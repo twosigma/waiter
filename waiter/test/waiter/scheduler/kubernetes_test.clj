@@ -757,10 +757,12 @@
                  :service-id->password-fn (constantly nil)
                  :service-id->service-description-fn (constantly nil)
                  :start-scheduler-syncer-fn (constantly nil)}
+        custom-options {:a 1 :b "two"}
         k8s-config {:authentication nil
                     :authorizer {:kind :default
                                  :default {:factory-fn 'waiter.authorization/noop-authorizer}}
                     :cluster-name "waiter"
+                    :custom-options custom-options
                     :fileserver {:port 9090
                                  :scheme "http"}
                     :watch-state (atom nil)
@@ -812,6 +814,9 @@
 
         (testing "should work with valid configuration"
           (is (instance? KubernetesScheduler (kubernetes-scheduler base-config))))
+
+        (testing "should retain custom plugin options"
+          (is (= custom-options (-> base-config kubernetes-scheduler :custom-options))))
 
         (testing "periodic auth-refresh task"
           (let [kill-task-fn (atom (constantly nil))

@@ -471,6 +471,7 @@
 (defrecord KubernetesScheduler [api-server-url
                                 authorizer
                                 cluster-name
+                                custom-options
                                 daemon-state
                                 fileserver
                                 http-client
@@ -943,13 +944,14 @@
 (defn kubernetes-scheduler
   "Returns a new KubernetesScheduler with the provided configuration. Validates the
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
-  [{:keys [authentication authorizer cluster-name http-options log-bucket-sync-secs log-bucket-url
-           max-patch-retries max-name-length pod-base-port pod-sigkill-delay-secs pod-suffix-length
-           replicaset-api-version replicaset-spec-builder scheduler-name scheduler-state-chan
-           scheduler-syncer-interval-secs service-id->service-description-fn service-id->password-fn
-           url start-scheduler-syncer-fn watch-retries]
-    {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver}]
+  [{:keys [authentication authorizer cluster-name custom-options http-options log-bucket-sync-secs
+           log-bucket-url max-patch-retries max-name-length pod-base-port pod-sigkill-delay-secs
+           pod-suffix-length replicaset-api-version replicaset-spec-builder scheduler-name
+           scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
+           service-id->password-fn start-scheduler-syncer-fn url watch-retries]
+    {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver :as context}]
   {:pre [(schema/contains-kind-sub-map? authorizer)
+         (or (nil? custom-options) (map? custom-options))
          (or (nil? fileserver-port)
              (and (integer? fileserver-port)
                   (< 0 fileserver-port 65535)))
@@ -1013,6 +1015,7 @@
           scheduler (->KubernetesScheduler url
                                            authorizer
                                            cluster-name
+                                           custom-options
                                            daemon-state
                                            fileserver
                                            http-client
