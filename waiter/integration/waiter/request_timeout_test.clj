@@ -68,39 +68,46 @@
 
 (deftest ^:parallel ^:integration-fast test-backend-request-errors
   (testing-using-waiter-url
-    (let [service-id (retrieve-service-id waiter-url {})]
-      (testing "backend request timeout"
-        (let [timeout-period 2000
-              extra-headers {:x-waiter-timeout timeout-period
-                             :x-waiter-debug "true"
-                             :x-kitchen-delay-ms (+ 2000 timeout-period)}
-              {:keys [headers] :as response} (make-kitchen-request waiter-url extra-headers)
-              response-body (:body response)
-              error-message (-> (waiter-settings waiter-url) :messages :backend-request-timed-out)]
-          (assert-response-status response 504)
-          (is error-message)
-          (is (str/includes? response-body error-message))
-          (is (not (str/blank? (get headers "x-waiter-backend-id"))))
-          (is (not (str/blank? (get headers "x-waiter-backend-host"))))
-          (is (not (str/blank? (get headers "x-waiter-backend-port"))))
-          (is (not (str/blank? (get headers "x-waiter-backend-proto"))))
-          (is (not (str/blank? (get headers "x-cid"))))))
+    (let [service-name (rand-name)
+          headers {:x-waiter-name service-name}
+          {:keys [headers request-headers service-id] :as first-response}
+          (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :method :get))]
+      (assert-response-status first-response 200)
+      (with-service-cleanup
+        service-id
+        (testing "backend request timeout"
+          (let [timeout-period 2000
+                extra-headers {:x-kitchen-delay-ms (+ 2000 timeout-period)
+                               :x-waiter-debug "true"
+                               :x-waiter-name service-name
+                               :x-waiter-timeout timeout-period}
+                {:keys [headers] :as response} (make-kitchen-request waiter-url extra-headers)
+                response-body (:body response)
+                error-message (-> (waiter-settings waiter-url) :messages :backend-request-timed-out)]
+            (assert-response-status response 504)
+            (is error-message)
+            (is (str/includes? response-body error-message))
+            (is (not (str/blank? (get headers "x-waiter-backend-id"))))
+            (is (not (str/blank? (get headers "x-waiter-backend-host"))))
+            (is (not (str/blank? (get headers "x-waiter-backend-port"))))
+            (is (not (str/blank? (get headers "x-waiter-backend-proto"))))
+            (is (not (str/blank? (get headers "x-cid"))))))
 
-      (testing "backend request failed"
-        (let [extra-headers {:x-kitchen-delay-ms 5000 ; sleep long enough to die before response
-                             :x-waiter-debug "true"}
-              {:keys [headers] :as response} (make-kitchen-request waiter-url extra-headers :path "/die")
-              response-body (:body response)
-              error-message (-> (waiter-settings waiter-url) :messages :backend-request-failed)]
-          (assert-response-status response 502)
-          (is error-message)
-          (is (str/includes? response-body error-message))
-          (is (not (str/blank? (get headers "x-waiter-backend-id"))))
-          (is (not (str/blank? (get headers "x-waiter-backend-host"))))
-          (is (not (str/blank? (get headers "x-waiter-backend-port"))))
-          (is (not (str/blank? (get headers "x-waiter-backend-proto"))))
-          (is (not (str/blank? (get headers "x-cid"))))))
-      (delete-service waiter-url service-id))))
+        (testing "backend request failed"
+          (let [extra-headers {:x-kitchen-delay-ms 5000 ; sleep long enough to die before response
+                               :x-waiter-debug "true"
+                               :x-waiter-name service-name}
+                {:keys [headers] :as response} (make-kitchen-request waiter-url extra-headers :path "/die")
+                response-body (:body response)
+                error-message (-> (waiter-settings waiter-url) :messages :backend-request-failed)]
+            (assert-response-status response 502)
+            (is error-message)
+            (is (str/includes? response-body error-message))
+            (is (not (str/blank? (get headers "x-waiter-backend-id"))))
+            (is (not (str/blank? (get headers "x-waiter-backend-host"))))
+            (is (not (str/blank? (get headers "x-waiter-backend-port"))))
+            (is (not (str/blank? (get headers "x-waiter-backend-proto"))))
+            (is (not (str/blank? (get headers "x-cid"))))))))))
 
 ; Marked explicit because it's flaky
 (deftest ^:parallel ^:integration-fast ^:explicit test-request-queue-timeout-slow-start-app
