@@ -1284,7 +1284,7 @@
         (finally
           (delete-token-and-assert waiter-url token))))))
 
-(deftest ^:parallel ^:integration-slow test-service-fallback-support
+(deftest ^:parallel ^:integration-slow ^:resource-heavy test-service-fallback-support
   (testing-using-waiter-url
     (let [service-name (rand-name)
           token (create-token-name waiter-url service-name)
