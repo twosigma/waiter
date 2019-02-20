@@ -69,5 +69,5 @@ matrix:
 
     - name: 'Waiter CLI integration tests'
       services: docker
-      before_script: cd cli
+      before_script: cd cli && ./bin/ci/setup.sh
       script: ./bin/ci/run-integration-tests.sh
