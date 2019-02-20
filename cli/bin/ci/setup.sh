@@ -16,4 +16,5 @@ then
     pip uninstall -y waiter-client
 fi
 
+pip install -e .
 pip install -r integration/requirements.txt

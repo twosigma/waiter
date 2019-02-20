@@ -1,4 +1,3 @@
-file:..#egg=waiter_client
 requests==2.20.0
 retrying==1.3.3
 pip==9.0.1; python_version >= '3.6'
