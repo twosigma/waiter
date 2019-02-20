@@ -28,21 +28,17 @@ class WaiterCliTest(util.WaiterTest):
         self.assertEqual(f"Couldn't find token {token_name}", error['waiter-error']['message'])
 
         # Create token
-        response_text = str(uuid.uuid4())
-        cmd = util.minimal_service_cmd(response_text=response_text)
-        service = util.minimal_service_description(cmd=cmd)
+        service = util.minimal_service_description()
         cp = cli.create_from_service_description(token_name, self.waiter_url, service)
         self.assertEqual(0, cp.returncode, cp.stderr)
         try:
             # Make sure token now exists
             token = util.load_token(self.waiter_url, token_name)
             self.assertIsNotNone(token)
-            self.assertEqual(cmd, token['cmd'])
             self.assertEqual('shell', token['cmd-type'])
 
             # Make sure we can access the service
             resp = util.session.get(self.waiter_url, headers={'X-Waiter-Token': token_name})
             self.assertEqual(200, resp.status_code, resp.text)
-            self.assertEqual(response_text, resp.text)
         finally:
             util.delete_token(self.waiter_url, token_name)
