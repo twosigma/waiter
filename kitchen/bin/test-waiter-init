@@ -11,6 +11,7 @@ start_test() {
     test_pid=$!
     sleep 0.1
     working_dir=r$(( $(cat .waiter-container-runs) - 1 ))
+    assertion_count=0
 }
 
 start_guarded_test() {
@@ -44,11 +45,12 @@ dump_stdout() {
 }
 
 failure() {
-    printf "\nFailed assertion: %s\n" "$1"
+    printf "\nFailed assertion #%d: %s\n" "$assertion_count" "$1"
     exit 1
 }
 
 assert() {
+    (( assertion_count++ ))
     test "$@" || failure "$*"
     echo -n .
 }
@@ -61,6 +63,12 @@ assert_still_running() {
 await_exit_and_assert_code() {
     wait $test_pid
     assert "EXIT=$?" == "EXIT=$1"
+}
+
+wait_until() {
+    while ! test "$@"; do
+        sleep 0.1
+    done
 }
 
 # Clean up any old copy of the restart state file
@@ -149,12 +157,13 @@ assert -f $working_dir/$fresh_file_name
 assert $(cat $working_dir/$fresh_file_name) == hello
 
 #
-# Ensure that the stdout file captured by the wrapper script
-# is uploaded to S3 when the script is terminated.
+# Ensure that the stdout and stderr files captured by the wrapper script
+# are uploaded to S3 when the script is terminated.
 # This test runs iff WAITER_LOG_BUCKET_URL is non-null.
 #
-start_guarded_test 'stdout uploaded to s3 bucket' "$WAITER_LOG_BUCKET_URL" <<EOF
-echo TestString && sleep 10
+start_guarded_test 'stdout and stderr uploaded to s3 bucket' "$WAITER_LOG_BUCKET_URL" <<EOF
+echo TestString | tee /dev/stderr;
+sleep 10
 EOF
 if $test_started; then
     send_sigterm
@@ -163,7 +172,33 @@ if $test_started; then
     pod_name=$(hostname --short)
     target_bucket_dir=$WAITER_LOG_BUCKET_URL/$pod_name/$working_dir
     assert "$(curl -s $target_bucket_dir/stdout)" == TestString
-    assert "$(curl -s $target_bucket_dir/stdout | wc -c)" == 11
+    assert "$(curl -s $target_bucket_dir/stderr | grep '^TestString$')"
+fi
+
+#
+# Ensure that a large stdout file captured by the wrapper script
+# is shortened before uploading to S3 when the script is terminated.
+# This test runs iff WAITER_LOG_BUCKET_URL is non-null.
+#
+export WAITER_LOG_MAX_BYTES=2000
+start_guarded_test 'shortened stdout uploaded to s3 bucket' "$WAITER_LOG_BUCKET_URL" <<EOF
+printf 'head of log\n\n';
+dd if=/dev/zero bs=1M count=1;
+printf '\n\ntail of log\n';
+touch done
+sleep 10
+EOF
+if $test_started; then
+    wait_until -f "$working_dir/done"
+    send_sigterm
+    send_sigterm
+    await_exit_and_assert_code 143
+    pod_name=$(hostname --short)
+    target_bucket_dir=$WAITER_LOG_BUCKET_URL/$pod_name/$working_dir
+    assert "$(curl -s $target_bucket_dir/stdout | head -n1)" == 'head of log'
+    assert "$(curl -s $target_bucket_dir/stdout | tail -n1)" == 'tail of log'
+    assert "$(curl -s $target_bucket_dir/stdout | grep 'waiter log .* bytes omitted')"
+    assert "$(curl -s $target_bucket_dir/stdout | wc -c)" -lt 2100
 fi
 
 printf '\n\nAll tests passed\n'

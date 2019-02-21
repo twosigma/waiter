@@ -78,15 +78,28 @@ pod_shutdown() {
         # (this is used to create a unique path in S3)
         pod_name=$(hostname --short)
         base_url="$WAITER_LOG_BUCKET_URL/$pod_name"
+        waiter_init_log "Uploading logs to S3: $base_url"
+        : ${WAITER_LOG_MAX_BYTES:=100000000}
+        waiter_log_chunk_bytes=$(( $WAITER_LOG_MAX_BYTES / 2 ))
         # For each ./r* directory created by a container restart,
         # we upload the stdout and stderr to the target directory in the S3 bucket.
         # We work backwards from the most recent run down to 0 to increase the odds
         # that our most recent runs' logs are successfully persisted before a SIGKILL.
         cd "$waiter_sandbox_base_dir"
-        for i in $(seq $waiter_restart_count -1 0); do
+        for (( i=$waiter_restart_count; i>=0; i-- )); do
             waiter_log_files='stdout stderr'
             for f in $waiter_log_files; do
                 logfile="r$i/$f"
+                # If the file is more than WAITER_LOG_MAX_BYTES, only save the head and tail
+                log_size=$(stat --printf=%s $logfile)
+                if [ $log_size -gt $WAITER_LOG_MAX_BYTES ]; then
+                    tmplog=${logfile}.waiter.tmp
+                    bytes_omitted=$(( $log_size - $WAITER_LOG_MAX_BYTES ))
+                    head -c$waiter_log_chunk_bytes $logfile > $tmplog
+                    printf '\n>>>>>> waiter log shortened: %d bytes omitted <<<<<<\n' "$bytes_omitted" >> $tmplog
+                    tail -c$waiter_log_chunk_bytes $logfile >> $tmplog
+                    mv $tmplog $logfile
+                fi
                 # Using the -T option with curl PUTs the target file to the given URL,
                 # and avoids loading the full file into memory when sending the payload.
                 # Enabling Kerberos/SPNEGO when the bucket is not kerberized does not
