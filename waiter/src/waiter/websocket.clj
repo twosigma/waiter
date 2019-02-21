@@ -34,6 +34,7 @@
             [waiter.scheduler :as scheduler]
             [waiter.statsd :as statsd]
             [waiter.util.async-utils :as au]
+            [waiter.util.http-utils :as hu]
             [waiter.util.ring-utils :as ru])
   (:import (java.net HttpCookie SocketTimeoutException URLDecoder URLEncoder)
            (java.nio ByteBuffer)
@@ -161,7 +162,7 @@
                                        :middleware ws-middleware}
                                 (not (str/blank? sec-websocket-protocol))
                                 (assoc :subprotocols (str/split sec-websocket-protocol #",")))
-        ws-protocol (if (= "https" (:protocol instance)) "wss" "ws")
+        ws-protocol (if (= "https" (-> instance :protocol hu/backend-proto->scheme)) "wss" "ws")
         instance-endpoint (scheduler/end-point-url (assoc instance :protocol ws-protocol) end-route)
         service-id (scheduler/instance->service-id instance)
         correlation-id (cid/get-correlation-id)]

@@ -203,6 +203,31 @@
 
       (delete-service waiter-url service-id))))
 
+(deftest ^:parallel ^:integration-fast test-basic-service-from-on-the-fly-headers
+  (testing-using-waiter-url
+    (let [headers {:authentication "standard"
+                   :backend-proto "h2c"
+                   :blacklist-on-503 false
+                   :cmd "foo"
+                   :cmd-type "shell"
+                   :concurrency-level 10
+                   :cpus 1
+                   :distribution-scheme "simple"
+                   :health-check-url "/status"
+                   :mem 512
+                   :metric-group "baz"
+                   :name (rand-name)
+                   :ports 2
+                   :version "1"}
+          waiter-headers (pc/map-keys #(str "x-waiter-" (name %)) headers)
+          service-id (retrieve-service-id waiter-url waiter-headers)
+          _ (is service-id)
+          service-description (service-id->service-description waiter-url service-id)
+          username (retrieve-username)]
+      (is (= (-> headers
+                 (assoc :permitted-user username :run-as-user username))
+             service-description)))))
+
 (deftest ^:parallel ^:integration-fast test-basic-logs
   (testing-using-waiter-url
     (let [waiter-headers {:x-waiter-name (rand-name)}
@@ -269,6 +294,28 @@
             (str "Invalid metric group for " service-id)))
 
       (delete-service waiter-url service-id))))
+
+(deftest ^:parallel ^:integration-fast test-h2c-backend-proto-service
+  (testing-using-waiter-url
+    (if (using-shell? waiter-url)
+      (let [backend-proto "h2c"
+            kitchen-command (proxy-kitchen-command backend-proto)
+            headers {:x-waiter-backend-proto backend-proto
+                     :x-waiter-cmd kitchen-command
+                     :x-waiter-name (rand-name)
+                     :x-waiter-ports 2}
+            {:keys [body service-id] :as response}
+            (make-request-with-debug-info headers #(make-shell-request waiter-url % :path "/request-info"))]
+        (with-service-cleanup
+          service-id
+          (is service-id)
+          (assert-response-status response 200)
+          (let [body-json (some-> body json/read-str walk/keywordize-keys)]
+            (is (contains? #{"HTTP/2" "HTTP/2.0"} (get-in body-json [:headers :x-kitchen-client-proto-version]))))
+          (let [service-settings (service-settings waiter-url service-id)]
+            (is (= backend-proto (get-in service-settings [:service-description :backend-proto])))
+            (is (= kitchen-command (get-in service-settings [:service-description :cmd]))))))
+      (log/info "Skipping test-h2c-backend-proto-service as the default is not shell scheduler"))))
 
 (deftest ^:parallel ^:integration-fast test-basic-unsupported-command-type
   (testing-using-waiter-url

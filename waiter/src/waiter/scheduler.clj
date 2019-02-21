@@ -30,6 +30,7 @@
             [waiter.statsd :as statsd]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
+            [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
   (:import (java.io EOFException)
            (java.net ConnectException SocketTimeoutException)
@@ -185,7 +186,8 @@
 (defn base-url
   "Returns the url at which the service definition resides."
   [{:keys [host port protocol]}]
-  (str protocol "://" host ":" port))
+  (let [scheme (hu/backend-proto->scheme protocol)]
+    (str scheme "://" host ":" port)))
 
 (defn end-point-url
   "Returns the endpoint url which can be queried on the service instance."
@@ -218,13 +220,17 @@
 
 (defn available?
   "Async go block which returns the status code and success of a health check.
-  Returns false if such a connection cannot be established."
-  [http-client {:keys [host port] :as service-instance} health-check-path]
+   Returns {:healthy? false} if such a connection cannot be established."
+  [http-clients {:keys [host protocol port] :as service-instance} health-check-path]
   (async/go
     (try
       (if (and (pos? port) host)
         (let [instance-health-check-url (health-check-url service-instance health-check-path)
-              {:keys [status error]} (async/<! (http/get http-client instance-health-check-url))
+              http-client (hu/retrieve-http-client protocol http-clients)
+              proto-version (-> protocol
+                                (hu/determine-backend-protocol-version "HTTP/1.1")
+                                hu/protocol->http-version)
+              {:keys [status error]} (async/<! (http/get http-client instance-health-check-url {:version proto-version}))
               error-flag (cond
                            (instance? ConnectException error) :connect-exception
                            (instance? EOFException error) :hangup-exception
@@ -897,3 +903,8 @@
           (log/error e "Error in launch-metrics-maintainer. Instance launch metrics will not be collected."))))
     {:exit-chan exit-chan
      :query-chan query-chan}))
+
+(defn http2-cleartext-service?
+  "Returns true if the backend proto identifies this service as a service requiring http/2 support."
+  [{:strs [backend-proto]}]
+  (= "h2c" backend-proto))

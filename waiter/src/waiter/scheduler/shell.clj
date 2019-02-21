@@ -83,6 +83,9 @@
     (doseq [[env-key env-val] (seq environment)]
       (when-not (nil? env-val)
         (.put process-env env-key env-val)))
+    ;; TODO maybe some day this will be WAITER_SANDBOX
+    (when-not (contains? process-env "MESOS_SANDBOX")
+      (.put process-env "MESOS_SANDBOX" (.getAbsolutePath working-dir)))
     (.directory pb working-dir)
     (.redirectOutput pb (File. working-dir "stdout"))
     (.redirectError pb (File. working-dir "stderr"))

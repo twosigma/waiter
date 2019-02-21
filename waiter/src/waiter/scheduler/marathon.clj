@@ -29,13 +29,13 @@
             [waiter.correlation-id :as cid]
             [waiter.mesos.marathon :as marathon]
             [waiter.mesos.mesos :as mesos]
-            [waiter.util.http-utils :as http-utils]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.schema :as schema]
             [waiter.service-description :as sd]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
+            [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
   (:import (org.joda.time.format DateTimeFormat)))
 
@@ -268,11 +268,12 @@
      :mem mem
      :ports (-> ports (repeat 0) vec)
      :cpus cpus
-     :healthChecks [{:protocol (str/upper-case backend-proto)
+     :healthChecks [{:protocol (-> backend-proto hu/backend-proto->scheme str/upper-case)
                      :path health-check-url
                      :gracePeriodSeconds grace-period-secs
                      :intervalSeconds health-check-interval-secs
-                     :portIndex 0
+                     :portIndex (cond-> 0
+                                  (scheduler/http2-cleartext-service? service-description) inc)
                      :timeoutSeconds 20
                      :maxConsecutiveFailures health-check-max-consecutive-failures}]
      :backoffFactor restart-backoff-factor
@@ -456,7 +457,12 @@
      :syncer (retrieve-syncer-state-fn)})
 
   (validate-service [_ service-id]
-    (let [{:strs [run-as-user]} (service-id->service-description-fn service-id)]
+    (let [{:strs [ports run-as-user] :as service-description} (service-id->service-description-fn service-id)]
+      (when (and (scheduler/http2-cleartext-service? service-description) (< ports 2))
+        (throw (ex-info (str "An h2c service must request at least two ports. "
+                             "It must respond to h2c health checks on ${PORT0}. "
+                             "It must also respond to HTTP/1.1 health checks on ${PORT1}.")
+                        {:service-description service-description})))
       (authz/check-user authorizer run-as-user service-id))))
 
 (defn- get-apps-with-deployments
@@ -608,7 +614,7 @@
   (let [authorizer (utils/create-component authorizer)
         http-client (-> http-options
                         (utils/assoc-if-absent :user-agent "waiter-marathon")
-                        http-utils/http-client-factory)
+                        hu/http-client-factory)
         marathon-api (marathon/api-factory http-client http-options url)
         mesos-api (mesos/api-factory http-client http-options mesos-slave-port slave-directory)
         service-id->failed-instances-transient-store (atom {})

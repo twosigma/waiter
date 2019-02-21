@@ -264,18 +264,6 @@
             {:status 202 :headers {"location" "http://www.example.com:5678/retrieve/result/location"}}
             "http://www.example.com:1234/query/for/status")))))
 
-(deftest test-protocol->http-version
-  (is (nil? (protocol->http-version nil)))
-  (is (nil? (protocol->http-version "")))
-  (is (nil? (protocol->http-version "Http/0.9")))
-  (is (= HttpVersion/HTTP_0_9 (protocol->http-version "HTTP/0.9")))
-  (is (nil? (protocol->http-version "http/1.0")))
-  (is (= HttpVersion/HTTP_1_0 (protocol->http-version "HTTP/1.0")))
-  (is (= HttpVersion/HTTP_1_1 (protocol->http-version "HTTP/1.1")))
-  (is (= HttpVersion/HTTP_2 (protocol->http-version "HTTP/2.0")))
-  (is (nil? (protocol->http-version "HTTP/2.1")))
-  (is (nil? (protocol->http-version "HTTP/3.0"))))
-
 (deftest test-make-request
   (let [instance {:service-id "test-service-id", :host "example.com", :port 8080, :protocol "proto"}
         request {:authorization/principal "test-user@test.com"
@@ -326,7 +314,8 @@
           service-id->password-fn (fn service-id->password-fn [service-id]
                                     (is (= "test-service-id" service-id))
                                     app-password)
-          http-client (http/client)
+          proto-version "HTTP/1.0"
+          http-clients {:http1-client (http/client)}
           http-request-mock-factory (fn [passthrough-headers request-method-fn-call-counter]
                                       (fn [^HttpClient _ request-config]
                                         (swap! request-method-fn-call-counter inc)
@@ -340,12 +329,12 @@
                                                            "te" "trailers" "transfer-encoding" "upgrade")
                                                    (merge {"x-waiter-auth-principal"          "test-user"
                                                            "x-waiter-authenticated-principal" "test-user@test.com"}))
-                                               (:headers request-config)))))
-          proto-version HttpVersion/HTTP_1_1]
+                                               (:headers request-config)))
+                                        (is (= HttpVersion/HTTP_1_0 (:version request-config)))))]
       (testing "make-request:headers"
         (let [request-method-fn-call-counter (atom 0)]
           (with-redefs [http/request (http-request-mock-factory passthrough-headers request-method-fn-call-counter)]
-            (make-request http-client make-basic-auth-fn service-id->password-fn instance request request-properties
+            (make-request http-clients make-basic-auth-fn service-id->password-fn instance request request-properties
                           passthrough-headers end-route nil proto-version)
             (is (= 1 @request-method-fn-call-counter)))))
 
@@ -359,7 +348,7 @@
                           (is (nil? metric-group))
                           (is (= "request_bytes" metric))
                           (deliver statsd-inc-call-value value))]
-            (make-request http-client make-basic-auth-fn service-id->password-fn instance request request-properties
+            (make-request http-clients make-basic-auth-fn service-id->password-fn instance request request-properties
                           passthrough-headers end-route nil proto-version)
             (is (= 1 @request-method-fn-call-counter))
             (is (= 1234123412341234 (deref statsd-inc-call-value 0 :statsd-inc-not-called)))))))))

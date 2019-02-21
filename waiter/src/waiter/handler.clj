@@ -52,12 +52,12 @@
 
 (defn async-make-request-helper
   "Helper function that returns a function that can invoke make-request-fn."
-  [http-client instance-request-properties make-basic-auth-fn service-id->password-fn prepare-request-properties-fn make-request-fn]
-  (fn async-make-request-fn [instance {:keys [headers protocol] :as request} end-route metric-group]
+  [http-clients instance-request-properties make-basic-auth-fn service-id->password-fn prepare-request-properties-fn make-request-fn]
+  (fn async-make-request-fn [instance {:keys [headers protocol] :as request} end-route metric-group backend-proto]
     (let [{:keys [passthrough-headers waiter-headers]} (headers/split-headers headers)
           instance-request-properties (prepare-request-properties-fn instance-request-properties waiter-headers)
-          proto-version (hu/determine-backend-protocol-version protocol)]
-      (make-request-fn http-client make-basic-auth-fn service-id->password-fn instance request
+          proto-version (hu/determine-backend-protocol-version backend-proto protocol)]
+      (make-request-fn http-clients make-basic-auth-fn service-id->password-fn instance request
                        instance-request-properties passthrough-headers end-route metric-group proto-version))))
 
 (defn- async-make-http-request
@@ -72,7 +72,7 @@
     (let [{:strs [backend-proto metric-group]} (service-id->service-description-fn service-id)
           instance (scheduler/make-ServiceInstance {:host host :port port :protocol backend-proto :service-id service-id})
           _ (log/info request-id counter-name "relative location is" location)]
-      (make-http-request-fn instance request location metric-group))))
+      (make-http-request-fn instance request location metric-group backend-proto))))
 
 (defn complete-async-handler
   "Completes execution of an async request by propagating a termination message to the request monitor system."

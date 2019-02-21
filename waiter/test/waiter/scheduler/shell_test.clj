@@ -493,7 +493,7 @@
 
 (deftest test-port-reserved?
   (let [port->reservation-atom (atom {})
-        port 10000
+        port 50000
         port-grace-period-ms -1000]
     (is (false? (port-reserved? port->reservation-atom port)))
     (with-redefs [utils/port-available? (constantly true)]
@@ -506,13 +506,13 @@
 
   (testing "successfully reserve all ports"
     (let [port->reservation-atom (atom {})
-          port-range [10000 11000]
+          port-range [44000 44999]
           reserved-ports (reserve-ports! 20 port->reservation-atom port-range)]
-      (is (= (range 10000 10020) reserved-ports))))
+      (is (= (range 44000 44020) reserved-ports))))
 
   (testing "unable to reserve all ports"
     (let [port->reservation-atom (atom {})
-          port-range [10000 10010]]
+          port-range [44000 44010]]
       (try
         (reserve-ports! 20 port->reservation-atom port-range)
         (is false "reserve-ports! did not throw an exception!")
