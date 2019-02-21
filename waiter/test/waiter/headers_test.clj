@@ -80,7 +80,16 @@
     (is (= "foo" (parse-header-value "x-waiter-metric-group" "foo"))))
 
   (testing "parse-header-value:metric-group-is-not-json"
-    (is (= "true" (parse-header-value "x-waiter-metric-group" "true")))))
+    (is (= "true" (parse-header-value "x-waiter-metric-group" "true"))))
+
+  (testing "parse-header-value:backend-proto:http"
+    (is (= "http" (parse-header-value "x-waiter-backend-proto" "http"))))
+
+  (testing "parse-header-value:backend-proto:http"
+    (is (= "https" (parse-header-value "x-waiter-backend-proto" "https"))))
+
+  (testing "parse-header-value:backend-proto:h2c"
+    (is (= "h2c" (parse-header-value "x-waiter-backend-proto" "h2c")))))
 
 (deftest test-contains-waiter-header
   (let [test-cases (list

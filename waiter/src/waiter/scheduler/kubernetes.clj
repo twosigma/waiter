@@ -647,10 +647,14 @@
      :watch-state @watch-state})
 
   (validate-service [_ service-id]
-    (let [run-as-user (-> service-id
-                          service-id->service-description-fn
-                          service-description->namespace)]
-      (authz/check-user authorizer run-as-user service-id))))
+    (let [{:strs [ports] :as service-description} (service-id->service-description-fn service-id)]
+      (when (and (scheduler/http2-cleartext-service? service-description) (< ports 2))
+        (throw (ex-info (str "An h2c service must request at least two ports. "
+                             "It must respond to h2c health checks on ${PORT0}. "
+                             "It must also respond to HTTP/1.1 health checks on ${PORT1}.")
+                        {:service-description service-description})))
+      (let [run-as-user (service-description->namespace service-description)]
+        (authz/check-user authorizer run-as-user service-id)))))
 
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
@@ -672,6 +676,8 @@
         ;; Make $PORT0 value pseudo-random to ensure clients can't hardcode it.
         ;; Helps maintain compatibility with Marathon, where port assignment is dynamic.
         port0 (-> service-id hash (mod 100) (* 10) (+ pod-base-port))
+        health-check-port (cond-> port0
+                            (scheduler/http2-cleartext-service? service-description) inc)
         env (into [;; We set these two "MESOS_*" variables to improve interoperability.
                    ;; New clients should prefer using WAITER_SANDBOX.
                    {:name "MESOS_DIRECTORY" :value home-path}
@@ -695,8 +701,7 @@
         backend-protocol-lower (string/lower-case backend-proto)
         backend-protocol-upper (string/upper-case backend-proto)
         health-check-url (sd/service-description->health-check-url service-description)
-        memory (str mem "Mi")
-        ssl? (= "https" backend-protocol-lower)]
+        memory (str mem "Mi")]
     (cond->
       {:kind "ReplicaSet"
        :apiVersion replicaset-api-version
@@ -717,7 +722,7 @@
                                               :image (or image default-container-image)
                                               :imagePullPolicy "IfNotPresent"
                                               :livenessProbe {:httpGet {:path health-check-url
-                                                                        :port port0
+                                                                        :port health-check-port
                                                                         :scheme backend-protocol-upper}
                                                               ;; We increment the threshold value to match Marathon behavior.
                                                               ;; Marathon treats this as a retry count,
@@ -729,7 +734,7 @@
                                               :name "waiter-app"
                                               :ports [{:containerPort port0}]
                                               :readinessProbe {:httpGet {:path health-check-url
-                                                                         :port port0
+                                                                         :port health-check-port
                                                                          :scheme backend-protocol-upper}
                                                                :failureThreshold 1
                                                                :periodSeconds health-check-interval-secs

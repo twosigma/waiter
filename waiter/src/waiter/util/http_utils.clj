@@ -17,13 +17,17 @@
   (:require [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.string :as str]
+            [clojure.tools.logging :as log]
             [clojure.walk :as walk]
             [qbits.jet.client.http :as http]
             [slingshot.slingshot :as ss]
             [waiter.auth.spnego :as spnego])
   (:import (java.net URI)
+           (java.util ArrayList)
            (org.eclipse.jetty.client HttpClient)
-           (org.eclipse.jetty.http HttpField HttpHeader)
+           (org.eclipse.jetty.http HttpField HttpHeader HttpVersion)
+           (org.eclipse.jetty.http2.client HTTP2Client)
+           (org.eclipse.jetty.http2.client.http HttpClientTransportOverHTTP2)
            (org.eclipse.jetty.util HttpCookieStore$Empty)))
 
 (defn http-request
@@ -60,13 +64,14 @@
 
 (defn ^HttpClient http-client-factory
   "Creates a HttpClient."
-  [{:keys [clear-content-decoders conn-timeout follow-redirects? socket-timeout user-agent]
+  [{:keys [clear-content-decoders conn-timeout follow-redirects? socket-timeout transport user-agent]
     :or {clear-content-decoders true}}]
   (let [^HttpClient client
         (http/client (cond-> {}
                        (some? conn-timeout) (assoc :connect-timeout conn-timeout)
                        (some? follow-redirects?) (assoc :follow-redirects? follow-redirects?)
-                       (some? socket-timeout) (assoc :idle-timeout socket-timeout)))]
+                       (some? socket-timeout) (assoc :idle-timeout socket-timeout)
+                       (some? transport) (assoc :transport transport)))]
     (when clear-content-decoders
       (.clear (.getContentDecoderFactories client)))
     (.setCookieStore client (HttpCookieStore$Empty.))
@@ -76,9 +81,60 @@
         (.setUserAgentField client new-user-agent-field)))
     client))
 
+(defn- prepare-http2-transport
+  "Returns the HTTP/2 client transport."
+  [connection-timeout-ms]
+  (let [http2-client (HTTP2Client.)
+        http2-protocols (ArrayList. ["h2c"])]
+    (.setConnectTimeout http2-client connection-timeout-ms)
+    (.setProtocols http2-client http2-protocols)
+    (HttpClientTransportOverHTTP2. http2-client)))
+
+(defn prepare-http-clients
+  "Prepares and returns a map of HTTP clients for http/1 and http/2 requests."
+  [{:keys [conn-timeout user-agent] :as config}]
+  (let [http2-transport (prepare-http2-transport conn-timeout)]
+    {:http1-client (http-client-factory (cond-> config
+                                          user-agent (update :user-agent str ".http1")))
+     :http2-client (-> (cond-> config
+                         user-agent (update :user-agent str ".http2"))
+                       (assoc :transport http2-transport)
+                       http-client-factory)}))
+
+(defn retrieve-http-client
+  "Returns the appropriate http client based on the backend protocol."
+  [backend-proto {:keys [http1-client http2-client]}]
+  (if (contains? #{"h2c"} backend-proto)
+    http2-client
+    http1-client))
+
 (defn determine-backend-protocol-version
   "Determines the protocol version to use for the request to the backend.
-   TODO: Once we add support for http/2 we will need to determine which protocol to use while
-   talking with the backend, using additional info from the service description."
+   Returns HTTP/2.0 for http/2 backends.
+   Returns HTTP/1.1, HTTP/1.0 or HTTP/0.9 for non-http/2 backends."
+  [^String backend-proto ^String client-protocol]
+  (cond
+    ;; HTTP/2 backend
+    (contains? #{"h2c"} backend-proto) "HTTP/2.0"
+    ;; Not a HTTP/2 backend, default to HTTP/1.1 for HTTP/2 requests
+    (= client-protocol "HTTP/2.0") "HTTP/1.1"
+    ;; Use client version: HTTP/1.1, HTTP/1.0 or HTTP/0.9
+    :else client-protocol))
+
+(defn backend-proto->scheme
+  "Determines the protocol scheme from the backend proto"
+  [backend-proto]
+  (case backend-proto
+    "http" "http"
+    "https" "https"
+    "h2c" "http"
+    backend-proto))
+
+(defn protocol->http-version
+  "Determines the http protocol version to use for the request to the backend."
   [^String protocol]
-  protocol)
+  (try
+    (when (and protocol (str/starts-with? protocol "HTTP"))
+      (HttpVersion/fromString protocol))
+    (catch Exception e
+      (log/error e "unable to determine http version from" protocol))))

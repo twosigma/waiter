@@ -501,7 +501,7 @@
 
 (deftest test-available?
   (with-redefs [http/get (fn [_ _] (throw (IllegalArgumentException. "Unable to make request")))]
-    (let [resp (async/<!! (available? (Object.)
+    (let [resp (async/<!! (available? {:http1-client (Object.)}
                                       {:port 80 :protocol "http" :host "www.example.com"}
                                       "/health-check"))]
       (is (= {:healthy? false} resp)))))

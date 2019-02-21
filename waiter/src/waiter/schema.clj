@@ -39,8 +39,8 @@
 
 (def valid-backend-proto
   "Validator for the backend-proto parameter.
-   Valid values are 'http' and 'https'."
-  (s/constrained non-empty-string #{"http" "https"} 'invalid-backend-proto))
+   Valid values are 'http', 'https', and 'h2c'."
+  (s/constrained non-empty-string #{"http" "https" "h2c"} 'invalid-backend-proto))
 
 (def valid-metric-group
   "Validator for metric group names. Valid names must:

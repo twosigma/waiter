@@ -322,6 +322,14 @@
        (throw (Exception. "Property waiter.test.kitchen.cmd is not set! (try `lein with-profile +test`)"))
        (str cmd (when-not (str/blank? args) " ") args)))))
 
+(defn proxy-kitchen-command
+  "Returns the command to launch kitchen behind a proxy"
+  [backend-proto]
+  (let [raw-command (kitchen-cmd)]
+    (-> raw-command
+        (str/replace "bin/kitchen" "bin/run-proxy-kitchen.sh")
+        (str " " backend-proto))))
+
 (defn kitchen-params
   []
   {:cmd-type "shell"
@@ -879,6 +887,11 @@
   "Returns true if Waiter is configured to use Marathon for scheduling"
   [waiter-url]
   (= "marathon" (retrieve-default-scheduler-name waiter-url)))
+
+(defn using-shell?
+  "Returns true if Waiter is configured to use shell scheduler for scheduling"
+  [waiter-url]
+  (str/includes? (retrieve-default-scheduler-name waiter-url) "shell"))
 
 (defn can-query-for-grace-period?
   "Returns true if Waiter supports querying for grace period"

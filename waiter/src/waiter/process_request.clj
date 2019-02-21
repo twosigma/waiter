@@ -43,7 +43,6 @@
   (:import (java.io InputStream IOException)
            (java.util.concurrent TimeoutException)
            (org.eclipse.jetty.client HttpClient)
-           (org.eclipse.jetty.http HttpVersion)
            (org.eclipse.jetty.io EofException)
            (org.eclipse.jetty.server HttpChannel HttpOutput)))
 
@@ -181,15 +180,6 @@
     (deliver reservation-status-promise promise-value)
     (utils/exception->response (ex-info message (assoc metrics-map :status status) error) request)))
 
-(defn protocol->http-version
-  "Determines the http protocol version to use for the request to the backend."
-  [^String protocol]
-  (try
-    (when (and protocol (str/starts-with? protocol "HTTP"))
-      (HttpVersion/fromString protocol))
-    (catch Exception e
-      (log/error e "unable to determine http version from" protocol))))
-
 (defn- make-http-request
   "Makes an asynchronous request to the endpoint using Basic authentication."
   [^HttpClient http-client make-basic-auth-fn request-method endpoint query-string headers body service-password
@@ -208,12 +198,12 @@
        :idle-timeout idle-timeout
        :method request-method
        :query-string query-string
-       :version (protocol->http-version proto-version)
+       :version (hu/protocol->http-version proto-version)
        :url endpoint})))
 
 (defn make-request
   "Makes an asynchronous http request to the instance endpoint and returns a channel."
-  [http-client make-basic-auth-fn service-id->password-fn instance {:keys [body query-string request-method] :as request}
+  [http-clients make-basic-auth-fn service-id->password-fn instance {:keys [body query-string request-method] :as request}
    {:keys [initial-socket-timeout-ms output-buffer-size]} passthrough-headers end-route metric-group proto-version]
   (let [instance-endpoint (scheduler/end-point-url instance end-route)
         service-id (scheduler/instance->service-id instance)
@@ -234,10 +224,13 @@
       (catch Exception e
         (log/error e "Unable to track content-length on request")))
     (when waiter-debug-enabled?
-      (log/info "connecting to" instance-endpoint))
-    (make-http-request
-      http-client make-basic-auth-fn request-method instance-endpoint query-string headers body service-password
-      (handler/make-auth-user-map request) initial-socket-timeout-ms output-buffer-size proto-version)))
+      (log/info "connecting to" instance-endpoint "using" proto-version))
+    (-> instance
+        :protocol
+        (hu/retrieve-http-client http-clients)
+        (make-http-request
+          make-basic-auth-fn request-method instance-endpoint query-string headers body service-password
+          (handler/make-auth-user-map request) initial-socket-timeout-ms output-buffer-size proto-version))))
 
 (defn extract-async-request-response-data
   "Helper function that inspects the response and returns the location and query-string if the response
@@ -372,8 +365,8 @@
   [post-process-async-request-response-fn _ instance-request-properties descriptor instance
    {:keys [uri] :as request} reason-map reservation-status-promise confirm-live-connection-with-abort
    request-state-chan {:keys [status] :as response}]
-  (let [{:keys [service-description service-id waiter-headers]} descriptor
-        {:strs [metric-group]} service-description
+  (let [{:keys [service-description service-id]} descriptor
+        {:strs [backend-proto metric-group]} service-description
         waiter-debug-enabled? (utils/request->debug-enabled? request)
         resp-chan (async/chan 5)]
     (when (and (= 503 status) (get service-description "blacklist-on-503"))
@@ -393,8 +386,8 @@
                             (metrics/stream-metric-map service-id))
       (-> (cond-> response
             location (post-process-async-request-response-fn
-                       service-id metric-group instance (handler/make-auth-user-map request) reason-map
-                       instance-request-properties location query-string))
+                       service-id metric-group backend-proto instance (handler/make-auth-user-map request)
+                       reason-map instance-request-properties location query-string))
           (assoc :body resp-chan)
           (update-in [:headers] (fn update-response-headers [headers]
                                   (utils/filterm #(not= "connection" (str/lower-case (str (key %)))) headers)))))))
@@ -439,7 +432,7 @@
         (timers/start-stop-time!
           process-timer
           (let [{:keys [service-id service-description]} descriptor
-                {:strs [metric-group]} service-description]
+                {:strs [backend-proto metric-group]} service-description]
             (send local-usage-agent metrics/update-last-request-time-usage-metric service-id request-time)
             (try
               (let [{:keys [waiter-headers passthrough-headers]} descriptor]
@@ -473,7 +466,7 @@
                                                                   reservation-status-promise metric-group)))
                         instance (:out timed-instance)
                         instance-elapsed (:elapsed timed-instance)
-                        proto-version (hu/determine-backend-protocol-version protocol)]
+                        proto-version (hu/determine-backend-protocol-version backend-proto protocol)]
                     (statsd/histo! metric-group "get_instance" instance-elapsed)
                     (-> (try
                           (log/info "suggested instance:" (:id instance) (:host instance) (:port instance))
