@@ -89,7 +89,10 @@
     (is (= "https" (parse-header-value "x-waiter-backend-proto" "https"))))
 
   (testing "parse-header-value:backend-proto:h2c"
-    (is (= "h2c" (parse-header-value "x-waiter-backend-proto" "h2c")))))
+    (is (= "h2c" (parse-header-value "x-waiter-backend-proto" "h2c"))))
+
+  (testing "parse-header-value:backend-proto:h2"
+    (is (= "h2" (parse-header-value "x-waiter-backend-proto" "h2")))))
 
 (deftest test-contains-waiter-header
   (let [test-cases (list

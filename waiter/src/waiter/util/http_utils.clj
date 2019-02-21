@@ -85,7 +85,7 @@
   "Returns the HTTP/2 client transport."
   [connection-timeout-ms]
   (let [http2-client (HTTP2Client.)
-        http2-protocols (ArrayList. ["h2c"])]
+        http2-protocols (ArrayList. ["h2" "h2c"])]
     (.setConnectTimeout http2-client connection-timeout-ms)
     (.setProtocols http2-client http2-protocols)
     (HttpClientTransportOverHTTP2. http2-client)))
@@ -104,7 +104,7 @@
 (defn retrieve-http-client
   "Returns the appropriate http client based on the backend protocol."
   [backend-proto {:keys [http1-client http2-client]}]
-  (if (contains? #{"h2c"} backend-proto)
+  (if (contains? #{"h2c" "h2"} backend-proto)
     http2-client
     http1-client))
 
@@ -115,7 +115,7 @@
   [^String backend-proto ^String client-protocol]
   (cond
     ;; HTTP/2 backend
-    (contains? #{"h2c"} backend-proto) "HTTP/2.0"
+    (contains? #{"h2c" "h2"} backend-proto) "HTTP/2.0"
     ;; Not a HTTP/2 backend, default to HTTP/1.1 for HTTP/2 requests
     (= client-protocol "HTTP/2.0") "HTTP/1.1"
     ;; Use client version: HTTP/1.1, HTTP/1.0 or HTTP/0.9
@@ -128,6 +128,7 @@
     "http" "http"
     "https" "https"
     "h2c" "http"
+    "h2" "https"
     backend-proto))
 
 (defn protocol->http-version

@@ -324,10 +324,10 @@
 
 (defn proxy-kitchen-command
   "Returns the command to launch kitchen behind a proxy"
-  [backend-proto]
+  [backend-proto proxy-script]
   (let [raw-command (kitchen-cmd)]
     (-> raw-command
-        (str/replace "bin/kitchen" "bin/run-proxy-kitchen.sh")
+        (str/replace "bin/kitchen" proxy-script)
         (str " " backend-proto))))
 
 (defn kitchen-params

@@ -295,27 +295,50 @@
 
       (delete-service waiter-url service-id))))
 
+(defn- run-backend-proto-service-test
+  "Helper method to run tests with various backend protocols"
+  [waiter-url backend-proto backend-scheme backend-proto-version]
+  (let [kitchen-command (proxy-kitchen-command backend-proto "bin/run-proxy-kitchen.sh")
+        headers {:x-waiter-backend-proto backend-proto
+                 :x-waiter-cmd kitchen-command
+                 :x-waiter-name (rand-name)
+                 :x-waiter-ports 2}
+        {:keys [body service-id] :as response}
+        (make-request-with-debug-info headers #(make-shell-request waiter-url % :path "/request-info"))]
+    (with-service-cleanup
+      service-id
+      (is service-id)
+      (assert-response-status response 200)
+      (let [body-json (some-> body json/read-str walk/keywordize-keys)]
+        (is (= backend-proto-version (get-in body-json [:headers :x-kitchen-client-proto])))
+        (is (= backend-scheme (get-in body-json [:headers :x-kitchen-client-scheme]))))
+      (let [service-settings (service-settings waiter-url service-id)]
+        (is (= backend-proto (get-in service-settings [:service-description :backend-proto])))
+        (is (= kitchen-command (get-in service-settings [:service-description :cmd])))))))
+
+(deftest ^:parallel ^:integration-fast test-http-backend-proto-service
+  (testing-using-waiter-url
+    (if (using-shell? waiter-url)
+      (run-backend-proto-service-test waiter-url "http" "http" "HTTP/1.1")
+      (log/info "Skipping test-h2c-backend-proto-service as the default is not shell scheduler"))))
+
+(deftest ^:parallel ^:integration-fast test-https-backend-proto-service
+  (testing-using-waiter-url
+    (if (using-shell? waiter-url)
+      (run-backend-proto-service-test waiter-url "https" "https" "HTTP/1.1")
+      (log/info "Skipping test-h2-backend-proto-service as the default is not shell scheduler"))))
+
 (deftest ^:parallel ^:integration-fast test-h2c-backend-proto-service
   (testing-using-waiter-url
     (if (using-shell? waiter-url)
-      (let [backend-proto "h2c"
-            kitchen-command (proxy-kitchen-command backend-proto)
-            headers {:x-waiter-backend-proto backend-proto
-                     :x-waiter-cmd kitchen-command
-                     :x-waiter-name (rand-name)
-                     :x-waiter-ports 2}
-            {:keys [body service-id] :as response}
-            (make-request-with-debug-info headers #(make-shell-request waiter-url % :path "/request-info"))]
-        (with-service-cleanup
-          service-id
-          (is service-id)
-          (assert-response-status response 200)
-          (let [body-json (some-> body json/read-str walk/keywordize-keys)]
-            (is (contains? #{"HTTP/2" "HTTP/2.0"} (get-in body-json [:headers :x-kitchen-client-proto-version]))))
-          (let [service-settings (service-settings waiter-url service-id)]
-            (is (= backend-proto (get-in service-settings [:service-description :backend-proto])))
-            (is (= kitchen-command (get-in service-settings [:service-description :cmd]))))))
+      (run-backend-proto-service-test waiter-url "h2c" "http" "HTTP/2.0")
       (log/info "Skipping test-h2c-backend-proto-service as the default is not shell scheduler"))))
+
+(deftest ^:parallel ^:integration-fast test-h2-backend-proto-service
+  (testing-using-waiter-url
+    (if (using-shell? waiter-url)
+      (run-backend-proto-service-test waiter-url "h2" "https" "HTTP/2.0")
+      (log/info "Skipping test-h2-backend-proto-service as the default is not shell scheduler"))))
 
 (deftest ^:parallel ^:integration-fast test-basic-unsupported-command-type
   (testing-using-waiter-url
