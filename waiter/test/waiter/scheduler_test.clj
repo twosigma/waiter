@@ -499,11 +499,22 @@
         (is (= 5 @call-counter))))))
 
 (deftest test-available?
-  (with-redefs [http/get (fn [_ _] (throw (IllegalArgumentException. "Unable to make request")))]
-    (let [resp (async/<!! (available? (Object.)
-                                      {:port 80 :protocol "http" :host "www.example.com"}
-                                      0 "/health-check"))]
-      (is (= {:healthy? false} resp)))))
+  (let [http-client (Object.)
+        service-instance {:extra-ports [81] :host "www.example.com" :port 80 :protocol "http"}]
+    (with-redefs [http/get (fn [in-http-client in-health-check-url]
+                             (is (= http-client in-http-client))
+                             (is (= "http://www.example.com:80/health-check" in-health-check-url))
+                             (let [response-chan (async/promise-chan)]
+                               (async/>!! response-chan {:status 200})
+                               response-chan))]
+      (let [resp (async/<!! (available? http-client service-instance 0 "/health-check"))]
+        (is (= {:error nil, :healthy? true, :status 200} resp))))
+    (with-redefs [http/get (fn [in-http-client in-health-check-url]
+                             (is (= http-client in-http-client))
+                             (is (= "http://www.example.com:81/health-check" in-health-check-url))
+                             (throw (IllegalArgumentException. "Unable to make request")))]
+      (let [resp (async/<!! (available? http-client service-instance 1 "/health-check"))]
+        (is (= {:healthy? false} resp))))))
 
 (defmacro check-trackers
   [all-trackers assertion-maps]

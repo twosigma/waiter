@@ -19,7 +19,7 @@
             [qbits.jet.client.http :as http]
             [waiter.util.http-utils :refer :all]
             [waiter.util.utils :as utils])
-  (:import clojure.lang.ExceptionInfo))
+  (:import (clojure.lang ExceptionInfo)))
 
 (deftest test-http-request
   (testing "successful-response"
@@ -71,3 +71,22 @@
           (is false "exception not thrown")
           (catch ExceptionInfo ex
             (is (= {:body "{\"error\":\"response\"}" :status 400} (ex-data ex)))))))))
+
+(deftest test-determine-backend-protocol-version
+  (doseq [client-protocol ["HTTP/0.9" "HTTP/1.0" "HTTP/1.1" "HTTP/2.0"]]
+    (is (= "HTTP/2.0" (determine-backend-protocol-version "h2c" client-protocol)))
+    (is (= "HTTP/2.0" (determine-backend-protocol-version "h2" client-protocol))))
+  (doseq [client-protocol ["HTTP/0.9" "HTTP/1.0" "HTTP/1.1"]]
+    (is (= client-protocol (determine-backend-protocol-version "http" client-protocol)))
+    (is (= client-protocol (determine-backend-protocol-version "https" client-protocol))))
+  (is (= "HTTP/1.1" (determine-backend-protocol-version "http" "HTTP/2.0")))
+  (is (= "HTTP/1.1" (determine-backend-protocol-version "https" "HTTP/2.0"))))
+
+(deftest test-backend-proto->scheme
+  (is (= "http" (backend-proto->scheme "http")))
+  (is (= "http" (backend-proto->scheme "h2c")))
+  (is (= "https" (backend-proto->scheme "https")))
+  (is (= "https" (backend-proto->scheme "h2")))
+  (is (= "ws" (backend-proto->scheme "ws")))
+  (is (= "wss" (backend-proto->scheme "wss")))
+  (is (= "zzz" (backend-proto->scheme "zzz"))))

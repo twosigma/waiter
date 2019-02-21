@@ -3,6 +3,9 @@ language: java
 jdk: openjdk8
 
 addons:
+  apt:
+    packages:
+    - nginx
   artifacts: true
 
 branches:

@@ -203,6 +203,31 @@
 
       (delete-service waiter-url service-id))))
 
+(deftest ^:parallel ^:integration-fast test-basic-service-from-on-the-fly-headers
+  (testing-using-waiter-url
+    (let [headers {:authentication "standard"
+                   :backend-proto "h2c"
+                   :blacklist-on-503 false
+                   :cmd "foo"
+                   :cmd-type "shell"
+                   :concurrency-level 10
+                   :cpus 1
+                   :distribution-scheme "simple"
+                   :health-check-url "/status"
+                   :mem 512
+                   :metric-group "baz"
+                   :name (rand-name)
+                   :ports 2
+                   :version "1"}
+          waiter-headers (pc/map-keys #(str "x-waiter-" (name %)) headers)
+          service-id (retrieve-service-id waiter-url waiter-headers)
+          _ (is service-id)
+          service-description (service-id->service-description waiter-url service-id)
+          username (retrieve-username)]
+      (is (= (-> headers
+                 (assoc :permitted-user username :run-as-user username))
+             service-description)))))
+
 (deftest ^:parallel ^:integration-fast test-basic-logs
   (testing-using-waiter-url
     (let [waiter-headers {:x-waiter-name (rand-name)}
@@ -291,6 +316,52 @@
             (is (= 1 (get-in service-settings [:service-description :health-check-port-index])))
             (is (seq active-instances))
             (is (every? :healthy? active-instances))))))))
+
+(defn- run-backend-proto-service-test
+  "Helper method to run tests with various backend protocols"
+  [waiter-url backend-proto backend-scheme backend-proto-version]
+  (let [kitchen-command (proxy-kitchen-command backend-proto "bin/run-nginx-server.sh")
+        request-headers {:x-waiter-backend-proto backend-proto
+                         :x-waiter-cmd kitchen-command
+                         :x-waiter-health-check-port-index 1
+                         :x-waiter-name (rand-name)
+                         :x-waiter-ports 2}
+        {:keys [headers service-id] :as response}
+        (make-request-with-debug-info request-headers #(make-shell-request waiter-url % :path "/request-info"))]
+    (with-service-cleanup
+      service-id
+      (is service-id)
+      (assert-response-status response 200)
+      (let [{:strs [x-nginx-client-proto x-nginx-client-scheme]} headers]
+        (is (= backend-proto-version x-nginx-client-proto))
+        (is (= backend-scheme x-nginx-client-scheme)))
+      (let [service-settings (service-settings waiter-url service-id)]
+        (is (= backend-proto (get-in service-settings [:service-description :backend-proto])))
+        (is (= kitchen-command (get-in service-settings [:service-description :cmd])))))))
+
+(deftest ^:parallel ^:integration-fast test-http-backend-proto-service
+  (testing-using-waiter-url
+    (if (using-shell? waiter-url)
+      (run-backend-proto-service-test waiter-url "http" "http" "HTTP/1.1")
+      (log/info "Skipping test-h2c-backend-proto-service as the default is not shell scheduler"))))
+
+(deftest ^:parallel ^:integration-fast test-https-backend-proto-service
+  (testing-using-waiter-url
+    (if (using-shell? waiter-url)
+      (run-backend-proto-service-test waiter-url "https" "https" "HTTP/1.1")
+      (log/info "Skipping test-h2-backend-proto-service as the default is not shell scheduler"))))
+
+(deftest ^:parallel ^:integration-fast test-h2c-backend-proto-service
+  (testing-using-waiter-url
+    (if (using-shell? waiter-url)
+      (run-backend-proto-service-test waiter-url "h2c" "http" "HTTP/2.0")
+      (log/info "Skipping test-h2c-backend-proto-service as the default is not shell scheduler"))))
+
+(deftest ^:parallel ^:integration-fast test-h2-backend-proto-service
+  (testing-using-waiter-url
+    (if (using-shell? waiter-url)
+      (run-backend-proto-service-test waiter-url "h2" "https" "HTTP/2.0")
+      (log/info "Skipping test-h2-backend-proto-service as the default is not shell scheduler"))))
 
 (deftest ^:parallel ^:integration-fast test-basic-unsupported-command-type
   (testing-using-waiter-url

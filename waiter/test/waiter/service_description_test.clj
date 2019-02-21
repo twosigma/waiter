@@ -38,8 +38,8 @@
 
     (is (nil? (s/check service-description-schema (assoc basic-description "backend-proto" "http"))))
     (is (nil? (s/check service-description-schema (assoc basic-description "backend-proto" "https"))))
-    (is (s/check service-description-schema (assoc basic-description "backend-proto" "h2c")))
-    (is (s/check service-description-schema (assoc basic-description "backend-proto" "h2")))
+    (is (nil? (s/check service-description-schema (assoc basic-description "backend-proto" "h2c"))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "backend-proto" "h2"))))
     (is (s/check service-description-schema (assoc basic-description "backend-proto" ["http"])))
     (is (s/check service-description-schema (assoc basic-description "backend-proto" "foo")))
 

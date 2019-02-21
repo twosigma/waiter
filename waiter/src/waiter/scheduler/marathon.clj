@@ -29,13 +29,13 @@
             [waiter.correlation-id :as cid]
             [waiter.mesos.marathon :as marathon]
             [waiter.mesos.mesos :as mesos]
-            [waiter.util.http-utils :as http-utils]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.schema :as schema]
             [waiter.service-description :as sd]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
+            [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
   (:import (org.joda.time.format DateTimeFormat)))
 
@@ -269,7 +269,7 @@
      :mem mem
      :ports (-> ports (repeat 0) vec)
      :cpus cpus
-     :healthChecks [{:protocol (str/upper-case backend-proto)
+     :healthChecks [{:protocol (-> backend-proto hu/backend-proto->scheme str/upper-case)
                      :path health-check-url
                      :gracePeriodSeconds grace-period-secs
                      :intervalSeconds health-check-interval-secs
@@ -612,7 +612,7 @@
   (let [authorizer (utils/create-component authorizer)
         http-client (-> http-options
                         (utils/assoc-if-absent :user-agent "waiter-marathon")
-                        http-utils/http-client-factory)
+                        hu/http-client-factory)
         marathon-api (marathon/api-factory http-client http-options url)
         mesos-api (mesos/api-factory http-client http-options mesos-slave-port slave-directory)
         service-id->failed-instances-transient-store (atom {})

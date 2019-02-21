@@ -73,7 +73,7 @@
      map->KubernetesScheduler)))
 
 (def dummy-service-description
-  {"backend-proto" "HTTP"
+  {"backend-proto" "http"
    "cmd" "foo"
    "cpus" 1.2
    "grace-period-secs" 7

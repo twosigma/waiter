@@ -533,11 +533,12 @@
                           (utils/create-component entitlement-config))
    :fallback-state-atom (pc/fnk [] (atom {:available-service-ids #{}
                                           :healthy-service-ids #{}}))
-   :http-client (pc/fnk [[:settings [:instance-request-properties connection-timeout-ms]]
-                         server-name]
-                  (http-utils/http-client-factory {:conn-timeout connection-timeout-ms
-                                                   :follow-redirects? false
-                                                   :user-agent server-name}))
+   :http-clients (pc/fnk [[:settings [:instance-request-properties connection-timeout-ms]]
+                          server-name]
+                   (http-utils/prepare-http-clients
+                     {:conn-timeout connection-timeout-ms
+                      :follow-redirects? false
+                      :user-agent server-name}))
    :instance-rpc-chan (pc/fnk [] (async/chan 1024)) ; TODO move to service-chan-maintainer
    :interstitial-state-atom (pc/fnk [] (atom {:initialized? false
                                               :service-id->interstitial-promise {}}))
@@ -590,8 +591,9 @@
                               hostname
                               [hostname])))
    :websocket-client (pc/fnk [[:settings [:websocket-config ws-max-binary-message-size ws-max-text-message-size]]
-                              http-client]
-                       (let [websocket-client (WebSocketClient. ^HttpClient http-client)]
+                              http-clients]
+                       (let [http-client (http-utils/retrieve-http-client "http" http-clients)
+                             websocket-client (WebSocketClient. ^HttpClient http-client)]
                          (doto (.getPolicy websocket-client)
                            (.setMaxBinaryMessageSize ws-max-binary-message-size)
                            (.setMaxTextMessageSize ws-max-text-message-size))
@@ -776,25 +778,27 @@
                          (fn make-basic-auth-fn [uri username password]
                            (BasicAuthentication$BasicResult. (URI. uri) username password)))
    :make-http-request-fn (pc/fnk [[:settings instance-request-properties]
-                                  [:state http-client]
+                                  [:state http-clients]
                                   make-basic-auth-fn service-id->password-fn]
                            (handler/async-make-request-helper
-                             http-client instance-request-properties make-basic-auth-fn service-id->password-fn
+                             http-clients instance-request-properties make-basic-auth-fn service-id->password-fn
                              pr/prepare-request-properties pr/make-request))
    :make-inter-router-requests-async-fn (pc/fnk [[:curator discovery]
                                                  [:settings [:instance-request-properties initial-socket-timeout-ms]]
-                                                 [:state http-client passwords router-id]
+                                                 [:state http-clients passwords router-id]
                                                  make-basic-auth-fn]
-                                          (letfn [(make-request-async-fn [method endpoint-url auth body config]
-                                                    (make-request-async http-client initial-socket-timeout-ms method endpoint-url auth body config))]
+                                          (let [http-client (http-utils/retrieve-http-client "http" http-clients)
+                                                make-request-async-fn (fn make-request-async-fn [method endpoint-url auth body config]
+                                                                        (make-request-async http-client initial-socket-timeout-ms method endpoint-url auth body config))]
                                             (fn make-inter-router-requests-async-fn [endpoint & args]
                                               (apply make-inter-router-requests make-request-async-fn make-basic-auth-fn router-id discovery passwords endpoint args))))
    :make-inter-router-requests-sync-fn (pc/fnk [[:curator discovery]
                                                 [:settings [:instance-request-properties initial-socket-timeout-ms]]
-                                                [:state http-client passwords router-id]
+                                                [:state http-clients passwords router-id]
                                                 make-basic-auth-fn]
-                                         (letfn [(make-request-sync-fn [method endpoint-url auth body config]
-                                                   (make-request-sync http-client initial-socket-timeout-ms method endpoint-url auth body config))]
+                                         (let [http-client (http-utils/retrieve-http-client "http" http-clients)
+                                               make-request-sync-fn (fn make-request-sync-fn [method endpoint-url auth body config]
+                                                                      (make-request-sync http-client initial-socket-timeout-ms method endpoint-url auth body config))]
                                            (fn make-inter-router-requests-sync-fn [endpoint & args]
                                              (apply make-inter-router-requests make-request-sync-fn make-basic-auth-fn router-id discovery passwords endpoint args))))
    :peers-acknowledged-blacklist-requests-fn (pc/fnk [[:curator discovery]
@@ -810,11 +814,12 @@
    :post-process-async-request-response-fn (pc/fnk [[:state async-request-store-atom instance-rpc-chan router-id]
                                                     make-http-request-fn]
                                              (fn post-process-async-request-response-wrapper
-                                               [response service-id metric-group instance _ reason-map request-properties
-                                                location query-string]
+                                               [response service-id metric-group backend-proto instance _
+                                                reason-map request-properties location query-string]
                                                (async-req/post-process-async-request-response
                                                  router-id async-request-store-atom make-http-request-fn instance-rpc-chan response
-                                                 service-id metric-group instance reason-map request-properties location query-string)))
+                                                 service-id metric-group backend-proto instance reason-map request-properties
+                                                 location query-string)))
    :prepend-waiter-url (pc/fnk [[:settings port hostname]]
                          (let [hostname (if (sequential? hostname) (first hostname) hostname)]
                            (fn [endpoint-url]
@@ -1184,11 +1189,11 @@
    :process-request-fn (pc/fnk [[:routines determine-priority-fn make-basic-auth-fn post-process-async-request-response-fn
                                  service-id->password-fn start-new-service-fn]
                                 [:settings instance-request-properties]
-                                [:state http-client instance-rpc-chan local-usage-agent interstitial-state-atom]
+                                [:state http-clients instance-rpc-chan local-usage-agent interstitial-state-atom]
                                 wrap-auth-bypass-fn wrap-descriptor-fn wrap-https-redirect-fn wrap-secure-request-fn
                                 wrap-service-discovery-fn]
                          (let [make-request-fn (fn [instance request request-properties passthrough-headers end-route metric-group proto-version]
-                                                 (pr/make-request http-client make-basic-auth-fn service-id->password-fn
+                                                 (pr/make-request http-clients make-basic-auth-fn service-id->password-fn
                                                                   instance request request-properties passthrough-headers
                                                                   end-route metric-group proto-version))
                                process-response-fn (partial pr/process-http-response post-process-async-request-response-fn)

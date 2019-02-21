@@ -398,7 +398,7 @@
                                            (attach-error-message-for-parameter
                                              parameter->issues :authentication "authentication must be one of disabled or standard.")
                                            (attach-error-message-for-parameter
-                                             parameter->issues :backend-proto "backend-proto must be one of http or https.")
+                                             parameter->issues :backend-proto "backend-proto must be one of h2, h2c, http, or https.")
                                            (attach-error-message-for-parameter
                                              parameter->issues :concurrency-level
                                              "concurrency-level must be an integer in the range [1, 10000].")
