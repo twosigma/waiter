@@ -111,8 +111,9 @@
     (is (= "twosigma/kitchen:latest" (get-in replicaset-spec [:spec :template :spec :containers 0 :image])))))
 
 (deftest replicaset-spec-custom-image
-  (let [scheduler (assoc (make-dummy-scheduler ["test-service-id"]) :replicaset-spec-builder-fn waiter.scheduler.kubernetes/default-replicaset-builder)
-        replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" dummy-service-description {:default-container-image "custom/image"})]
+  (let [scheduler (make-dummy-scheduler ["test-service-id"])
+        replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id"
+                          (assoc dummy-service-description "image" "custom/image"))]
     (is (= "custom/image" (get-in replicaset-spec [:spec :template :spec :containers 0 :image])))))
 
 (deftest test-service-id->k8s-app-name
