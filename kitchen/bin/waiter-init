@@ -35,7 +35,7 @@ pod_shutdown() {
     # Propagate the SIGTERM to the user's app's process group,
     # giving it the opportunity to shut down gracefully.
     if [ "$waiter_child_pid" ]; then
-        kill -- -$waiter_child_pid &>/dev/null
+        kill -15 -- -$waiter_child_pid &>/dev/null
     else
         waiter_init_log 'waiter error: user process not initialized'
     fi
