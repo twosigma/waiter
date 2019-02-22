@@ -12,6 +12,11 @@
 # We set it to null here just in case it was set in the external environment.
 waiter_child_pid=
 
+# Log a message to stderr
+waiter_init_log() {
+    printf '%s waiter-init> %s\n' "$(date +'%Y-%m-%dT%H:%M:%S%z')" "$1" >&2
+}
+
 # Catch the first SIGTERM sent by Kubernetes on pod deletion,
 # waiting for a second signal (SIGTERM or SIGKILL) before exiting.
 # This double-termination is an important part of our Waiter scale-down logic,
@@ -25,12 +30,14 @@ handle_k8s_terminate() {
 # we assume that's Kubernetes signaling pod termination.
 # This function handles safe shutdown and log persistence.
 pod_shutdown() {
+    waiter_init_log 'Received SIGTERM, shutting down...'
+
     # Propagate the SIGTERM to the user's app's process group,
     # giving it the opportunity to shut down gracefully.
     if [ "$waiter_child_pid" ]; then
-        kill -- -$waiter_child_pid
+        kill -15 -- -$waiter_child_pid &>/dev/null
     else
-        echo 'waiter error: user process not initialized' >&2
+        waiter_init_log 'waiter error: user process not initialized'
     fi
 
     waiter_init_pid=$$
@@ -38,8 +45,8 @@ pod_shutdown() {
     {
         # Give the user's application a few seconds to gracefully exit,
         # then forcefully terminate with a SIGKILL if it's still running.
-        sleep ${WAITER_GRACE_SECS:=3}
-        kill -9 -- -$waiter_child_pid
+        sleep ${WAITER_GRACE_SECS:-3}
+        kill -9 -- -$waiter_child_pid &>/dev/null && waiter_init_log 'Sent SIGKILL to user process tree'
 
         # Wait for another signal from Kubernetes.
         # This delay gives Waiter time to safely update the desired replica count
@@ -54,14 +61,16 @@ pod_shutdown() {
         # However, if we don't see the second SIGTERM after a reasonable delay,
         # we assume we missed it (due to the asyncronous nature of the system),
         # and that it is now safe to terminate this pod.
-        sleep ${WAITER_SYNC_MAX_SECS:=10}
-        kill -15 $waiter_init_pid
+        sleep ${WAITER_SYNC_MAX_SECS:-10}
+        kill -15 $waiter_init_pid &>/dev/null
     } &
 
     # wait for graceful termination of user's process
-    while kill -0 $waiter_child_pid; do
+    while kill -0 $waiter_child_pid &>/dev/null; do
         wait %1
     done &>/dev/null
+
+    waiter_init_log 'User process terminated.'
 
     # send logs to S3 (if enabled)
     if [ "$WAITER_LOG_BUCKET_URL" ]; then
@@ -102,6 +111,7 @@ pod_shutdown() {
 handle_2nd_k8s_terminate() {
     trap : SIGTERM  # reset SIGTERM handler to no-op
     waiter_2nd_sigterm=received
+    waiter_init_log 'Received second SIGTERM'
 }
 
 waiter_2nd_sigterm=skip
@@ -125,9 +135,13 @@ cd "$HOME"
 exec 2> >(tee stderr 1>&2)
 exec 1> >(tee stdout)
 
+waiter_init_log "Starting service $WAITER_SERVICE_ID from $HOME"
+waiter_init_log "Running command: $1"
+
 # Run the user's Waiter app command in its own process group.
 /usr/bin/setsid /bin/bash -c "$1" &
 waiter_child_pid=$!
+waiter_init_log "Started user process: $waiter_child_pid"
 
 # Wait for the user's process to exit, propagating the exit code.
 # If this wait call is interrupted by a SIGTERM,
@@ -135,4 +149,5 @@ waiter_child_pid=$!
 wait %1
 exit_code=$?
 [ $waiter_2nd_sigterm != skip ] && pod_shutdown
+waiter_init_log "Command exited normally with code $exit_code"
 exit $exit_code
