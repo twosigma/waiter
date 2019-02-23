@@ -34,19 +34,13 @@
             [waiter.util.http-utils :as http-utils]
             [waiter.util.utils :as utils])
   (:import java.io.File
-           java.lang.UNIXProcess
            java.util.ArrayList))
 
 (defn pid
-  "Returns the pid of the provided process (if it is a UNIXProcess)"
+  "Returns the pid of the provided process"
   [^Process process]
   (try
-    (when (= UNIXProcess (type process))
-      (let [field (.getDeclaredField (.getClass process) "pid")
-            _ (.setAccessible field true)
-            pid (.getLong field process)]
-        (.setAccessible field false)
-        pid))
+    (.pid process)
     (catch Exception e
       (log/error e "error getting pid from" process))))
 
