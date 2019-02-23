@@ -1,6 +1,6 @@
 dist: xenial
 language: java
-jdk: openjdk8
+jdk: oraclejdk11
 
 addons:
   apt:
