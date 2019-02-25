@@ -30,6 +30,7 @@
             [waiter.util.async-utils :as au]
             [waiter.util.utils :as utils])
   (:import (com.codahale.metrics MetricFilter MetricRegistry)
+           (com.codahale.metrics.jvm FileDescriptorRatioGauge)
            (org.joda.time DateTime)))
 
 (deftest test-compress-strings
@@ -502,3 +503,11 @@
     (is (= {"bar" {"last-request-time" time-4}, "foo" {"last-request-time" time-2}}
            (cleanup-local-usage-metrics
              {"bar" {"last-request-time" time-4}, "foo" {"last-request-time" time-2}} "cid" "baz")))))
+
+(deftest test-metrics-clojure-jvm-file-descriptor-ratio-gauge
+  (try
+    (.getValue (FileDescriptorRatioGauge.))
+    (is false (str "No exception thrown while accessing FileDescriptorRatioGauge, "
+                   "if you upgraded io.dropwizard.metrics/metrics-jvm fix waiter.main/instrument-jvm and this test"))
+    (catch Exception ex
+      (is true (str "Expected Exception thrown:" (.getMessage ex))))))
