@@ -1,5 +1,4 @@
 import logging
-import uuid
 
 import pytest
 
@@ -28,8 +27,7 @@ class WaiterCliTest(util.WaiterTest):
         self.assertEqual(f"Couldn't find token {token_name}", error['waiter-error']['message'])
 
         # Create token
-        service = util.minimal_service_description()
-        cp = cli.create_from_service_description(token_name, self.waiter_url, service)
+        cp = cli.create_minimal(token_name, self.waiter_url)
         self.assertEqual(0, cp.returncode, cp.stderr)
         try:
             # Make sure token now exists
@@ -42,3 +40,18 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(200, resp.status_code, resp.text)
         finally:
             util.delete_token(self.waiter_url, token_name)
+
+    def test_failed_create(self):
+        service = util.minimal_service_description(cpus=0)
+        cp = cli.create_from_service_description(self.current_name(), self.waiter_url, service)
+        self.assertEqual(1, cp.returncode, cp.stderr)
+        self.assertEqual(b'Service description using waiter headers/token improperly configured\ncpus must be a '
+                         b'positive number..\n', cp.stderr)
+
+    def test_no_cluster(self):
+        config = {'clusters': []}
+        with cli.temp_config_file(config) as path:
+            flags = '--config %s' % path
+            cp = cli.create_minimal(self.current_name(), flags=flags)
+            self.assertEqual(1, cp.returncode, cp.stderr)
+            self.assertIn('must specify at least one cluster', cli.decode(cp.stderr))

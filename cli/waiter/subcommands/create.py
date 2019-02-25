@@ -24,7 +24,7 @@ def print_post_result(resp):
 
 def post_failed_message(cluster_name, reason):
     """Generates a failed token post message with the given cluster name and reason"""
-    return 'Token post %s on %s:\n%s' % (terminal.failed('failed'), cluster_name, terminal.reason(reason))
+    return f'Token post {terminal.failed("failed")} on {cluster_name}:\n{terminal.reason(reason)}'
 
 
 def create_or_update(cluster, token_name, token_fields):

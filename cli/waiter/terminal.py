@@ -23,6 +23,10 @@ def failed(s):
     return colorize(s, Color.BOLD + Color.RED)
 
 
+def reason(s):
+    return colorize(s, Color.RED)
+
+
 def bold(s):
     return colorize(s, Color.BOLD)
 

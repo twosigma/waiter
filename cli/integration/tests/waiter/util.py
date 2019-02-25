@@ -69,9 +69,9 @@ def load_token(waiter_url, token_name, assert_response=True, expected_status_cod
 def minimal_service_cmd(response_text=None):
     if response_text is None:
         response_text = 'OK'
-    return f'RESPONSE="HTTP/1.1 200 OK\\r\\nConnection: keep-alive\\r\\n\\r\\n{response_text}"; ' \
+    return f'RESPONSE="HTTP/1.1 200 OK\\r\\n\\r\\n{response_text}"; ' \
            'while { printf "$RESPONSE"; } | nc -l "$PORT0"; do ' \
-           '  echo "================================================"; ' \
+           '  echo "====="; ' \
            'done'
 
 

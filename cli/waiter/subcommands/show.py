@@ -62,11 +62,10 @@ def show_data(cluster_name, data, format_fn, token_name):
 def get_token_on_cluster(cluster, token_name):
     """Gets the token with the given name on the given cluster"""
     token = get_token(cluster, token_name)
-    if not token:
-        print_error(f'Unable to retrieve token information on {cluster["name"]} ({cluster["url"]}).')
-        return {'count': 0}
-    else:
+    if token:
         return {'count': 1, 'token': token}
+    else:
+        raise Exception(f'Unable to retrieve token information on {cluster["name"]} ({cluster["url"]}).')
 
 
 def query(clusters, token):

@@ -111,7 +111,7 @@ def make_data_request(cluster, make_request_fn):
         logging.warning(f'Unexpected response code {resp.status_code} for data request. Response body: {resp.text}')
     except requests.exceptions.ConnectionError as ce:
         logging.exception(ce)
-        print_error(f'Encountered connection error with {cluster["name"]} ({cluster["url"]}).')
+        raise Exception(f'Encountered connection error with {cluster["name"]} ({cluster["url"]}).')
     except requests.exceptions.ReadTimeout as rt:
         logging.exception(rt)
         print_error(f'Encountered read timeout with {cluster["name"]} ({cluster["url"]}).')
