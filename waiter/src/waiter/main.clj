@@ -20,6 +20,7 @@
             [clojure.string :as str]
             [clojure.tools.cli :as cli]
             [clojure.tools.logging :as log]
+            [metrics.core :as mc]
             [metrics.jvm.core :as jvm-metrics]
             [plumbing.core :as pc]
             [plumbing.graph :as graph]
@@ -167,13 +168,25 @@
         validate-config (:schema-validate options)]
     {:validate-config validate-config}))
 
+(defn- instrument-jvm
+  "Glues together metrics-clojure and jvm instrumentation.
+   We explicitly avoid jvm-metrics/register-file-descriptor-ratio-gauge-set as it is not JDK 11 compatible
+   when we are stuck at using io.dropwizard.metrics/metrics-jvm/3.2.2"
+  []
+  (let [registry mc/default-registry]
+    (doseq [register-metric-set [jvm-metrics/register-jvm-attribute-gauge-set
+                                 jvm-metrics/register-memory-usage-gauge-set
+                                 jvm-metrics/register-garbage-collector-metric-set
+                                 jvm-metrics/register-thread-state-gauge-set]]
+      (register-metric-set registry))))
+
 (defn -main
   [config & args]
   (Thread/setDefaultUncaughtExceptionHandler
     (reify Thread$UncaughtExceptionHandler
       (uncaughtException [_ thread throwable]
         (log/error throwable (str (.getName thread) " threw exception: " (.getMessage throwable))))))
-  (jvm-metrics/instrument-jvm)
+  (instrument-jvm)
   (let [{:keys [validate-config]} (parse-options args)]
     (if validate-config
       (validate-config-schema config)
