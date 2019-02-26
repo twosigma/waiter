@@ -57,7 +57,18 @@ def create(clusters, args, _):
     """Creates (or updates) a Waiter token"""
     guard_no_cluster(clusters)
     logging.debug('create args: %s' % args)
-    cluster = clusters[0]
+    if len(clusters) > 1:
+        default_for_create = [c for c in clusters if c.get('default-for-create', False)]
+        num_default_create_clusters = len(default_for_create)
+        if num_default_create_clusters == 0:
+            raise Exception('You must either specify a cluster via --cluster or set "default-for-create" to true for '
+                            'one of your configured clusters.')
+        elif num_default_create_clusters > 1:
+            raise Exception('You have "default-for-create" set to true for more than one cluster.')
+        else:
+            cluster = default_for_create[0]
+    else:
+        cluster = clusters[0]
     token_name = args.pop('token')
     token_fields = args
     return create_or_update(cluster, token_name, token_fields)

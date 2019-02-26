@@ -1,4 +1,5 @@
 import logging
+import uuid
 
 import pytest
 
@@ -20,11 +21,7 @@ class WaiterCliTest(util.WaiterTest):
 
     def test_basic_create(self):
         token_name = self.current_name()
-
-        # Make sure token doesn't exist
-        util.delete_token(self.waiter_url, token_name, assert_response=False)
-        error = util.load_token(self.waiter_url, token_name, expected_status_code=404)
-        self.assertEqual(f"Couldn't find token {token_name}", error['waiter-error']['message'])
+        util.delete_token_if_exists(self.waiter_url, token_name)
 
         # Create token
         cp = cli.create_minimal(token_name, self.waiter_url)
@@ -55,3 +52,46 @@ class WaiterCliTest(util.WaiterTest):
             cp = cli.create_minimal(self.current_name(), flags=flags)
             self.assertEqual(1, cp.returncode, cp.stderr)
             self.assertIn('must specify at least one cluster', cli.decode(cp.stderr))
+
+    def test_unspecified_create_cluster(self):
+        config = {
+            'clusters': [
+                {"name": "Foo", "url": self.waiter_url},
+                {"name": "Bar", "url": self.waiter_url}
+            ]
+        }
+        with cli.temp_config_file(config) as path:
+            flags = '--config %s' % path
+            cp = cli.create_minimal(self.current_name(), flags=flags)
+            self.assertEqual(1, cp.returncode, cp.stderr)
+            self.assertIn('must either specify a cluster via --cluster or set "default-for-create" to true',
+                          cli.decode(cp.stderr))
+
+    def test_over_specified_create_cluster(self):
+        config = {
+            'clusters': [
+                {"name": "Foo", "url": self.waiter_url, "default-for-create": True},
+                {"name": "Bar", "url": self.waiter_url, "default-for-create": True}
+            ]
+        }
+        with cli.temp_config_file(config) as path:
+            flags = '--config %s' % path
+            cp = cli.create_minimal(self.current_name(), flags=flags)
+            self.assertEqual(1, cp.returncode, cp.stderr)
+            self.assertIn('have "default-for-create" set to true for more than one cluster', cli.decode(cp.stderr))
+
+    def test_single_specified_create_cluster(self):
+        config = {
+            'clusters': [
+                {"name": "Foo", "url": str(uuid.uuid4())},
+                {"name": "Bar", "url": self.waiter_url, "default-for-create": True}
+            ]
+        }
+        with cli.temp_config_file(config) as path:
+            token_name = self.current_name()
+            util.delete_token_if_exists(self.waiter_url, token_name)
+            flags = '--config %s' % path
+            cp = cli.create_minimal(token_name, flags=flags)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            token = util.load_token(self.waiter_url, token_name)
+            self.assertIsNotNone(token)
