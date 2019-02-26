@@ -8,7 +8,6 @@
 # Runs Waiter, configured to use the Kubernetes scheduler.
 
 export WAITER_PORT=${1:-9091}
-export INTEGRATION_TEST_CUSTOM_IMAGE="twosigma/integration"
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
