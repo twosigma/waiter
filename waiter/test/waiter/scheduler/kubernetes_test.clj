@@ -105,6 +105,17 @@
          (clojure.data/diff expected# actual#)))
      (is (= expected# actual#))))
 
+(deftest replicaset-spec-no-image
+  (let [scheduler (make-dummy-scheduler ["test-service-id"])
+        replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" dummy-service-description)]
+    (is (= "twosigma/kitchen:latest" (get-in replicaset-spec [:spec :template :spec :containers 0 :image])))))
+
+(deftest replicaset-spec-custom-image
+  (let [scheduler (make-dummy-scheduler ["test-service-id"])
+        replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id"
+                          (assoc dummy-service-description "image" "custom/image"))]
+    (is (= "custom/image" (get-in replicaset-spec [:spec :template :spec :containers 0 :image])))))
+
 (deftest test-service-id->k8s-app-name
   (let [base-scheduler-spec {:pod-suffix-length default-pod-suffix-length}
         long-app-name (str/join (repeat 200 \A))

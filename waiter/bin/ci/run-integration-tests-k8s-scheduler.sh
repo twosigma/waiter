@@ -39,6 +39,7 @@ ${WAITER_DIR}/bin/run-using-k8s.sh ${WAITER_PORT} &
 bash +x ${DIR}/monitor-pods.sh &
 
 # Run the integration tests
+export INTEGRATION_TEST_CUSTOM_IMAGE="twosigma/integration"
 export LEIN_TEST_THREADS=4
 export WAITER_TEST_KITCHEN_CMD=/opt/kitchen/kitchen
 export WAITER_AUTH_RUN_AS_USER=${USER}

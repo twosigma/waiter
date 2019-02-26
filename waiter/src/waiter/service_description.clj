@@ -66,6 +66,7 @@
    ; Marathon imposes a 512 character limit on environment variable keys and values
    (s/optional-key "env") (s/constrained {environment-variable-schema (s/constrained s/Str #(<= 1 (count %) 512))}
                                          #(< (count %) 100))
+   (s/optional-key "image") schema/non-empty-string
    (s/optional-key "metadata") (s/constrained {(s/both schema/valid-string-length #"^[a-z][a-z0-9\\-]*$")
                                                schema/valid-string-length}
                                               #(< (count %) 100))
@@ -116,7 +117,7 @@
     "max-instances" "restart-backoff-factor" "scale-down-factor" "scale-factor" "scale-up-factor"})
 
 (def ^:const service-non-override-keys
-  #{"allowed-params" "backend-proto" "cmd" "cmd-type" "cpus" "env" "health-check-url" "mem" "metadata"
+  #{"allowed-params" "backend-proto" "cmd" "cmd-type" "cpus" "env" "health-check-url" "image" "mem" "metadata"
     "metric-group" "name" "permitted-user" "ports" "run-as-user" "scheduler" "version"})
 
 ; keys used as parameters in the service description

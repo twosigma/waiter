@@ -40,6 +40,22 @@
             (is (<= initial-rs-snapshot-version rs-snapshot-version'))
             (is (< rs-snapshot-version' rs-watch-version'))))))))
 
+; test that we can provide a custom docker image that contains /tmp/index.html with "Integration Test Image" in it
+(deftest ^:parallel ^:integration-slow test-kubernetes-custom-image
+  (testing-using-waiter-url
+    (when (using-k8s? waiter-url)
+      (let [custom-image (System/getenv "INTEGRATION_TEST_CUSTOM_IMAGE")
+            _ (is (not (string/blank? custom-image)) "You must provide a custom image in the INTEGRATION_TEST_CUSTOM_IMAGE environment variable")
+            {:keys [body]} (make-kitchen-request
+                             waiter-url
+                             {:x-waiter-name (rand-name)
+                              :x-waiter-image custom-image
+                              :x-waiter-cmd "echo -n $INTEGRATION_TEST_SENTINEL_VALUE > index.html && python3 -m http.server $PORT0"
+                              :x-waiter-health-check-url "/"}
+                             :method :get
+                             :path "/")]
+        (is (= "Integration Test Sentinel Value" body))))))
+
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-s3-logs
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
