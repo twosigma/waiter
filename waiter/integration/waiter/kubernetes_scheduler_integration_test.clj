@@ -40,17 +40,18 @@
             (is (<= initial-rs-snapshot-version rs-snapshot-version'))
             (is (< rs-snapshot-version' rs-watch-version'))))))))
 
+; test that we can provide a custom docker image that contains /tmp/index.html with "Integration Test Image" in it
 (deftest ^:parallel ^:integration-slow test-kubernetes-custom-image
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
       (let [{:keys [body]} (make-kitchen-request
-                                          waiter-url
-                                          {:x-waiter-name (rand-name)
-                                           :x-waiter-image "twosigma/integration"
-                                           :x-waiter-cmd "cd /tmp && python3 -m http.server $PORT0"
-                                           :x-waiter-health-check-url "/"}
-                                          :method :get
-                                          :path "/")]
+                             waiter-url
+                             {:x-waiter-name (rand-name)
+                              :x-waiter-image (System/getenv "INTEGRATION_TEST_CUSTOM_IMAGE")
+                              :x-waiter-cmd "cd /tmp && python3 -m http.server $PORT0"
+                              :x-waiter-health-check-url "/"}
+                             :method :get
+                             :path "/")]
         (is (= "Integration Test Image\n" body))))))
 
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-s3-logs
