@@ -158,7 +158,7 @@
   [{:keys [curator base-path sync-timeout-ms]}]
   {:pre [(instance? CuratorFramework curator)
          (string? base-path)
-         (utils/pos-int? sync-timeout-ms)]}
+         (pos-int? sync-timeout-ms)]}
   (->ZooKeeperKeyValueStore curator base-path sync-timeout-ms))
 
 ;; File-based persistent KV store

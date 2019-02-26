@@ -75,3 +75,10 @@
       (let [new-user-agent-field (HttpField. HttpHeader/USER_AGENT (str user-agent))]
         (.setUserAgentField client new-user-agent-field)))
     client))
+
+(defn determine-backend-protocol-version
+  "Determines the protocol version to use for the request to the backend.
+   TODO: Once we add support for http/2 we will need to determine which protocol to use while
+   talking with the backend, using additional info from the service description."
+  [^String protocol]
+  protocol)

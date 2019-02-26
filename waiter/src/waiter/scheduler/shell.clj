@@ -695,11 +695,11 @@
            scheduler-name
            service-id->password-fn
            service-id->service-description-fn]}]
-  {:pre [(utils/pos-int? failed-instance-retry-interval-ms)
-         (utils/pos-int? health-check-interval-ms)
-         (utils/pos-int? health-check-timeout-ms)
-         (utils/pos-int? port-grace-period-ms)
-         (and (every? utils/pos-int? port-range)
+  {:pre [(pos-int? failed-instance-retry-interval-ms)
+         (pos-int? health-check-interval-ms)
+         (pos-int? health-check-timeout-ms)
+         (pos-int? port-grace-period-ms)
+         (and (every? pos-int? port-range)
               (= 2 (count port-range))
               (<= (first port-range) (second port-range)))
          (not (str/blank? work-directory))
@@ -759,7 +759,7 @@
   "Detects and marks lost processes."
   [running-pids id->instance]
   (pc/map-vals
-    (fn [{:strs [killed? shell-scheduler/pid] :as instance}]
+    (fn [{:strs [killed?] pid "shell-scheduler/pid" :as instance}]
       (cond-> (-> (pc/map-keys keyword instance)
                   (update :started-at str-to-date-safe))
         (and (not killed?) (not (contains? running-pids pid)))
@@ -836,7 +836,7 @@
            scheduler-name scheduler-state-chan scheduler-syncer-interval-secs start-scheduler-syncer-fn] :as config}]
   {:pre [(not (str/blank? scheduler-name))
          (au/chan? scheduler-state-chan)
-         (utils/pos-int? scheduler-syncer-interval-secs)
+         (pos-int? scheduler-syncer-interval-secs)
          (fn? start-scheduler-syncer-fn)]}
   (let [id->service-agent (agent {})
         get-service->instances-fn #(get-service->instances id->service-agent)

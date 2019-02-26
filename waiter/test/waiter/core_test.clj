@@ -37,8 +37,9 @@
             [waiter.test-helpers :refer :all]
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
-  (:import java.io.StringBufferInputStream
-           (java.util.concurrent Executors)))
+  (:import (java.io StringBufferInputStream)
+           (java.util.concurrent Executors)
+           (javax.servlet ServletRequest)))
 
 (defn request
   [resource request-method & params]
@@ -738,8 +739,8 @@
                     :waiter-request?-fn (constantly true)}
           {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
       (is (= 200 status))
-      (is (= {} headers))
-      (is (= "ok" (str body))))))
+      (is (= expected-json-response-headers headers))
+      (is (= {"status" "ok"} (json/read-str body))))))
 
 (deftest test-leader-fn-factory
   (with-redefs [discovery/cluster-size int]
@@ -1425,3 +1426,16 @@
                             "server" "waiter"}
                   :status 301}
                  response)))))))
+
+(deftest test-request->protocol
+  (is (nil? (request->protocol {})))
+  (is (nil? (request->protocol {:headers {"x-forwarded-proto-version" "Foo/Bar"}})))
+  (is (= "HTTP" (request->protocol {:scheme :http})))
+  (is (= "FOO/BAR" (request->protocol {:headers {"x-forwarded-proto-version" "Foo/Bar"}
+                                       :servlet-request (Object.)})))
+  (is (= "HTTP/1.1" (request->protocol {:scheme :http
+                                                 :servlet-request (reify ServletRequest
+                                                                    (getProtocol [_] "HTTP/1.1"))})))
+  (is (= "WS" (request->protocol {:scheme :ws})))
+  (is (= "WS" (request->protocol {:headers {} :scheme :ws})))
+  (is (= "WS/13" (request->protocol {:headers {"sec-websocket-version" "13"} :scheme :ws}))))

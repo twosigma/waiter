@@ -66,6 +66,7 @@
    ; Marathon imposes a 512 character limit on environment variable keys and values
    (s/optional-key "env") (s/constrained {environment-variable-schema (s/constrained s/Str #(<= 1 (count %) 512))}
                                          #(< (count %) 100))
+   (s/optional-key "image") schema/non-empty-string
    (s/optional-key "metadata") (s/constrained {(s/both schema/valid-string-length #"^[a-z][a-z0-9\\-]*$")
                                                schema/valid-string-length}
                                               #(< (count %) 100))
@@ -116,7 +117,7 @@
     "max-instances" "restart-backoff-factor" "scale-down-factor" "scale-factor" "scale-up-factor"})
 
 (def ^:const service-non-override-keys
-  #{"allowed-params" "backend-proto" "cmd" "cmd-type" "cpus" "env" "health-check-url" "mem" "metadata"
+  #{"allowed-params" "backend-proto" "cmd" "cmd-type" "cpus" "env" "health-check-url" "image" "mem" "metadata"
     "metric-group" "name" "permitted-user" "ports" "run-as-user" "scheduler" "version"})
 
 ; keys used as parameters in the service description
@@ -135,7 +136,7 @@
 (def ^:const on-the-fly-service-description-keys (set/union service-parameter-keys #{"token"}))
 
 ; keys allowed in system metadata for tokens, these need to be distinct from service description keys
-(def ^:const system-metadata-keys #{"deleted" "last-update-time" "last-update-user" "previous" "root"})
+(def ^:const system-metadata-keys #{"cluster" "deleted" "last-update-time" "last-update-user" "previous" "root"})
 
 ; keys allowed in user metadata for tokens, these need to be distinct from service description keys
 (def ^:const user-metadata-keys #{"fallback-period-secs" "https-redirect" "owner" "stale-timeout-mins"})
@@ -974,12 +975,12 @@
   (let [{:strs [idle-timeout-mins]} (service-id->service-description-fn service-id)
         source-tokens-set (service-id->source-tokens-set-fn service-id)]
     (if (and (seq source-tokens-set)
-             (some (fn [source-tokens]
-                     (and (seq source-tokens)
-                          ;; safe assumption mark a service stale when every token used to access it is stale
-                          (every? (fn [{:strs [token version]}]
-                                    (not= (token->token-hash token) version))
-                                source-tokens)))
+             ;; safe assumption mark a service stale when every token used to access it is stale
+             (every? (fn [source-tokens]
+                       (and (seq source-tokens)
+                            (every? (fn [{:strs [token version]}]
+                                      (not= (token->token-hash token) version))
+                                    source-tokens)))
                    source-tokens-set))
       (do
         (log/info service-id "that uses tokens is stale")

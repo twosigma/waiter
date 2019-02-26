@@ -163,8 +163,7 @@ if $test_started; then
     pod_name=$(hostname --short)
     target_bucket_dir=$WAITER_LOG_BUCKET_URL/$pod_name/$working_dir
     assert "$(curl -s $target_bucket_dir/stdout)" == TestString
-    assert "$(curl -s $target_bucket_dir/index.json | jq -r '.[0].name')" == stdout
-    assert "$(curl -s $target_bucket_dir/index.json | jq '.[0].size')" == 11
+    assert "$(curl -s $target_bucket_dir/stdout | wc -c)" == 11
 fi
 
 printf '\n\nAll tests passed\n'

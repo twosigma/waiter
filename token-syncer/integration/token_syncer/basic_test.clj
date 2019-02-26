@@ -31,14 +31,23 @@
                         "mem" 2048
                         "metric-group" "syncer-test"})
 
-(defn- waiter-urls []
+(defn- waiter-urls
+  "Retrieves urls to the waiter clusters provided in the WAITER_URIS environment variable."
+  []
   (let [waiter-uris (System/getenv "WAITER_URIS")]
     (is waiter-uris)
     (-> waiter-uris
         (str/split #",")
         sort)))
 
-(defn- waiter-api []
+(defn- waiter-url->cluster
+  "Retrieves the cluster name corresponding to the provided cluster,"
+  [waiter-url]
+  (str "cluster-" (hash waiter-url)))
+
+(defn- waiter-api
+  "Initializes and returns the Waiter API functions."
+  []
   (main/init-waiter-api {:connection-timeout-ms 5000, :idle-timeout-ms 5000}))
 
 (deftest ^:integration test-environment
@@ -56,7 +65,8 @@
 (defn- basic-token-metadata
   "Returns the common metadata used in the tests."
   [current-time-ms]
-  {"last-update-time" current-time-ms
+  {"cluster" "cl.1"
+   "last-update-time" current-time-ms
    "last-update-user" "auth-user"
    "owner" "test-user"
    "previous" {"last-update-time" (- current-time-ms 30000)
@@ -70,6 +80,7 @@
       (get :token-etag)))
 
 (defn- cleanup-token
+  "'Hard' deletes the token on all provided clusters."
   [{:keys [hard-delete-token] :as waiter-api} waiter-urls token-name]
   (log/info "Cleaning up token:" token-name)
   (doseq [waiter-url waiter-urls]
@@ -382,6 +393,7 @@
               (fn [index waiter-url]
                 (store-token waiter-url token-name nil
                              (assoc basic-description
+                               "cluster" (waiter-url->cluster waiter-url)
                                "cpus" (inc index)
                                "last-update-time" (- last-update-time-ms index)
                                "last-update-user" (str "auth-user-" index)
@@ -398,6 +410,7 @@
 
               ;; ASSERT
               (let [latest-description (assoc basic-description
+                                         "cluster" (waiter-url->cluster (first waiter-urls))
                                          "cpus" 1
                                          "last-update-time" last-update-time-ms
                                          "last-update-user" "auth-user-0"
@@ -448,6 +461,7 @@
               (fn [index waiter-url]
                 (store-token waiter-url token-name nil
                              (assoc basic-description
+                               "cluster" (waiter-url->cluster waiter-url)
                                "cpus" (inc index)
                                "last-update-time" (- last-update-time-ms index)
                                "last-update-user" "auth-user"
@@ -464,6 +478,7 @@
 
               ;; ASSERT
               (let [latest-description (assoc basic-description
+                                         "cluster" (waiter-url->cluster (first waiter-urls))
                                          "cpus" 1
                                          "last-update-time" last-update-time-ms
                                          "last-update-user" "auth-user"
@@ -477,6 +492,7 @@
                                          [waiter-url
                                           {:code :error/root-mismatch
                                            :details {:cluster (assoc basic-description
+                                                                "cluster" (waiter-url->cluster waiter-url)
                                                                 "cpus" (+ index 2)
                                                                 "last-update-time" (- last-update-time-ms index 1)
                                                                 "last-update-user" "auth-user"
@@ -505,6 +521,7 @@
                       (let [token-last-modified-time (- last-update-time-ms index)
                             token-etag (token->etag waiter-api waiter-url token-name)]
                         (is (= {:description (assoc basic-description
+                                               "cluster" (waiter-url->cluster waiter-url)
                                                "cpus" (inc index)
                                                "last-update-time" token-last-modified-time
                                                "last-update-user" "auth-user"

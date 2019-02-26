@@ -118,7 +118,8 @@
          (pos? keep-alive-mins)
          (integer? max-queue-length)
          (pos? max-queue-length)]}
-  (let [executor (ThreadPoolExecutor. 1 concurrency-level keep-alive-mins TimeUnit/MINUTES (LinkedBlockingQueue.))]
+  (let [queue (LinkedBlockingQueue.)
+        executor (ThreadPoolExecutor. concurrency-level concurrency-level keep-alive-mins TimeUnit/MINUTES queue)]
     (metrics/waiter-gauge #(.getActiveCount executor)
                           "core" "kerberos" "throttle" "active-thread-count")
     (metrics/waiter-gauge #(- concurrency-level (.getActiveCount executor))
@@ -143,8 +144,8 @@
 (defn kerberos-authorizer
   "Factory function for creating KerberosAuthorizer"
   [{:keys [prestash-cache-min-refresh-ms prestash-cache-refresh-ms prestash-query-host]}]
-  {:pre [(utils/pos-int? prestash-cache-min-refresh-ms)
-         (utils/pos-int? prestash-cache-refresh-ms)
+  {:pre [(pos-int? prestash-cache-min-refresh-ms)
+         (pos-int? prestash-cache-refresh-ms)
          (not (str/blank? prestash-query-host))]}
   (let [; use nil to initialize cache so that if it fails to populate, we can return true for all users
         prestash-cache (atom nil)

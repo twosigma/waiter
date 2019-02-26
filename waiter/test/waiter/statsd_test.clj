@@ -14,10 +14,10 @@
 ;; limitations under the License.
 ;;
 (ns waiter.statsd-test
-  (require [clojure.test :refer :all]
-           [clojure.tools.logging :as log]
-           [waiter.statsd :as statsd]
-           [waiter.test-helpers :refer :all])
+  (:require [clojure.test :refer :all]
+            [clojure.tools.logging :as log]
+            [waiter.statsd :as statsd]
+            [waiter.test-helpers :refer :all])
   (:import (clojure.lang PersistentQueue)))
 
 (defn- teardown

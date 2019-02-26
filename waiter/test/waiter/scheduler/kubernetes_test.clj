@@ -105,6 +105,17 @@
          (clojure.data/diff expected# actual#)))
      (is (= expected# actual#))))
 
+(deftest replicaset-spec-no-image
+  (let [scheduler (make-dummy-scheduler ["test-service-id"])
+        replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" dummy-service-description)]
+    (is (= "twosigma/kitchen:latest" (get-in replicaset-spec [:spec :template :spec :containers 0 :image])))))
+
+(deftest replicaset-spec-custom-image
+  (let [scheduler (make-dummy-scheduler ["test-service-id"])
+        replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id"
+                          (assoc dummy-service-description "image" "custom/image"))]
+    (is (= "custom/image" (get-in replicaset-spec [:spec :template :spec :containers 0 :image])))))
+
 (deftest test-service-id->k8s-app-name
   (let [base-scheduler-spec {:pod-suffix-length default-pod-suffix-length}
         long-app-name (str/join (repeat 200 \A))
@@ -757,10 +768,12 @@
                  :service-id->password-fn (constantly nil)
                  :service-id->service-description-fn (constantly nil)
                  :start-scheduler-syncer-fn (constantly nil)}
+        custom-options {:a 1 :b "two"}
         k8s-config {:authentication nil
                     :authorizer {:kind :default
                                  :default {:factory-fn 'waiter.authorization/noop-authorizer}}
                     :cluster-name "waiter"
+                    :custom-options custom-options
                     :fileserver {:port 9090
                                  :scheme "http"}
                     :watch-state (atom nil)
@@ -812,6 +825,9 @@
 
         (testing "should work with valid configuration"
           (is (instance? KubernetesScheduler (kubernetes-scheduler base-config))))
+
+        (testing "should retain custom plugin options"
+          (is (= custom-options (-> base-config kubernetes-scheduler :custom-options))))
 
         (testing "periodic auth-refresh task"
           (let [kill-task-fn (atom (constantly nil))

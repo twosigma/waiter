@@ -91,14 +91,18 @@
 (defn replicaset->Service
   "Convert a Kubernetes ReplicaSet JSON response into a Waiter Service record."
   [replicaset-json]
-  (try
-    (pc/letk
-      [[spec
-        [:metadata name namespace [:annotations waiter/service-id]]
-        [:status {replicas 0} {availableReplicas 0} {readyReplicas 0} {unavailableReplicas 0}]]
-       replicaset-json
-       requested (get spec :replicas 0)
-       staged (- replicas (+ availableReplicas unavailableReplicas))]
+  (if (= "Failure" (:status replicaset-json))
+    (do
+      (log/info "encountered error response in ReplicaSet query:" replicaset-json)
+      nil)
+    (try
+      (pc/letk
+        [[spec
+          [:metadata name namespace [:annotations waiter/service-id]]
+          [:status {replicas 0} {availableReplicas 0} {readyReplicas 0} {unavailableReplicas 0}]]
+         replicaset-json
+         requested (get spec :replicas 0)
+         staged (- replicas (+ availableReplicas unavailableReplicas))]
         (scheduler/make-Service
           {:id service-id
            :instances requested
@@ -109,8 +113,8 @@
                         :running (- replicas staged)
                         :staged staged
                         :unhealthy (- replicas readyReplicas staged)}}))
-    (catch Throwable t
-      (log/error t "error converting ReplicaSet to Waiter Service"))))
+      (catch Throwable t
+        (log/error t "error converting ReplicaSet to Waiter Service")))))
 
 (defn k8s-object->id
   "Get the id (name) from a ReplicaSet or Pod's metadata"
@@ -432,8 +436,13 @@
                          (service-description->namespace service-description) "/replicasets")
         response-json (api-request request-url scheduler
                                    :body (utils/clj->json spec-json)
-                                   :request-method :post)]
-    (some-> response-json replicaset->Service)))
+                                   :request-method :post)
+        service (some-> response-json replicaset->Service)]
+    (when-not service
+      (throw (ex-info "failed to create service"
+                      {:service-description service-description
+                       :service-id service-id})))
+    service))
 
 (defn- delete-service
   "Delete the Kubernetes ReplicaSet corresponding to a Waiter Service.
@@ -462,6 +471,7 @@
 (defrecord KubernetesScheduler [api-server-url
                                 authorizer
                                 cluster-name
+                                custom-options
                                 daemon-state
                                 fileserver
                                 http-client
@@ -647,7 +657,7 @@
   [{:keys [cluster-name fileserver pod-base-port pod-sigkill-delay-secs
            replicaset-api-version service-id->password-fn] :as scheduler}
    service-id
-   {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs
+   {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs image
            health-check-max-consecutive-failures mem min-instances ports
            run-as-user] :as service-description}
    {:keys [default-container-image log-bucket-url] :as context}]
@@ -678,6 +688,7 @@
                         :value (str log-bucket-url "/" run-as-user "/" service-id)}])
                     (for [[k v] base-env]
                       {:name k :value v})
+                    [{:name "PORT" :value (str port0)}]
                     (for [i (range ports)]
                       {:name (str "PORT" i) :value (str (+ port0 i))})))
         k8s-name (service-id->k8s-app-name scheduler service-id)
@@ -703,7 +714,7 @@
                                              :waiter-cluster cluster-name}}
                          :spec {:containers [{:command ["/usr/bin/waiter-init" cmd]
                                               :env env
-                                              :image default-container-image
+                                              :image (or image default-container-image)
                                               :imagePullPolicy "IfNotPresent"
                                               :livenessProbe {:httpGet {:path health-check-url
                                                                         :port port0
@@ -723,8 +734,7 @@
                                                                :failureThreshold 1
                                                                :periodSeconds health-check-interval-secs
                                                                :timeoutSeconds 1}
-                                              :resources {:limits {:cpu cpus
-                                                                   :memory memory}
+                                              :resources {:limits {:memory memory}
                                                           :requests {:cpu cpus
                                                                      :memory memory}}
                                               :volumeMounts [{:mountPath work-path
@@ -746,7 +756,7 @@
            :imagePullPolicy "IfNotPresent"
            :name "waiter-fileserver"
            :ports [{:containerPort port}]
-           :resources {:limits {:cpu cpu :memory memory}
+           :resources {:limits {:memory memory}
                        :requests {:cpu cpu :memory memory}}
            :volumeMounts [{:mountPath "/srv/www"
                            :name "user-home"}]
@@ -757,7 +767,7 @@
    and optionally start a chime to periodically refresh the value."
   [{:keys [action-fn refresh-delay-mins] :as context}]
   {:pre [(or (nil? refresh-delay-mins)
-             (utils/pos-int? refresh-delay-mins))
+             (pos-int? refresh-delay-mins))
          (symbol? action-fn)]}
   (let [refresh! (-> action-fn utils/resolve-symbol deref)
         auth-update-task (fn auth-update-task []
@@ -933,35 +943,36 @@
 (defn kubernetes-scheduler
   "Returns a new KubernetesScheduler with the provided configuration. Validates the
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
-  [{:keys [authentication authorizer cluster-name http-options log-bucket-sync-secs log-bucket-url
-           max-patch-retries max-name-length pod-base-port pod-sigkill-delay-secs pod-suffix-length
-           replicaset-api-version replicaset-spec-builder scheduler-name scheduler-state-chan
-           scheduler-syncer-interval-secs service-id->service-description-fn service-id->password-fn
-           url start-scheduler-syncer-fn watch-retries]
-    {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver}]
+  [{:keys [authentication authorizer cluster-name custom-options http-options log-bucket-sync-secs
+           log-bucket-url max-patch-retries max-name-length pod-base-port pod-sigkill-delay-secs
+           pod-suffix-length replicaset-api-version replicaset-spec-builder scheduler-name
+           scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
+           service-id->password-fn start-scheduler-syncer-fn url watch-retries]
+    {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver :as context}]
   {:pre [(schema/contains-kind-sub-map? authorizer)
+         (or (nil? custom-options) (map? custom-options))
          (or (nil? fileserver-port)
              (and (integer? fileserver-port)
                   (< 0 fileserver-port 65535)))
          (re-matches #"https?" fileserver-scheme)
-         (utils/pos-int? (:socket-timeout http-options))
-         (utils/pos-int? (:conn-timeout http-options))
+         (pos-int? (:socket-timeout http-options))
+         (pos-int? (:conn-timeout http-options))
          (and (number? log-bucket-sync-secs) (<= 0 log-bucket-sync-secs 300))
          (or (nil? log-bucket-url) (some? (io/as-url log-bucket-url)))
          (utils/non-neg-int? max-patch-retries)
-         (utils/pos-int? max-name-length)
+         (pos-int? max-name-length)
          (not (string/blank? cluster-name))
          (integer? pod-base-port)
          (< 0 pod-base-port 65527) ; max port is 65535, and we need to reserve up to 10 ports
          (integer? pod-sigkill-delay-secs)
          (<= 0 pod-sigkill-delay-secs 300)
-         (utils/pos-int? pod-suffix-length)
+         (pos-int? pod-suffix-length)
          (not (string/blank? replicaset-api-version))
          (symbol? (:factory-fn replicaset-spec-builder))
          (some? (io/as-url url))
          (not (string/blank? scheduler-name))
          (au/chan? scheduler-state-chan)
-         (utils/pos-int? scheduler-syncer-interval-secs)
+         (pos-int? scheduler-syncer-interval-secs)
          (fn? service-id->password-fn)
          (fn? service-id->service-description-fn)
          (fn? start-scheduler-syncer-fn)
@@ -1003,6 +1014,7 @@
           scheduler (->KubernetesScheduler url
                                            authorizer
                                            cluster-name
+                                           custom-options
                                            daemon-state
                                            fileserver
                                            http-client

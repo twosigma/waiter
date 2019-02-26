@@ -76,7 +76,7 @@
                                      (s/required-key :metrics-gc-interval-ms) schema/positive-int
                                      (s/required-key :metrics-sync-interval-ms) schema/positive-int
                                      (s/required-key :codahale-reporters) {s/Keyword {(s/required-key :factory-fn) s/Symbol
-                                                                             s/Any s/Any}}
+                                                                                      s/Any s/Any}}
                                      (s/required-key :router-update-interval-ms) schema/positive-int
                                      (s/required-key :transient-metrics-timeout-ms) schema/positive-int}
    (s/required-key :password-store-config) (s/constrained
@@ -144,7 +144,11 @@
    (s/required-key :support-info) [{(s/required-key :label) schema/non-empty-string
                                     (s/required-key :link) {(s/required-key :type) s/Keyword
                                                             (s/required-key :value) schema/non-empty-string}}]
-   (s/required-key :token-config) {(s/required-key :history-length) schema/positive-int
+   (s/required-key :token-config) {(s/required-key :cluster-calculator) (s/constrained
+                                                                          {:kind s/Keyword
+                                                                           s/Keyword schema/require-symbol-factory-fn}
+                                                                          schema/contains-kind-sub-map?)
+                                   (s/required-key :history-length) schema/positive-int
                                    (s/required-key :limit-per-owner) schema/positive-int
                                    (s/required-key :token-defaults) {(s/required-key "fallback-period-secs") schema/non-negative-int
                                                                      (s/required-key "https-redirect") s/Bool
@@ -388,7 +392,11 @@
    :support-info [{:label "Waiter on GitHub"
                    :link {:type :url
                           :value "http://github.com/twosigma/waiter"}}]
-   :token-config {:history-length 5
+   :token-config {:cluster-calculator {:kind :configured
+                                       :configured {:factory-fn 'waiter.token/new-configured-cluster-calculator}
+                                       :regex {:factory-fn 'waiter.token/new-regex-cluster-calculator
+                                               :root-regex #"^waiter-([a-zA-Z][0-9a-zA-Z\\-]*)"}}
+                  :history-length 5
                   :limit-per-owner 1000
                   :token-defaults {"fallback-period-secs" (-> 5 t/minutes t/in-seconds)
                                    "https-redirect" false

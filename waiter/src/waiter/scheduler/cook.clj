@@ -523,7 +523,7 @@
          (pos? search-interval-days)
          (not (str/blank? scheduler-name))
          (au/chan? scheduler-state-chan)
-         (utils/pos-int? scheduler-syncer-interval-secs)
+         (pos-int? scheduler-syncer-interval-secs)
          (fn? start-scheduler-syncer-fn)]}
   (let [http-client (-> http-options
                         (utils/assoc-if-absent :user-agent "waiter-cook")
