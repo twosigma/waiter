@@ -95,3 +95,14 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(0, cp.returncode, cp.stderr)
             token = util.load_token(self.waiter_url, token_name)
             self.assertIsNotNone(token)
+
+    def test_single_cluster(self):
+        config = {'clusters': [{"name": "Bar", "url": self.waiter_url}]}
+        with cli.temp_config_file(config) as path:
+            token_name = self.current_name()
+            util.delete_token_if_exists(self.waiter_url, token_name)
+            flags = '--config %s' % path
+            cp = cli.create_minimal(token_name, flags=flags)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            token = util.load_token(self.waiter_url, token_name)
+            self.assertIsNotNone(token)

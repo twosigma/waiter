@@ -7,6 +7,9 @@ from waiter.querying import get_token
 from waiter.util import guard_no_cluster, print_info
 
 
+create_parser = None
+
+
 def print_post_result(resp):
     """Prints the result of a token POST"""
     resp_json = resp.json()
@@ -76,13 +79,28 @@ def create(clusters, args, _):
 
 def register(add_parser):
     """Adds this sub-command's parser and returns the action function"""
-    submit_parser = add_parser('create', help='create token')
-    submit_parser.add_argument('--name', '-n', help='name of service')
-    submit_parser.add_argument('--version', '-v', help='version of service')
-    submit_parser.add_argument('--cmd', '-C', help='command to start service')
-    submit_parser.add_argument('--cmd-type', '-t', help='command type of service (e.g. "shell")', dest='cmd-type')
-    submit_parser.add_argument('--cpus', '-c', help='cpus to reserve for service', type=float)
-    submit_parser.add_argument('--mem', '-m', help='memory to reserve for service', type=int)
-    submit_parser.add_argument('--ports', help='number of ports to reserve for service', type=int)
-    submit_parser.add_argument('token', nargs=1)
-    return create
+    global create_parser
+    create_parser = add_parser('create', help='create token')
+    create_parser.add_argument('--name', '-n', help='name of service')
+    create_parser.add_argument('--version', '-v', help='version of service')
+    create_parser.add_argument('--cmd', '-C', help='command to start service')
+    create_parser.add_argument('--cmd-type', '-t', help='command type of service (e.g. "shell")', dest='cmd-type')
+    create_parser.add_argument('--cpus', '-c', help='cpus to reserve for service', type=float)
+    create_parser.add_argument('--mem', '-m', help='memory to reserve for service', type=int)
+    create_parser.add_argument('--ports', help='number of ports to reserve for service', type=int)
+    create_parser.add_argument('token', nargs=1)
+    return create, create_parser
+
+
+def add_unknown_arguments(unknown_args):
+    """TODO(DPO)"""
+    for i in range(len(unknown_args)):
+        arg = unknown_args[i]
+        if arg.startswith(("-", "--")):
+            if arg.endswith('-secs'):
+                arg_type = int
+            elif (i+1) < len(unknown_args) and (unknown_args[i + 1] == 'true' or unknown_args[i + 1] == 'false'):
+                arg_type = bool
+            else:
+                arg_type = None
+            create_parser.add_argument(arg, dest=arg.lstrip('-'), type=arg_type)

@@ -16,8 +16,9 @@ parser.add_argument('--version', help='output version information and exit',
 
 subparsers = parser.add_subparsers(dest='action')
 
+create_fn, create_subparser = create.register(subparsers.add_parser)
 actions = {
-    'create': create.register(subparsers.add_parser),
+    'create': create_fn,
     'show': show.register(subparsers.add_parser)
 }
 
@@ -52,7 +53,11 @@ def run(args):
     processes global command line arguments, and calls other command line 
     sub-commands (actions) if necessary.
     """
-    args = vars(parser.parse_args(args))
+    args, unknown_args = parser.parse_known_args(args)
+    if args['action'] == 'create':
+        create.add_unknown_arguments(unknown_args)
+    args = parser.parse_args()
+    args = vars(args)
 
     verbose = args.pop('verbose')
 
