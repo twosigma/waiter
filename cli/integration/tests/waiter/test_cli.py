@@ -118,16 +118,23 @@ class WaiterCliTest(util.WaiterTest):
         self.assertEqual(0, cp.returncode, cp.stderr)
         self.assertIn('--cpus', cli.stdout(cp))
         self.assertNotIn('--https-redirect', cli.stdout(cp))
+        self.assertNotIn('--fallback-period-secs', cli.stdout(cp))
         token_name = self.current_name()
         util.delete_token_if_exists(self.waiter_url, token_name)
-        cp = cli.create(token_name, self.waiter_url, create_flags='--https-redirect true --cpus 0.1')
+        cp = cli.create(token_name, self.waiter_url, create_flags='--https-redirect true '
+                                                                  '--cpus 0.1 '
+                                                                  '--fallback-period-secs 10')
         self.assertEqual(0, cp.returncode, cp.stderr)
         try:
             token = util.load_token(self.waiter_url, token_name)
             self.assertTrue(token['https-redirect'])
-            cp = cli.create(token_name, self.waiter_url, create_flags='--https-redirect false --cpus 0.1')
+            self.assertEqual(10, token['fallback-period-secs'])
+            cp = cli.create(token_name, self.waiter_url, create_flags='--https-redirect false '
+                                                                      '--cpus 0.1 '
+                                                                      '--fallback-period-secs 20')
             self.assertEqual(0, cp.returncode, cp.stderr)
             token = util.load_token(self.waiter_url, token_name)
             self.assertFalse(token['https-redirect'])
+            self.assertEqual(20, token['fallback-period-secs'])
         finally:
             util.delete_token(self.waiter_url, token_name)

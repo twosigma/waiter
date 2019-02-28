@@ -7,6 +7,10 @@ from waiter import terminal, http
 from waiter.querying import get_token
 from waiter.util import guard_no_cluster, print_info
 
+TRUE_STRINGS = ('yes', 'true')
+FALSE_STRINGS = ('no', 'false')
+BOOL_STRINGS = TRUE_STRINGS + FALSE_STRINGS
+
 create_parser = None
 
 
@@ -80,7 +84,14 @@ def create(clusters, args, _):
 def register(add_parser):
     """Adds this sub-command's parser and returns the action function"""
     global create_parser
-    create_parser = add_parser('create', help='create token')
+    create_parser = add_parser('create', help='create token', description='Create or update a Waiter token. '
+                                                                          'In addition to the optional arguments '
+                                                                          'explicitly listed below, '
+                                                                          'you can optionally provide any Waiter '
+                                                                          'token parameter as a flag. For example, '
+                                                                          'to specify 10 seconds for the '
+                                                                          'grace-period-secs parameter, '
+                                                                          'you can pass --grace-period-secs 10.')
     create_parser.add_argument('--name', '-n', help='name of service')
     create_parser.add_argument('--version', '-v', help='version of service')
     create_parser.add_argument('--cmd', '-C', help='command to start service')
@@ -89,26 +100,31 @@ def register(add_parser):
     create_parser.add_argument('--mem', '-m', help='memory to reserve for service', type=int)
     create_parser.add_argument('--ports', help='number of ports to reserve for service', type=int)
     create_parser.add_argument('token', nargs=1)
-    return create, create_parser
+    return create
 
 
 def str2bool(v):
-    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+    """Converts the given string to a boolean, or raises"""
+    if v.lower() in TRUE_STRINGS:
         return True
-    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+    elif v.lower() in FALSE_STRINGS:
         return False
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
 
 def add_implicit_arguments(unknown_args):
-    """Given the list of "unknown" args, dynamically adds proper arguments to the subparser"""
-    for i in range(len(unknown_args)):
+    """
+    Given the list of "unknown" args, dynamically adds proper arguments to
+    the subparser, allowing us to support any token parameter as a flag
+    """
+    num_unknown_args = len(unknown_args)
+    for i in range(num_unknown_args):
         arg = unknown_args[i]
         if arg.startswith(("-", "--")):
             if arg.endswith('-secs'):
                 arg_type = int
-            elif (i + 1) < len(unknown_args) and (unknown_args[i + 1] == 'true' or unknown_args[i + 1] == 'false'):
+            elif (i + 1) < num_unknown_args and unknown_args[i + 1].lower() in BOOL_STRINGS:
                 arg_type = str2bool
             else:
                 arg_type = None

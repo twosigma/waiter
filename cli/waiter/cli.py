@@ -16,9 +16,8 @@ parser.add_argument('--version', help='output version information and exit',
 
 subparsers = parser.add_subparsers(dest='action')
 
-create_fn, create_subparser = create.register(subparsers.add_parser)
 actions = {
-    'create': create_fn,
+    'create': create.register(subparsers.add_parser),
     'show': show.register(subparsers.add_parser)
 }
 
