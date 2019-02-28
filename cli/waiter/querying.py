@@ -26,8 +26,10 @@ def query_across_clusters(clusters, query_fn):
     return all_entities
 
 
-def get_token(cluster, token_name):
+def get_token(cluster, token_name, include=None):
     """Gets the token with the given name from the given cluster"""
     params = {'token': token_name}
+    if include:
+        params['include'] = include
     token = http.make_data_request(cluster, lambda: http.get(cluster, 'token', params=params))
     return token

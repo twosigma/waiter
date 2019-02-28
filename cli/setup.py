@@ -5,6 +5,7 @@ from setuptools import setup
 from waiter import version
 
 requirements = [
+    'arrow',
     'humanfriendly',
     'requests',
     'tabulate'

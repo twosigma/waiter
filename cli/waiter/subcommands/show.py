@@ -1,36 +1,30 @@
-import itertools
 import json
 
 from tabulate import tabulate
 
-from waiter.format import format_mem_field
+from waiter.format import format_mem_field, format_timestamp_string, format_field_name
 from waiter.querying import query_across_clusters, get_token
 from waiter.util import guard_no_cluster
 
 
-def juxtapose_text(text_a, text_b, buffer_len=15):
-    """Places text_a to the left of text_b with a buffer of spaces in between"""
-    lines_a = text_a.splitlines()
-    lines_b = text_b.splitlines()
-    longest_line_length_a = max(map(len, lines_a))
-    paired_lines = itertools.zip_longest(lines_a, lines_b, fillvalue="")
-    a_columns = longest_line_length_a + buffer_len
-    return "\n".join("{0:<{1}}{2}".format(a, a_columns, b) for a, b in paired_lines)
-
-
 def tabulate_token(cluster_name, token, token_name):
     """Given a token, returns a string containing tables for the fields"""
-    left = [['Cluster', cluster_name],
-                      ['Owner', token['owner']],
-                      ['CPUs', token['cpus']]]
+    table = [['Cluster', cluster_name],
+             ['Owner', token['owner']]]
     if token.get('name'):
-        left.append(['Name', token['name']])
+        table.append(['Name', token['name']])
+    if token.get('cpus'):
+        table.append(['CPUs', token['cpus']])
     if token.get('mem'):
-        left.append(['Memory', format_mem_field(token)])
+        table.append(['Memory', format_mem_field(token)])
     if token.get('ports'):
-        left.append(['Ports Requested', token['ports']])
+        table.append(['Ports Requested', token['ports']])
 
-    right = []
+    explicit_keys = ('owner', 'cpus', 'name', 'mem', 'ports', 'last-update-user', 'last-update-time')
+    ignored_keys = ('cluster', 'root', 'previous')
+    for key, value in token.items():
+        if key not in (explicit_keys + ignored_keys):
+            table.append([format_field_name(key), value])
 
     command = token.get('cmd')
     if command:
@@ -43,10 +37,18 @@ def tabulate_token(cluster_name, token, token_name):
     else:
         environment = ''
 
-    left_table = tabulate(left, tablefmt='plain')
-    right_table = tabulate(right, tablefmt='plain')
-    tables = juxtapose_text(left_table, right_table)
-    return f'\n=== Token: {token_name} ===\n\n{tables}\n\n{token_command}{environment}'
+    table_text = tabulate(table, tablefmt='plain')
+    last_update_time = format_timestamp_string(token['last-update-time'])
+    last_update_user = token['last-update-user']
+    return f'\n' \
+           f'=== Token: {token_name} ===\n' \
+           f'\n' \
+           f'Last Updated: {last_update_time} ({last_update_user})\n' \
+           f'\n' \
+           f'{table_text}\n' \
+           f'\n' \
+           f'{token_command}' \
+           f'{environment}'
 
 
 def show_data(cluster_name, data, format_fn, token_name):
@@ -61,7 +63,7 @@ def show_data(cluster_name, data, format_fn, token_name):
 
 def get_token_on_cluster(cluster, token_name):
     """Gets the token with the given name on the given cluster"""
-    token = get_token(cluster, token_name)
+    token = get_token(cluster, token_name, include='metadata')
     if token:
         return {'count': 1, 'token': token}
     else:

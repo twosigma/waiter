@@ -148,3 +148,14 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(0, cp.returncode, cp.stderr)
         finally:
             util.delete_token(self.waiter_url, token_name)
+
+    def test_implicit_show_fields(self):
+        token_name = self.current_name()
+        util.post_token(self.waiter_url, token_name, {'cpus': 0.1, 'https-redirect': True, 'fallback-period-secs': 10})
+        try:
+            cp = cli.show(self.waiter_url, token_name)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('Https redirect', cli.stdout(cp))
+            self.assertIn('Fallback period (seconds)', cli.stdout(cp))
+        finally:
+            util.delete_token(self.waiter_url, token_name)
