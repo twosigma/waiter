@@ -22,17 +22,12 @@ class WaiterCliTest(util.WaiterTest):
     def test_basic_create(self):
         token_name = self.current_name()
         util.delete_token_if_exists(self.waiter_url, token_name)
-
-        # Create token
-        cp = cli.create_minimal(token_name, self.waiter_url)
+        cp = cli.create_minimal(self.waiter_url, token_name)
         self.assertEqual(0, cp.returncode, cp.stderr)
         try:
-            # Make sure token now exists
             token = util.load_token(self.waiter_url, token_name)
             self.assertIsNotNone(token)
             self.assertEqual('shell', token['cmd-type'])
-
-            # Make sure we can access the service
             resp = util.session.get(self.waiter_url, headers={'X-Waiter-Token': token_name})
             self.assertEqual(200, resp.status_code, resp.text)
         finally:
@@ -40,16 +35,16 @@ class WaiterCliTest(util.WaiterTest):
 
     def test_failed_create(self):
         service = util.minimal_service_description(cpus=0)
-        cp = cli.create_from_service_description(self.current_name(), self.waiter_url, service)
+        cp = cli.create_from_service_description(self.waiter_url, self.current_name(), service)
         self.assertEqual(1, cp.returncode, cp.stderr)
         self.assertEqual(b'Service description using waiter headers/token improperly configured\ncpus must be a '
                          b'positive number..\n', cp.stderr)
 
-    def test_no_cluster(self):
+    def test_create_no_cluster(self):
         config = {'clusters': []}
         with cli.temp_config_file(config) as path:
             flags = '--config %s' % path
-            cp = cli.create_minimal(self.current_name(), flags=flags)
+            cp = cli.create_minimal(token_name=self.current_name(), flags=flags)
             self.assertEqual(1, cp.returncode, cp.stderr)
             self.assertIn('must specify at least one cluster', cli.decode(cp.stderr))
 
@@ -62,7 +57,7 @@ class WaiterCliTest(util.WaiterTest):
         }
         with cli.temp_config_file(config) as path:
             flags = '--config %s' % path
-            cp = cli.create_minimal(self.current_name(), flags=flags)
+            cp = cli.create_minimal(token_name=self.current_name(), flags=flags)
             self.assertEqual(1, cp.returncode, cp.stderr)
             self.assertIn('must either specify a cluster via --cluster or set "default-for-create" to true',
                           cli.decode(cp.stderr))
@@ -76,7 +71,7 @@ class WaiterCliTest(util.WaiterTest):
         }
         with cli.temp_config_file(config) as path:
             flags = '--config %s' % path
-            cp = cli.create_minimal(self.current_name(), flags=flags)
+            cp = cli.create_minimal(token_name=self.current_name(), flags=flags)
             self.assertEqual(1, cp.returncode, cp.stderr)
             self.assertIn('have "default-for-create" set to true for more than one cluster', cli.decode(cp.stderr))
 
@@ -91,7 +86,7 @@ class WaiterCliTest(util.WaiterTest):
             token_name = self.current_name()
             util.delete_token_if_exists(self.waiter_url, token_name)
             flags = '--config %s' % path
-            cp = cli.create_minimal(token_name, flags=flags)
+            cp = cli.create_minimal(token_name=token_name, flags=flags)
             self.assertEqual(0, cp.returncode, cp.stderr)
             try:
                 token = util.load_token(self.waiter_url, token_name)
@@ -99,13 +94,13 @@ class WaiterCliTest(util.WaiterTest):
             finally:
                 util.delete_token(self.waiter_url, token_name)
 
-    def test_single_cluster(self):
+    def test_create_single_cluster(self):
         config = {'clusters': [{"name": "Bar", "url": self.waiter_url}]}
         with cli.temp_config_file(config) as path:
             token_name = self.current_name()
             util.delete_token_if_exists(self.waiter_url, token_name)
             flags = '--config %s' % path
-            cp = cli.create_minimal(token_name, flags=flags)
+            cp = cli.create_minimal(token_name=token_name, flags=flags)
             self.assertEqual(0, cp.returncode, cp.stderr)
             try:
                 token = util.load_token(self.waiter_url, token_name)
@@ -121,7 +116,7 @@ class WaiterCliTest(util.WaiterTest):
         self.assertNotIn('--fallback-period-secs', cli.stdout(cp))
         token_name = self.current_name()
         util.delete_token_if_exists(self.waiter_url, token_name)
-        cp = cli.create(token_name, self.waiter_url, create_flags='--https-redirect true '
+        cp = cli.create(self.waiter_url, token_name, create_flags='--https-redirect true '
                                                                   '--cpus 0.1 '
                                                                   '--fallback-period-secs 10')
         self.assertEqual(0, cp.returncode, cp.stderr)
@@ -129,12 +124,27 @@ class WaiterCliTest(util.WaiterTest):
             token = util.load_token(self.waiter_url, token_name)
             self.assertTrue(token['https-redirect'])
             self.assertEqual(10, token['fallback-period-secs'])
-            cp = cli.create(token_name, self.waiter_url, create_flags='--https-redirect false '
+            cp = cli.create(self.waiter_url, token_name, create_flags='--https-redirect false '
                                                                       '--cpus 0.1 '
                                                                       '--fallback-period-secs 20')
             self.assertEqual(0, cp.returncode, cp.stderr)
             token = util.load_token(self.waiter_url, token_name)
             self.assertFalse(token['https-redirect'])
             self.assertEqual(20, token['fallback-period-secs'])
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_basic_show(self):
+        token_name = self.current_name()
+        util.delete_token_if_exists(self.waiter_url, token_name)
+        cp = cli.show(self.waiter_url, token_name)
+        self.assertEqual(1, cp.returncode, cp.stderr)
+        self.assertIn('Unable to retrieve token information', cli.decode(cp.stderr))
+        util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
+        try:
+            token = util.load_token(self.waiter_url, token_name)
+            self.assertIsNotNone(token)
+            cp = cli.show(self.waiter_url, token_name)
+            self.assertEqual(0, cp.returncode, cp.stderr)
         finally:
             util.delete_token(self.waiter_url, token_name)

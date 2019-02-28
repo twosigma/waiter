@@ -59,27 +59,29 @@ def cli(args, waiter_url=None, flags=None, stdin=None, env=None, wait_for_exit=T
     return cp
 
 
-def create(token_name=None, waiter_url=None, flags=None, create_flags=None):
+def create(waiter_url=None, token_name=None, flags=None, create_flags=None):
     """Creates a token via the CLI"""
     args = f"create {token_name} {create_flags or ''}"
     cp = cli(args, waiter_url, flags)
     return cp
 
 
-def create_from_service_description(token_name, waiter_url, service, flags=None):
+def create_from_service_description(waiter_url, token_name, service, flags=None):
     """Creates a token via the CLI, using the provided service fields"""
-    cp = create(token_name, waiter_url, flags=flags, create_flags=f"--cmd '{service['cmd']}' "
-                                                                  f"--cpus {service['cpus']} "
-                                                                  f"--mem {service['mem']} "
-                                                                  f"--cmd-type {service['cmd-type']} "
-                                                                  f"--version {service['version']}")
+    create_flags = \
+        f"--cmd '{service['cmd']}' " \
+        f"--cpus {service['cpus']} " \
+        f"--mem {service['mem']} " \
+        f"--cmd-type {service['cmd-type']} " \
+        f"--version {service['version']}"
+    cp = create(waiter_url, token_name, flags=flags, create_flags=create_flags)
     return cp
 
 
-def create_minimal(token_name, waiter_url=None, flags=None):
+def create_minimal(waiter_url=None, token_name=None, flags=None):
     """Creates a token via the CLI, using the "minimal" service description"""
     service = util.minimal_service_description()
-    cp = create_from_service_description(token_name, waiter_url, service, flags=flags)
+    cp = create_from_service_description(waiter_url, token_name, service, flags=flags)
     return cp
 
 
@@ -128,3 +130,10 @@ class temp_config_file:
 
     def __exit__(self, _, __, ___):
         os.remove(self.path)
+
+
+def show(waiter_url=None, token_name=None, flags=None, show_flags=None):
+    """Shows a token via the CLI"""
+    args = f"show {token_name} {show_flags or ''}"
+    cp = cli(args, waiter_url, flags)
+    return cp

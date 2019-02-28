@@ -5,7 +5,7 @@ from tabulate import tabulate
 
 from waiter.format import format_mem_field
 from waiter.querying import query_across_clusters, get_token
-from waiter.util import guard_no_cluster, print_error
+from waiter.util import guard_no_cluster
 
 
 def juxtapose_text(text_a, text_b, buffer_len=15):
@@ -20,17 +20,17 @@ def juxtapose_text(text_a, text_b, buffer_len=15):
 
 def tabulate_token(cluster_name, token, token_name):
     """Given a token, returns a string containing tables for the fields"""
-    job_definition = [['Cluster', cluster_name],
+    left = [['Cluster', cluster_name],
                       ['Owner', token['owner']],
                       ['CPUs', token['cpus']]]
     if token.get('name'):
-        job_definition.append(['Name', token['name']])
+        left.append(['Name', token['name']])
     if token.get('mem'):
-        job_definition.append(['Memory', format_mem_field(token)])
+        left.append(['Memory', format_mem_field(token)])
     if token.get('ports'):
-        job_definition.append(['Ports Requested', token['ports']])
+        left.append(['Ports Requested', token['ports']])
 
-    job_state = []
+    right = []
 
     command = token.get('cmd')
     if command:
@@ -43,10 +43,10 @@ def tabulate_token(cluster_name, token, token_name):
     else:
         environment = ''
 
-    job_definition_table = tabulate(job_definition, tablefmt='plain')
-    job_state_table = tabulate(job_state, tablefmt='plain')
-    job_tables = juxtapose_text(job_definition_table, job_state_table)
-    return f'\n=== Token: {token_name} ===\n\n{job_tables}\n\n{token_command}{environment}'
+    left_table = tabulate(left, tablefmt='plain')
+    right_table = tabulate(right, tablefmt='plain')
+    tables = juxtapose_text(left_table, right_table)
+    return f'\n=== Token: {token_name} ===\n\n{tables}\n\n{token_command}{environment}'
 
 
 def show_data(cluster_name, data, format_fn, token_name):

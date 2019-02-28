@@ -66,6 +66,16 @@ def load_token(waiter_url, token_name, assert_response=True, expected_status_cod
     return response.json()
 
 
+def post_token(waiter_url, token_name, token_definition, assert_response=True, expected_status_code=200):
+    headers = {'Content-Type': 'application/json'}
+    response = session.post(f'{waiter_url}/token', headers=headers, json=token_definition, params={'token': token_name})
+    if assert_response:
+        assert \
+            expected_status_code == response.status_code, \
+            f'Expected {expected_status_code}, got {response.status_code} with body {response.text}'
+    return response.json()
+
+
 def minimal_service_cmd(response_text=None):
     if response_text is None:
         response_text = 'OK'
