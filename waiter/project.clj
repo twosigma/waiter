@@ -112,8 +112,7 @@
              "-Dclojure.core.async.pool-size=64"
              ~(str "-Dwaiter.logFilePrefix=" (System/getenv "WAITER_LOG_FILE_PREFIX"))
              "-XX:+UseG1GC"
-             "-XX:MaxGCPauseMillis=50"
-             "-XX:PermSize=1g"]
+             "-XX:MaxGCPauseMillis=50"]
   :filespecs [{:type :fn
                :fn (fn [p]
                      {:type :bytes :path "git-log"
