@@ -11,7 +11,7 @@
                                                   :factory-fn waiter.reporter/graphite-reporter
                                                   :filter-regex #config/regex "^jvm.*|^waiter.*"
                                                   :host "localhost"
-                                                  :period-ms 3000
+                                                  :period-ms 6000
                                                   :pickled? true
                                                   :prefix "waiter-internal"
                                                   :port #config/env-int "GRAPHITE_SERVER_PORT"}}}
