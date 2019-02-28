@@ -137,3 +137,18 @@ def show(waiter_url=None, token_name=None, flags=None, show_flags=None):
     args = f"show {token_name} {show_flags or ''}"
     cp = cli(args, waiter_url, flags)
     return cp
+
+
+def __show_json(waiter_url=None, token_name=None, flags=None):
+    """Invokes show on the given token with --json, and returns the parsed JSON"""
+    flags = (flags + ' ') if flags else ''
+    cp = show(waiter_url, token_name, flags, '--json')
+    data = json.loads(stdout(cp))
+    return cp, data
+
+
+def show_tokens(waiter_url=None, token_name=None, flags=None):
+    """Shows the token JSON corresponding to the given token name"""
+    cp, data = __show_json(waiter_url, token_name, flags)
+    tokens = [entities['token'] for entities in data['clusters'].values()]
+    return cp, tokens

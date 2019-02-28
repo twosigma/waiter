@@ -159,3 +159,22 @@ class WaiterCliTest(util.WaiterTest):
             self.assertIn('Fallback period (seconds)', cli.stdout(cp))
         finally:
             util.delete_token(self.waiter_url, token_name)
+
+    def test_show_no_cluster(self):
+        config = {'clusters': []}
+        with cli.temp_config_file(config) as path:
+            flags = '--config %s' % path
+            cp = cli.show(token_name=self.current_name(), flags=flags)
+            self.assertEqual(1, cp.returncode, cp.stderr)
+            self.assertIn('must specify at least one cluster', cli.decode(cp.stderr))
+
+    def test_show_json(self):
+        token_name = self.current_name()
+        util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
+        try:
+            cp, tokens = cli.show_tokens(self.waiter_url, token_name)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertEqual(1, len(tokens))
+            self.assertEqual(util.load_token(self.waiter_url, token_name), tokens[0])
+        finally:
+            util.delete_token(self.waiter_url, token_name)

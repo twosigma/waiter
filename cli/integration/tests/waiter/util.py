@@ -58,7 +58,8 @@ def load_token(waiter_url, token_name, assert_response=True, expected_status_cod
         'X-Waiter-Token': token_name,
         'Content-Type': 'application/json'
     }
-    response = session.get(f'{waiter_url}/token', headers=headers)
+    params = {'include': 'metadata'}
+    response = session.get(f'{waiter_url}/token', headers=headers, params=params)
     if assert_response:
         assert \
             expected_status_code == response.status_code, \
