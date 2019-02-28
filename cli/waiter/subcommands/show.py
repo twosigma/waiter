@@ -20,8 +20,8 @@ def tabulate_token(cluster_name, token, token_name):
     if token.get('ports'):
         table.append(['Ports Requested', token['ports']])
 
-    explicit_keys = ('owner', 'cpus', 'name', 'mem', 'ports', 'last-update-user', 'last-update-time')
-    ignored_keys = ('cluster', 'root', 'previous')
+    explicit_keys = ('cmd', 'cpus', 'last-update-time', 'last-update-user', 'mem', 'name', 'owner', 'ports')
+    ignored_keys = ('cluster', 'previous', 'root')
     for key, value in token.items():
         if key not in (explicit_keys + ignored_keys):
             table.append([format_field_name(key), value])
