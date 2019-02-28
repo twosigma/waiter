@@ -93,8 +93,11 @@ class WaiterCliTest(util.WaiterTest):
             flags = '--config %s' % path
             cp = cli.create_minimal(token_name, flags=flags)
             self.assertEqual(0, cp.returncode, cp.stderr)
-            token = util.load_token(self.waiter_url, token_name)
-            self.assertIsNotNone(token)
+            try:
+                token = util.load_token(self.waiter_url, token_name)
+                self.assertIsNotNone(token)
+            finally:
+                util.delete_token(self.waiter_url, token_name)
 
     def test_single_cluster(self):
         config = {'clusters': [{"name": "Bar", "url": self.waiter_url}]}
@@ -104,5 +107,27 @@ class WaiterCliTest(util.WaiterTest):
             flags = '--config %s' % path
             cp = cli.create_minimal(token_name, flags=flags)
             self.assertEqual(0, cp.returncode, cp.stderr)
+            try:
+                token = util.load_token(self.waiter_url, token_name)
+                self.assertIsNotNone(token)
+            finally:
+                util.delete_token(self.waiter_url, token_name)
+
+    def test_implicit_create_args(self):
+        cp = cli.create(create_flags='--help')
+        self.assertEqual(0, cp.returncode, cp.stderr)
+        self.assertIn('--cpus', cli.stdout(cp))
+        self.assertNotIn('--https-redirect', cli.stdout(cp))
+        token_name = self.current_name()
+        util.delete_token_if_exists(self.waiter_url, token_name)
+        cp = cli.create(token_name, self.waiter_url, create_flags='--https-redirect true --cpus 0.1')
+        self.assertEqual(0, cp.returncode, cp.stderr)
+        try:
             token = util.load_token(self.waiter_url, token_name)
-            self.assertIsNotNone(token)
+            self.assertTrue(token['https-redirect'])
+            cp = cli.create(token_name, self.waiter_url, create_flags='--https-redirect false --cpus 0.1')
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            token = util.load_token(self.waiter_url, token_name)
+            self.assertFalse(token['https-redirect'])
+        finally:
+            util.delete_token(self.waiter_url, token_name)

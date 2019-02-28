@@ -1,3 +1,4 @@
+import argparse
 import logging
 
 import requests
@@ -5,7 +6,6 @@ import requests
 from waiter import terminal, http
 from waiter.querying import get_token
 from waiter.util import guard_no_cluster, print_info
-
 
 create_parser = None
 
@@ -92,15 +92,24 @@ def register(add_parser):
     return create, create_parser
 
 
-def add_unknown_arguments(unknown_args):
-    """TODO(DPO)"""
+def str2bool(v):
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
+
+def add_implicit_arguments(unknown_args):
+    """Given the list of "unknown" args, dynamically adds proper arguments to the subparser"""
     for i in range(len(unknown_args)):
         arg = unknown_args[i]
         if arg.startswith(("-", "--")):
             if arg.endswith('-secs'):
                 arg_type = int
-            elif (i+1) < len(unknown_args) and (unknown_args[i + 1] == 'true' or unknown_args[i + 1] == 'false'):
-                arg_type = bool
+            elif (i + 1) < len(unknown_args) and (unknown_args[i + 1] == 'true' or unknown_args[i + 1] == 'false'):
+                arg_type = str2bool
             else:
                 arg_type = None
             create_parser.add_argument(arg, dest=arg.lstrip('-'), type=arg_type)

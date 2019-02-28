@@ -59,7 +59,7 @@ def cli(args, waiter_url=None, flags=None, stdin=None, env=None, wait_for_exit=T
     return cp
 
 
-def create(token_name, waiter_url=None, flags=None, create_flags=None):
+def create(token_name=None, waiter_url=None, flags=None, create_flags=None):
     """Creates a token via the CLI"""
     args = f"create {token_name} {create_flags or ''}"
     cp = cli(args, waiter_url, flags)

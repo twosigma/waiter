@@ -54,8 +54,8 @@ def run(args):
     sub-commands (actions) if necessary.
     """
     args, unknown_args = parser.parse_known_args(args)
-    if args['action'] == 'create':
-        create.add_unknown_arguments(unknown_args)
+    if args.action == 'create':
+        create.add_implicit_arguments(unknown_args)
     args = parser.parse_args()
     args = vars(args)
 
