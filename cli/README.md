@@ -44,5 +44,5 @@ The fastest way to learn more about `waiter` is with the `-h` (or `--help`) opti
 
 All global options (`--cluster`, `--config`, etc.) can be provided when using subcommands.
 
-- `create`: You can a token with `create`. 
+- `create`: You can create a token with `create`. 
 - `show`: You can view a token's details with `show`.
