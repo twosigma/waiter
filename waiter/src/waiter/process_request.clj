@@ -43,7 +43,6 @@
   (:import (java.io InputStream IOException)
            (java.util.concurrent TimeoutException)
            (org.eclipse.jetty.client HttpClient)
-           (org.eclipse.jetty.http HttpVersion)
            (org.eclipse.jetty.io EofException)
            (org.eclipse.jetty.server HttpChannel HttpOutput)))
 
@@ -181,15 +180,6 @@
     (deliver reservation-status-promise promise-value)
     (utils/exception->response (ex-info message (assoc metrics-map :status status) error) request)))
 
-(defn protocol->http-version
-  "Determines the http protocol version to use for the request to the backend."
-  [^String protocol]
-  (try
-    (when (and protocol (str/starts-with? protocol "HTTP"))
-      (HttpVersion/fromString protocol))
-    (catch Exception e
-      (log/error e "unable to determine http version from" protocol))))
-
 (defn- make-http-request
   "Makes an asynchronous request to the endpoint using Basic authentication."
   [^HttpClient http-client make-basic-auth-fn request-method endpoint query-string headers body service-password
@@ -208,7 +198,7 @@
        :idle-timeout idle-timeout
        :method request-method
        :query-string query-string
-       :version (protocol->http-version proto-version)
+       :version proto-version
        :url endpoint})))
 
 (defn make-request

@@ -16,15 +16,14 @@
 (ns waiter.request-log-test
   (:require [clj-time.core :as t]
             [clojure.test :refer :all]
-            [waiter.request-log :refer :all])
-  (:import [org.eclipse.jetty.http HttpVersion]))
+            [waiter.request-log :refer :all]))
 
 (deftest test-request->context
   (let [request {:headers {"host" "host"
                            "origin" "www.origin.org"
                            "user-agent" "test-user-agent"
                            "x-cid" "123"}
-                 :protocol (str HttpVersion/HTTP_1_1)
+                 :protocol "HTTP/1.1"
                  :query-string "a=1"
                  :remote-addr "127.0.0.1"
                  :request-id "abc"
@@ -61,7 +60,7 @@
                              :port 123
                              :protocol "instance-proto"}
                   :latest-service-id "latest-service-id"
-                  :protocol (str HttpVersion/HTTP_2)
+                  :protocol "HTTP/2.0"
                   :status 200}]
     (is (= {:backend-response-latency-ns 1000
             :backend-protocol "HTTP/2.0"

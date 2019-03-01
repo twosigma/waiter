@@ -24,7 +24,6 @@
             [waiter.websocket :refer :all])
   (:import (java.net HttpCookie SocketTimeoutException URLDecoder)
            (java.util ArrayList Collection)
-           (org.eclipse.jetty.http HttpVersion)
            (org.eclipse.jetty.websocket.api MessageTooLargeException UpgradeRequest)
            (org.eclipse.jetty.websocket.client ClientUpgradeRequest)
            (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse)))
@@ -270,7 +269,7 @@
         assert-request-headers (fn assert-request-headers [upgrade-request]
                                  (doseq [[header-name header-value] assertion-headers]
                                    (is (= header-value (.getHeader upgrade-request header-name)) header-name)))
-        proto-version HttpVersion/HTTP_1_1]
+        proto-version "HTTP/1.1"]
 
     (testing "successful-connect-ws"
       (with-redefs [ws-client/connect! (fn [_ instance-endpoint request-callback {:keys [middleware] :as request-properties}]
