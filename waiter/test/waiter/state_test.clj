@@ -997,6 +997,8 @@
       (testing (str "Test " name)
         (is (= expected (get-instability-issue failed-instances)))))))
 
+(defn- dummy-deployment-error-config-fn [_] nil)
+
 (deftest test-router-state-maintainer-removes-expired-instances
   (let [scheduler-state-chan (async/chan 1)
         router-chan (async/chan 1)
@@ -1015,7 +1017,7 @@
     (let [{:keys [router-state-push-mult]}
           (start-router-state-maintainer
             scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn
-            refresh-service-descriptions-fn deployment-error-config)]
+            refresh-service-descriptions-fn dummy-deployment-error-config-fn deployment-error-config)]
       (async/tap router-state-push-mult router-state-push-chan))
     (async/>!! router-chan {router-id (str "http://www." router-id ".com")})
     (async/>!! scheduler-state-chan [[:update-available-services {:available-service-ids #{service-id}
@@ -1063,7 +1065,7 @@
     (let [{:keys [notify-instance-killed-fn query-chan router-state-push-mult]}
           (start-router-state-maintainer
             scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn
-            refresh-service-descriptions-fn deployment-error-config)]
+            refresh-service-descriptions-fn dummy-deployment-error-config-fn deployment-error-config)]
       (async/tap router-state-push-mult router-state-push-chan)
       (async/>!! router-chan {router-id (str "http://www." router-id ".com")})
       (async/>!! scheduler-state-chan [[:update-available-services {:available-service-ids #{service-id}
@@ -1160,7 +1162,7 @@
 
       (let [{:keys [router-state-push-mult]}
             (start-router-state-maintainer scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn
-                                           refresh-service-descriptions-fn deployment-error-config)]
+                                           refresh-service-descriptions-fn dummy-deployment-error-config-fn deployment-error-config)]
         (async/tap router-state-push-mult router-state-push-chan))
 
 
@@ -1277,7 +1279,7 @@
 
       (let [{:keys [router-state-push-mult]}
             (start-router-state-maintainer scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn
-                                           refresh-service-descriptions-fn deployment-error-config)]
+                                           refresh-service-descriptions-fn dummy-deployment-error-config-fn deployment-error-config)]
         (async/tap router-state-push-mult router-state-push-chan))
 
       (async/>!! router-chan routers)

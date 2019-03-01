@@ -1184,7 +1184,7 @@
    Acts as the central access point for modifying this data for the router.
    Exposes the state of the router via a `query-state-fn` no-args function that is returned."
   [scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn
-   refresh-service-descriptions-fn deployment-error-config]
+   refresh-service-descriptions-fn service-id->deployment-error-config-fn default-deployment-error-config]
   (cid/with-correlation-id
     "router-state-maintainer"
     (let [killed-instances-to-keep 10
@@ -1278,6 +1278,8 @@
                                           service-id->starting-instances' (assoc service-id->starting-instances service-id starting-instances)
                                           service-id->failed-instances' (assoc service-id->failed-instances service-id failed-instances)
                                           service-id->instance-counts' (assoc service-id->instance-counts service-id instance-counts)
+                                          deployment-error-config (merge default-deployment-error-config
+                                                                         (service-id->deployment-error-config-fn service-id))
                                           deployment-error (get-deployment-error healthy-instances unhealthy-instances failed-instances deployment-error-config)
                                           service-id->deployment-error' (if deployment-error
                                                                           (assoc service-id->deployment-error service-id deployment-error)

@@ -96,6 +96,11 @@
       :result :deleted|:error|:no-such-service-exists
       :success true|false}")
 
+  (deployment-error-config [this ^String service-id]
+    "Returns nil, or a map containing a subset of the global :deployment-error-config options.
+     These options should be merged (to override) the global :deployment-error-config options
+     in the waiter.state module when computing the deployment errors for the given service-id.")
+
   (scale-service [this ^String service-id target-instances force]
     "Instructs the scheduler to scale up/down instances of the specified service to the specified number
      of instances. The force flag can be used enforce the scaling by ignoring previous pending operations.")

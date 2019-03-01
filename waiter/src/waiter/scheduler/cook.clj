@@ -437,6 +437,9 @@
        :result :no-such-service-exists
        :success false}))
 
+  (deployment-error-config [_ _]
+    (comment ":deployment-error-config overrides currently not supported."))
+
   (scale-service [this service-id scale-to-instances _]
     (if (scheduler/service-exists? this service-id)
       (let [result (try

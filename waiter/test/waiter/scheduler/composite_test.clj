@@ -68,6 +68,9 @@
   (delete-service [_ service-id]
     {:identifier service-id :operation :delete :scheduler-name scheduler-name})
 
+  (deployment-error-config [_ service-id]
+    {:scheduler-name scheduler-name})
+
   (scale-service [_ service-id target-instances force]
     {:identifier (str service-id ":" target-instances ":" force) :operation :scale :scheduler-name scheduler-name})
 
@@ -327,6 +330,11 @@
                     :operation :delete
                     :scheduler-name (service-id->scheduler-id service-id)}
                    (scheduler/delete-service composite-scheduler service-id)))))
+
+        (testing "deployment-error-config"
+          (doseq [service-id all-service-ids]
+            (is (= {:scheduler-name (service-id->scheduler-id service-id)}
+                   (scheduler/deployment-error-config composite-scheduler service-id)))))
 
         (testing "scale-service"
           (doseq [service-id all-service-ids]

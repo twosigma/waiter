@@ -79,6 +79,11 @@
         service-id->scheduler
         (scheduler/delete-service service-id)))
 
+  (deployment-error-config [_ service-id]
+    (-> service-id
+        service-id->scheduler
+        (scheduler/deployment-error-config service-id)))
+
   (scale-service [_ service-id target-instances force]
     (-> service-id
         service-id->scheduler
