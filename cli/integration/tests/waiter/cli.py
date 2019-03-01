@@ -48,7 +48,7 @@ def sh(cmd, stdin=None, env=None, wait_for_exit=True):
 
 def command():
     """If the WAITER_TEST_CLI_COMMAND environment variable is set, returns its value, otherwise 'waiter'"""
-    return os.environ['WAITER_TEST_CLI_COMMAND'] if 'WAITER_TEST_CLI_COMMAND' in os.environ else 'waiter'
+    return os.getenv('WAITER_TEST_CLI_COMMAND', 'waiter')
 
 
 def cli(args, waiter_url=None, flags=None, stdin=None, env=None, wait_for_exit=True):
