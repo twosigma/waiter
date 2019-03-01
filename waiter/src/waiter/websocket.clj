@@ -37,7 +37,7 @@
             [waiter.util.ring-utils :as ru])
   (:import (java.net HttpCookie SocketTimeoutException URLDecoder URLEncoder)
            (java.nio ByteBuffer)
-           (org.eclipse.jetty.websocket.api MessageTooLargeException UpgradeRequest)
+           (org.eclipse.jetty.websocket.api MessageTooLargeException StatusCode UpgradeRequest)
            (org.eclipse.jetty.websocket.common WebSocketSession)
            (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse)))
 
@@ -282,18 +282,27 @@
                   (when (integer? return-code-or-exception)
                     ;; Close status codes https://tools.ietf.org/html/rfc6455#section-7.4
                     (case (int return-code-or-exception)
-                      1000 "closed normally"
-                      1002 "protocol error"
-                      1003 "unsupported input data"
-                      1006 "closed abnormally"
+                      StatusCode/NORMAL "closed normally"
+                      StatusCode/SHUTDOWN "shutdown"
+                      StatusCode/PROTOCOL "protocol error"
+                      StatusCode/BAD_DATA "unsupported input data"
+                      StatusCode/ABNORMAL "closed abnormally"
+                      StatusCode/BAD_PAYLOAD "unsupported payload"
+                      StatusCode/POLICY_VIOLATION "policy violation"
                       (str "status code " return-code-or-exception))))
         (if (integer? return-code-or-exception)
           (on-close-callback return-code-or-exception)
           (on-close-callback server-termination-on-unexpected-condition))
-        (let [close-code (condp = ctrl-code
-                           nil :connection-closed
-                           :qbits.jet.websocket/close :success
-                           :qbits.jet.websocket/error
+        (let [close-code (cond
+                           (or (nil? ctrl-code)
+                               (and (integer? return-code-or-exception)
+                                    (StatusCode/isFatal return-code-or-exception)))
+                           :connection-closed
+
+                           (= ctrl-code :qbits.jet.websocket/close)
+                           :success
+
+                           (= ctrl-code :qbits.jet.websocket/error)
                            (let [error-code (cond
                                               (instance? MessageTooLargeException return-code-or-exception) :generic-error
                                               (instance? SocketTimeoutException return-code-or-exception) :socket-timeout
@@ -301,7 +310,8 @@
                              (deliver reservation-status-promise error-code)
                              (log/error return-code-or-exception "error from" (name source) "websocket request")
                              error-code)
-                           :unknown)]
+
+                           :else :unknown)]
           (async/>! request-close-promise-chan [source close-code return-code-or-exception close-message]))))))
 
 (defn- close-client-session!
@@ -310,9 +320,8 @@
   (try
     (let [^WebSocketSession client-session (-> request :ws (.session))]
       (when (some-> client-session .isOpen)
-        (when (some-> client-session .isOpen)
-          (log/info "closing client session with code" status-code close-message)
-          (.close client-session status-code close-message))))
+        (log/info "closing client session with code" status-code close-message)
+        (.close client-session status-code close-message)))
     (catch Exception e
       (log/error e "error in explicitly closing client websocket using" status-code close-message))))
 
@@ -366,8 +375,7 @@
     (->> (fn instance-on-close-callback [status]
            (counters/inc! (metrics/service-counter service-id "response-status" (str status)))
            (statsd/inc! metric-group (str "response_status_" status))
-           (if (successful? status)
-             (deliver reservation-status-promise (if (successful? status) :success :instance-error))))
+           (deliver reservation-status-promise (if (successful? status) :success :instance-error)))
          (watch-ctrl-chan :instance (:ctrl-mult response) reservation-status-promise request-close-promise-chan))
 
     (try
