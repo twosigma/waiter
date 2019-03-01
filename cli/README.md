@@ -12,7 +12,7 @@ This will install the `waiter` command on your system.
 
 ### Configuration
 
-In order to use the Waiter CLI, you’ll need a configuration file. 
+In order to use the Waiter CLI, you'll need a configuration file. 
 `waiter` looks first for a `.waiter.json` file in the current directory, and then for a `.waiter.json` file in your home directory. 
 The path to this file may also be provided manually via the command line with the `--config` option.
 
