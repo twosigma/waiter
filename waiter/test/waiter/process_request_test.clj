@@ -28,8 +28,7 @@
             [waiter.process-request :refer :all]
             [waiter.statsd :as statsd])
   (:import (java.io ByteArrayOutputStream)
-           (org.eclipse.jetty.client HttpClient)
-           (org.eclipse.jetty.http HttpVersion)))
+           (org.eclipse.jetty.client HttpClient)))
 
 (deftest test-prepare-request-properties
   (let [test-cases (list
@@ -264,18 +263,6 @@
             {:status 202 :headers {"location" "http://www.example.com:5678/retrieve/result/location"}}
             "http://www.example.com:1234/query/for/status")))))
 
-(deftest test-protocol->http-version
-  (is (nil? (protocol->http-version nil)))
-  (is (nil? (protocol->http-version "")))
-  (is (nil? (protocol->http-version "Http/0.9")))
-  (is (= HttpVersion/HTTP_0_9 (protocol->http-version "HTTP/0.9")))
-  (is (nil? (protocol->http-version "http/1.0")))
-  (is (= HttpVersion/HTTP_1_0 (protocol->http-version "HTTP/1.0")))
-  (is (= HttpVersion/HTTP_1_1 (protocol->http-version "HTTP/1.1")))
-  (is (= HttpVersion/HTTP_2 (protocol->http-version "HTTP/2.0")))
-  (is (nil? (protocol->http-version "HTTP/2.1")))
-  (is (nil? (protocol->http-version "HTTP/3.0"))))
-
 (deftest test-make-request
   (let [instance {:service-id "test-service-id", :host "example.com", :port 8080, :protocol "proto"}
         request {:authorization/principal "test-user@test.com"
@@ -341,7 +328,7 @@
                                                    (merge {"x-waiter-auth-principal"          "test-user"
                                                            "x-waiter-authenticated-principal" "test-user@test.com"}))
                                                (:headers request-config)))))
-          proto-version HttpVersion/HTTP_1_1]
+          proto-version "HTTP/1.1"]
       (testing "make-request:headers"
         (let [request-method-fn-call-counter (atom 0)]
           (with-redefs [http/request (http-request-mock-factory passthrough-headers request-method-fn-call-counter)]
