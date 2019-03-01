@@ -7,7 +7,6 @@ set -ev
 
 pyenv global 3.6
 
-python --version
 python3 --version
 
 # Explicitly uninstall cli
