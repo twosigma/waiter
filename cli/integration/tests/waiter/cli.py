@@ -53,9 +53,9 @@ def command():
 
 def cli(args, waiter_url=None, flags=None, stdin=None, env=None, wait_for_exit=True):
     """Runs a CLI command with the given URL, flags, and stdin"""
-    url_flag = f'--url {waiter_url} ' if waiter_url else ''
-    other_flags = f'{flags} ' if flags else ''
-    cp = sh(f'{command()} {url_flag}{other_flags}{args}', stdin, env, wait_for_exit)
+    url_flag = f'--url {waiter_url}' if waiter_url else ''
+    other_flags = f'{flags}' if flags else ''
+    cp = sh(f'{command()} {url_flag} {other_flags} {args}', stdin, env, wait_for_exit)
     return cp
 
 
