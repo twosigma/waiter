@@ -11,7 +11,7 @@ export WAITER_PORT=${1:-9091}
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-$(${MINIMESOS_CMD:-minimesos} info | grep MINIMESOS)
+$(${MINIMESOS_CMD:-${DIR}/ci/minimesos} info | grep MINIMESOS)
 EXIT_CODE=$?
 if [ ${EXIT_CODE} -eq 0 ]
 then
