@@ -300,7 +300,7 @@
    Grouped by liveness status, i.e.: {:active-instances [...] :failed-instances [...] :killed-instances [...]}"
   [{:keys [service-id->failed-instances-transient-store] :as scheduler} {service-id :id :as basic-service-info}]
   {:active-instances (get-service-instances! scheduler basic-service-info)
-   :failed-instances (-> @service-id->failed-instances-transient-store (get service-id []) vals vec)})
+   :failed-instances (-> @service-id->failed-instances-transient-store (get service-id) vals vec)})
 
 (defn- patch-object-json
   "Make a JSON-patch request on a given Kubernetes object."
@@ -547,6 +547,11 @@
                   {:service-id service-id})
         {:result :error
          :message "Internal error while deleting service"})))
+
+  (deployment-error-config [_ _]
+    ;; The min-hosts count currently MUST be 1 on Kubernetes since a failing service's
+    ;; container restarts repeadly within a single Pod, normally not switching hosts.
+    {:min-hosts 1})
 
   (scale-service [this service-id scale-to-instances _]
     (ss/try+

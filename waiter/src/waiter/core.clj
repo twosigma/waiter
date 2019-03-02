@@ -1023,14 +1023,17 @@
                                                                                 inter-router-metrics-idle-timeout-ms metrics-sync-interval-ms
                                                                                 websocket-client bytes-encryptor websocket-request-auth-cookie-attacher)}))
    :router-state-maintainer (pc/fnk [[:routines refresh-service-descriptions-fn service-id->service-description-fn]
+                                     [:scheduler scheduler]
                                      [:settings deployment-error-config]
                                      [:state router-id scheduler-state-chan]
                                      router-list-maintainer]
                               (let [exit-chan (async/chan)
                                     router-chan (async/tap (:router-mult-chan router-list-maintainer) (au/latest-chan))
+                                    service-id->deployment-error-config-fn #(scheduler/deployment-error-config scheduler %)
                                     maintainer (state/start-router-state-maintainer
                                                  scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn
-                                                 refresh-service-descriptions-fn deployment-error-config)]
+                                                 refresh-service-descriptions-fn service-id->deployment-error-config-fn
+                                                 deployment-error-config)]
                                 {:exit-chan exit-chan
                                  :maintainer maintainer}))
    :scheduler-broken-services-gc (pc/fnk [[:curator gc-state-reader-fn gc-state-writer-fn leader?-fn]

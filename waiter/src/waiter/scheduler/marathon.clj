@@ -409,6 +409,9 @@
         (log/warn "[delete-service] Marathon unavailable (Error 503).")
         (log/debug (:throwable &throw-context) "[delete-service] Marathon unavailable"))))
 
+  (deployment-error-config [_ _]
+    (comment ":deployment-error-config overrides currently not supported."))
+
   (scale-service [_ service-id scale-to-instances force]
     (ss/try+
       (scheduler/suppress-transient-server-exceptions
