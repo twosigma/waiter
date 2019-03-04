@@ -252,7 +252,7 @@
         (finally
           (delete-service waiter-url waiter-headers))))))
 
-(deftest ^:parallel ^:integration-fast test-request-instance-death
+(deftest ^:parallel ^:integration-slow test-request-instance-death
   (testing-using-waiter-url
     (let [auth-cookie-value (auth-cookie waiter-url)
           send-success-after-timeout-atom (atom true)
@@ -264,11 +264,18 @@
       (is auth-cookie-value)
       (try
         (let [response-promise (promise)
-              client http-client]
+              ctrl-promise (promise)
+              client http-client
+              websocket-client (websocket-client-factory)]
+          (doto (.getPolicy websocket-client)
+            (.setAsyncWriteTimeout (-> 1 t/minutes t/in-millis))
+            (.setIdleTimeout (-> 2 t/minutes t/in-millis)))
           (ws-client/connect!
-            (websocket-client-factory)
+            websocket-client
             (ws-url waiter-url "/websocket-timeout")
-            (fn [{:keys [in out]}]
+            (fn [{:keys [ctrl in out]}]
+              (async/go
+                (deliver ctrl-promise (async/<! ctrl)))
               (async/go
                 (async/>! out "hello")
                 (async/<! in) ;; kitchen message
@@ -286,6 +293,8 @@
                                            "x-waiter-timeout" "20000")]
                              (websocket/add-headers-to-upgrade-request! request headers))
                            (add-auth-cookie request auth-cookie-value))})
+          (is (= [:qbits.jet.websocket/close 1006 "Disconnected"]
+                 (deref ctrl-promise default-timeout-period :timed-out)))
           (is (= :done (deref response-promise default-timeout-period :timed-out))))
         (is (not @send-success-after-timeout-atom))
         (finally
@@ -300,7 +309,6 @@
           ws-max-text-message-size' (+ 2048 ws-max-text-message-size)
           auth-cookie-value (auth-cookie waiter-url)
           process-mem 1024
-          kitchen-mem (- process-mem 64)
           waiter-headers (-> (kitchen-request-headers)
                              (assoc :x-waiter-mem process-mem
                                     :x-waiter-metric-group "test-ws-support"
@@ -431,14 +439,14 @@
       (log/error e "error in executing websocket request for test")
       (is false (str "websocket streaming iteration threw an error:" (.getMessage e))))))
 
-(deftest ^:parallel ^:integration-fast test-request-parallel-streaming
-  ;; streams requests in parallel abd verifies all bytes were transferred correctly and
+(deftest ^:parallel ^:integration-slow test-request-parallel-streaming
+  ;; streams requests in parallel and verifies all bytes were transferred correctly and
   ;; they were closed with status codes 1000 and 1006 (due to an issue with jet closing requests).
   (testing-using-waiter-url
     (let [auth-cookie-value (auth-cookie waiter-url)
           _ (is auth-cookie-value)
           all-iteration-result-atom (atom {})
-          concurrency-level 6
+          concurrency-level 3
           waiter-headers (assoc (kitchen-request-headers)
                            "x-waiter-metric-group" "test-ws-support"
                            "x-waiter-name" (rand-name)
@@ -446,7 +454,7 @@
                            "x-waiter-scale-up-factor" 0.99
                            "x-waiter-scale-down-factor" 0.001)
           service-id (retrieve-service-id waiter-url waiter-headers)
-          num-threads 10
+          num-threads 4
           iterations-per-thread 3
           num-requests (* num-threads iterations-per-thread)
           websocket-client (websocket-client-factory)]
