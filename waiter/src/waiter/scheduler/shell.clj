@@ -162,7 +162,8 @@
 
 (defn launch-instance
   "Launches a new process for the given service-id"
-  [service-id {:strs [backend-proto cmd ports]} working-dir-base-path environment port->reservation-atom port-range]
+  [service-id {:strs [backend-proto health-check-port-index cmd ports]}
+   working-dir-base-path environment port->reservation-atom port-range]
   (when-not cmd
     (throw (ex-info "The command to run was not supplied" {:service-id service-id})))
   (let [reserved-ports (reserve-ports! ports port->reservation-atom port-range)
@@ -178,6 +179,7 @@
        :service-id service-id
        :started-at started-at
        :healthy? nil
+       :health-check-port-index health-check-port-index
        :host (str "127.0.0." (inc (rand-int 10)))
        :port (first reserved-ports)
        :extra-ports (-> reserved-ports rest vec)

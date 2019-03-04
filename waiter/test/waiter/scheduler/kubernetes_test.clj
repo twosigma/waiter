@@ -78,6 +78,7 @@
    "grace-period-secs" 7
    "health-check-interval-secs" 10
    "health-check-max-consecutive-failures" 2
+   "health-check-port-index" 0
    "mem" 1024
    "min-instances" 1
    "ports" 2
@@ -104,6 +105,17 @@
        (clojure.pprint/pprint
          (clojure.data/diff expected# actual#)))
      (is (= expected# actual#))))
+
+(deftest replicaset-spec-health-check-port-index
+  (let [service-description (assoc dummy-service-description "health-check-port-index"  2 "ports" 3)
+        scheduler (make-dummy-scheduler ["test-service-id"]
+                                        {:service-id->service-description-fn (constantly service-description)})
+        replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description)]
+    (is (= {:waiter/health-check-port-index "2"
+            :waiter/port-count "3"
+            :waiter/protocol "http"
+            :waiter/service-id "test-service-id"}
+           (get-in replicaset-spec [:spec :template :metadata :annotations])))))
 
 (deftest replicaset-spec-no-image
   (let [scheduler (make-dummy-scheduler ["test-service-id"])

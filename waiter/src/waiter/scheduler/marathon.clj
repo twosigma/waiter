@@ -160,7 +160,7 @@
   [marathon-response service-keys retrieve-framework-id-fn mesos-api service-id->failed-instances-transient-store
    service-id->service-description]
   (let [service-id (remove-slash-prefix (get-in marathon-response (conj service-keys :id)))
-        {:strs [backend-proto]} (service-id->service-description service-id)
+        {:strs [backend-proto health-check-port-index]} (service-id->service-description service-id)
         framework-id (retrieve-framework-id-fn)
         common-extractor-fn (fn [instance-id marathon-task-response]
                               (let [{:keys [appId host message slaveId]} marathon-task-response
@@ -199,6 +199,7 @@
                                   {:id instance-id
                                    :started-at (some-> % :startedAt (du/str-to-date formatter-marathon))
                                    :healthy? (healthy?-fn %)
+                                   :health-check-port-index health-check-port-index
                                    ;; first port must be used for the web server, extra ports can be used freely.
                                    :port (-> % :ports first)
                                    :extra-ports (-> % :ports rest vec)})))
@@ -252,8 +253,9 @@
   "Returns the descriptor to be used by Marathon to create new apps."
   [home-path-prefix service-id->password-fn {:keys [service-id service-description]}]
   (let [health-check-url (sd/service-description->health-check-url service-description)
-        {:strs [backend-proto cmd cmd-type cpus disk grace-period-secs health-check-interval-secs
-                health-check-max-consecutive-failures mem ports restart-backoff-factor run-as-user]} service-description
+        {:strs [backend-proto cmd cmd-type cpus disk grace-period-secs
+                health-check-interval-secs health-check-max-consecutive-failures health-check-port-index
+                mem ports restart-backoff-factor run-as-user]} service-description
         home-path (str home-path-prefix run-as-user)]
     (when (= "docker" cmd-type)
       (throw (ex-info "Unsupported command type on service"
@@ -272,7 +274,7 @@
                      :path health-check-url
                      :gracePeriodSeconds grace-period-secs
                      :intervalSeconds health-check-interval-secs
-                     :portIndex 0
+                     :portIndex health-check-port-index
                      :timeoutSeconds 20
                      :maxConsecutiveFailures health-check-max-consecutive-failures}]
      :backoffFactor restart-backoff-factor

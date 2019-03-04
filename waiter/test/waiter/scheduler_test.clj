@@ -61,6 +61,7 @@
                         "www.scheduler-test.example.com"
                         1234
                         []
+                        0
                         "proto"
                         "log-dir"
                         "instance-message")]
@@ -260,9 +261,9 @@
         timeout-chan (async/chan 1)
         service-id->service-description-fn (fn [id] {"health-check-url" (str "/" id)})
         started-at (t/minus (clock) (t/hours 1))
-        instance1 (->ServiceInstance "s1.i1" "s1" started-at nil nil #{} nil "host" 123 [] "proto" "/log" "test")
-        instance2 (->ServiceInstance "s1.i2" "s1" started-at true nil #{} nil "host" 123 [] "proto" "/log" "test")
-        instance3 (->ServiceInstance "s1.i3" "s1" started-at nil nil #{} nil "host" 123 [] "proto" "/log" "test")
+        instance1 (->ServiceInstance "s1.i1" "s1" started-at nil nil #{} nil "host" 123 [] 0 "proto" "/log" "test")
+        instance2 (->ServiceInstance "s1.i2" "s1" started-at true nil #{} nil "host" 123 [] 0 "proto" "/log" "test")
+        instance3 (->ServiceInstance "s1.i3" "s1" started-at nil nil #{} nil "host" 123 [] 0 "proto" "/log" "test")
         get-service->instances (constantly
                                  {(->Service "s1" {} {} {}) {:active-instances [instance1 instance2 instance3]
                                                              :failed-instances []}

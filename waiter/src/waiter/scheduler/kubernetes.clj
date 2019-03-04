@@ -202,6 +202,7 @@
         {:extra-ports (->> (get-in pod [:metadata :annotations :waiter/port-count])
                            Integer/parseInt range next (mapv #(+ port0 %)))
          :healthy? (get-in pod [:status :containerStatuses 0 :ready] false)
+         :health-check-port-index (Integer/parseInt (get-in pod [:metadata :annotations :waiter/health-check-port-index] "0"))
          :host (get-in pod [:status :podIP])
          :id (pod->instance-id scheduler pod)
          :k8s/app-name (get-in pod [:metadata :labels :app])
@@ -662,9 +663,8 @@
   [{:keys [cluster-name fileserver pod-base-port pod-sigkill-delay-secs
            replicaset-api-version service-id->password-fn] :as scheduler}
    service-id
-   {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs image
-           health-check-max-consecutive-failures mem min-instances ports
-           run-as-user] :as service-description}
+   {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs health-check-max-consecutive-failures
+           health-check-port-index image mem min-instances ports run-as-user] :as service-description}
    {:keys [default-container-image log-bucket-url] :as context}]
   (let [work-path (str "/home/" run-as-user)
         home-path (str work-path "/latest")
@@ -677,6 +677,7 @@
         ;; Make $PORT0 value pseudo-random to ensure clients can't hardcode it.
         ;; Helps maintain compatibility with Marathon, where port assignment is dynamic.
         port0 (-> service-id hash (mod 100) (* 10) (+ pod-base-port))
+        health-check-port (+ port0 health-check-port-index)
         env (into [;; We set these two "MESOS_*" variables to improve interoperability.
                    ;; New clients should prefer using WAITER_SANDBOX.
                    {:name "MESOS_DIRECTORY" :value home-path}
@@ -700,8 +701,7 @@
         backend-protocol-lower (string/lower-case backend-proto)
         backend-protocol-upper (string/upper-case backend-proto)
         health-check-url (sd/service-description->health-check-url service-description)
-        memory (str mem "Mi")
-        ssl? (= "https" backend-protocol-lower)]
+        memory (str mem "Mi")]
     (cond->
       {:kind "ReplicaSet"
        :apiVersion replicaset-api-version
@@ -712,7 +712,8 @@
        :spec {:replicas min-instances
               :selector {:matchLabels {:app k8s-name
                                        :waiter-cluster cluster-name}}
-              :template {:metadata {:annotations {:waiter/port-count (str ports)
+              :template {:metadata {:annotations {:waiter/health-check-port-index (str health-check-port-index)
+                                                  :waiter/port-count (str ports)
                                                   :waiter/protocol backend-protocol-lower
                                                   :waiter/service-id service-id}
                                     :labels {:app k8s-name
@@ -722,7 +723,7 @@
                                               :image (or image default-container-image)
                                               :imagePullPolicy "IfNotPresent"
                                               :livenessProbe {:httpGet {:path health-check-url
-                                                                        :port port0
+                                                                        :port health-check-port
                                                                         :scheme backend-protocol-upper}
                                                               ;; We increment the threshold value to match Marathon behavior.
                                                               ;; Marathon treats this as a retry count,
@@ -734,7 +735,7 @@
                                               :name "waiter-app"
                                               :ports [{:containerPort port0}]
                                               :readinessProbe {:httpGet {:path health-check-url
-                                                                         :port port0
+                                                                         :port health-check-port
                                                                          :scheme backend-protocol-upper}
                                                                :failureThreshold 1
                                                                :periodSeconds health-check-interval-secs
