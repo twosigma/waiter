@@ -65,12 +65,13 @@
    ^String host
    port
    extra-ports
+   health-check-port-index
    ^String protocol
    ^String log-directory
    ^String message])
 
 (defn make-ServiceInstance [value-map]
-  (map->ServiceInstance (merge {:extra-ports [] :flags #{}} value-map)))
+  (map->ServiceInstance (merge {:extra-ports [] :flags #{} :health-check-port-index 0} value-map)))
 
 (defprotocol ServiceScheduler
 
@@ -200,8 +201,12 @@
 
 (defn health-check-url
   "Returns the health check url which can be queried on the service instance."
-  [service-instance health-check-path]
-  (end-point-url service-instance health-check-path))
+  [{:keys [health-check-port-index extra-ports] :as service-instance} health-check-path]
+  (if (zero? health-check-port-index)
+    (end-point-url service-instance health-check-path)
+    (let [health-check-port (->> health-check-port-index dec (nth extra-ports))]
+      (-> (assoc service-instance :port health-check-port)
+          (end-point-url health-check-path)))))
 
 (defn log-health-check-issues
   "Logs messages based on the type of error (if any) encountered by a health check"

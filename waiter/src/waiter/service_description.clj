@@ -78,6 +78,7 @@
    (s/optional-key "grace-period-secs") (s/both s/Int (s/pred #(<= 1 % (t/in-seconds (t/minutes 60))) 'at-most-60-minutes))
    (s/optional-key "health-check-interval-secs") (s/both s/Int (s/pred #(<= 5 % 60) 'between-5-seconds-and-1-minute))
    (s/optional-key "health-check-max-consecutive-failures") (s/both s/Int (s/pred #(<= 1 % 15) 'at-most-fifteen))
+   (s/optional-key "health-check-port-index") schema/valid-health-check-port-index
    (s/optional-key "health-check-url") schema/non-empty-string
    (s/optional-key "idle-timeout-mins") (s/both s/Int (s/pred #(<= 1 % (t/in-minutes (t/days 30))) 'between-1-minute-and-30-days))
    (s/optional-key "interstitial-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/minutes 60))) 'at-most-60-minutes))
@@ -117,8 +118,8 @@
     "max-instances" "restart-backoff-factor" "scale-down-factor" "scale-factor" "scale-up-factor"})
 
 (def ^:const service-non-override-keys
-  #{"allowed-params" "backend-proto" "cmd" "cmd-type" "cpus" "env" "health-check-url" "image" "mem" "metadata"
-    "metric-group" "name" "permitted-user" "ports" "run-as-user" "scheduler" "version"})
+  #{"allowed-params" "backend-proto" "cmd" "cmd-type" "cpus" "env" "health-check-port-index" "health-check-url"
+    "image" "mem" "metadata" "metric-group" "name" "permitted-user" "ports" "run-as-user" "scheduler" "version"})
 
 ; keys used as parameters in the service description
 (def ^:const service-parameter-keys
@@ -414,6 +415,9 @@
                                              parameter->issues :grace-period-secs
                                              "grace-period-secs must be an integer in the range [1, 3600].")
                                            (attach-error-message-for-parameter
+                                             parameter->issues :health-check-port-index
+                                             "health-check-port-index  must be an integer in the range [0, 9].")
+                                           (attach-error-message-for-parameter
                                              parameter->issues :health-check-url "health-check-url must be a non-empty string.")
                                            (attach-error-message-for-parameter
                                              parameter->issues :idle-timeout-mins
@@ -481,6 +485,14 @@
       (when (and (not (str/blank? cmd-type)) (not ((:valid-cmd-types args-map) cmd-type)))
         (sling/throw+ {:type :service-description-error
                        :friendly-error-message (str "Command type " cmd-type " is not supported")
+                       :status 400})))
+
+    ; validate the health-check-port-index
+    (let [{:strs [health-check-port-index ports]} service-description-to-use]
+      (when (and health-check-port-index ports (>= health-check-port-index ports))
+        (sling/throw+ {:type :service-description-error
+                       :friendly-error-message (str "The health check port index (" health-check-port-index ") "
+                                                    "must be smaller than ports (" ports ")")
                        :status 400})))))
 
 (defprotocol ServiceDescriptionBuilder

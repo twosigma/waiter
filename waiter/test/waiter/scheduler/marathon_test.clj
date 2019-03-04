@@ -149,7 +149,8 @@
                                                   :protocol "https",
                                                   :service-id "test-app-1234",
                                                   :started-at (du/str-to-date "2014-09-12T23:23:41.711Z" formatter-marathon)}))}
-                          :service-id->service-description {"test-app-1234" {"backend-proto" "https"}}},
+                          :service-id->service-description {"test-app-1234" {"backend-proto" "https"
+                                                                             "health-check-port-index" 0}}},
                          {
                           :name "response-data->service-instances valid response without task failure"
                           :marathon-response
@@ -235,7 +236,8 @@
                                                   :service-id "test-app-1234",
                                                   :started-at (du/str-to-date "2014-09-13T00:24:46.965Z" formatter-marathon)}))
                            :failed-instances []}
-                          :service-id->service-description {"test-app-1234" {"backend-proto" "http"}}})]
+                          :service-id->service-description {"test-app-1234" {"backend-proto" "http"
+                                                                             "health-check-port-index" 0}}})]
     (doseq [{:keys [expected-response marathon-response name service-id->service-description]} test-cases]
       (testing (str "Test " name)
         (let [framework-id (:framework-id marathon-response)
@@ -390,8 +392,8 @@
                          :started-at (du/str-to-date "2014-09-12T23:23:41.711Z" formatter-marathon)
                          :message "Abnormal executor termination"}))})
         service-id->failed-instances-transient-store (atom {})
-        service-id->service-description {"test-app-1234" {"backend-proto" "https"}
-                                         "test-app-6789" {"backend-proto" "http"}}
+        service-id->service-description {"test-app-1234" {"backend-proto" "https" "health-check-port-index" 0}
+                                         "test-app-6789" {"backend-proto" "http" "health-check-port-index" 0}}
         actual (response-data->service->service-instances
                  input (fn [] nil) nil service-id->failed-instances-transient-store service-id->service-description)]
     (is (= expected actual))
@@ -625,11 +627,20 @@
                                  "grace-period-secs" 111
                                  "health-check-interval-secs" 10
                                  "health-check-max-consecutive-failures" 5
+                                 "health-check-port-index" 0
                                  "env" {"FOO" "bar"
                                         "BAZ" "quux"}}
             actual (marathon-descriptor home-path-prefix service-id->password-fn
                                         {:service-id service-id, :service-description service-description})]
-        (is (= expected actual))))))
+        (is (= expected actual))
+
+        (testing "health-check-port-index of 2"
+          (is (= (-> expected
+                     (assoc-in [:healthChecks 0 :portIndex] 2)
+                     (assoc :ports [0 0 0]))
+                 (->> (assoc service-description "health-check-port-index" 2 "ports" 3)
+                      (assoc {:service-id service-id} :service-description)
+                      (marathon-descriptor home-path-prefix service-id->password-fn)))))))))
 
 (defn- create-marathon-scheduler
   [& {:as marathon-config}]

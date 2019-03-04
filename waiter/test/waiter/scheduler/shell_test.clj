@@ -45,6 +45,7 @@
                                                   "cmd" "ls"
                                                   "cpus" 2
                                                   "grace-period-secs" 10
+                                                  "health-check-port-index" 0
                                                   "health-check-url" "/health-check-url"
                                                   "mem" 32
                                                   "ports" 1}
@@ -137,7 +138,32 @@
         (with-redefs [launch-process (fn [_ _ command environment]
                                        (is (= "dummy-command" command))
                                        (is (every? #(contains? environment (str "PORT" %)) (range num-ports))))]
-          (let [{:keys [extra-ports port]} (launch-instance "baz" {"backend-proto" "http" "cmd" "dummy-command" "ports" num-ports "mem" 32} (work-dir) {} (atom {}) port-range)]
+          (let [service-description {"backend-proto" "http"
+                                     "cmd" "dummy-command"
+                                     "health-check-port-index" 0
+                                     "mem" 32
+                                     "ports" num-ports}
+                {:keys [extra-ports health-check-port-index port]}
+                (launch-instance "baz" service-description (work-dir) {} (atom {}) port-range)]
+            (is (= health-check-port-index 0))
+            (is (= port-range-start port))
+            (is (= (map #(+ % port-range-start) (range 1 num-ports)) extra-ports))))))
+
+    (testing "with custom health check index"
+      (let [num-ports 8
+            port-range-start 5100
+            port-range [port-range-start (+ port-range-start 100)]]
+        (with-redefs [launch-process (fn [_ _ command environment]
+                                       (is (= "dummy-command" command))
+                                       (is (every? #(contains? environment (str "PORT" %)) (range num-ports))))]
+          (let [service-description {"backend-proto" "http"
+                                     "cmd" "dummy-command"
+                                     "health-check-port-index" 3
+                                     "mem" 32
+                                     "ports" num-ports}
+                {:keys [extra-ports health-check-port-index port]}
+                (launch-instance "baz" service-description (work-dir) {} (atom {}) port-range)]
+            (is (= health-check-port-index 3))
             (is (= port-range-start port))
             (is (= (map #(+ % port-range-start) (range 1 num-ports)) extra-ports))))))))
 
@@ -382,6 +408,7 @@
                                         "cmd" "sleep 10000"
                                         "cpus" 2
                                         "grace-period-secs" 10
+                                        "health-check-port-index" 0
                                         "health-check-url" "/health-check-url"
                                         "mem" 32
                                         "ports" 1}
@@ -402,6 +429,7 @@
                                         "cmd" "sleep 10000"
                                         "cpus" 2
                                         "grace-period-secs" 10
+                                        "health-check-port-index" 0
                                         "health-check-url" "/health-check-url"
                                         "mem" 32
                                         "ports" 1}
@@ -422,6 +450,7 @@
                                         "cmd" "sleep 10000"
                                         "cpus" 2
                                         "grace-period-secs" 10
+                                        "health-check-port-index" 0
                                         "health-check-url" "/health-check-url"
                                         "mem" 32
                                         "ports" 1}
@@ -458,6 +487,7 @@
                                                           "cmd" "ls"
                                                           "cpus" 2
                                                           "grace-period-secs" 10
+                                                          "health-check-port-index" 0
                                                           "health-check-url" "/health-check-url"
                                                           "mem" 32
                                                           "ports" 1}

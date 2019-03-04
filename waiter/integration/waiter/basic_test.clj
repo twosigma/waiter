@@ -270,6 +270,28 @@
 
       (delete-service waiter-url service-id))))
 
+(deftest ^:parallel ^:integration-fast test-basic-health-check-port-index
+  (testing-using-waiter-url
+    (let [generate-server (fn [status port-env]
+                            (str "while true; do "
+                                 "{ echo -e 'HTTP/1.1 " status " OK\\r\\n\\r\\nFrom " port-env ": ${" port-env "}'; "
+                                 " sleep 1; } | nc -l ${" port-env "}; done"))
+          headers {:x-waiter-cmd (str (generate-server 400 "PORT0")  " & " (generate-server 200 "PORT1"))
+                   :x-waiter-name (rand-name)
+                   :x-waiter-health-check-port-index 1
+                   :x-waiter-ports 2}
+          {:keys [body service-id] :as response} (make-request-with-debug-info headers #(make-shell-request waiter-url %))]
+      (is (not (nil? service-id)))
+      (assert-response-status response 400)
+      (is (str/includes? (str body) "From PORT0"))
+
+      (let [service-settings (service-settings waiter-url service-id)]
+        (is (= (:x-waiter-cmd headers) (get-in service-settings [:service-description :cmd])))
+        (is (= 1 (get-in service-settings [:service-description :health-check-port-index])))
+        (is (every? #(= 1 (:health-check-port-index %)) (get-in service-settings [:instances :active-instance]))))
+
+      (delete-service waiter-url service-id))))
+
 (deftest ^:parallel ^:integration-fast test-basic-unsupported-command-type
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)

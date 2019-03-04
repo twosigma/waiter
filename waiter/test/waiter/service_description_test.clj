@@ -28,258 +28,89 @@
            (org.joda.time DateTime)))
 
 (deftest test-validate-service-description-schema
-  (is (nil? (s/check service-description-schema {"cpus" 1
-                                                 "mem" 1
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "run-as-user" "test-user"})))
-  (is (nil? (s/check service-description-schema {"cpus" 1.5
-                                                 "mem" 1.5
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "run-as-user" "test-user"})))
-  (is (nil? (s/check service-description-schema {"cpus" 1
-                                                 "mem" 1
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "run-as-user" "test-user"
-                                                 "name" "testname123"
-                                                 "health-check-url" "http://www.example.com/test/status"
-                                                 "permitted-user" "testuser2"
-                                                 "disk" 1
-                                                 "ports" 1})))
-  (is (nil? (s/check service-description-schema {"cpus" 1
-                                                 "mem" 1
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "run-as-user" "test-user"
-                                                 "name" "testname123"
-                                                 "health-check-url" "http://www.example.com/test/status"
-                                                 "permitted-user" "testuser2"
-                                                 "disk" 1
-                                                 "ports" 5})))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" ""
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "name" "testname123"
-                                                      "health-check-url" "http://www.example.com/test/status"
-                                                      "permitted-user" "testuser2"
-                                                      "disk" 1
-                                                      "ports" 11}))))
-  (is (not (nil? (s/check service-description-schema {"mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 0
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" -1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" "1"
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 0
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" -1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" "1"
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" ""
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1, "mem" 1, "cmd" "test command", "version" "v123"}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" ""}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "name" ""}))))
-  (is (nil? (s/check service-description-schema {"cpus" 1
-                                                 "mem" 1
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "run-as-user" "test-user"
-                                                 "name" "testName123"})))
-  (is (nil? (s/check service-description-schema {"cpus" 1
-                                                 "mem" 1
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "run-as-user" "test-user"
-                                                 "name" "test.name"})))
-  (is (nil? (s/check service-description-schema {"cpus" 1
-                                                 "mem" 1
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "run-as-user" "test-user"
-                                                 "name" "test.n&me"})))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "grace-period-secs" (t/in-seconds (t/minutes 75))}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "grace-period-secs" -1}))))
-  (is (nil? (s/check service-description-schema {"cpus" 1
-                                                 "mem" 1
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "run-as-user" "test-user"
-                                                 "grace-period-secs" 5})))
-  (is (nil? (s/check service-description-schema {"cpus" 1
-                                                 "mem" 1
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "cmd-type" "shell"
-                                                 "run-as-user" "test-user"})))
-  (is (nil? (s/check service-description-schema {"cpus" 1
-                                                 "mem" 1
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "cmd-type" "shell"
-                                                 "run-as-user" "test-user"})))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "cmd-type" ""
-                                                      "run-as-user" "test-user"}))))
-  (is (nil? (s/check service-description-schema {"cpus" 1
-                                                 "mem" 1
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "run-as-user" "test-user"
-                                                 "metadata" {"a" "b", "c-e" "d"}})))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "metadata" {"a" "b", "c" {"d" "e"}}}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "metadata" {"a" "b", "c" 1}}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "metadata" {"a" "b", "1c" "e"}}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "metadata" (zipmap (take 400 (iterate #(str % "a") "a"))
-                                                                         (take 400 (iterate #(str % "a") "a")))}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "concurrency-level" -1}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "concurrency-level" 20000000}))))
-  (is (nil? (s/check service-description-schema {"cpus" 1
-                                                 "mem" 1
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "run-as-user" "test-user"
-                                                 "concurrency-level" 5})))
-  (is (nil? (s/check service-description-schema {"cpus" 1
-                                                 "mem" 1
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "run-as-user" "test-user"
-                                                 "env" {"MY_VAR" "1", "MY_VAR_2" "2"}})))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "env" {"2MY_VAR" "1", "MY_OTHER_VAR" "2"}}))))
-  (is (nil? (s/check service-description-schema {"cpus" 1
-                                                 "mem" 1
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "run-as-user" "test-user"
-                                                 "env" {"MY_VAR" "1", "MY_other_VAR" "2"}})))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "env" {"MY_VAR" 1, "MY_other_VAR" "2"}}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "env" {(str/join (take 513 (repeat "A"))) "A"
-                                                             "MY_other_VAR" "2"}}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "env" {"MY_VAR" (str/join (take 513 (repeat "A")))
-                                                             "MY_other_VAR" "2"}}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "env" (zipmap (take 150 (iterate #(str % "A") "a"))
-                                                                    (take 150 (iterate #(str % "A") "a")))})))))
+  (let [basic-description {"cpus" 1
+                           "mem" 1
+                           "cmd" "test command"
+                           "version" "v123"
+                           "run-as-user" "test-user"}]
+    (is (nil? (s/check service-description-schema basic-description)))
+    (is (nil? (s/check service-description-schema (assoc basic-description "cpus" 1.5 "mem" 1.5))))
+
+    (is (nil? (s/check service-description-schema (assoc basic-description "backend-proto" "http"))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "backend-proto" "https"))))
+    (is (s/check service-description-schema (assoc basic-description "backend-proto" "h2c")))
+    (is (s/check service-description-schema (assoc basic-description "backend-proto" "h2")))
+    (is (s/check service-description-schema (assoc basic-description "backend-proto" ["http"])))
+    (is (s/check service-description-schema (assoc basic-description "backend-proto" "foo")))
+
+    (is (s/check service-description-schema (dissoc basic-description "cmd")))
+    (is (s/check service-description-schema (assoc basic-description "cmd" "")))
+
+    (is (nil? (s/check service-description-schema (assoc basic-description "cmd-type" "shell"))))
+    (is (s/check service-description-schema (assoc basic-description "cmd-type" "")))
+
+    (is (nil? (s/check service-description-schema (assoc basic-description "concurrency-level" 5))))
+    (is (s/check service-description-schema (assoc basic-description "concurrency-level" -1)))
+    (is (s/check service-description-schema (assoc basic-description "concurrency-level" 20000000)))
+
+    (is (s/check service-description-schema (dissoc basic-description "cpus")))
+    (is (s/check service-description-schema (assoc basic-description "cpus" 0)))
+    (is (s/check service-description-schema (assoc basic-description "cpus" -1)))
+    (is (s/check service-description-schema (assoc basic-description "cpus" "1")))
+
+    (is (nil? (s/check service-description-schema (assoc basic-description "env" {}))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "env" {"MY_VAR" "1", "MY_VAR_2" "2"}))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "env" {"MY_VAR" "1", "MY_other_VAR" "2"}))))
+    (is (s/check service-description-schema (assoc basic-description "env" {"2MY_VAR" "1", "MY_OTHER_VAR" "2"})))
+    (is (s/check service-description-schema (assoc basic-description "env" {(str/join (take 513 (repeat "A"))) "A"
+                                                                            "MY_other_VAR" "2"})))
+    (is (not (nil? (s/check service-description-schema (assoc basic-description "env" {"MY_VAR" (str/join (take 513 (repeat "A")))
+                                                                                       "MY_other_VAR" "2"})))))
+    (is (not (nil? (s/check service-description-schema (assoc basic-description "env" (zipmap (take 150 (iterate #(str % "A") "a"))
+                                                                                              (take 150 (iterate #(str % "A") "a"))))))))
+
+    (is (nil? (s/check service-description-schema (assoc basic-description "disk" 1))))
+
+    (is (nil? (s/check service-description-schema (assoc basic-description "grace-period-secs" 5))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "grace-period-secs" 11))))
+    (is (s/check service-description-schema (assoc basic-description "grace-period-secs" -1)))
+    (is (s/check service-description-schema (assoc basic-description "grace-period-secs" (t/in-seconds (t/minutes 75)))))
+
+    (is (nil? (s/check service-description-schema (assoc basic-description "health-check-port-index" 0))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "health-check-port-index" 1))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "health-check-port-index" 9))))
+    (is (not (nil? (s/check service-description-schema (assoc basic-description "health-check-port-index" -1)))))
+    (is (not (nil? (s/check service-description-schema (assoc basic-description "health-check-port-index" 10)))))
+    (is (not (nil? (s/check service-description-schema (assoc basic-description "health-check-port-index" "0")))))
+
+    (is (nil? (s/check service-description-schema (assoc basic-description "health-check-url" "http://www.example.com/test/status"))))
+
+    (is (s/check service-description-schema (dissoc basic-description "mem")))
+    (is (s/check service-description-schema (assoc basic-description "mem" 0)))
+    (is (s/check service-description-schema (assoc basic-description "mem" -1)))
+    (is (s/check service-description-schema (assoc basic-description "mem" "1")))
+
+    (is (nil? (s/check service-description-schema (assoc basic-description "metadata" {}))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "metadata" {"a" "b", "c-e" "d"}))))
+    (is (not (nil? (s/check service-description-schema (assoc basic-description "metadata" {"a" "b", "1c" "e"})))))
+    (is (not (nil? (s/check service-description-schema (assoc basic-description "metadata" {"a" "b", "c" 1})))))
+    (is (not (nil? (s/check service-description-schema (assoc basic-description "metadata" {"a" "b", "c" {"d" "e"}})))))
+    (is (not (nil? (s/check service-description-schema (assoc basic-description "metadata" (zipmap (take 400 (iterate #(str % "a") "a"))
+                                                                                                   (take 400 (iterate #(str % "a") "a"))))))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "name" "testname123"))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "name" "testName123"))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "name" "test.name"))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "name" "test.n&me"))))
+    (is (s/check service-description-schema (assoc basic-description "name" "")))
+
+    (is (nil? (s/check service-description-schema (assoc basic-description "permitted-user" "testuser2"))))
+
+    (is (nil? (s/check service-description-schema (assoc basic-description "ports" 1))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "ports" 5))))
+    (is (s/check service-description-schema (assoc basic-description "ports" 11)))
+
+    (is (s/check service-description-schema (dissoc basic-description "run-as-user")))
+    (is (s/check service-description-schema (assoc basic-description "run-as-user" "")))))
 
 (deftest test-retrieve-token-from-service-description-or-hostname
   (let [test-cases (list
@@ -2025,20 +1856,15 @@
         (is (not (str/includes? error-msg "upper case")) error-msg)))))
 
 (defmacro run-validate-schema-test
-  [valid-description constraints-schema config param-name param-value error-message]
-  `(let [param-name# ~param-name
-         param-value# ~param-value
-         error-message# ~error-message]
-     (testing (str "testing invalid " param-name#)
-       (try
-         (-> ~valid-description
-             (assoc param-name# param-value#)
-             (validate-schema ~constraints-schema ~config))
-         (is false "Fail as exception was not thrown!")
-         (catch ExceptionInfo ex#
-           (let [exception-data# (ex-data ex#)
-                 actual-error-message# (:friendly-error-message exception-data#)]
-             (is (str/includes? (str actual-error-message#) (str error-message#)))))))))
+  [valid-description constraints-schema config error-message]
+  `(let [error-message# ~error-message]
+     (try
+       (validate-schema ~valid-description ~constraints-schema ~config)
+       (is false "Fail as exception was not thrown!")
+       (catch ExceptionInfo ex#
+         (let [exception-data# (ex-data ex#)
+               actual-error-message# (:friendly-error-message exception-data#)]
+           (is (str/includes? (str actual-error-message#) (str error-message#))))))))
 
 (deftest test-validate-schema
   (let [valid-description {"cpus" 1
@@ -2051,20 +1877,30 @@
         config {:allow-missing-required-fields? false}]
     (is (nil? (validate-schema valid-description constraints-schema config)))
 
-    (run-validate-schema-test
-      valid-description constraints-schema config
-      "cmd" ""
-      "cmd must be a non-empty string")
+    (testing (str "testing empty cmd")
+      (run-validate-schema-test
+        (assoc valid-description "cmd" "")
+        constraints-schema config "cmd must be a non-empty string"))
 
-    (run-validate-schema-test
-      valid-description constraints-schema config
-      "cmd" (str/join "" (repeat 150 "c"))
-      "cmd must be at most 100 characters")
+    (testing (str "testing long cmd")
+      (run-validate-schema-test
+        (assoc valid-description "cmd" (str/join "" (repeat 150 "c")))
+        constraints-schema config "cmd must be at most 100 characters"))
 
-    (run-validate-schema-test
-      valid-description constraints-schema config
-      "metric-group" (str/join "" (repeat 100 "m"))
-      "The metric-group must be be between 2 and 32 characters")))
+    (testing (str "testing invalid health check port index")
+      (run-validate-schema-test
+        (assoc valid-description "health-check-port-index" 1 "ports" 1)
+        constraints-schema config
+        "The health check port index (1) must be smaller than ports (1)")
+      (run-validate-schema-test
+        (assoc valid-description "health-check-port-index" 5 "ports" 3)
+        constraints-schema config
+        "The health check port index (5) must be smaller than ports (3)"))
+
+    (testing (str "testing invalid metric-group")
+      (run-validate-schema-test
+        (assoc valid-description "metric-group" (str/join "" (repeat 100 "m")))
+        constraints-schema config "The metric-group must be be between 2 and 32 characters"))))
 
 (deftest test-service-description-schema
   (testing "Service description schema"
