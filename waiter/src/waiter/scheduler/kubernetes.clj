@@ -17,6 +17,7 @@
   (:require [cheshire.core :as cheshire]
             [clj-http.client :as clj-http]
             [clj-time.core :as t]
+            [clojure.data :as data]
             [clojure.data.zip.xml :as zx]
             [clojure.java.io :as io]
             [clojure.string :as string]
@@ -891,8 +892,8 @@
                     (let [now (t/now)
                           pod-id (k8s-object->id pod)
                           service-id (k8s-object->service-id pod)
-                          version (k8s-object->resource-version pod)]
-                      (scheduler/log "pod state update:" update-type version pod)
+                          version (k8s-object->resource-version pod)
+                          old-state @watch-state]
                       (when (not= "ERROR" update-type)
                         (swap! watch-state
                                #(as-> % state
@@ -901,7 +902,10 @@
                                     "MODIFIED" (assoc-in state [:service-id->pod-id->pod service-id pod-id] pod)
                                     "DELETED" (utils/dissoc-in state [:service-id->pod-id->pod service-id pod-id]))
                                   (assoc-in state [:pods-metadata :timestamp :watch] now)
-                                  (assoc-in state [:pods-metadata :version :watch] version))))))}
+                                  (assoc-in state [:pods-metadata :version :watch] version)))
+                        (let [old-pod (get-in old-state [:service-id->pod-id->pod service-id pod-id])
+                              [pod-fields pod-fields'] (data/diff old-pod pod)]
+                          (scheduler/log "pod state update:" update-type version pod-fields "->" pod-fields')))))}
       (merge options))))
 
 (defn global-rs-state-query
