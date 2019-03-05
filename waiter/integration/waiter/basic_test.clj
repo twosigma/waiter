@@ -272,23 +272,26 @@
 
 (deftest ^:parallel ^:integration-fast test-basic-health-check-port-index
   (testing-using-waiter-url
-    (when (using-shell? waiter-url)
-      (let [headers {:x-waiter-cmd (str "while true; do echo -e 'HTTP/1.1 400 OK\\r\\n\\r\\nFrom PORT0: ${PORT0}' | nc -l $PORT0; done & "
-                                        "while true; do echo -e 'HTTP/1.1 200 OK\\r\\n\\r\\nFrom PORT1: ${PORT1}' | nc -l $PORT1; done")
-                     :x-waiter-name (rand-name)
-                     :x-waiter-health-check-port-index 1
-                     :x-waiter-ports 2}
-            {:keys [body service-id] :as response} (make-request-with-debug-info headers #(make-shell-request waiter-url %))]
-        (is (not (nil? service-id)))
-        (assert-response-status response 400)
-        (is (str/includes? (str body) "From PORT0"))
-
-        (let [service-settings (service-settings waiter-url service-id)]
-          (is (= (:x-waiter-cmd headers) (get-in service-settings [:service-description :cmd])))
-          (is (= 1 (get-in service-settings [:service-description :health-check-port-index])))
-          (is (every? #(= 1 (:health-check-port-index %)) (get-in service-settings [:instances :active-instance]))))
-
-        (delete-service waiter-url service-id)))))
+    (let [command (kitchen-cmd "-p $PORT1")
+          headers {:x-waiter-cmd command
+                   :x-waiter-health-check-port-index 1
+                   :x-waiter-name (rand-name)
+                   :x-waiter-ports 2}
+          {:keys [service-id] :as response} (make-request-with-debug-info headers #(make-shell-request waiter-url %))]
+      (is (not (nil? service-id)))
+      (when service-id
+        (with-service-cleanup
+          service-id
+          (assert-response-status response 502)
+          (is (str/includes? (-> response :body str) "Request to service backend failed"))
+          (is (str/includes? (-> response :headers (get "server")) "waiter/"))
+          (let [service-settings (service-settings waiter-url service-id)
+                active-instances (get-in service-settings [:instances :active-instances])]
+            (is (= command (get-in service-settings [:service-description :cmd])))
+            (is (= 1 (get-in service-settings [:service-description :health-check-port-index])))
+            (is (seq active-instances))
+            (is (every? :healthy? active-instances))
+            (is (every? #(= 1 (:health-check-port-index %)) active-instances))))))))
 
 (deftest ^:parallel ^:integration-fast test-basic-unsupported-command-type
   (testing-using-waiter-url
