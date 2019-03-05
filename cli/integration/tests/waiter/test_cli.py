@@ -47,8 +47,9 @@ class WaiterCliTest(util.WaiterTest):
         service = util.minimal_service_description(cpus=0)
         cp = cli.create_from_service_description(self.waiter_url, self.token_name(), service)
         self.assertEqual(1, cp.returncode, cp.stderr)
-        self.assertEqual(b'Service description using waiter headers/token improperly configured\ncpus must be a '
-                         b'positive number..\n', cp.stderr)
+        self.assertIn('Service description', cli.decode(cp.stderr))
+        self.assertIn('improper', cli.decode(cp.stderr))
+        self.assertIn('cpus must be a positive number', cli.decode(cp.stderr))
 
     def test_create_no_cluster(self):
         config = {'clusters': []}
