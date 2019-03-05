@@ -138,8 +138,9 @@
   "Construct the Waiter instance-id for the given Kubernetes pod incarnation.
    Note that a new Waiter Service Instance is created each time a pod restarts,
    and that we generate a unique instance-id by including the pod's restartCount value."
-  ([scheduler pod] (pod->instance-id scheduler pod (get-in pod [:status :containerStatuses 0 :restartCount])))
-  ([{:keys [pod-suffix-length] :as scheduler} pod restart-count]
+  ([pod]
+   (pod->instance-id pod (get-in pod [:status :containerStatuses 0 :restartCount])))
+  ([pod restart-count]
    (let [pod-name (k8s-object->id pod)
          service-id (k8s-object->service-id pod)]
      (str service-id \. pod-name \- restart-count))))
@@ -174,7 +175,7 @@
     (let [failure-flags (if (= "OOMKilled" (:reason newest-failure)) #{:memory-limit-exceeded} #{})
           newest-failure-start-time (-> newest-failure :startedAt timestamp-str->datetime)
           restart-count (get-in pod [:status :containerStatuses 0 :restartCount])
-          newest-failure-id (pod->instance-id scheduler pod (dec restart-count))
+          newest-failure-id (pod->instance-id pod (dec restart-count))
           failures (-> service-id->failed-instances-transient-store deref (get service-id))]
       (when-not (contains? failures newest-failure-id)
         (let [newest-failure-instance (cond-> (assoc live-instance
@@ -193,7 +194,7 @@
 
 (defn pod->ServiceInstance
   "Convert a Kubernetes Pod JSON response into a Waiter Service Instance record."
-  [scheduler pod]
+  [pod]
   (try
     (let [port0 (get-in pod [:spec :containers 0 :ports 0 :containerPort])
           restart-count (get-in pod [:status :containerStatuses 0 :restartCount])
@@ -202,9 +203,8 @@
         {:extra-ports (->> (get-in pod [:metadata :annotations :waiter/port-count])
                            Integer/parseInt range next (mapv #(+ port0 %)))
          :healthy? (get-in pod [:status :containerStatuses 0 :ready] false)
-         :health-check-port-index (Integer/parseInt (get-in pod [:metadata :annotations :waiter/health-check-port-index] "0"))
          :host (get-in pod [:status :podIP])
-         :id (pod->instance-id scheduler pod)
+         :id (pod->instance-id pod)
          :k8s/app-name (get-in pod [:metadata :labels :app])
          :k8s/namespace namespace
          :k8s/pod-name (k8s-object->id pod)
@@ -289,10 +289,10 @@
 (defn- get-service-instances!
   "Get all active Waiter Service Instances associated with the given Waiter Service.
    Also updates the service-id->failed-instances-transient-store as a side-effect."
-  [{:keys [api-server-url http-client] :as scheduler} basic-service-info]
+  [scheduler basic-service-info]
   (vec (for [pod (get-replicaset-pods scheduler basic-service-info)
              :when (live-pod? pod)]
-         (let [service-instance (pod->ServiceInstance scheduler pod)]
+         (let [service-instance (pod->ServiceInstance pod)]
            (track-failed-instances! service-instance scheduler pod)
            service-instance))))
 
@@ -712,8 +712,7 @@
        :spec {:replicas min-instances
               :selector {:matchLabels {:app k8s-name
                                        :waiter-cluster cluster-name}}
-              :template {:metadata {:annotations {:waiter/health-check-port-index (str health-check-port-index)
-                                                  :waiter/port-count (str ports)
+              :template {:metadata {:annotations {:waiter/port-count (str ports)
                                                   :waiter/protocol backend-protocol-lower
                                                   :waiter/service-id service-id}
                                     :labels {:app k8s-name

@@ -65,13 +65,12 @@
    ^String host
    port
    extra-ports
-   health-check-port-index
    ^String protocol
    ^String log-directory
    ^String message])
 
 (defn make-ServiceInstance [value-map]
-  (map->ServiceInstance (merge {:extra-ports [] :flags #{} :health-check-port-index 0} value-map)))
+  (map->ServiceInstance (merge {:extra-ports [] :flags #{}} value-map)))
 
 (defprotocol ServiceScheduler
 
@@ -194,14 +193,14 @@
   (str protocol "://" host ":" port))
 
 (defn end-point-url
-  "Returns the endpoint url which can be queried on the service instance."
-  [service-instance ^String end-point]
-  (str (base-url service-instance)
+  "Returns the endpoint url which can be queried on the url specified by the url-info map."
+  [url-info ^String end-point]
+  (str (base-url url-info)
        (if (and end-point (str/starts-with? end-point "/")) end-point (str "/" end-point))))
 
 (defn health-check-url
   "Returns the health check url which can be queried on the service instance."
-  [{:keys [health-check-port-index extra-ports] :as service-instance} health-check-path]
+  [{:keys [extra-ports] :as service-instance} health-check-port-index health-check-path]
   (if (zero? health-check-port-index)
     (end-point-url service-instance health-check-path)
     (let [health-check-port (->> health-check-port-index dec (nth extra-ports))]
@@ -229,11 +228,11 @@
 (defn available?
   "Async go block which returns the status code and success of a health check.
   Returns false if such a connection cannot be established."
-  [http-client {:keys [host port] :as service-instance} health-check-path]
+  [http-client {:keys [host port] :as service-instance} health-check-port-index health-check-path]
   (async/go
     (try
       (if (and (pos? port) host)
-        (let [instance-health-check-url (health-check-url service-instance health-check-path)
+        (let [instance-health-check-url (health-check-url service-instance health-check-port-index health-check-path)
               {:keys [status error]} (async/<! (http/get http-client instance-health-check-url))
               error-flag (cond
                            (instance? ConnectException error) :connect-exception
@@ -397,7 +396,7 @@
          service->service-instances' {}]
     (if-not service
       service->service-instances'
-      (let [{:strs [health-check-url]} (service-id->service-description-fn (:id service))
+      (let [{:strs [health-check-port-index health-check-url]} (service-id->service-description-fn (:id service))
             connection-errors #{:connect-exception :hangup-exception :timeout-exception}
             update-unhealthy-instance (fn [instance status error]
                                         (-> instance
@@ -420,7 +419,7 @@
                                                          (if healthy?
                                                            (assoc instance :healthy? true)
                                                            (update-unhealthy-instance instance status error))))
-                                           (available? instance health-check-url)))
+                                           (available? instance health-check-port-index health-check-url)))
                                        chan))
                                    active-instances)]
         (recur rest (assoc service->service-instances' service

@@ -141,8 +141,8 @@
   (defn create-job-description
     "Create the Cook job description for a service."
     [service-id service-description service-id->password-fn home-path-prefix instance-priority backend-port]
-    (let [{:strs [backend-proto cmd cmd-type cpus health-check-port-index health-check-url instance-expiry-mins
-                  mem name ports run-as-user version]} service-description
+    (let [{:strs [backend-proto cmd cmd-type cpus health-check-url instance-expiry-mins mem name ports
+                  run-as-user version]} service-description
           job-uuid (str (UUID/randomUUID)) ;; TODO Use "less random" UUIDs for better Cook cache performance.
           _ (log/info "creating a new job for" service-id "with uuid" job-uuid)
           home-path (str home-path-prefix run-as-user)
@@ -169,7 +169,6 @@
                        :env environment
                        :executor "cook"
                        :labels (cond-> {:backend-proto backend-proto
-                                        :health-check-port-index health-check-port-index
                                         :health-check-url health-check-url
                                         :service-id service-id
                                         :source "waiter"
@@ -247,7 +246,6 @@
        :exit-code (-> job-instance :exit_code)
        :extra-ports (seq (remove #(= job-port %) instance-ports))
        :healthy? (job-healthy? job)
-       :health-check-port-index (-> job :labels :health-check-port-index)
        :host (-> job-instance :hostname)
        ;; Mimic Cook's logic of creating a task name
        :id (str (-> job :name) "_" (-> job :labels :user) "_" (-> job-instance :task_id))

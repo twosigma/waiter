@@ -290,8 +290,7 @@
             (is (= command (get-in service-settings [:service-description :cmd])))
             (is (= 1 (get-in service-settings [:service-description :health-check-port-index])))
             (is (seq active-instances))
-            (is (every? :healthy? active-instances))
-            (is (every? #(= 1 (:health-check-port-index %)) active-instances))))))))
+            (is (every? :healthy? active-instances))))))))
 
 (deftest ^:parallel ^:integration-fast test-basic-unsupported-command-type
   (testing-using-waiter-url

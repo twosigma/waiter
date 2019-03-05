@@ -64,7 +64,8 @@
                                      {:default-container-image "twosigma/kitchen:latest"})
       :service-id->failed-instances-transient-store (atom {})
       :service-id->password-fn #(str "password-" %)
-      :service-id->service-description-fn (pc/map-from-keys (constantly {"run-as-user" "myself"})
+      :service-id->service-description-fn (pc/map-from-keys (constantly {"health-check-port-index" 0
+                                                                         "run-as-user" "myself"})
                                                             service-ids)
       :scheduler-name "dummy-scheduler"
       :watch-state (atom nil)}
@@ -111,8 +112,7 @@
         scheduler (make-dummy-scheduler ["test-service-id"]
                                         {:service-id->service-description-fn (constantly service-description)})
         replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description)]
-    (is (= {:waiter/health-check-port-index "2"
-            :waiter/port-count "3"
+    (is (= {:waiter/port-count "3"
             :waiter/protocol "http"
             :waiter/service-id "test-service-id"}
            (get-in replicaset-spec [:spec :template :metadata :annotations])))))
@@ -692,7 +692,6 @@
   ;; Killed pod
   (let [service-id "service-id"
         instance-id "service-id.instance-id-321"
-        instance-base-dir "/myself/service-id/instance-id/r321"
         path "/x/a"
         expected [{:name "bar",
                    :size 4,
@@ -736,7 +735,7 @@
         make-file (fn [file-name size]
                     {:url (str "http://" host ":" port instance-base-dir path file-name)
                      :name file-name
-                     :size 1
+                     :size size
                      :type "file"})
         make-dir (fn [dir-name]
                    {:path (str path dir-name)
@@ -1006,11 +1005,11 @@
                              :exit-on-error? false
                              :streaming-api-request-fn (constantly pods-watch-stream)})
 
-        get-instance (fn [{:keys [watch-state] :as scheduler} index]
+        get-instance (fn [{:keys [watch-state]} index]
                        (let [pod-id (str "test-app-1234-abcd" index)
                              pod (get-in @watch-state [:service-id->pod-id->pod service-id pod-id])]
                          (when pod
-                           (pod->ServiceInstance scheduler pod))))
+                           (pod->ServiceInstance pod))))
         wait-for-version (fn [version-tag value]
                            (ct/wait-for
                              #(= value
@@ -1312,11 +1311,11 @@
                              :streaming-api-request-fn pods-watch-query-fn
                              :watch-retries 1})
 
-        get-instance (fn [{:keys [watch-state] :as scheduler} index]
+        get-instance (fn [{:keys [watch-state]} index]
                        (let [pod-id (str "test-app-1234-abcd" index)
                              pod (get-in @watch-state [:service-id->pod-id->pod service-id pod-id])]
                          (when pod
-                           (pod->ServiceInstance scheduler pod))))
+                           (pod->ServiceInstance pod))))
         wait-for-version (fn [resource version-tag value]
                            (ct/wait-for
                              #(= value

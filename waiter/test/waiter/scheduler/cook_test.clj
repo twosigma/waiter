@@ -294,7 +294,6 @@
                             "WAITER_USERNAME" "waiter"}
                       :executor "cook"
                       :labels {:backend-proto "http"
-                               :health-check-port-index 0
                                :health-check-url "/health-check"
                                :service-id "test-service-1"
                                :source "waiter"
@@ -315,20 +314,6 @@
                                :name (str "test-service-1." job-uuid)
                                :uuid job-uuid)]}]
         (is (= expected actual))))
-
-    (testing "basic-test-custom-health-check-port-index"
-      (let [service-description (assoc service-description
-                                  "health-check-port-index" 1
-                                  "ports" 2)
-            backend-port 4567
-            actual (create-job-description
-                     service-id service-description service-id->password-fn home-path-prefix
-                     instance-priority backend-port)
-            job-uuid (-> actual :jobs first :uuid)
-            expected {:jobs [(-> expected-job
-                                 (assoc :name (str "test-service-1." job-uuid) :uuid job-uuid)
-                                 (update :labels assoc :backend-port "4567"))]}]
-        (is (= (assoc-in expected [:jobs 0 :labels :health-check-port-index] 1) actual))))
 
     (testing "basic-test-custom-port"
       (let [service-description service-description
@@ -426,7 +411,6 @@
                              :exit-code 0
                              :extra-ports [5678 7890]
                              :flags #{}
-                             :health-check-port-index 1
                              :health-check-status nil
                              :healthy? true
                              :host "hostname.localtest.me"

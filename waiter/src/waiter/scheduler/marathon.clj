@@ -160,7 +160,7 @@
   [marathon-response service-keys retrieve-framework-id-fn mesos-api service-id->failed-instances-transient-store
    service-id->service-description]
   (let [service-id (remove-slash-prefix (get-in marathon-response (conj service-keys :id)))
-        {:strs [backend-proto health-check-port-index]} (service-id->service-description service-id)
+        {:strs [backend-proto]} (service-id->service-description service-id)
         framework-id (retrieve-framework-id-fn)
         common-extractor-fn (fn [instance-id marathon-task-response]
                               (let [{:keys [appId host message slaveId]} marathon-task-response
@@ -199,7 +199,6 @@
                                   {:id instance-id
                                    :started-at (some-> % :startedAt (du/str-to-date formatter-marathon))
                                    :healthy? (healthy?-fn %)
-                                   :health-check-port-index health-check-port-index
                                    ;; first port must be used for the web server, extra ports can be used freely.
                                    :port (-> % :ports first)
                                    :extra-ports (-> % :ports rest vec)})))

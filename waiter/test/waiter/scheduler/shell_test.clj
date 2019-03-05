@@ -143,9 +143,7 @@
                                      "health-check-port-index" 0
                                      "mem" 32
                                      "ports" num-ports}
-                {:keys [extra-ports health-check-port-index port]}
-                (launch-instance "baz" service-description (work-dir) {} (atom {}) port-range)]
-            (is (= health-check-port-index 0))
+                {:keys [extra-ports port]} (launch-instance "baz" service-description (work-dir) {} (atom {}) port-range)]
             (is (= port-range-start port))
             (is (= (map #(+ % port-range-start) (range 1 num-ports)) extra-ports))))))
 
@@ -161,9 +159,7 @@
                                      "health-check-port-index" 3
                                      "mem" 32
                                      "ports" num-ports}
-                {:keys [extra-ports health-check-port-index port]}
-                (launch-instance "baz" service-description (work-dir) {} (atom {}) port-range)]
-            (is (= health-check-port-index 3))
+                {:keys [extra-ports port]} (launch-instance "baz" service-description (work-dir) {} (atom {}) port-range)]
             (is (= port-range-start port))
             (is (= (map #(+ % port-range-start) (range 1 num-ports)) extra-ports))))))))
 
