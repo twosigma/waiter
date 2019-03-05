@@ -270,6 +270,28 @@
 
       (delete-service waiter-url service-id))))
 
+(deftest ^:parallel ^:integration-fast test-basic-health-check-port-index
+  (testing-using-waiter-url
+    (let [command (kitchen-cmd "-p $PORT1")
+          headers {:x-waiter-cmd command
+                   :x-waiter-health-check-port-index 1
+                   :x-waiter-name (rand-name)
+                   :x-waiter-ports 2}
+          {:keys [service-id] :as response} (make-request-with-debug-info headers #(make-shell-request waiter-url %))]
+      (is (not (nil? service-id)))
+      (when service-id
+        (with-service-cleanup
+          service-id
+          (assert-response-status response 502)
+          (is (str/includes? (-> response :body str) "Request to service backend failed"))
+          (is (str/includes? (-> response :headers (get "server")) "waiter/"))
+          (let [service-settings (service-settings waiter-url service-id)
+                active-instances (get-in service-settings [:instances :active-instances])]
+            (is (= command (get-in service-settings [:service-description :cmd])))
+            (is (= 1 (get-in service-settings [:service-description :health-check-port-index])))
+            (is (seq active-instances))
+            (is (every? :healthy? active-instances))))))))
+
 (deftest ^:parallel ^:integration-fast test-basic-unsupported-command-type
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)

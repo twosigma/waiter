@@ -65,6 +65,10 @@
   "Validator for number of ports."
   (s/pred #(<= 1 % 10) 'between-1-and-10))
 
+(def valid-health-check-port-index
+  "Validator for health check port index."
+  (s/pred #(<= 0 % 9) 'between-0-and-9))
+
 (def valid-zookeeper-connect-config
   "Validator for the Zookeeper connection configuration. We allow either
   a non-empty string (representing a connection string), or the keyword

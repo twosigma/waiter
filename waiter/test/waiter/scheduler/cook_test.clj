@@ -269,6 +269,7 @@
                              "grace-period-secs" 111
                              "health-check-interval-secs" 10
                              "health-check-max-consecutive-failures" 5
+                             "health-check-port-index" 0
                              "health-check-url" "/health-check"
                              "instance-expiry-mins" 3600
                              "env" {"FOO" "bar"
@@ -428,6 +429,7 @@
                                    :start_time start-time
                                    :task_id "task-id"}]
                       :labels {:backend-proto "http"
+                               :health-check-port-index 1
                                :service-id "service-id"
                                :user "test-user"}
                       :name "job-name"
