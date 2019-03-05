@@ -147,7 +147,7 @@ def __show_json(waiter_url=None, token_name=None, flags=None):
     return cp, data
 
 
-def show_tokens(waiter_url=None, token_name=None, flags=None):
+def show_token(waiter_url=None, token_name=None, flags=None):
     """Shows the token JSON corresponding to the given token name"""
     cp, data = __show_json(waiter_url, token_name, flags)
     tokens = [entities['token'] for entities in data['clusters'].values()]

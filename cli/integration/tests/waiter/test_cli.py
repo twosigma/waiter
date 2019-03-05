@@ -172,7 +172,7 @@ class WaiterCliTest(util.WaiterTest):
         token_name = self.current_name()
         util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
         try:
-            cp, tokens = cli.show_tokens(self.waiter_url, token_name)
+            cp, tokens = cli.show_token(self.waiter_url, token_name)
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertEqual(1, len(tokens))
             self.assertEqual(util.load_token(self.waiter_url, token_name), tokens[0])
