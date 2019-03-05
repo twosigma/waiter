@@ -78,9 +78,9 @@ def create_from_service_description(waiter_url, token_name, service, flags=None)
     return cp
 
 
-def create_minimal(waiter_url=None, token_name=None, flags=None):
+def create_minimal(waiter_url=None, token_name=None, flags=None, **kwargs):
     """Creates a token via the CLI, using the "minimal" service description"""
-    service = util.minimal_service_description()
+    service = util.minimal_service_description(**kwargs)
     cp = create_from_service_description(waiter_url, token_name, service, flags=flags)
     return cp
 

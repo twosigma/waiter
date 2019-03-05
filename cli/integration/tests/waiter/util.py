@@ -2,6 +2,9 @@ import functools
 import importlib
 import logging
 import os
+import random
+import string
+from datetime import datetime
 
 import unittest
 
@@ -16,10 +19,16 @@ DEFAULT_TEST_TIMEOUT_SECS = int(os.getenv('WAITER_TEST_DEFAULT_TEST_TIMEOUT_SECS
 
 
 class WaiterTest(unittest.TestCase):
-    def current_name(self):
-        """Returns the name of the currently running test function"""
+    def token_name(self):
+        """
+        Returns the name of the currently running test function
+        with a timestamp and 8-character random string
+        """
         test_id = self.id()
-        return test_id.split('.')[-1]
+        test_function = test_id.split('.')[-1]
+        timestamp = datetime.now().strftime('%Y%m%dT%H%M%S')
+        random_string = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+        return f'{test_function}_{timestamp}_{random_string}'
 
 
 @functools.lru_cache()
@@ -96,11 +105,3 @@ def minimal_service_description(**kwargs):
     }
     service.update(kwargs)
     return service
-
-
-def delete_token_if_exists(waiter_url, token_name):
-    delete_token(waiter_url, token_name, assert_response=False)
-    error = load_token(waiter_url, token_name, expected_status_code=404)
-    assert \
-        f"Couldn't find token {token_name}" == error['waiter-error']['message'], \
-        f'Expected "Couldn\'t find token {token_name}" to be in the response, got {error}'
