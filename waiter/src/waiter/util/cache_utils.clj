@@ -19,7 +19,7 @@
            [java.util.concurrent TimeUnit]))
 
 (defn cache-factory
-  "Creates a cache wrapped in an atom.
+  "Creates a Guava cache.
    The argument to the method is a map that contains the threshold and ttl keys.
    The threshold argument defines the maximum number of elements in the cache.
    The ttl argument that defines the time (in millis) that entries are allowed to reside in the cache."
