@@ -152,3 +152,8 @@ def show_token(waiter_url=None, token_name=None, flags=None):
     cp, data = __show_json(waiter_url, token_name, flags)
     tokens = [entities['token'] for entities in data['clusters'].values()]
     return cp, tokens
+
+
+def output(cp):
+    """Returns a string containing the stdout and stderr from the given CompletedProcess"""
+    return f'\nstdout:\n{stdout(cp)}\n\nstderr:\n{decode(cp.stderr)}'

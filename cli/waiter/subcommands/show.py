@@ -63,7 +63,7 @@ def show_data(cluster_name, data, format_fn, token_name):
 
 def get_token_on_cluster(cluster, token_name):
     """Gets the token with the given name on the given cluster"""
-    token_data = get_token(cluster, token_name, include='metadata')
+    token_data, _ = get_token(cluster, token_name, include='metadata')
     if token_data:
         return {'count': 1, 'token': token_data}
     else:

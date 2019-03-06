@@ -1,5 +1,6 @@
 import getpass
 import logging
+import threading
 import uuid
 
 import pytest
@@ -184,4 +185,34 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(1, len(tokens))
             self.assertEqual(util.load_token(self.waiter_url, token_name), tokens[0])
         finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_if_match(self):
+
+        def encountered_stale_token_error(cp):
+            self.logger.info(f'Return code: {cp.returncode}, output: {cli.output(cp)}')
+            assert 1 == cp.returncode
+            assert 'stale token' in cli.decode(cp.stderr)
+            return True
+
+        token_name = self.token_name()
+        keep_running = True
+
+        def update_token_loop():
+            mem = 1
+            while keep_running:
+                util.post_token(self.waiter_url, token_name, {'mem': mem})
+                mem += 1
+
+        util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
+        thread = threading.Thread(target=update_token_loop)
+        try:
+            thread.start()
+            util.wait_until(lambda: cli.create_minimal(self.waiter_url, token_name),
+                            encountered_stale_token_error,
+                            wait_interval_ms=0)
+        finally:
+            keep_running = False
+            thread.join()
+            self.logger.info('Thread finished')
             util.delete_token(self.waiter_url, token_name)
