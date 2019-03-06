@@ -232,7 +232,7 @@
                     (au/timed-offer! upload-chan send-data streaming-timeout-ms))
                 (recur (+ bytes-streamed bytes-read))
                 (do
-                  (log/error "unable to stream to " dest-name {:cid (cid/get-correlation-id), :bytes-streamed bytes-streamed})
+                  (log/error "unable to stream to" dest-name {:cid (cid/get-correlation-id), :bytes-streamed bytes-streamed})
                   (meters/mark! stream-back-pressure-meter)
                   (deliver reservation-status-promise stream-error-type)
                   (async/>! request-close-chan stream-error-type))))
@@ -312,6 +312,7 @@
                              error-code)
 
                            :else :unknown)]
+          (log/info (name source) "requesting close of websocket:" close-code close-message)
           (async/>! request-close-promise-chan [source close-code return-code-or-exception close-message]))))))
 
 (defn- close-client-session!
@@ -328,7 +329,7 @@
 (defn- successful?
   "Returns whether the status represents a successful status code."
   [status]
-  (= 1000 status))
+  (= StatusCode/NORMAL status))
 
 (defn process-response!
   "Processes a response resulting from a websocket request.
@@ -349,8 +350,8 @@
         stream-complete-rate
         (timers/start-stop-time!
           stream
-          (when-let [close-message (async/<! request-close-promise-chan)]
-            (let [[source close-code status-code-or-exception close-message] close-message]
+          (when-let [close-message-wrapper (async/<! request-close-promise-chan)]
+            (let [[source close-code status-code-or-exception close-message] close-message-wrapper]
               (log/info "websocket connections requested to be closed due to" source close-code close-message)
               (counters/dec! requests-streaming)
               ;; explicitly close the client connection if backend triggered the close
