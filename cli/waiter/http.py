@@ -79,7 +79,7 @@ def post(cluster, endpoint, json_body, params=None):
 def get(cluster, endpoint, params):
     """GETs data corresponding to the given params from cluster at /endpoint"""
     url = __make_url(cluster, endpoint)
-    resp = __get(url, params)
+    resp = __get(url, params, headers={'Accept': 'application/json'})
     logging.info(f'GET response: {resp.text}')
     return resp
 

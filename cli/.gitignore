@@ -1,4 +1,6 @@
-venv
 __pycache__
 *.egg-info
+*.spec
 .cache
+build
+venv

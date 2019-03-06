@@ -63,9 +63,9 @@ def show_data(cluster_name, data, format_fn, token_name):
 
 def get_token_on_cluster(cluster, token_name):
     """Gets the token with the given name on the given cluster"""
-    token = get_token(cluster, token_name, include='metadata')
-    if token:
-        return {'count': 1, 'token': token}
+    token_data = get_token(cluster, token_name, include='metadata')
+    if token_data:
+        return {'count': 1, 'token': token_data}
     else:
         raise Exception(f'Unable to retrieve token information on {cluster["name"]} ({cluster["url"]}).')
 
@@ -91,7 +91,7 @@ def show(clusters, args, _):
     if as_json:
         print(json.dumps(query_result))
     else:
-        for cluster_name, entities in query_result['clusters'].items():
+        for cluster_name, entities in sorted(query_result['clusters'].items()):
             show_data(cluster_name, entities['token'], tabulate_token, token_name)
 
     if query_result['count'] > 0:
@@ -102,7 +102,7 @@ def show(clusters, args, _):
 
 def register(add_parser):
     """Adds this sub-command's parser and returns the action function"""
-    show_parser = add_parser('show', help='show jobs / instances / groups by uuid')
+    show_parser = add_parser('show', help='show token by name')
     show_parser.add_argument('token', nargs=1)
     show_parser.add_argument('--json', help='show the data in JSON format', dest='json', action='store_true')
     return show
