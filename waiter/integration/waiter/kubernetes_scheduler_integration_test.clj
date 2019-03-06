@@ -7,13 +7,19 @@
             [clojure.tools.logging :as log]
             [waiter.util.client-tools :refer :all]))
 
+(defn- get-watch-state [state-json]
+  (or (get-in state-json ["state" "watch-state"])
+      (get-in state-json ["state" "components" "kubernetes" "watch-state"])))
+
 (deftest ^:parallel ^:integration-fast test-kubernetes-watch-state-update
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
-      (let [{:keys [body] :as response} (make-request waiter-url "/state/scheduler" :method :get)
+      (let [cookies (all-cookies waiter-url)
+            router-url (-> waiter-url routers first val)
+            {:keys [body] :as response} (make-request router-url "/state/scheduler" :method :get :cookies cookies)
             _ (assert-response-status response 200)
             body-json (-> body str try-parse-json)
-            watch-state-json (get-in body-json ["state" "watch-state"])
+            watch-state-json (get-watch-state body-json)
             initial-pods-snapshot-version (get-in watch-state-json ["pods-metadata" "version" "snapshot"])
             initial-pods-watch-version (get-in watch-state-json ["pods-metadata" "version" "watch"])
             initial-rs-snapshot-version (get-in watch-state-json ["rs-metadata" "version" "snapshot"])
@@ -23,10 +29,10 @@
                                                    #(make-kitchen-request waiter-url % :path "/hello"))]
         (with-service-cleanup
           service-id
-          (let [{:keys [body] :as response} (make-request waiter-url "/state/scheduler" :method :get)
+          (let [{:keys [body] :as response} (make-request router-url "/state/scheduler" :method :get :cookies cookies)
                 _ (assert-response-status response 200)
                 body-json (-> body str try-parse-json)
-                watch-state-json (get-in body-json ["state" "watch-state"])
+                watch-state-json (get-watch-state body-json)
                 pods-snapshot-version' (get-in watch-state-json ["pods-metadata" "version" "snapshot"])
                 pods-watch-version' (get-in watch-state-json ["pods-metadata" "version" "watch"])
                 rs-snapshot-version' (get-in watch-state-json ["rs-metadata" "version" "snapshot"])
