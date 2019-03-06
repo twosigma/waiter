@@ -445,7 +445,7 @@
   (testing-using-waiter-url
     (let [auth-cookie-value (auth-cookie waiter-url)
           _ (is auth-cookie-value)
-          all-iteration-result-atom (atom {})
+          iteration-results-atom (atom {})
           concurrency-level 3
           waiter-headers (assoc (kitchen-request-headers)
                            "x-waiter-metric-group" "test-ws-support"
@@ -458,22 +458,25 @@
           iterations-per-thread 3
           num-requests (* num-threads iterations-per-thread)
           websocket-client (websocket-client-factory)]
-      (try
+      (with-service-cleanup
+        service-id
         (parallelize-requests
           num-threads iterations-per-thread
-          (fn []
-            (request-streaming-helper waiter-url waiter-headers auth-cookie-value all-iteration-result-atom
-                                      websocket-client)))
-        (is (= num-requests (count @all-iteration-result-atom)))
-        (is (every? #{:success} (vals @all-iteration-result-atom)) (str @all-iteration-result-atom))
+          (fn test-request-parallel-streaming-task []
+            (request-streaming-helper waiter-url waiter-headers auth-cookie-value iteration-results-atom websocket-client)))
+        (let [iteration-results @iteration-results-atom]
+          (is (every? #{:success :timed-out} (vals iteration-results)) (str iteration-results))
+          (is (= num-requests (count iteration-results)))
+          (is (<= (* 0.75 num-requests) (->> iteration-results vals (filter #{:success}) count)) (str iteration-results)))
         (is (pos? (num-instances waiter-url service-id)))
         (Thread/sleep 1000) ;; allow metrics to be sync-ed
         (let [service-data (service-settings waiter-url service-id)
               request-counts (get-in service-data [:metrics :aggregate :counters :request-counts])
               response-status (get-in service-data [:metrics :aggregate :counters :response-status])]
           (is (= num-requests (reduce + (vals (select-keys response-status [:1000 :1006])))) (str response-status))
-          (is (= {:outstanding 0 :streaming 0 :total num-requests :waiting-for-available-instance 0 :waiting-to-stream 0}
-                 (select-keys request-counts [:outstanding :streaming :total :waiting-for-available-instance :waiting-to-stream]))
-              (str request-counts)))
-        (finally
-          (delete-service waiter-url service-id))))))
+          (is (= {:total num-requests :waiting-for-available-instance 0 :waiting-to-stream 0}
+                 (select-keys request-counts [:total :waiting-for-available-instance :waiting-to-stream]))
+              (str request-counts))
+          (let [num-timed-out (->> @iteration-results-atom vals (filter #{:timed-out}) count)]
+            (is (<= (:outstanding request-counts) num-timed-out) (str request-counts))
+            (is (<= (:streaming request-counts) num-timed-out) (str request-counts))))))))
