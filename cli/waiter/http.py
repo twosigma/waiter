@@ -45,10 +45,10 @@ def configure(config):
             raise Exception(f'Encountered unsupported authentication type "{auth_type}".')
 
 
-def __post(url, json_body, params=None):
+def __post(url, json_body, params=None, **kwargs):
     """Sends a POST with the json payload to the given url"""
-    logging.info(f'POST {url} with body {json_body}')
-    return session.post(url, json=json_body, timeout=timeouts, params=params)
+    logging.info(f'POST {url} with body {json_body} and headers {kwargs.get("headers", {})}')
+    return session.post(url, json=json_body, timeout=timeouts, params=params, **kwargs)
 
 
 def __get(url, params=None, **kwargs):
@@ -68,19 +68,21 @@ def __make_url(cluster, endpoint):
     return urljoin(cluster['url'], endpoint)
 
 
-def post(cluster, endpoint, json_body, params=None):
+def post(cluster, endpoint, json_body, params=None, headers=None):
     """POSTs data to cluster at /endpoint"""
     url = __make_url(cluster, endpoint)
-    resp = __post(url, json_body, params=params)
-    logging.info(f'POST response: {resp.text}')
+    resp = __post(url, json_body, params=params, headers=headers)
+    resp.headers.pop('Set-Cookie', None)
+    logging.info(f'POST response: {resp.text} (headers: {resp.headers})')
     return resp
 
 
 def get(cluster, endpoint, params):
     """GETs data corresponding to the given params from cluster at /endpoint"""
     url = __make_url(cluster, endpoint)
-    resp = __get(url, params)
-    logging.info(f'GET response: {resp.text}')
+    resp = __get(url, params, headers={'Accept': 'application/json'})
+    resp.headers.pop('Set-Cookie', None)
+    logging.info(f'GET response: {resp.text} (headers: {resp.headers})')
     return resp
 
 
@@ -100,10 +102,10 @@ def make_data_request(cluster, make_request_fn):
     try:
         resp = make_request_fn()
         if resp.status_code == 200:
-            return resp.json()
+            return resp.json(), resp.headers
         elif resp.status_code == 401:
             print_error(f'Authentication failed on {cluster["name"]} ({cluster["url"]}).')
-            return []
+            return [], {}
         elif resp.status_code == 500:
             print_error(f'Encountered server error while querying {cluster["name"]}.')
             # fall through to logging call below
@@ -119,4 +121,4 @@ def make_data_request(cluster, make_request_fn):
         logging.exception(ioe)
     except json.decoder.JSONDecodeError as jde:
         logging.exception(jde)
-    return []
+    return [], {}

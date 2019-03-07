@@ -25,7 +25,7 @@ setup(
     version=version.VERSION,
     description="Two Sigma's Waiter CLI",
     long_description="This package contains Two Sigma's Waiter command line interface, waiter. waiter allows you to "
-                     "create/update/delete tokens and view tokens and services across multiple Waiter clusters.",
+                     "create/update/delete/view tokens and also view services across multiple Waiter clusters.",
     packages=['waiter', 'waiter.subcommands'],
     entry_points={'console_scripts': ['waiter = waiter.__main__:main']},
     install_requires=requirements,

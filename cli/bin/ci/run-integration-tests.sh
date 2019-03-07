@@ -50,3 +50,8 @@ export WAITER_URI=127.0.0.1:${WAITER_PORT}
 export WAITER_TEST_DEFAULT_CMD="${ROOT_DIR}/kitchen/bin/kitchen --port \${PORT0}"
 cd ${CLI_DIR}/integration
 pytest
+
+# TODO(DPO) Delete this
+for i in {1..100}; do
+    pytest -k test_if_match || exit 1
+done
