@@ -44,7 +44,7 @@ def create_or_update(cluster, token_name, token_fields):
         print_info('Attempting to post on %s cluster...' % terminal.bold(cluster_name))
         json_body = existing_token_data if existing_token_data else {}
         json_body.update(token_fields)
-        headers = {'If-Match': existing_token_etag} if existing_token_etag else None
+        headers = {'If-Match': existing_token_etag or ''}
         resp = http.post(cluster, 'token', json_body, params={'token': token_name}, headers=headers)
         print_post_result(resp)
         if resp.status_code == 201:
