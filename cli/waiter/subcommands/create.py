@@ -14,7 +14,7 @@ BOOL_STRINGS = TRUE_STRINGS + FALSE_STRINGS
 create_parser = None
 
 
-def print_post_result(resp):
+def process_post_result(resp):
     """Prints the result of a token POST"""
     resp_json = resp.json()
     if 'message' in resp_json:
@@ -46,9 +46,8 @@ def create_or_update(cluster, token_name, token_fields):
         json_body.update(token_fields)
         headers = {'If-Match': existing_token_etag} if existing_token_etag else None
         resp = http.post(cluster, 'token', json_body, params={'token': token_name}, headers=headers)
-        print_post_result(resp)
-        if resp.status_code == 201:
-            return 0
+        process_post_result(resp)
+        return 0
     except requests.exceptions.ReadTimeout as rt:
         logging.exception(rt)
         print_info(terminal.failed(
