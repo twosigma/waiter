@@ -227,7 +227,7 @@
       (log/info "connecting to" instance-endpoint "using" proto-version))
     (-> instance
         :protocol
-        (hu/retrieve-http-client http-clients)
+        (hu/select-http-client http-clients)
         (make-http-request
           make-basic-auth-fn request-method instance-endpoint query-string headers body service-password
           (handler/make-auth-user-map request) initial-socket-timeout-ms output-buffer-size proto-version))))
@@ -414,7 +414,7 @@
     [make-request-fn instance-rpc-chan start-new-service-fn
      instance-request-properties determine-priority-fn process-backend-response-fn
      request-abort-callback-factory local-usage-agent
-     {:keys [ctrl descriptor protocol request-id request-time] :as request}]
+     {:keys [ctrl descriptor request-id request-time] :as request}]
     (let [reservation-status-promise (promise)
           control-mult (async/mult ctrl)
           {:keys [uri] :as request} (-> request (dissoc :ctrl) (assoc :ctrl-mult control-mult))
@@ -466,7 +466,7 @@
                                                                   reservation-status-promise metric-group)))
                         instance (:out timed-instance)
                         instance-elapsed (:elapsed timed-instance)
-                        proto-version (hu/determine-backend-protocol-version backend-proto protocol)]
+                        proto-version (hu/backend-protocol->http-version backend-proto)]
                     (statsd/histo! metric-group "get_instance" instance-elapsed)
                     (-> (try
                           (log/info "suggested instance:" (:id instance) (:host instance) (:port instance))

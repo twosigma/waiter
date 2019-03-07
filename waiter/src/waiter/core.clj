@@ -592,7 +592,7 @@
                               [hostname])))
    :websocket-client (pc/fnk [[:settings [:websocket-config ws-max-binary-message-size ws-max-text-message-size]]
                               http-clients]
-                       (let [http-client (http-utils/retrieve-http-client "http" http-clients)
+                       (let [http-client (http-utils/select-http-client "http" http-clients)
                              websocket-client (WebSocketClient. ^HttpClient http-client)]
                          (doto (.getPolicy websocket-client)
                            (.setMaxBinaryMessageSize ws-max-binary-message-size)
@@ -787,7 +787,7 @@
                                                  [:settings [:instance-request-properties initial-socket-timeout-ms]]
                                                  [:state http-clients passwords router-id]
                                                  make-basic-auth-fn]
-                                          (let [http-client (http-utils/retrieve-http-client "http" http-clients)
+                                          (let [http-client (http-utils/select-http-client "http" http-clients)
                                                 make-request-async-fn (fn make-request-async-fn [method endpoint-url auth body config]
                                                                         (make-request-async http-client initial-socket-timeout-ms method endpoint-url auth body config))]
                                             (fn make-inter-router-requests-async-fn [endpoint & args]
@@ -796,7 +796,7 @@
                                                 [:settings [:instance-request-properties initial-socket-timeout-ms]]
                                                 [:state http-clients passwords router-id]
                                                 make-basic-auth-fn]
-                                         (let [http-client (http-utils/retrieve-http-client "http" http-clients)
+                                         (let [http-client (http-utils/select-http-client "http" http-clients)
                                                make-request-sync-fn (fn make-request-sync-fn [method endpoint-url auth body config]
                                                                       (make-request-sync http-client initial-socket-timeout-ms method endpoint-url auth body config))]
                                            (fn make-inter-router-requests-sync-fn [endpoint & args]

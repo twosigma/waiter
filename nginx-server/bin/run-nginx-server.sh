@@ -37,6 +37,8 @@ if [[ ! -e "${NGINX_CMD}" ]]; then
   exit 1
 fi
 nginx_log "nginx command is ${NGINX_CMD}"
+nginx_log "nginx version:"
+${NGINX_CMD} -v
 
 NGINX_HTTP2=""
 if [[ ( "${PROTO_VERSION}" = "h2c" ) || ( "${PROTO_VERSION}" = "h2" ) ]]; then

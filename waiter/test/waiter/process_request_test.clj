@@ -264,7 +264,7 @@
             "http://www.example.com:1234/query/for/status")))))
 
 (deftest test-make-request
-  (let [instance {:service-id "test-service-id", :host "example.com", :port 8080, :protocol "proto"}
+  (let [instance {:service-id "test-service-id", :host "example.com", :port 8080, :protocol "http"}
         request {:authorization/principal "test-user@test.com"
                  :authorization/user "test-user"
                  :body "body"}
@@ -304,7 +304,7 @@
                              "x-http-method-override" "DELETE"}
         end-route "/end-route"
         app-password "test-password"]
-    (let [expected-endpoint "proto://example.com:8080/end-route"
+    (let [expected-endpoint "http://example.com:8080/end-route"
           make-basic-auth-fn (fn make-basic-auth-fn [endpoint username password]
                                (is (= expected-endpoint endpoint))
                                (is (= username "waiter"))

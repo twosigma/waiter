@@ -100,25 +100,23 @@
                        (assoc :transport http2-transport)
                        http-client-factory)}))
 
-(defn retrieve-http-client
+(defn select-http-client
   "Returns the appropriate http client based on the backend protocol."
   [backend-proto {:keys [http1-client http2-client]}]
-  (if (contains? #{"h2" "h2c"} backend-proto)
-    http2-client
-    http1-client))
+  (cond
+    (contains? #{"h2" "h2c"} backend-proto) http2-client
+    (contains? #{"http" "https"} backend-proto) http1-client
+    :else (throw (ex-info (str "Unsupported backend-proto: " backend-proto) {}))))
 
-(defn determine-backend-protocol-version
+(defn backend-protocol->http-version
   "Determines the protocol version to use for the request to the backend.
    Returns HTTP/2.0 for http/2 backends.
-   Returns HTTP/1.1, HTTP/1.0 or HTTP/0.9 for non-http/2 backends."
-  [^String backend-proto ^String client-protocol]
+   Returns HTTP/1.1, for non-http/2 backends."
+  [^String backend-proto]
   (cond
-    ;; HTTP/2 backend
     (contains? #{"h2" "h2c"} backend-proto) "HTTP/2.0"
-    ;; Not a HTTP/2 backend, default to HTTP/1.1 for HTTP/2 requests
-    (= client-protocol "HTTP/2.0") "HTTP/1.1"
-    ;; Use client version: HTTP/1.1, HTTP/1.0 or HTTP/0.9
-    :else client-protocol))
+    (contains? #{"http" "https"} backend-proto) "HTTP/1.1"
+    :else (throw (ex-info (str "Unsupported backend-proto: " backend-proto) {}))))
 
 (defn backend-proto->scheme
   "Determines the protocol scheme from the backend proto"

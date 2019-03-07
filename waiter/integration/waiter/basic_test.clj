@@ -203,7 +203,7 @@
 
       (delete-service waiter-url service-id))))
 
-(deftest ^:parallel ^:integration-fast test-basic-service-from-on-the-fly-headers
+(deftest ^:parallel ^:integration-fast test-basic-service-validation-from-on-the-fly-headers
   (testing-using-waiter-url
     (let [headers {:authentication "standard"
                    :backend-proto "h2c"
@@ -320,9 +320,9 @@
 (defn- run-backend-proto-service-test
   "Helper method to run tests with various backend protocols"
   [waiter-url backend-proto backend-scheme backend-proto-version]
-  (let [kitchen-command (proxy-kitchen-command backend-proto "bin/run-nginx-server.sh")
+  (let [nginx-command (nginx-server-command backend-proto)
         request-headers {:x-waiter-backend-proto backend-proto
-                         :x-waiter-cmd kitchen-command
+                         :x-waiter-cmd nginx-command
                          :x-waiter-health-check-port-index 1
                          :x-waiter-name (rand-name)
                          :x-waiter-ports 2}
@@ -337,7 +337,7 @@
         (is (= backend-scheme x-nginx-client-scheme)))
       (let [service-settings (service-settings waiter-url service-id)]
         (is (= backend-proto (get-in service-settings [:service-description :backend-proto])))
-        (is (= kitchen-command (get-in service-settings [:service-description :cmd])))))))
+        (is (= nginx-command (get-in service-settings [:service-description :cmd])))))))
 
 (deftest ^:parallel ^:integration-fast test-http-backend-proto-service
   (testing-using-waiter-url
