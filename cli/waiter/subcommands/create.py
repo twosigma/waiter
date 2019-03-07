@@ -122,8 +122,10 @@ def add_implicit_arguments(unknown_args):
     for i in range(num_unknown_args):
         arg = unknown_args[i]
         if arg.startswith(("-", "--")):
-            if arg.endswith('-secs'):
+            if arg.endswith('-secs') or arg.endswith('-mins') or arg.endswith('-instances'):
                 arg_type = int
+            elif arg.endswith('-factor'):
+                arg_type = float
             elif (i + 1) < num_unknown_args and unknown_args[i + 1].lower() in BOOL_STRINGS:
                 arg_type = str2bool
             else:
