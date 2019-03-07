@@ -70,8 +70,11 @@ def __make_url(cluster, endpoint):
 
 def post(cluster, endpoint, json_body, params=None, headers=None):
     """POSTs data to cluster at /endpoint"""
+    if headers is None:
+        headers = {}
     url = __make_url(cluster, endpoint)
-    resp = __post(url, json_body, params=params, headers=headers)
+    default_headers = {'Accept': 'application/json'}
+    resp = __post(url, json_body, params=params, headers={**default_headers, **headers})
     resp.headers.pop('Set-Cookie', None)
     logging.info(f'POST response: {resp.text} (headers: {resp.headers})')
     return resp

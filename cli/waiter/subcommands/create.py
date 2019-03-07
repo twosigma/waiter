@@ -14,7 +14,7 @@ BOOL_STRINGS = TRUE_STRINGS + FALSE_STRINGS
 create_parser = None
 
 
-def print_post_result(resp):
+def process_post_result(resp):
     """Prints the result of a token POST"""
     resp_json = resp.json()
     if 'message' in resp_json:
@@ -46,9 +46,8 @@ def create_or_update(cluster, token_name, token_fields):
         json_body.update(token_fields)
         headers = {'If-Match': existing_token_etag or ''}
         resp = http.post(cluster, 'token', json_body, params={'token': token_name}, headers=headers)
-        print_post_result(resp)
-        if resp.status_code == 201:
-            return 0
+        process_post_result(resp)
+        return 0
     except requests.exceptions.ReadTimeout as rt:
         logging.exception(rt)
         print_info(terminal.failed(
@@ -123,8 +122,10 @@ def add_implicit_arguments(unknown_args):
     for i in range(num_unknown_args):
         arg = unknown_args[i]
         if arg.startswith(("-", "--")):
-            if arg.endswith('-secs'):
+            if arg.endswith('-secs') or arg.endswith('-mins') or arg.endswith('-instances'):
                 arg_type = int
+            elif arg.endswith('-factor'):
+                arg_type = float
             elif (i + 1) < num_unknown_args and unknown_args[i + 1].lower() in BOOL_STRINGS:
                 arg_type = str2bool
             else:

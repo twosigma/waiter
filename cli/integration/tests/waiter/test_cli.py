@@ -39,8 +39,6 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(getpass.getuser(), token_data['last-update-user'])
             self.assertEqual({}, token_data['previous'])
             self.assertEqual(version, token_data['version'])
-            resp = util.session.get(self.waiter_url, headers={'X-Waiter-Token': token_name})
-            self.assertEqual(200, resp.status_code, resp.text)
         finally:
             util.delete_token(self.waiter_url, token_name)
 
@@ -124,22 +122,37 @@ class WaiterCliTest(util.WaiterTest):
         self.assertIn('--cpus', cli.stdout(cp))
         self.assertNotIn('--https-redirect', cli.stdout(cp))
         self.assertNotIn('--fallback-period-secs', cli.stdout(cp))
+        self.assertNotIn('--idle-timeout-mins', cli.stdout(cp))
+        self.assertNotIn('--max-instances', cli.stdout(cp))
+        self.assertNotIn('--restart-backoff-factor', cli.stdout(cp))
         token_name = self.token_name()
         cp = cli.create(self.waiter_url, token_name, create_flags='--https-redirect true '
                                                                   '--cpus 0.1 '
-                                                                  '--fallback-period-secs 10')
+                                                                  '--fallback-period-secs 10 '
+                                                                  '--idle-timeout-mins 1 '
+                                                                  '--max-instances 100 '
+                                                                  '--restart-backoff-factor 1.1')
         self.assertEqual(0, cp.returncode, cp.stderr)
         try:
             token = util.load_token(self.waiter_url, token_name)
             self.assertTrue(token['https-redirect'])
             self.assertEqual(10, token['fallback-period-secs'])
+            self.assertEqual(1, token['idle-timeout-mins'])
+            self.assertEqual(100, token['max-instances'])
+            self.assertEqual(1.1, token['restart-backoff-factor'])
             cp = cli.create(self.waiter_url, token_name, create_flags='--https-redirect false '
                                                                       '--cpus 0.1 '
-                                                                      '--fallback-period-secs 20')
+                                                                      '--fallback-period-secs 20 '
+                                                                      '--idle-timeout-mins 2 '
+                                                                      '--max-instances 200 '
+                                                                      '--restart-backoff-factor 2.2')
             self.assertEqual(0, cp.returncode, cp.stderr)
             token = util.load_token(self.waiter_url, token_name)
             self.assertFalse(token['https-redirect'])
             self.assertEqual(20, token['fallback-period-secs'])
+            self.assertEqual(2, token['idle-timeout-mins'])
+            self.assertEqual(200, token['max-instances'])
+            self.assertEqual(2.2, token['restart-backoff-factor'])
         finally:
             util.delete_token(self.waiter_url, token_name)
 
