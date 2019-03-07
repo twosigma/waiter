@@ -14,8 +14,8 @@ DEFAULT_CONFIG = {'http': {'retries': 2,
                            'modules': {'session-module': 'requests',
                                        'adapters-module': 'requests.adapters'}},
                   'metrics': {'disabled': True,
-                              'timeout': 0.15,
-                              'max-retries': 2}}
+                              'max-retries': 2,
+                              'timeout': 0.15}}
 
 
 def __load_json_file(path):

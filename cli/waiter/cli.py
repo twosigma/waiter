@@ -80,12 +80,16 @@ def run(args):
         config_map = configuration.load_config_with_defaults(config_path)
         try:
             metrics.initialize(config_map)
-            metrics.inc('command.%s.runs' % action)
+            metrics.inc(f'command.{action}.runs')
             clusters = load_target_clusters(config_map, url, cluster)
             http.configure(config_map)
             args = {k: v for k, v in args.items() if v is not None}
             result = actions[action](clusters, args, config_path)
-            logging.debug('result: %s' % result)
+            logging.debug(f'result: {result}')
+            if result == 0:
+                metrics.inc(f'command.{action}.result.success')
+            else:
+                metrics.inc(f'command.{action}.result.failure')
             return result
         finally:
             metrics.close()

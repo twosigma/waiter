@@ -27,6 +27,6 @@ def get_token(cluster, token_name, include=None):
     params = {'token': token_name}
     if include:
         params['include'] = include
-    token, headers = http.make_data_request(cluster, lambda: http.get(cluster, 'token', params=params))
+    token_data, headers = http.make_data_request(cluster, lambda: http.get(cluster, 'token', params=params))
     etag = headers.get('ETag', None)
-    return token, etag
+    return token_data, etag
