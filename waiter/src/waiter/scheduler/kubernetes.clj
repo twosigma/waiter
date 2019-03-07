@@ -162,8 +162,9 @@
   "Determine whether a pod was killed (restarted) by its corresponding Kubernetes liveness checks."
   [{:keys [exitCode reason] :as pod-terminated-info}]
   ;; TODO (#351) - Look at events for messages about liveness probe failures.
-  ;; Currently, we assume any SIGKILL (137) with the default "Error" reason was a livenessProbe kill.
-  (and (= 137 exitCode)
+  ;; Currently, we assume any SIGKILL (137) or SIGTERM (143) exit code
+  ;; with the default "Error" reason string indicates a livenessProbe kill.
+  (and (contains? #{137 143} exitCode)
        (= "Error" reason)))
 
 (defn- track-failed-instances!
