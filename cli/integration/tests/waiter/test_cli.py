@@ -38,8 +38,6 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(getpass.getuser(), token_data['last-update-user'])
             self.assertEqual({}, token_data['previous'])
             self.assertEqual(version, token_data['version'])
-            resp = util.session.get(self.waiter_url, headers={'X-Waiter-Token': token_name})
-            self.assertEqual(200, resp.status_code, resp.text)
         finally:
             util.delete_token(self.waiter_url, token_name)
 
