@@ -106,7 +106,7 @@
                 instance-request-fn (fn []
                                       (let [instance-id (request-fn)]
                                         (swap! instance-ids-atom conj instance-id)))
-                instance-ids (->> (parallelize-requests 4 10 instance-request-fn
+                instance-ids (->> (parallelize-requests 4 16 instance-request-fn
                                                         :canceled? (fn [] (> (count @instance-ids-atom) 2))
                                                         :verbose true
                                                         :service-id service-id)
