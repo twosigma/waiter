@@ -232,7 +232,7 @@
     (-> (headers/split-headers (:headers request))
         (sd/merge-service-description-sources kv-store waiter-hostnames service-description-defaults token-defaults)
         (sd/merge-service-description-and-id kv-store service-id-prefix current-request-user metric-group-mappings
-                                             service-description-builder assoc-run-as-user-approved?)
+                                             service-description-builder assoc-run-as-user-approved? true)
         (sd/merge-suspended kv-store))))
 
 (defn descriptor->previous-descriptor
@@ -240,22 +240,28 @@
    The result map contains the following elements:
    {:keys [waiter-headers passthrough-headers sources service-id service-description core-service-description suspended-state]}"
   [kv-store service-id-prefix token-defaults metric-group-mappings service-description-builder service-approved? username
-   {:keys [sources] :as descriptor}]
-  (when-let [token-sequence (-> sources :token-sequence seq)]
-    (let [{:keys [token->token-data]} sources
-          previous-token (->> token->token-data
-                              (pc/map-vals (fn [token-data] (get token-data "previous")))
-                              sd/retrieve-most-recently-modified-token)
-          previous-token-data (get-in token->token-data [previous-token "previous"])]
-      (when (seq previous-token-data)
-        (let [new-sources (->> (assoc token->token-data previous-token previous-token-data)
-                               (sd/compute-service-description-template-from-tokens token-defaults token-sequence)
-                               (merge sources))]
-          (-> (select-keys descriptor [:passthrough-headers :waiter-headers])
-              (assoc :sources new-sources)
-              (sd/merge-service-description-and-id
-                kv-store service-id-prefix username metric-group-mappings service-description-builder service-approved?)
-              (sd/merge-suspended kv-store)))))))
+   descriptor]
+  (loop [{:keys [sources]} descriptor]
+    (when-let [token-sequence (-> sources :token-sequence seq)]
+      (let [{:keys [token->token-data]} sources
+            previous-token (->> token->token-data
+                                (pc/map-vals (fn [token-data] (get token-data "previous")))
+                                sd/retrieve-most-recently-modified-token)
+            previous-token-data (get-in token->token-data [previous-token "previous"])]
+        (when (seq previous-token-data)
+          (let [new-sources (->> (assoc token->token-data previous-token previous-token-data)
+                                 (sd/compute-service-description-template-from-tokens token-defaults token-sequence)
+                                 (merge sources))
+                {:keys [service-description-valid?] :as previous-descriptor}
+                (-> (select-keys descriptor [:passthrough-headers :waiter-headers])
+                    (assoc :sources new-sources)
+                    (sd/merge-service-description-and-id
+                      kv-store service-id-prefix username metric-group-mappings service-description-builder
+                      service-approved? false)
+                    (sd/merge-suspended kv-store))]
+            (if (not service-description-valid?)
+              (recur previous-descriptor)
+              previous-descriptor)))))))
 
 (let [request->descriptor-timer (metrics/waiter-timer "core" "request->descriptor")]
   (defn request->descriptor

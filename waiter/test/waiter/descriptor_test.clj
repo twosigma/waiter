@@ -530,6 +530,7 @@
                 :passthrough-headers passthrough-headers
                 :service-authentication-disabled false
                 :service-description (merge (:defaults sources) service-description-1)
+                :service-description-valid? true
                 :service-id (sd/service-description->service-id service-id-prefix service-description-1)
                 :service-preauthorized false
                 :source-tokens [(sd/source-tokens-entry test-token token-data-1)]
@@ -571,6 +572,7 @@
                   :passthrough-headers passthrough-headers
                   :service-authentication-disabled false
                   :service-description (merge (:defaults sources) expected-core-service-description)
+                  :service-description-valid? true
                   :service-id (sd/service-description->service-id service-id-prefix expected-core-service-description)
                   :service-preauthorized false
                   :source-tokens [(sd/source-tokens-entry test-token token-data-1)]
@@ -636,6 +638,7 @@
                   :passthrough-headers passthrough-headers
                   :service-authentication-disabled false
                   :service-description (merge (:defaults sources) expected-core-service-description)
+                  :service-description-valid? true
                   :service-id (sd/service-description->service-id service-id-prefix expected-core-service-description)
                   :service-preauthorized false
                   :source-tokens [(sd/source-tokens-entry test-token-1 token-data-1)
@@ -659,6 +662,7 @@
                     :passthrough-headers passthrough-headers
                     :service-authentication-disabled false
                     :service-description (merge (:defaults sources) expected-core-service-description)
+                    :service-description-valid? true
                     :service-id (sd/service-description->service-id service-id-prefix expected-core-service-description)
                     :service-preauthorized false
                     :source-tokens [(sd/source-tokens-entry test-token-1 token-data-1p)

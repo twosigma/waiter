@@ -788,7 +788,7 @@
            waiter-headers (or waiter-headers {})]
        (compute-service-description sources waiter-headers {} kv-store "test-service-" "current-request-user"
                                     [] (create-default-service-description-builder {})
-                                    assoc-run-as-user-approved?)))))
+                                    assoc-run-as-user-approved? true)))))
 
 (defn- service-description
   ([sources & {:keys [assoc-run-as-user-approved? kv-store waiter-headers]}]
@@ -1384,7 +1384,8 @@
                                                                               "run-as-user" test-user}}
                                               {} {} kv-store service-id-prefix test-user []
                                               (create-default-service-description-builder {})
-                                              (constantly false))))
+                                              (constantly false)
+                                              true)))
     (is (thrown? Exception
                  (compute-service-description {:defaults {"health-check-url" 1}
                                                :headers {}
@@ -1395,14 +1396,16 @@
                                                                               "run-as-user" test-user}}
                                               {} {} kv-store service-id-prefix test-user []
                                               (create-default-service-description-builder {})
-                                              (constantly false))))
+                                              (constantly false)
+                                              true)))
     (is (thrown? Exception
                  (compute-service-description {:defaults {"health-check-url" 1}
                                                :headers {}
                                                :service-description-template {}}
                                               {} {} kv-store service-id-prefix test-user []
                                               (create-default-service-description-builder {})
-                                              (constantly false))))
+                                              (constantly false)
+                                              true)))
     (is (thrown? Exception
                  (compute-service-description {:defaults {"health-check-url" "/health"}
                                                :service-description-template {"cmd" "cmd for missing run-as-user"
@@ -1411,7 +1414,8 @@
                                                                               "version" "a1b2c3"}}
                                               {} {} kv-store service-id-prefix test-user []
                                               (create-default-service-description-builder {})
-                                              (constantly false))))
+                                              (constantly false)
+                                              true)))
 
     (testing "invalid allowed params - reserved"
       (is (thrown? Exception
@@ -1426,7 +1430,8 @@
                                                                                 "version" "a1b2c3"}}
                                                 {} {} kv-store service-id-prefix test-user []
                                                 (create-default-service-description-builder {})
-                                                (constantly false)))))
+                                                (constantly false)
+                                                true))))
 
     (testing "invalid allowed params - bad naming"
       (is (thrown? Exception
@@ -1441,7 +1446,8 @@
                                                                                 "version" "a1b2c3"}}
                                                 {} {} kv-store service-id-prefix test-user []
                                                 (create-default-service-description-builder {})
-                                                (constantly false)))))
+                                                (constantly false)
+                                                true))))
 
     (testing "invalid allowed params - reserved and bad naming"
       (is (thrown? Exception
@@ -1456,7 +1462,8 @@
                                                                                 "version" "a1b2c3"}}
                                                 {} {} kv-store service-id-prefix test-user []
                                                 (create-default-service-description-builder {})
-                                                (constantly false)))))
+                                                (constantly false)
+                                                true))))
 
     (testing "token + disallowed param header - on-the-fly"
       (is (thrown? Exception
@@ -1471,7 +1478,8 @@
                                                                                 "run-as-user" "test-user"}}
                                                 {} {} kv-store service-id-prefix test-user []
                                                 (create-default-service-description-builder {})
-                                                (constantly false)))))
+                                                (constantly false)
+                                                true))))
 
     (testing "token + no allowed params - on-the-fly"
       (is (thrown? Exception
@@ -1486,7 +1494,8 @@
                                                                                 "run-as-user" "test-user"}}
                                                 {} {} kv-store service-id-prefix test-user []
                                                 (create-default-service-description-builder {})
-                                                (constantly false)))))
+                                                (constantly false)
+                                                true))))
 
     (testing "instance-expiry-mins"
       (let [core-service-description {"cmd" "cmd for missing run-as-user"
@@ -1499,7 +1508,8 @@
                                                                             :service-description-template service-description}
                                                                            {} {} kv-store service-id-prefix test-user []
                                                                            (create-default-service-description-builder {})
-                                                                           (constantly false)))]
+                                                                           (constantly false)
+                                                                           true))]
         (is (thrown? Exception (run-compute-service-description (assoc core-service-description "instance-expiry-mins" -1))))
         (is (run-compute-service-description (assoc core-service-description "instance-expiry-mins" 0)))
         (is (run-compute-service-description (assoc core-service-description "instance-expiry-mins" 1)))))))

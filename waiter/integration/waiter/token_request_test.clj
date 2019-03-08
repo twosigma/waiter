@@ -129,7 +129,7 @@
 (defmacro assert-token-response
   "Asserts the token data in the response"
   ([response token-root token-cluster service-id-prefix deleted]
-   `(assert-token-response ~response ~token-root~token-cluster ~service-id-prefix ~deleted true))
+   `(assert-token-response ~response ~token-root ~token-cluster ~service-id-prefix ~deleted true))
   ([response token-root token-cluster service-id-prefix deleted include-metadata]
    `(let [body# (:body ~response)
           token-description# (parse-token-description body#)]
@@ -374,10 +374,10 @@
                 services (json/read-str body)
                 service-tokens (mapcat (fn [entry]
                                          (some->> entry
-                                                  walk/keywordize-keys
-                                                  :source-tokens
-                                                  flatten
-                                                  (map :token)))
+                                           walk/keywordize-keys
+                                           :source-tokens
+                                           flatten
+                                           (map :token)))
                                        services)]
             (assert-response-status response 200)
             (is (= (count @service-ids-atom) (count service-tokens))
@@ -394,10 +394,10 @@
                 services (json/read-str body)
                 service-tokens (mapcat (fn [entry]
                                          (some->> entry
-                                                  walk/keywordize-keys
-                                                  :source-tokens
-                                                  flatten
-                                                  (map :token)))
+                                           walk/keywordize-keys
+                                           :source-tokens
+                                           flatten
+                                           (map :token)))
                                        services)]
             (assert-response-status response 200)
             (is (= 3 (count service-tokens))
@@ -415,10 +415,10 @@
                   services (json/read-str body)
                   service-token-versions (mapcat (fn [entry]
                                                    (some->> entry
-                                                            walk/keywordize-keys
-                                                            :source-tokens
-                                                            flatten
-                                                            (map :version)))
+                                                     walk/keywordize-keys
+                                                     :source-tokens
+                                                     flatten
+                                                     (map :version)))
                                                  services)]
               (assert-response-status response 200)
               (is (= 1 (count service-token-versions))
@@ -442,9 +442,9 @@
           (log/info "basic hostname as token test")
           (let [current-user (retrieve-username)
                 service-description (assoc (kitchen-request-headers)
-                                           :x-waiter-metric-group token-prefix
-                                           :x-waiter-permitted-user "*"
-                                           :x-waiter-run-as-user current-user)]
+                                      :x-waiter-metric-group token-prefix
+                                      :x-waiter-permitted-user "*"
+                                      :x-waiter-run-as-user current-user)]
             (testing "hostname-token-creation"
               (log/info "creating configuration using token" token)
               (let [{:keys [body status]}
@@ -803,7 +803,7 @@
 (deftest ^:parallel ^:integration-fast ^:explicit test-on-the-fly-to-token
   (testing-using-waiter-url
     (let [name-string (rand-name)
-          {:keys[cookies] :as canary-response}
+          {:keys [cookies] :as canary-response}
           (make-request-with-debug-info {:x-waiter-name name-string} #(make-kitchen-request waiter-url %))
           service-id-1 (:service-id canary-response)]
       (with-service-cleanup
@@ -1397,3 +1397,49 @@
                     (is (= service-id-3 (kitchen-env-service-id)))))))))
         (finally
           (delete-token-and-assert waiter-url token))))))
+
+(deftest ^:parallel ^:integration-fast test-valid-fallback-service-resolution
+  (testing-using-waiter-url
+    (let [service-name (rand-name)
+          token (create-token-name waiter-url service-name)
+          request-headers {:x-waiter-token token}
+          fallback-period-secs 300
+          token-description-1 (-> (kitchen-request-headers :prefix "")
+                                  (assoc :fallback-period-secs fallback-period-secs
+                                         :idle-timeout-mins 1
+                                         :name (str service-name "-v1")
+                                         :permitted-user "*"
+                                         :run-as-user (retrieve-username)
+                                         :token token
+                                         :version "version-1"))
+          token-description-2 (-> token-description-1
+                                  (assoc :name (str service-name "-v2")
+                                         :version "version-2")
+                                  (dissoc :cpus :mem :version))
+          token-description-3 (-> token-description-1
+                                  (assoc :name (str service-name "-v3")
+                                         :version "version-3"))]
+      (-> token-description-1
+          (as-> token-description (post-token waiter-url token-description))
+          (assert-response-status 200))
+      (let [service-id-1 (retrieve-service-id waiter-url request-headers)]
+        (with-service-cleanup
+          service-id-1
+          (let [response-1 (make-request-with-debug-info request-headers #(make-request waiter-url "/hello" :headers %))]
+            (assert-response-status response-1 200)
+            (is (= service-id-1 (:service-id response-1))))
+          (-> token-description-2
+              (as-> token-description (post-token waiter-url token-description))
+              (assert-response-status 200))
+          (-> (make-request waiter-url "/hello" :headers request-headers)
+              (assert-response-status 400))
+          (-> token-description-3
+              (as-> token-description (post-token waiter-url token-description))
+              (assert-response-status 200))
+          (let [service-id-2 (retrieve-service-id waiter-url (assoc request-headers :x-waiter-fallback-period-secs 0))]
+            (is (not= service-id-1 service-id-2))
+            (with-service-cleanup
+              service-id-2
+              (let [response-2 (make-request-with-debug-info request-headers #(make-request waiter-url "/hello" :headers %))]
+                (assert-response-status response-2 200)
+                (is (= service-id-1 (:service-id response-2)))))))))))
