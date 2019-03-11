@@ -42,6 +42,7 @@ bash +x ${DIR}/monitor-pods.sh &
 export INTEGRATION_TEST_CUSTOM_IMAGE="twosigma/integration"
 export LEIN_TEST_THREADS=4
 export WAITER_TEST_KITCHEN_CMD=/opt/kitchen/kitchen
+export WAITER_TEST_NGINX_SERVER_CMD=/opt/nginx-server/bin/run-nginx-server.sh
 export WAITER_AUTH_RUN_AS_USER=${USER}
 export WAITER_URI=127.0.0.1:${WAITER_PORT}
 ${WAITER_DIR}/bin/test.sh ${TEST_COMMAND} ${TEST_SELECTOR}

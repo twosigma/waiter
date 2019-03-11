@@ -5,7 +5,7 @@
 # Launches kitchen fronted by a nginx instance to handle
 # incoming requests using the specified protocol.
 
-set -eux
+set -ux
 
 # Log a message to stdout
 nginx_log() {

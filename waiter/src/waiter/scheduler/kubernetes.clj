@@ -701,7 +701,7 @@
                       {:name (str "PORT" i) :value (str (+ port0 i))})))
         k8s-name (service-id->k8s-app-name scheduler service-id)
         backend-protocol-lower (string/lower-case backend-proto)
-        backend-protocol-upper (string/upper-case backend-proto)
+        health-check-scheme (-> backend-proto http-utils/backend-proto->scheme string/upper-case)
         health-check-url (sd/service-description->health-check-url service-description)
         memory (str mem "Mi")]
     (cond->
@@ -725,7 +725,7 @@
                                               :imagePullPolicy "IfNotPresent"
                                               :livenessProbe {:httpGet {:path health-check-url
                                                                         :port health-check-port
-                                                                        :scheme backend-protocol-upper}
+                                                                        :scheme health-check-scheme}
                                                               ;; We increment the threshold value to match Marathon behavior.
                                                               ;; Marathon treats this as a retry count,
                                                               ;; whereas Kubernetes treats it as a run count.
@@ -737,7 +737,7 @@
                                               :ports [{:containerPort port0}]
                                               :readinessProbe {:httpGet {:path health-check-url
                                                                          :port health-check-port
-                                                                         :scheme backend-protocol-upper}
+                                                                         :scheme health-check-scheme}
                                                                :failureThreshold 1
                                                                :periodSeconds health-check-interval-secs
                                                                :timeoutSeconds 1}

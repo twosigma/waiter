@@ -341,27 +341,19 @@
 
 (deftest ^:parallel ^:integration-fast test-http-backend-proto-service
   (testing-using-waiter-url
-    (if (using-shell? waiter-url)
-      (run-backend-proto-service-test waiter-url "http" "http" "HTTP/1.1")
-      (log/info "Skipping test-h2c-backend-proto-service as the default is not shell scheduler"))))
+    (run-backend-proto-service-test waiter-url "http" "http" "HTTP/1.1")))
 
 (deftest ^:parallel ^:integration-fast test-https-backend-proto-service
   (testing-using-waiter-url
-    (if (using-shell? waiter-url)
-      (run-backend-proto-service-test waiter-url "https" "https" "HTTP/1.1")
-      (log/info "Skipping test-h2-backend-proto-service as the default is not shell scheduler"))))
+    (run-backend-proto-service-test waiter-url "https" "https" "HTTP/1.1")))
 
 (deftest ^:parallel ^:integration-fast test-h2c-backend-proto-service
   (testing-using-waiter-url
-    (if (using-shell? waiter-url)
-      (run-backend-proto-service-test waiter-url "h2c" "http" "HTTP/2.0")
-      (log/info "Skipping test-h2c-backend-proto-service as the default is not shell scheduler"))))
+    (run-backend-proto-service-test waiter-url "h2c" "http" "HTTP/2.0")))
 
 (deftest ^:parallel ^:integration-fast test-h2-backend-proto-service
   (testing-using-waiter-url
-    (if (using-shell? waiter-url)
-      (run-backend-proto-service-test waiter-url "h2" "https" "HTTP/2.0")
-      (log/info "Skipping test-h2-backend-proto-service as the default is not shell scheduler"))))
+    (run-backend-proto-service-test waiter-url "h2" "https" "HTTP/2.0")))
 
 (deftest ^:parallel ^:integration-fast test-basic-unsupported-command-type
   (testing-using-waiter-url
