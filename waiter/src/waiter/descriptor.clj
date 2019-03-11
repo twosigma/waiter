@@ -180,14 +180,20 @@
                    attempted-service-ids #{}]
               (if (<= iteration search-history-length)
                 (if-let [previous-descriptor (descriptor->previous-descriptor loop-descriptor)]
-                  (let [{:keys [service-id]} previous-descriptor]
-                    (if (service-healthy? fallback-state service-id)
+                  (let [{:keys [service-description-valid? service-id]} previous-descriptor]
+                    (if service-description-valid?
+                      (if (service-healthy? fallback-state service-id)
+                        (do
+                          (log/info (str "iteration-" iteration) current-service-id "falling back to" service-id)
+                          previous-descriptor)
+                        (recur (inc iteration)
+                               previous-descriptor
+                               (conj attempted-service-ids service-id)))
                       (do
-                        (log/info (str "iteration-" iteration) current-service-id "falling back to" service-id)
-                        previous-descriptor)
-                      (recur (inc iteration)
-                             previous-descriptor
-                             (conj attempted-service-ids service-id))))
+                        (log/info (str "iteration-" iteration) "retrieved an invalid service descriptor")
+                        (recur (inc iteration)
+                               previous-descriptor
+                               attempted-service-ids))))
                   (log/info "no fallback service found for" current-service-id "after entire history lookup"
                             {:attempted-service-ids attempted-service-ids
                              :fallback-state (retrieve-fallback-state-for fallback-state attempted-service-ids)}))
@@ -236,32 +242,28 @@
         (sd/merge-suspended kv-store))))
 
 (defn descriptor->previous-descriptor
-  "Creates the service descriptor from the request.
+  "Creates the previous version of the descriptor from the provided descriptor.
    The result map contains the following elements:
-   {:keys [waiter-headers passthrough-headers sources service-id service-description core-service-description suspended-state]}"
+   {:keys [waiter-headers passthrough-headers sources service-id service-description service-description-valid?
+           core-service-description suspended-state]}"
   [kv-store service-id-prefix token-defaults metric-group-mappings service-description-builder service-approved? username
-   descriptor]
-  (loop [{:keys [sources]} descriptor]
-    (when-let [token-sequence (-> sources :token-sequence seq)]
-      (let [{:keys [token->token-data]} sources
-            previous-token (->> token->token-data
-                                (pc/map-vals (fn [token-data] (get token-data "previous")))
-                                sd/retrieve-most-recently-modified-token)
-            previous-token-data (get-in token->token-data [previous-token "previous"])]
-        (when (seq previous-token-data)
-          (let [new-sources (->> (assoc token->token-data previous-token previous-token-data)
-                                 (sd/compute-service-description-template-from-tokens token-defaults token-sequence)
-                                 (merge sources))
-                {:keys [service-description-valid?] :as previous-descriptor}
-                (-> (select-keys descriptor [:passthrough-headers :waiter-headers])
-                    (assoc :sources new-sources)
-                    (sd/merge-service-description-and-id
-                      kv-store service-id-prefix username metric-group-mappings service-description-builder
-                      service-approved? false)
-                    (sd/merge-suspended kv-store))]
-            (if (not service-description-valid?)
-              (recur previous-descriptor)
-              previous-descriptor)))))))
+   {:keys [sources] :as descriptor}]
+  (when-let [token-sequence (-> sources :token-sequence seq)]
+    (let [{:keys [token->token-data]} sources
+          previous-token (->> token->token-data
+                              (pc/map-vals (fn [token-data] (get token-data "previous")))
+                              sd/retrieve-most-recently-modified-token)
+          previous-token-data (get-in token->token-data [previous-token "previous"])]
+      (when (seq previous-token-data)
+        (let [new-sources (->> (assoc token->token-data previous-token previous-token-data)
+                               (sd/compute-service-description-template-from-tokens token-defaults token-sequence)
+                               (merge sources))]
+          (-> (select-keys descriptor [:passthrough-headers :waiter-headers])
+              (assoc :sources new-sources)
+              (sd/merge-service-description-and-id
+                kv-store service-id-prefix username metric-group-mappings service-description-builder service-approved?
+                false)
+              (sd/merge-suspended kv-store)))))))
 
 (let [request->descriptor-timer (metrics/waiter-timer "core" "request->descriptor")]
   (defn request->descriptor

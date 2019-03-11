@@ -134,12 +134,14 @@
         fallback-period-secs 120
         search-history-length 5
         time-1 (- current-time-millis (t/in-millis (t/seconds 30)))
-        descriptor-1 {:service-id "service-1"
+        descriptor-1 {:service-description-valid? true
+                      :service-id "service-1"
                       :sources {:fallback-period-secs fallback-period-secs
                                 :token->token-data {"test-token" {"last-update-time" time-1}}
                                 :token-sequence ["test-token"]}}
         time-2 (- current-time-millis (t/in-millis (t/seconds 20)))
         descriptor-2 {:previous descriptor-1
+                      :service-description-valid? true
                       :service-id "service-2"
                       :sources {:fallback-period-secs fallback-period-secs
                                 :token->token-data {"test-token" {"last-update-time" time-2}}
@@ -148,6 +150,7 @@
 
     (testing "no fallback service for on-the-fly"
       (let [descriptor-4 {:previous descriptor-2
+                          :service-description-valid? true
                           :service-id "service-4"
                           :sources {:token->token-data {} :token-sequence []}}
             fallback-state {:available-service-ids #{"service-1" "service-2"}
@@ -157,7 +160,23 @@
         (is (nil? result-descriptor))))
 
     (let [time-3 (- current-time-millis (t/in-millis (t/seconds 10)))
+          descriptor-3 {:previous (assoc descriptor-2 :service-description-valid? false)
+                        :service-description-valid? true
+                        :service-id "service-3"
+                        :sources {:fallback-period-secs fallback-period-secs
+                                  :token->token-data {"test-token" {"last-update-time" time-3}}
+                                  :token-sequence ["test-token"]}}]
+
+      (testing "fallback to previous healthy instance inside fallback period"
+        (let [fallback-state {:available-service-ids #{"service-1" "service-2"}
+                              :healthy-service-ids #{"service-1" "service-2"}}
+              result-descriptor (retrieve-fallback-descriptor
+                                  descriptor->previous-descriptor search-history-length fallback-state request-time descriptor-3)]
+          (is (= descriptor-1 result-descriptor)))))
+
+    (let [time-3 (- current-time-millis (t/in-millis (t/seconds 10)))
           descriptor-3 {:previous descriptor-2
+                        :service-description-valid? true
                         :service-id "service-3"
                         :sources {:fallback-period-secs fallback-period-secs
                                   :token->token-data {"test-token" {"last-update-time" time-3}}
