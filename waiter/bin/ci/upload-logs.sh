@@ -40,7 +40,7 @@ if [ -d ./waiter/scheduler ]; then
 fi
 
 # Tarball-up all of our Waiter/Mesos/etc logs
-tar -cJf $tarball --transform="s|\\./[^/]*/\\.*|${dump_name}/|" --warning=no-file-changed $log_dirs || exitcode=$?
+tar --ignore-failed-read -cJf $tarball --transform="s|\\./[^/]*/\\.*|${dump_name}/|" --warning=no-file-changed $log_dirs || exitcode=$?
 
 # GNU tar always exits with 0, 1 or 2 (https://www.gnu.org/software/tar/manual/html_section/tar_19.html)
 # 0 = Successful termination

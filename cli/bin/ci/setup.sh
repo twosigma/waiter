@@ -5,7 +5,10 @@ set -ev
 ################################
 # Python environment setup
 
-pyenv global 3.6
+apt-get update && apt-get install -y python3
+
+pyenv install 3.6.3
+pyenv global 3.6.3
 
 python3 --version
 

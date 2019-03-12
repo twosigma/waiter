@@ -1,6 +1,6 @@
-dist: trusty
+dist: xenial
 language: java
-jdk: oraclejdk8
+jdk: openjdk8
 
 addons:
   artifacts: true
@@ -26,6 +26,8 @@ install:
 matrix:
   include:
     - name: 'Kitchen tests'
+      language: python
+      python: "3.6"
       before_script: cd kitchen && ./bin/ci/setup.sh
       script: ./bin/ci/run.sh
 
