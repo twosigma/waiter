@@ -19,7 +19,7 @@
             [qbits.jet.client.http :as http]
             [waiter.util.http-utils :refer :all]
             [waiter.util.utils :as utils])
-  (:import clojure.lang.ExceptionInfo))
+  (:import (clojure.lang ExceptionInfo)))
 
 (deftest test-http-request
   (testing "successful-response"
@@ -71,3 +71,18 @@
           (is false "exception not thrown")
           (catch ExceptionInfo ex
             (is (= {:body "{\"error\":\"response\"}" :status 400} (ex-data ex)))))))))
+
+(deftest test-backend-protocol->http-version
+  (is (= "HTTP/2.0" (backend-protocol->http-version "h2")))
+  (is (= "HTTP/2.0" (backend-protocol->http-version "h2c")))
+  (is (= "HTTP/1.1" (backend-protocol->http-version "http")))
+  (is (= "HTTP/1.1" (backend-protocol->http-version "https"))))
+
+(deftest test-backend-proto->scheme
+  (is (= "http" (backend-proto->scheme "http")))
+  (is (= "http" (backend-proto->scheme "h2c")))
+  (is (= "https" (backend-proto->scheme "https")))
+  (is (= "https" (backend-proto->scheme "h2")))
+  (is (= "ws" (backend-proto->scheme "ws")))
+  (is (= "wss" (backend-proto->scheme "wss")))
+  (is (= "zzz" (backend-proto->scheme "zzz"))))

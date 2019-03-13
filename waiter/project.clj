@@ -84,6 +84,9 @@
                  [org.clojure/tools.logging "0.4.1"]
                  [org.clojure/tools.namespace "0.2.11"]
                  [org.clojure/tools.reader "1.3.2"]
+                 [org.eclipse.jetty/jetty-alpn-openjdk8-client "9.4.15.v20190215"]
+                 ;; use maven to download this jar so we can set up the boot classpath
+                 [org.mortbay.jetty.alpn/alpn-boot "8.1.13.v20181017"]
                  [org.slf4j/slf4j-log4j12 "1.7.25"
                   :exclusions [log4j]]
                  [potemkin "0.4.5"]
@@ -112,7 +115,10 @@
              "-Dclojure.core.async.pool-size=64"
              ~(str "-Dwaiter.logFilePrefix=" (System/getenv "WAITER_LOG_FILE_PREFIX"))
              "-XX:+UseG1GC"
-             "-XX:MaxGCPauseMillis=50"]
+             "-XX:MaxGCPauseMillis=50"
+             ~(str "-Xbootclasspath/p:"
+                (or (System/getenv "WAITER_MAVEN_LOCAL_REPO") (str (System/getenv "HOME") "/.m2/repository"))
+                "/org/mortbay/jetty/alpn/alpn-boot/8.1.13.v20181017/alpn-boot-8.1.13.v20181017.jar")]
   :filespecs [{:type :fn
                :fn (fn [p]
                      {:type :bytes :path "git-log"
@@ -123,7 +129,9 @@
                      ["-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005"]}
              :test {:jvm-opts
                     [~(str "-Dwaiter.test.kitchen.cmd=" (or (System/getenv "WAITER_TEST_KITCHEN_CMD")
-                                                            (.getCanonicalPath (clojure.java.io/file "../kitchen/bin/kitchen"))))]
+                                                            (.getCanonicalPath (clojure.java.io/file "../kitchen/bin/kitchen"))))
+                     ~(str "-Dwaiter.test.nginx-server.cmd=" (or (System/getenv "WAITER_TEST_NGINX_SERVER_CMD")
+                                                          (.getCanonicalPath (clojure.java.io/file "../nginx-server/bin/run-nginx-server.sh"))))]
                     :parallel-test {:pools {:serial (constantly 1)
                                             :parallel (fn []
                                                         (or (some-> (System/getenv "LEIN_TEST_THREADS") Long/valueOf)

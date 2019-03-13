@@ -322,6 +322,14 @@
        (throw (Exception. "Property waiter.test.kitchen.cmd is not set! (try `lein with-profile +test`)"))
        (str cmd (when-not (str/blank? args) " ") args)))))
 
+(defn nginx-server-command
+  "Returns the command to launch the nginx server."
+  [backend-proto]
+  (let [raw-command (System/getProperty "waiter.test.nginx-server.cmd")]
+    (if (str/blank? raw-command)
+      (throw (Exception. "Property waiter.test.nginx-server.cmd is not set! (try `lein with-profile +test`)"))
+      (str raw-command " " backend-proto))))
+
 (defn kitchen-params
   []
   {:cmd-type "shell"

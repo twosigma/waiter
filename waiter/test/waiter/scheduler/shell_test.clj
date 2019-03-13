@@ -519,7 +519,7 @@
 
 (deftest test-port-reserved?
   (let [port->reservation-atom (atom {})
-        port 10000
+        port 50000
         port-grace-period-ms -1000]
     (is (false? (port-reserved? port->reservation-atom port)))
     (with-redefs [utils/port-available? (constantly true)]

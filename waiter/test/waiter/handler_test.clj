@@ -29,7 +29,6 @@
             [waiter.handler :refer :all]
             [waiter.interstitial :as interstitial]
             [waiter.kv :as kv]
-            [waiter.reporter :as reporter]
             [waiter.scheduler :as scheduler]
             [waiter.service-description :as sd]
             [waiter.statsd :as statsd]
@@ -105,7 +104,8 @@
                              :service-id service-id})
         service-id->service-description-fn (fn [in-service-id]
                                              (is (= service-id in-service-id))
-                                             {"backend-proto" "http", "metric-group" "test-metric-group"})]
+                                             {"backend-proto" "http"
+                                              "metric-group" "test-metric-group"})]
     (testing "missing-location"
       (let [request {:headers {"accept" "application/json"}
                      :route-params (make-route-params "missing-location")}
@@ -142,12 +142,13 @@
                      :headers {"accept" "application/json"}
                      :request-method :http-method
                      :route-params (make-route-params "local")}
-            make-http-request-fn (fn [instance in-request end-route metric-group]
+            make-http-request-fn (fn [instance in-request end-route metric-group backend-proto]
                                    (is (= {:host "host" :port "port" :protocol "http" :service-id service-id}
                                           (select-keys instance [:host :port :protocol :service-id])))
                                    (is (= request in-request))
                                    (is (= (-> request :route-params :location) end-route))
                                    (is (= "test-metric-group" metric-group))
+                                   (is (= "http" backend-proto))
                                    (async/go {:error (ex-info "backend-status-error" {:status 502})}))
             async-trigger-terminate-fn (fn [in-router-id in-service-id in-request-id]
                                          (is (= my-router-id in-router-id))
@@ -173,7 +174,8 @@
                              :service-id service-id})
         service-id->service-description-fn (fn [in-service-id]
                                              (is (= service-id in-service-id))
-                                             {"backend-proto" "http", "metric-group" "test-metric-group"})
+                                             {"backend-proto" "http"
+                                              "metric-group" "test-metric-group"})
         request-id-fn (fn [router-type] (if (= router-type "local") "req-1234" "req-6789"))]
     (letfn [(execute-async-result-check
               [{:keys [request-method return-status router-type]}]
@@ -188,12 +190,13 @@
                              :headers {"accept" "application/json"}
                              :request-method request-method,
                              :route-params (make-route-params router-type)}
-                    make-http-request-fn (fn [instance in-request end-route metric-group]
+                    make-http-request-fn (fn [instance in-request end-route metric-group backend-proto]
                                            (is (= {:host "host" :port "port" :protocol "http" :service-id service-id}
                                                   (select-keys instance [:host :port :protocol :service-id])))
                                            (is (= request in-request))
                                            (is (= (-> request :route-params :location) end-route))
                                            (is (= "test-metric-group" metric-group))
+                                           (is (= "http" backend-proto))
                                            (async/go {:body "async-result-response", :headers {}, :status return-status}))
                     {:keys [status headers]}
                     (async/<!!
@@ -254,7 +257,8 @@
                              :service-id service-id})
         service-id->service-description-fn (fn [in-service-id]
                                              (is (= service-id in-service-id))
-                                             {"backend-proto" "http", "metric-group" "test-metric-group"})]
+                                             {"backend-proto" "http"
+                                              "metric-group" "test-metric-group"})]
     (testing "missing-code"
       (let [request {:headers {"accept" "application/json"}
                      :query-string ""}
@@ -293,12 +297,13 @@
                      :headers {"accept" "application/json"}
                      :route-params (make-route-params "local")
                      :request-method :http-method}
-            make-http-request-fn (fn [instance in-request end-route metric-group]
+            make-http-request-fn (fn [instance in-request end-route metric-group backend-proto]
                                    (is (= {:host "host" :port "port" :protocol "http" :service-id service-id}
                                           (select-keys instance [:host :port :protocol :service-id])))
                                    (is (= request in-request))
                                    (is (= (-> request :route-params :location) end-route))
                                    (is (= "test-metric-group" metric-group))
+                                   (is (= "http" backend-proto))
                                    (async/go {:error (ex-info "backend-status-error" {:status 400})}))
             async-trigger-terminate-fn nil
             {:keys [body headers status]} (async/<!! (async-status-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))]
@@ -319,7 +324,8 @@
                              :service-id service-id})
         service-id->service-description-fn (fn [in-service-id]
                                              (is (= service-id in-service-id))
-                                             {"backend-proto" "http", "metric-group" "test-metric-group"})
+                                             {"backend-proto" "http"
+                                              "metric-group" "test-metric-group"})
         request-id-fn (fn [router-type] (if (= router-type "local") "req-1234" "req-6789"))
         result-location-fn (fn [router-type & {:keys [include-host-port] :or {include-host-port false}}]
                              (str (when include-host-port "http://www.example.com:8521")
@@ -343,12 +349,13 @@
                              :authorization/user "test-user"
                              :request-method request-method
                              :route-params (make-route-params router-type)}
-                    make-http-request-fn (fn [instance in-request end-route metric-group]
+                    make-http-request-fn (fn [instance in-request end-route metric-group backend-proto]
                                            (is (= {:host "host" :port "port" :protocol "http" :service-id service-id}
                                                   (select-keys instance [:host :port :protocol :service-id])))
                                            (is (= request in-request))
                                            (is (= (-> request :route-params :location) end-route))
                                            (is (= "test-metric-group" metric-group))
+                                           (is (= "http" backend-proto))
                                            (async/go {:body "status-check-response"
                                                       :headers (if (= return-status 303) {"location" (or result-location (result-location-fn router-type))} {})
                                                       :status return-status}))

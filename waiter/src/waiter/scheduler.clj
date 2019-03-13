@@ -30,6 +30,7 @@
             [waiter.statsd :as statsd]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
+            [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
   (:import (java.io EOFException)
            (java.net ConnectException SocketTimeoutException)
@@ -190,7 +191,8 @@
 (defn base-url
   "Returns the url at which the service definition resides."
   [{:keys [host port protocol]}]
-  (str protocol "://" host ":" port))
+  (let [scheme (hu/backend-proto->scheme protocol)]
+    (str scheme "://" host ":" port)))
 
 (defn end-point-url
   "Returns the endpoint url which can be queried on the url specified by the url-info map."
@@ -227,7 +229,7 @@
 
 (defn available?
   "Async go block which returns the status code and success of a health check.
-  Returns false if such a connection cannot be established."
+   Returns {:healthy? false} if such a connection cannot be established."
   [http-client {:keys [host port] :as service-instance} health-check-port-index health-check-path]
   (async/go
     (try
