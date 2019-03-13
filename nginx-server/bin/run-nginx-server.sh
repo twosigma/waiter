@@ -4,6 +4,7 @@
 #
 # Launches kitchen fronted by a nginx instance to handle
 # incoming requests using the specified protocol.
+# Supported protocols are: http, https, h2c, and h2.
 
 set -ux
 

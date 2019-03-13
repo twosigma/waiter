@@ -319,11 +319,11 @@
 
 (defn- run-backend-proto-service-test
   "Helper method to run tests with various backend protocols"
-  [waiter-url backend-proto backend-scheme backend-proto-version]
+  [waiter-url backend-proto health-check-port-index backend-scheme backend-proto-version]
   (let [nginx-command (nginx-server-command backend-proto)
         request-headers {:x-waiter-backend-proto backend-proto
                          :x-waiter-cmd nginx-command
-                         :x-waiter-health-check-port-index 1
+                         :x-waiter-health-check-port-index health-check-port-index
                          :x-waiter-name (rand-name)
                          :x-waiter-ports 2}
         {:keys [headers service-id] :as response}
@@ -341,19 +341,23 @@
 
 (deftest ^:parallel ^:integration-fast test-http-backend-proto-service
   (testing-using-waiter-url
-    (run-backend-proto-service-test waiter-url "http" "http" "HTTP/1.1")))
+    (run-backend-proto-service-test waiter-url "http" 1 "http" "HTTP/1.1")))
 
 (deftest ^:parallel ^:integration-fast test-https-backend-proto-service
   (testing-using-waiter-url
-    (run-backend-proto-service-test waiter-url "https" "https" "HTTP/1.1")))
+    (run-backend-proto-service-test waiter-url "https" 1 "https" "HTTP/1.1")))
 
 (deftest ^:parallel ^:integration-fast test-h2c-backend-proto-service
   (testing-using-waiter-url
-    (run-backend-proto-service-test waiter-url "h2c" "http" "HTTP/2.0")))
+    (run-backend-proto-service-test waiter-url "h2c" 1 "http" "HTTP/2.0")))
 
 (deftest ^:parallel ^:integration-fast test-h2-backend-proto-service
   (testing-using-waiter-url
-    (run-backend-proto-service-test waiter-url "h2" "https" "HTTP/2.0")))
+    (run-backend-proto-service-test waiter-url "h2" 1 "https" "HTTP/2.0")))
+
+(deftest ^:parallel ^:integration-fast test-h2-backend-proto-service-health-check-on-port0
+  (testing-using-waiter-url
+    (run-backend-proto-service-test waiter-url "h2" 0 "https" "HTTP/2.0")))
 
 (deftest ^:parallel ^:integration-fast test-basic-unsupported-command-type
   (testing-using-waiter-url
