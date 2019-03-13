@@ -285,12 +285,16 @@
           (assert-response-status response 502)
           (is (str/includes? (-> response :body str) "Request to service backend failed"))
           (is (str/includes? (-> response :headers (get "server")) "waiter/"))
-          (let [service-settings (service-settings waiter-url service-id)
-                active-instances (get-in service-settings [:instances :active-instances])]
+          (let [service-settings (service-settings waiter-url service-id)]
             (is (= command (get-in service-settings [:service-description :cmd])))
-            (is (= 1 (get-in service-settings [:service-description :health-check-port-index])))
-            (is (seq active-instances))
-            (is (every? :healthy? active-instances))))))))
+            (is (= 1 (get-in service-settings [:service-description :health-check-port-index]))))
+          (is (wait-for
+                (fn run-basic-health-check-port-index-helper []
+                  (let [service-settings (service-settings waiter-url service-id)
+                        active-instances (get-in service-settings [:instances :active-instances])]
+                    (and (seq active-instances) (every? :healthy? active-instances))))
+                :interval 1 :timeout 10)
+              "active instances are not healthy!"))))))
 
 (deftest ^:parallel ^:integration-fast test-basic-unsupported-command-type
   (testing-using-waiter-url
