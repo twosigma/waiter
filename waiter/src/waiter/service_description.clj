@@ -854,7 +854,7 @@
      If after the merge a permitted-user is not available, then `username` becomes the permitted-user."
     [{:keys [defaults headers service-description-template source-tokens token-authentication-disabled token-preauthorized]}
      waiter-headers passthrough-headers kv-store service-id-prefix username metric-group-mappings
-     service-description-builder assoc-run-as-user-approved? throw-if-invalid?]
+     service-description-builder assoc-run-as-user-approved?]
     (let [headers-without-params (dissoc headers "param")
           header-params (get headers "param")
           ; any change with the on-the-fly must change the run-as-user if it doesn't already exist
@@ -894,51 +894,50 @@
       (when-not (seq user-service-description)
         (throw (ex-info (utils/message :cannot-identify-service)
                         (error-message-map-fn passthrough-headers waiter-headers))))
-      (sling/try+
-        (let [{:keys [core-service-description service-description service-id]}
-              (build service-description-builder user-service-description
-                     {:assoc-run-as-user-approved? assoc-run-as-user-approved?
-                      :defaults defaults
-                      :kv-store kv-store
-                      :metric-group-mappings metric-group-mappings
-                      :service-id-prefix service-id-prefix
-                      :username username})
-              service-preauthorized (and token-preauthorized (empty? service-description-based-on-headers))
-              service-authentication-disabled (and token-authentication-disabled (empty? service-description-based-on-headers))
-              stored-service-description? (fetch-core kv-store service-id)
-              ; Validating is expensive, so avoid validating if we've validated before, relying on the fact
-              ; that we'll only store validated service descriptions
-              service-description-valid? (or stored-service-description?
-                                             (try
-                                               (validate service-description-builder core-service-description {:allow-missing-required-fields? false})
-                                               (validate service-description-builder service-description {:allow-missing-required-fields? false})
-                                               true
-                                               (catch Throwable th
-                                                 (if throw-if-invalid?
-                                                   (throw th)
-                                                   (do
-                                                     (log/info "invalid service description" (.getMessage th))
-                                                     false)))))]
-          {:core-service-description core-service-description
-           :on-the-fly? contains-waiter-header?
-           :service-authentication-disabled service-authentication-disabled
-           :service-description service-description
-           :service-description-valid? service-description-valid?
-           :service-id service-id
-           :service-preauthorized service-preauthorized
-           :source-tokens source-tokens})
-        (catch [:type :service-description-error] ex-data
-          (throw (ex-info (:message ex-data)
-                          (merge (error-message-map-fn passthrough-headers waiter-headers) ex-data)
-                          (:throwable &throw-context))))))))
+      (let [{:keys [core-service-description service-description service-id]}
+            (build service-description-builder user-service-description
+                   {:assoc-run-as-user-approved? assoc-run-as-user-approved?
+                    :defaults defaults
+                    :kv-store kv-store
+                    :metric-group-mappings metric-group-mappings
+                    :service-id-prefix service-id-prefix
+                    :username username})
+            service-preauthorized (and token-preauthorized (empty? service-description-based-on-headers))
+            service-authentication-disabled (and token-authentication-disabled (empty? service-description-based-on-headers))]
+        {:core-service-description core-service-description
+         :on-the-fly? contains-waiter-header?
+         :service-authentication-disabled service-authentication-disabled
+         :service-description service-description
+         :service-id service-id
+         :service-preauthorized service-preauthorized
+         :source-tokens source-tokens})))
+
+  (defn validate-service-description
+    "Returns nil if the provided descriptor contains a valid service description.
+     Else it returns an instance of Throwable that reflects the validation error."
+    [kv-store service-description-builder
+     {:keys [core-service-description passthrough-headers service-description service-id waiter-headers]}]
+    (sling/try+
+      (let [stored-service-description? (fetch-core kv-store service-id)]
+        ; Validating is expensive, so avoid validating if we've validated before, relying on the fact
+        ; that we'll only store validated service descriptions
+        (when-not (seq stored-service-description?)
+          (validate service-description-builder core-service-description {:allow-missing-required-fields? false})
+          (validate service-description-builder service-description {:allow-missing-required-fields? false}))
+        nil)
+      (catch [:type :service-description-error] ex-data
+        (ex-info (:message ex-data)
+                 (merge (error-message-map-fn passthrough-headers waiter-headers) ex-data)
+                 (:throwable &throw-context)))
+      (catch Throwable th
+        th))))
 
 (defn merge-service-description-and-id
   "Populates the descriptor with the service-description and service-id."
   [{:keys [passthrough-headers sources waiter-headers] :as descriptor} kv-store service-id-prefix username
-   metric-group-mappings service-description-builder assoc-run-as-user-approved? throw-if-invalid?]
+   metric-group-mappings service-description-builder assoc-run-as-user-approved?]
   (->> (compute-service-description sources waiter-headers passthrough-headers kv-store service-id-prefix username
-                                    metric-group-mappings service-description-builder assoc-run-as-user-approved?
-                                    throw-if-invalid?)
+                                    metric-group-mappings service-description-builder assoc-run-as-user-approved?)
        (merge descriptor)))
 
 (defn retrieve-most-recently-modified-token

@@ -134,14 +134,12 @@
         fallback-period-secs 120
         search-history-length 5
         time-1 (- current-time-millis (t/in-millis (t/seconds 30)))
-        descriptor-1 {:service-description-valid? true
-                      :service-id "service-1"
+        descriptor-1 {:service-id "service-1"
                       :sources {:fallback-period-secs fallback-period-secs
                                 :token->token-data {"test-token" {"last-update-time" time-1}}
                                 :token-sequence ["test-token"]}}
         time-2 (- current-time-millis (t/in-millis (t/seconds 20)))
         descriptor-2 {:previous descriptor-1
-                      :service-description-valid? true
                       :service-id "service-2"
                       :sources {:fallback-period-secs fallback-period-secs
                                 :token->token-data {"test-token" {"last-update-time" time-2}}
@@ -150,7 +148,6 @@
 
     (testing "no fallback service for on-the-fly"
       (let [descriptor-4 {:previous descriptor-2
-                          :service-description-valid? true
                           :service-id "service-4"
                           :sources {:token->token-data {} :token-sequence []}}
             fallback-state {:available-service-ids #{"service-1" "service-2"}
@@ -160,23 +157,7 @@
         (is (nil? result-descriptor))))
 
     (let [time-3 (- current-time-millis (t/in-millis (t/seconds 10)))
-          descriptor-3 {:previous (assoc descriptor-2 :service-description-valid? false)
-                        :service-description-valid? true
-                        :service-id "service-3"
-                        :sources {:fallback-period-secs fallback-period-secs
-                                  :token->token-data {"test-token" {"last-update-time" time-3}}
-                                  :token-sequence ["test-token"]}}]
-
-      (testing "fallback to previous healthy instance inside fallback period"
-        (let [fallback-state {:available-service-ids #{"service-1" "service-2"}
-                              :healthy-service-ids #{"service-1" "service-2"}}
-              result-descriptor (retrieve-fallback-descriptor
-                                  descriptor->previous-descriptor search-history-length fallback-state request-time descriptor-3)]
-          (is (= descriptor-1 result-descriptor)))))
-
-    (let [time-3 (- current-time-millis (t/in-millis (t/seconds 10)))
           descriptor-3 {:previous descriptor-2
-                        :service-description-valid? true
                         :service-id "service-3"
                         :sources {:fallback-period-secs fallback-period-secs
                                   :token->token-data {"test-token" {"last-update-time" time-3}}
@@ -549,7 +530,46 @@
                 :passthrough-headers passthrough-headers
                 :service-authentication-disabled false
                 :service-description (merge (:defaults sources) service-description-1)
-                :service-description-valid? true
+                :service-id (sd/service-description->service-id service-id-prefix service-description-1)
+                :service-preauthorized false
+                :source-tokens [(sd/source-tokens-entry test-token token-data-1)]
+                :sources (assoc sources
+                           :fallback-period-secs 300
+                           :service-description-template service-description-1
+                           :source-tokens [(sd/source-tokens-entry test-token token-data-1)]
+                           :token->token-data {test-token token-data-1})
+                :waiter-headers waiter-headers}
+               previous-descriptor))
+        (is (nil? (descriptor->previous-descriptor
+                    kv-store service-id-prefix token-defaults metric-group-mappings builder assoc-run-as-user-approved? username
+                    previous-descriptor)))))
+
+    (testing "single token with invalid intermediate"
+      (let [test-token "test-token"
+            token-data-1 {"cmd" "ls-1" "cpus" 1 "mem" 32 "run-as-user" "ru" "version" "foo1"}
+            service-description-1 token-data-1
+            token-data-2 {"cpus" 2 "mem" 64 "previous" token-data-1 "run-as-user" "ru" "version" "foo2"}
+            token-data-3 {"cmd" "ls-3" "cpus" 3 "mem" 128 "previous" token-data-2 "run-as-user" "ru" "version" "foo3"}
+            service-description-3 token-data-2
+            sources {:defaults {"metric-group" "other" "permitted-user" "*"}
+                     :headers {}
+                     :service-description-template service-description-3
+                     :token->token-data {test-token token-data-3}
+                     :token-authentication-disabled false
+                     :token-preauthorized false
+                     :token-sequence [test-token]}
+            passthrough-headers {}
+            waiter-headers {}
+            previous-descriptor (descriptor->previous-descriptor
+                                  kv-store service-id-prefix token-defaults metric-group-mappings builder assoc-run-as-user-approved? username
+                                  {:passthrough-headers passthrough-headers
+                                   :sources sources
+                                   :waiter-headers waiter-headers})]
+        (is (= {:core-service-description service-description-1
+                :on-the-fly? nil
+                :passthrough-headers passthrough-headers
+                :service-authentication-disabled false
+                :service-description (merge (:defaults sources) service-description-1)
                 :service-id (sd/service-description->service-id service-id-prefix service-description-1)
                 :service-preauthorized false
                 :source-tokens [(sd/source-tokens-entry test-token token-data-1)]
@@ -591,7 +611,6 @@
                   :passthrough-headers passthrough-headers
                   :service-authentication-disabled false
                   :service-description (merge (:defaults sources) expected-core-service-description)
-                  :service-description-valid? true
                   :service-id (sd/service-description->service-id service-id-prefix expected-core-service-description)
                   :service-preauthorized false
                   :source-tokens [(sd/source-tokens-entry test-token token-data-1)]
@@ -657,7 +676,6 @@
                   :passthrough-headers passthrough-headers
                   :service-authentication-disabled false
                   :service-description (merge (:defaults sources) expected-core-service-description)
-                  :service-description-valid? true
                   :service-id (sd/service-description->service-id service-id-prefix expected-core-service-description)
                   :service-preauthorized false
                   :source-tokens [(sd/source-tokens-entry test-token-1 token-data-1)
@@ -681,7 +699,6 @@
                     :passthrough-headers passthrough-headers
                     :service-authentication-disabled false
                     :service-description (merge (:defaults sources) expected-core-service-description)
-                    :service-description-valid? true
                     :service-id (sd/service-description->service-id service-id-prefix expected-core-service-description)
                     :service-preauthorized false
                     :source-tokens [(sd/source-tokens-entry test-token-1 token-data-1p)
