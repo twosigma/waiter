@@ -529,16 +529,15 @@
     (is (false? (port-reserved? port->reservation-atom port)))))
 
 (deftest test-reserve-ports!
-
   (testing "successfully reserve all ports"
     (let [port->reservation-atom (atom {})
-          port-range [10000 11000]
+          port-range [50000 51000]
           reserved-ports (reserve-ports! 20 port->reservation-atom port-range)]
-      (is (= (range 10000 10020) reserved-ports))))
+      (is (= (range 50000 50020) reserved-ports))))
 
   (testing "unable to reserve all ports"
     (let [port->reservation-atom (atom {})
-          port-range [10000 10010]]
+          port-range [50000 50010]]
       (try
         (reserve-ports! 20 port->reservation-atom port-range)
         (is false "reserve-ports! did not throw an exception!")

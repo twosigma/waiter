@@ -180,8 +180,6 @@ services.service-id.counters.fee.fie
                "timestamp"}
              (set (keys @actual-values))))
       (is (= (get @actual-values "prefix.services.service-id.counters.fee.fie") "0"))
-      (println (get @actual-values "timestamp"))
-      (println (System/currentTimeMillis))
       (is (< (Math/abs (- (* 1000 (get @actual-values "timestamp")) (System/currentTimeMillis))) max-test-duration-ms))
       (is (= {:run-state :created
               :last-reporting-time time
