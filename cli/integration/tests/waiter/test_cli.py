@@ -129,7 +129,7 @@ class WaiterCliTest(util.WaiterTest):
         cp = cli.create(self.waiter_url, token_name, create_flags='--https-redirect true '
                                                                   '--cpus 0.1 '
                                                                   '--fallback-period-secs 10 '
-                                                                  '--idle-timeout-mins 1 '
+                                                                  '--idle-timeout-mins 1000 '
                                                                   '--max-instances 100 '
                                                                   '--restart-backoff-factor 1.1')
         self.assertEqual(0, cp.returncode, cp.stderr)
@@ -143,7 +143,7 @@ class WaiterCliTest(util.WaiterTest):
             cp = cli.create(self.waiter_url, token_name, create_flags='--https-redirect false '
                                                                       '--cpus 0.1 '
                                                                       '--fallback-period-secs 20 '
-                                                                      '--idle-timeout-mins 2 '
+                                                                      '--idle-timeout-mins 2000 '
                                                                       '--max-instances 200 '
                                                                       '--restart-backoff-factor 2.2')
             self.assertEqual(0, cp.returncode, cp.stderr)
