@@ -787,8 +787,7 @@
            kv-store (or kv-store (kv/->LocalKeyValueStore (atom {})))
            waiter-headers (or waiter-headers {})]
        (compute-service-description sources waiter-headers {} kv-store "test-service-" "current-request-user"
-                                    [] (create-default-service-description-builder {})
-                                    assoc-run-as-user-approved?)))))
+                                    [] (create-default-service-description-builder {}) assoc-run-as-user-approved?)))))
 
 (defn- service-description
   ([sources & {:keys [assoc-run-as-user-approved? kv-store waiter-headers]}]
@@ -1373,120 +1372,108 @@
 (deftest test-compute-service-description-error-scenarios
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
         service-id-prefix "test-service-"
-        test-user "test-header-user"]
+        test-user "test-header-user"
+        waiter-headers {}
+        passthrough-headers {}
+        metric-group-mappings []
+        assoc-run-as-user-approved? (constantly false)
+        service-description-builder (create-default-service-description-builder {})
+        run-compute-service-description
+        (fn run-compute-service-description [descriptor]
+          (let [result-descriptor
+                (compute-service-description
+                  descriptor waiter-headers passthrough-headers kv-store service-id-prefix test-user
+                  metric-group-mappings service-description-builder assoc-run-as-user-approved?)
+                result-errors (validate-service-description kv-store service-description-builder result-descriptor)]
+            (when result-errors
+              (throw result-errors))
+            result-descriptor))]
     (is (thrown? Exception
-                 (compute-service-description {:defaults {"health-check-url" "/ping"}
-                                               :headers {}
-                                               :service-description-template {"cmd" "test command"
-                                                                              "cpus" "one"
-                                                                              "mem" 200
-                                                                              "version" "a1b2c3"
-                                                                              "run-as-user" test-user}}
-                                              {} {} kv-store service-id-prefix test-user []
-                                              (create-default-service-description-builder {})
-                                              (constantly false))))
+                 (run-compute-service-description {:defaults {"health-check-url" "/ping"}
+                                                   :headers {}
+                                                   :service-description-template {"cmd" "test command"
+                                                                                  "cpus" "one"
+                                                                                  "mem" 200
+                                                                                  "version" "a1b2c3"
+                                                                                  "run-as-user" test-user}})))
     (is (thrown? Exception
-                 (compute-service-description {:defaults {"health-check-url" 1}
-                                               :headers {}
-                                               :service-description-template {"cmd" "test command"
-                                                                              "cpus" 1
-                                                                              "mem" 200
-                                                                              "version" "a1b2c3"
-                                                                              "run-as-user" test-user}}
-                                              {} {} kv-store service-id-prefix test-user []
-                                              (create-default-service-description-builder {})
-                                              (constantly false))))
+                 (run-compute-service-description {:defaults {"health-check-url" 1}
+                                                   :headers {}
+                                                   :service-description-template {"cmd" "test command"
+                                                                                  "cpus" 1
+                                                                                  "mem" 200
+                                                                                  "version" "a1b2c3"
+                                                                                  "run-as-user" test-user}})))
     (is (thrown? Exception
-                 (compute-service-description {:defaults {"health-check-url" 1}
-                                               :headers {}
-                                               :service-description-template {}}
-                                              {} {} kv-store service-id-prefix test-user []
-                                              (create-default-service-description-builder {})
-                                              (constantly false))))
+                 (run-compute-service-description {:defaults {"health-check-url" 1}
+                                                   :headers {}
+                                                   :service-description-template {}})))
     (is (thrown? Exception
-                 (compute-service-description {:defaults {"health-check-url" "/health"}
-                                               :service-description-template {"cmd" "cmd for missing run-as-user"
-                                                                              "cpus" 1
-                                                                              "mem" 200
-                                                                              "version" "a1b2c3"}}
-                                              {} {} kv-store service-id-prefix test-user []
-                                              (create-default-service-description-builder {})
-                                              (constantly false))))
+                 (run-compute-service-description {:defaults {"health-check-url" "/health"}
+                                                   :service-description-template {"cmd" "cmd for missing run-as-user"
+                                                                                  "cpus" 1
+                                                                                  "mem" 200
+                                                                                  "version" "a1b2c3"}})))
 
     (testing "invalid allowed params - reserved"
       (is (thrown? Exception
-                   (compute-service-description {:defaults {"health-check-url" "/ping"
-                                                            "permitted-user" "bob"}
-                                                 :headers {}
-                                                 :service-description-template {"allowed-params" #{"HOME" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
-                                                                                "cmd" "token-cmd"
-                                                                                "cpus" 1
-                                                                                "mem" 200
-                                                                                "run-as-user" "test-user"
-                                                                                "version" "a1b2c3"}}
-                                                {} {} kv-store service-id-prefix test-user []
-                                                (create-default-service-description-builder {})
-                                                (constantly false)))))
+                   (run-compute-service-description {:defaults {"health-check-url" "/ping"
+                                                                "permitted-user" "bob"}
+                                                     :headers {}
+                                                     :service-description-template {"allowed-params" #{"HOME" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                                                                    "cmd" "token-cmd"
+                                                                                    "cpus" 1
+                                                                                    "mem" 200
+                                                                                    "run-as-user" "test-user"
+                                                                                    "version" "a1b2c3"}}))))
 
     (testing "invalid allowed params - bad naming"
       (is (thrown? Exception
-                   (compute-service-description {:defaults {"health-check-url" "/ping"
-                                                            "permitted-user" "bob"}
-                                                 :headers {}
-                                                 :service-description-template {"allowed-params" #{"VAR.1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
-                                                                                "cmd" "token-cmd"
-                                                                                "cpus" 1
-                                                                                "mem" 200
-                                                                                "run-as-user" "test-user"
-                                                                                "version" "a1b2c3"}}
-                                                {} {} kv-store service-id-prefix test-user []
-                                                (create-default-service-description-builder {})
-                                                (constantly false)))))
+                   (run-compute-service-description {:defaults {"health-check-url" "/ping"
+                                                                "permitted-user" "bob"}
+                                                     :headers {}
+                                                     :service-description-template {"allowed-params" #{"VAR.1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                                                                    "cmd" "token-cmd"
+                                                                                    "cpus" 1
+                                                                                    "mem" 200
+                                                                                    "run-as-user" "test-user"
+                                                                                    "version" "a1b2c3"}}))))
 
     (testing "invalid allowed params - reserved and bad naming"
       (is (thrown? Exception
-                   (compute-service-description {:defaults {"health-check-url" "/ping"
-                                                            "permitted-user" "bob"}
-                                                 :headers {}
-                                                 :service-description-template {"allowed-params" #{"USER" "VAR.1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
-                                                                                "cmd" "token-cmd"
-                                                                                "cpus" 1
-                                                                                "mem" 200
-                                                                                "run-as-user" "test-user"
-                                                                                "version" "a1b2c3"}}
-                                                {} {} kv-store service-id-prefix test-user []
-                                                (create-default-service-description-builder {})
-                                                (constantly false)))))
+                   (run-compute-service-description {:defaults {"health-check-url" "/ping"
+                                                                "permitted-user" "bob"}
+                                                     :headers {}
+                                                     :service-description-template {"allowed-params" #{"USER" "VAR.1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                                                                    "cmd" "token-cmd"
+                                                                                    "cpus" 1
+                                                                                    "mem" 200
+                                                                                    "run-as-user" "test-user"
+                                                                                    "version" "a1b2c3"}}))))
 
     (testing "token + disallowed param header - on-the-fly"
       (is (thrown? Exception
-                   (compute-service-description {:defaults {"health-check-url" "/ping"
-                                                            "permitted-user" "bob"}
-                                                 :headers {"param" {"VAR_1" "VALUE-1"
-                                                                    "ANOTHER_VAR_2" "VALUE-2"}
-                                                           "version" "on-the-fly-version"}
-                                                 :service-description-template {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
-                                                                                "cmd" "token-cmd"
-                                                                                "concurrency-level" 5
-                                                                                "run-as-user" "test-user"}}
-                                                {} {} kv-store service-id-prefix test-user []
-                                                (create-default-service-description-builder {})
-                                                (constantly false)))))
+                   (run-compute-service-description {:defaults {"health-check-url" "/ping"
+                                                                "permitted-user" "bob"}
+                                                     :headers {"param" {"VAR_1" "VALUE-1"
+                                                                        "ANOTHER_VAR_2" "VALUE-2"}
+                                                               "version" "on-the-fly-version"}
+                                                     :service-description-template {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                                                                    "cmd" "token-cmd"
+                                                                                    "concurrency-level" 5
+                                                                                    "run-as-user" "test-user"}}))))
 
     (testing "token + no allowed params - on-the-fly"
       (is (thrown? Exception
-                   (compute-service-description {:defaults {"health-check-url" "/ping"
-                                                            "permitted-user" "bob"}
-                                                 :headers {"param" {"VAR_1" "VALUE-1"
-                                                                    "VAR_2" "VALUE-2"}
-                                                           "version" "on-the-fly-version"}
-                                                 :service-description-template {"allowed-params" #{}
-                                                                                "cmd" "token-cmd"
-                                                                                "concurrency-level" 5
-                                                                                "run-as-user" "test-user"}}
-                                                {} {} kv-store service-id-prefix test-user []
-                                                (create-default-service-description-builder {})
-                                                (constantly false)))))
+                   (run-compute-service-description {:defaults {"health-check-url" "/ping"
+                                                                "permitted-user" "bob"}
+                                                     :headers {"param" {"VAR_1" "VALUE-1"
+                                                                        "VAR_2" "VALUE-2"}
+                                                               "version" "on-the-fly-version"}
+                                                     :service-description-template {"allowed-params" #{}
+                                                                                    "cmd" "token-cmd"
+                                                                                    "concurrency-level" 5
+                                                                                    "run-as-user" "test-user"}}))))
 
     (testing "instance-expiry-mins"
       (let [core-service-description {"cmd" "cmd for missing run-as-user"
@@ -1494,15 +1481,12 @@
                                       "mem" 200
                                       "run-as-user" test-user
                                       "version" "a1b2c3"}
-            run-compute-service-description (fn [service-description]
-                                              (compute-service-description {:defaults {"health-check-url" "/health"}
-                                                                            :service-description-template service-description}
-                                                                           {} {} kv-store service-id-prefix test-user []
-                                                                           (create-default-service-description-builder {})
-                                                                           (constantly false)))]
-        (is (thrown? Exception (run-compute-service-description (assoc core-service-description "instance-expiry-mins" -1))))
-        (is (run-compute-service-description (assoc core-service-description "instance-expiry-mins" 0)))
-        (is (run-compute-service-description (assoc core-service-description "instance-expiry-mins" 1)))))))
+            run-compute-service-description-helper (fn [service-description]
+                                                     (run-compute-service-description {:defaults {"health-check-url" "/health"}
+                                                                                       :service-description-template service-description}))]
+        (is (thrown? Exception (run-compute-service-description-helper (assoc core-service-description "instance-expiry-mins" -1))))
+        (is (run-compute-service-description-helper (assoc core-service-description "instance-expiry-mins" 0)))
+        (is (run-compute-service-description-helper (assoc core-service-description "instance-expiry-mins" 1)))))))
 
 (deftest test-compute-service-description-service-preauthorized-and-authentication-disabled
   (letfn [(execute-test [service-description-template header-parameters]

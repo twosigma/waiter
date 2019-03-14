@@ -544,6 +544,46 @@
                     kv-store service-id-prefix token-defaults metric-group-mappings builder assoc-run-as-user-approved? username
                     previous-descriptor)))))
 
+    (testing "single token with invalid intermediate"
+      (let [test-token "test-token"
+            token-data-1 {"cmd" "ls-1" "cpus" 1 "mem" 32 "run-as-user" "ru" "version" "foo1"}
+            service-description-1 token-data-1
+            token-data-2 {"cpus" 2 "mem" 64 "previous" token-data-1 "run-as-user" "ru" "version" "foo2"}
+            token-data-3 {"cmd" "ls-3" "cpus" 3 "mem" 128 "previous" token-data-2 "run-as-user" "ru" "version" "foo3"}
+            service-description-3 token-data-2
+            sources {:defaults {"metric-group" "other" "permitted-user" "*"}
+                     :headers {}
+                     :service-description-template service-description-3
+                     :token->token-data {test-token token-data-3}
+                     :token-authentication-disabled false
+                     :token-preauthorized false
+                     :token-sequence [test-token]}
+            passthrough-headers {}
+            waiter-headers {}
+            previous-descriptor (descriptor->previous-descriptor
+                                  kv-store service-id-prefix token-defaults metric-group-mappings builder assoc-run-as-user-approved? username
+                                  {:passthrough-headers passthrough-headers
+                                   :sources sources
+                                   :waiter-headers waiter-headers})]
+        (is (= {:core-service-description service-description-1
+                :on-the-fly? nil
+                :passthrough-headers passthrough-headers
+                :service-authentication-disabled false
+                :service-description (merge (:defaults sources) service-description-1)
+                :service-id (sd/service-description->service-id service-id-prefix service-description-1)
+                :service-preauthorized false
+                :source-tokens [(sd/source-tokens-entry test-token token-data-1)]
+                :sources (assoc sources
+                           :fallback-period-secs 300
+                           :service-description-template service-description-1
+                           :source-tokens [(sd/source-tokens-entry test-token token-data-1)]
+                           :token->token-data {test-token token-data-1})
+                :waiter-headers waiter-headers}
+               previous-descriptor))
+        (is (nil? (descriptor->previous-descriptor
+                    kv-store service-id-prefix token-defaults metric-group-mappings builder assoc-run-as-user-approved? username
+                    previous-descriptor)))))
+
     (testing "single on-the-fly+token with previous"
       (let [test-token "test-token"
             token-data-1 {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru1" "version" "foo1"}
