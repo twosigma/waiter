@@ -157,3 +157,20 @@ def show_token(waiter_url=None, token_name=None, flags=None):
 def output(cp):
     """Returns a string containing the stdout and stderr from the given CompletedProcess"""
     return f'\nstdout:\n{stdout(cp)}\n\nstderr:\n{decode(cp.stderr)}'
+
+
+def plugins_config():
+    """If the WAITER_TEST_PLUGIN_JSON environment variable is set, returns its value, otherwise empty dict"""
+    return json.loads(os.environ['WAITER_TEST_PLUGIN_JSON']) if 'WAITER_TEST_PLUGIN_JSON' in os.environ else {}
+
+
+def base_config():
+    """Returns a "base" config map that can be added to."""
+    return plugins_config()
+
+
+def write_base_config():
+    """Creates a config file that can be used as a starting point for integration tests"""
+    config = base_config()
+    if config:
+        write_json(os.path.abspath('.waiter.json'), config)
