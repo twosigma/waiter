@@ -99,12 +99,7 @@ class temp_config_file:
     """
 
     def __init__(self, config):
-        session_module = os.getenv('COOK_SESSION_MODULE')
-        if session_module:
-            self.config = {'http': {'modules': {'session-module': session_module, 'adapters-module': session_module}}}
-            self.config.update(config)
-        else:
-            self.config = config
+        self.config = config
 
     def deep_merge(self, a, b):
         """Merges a and b, letting b win if there is a conflict"""
@@ -120,7 +115,7 @@ class temp_config_file:
 
     def write_temp_json(self):
         path = tempfile.NamedTemporaryFile(delete=False).name
-        config = self.config
+        config = self.deep_merge(base_config(), self.config)
         write_json(path, config)
         return path
 
