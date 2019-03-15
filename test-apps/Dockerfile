@@ -10,5 +10,5 @@ RUN apt-get update \
 
 COPY kitchen/bin/waiter-init /usr/bin/waiter-init
 COPY kitchen/bin/kitchen /opt/kitchen/kitchen
-COPY nginx-server/bin/run-nginx-server.sh /opt/nginx-server/bin/run-nginx-server.sh
-COPY nginx-server/data/nginx-template.conf /opt/nginx-server/data/nginx-template.conf
+COPY nginx/bin/run-nginx-server.sh /opt/nginx/bin/run-nginx-server.sh
+COPY nginx/data/nginx-template.conf /opt/nginx/data/nginx-template.conf

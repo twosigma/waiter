@@ -325,9 +325,9 @@
 (defn nginx-server-command
   "Returns the command to launch the nginx server."
   [backend-proto]
-  (let [raw-command (System/getProperty "waiter.test.nginx-server.cmd")]
+  (let [raw-command (System/getProperty "waiter.test.nginx.cmd")]
     (if (str/blank? raw-command)
-      (throw (Exception. "Property waiter.test.nginx-server.cmd is not set! (try `lein with-profile +test`)"))
+      (throw (Exception. "Property waiter.test.nginx.cmd is not set! (try `lein with-profile +test`)"))
       (str raw-command " " backend-proto))))
 
 (defn kitchen-params

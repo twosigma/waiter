@@ -131,9 +131,9 @@
                     [~(str "-Dwaiter.test.kitchen.cmd="
                         (or (System/getenv "WAITER_TEST_KITCHEN_CMD")
                             (.getCanonicalPath (clojure.java.io/file "../test-apps/kitchen/bin/kitchen"))))
-                     ~(str "-Dwaiter.test.nginx-server.cmd="
-                        (or (System/getenv "WAITER_TEST_NGINX_SERVER_CMD")
-                            (.getCanonicalPath (clojure.java.io/file "../test-apps/nginx-server/bin/run-nginx-server.sh"))))]
+                     ~(str "-Dwaiter.test.nginx.cmd="
+                        (or (System/getenv "WAITER_TEST_NGINX_CMD")
+                            (.getCanonicalPath (clojure.java.io/file "../test-apps/nginx/bin/run-nginx-server.sh"))))]
                     :parallel-test {:pools {:serial (constantly 1)
                                             :parallel (fn []
                                                         (or (some-> (System/getenv "LEIN_TEST_THREADS") Long/valueOf)
