@@ -16,10 +16,10 @@ TEST_SELECTOR=${2:-integration}
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WAITER_DIR=${DIR}/../..
-KITCHEN_DIR=${WAITER_DIR}/../kitchen
+TEST_APPS_DIR=${WAITER_DIR}/../test-apps
 
 # Build mesos agent container with Kitchen packed in
-${KITCHEN_DIR}/bin/build-docker-image.sh
+${TEST_APPS_DIR}/bin/build-docker-image.sh
 
 # Start minimesos
 export MINIMESOS_CMD=${DIR}/minimesos

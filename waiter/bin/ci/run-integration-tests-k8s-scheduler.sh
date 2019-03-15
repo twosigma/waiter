@@ -16,7 +16,7 @@ TEST_SELECTOR=${2:-integration}
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WAITER_DIR=${DIR}/../..
-KITCHEN_DIR=${WAITER_DIR}/../kitchen
+TEST_APPS_DIR=${WAITER_DIR}/../test-apps
 
 # Start minikube
 ${DIR}/minikube-setup.sh
@@ -29,7 +29,7 @@ if [[ $TEST_SELECTOR =~ heavy$ ]]; then
 fi
 
 # Ensure we have the docker image for the pods
-${KITCHEN_DIR}/bin/build-docker-image.sh
+${TEST_APPS_DIR}/bin/build-docker-image.sh
 
 # Start waiter
 : ${WAITER_PORT:=9091}

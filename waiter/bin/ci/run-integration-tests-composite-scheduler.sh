@@ -16,8 +16,9 @@ TEST_SELECTOR=${2:-integration}
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WAITER_DIR=${DIR}/../..
-KITCHEN_DIR=${WAITER_DIR}/../kitchen
-NGINX_SERVER_DIR=${WAITER_DIR}/../nginx-server
+TEST_APPS_DIR=${WAITER_DIR}/../test-apps
+KITCHEN_DIR=${TEST_APPS_DIR}/kitchen
+NGINX_SERVER_DIR=${TEST_APPS_DIR}/nginx-server
 
 # Start waiter
 : ${WAITER_PORT:=9091}
