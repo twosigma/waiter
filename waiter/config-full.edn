@@ -121,6 +121,49 @@
  :hostname ["waiter.example.com"
             "waiter-alternate.example.com"]
 
+ ;; The configuration for the Waiter server that will be launched.
+ ;; Unless specified otherwise, all the entries below are optional:
+ :server-options {;; Whether or not to  enable secure HTTP2 transport, default false
+                  :http2? false
+
+                  ;; Whether or not to  enable HTTP2 cleartext transport, default true
+                  :http2c? true
+
+                  ;; When SSL is enabled, the keystore to use for SSL connections
+                  :keystore "/path/to/keystore.p12"
+                  ;; When SSL is enabled, the format of keystore
+                  :keystore-type "pkcs12"
+                  ;; When SSL is enabled, the password to the keystore
+                  :key-password "keystore-password"
+
+                  ;; The maximum number of threads to use (default 250)
+                  :max-threads 250
+
+                  ;; The maximum size in bytes of the request header.
+                  ;; Larger headers will allow for more and/or larger cookies plus larger form content encoded in a URL.
+                  ;; However, larger headers consume more memory and can make a server more vulnerable to denial of service attacks.
+                  :request-header-size 32768
+
+                  ;; The maximum size in bytes of the response header.
+                  ;; Larger headers will allow for more and/or larger cookies and longer HTTP headers (eg for redirection).
+                  ;; However, larger headers will also consume more memory.
+                  :response-header-size 8192
+
+                  ;; Whether to send the Date header in responses
+                  :send-date-header? false
+
+                  ;; The SSL port to listen on.
+                  ;; To disable SSL support, do not include this entry in the config.
+                  ;; Specifying a value for this port (which must be different from port above) enables SSL support.
+                  :ssl-port 9443
+
+                  ;; When SSL is enabled, the truststore to use for SSL connections
+                  :truststore "/path/to/truststore.p12"
+                  ;; When SSL is enabled, the format of trust store
+                  :truststore-type "pkcs12"
+                  ;; When SSL is enabled, the password to the truststore
+                  :trust-password "truststore-password"}
+
  ; ---------- Token Storage ----------
 
  :kv-config {

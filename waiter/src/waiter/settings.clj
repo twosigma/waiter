@@ -52,7 +52,9 @@
    (s/required-key :git-version) s/Any
    (s/required-key :health-check-config) {(s/required-key :health-check-timeout-ms) schema/positive-int
                                           (s/required-key :failed-check-threshold) schema/positive-int}
+   ;; TODO host belongs in server-options?
    (s/required-key :host) schema/non-empty-string
+   ;; TODO hostname belongs in server-options?
    (s/required-key :hostname) (s/if string? schema/non-empty-string (s/constrained [schema/non-empty-string]
                                                                                    not-empty))
    (s/required-key :instance-request-properties) {(s/required-key :async-check-interval-ms) schema/positive-int
@@ -83,6 +85,7 @@
                                              {:kind s/Keyword
                                               s/Keyword schema/require-symbol-factory-fn}
                                              schema/contains-kind-sub-map?)
+   ;; TODO port belongs in server-options?
    (s/required-key :port) schema/positive-int
    (s/required-key :router-id-prefix) s/Str
    (s/required-key :router-syncer) {(s/required-key :delay-ms) schema/positive-int
@@ -100,6 +103,19 @@
                                           (s/required-key :scheduler-gc-broken-service-interval-ms) schema/positive-int
                                           (s/required-key :scheduler-gc-interval-ms) schema/positive-int}
    (s/required-key :scheduler-syncer-interval-secs) schema/positive-int
+   (s/required-key :server-options) {(s/optional-key :http2?) s/Bool
+                                     (s/optional-key :http2c?) s/Bool
+                                     (s/optional-key :keystore) schema/non-empty-string
+                                     (s/optional-key :keystore-type) schema/non-empty-string
+                                     (s/optional-key :key-password) schema/non-empty-string
+                                     (s/optional-key :max-threads) schema/positive-int
+                                     (s/optional-key :request-header-size) schema/positive-int
+                                     (s/optional-key :response-header-size) schema/positive-int
+                                     (s/optional-key :send-date-header?) s/Bool
+                                     (s/optional-key :ssl-port) schema/positive-int
+                                     (s/optional-key :truststore) schema/non-empty-string
+                                     (s/optional-key :truststore-type) schema/non-empty-string
+                                     (s/optional-key :trust-password) schema/non-empty-string}
    (s/required-key :service-description-builder-config) (s/constrained
                                                           {:kind s/Keyword
                                                            s/Keyword schema/require-symbol-factory-fn}
@@ -358,6 +374,12 @@
                          :scheduler-gc-broken-service-interval-ms 60000
                          :scheduler-gc-interval-ms 60000}
    :scheduler-syncer-interval-secs 5
+   :server-options {:http2? false
+                    :http2c? true
+                    :max-threads 250
+                    :request-header-size 32768
+                    :response-header-size 8192
+                    :send-date-header? false}
    :service-description-builder-config {:kind :default
                                         :default {:factory-fn 'waiter.service-description/create-default-service-description-builder}}
    :service-description-constraints {"cmd" {:max 1200}
