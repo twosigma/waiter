@@ -155,8 +155,16 @@ def output(cp):
 
 
 def plugins_config():
-    """If the WAITER_TEST_PLUGIN_JSON environment variable is set, returns its value, otherwise empty dict"""
-    return json.loads(os.environ['WAITER_TEST_PLUGIN_JSON']) if 'WAITER_TEST_PLUGIN_JSON' in os.environ else {}
+    """
+    If the WAITER_TEST_PLUGIN_JSON environment variable is set,
+    returns the parsed contents of the file, otherwise empty dict
+    """
+    if 'WAITER_TEST_PLUGIN_JSON' in os.environ:
+        path = os.environ['WAITER_TEST_PLUGIN_JSON']
+        content = util.load_json_file(os.path.abspath(path))
+        return content
+    else:
+        return {}
 
 
 def base_config():
