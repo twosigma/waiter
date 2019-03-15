@@ -8,8 +8,7 @@ RUN apt-get update \
   && apt-get install -y nginx \
   && apt-get install -y python3
 
-RUN mkdir -p /opt/kitchen
-COPY bin/kitchen /opt/kitchen
-COPY bin/waiter-init /usr/bin/waiter-init
-COPY .temp/nginx-server/bin/run-nginx-server.sh /opt/nginx-server/bin/run-nginx-server.sh
-COPY .temp/nginx-server/data/nginx-template.conf /opt/nginx-server/data/nginx-template.conf
+COPY kitchen/bin/waiter-init /usr/bin/waiter-init
+COPY kitchen/bin/kitchen /opt/kitchen/kitchen
+COPY nginx/bin/run-nginx-server.sh /opt/nginx/bin/run-nginx-server.sh
+COPY nginx/data/nginx-template.conf /opt/nginx/data/nginx-template.conf

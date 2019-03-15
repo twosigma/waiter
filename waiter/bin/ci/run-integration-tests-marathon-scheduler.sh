@@ -16,10 +16,10 @@ TEST_SELECTOR=${2:-integration}
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WAITER_DIR=${DIR}/../..
-KITCHEN_DIR=${WAITER_DIR}/../kitchen
+TEST_APPS_DIR=${WAITER_DIR}/../test-apps
 
 # Build mesos agent container with Kitchen packed in
-${KITCHEN_DIR}/bin/build-docker-image.sh
+${TEST_APPS_DIR}/bin/build-docker-image.sh
 
 # Start minimesos
 export MINIMESOS_CMD=${DIR}/minimesos
@@ -33,6 +33,6 @@ ${WAITER_DIR}/bin/run-using-minimesos.sh ${WAITER_PORT} &
 
 # Run the integration tests
 export WAITER_TEST_KITCHEN_CMD=/opt/kitchen/kitchen
-export WAITER_TEST_NGINX_SERVER_CMD=/opt/nginx-server/bin/run-nginx-server.sh
+export WAITER_TEST_NGINX_CMD=/opt/nginx/bin/run-nginx-server.sh
 export WAITER_URI=127.0.0.1:${WAITER_PORT}
 ${WAITER_DIR}/bin/test.sh ${TEST_COMMAND} ${TEST_SELECTOR}

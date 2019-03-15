@@ -663,7 +663,7 @@
                                                     "authentication" "standard",
                                                     "backend-proto" "http",
                                                     "blacklist-on-503" true,
-                                                    "cmd" "/kitchen/bin/kitchen -p $PORT0",
+                                                    "cmd" "/opt/bin/kitchen -p $PORT0",
                                                     "cmd-type" "shell",
                                                     "concurrency-level" 1,
                                                     "cpus" 0.1,

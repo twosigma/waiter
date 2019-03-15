@@ -16,7 +16,7 @@ TEST_SELECTOR=${2:-integration}
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WAITER_DIR=${DIR}/../..
-KITCHEN_DIR=${WAITER_DIR}/../kitchen
+TEST_APPS_DIR=${WAITER_DIR}/../test-apps
 
 # Start minikube
 ${DIR}/minikube-setup.sh
@@ -29,7 +29,7 @@ if [[ $TEST_SELECTOR =~ heavy$ ]]; then
 fi
 
 # Ensure we have the docker image for the pods
-${KITCHEN_DIR}/bin/build-docker-image.sh
+${TEST_APPS_DIR}/bin/build-docker-image.sh
 
 # Start waiter
 : ${WAITER_PORT:=9091}
@@ -42,7 +42,7 @@ bash +x ${DIR}/monitor-pods.sh &
 export INTEGRATION_TEST_CUSTOM_IMAGE="twosigma/integration"
 export LEIN_TEST_THREADS=4
 export WAITER_TEST_KITCHEN_CMD=/opt/kitchen/kitchen
-export WAITER_TEST_NGINX_SERVER_CMD=/opt/nginx-server/bin/run-nginx-server.sh
+export WAITER_TEST_NGINX_CMD=/opt/nginx/bin/run-nginx-server.sh
 export WAITER_AUTH_RUN_AS_USER=${USER}
 export WAITER_URI=127.0.0.1:${WAITER_PORT}
 ${WAITER_DIR}/bin/test.sh ${TEST_COMMAND} ${TEST_SELECTOR}
