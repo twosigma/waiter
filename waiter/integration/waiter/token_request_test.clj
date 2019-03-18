@@ -1418,7 +1418,9 @@
                                          :version "version-2")
                                   (dissoc :cpus :mem :version))
           token-description-3 (-> token-description-1
-                                  (assoc :name (str service-name "-v3")
+                                  (assoc :cmd (kitchen-cmd (str "-p $PORT0 --start-up-sleep-ms 240000"))
+                                         :grace-period-secs 300
+                                         :name (str service-name "-v3")
                                          :version "version-3"))]
       (assert-response-status (post-token waiter-url token-description-1) 200)
       (let [service-id-1 (retrieve-service-id waiter-url request-headers)]
