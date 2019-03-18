@@ -162,7 +162,7 @@ def plugins_config():
     if 'WAITER_TEST_PLUGIN_JSON' in os.environ:
         path = os.environ['WAITER_TEST_PLUGIN_JSON']
         content = util.load_json_file(os.path.abspath(path))
-        return content
+        return content or {}
     else:
         return {}
 

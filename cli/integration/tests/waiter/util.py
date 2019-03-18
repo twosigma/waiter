@@ -155,8 +155,8 @@ def load_json_file(path):
             try:
                 logging.debug(f'attempting to load json configuration from {path}')
                 content = json.load(json_file)
-            except Exception:
-                pass
+            except Exception as e:
+                logging.error(e, f'error loading json configuration from {path}')
     else:
         logging.info(f'{path} is not a file')
 
