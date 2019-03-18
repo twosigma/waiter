@@ -1,5 +1,6 @@
 import functools
 import importlib
+import json
 import logging
 import os
 import random
@@ -143,3 +144,20 @@ def wait_until(query, predicate, max_wait_ms=DEFAULT_TIMEOUT_MS, wait_interval_m
             details = str(final_response)
         logging.info(f"Timeout exceeded waiting for condition. Details: {details}")
         raise
+
+
+def load_json_file(path):
+    """Decode a JSON formatted file."""
+    content = None
+
+    if os.path.isfile(path):
+        with open(path) as json_file:
+            try:
+                logging.debug(f'attempting to load json configuration from {path}')
+                content = json.load(json_file)
+            except Exception as e:
+                logging.error(e, f'error loading json configuration from {path}')
+    else:
+        logging.info(f'{path} is not a file')
+
+    return content

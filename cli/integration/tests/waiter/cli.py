@@ -99,12 +99,7 @@ class temp_config_file:
     """
 
     def __init__(self, config):
-        session_module = os.getenv('COOK_SESSION_MODULE')
-        if session_module:
-            self.config = {'http': {'modules': {'session-module': session_module, 'adapters-module': session_module}}}
-            self.config.update(config)
-        else:
-            self.config = config
+        self.config = config
 
     def deep_merge(self, a, b):
         """Merges a and b, letting b win if there is a conflict"""
@@ -120,7 +115,7 @@ class temp_config_file:
 
     def write_temp_json(self):
         path = tempfile.NamedTemporaryFile(delete=False).name
-        config = self.config
+        config = self.deep_merge(base_config(), self.config)
         write_json(path, config)
         return path
 
@@ -157,3 +152,28 @@ def show_token(waiter_url=None, token_name=None, flags=None):
 def output(cp):
     """Returns a string containing the stdout and stderr from the given CompletedProcess"""
     return f'\nstdout:\n{stdout(cp)}\n\nstderr:\n{decode(cp.stderr)}'
+
+
+def plugins_config():
+    """
+    If the WAITER_TEST_PLUGIN_JSON environment variable is set,
+    returns the parsed contents of the file, otherwise empty dict
+    """
+    if 'WAITER_TEST_PLUGIN_JSON' in os.environ:
+        path = os.environ['WAITER_TEST_PLUGIN_JSON']
+        content = util.load_json_file(os.path.abspath(path))
+        return content or {}
+    else:
+        return {}
+
+
+def base_config():
+    """Returns a "base" config map that can be added to."""
+    return plugins_config()
+
+
+def write_base_config():
+    """Creates a config file that can be used as a starting point for integration tests"""
+    config = base_config()
+    if config:
+        write_json(os.path.abspath('.waiter.json'), config)

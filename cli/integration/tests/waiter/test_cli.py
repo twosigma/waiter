@@ -16,6 +16,7 @@ class WaiterCliTest(util.WaiterTest):
     def setUpClass(cls):
         cls.waiter_url = util.retrieve_waiter_url()
         util.init_waiter_session(cls.waiter_url)
+        cli.write_base_config()
 
     def setUp(self):
         self.waiter_url = type(self).waiter_url
