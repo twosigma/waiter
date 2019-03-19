@@ -3,7 +3,7 @@ import logging
 import os
 from concurrent import futures
 
-from waiter import http
+from waiter import http_util
 
 
 def query_across_clusters(clusters, query_fn):
@@ -27,6 +27,6 @@ def get_token(cluster, token_name, include=None):
     params = {'token': token_name}
     if include:
         params['include'] = include
-    token_data, headers = http.make_data_request(cluster, lambda: http.get(cluster, 'token', params=params))
+    token_data, headers = http_util.make_data_request(cluster, lambda: http_util.get(cluster, 'token', params=params))
     etag = headers.get('ETag', None)
     return token_data, etag
