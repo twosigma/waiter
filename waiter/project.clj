@@ -32,7 +32,8 @@
 
   :dependencies [[bidi "2.1.5"
                   :exclusions [prismatic/schema ring/ring-core]]
-                 [twosigma/jet "0.7.10-20190315_050957-g3e53036"]
+                 [twosigma/jet "0.7.10-20190319_181636-g5104f1f"
+                  :exclusions [org.mortbay.jetty.alpn/alpn-boot]]
                  [twosigma/clj-http "1.0.2-20180124_201819-gcdf23e5"
                   :exclusions [commons-codec commons-io org.clojure/tools.reader potemkin slingshot]]
                  [clj-time "0.15.1"
@@ -84,9 +85,9 @@
                  [org.clojure/tools.logging "0.4.1"]
                  [org.clojure/tools.namespace "0.2.11"]
                  [org.clojure/tools.reader "1.3.2"]
-                 [org.eclipse.jetty/jetty-alpn-openjdk8-client "9.4.15.v20190215"]
                  ;; use maven to download this jar so we can set up the boot classpath
-                 [org.mortbay.jetty.alpn/alpn-boot "8.1.13.v20181017"]
+                 [org.mortbay.jetty.alpn/alpn-boot "8.1.13.v20181017"
+                  :scope "provided"]
                  [org.slf4j/slf4j-log4j12 "1.7.25"
                   :exclusions [log4j]]
                  [potemkin "0.4.5"]
