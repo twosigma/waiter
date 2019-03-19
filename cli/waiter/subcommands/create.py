@@ -84,14 +84,17 @@ def create(clusters, args, _):
 def register(add_parser):
     """Adds this sub-command's parser and returns the action function"""
     global create_parser
-    create_parser = add_parser('create', help='create token', description='Create or update a Waiter token. '
-                                                                          'In addition to the optional arguments '
-                                                                          'explicitly listed below, '
-                                                                          'you can optionally provide any Waiter '
-                                                                          'token parameter as a flag. For example, '
-                                                                          'to specify 10 seconds for the '
-                                                                          'grace-period-secs parameter, '
-                                                                          'you can pass --grace-period-secs 10.')
+    create_parser = add_parser('create',
+                               help='create or update token',
+                               description='Create or update a Waiter token. '
+                                           'In addition to the optional arguments '
+                                           'explicitly listed below, '
+                                           'you can optionally provide any Waiter '
+                                           'token parameter as a flag. For example, '
+                                           'to specify 10 seconds for the '
+                                           'grace-period-secs parameter, '
+                                           'you can pass --grace-period-secs 10.',
+                               aliases=['update'])
     create_parser.add_argument('--name', '-n', help='name of service')
     create_parser.add_argument('--version', '-v', help='version of service')
     create_parser.add_argument('--cmd', '-C', help='command to start service')

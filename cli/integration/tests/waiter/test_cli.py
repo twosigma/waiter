@@ -30,7 +30,26 @@ class WaiterCliTest(util.WaiterTest):
         self.assertEqual(0, cp.returncode, cp.stderr)
         try:
             token_data = util.load_token(self.waiter_url, token_name)
-            print(token_data)
+            self.assertIsNotNone(token_data)
+            self.assertEqual('shell', token_data['cmd-type'])
+            self.assertEqual(cmd, token_data['cmd'])
+            self.assertEqual(0.1, token_data['cpus'])
+            self.assertEqual(128, token_data['mem'])
+            self.assertEqual(getpass.getuser(), token_data['owner'])
+            self.assertEqual(getpass.getuser(), token_data['last-update-user'])
+            self.assertEqual({}, token_data['previous'])
+            self.assertEqual(version, token_data['version'])
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_basic_update(self):
+        token_name = self.token_name()
+        version = str(uuid.uuid4())
+        cmd = util.minimal_service_cmd()
+        cp = cli.update_minimal(self.waiter_url, token_name, flags=None, cmd=cmd, cpus=0.1, mem=128, version=version)
+        self.assertEqual(0, cp.returncode, cp.stderr)
+        try:
+            token_data = util.load_token(self.waiter_url, token_name)
             self.assertIsNotNone(token_data)
             self.assertEqual('shell', token_data['cmd-type'])
             self.assertEqual(cmd, token_data['cmd'])
