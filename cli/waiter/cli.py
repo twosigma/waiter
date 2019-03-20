@@ -16,8 +16,10 @@ parser.add_argument('--version', help='output version information and exit',
 
 subparsers = parser.add_subparsers(dest='action')
 
+create_or_update = create.register(subparsers.add_parser)
 actions = {
-    'create': create.register(subparsers.add_parser),
+    'create': create_or_update,
+    'update': create_or_update,
     'show': show.register(subparsers.add_parser)
 }
 

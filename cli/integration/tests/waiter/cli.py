@@ -59,29 +59,53 @@ def cli(args, waiter_url=None, flags=None, stdin=None, env=None, wait_for_exit=T
     return cp
 
 
-def create(waiter_url=None, token_name=None, flags=None, create_flags=None):
-    """Creates a token via the CLI"""
-    args = f"create {token_name} {create_flags or ''}"
+def create_or_update(subcommand, waiter_url=None, token_name=None, flags=None, create_flags=None):
+    """Creates or updates a token via the CLI"""
+    args = f"{subcommand} {token_name} {create_flags or ''}"
     cp = cli(args, waiter_url, flags)
     return cp
 
 
-def create_from_service_description(waiter_url, token_name, service, flags=None):
-    """Creates a token via the CLI, using the provided service fields"""
+def create(waiter_url=None, token_name=None, flags=None, create_flags=None):
+    """Creates a token via the CLI"""
+    cp = create_or_update('create', waiter_url, token_name, flags, create_flags)
+    return cp
+
+
+def create_or_update_from_service_description(subcommand, waiter_url, token_name, service, flags=None):
+    """Creates or updates a token via the CLI, using the provided service fields"""
     create_flags = \
         f"--cmd '{service['cmd']}' " \
         f"--cpus {service['cpus']} " \
         f"--mem {service['mem']} " \
         f"--cmd-type {service['cmd-type']} " \
         f"--version {service['version']}"
-    cp = create(waiter_url, token_name, flags=flags, create_flags=create_flags)
+    cp = create_or_update(subcommand, waiter_url, token_name, flags=flags, create_flags=create_flags)
+    return cp
+
+
+def create_from_service_description(waiter_url, token_name, service, flags=None):
+    """Creates a token via the CLI, using the provided service fields"""
+    cp = create_or_update_from_service_description('create', waiter_url, token_name, service, flags)
+    return cp
+
+
+def create_or_update_minimal(subcommand, waiter_url=None, token_name=None, flags=None, **kwargs):
+    """Creates or updates a token via the CLI, using the "minimal" service description"""
+    service = util.minimal_service_description(**kwargs)
+    cp = create_or_update_from_service_description(subcommand, waiter_url, token_name, service, flags=flags)
     return cp
 
 
 def create_minimal(waiter_url=None, token_name=None, flags=None, **kwargs):
     """Creates a token via the CLI, using the "minimal" service description"""
-    service = util.minimal_service_description(**kwargs)
-    cp = create_from_service_description(waiter_url, token_name, service, flags=flags)
+    cp = create_or_update_minimal('create', waiter_url, token_name, flags, **kwargs)
+    return cp
+
+
+def update_minimal(waiter_url=None, token_name=None, flags=None, **kwargs):
+    """Updates a token via the CLI, using the "minimal" service description"""
+    cp = create_or_update_minimal('update', waiter_url, token_name, flags, **kwargs)
     return cp
 
 
