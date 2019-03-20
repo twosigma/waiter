@@ -180,7 +180,7 @@ class WaiterCliTest(util.WaiterTest):
         token_name = self.token_name()
         cp = cli.show(self.waiter_url, token_name)
         self.assertEqual(1, cp.returncode, cp.stderr)
-        self.assertIn('Unable to retrieve token information', cli.decode(cp.stderr))
+        self.assertIn('No matching data found', cli.stdout(cp))
         util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
         try:
             token = util.load_token(self.waiter_url, token_name)
@@ -248,4 +248,20 @@ class WaiterCliTest(util.WaiterTest):
             keep_running = False
             thread.join()
             self.logger.info('Thread finished')
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_avoid_exit_on_connection_error(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
+        try:
+            config = {'clusters': [{'name': 'foo', 'url': self.waiter_url},
+                                   {'name': 'bar', 'url': 'http://localhost:65535'}]}
+            with cli.temp_config_file(config) as path:
+                flags = f'--config {path}'
+                cp, tokens = cli.show_token(token_name=token_name, flags=flags)
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                self.assertEqual(1, len(tokens), tokens)
+                self.assertEqual(util.load_token(self.waiter_url, token_name), tokens[0])
+                self.assertIn('Encountered connection error with bar', cli.decode(cp.stderr), cli.output(cp))
+        finally:
             util.delete_token(self.waiter_url, token_name)
