@@ -3,7 +3,7 @@ import logging
 
 import requests
 
-from waiter import terminal, http
+from waiter import terminal, http_util
 from waiter.querying import get_token
 from waiter.util import guard_no_cluster, print_info
 
@@ -45,7 +45,7 @@ def create_or_update(cluster, token_name, token_fields):
         json_body = existing_token_data if existing_token_data else {}
         json_body.update(token_fields)
         headers = {'If-Match': existing_token_etag or ''}
-        resp = http.post(cluster, 'token', json_body, params={'token': token_name}, headers=headers)
+        resp = http_util.post(cluster, 'token', json_body, params={'token': token_name}, headers=headers)
         process_post_result(resp)
         return 0
     except requests.exceptions.ReadTimeout as rt:
