@@ -1404,6 +1404,8 @@
           token (create-token-name waiter-url service-name)
           request-headers {:x-waiter-token token}
           fallback-period-secs 300
+          scheduler-syncer-interval-secs (setting waiter-url [:scheduler-syncer-interval-secs])
+          scheduler-sync-allowance-sleep-duration-ms (* 2 scheduler-syncer-interval-secs)
           token-description-1 (-> (kitchen-request-headers :prefix "")
                                   (assoc :fallback-period-secs fallback-period-secs
                                          :idle-timeout-mins 1
@@ -1429,6 +1431,8 @@
           (let [response-1 (make-request-with-debug-info request-headers #(make-request waiter-url "/hello" :headers %))]
             (assert-response-status response-1 200)
             (is (= service-id-1 (:service-id response-1))))
+          ;; allow every router to learn about the new instance
+          (Thread/sleep scheduler-sync-allowance-sleep-duration-ms)
           (assert-response-status (post-token waiter-url token-description-2) 200)
           (assert-response-status (make-request waiter-url "/hello" :headers request-headers) 400)
           (assert-response-status (post-token waiter-url token-description-3) 200)
