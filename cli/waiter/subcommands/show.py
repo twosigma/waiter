@@ -1,9 +1,10 @@
 import json
+import logging
 
 from tabulate import tabulate
 
 from waiter.format import format_mem_field, format_timestamp_string, format_field_name
-from waiter.querying import query_across_clusters, get_token
+from waiter.querying import query_across_clusters, get_token, print_no_data
 from waiter.util import guard_no_cluster
 
 
@@ -67,7 +68,8 @@ def get_token_on_cluster(cluster, token_name):
     if token_data:
         return {'count': 1, 'token': token_data}
     else:
-        raise Exception(f'Unable to retrieve token information on {cluster["name"]} ({cluster["url"]}).')
+        logging.info(f'Unable to retrieve token information on {cluster["name"]} ({cluster["url"]}).')
+        return {'count': 0}
 
 
 def query(clusters, token):
@@ -97,6 +99,8 @@ def show(clusters, args, _):
     if query_result['count'] > 0:
         return 0
     else:
+        if not as_json:
+            print_no_data(clusters)
         return 1
 
 

@@ -3,7 +3,7 @@ import logging
 import os
 from concurrent import futures
 
-from waiter import http_util
+from waiter import http_util, terminal
 
 
 def query_across_clusters(clusters, query_fn):
@@ -16,8 +16,10 @@ def query_across_clusters(clusters, query_fn):
         future_to_cluster = {query_fn(c, executor): c for c in clusters}
         for future, cluster in future_to_cluster.items():
             entities = future.result()
-            all_entities['clusters'][cluster['name']] = entities
-            count += entities['count']
+            cluster_count = entities['count']
+            if cluster_count > 0:
+                all_entities['clusters'][cluster['name']] = entities
+                count += cluster_count
     all_entities['count'] = count
     return all_entities
 
@@ -30,3 +32,16 @@ def get_token(cluster, token_name, include=None):
     token_data, headers = http_util.make_data_request(cluster, lambda: http_util.get(cluster, 'token', params=params))
     etag = headers.get('ETag', None)
     return token_data, etag
+
+
+def no_data_message(clusters):
+    """Returns a message indicating that no data was found in the given clusters"""
+    clusters_text = ' / '.join([c['name'] for c in clusters])
+    message = terminal.failed(f'No matching data found in {clusters_text}.')
+    message = f'{message}\nDo you need to add another cluster to your configuration?'
+    return message
+
+
+def print_no_data(clusters):
+    """Prints a message indicating that no data was found in the given clusters"""
+    print(no_data_message(clusters))
