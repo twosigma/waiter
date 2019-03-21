@@ -3,4 +3,5 @@ __pycache__
 *.spec
 .cache
 build
+dist
 venv

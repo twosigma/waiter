@@ -3,7 +3,7 @@ import logging
 
 import requests
 
-from waiter import terminal, http
+from waiter import terminal, http_util
 from waiter.querying import get_token
 from waiter.util import guard_no_cluster, print_info
 
@@ -45,7 +45,7 @@ def create_or_update(cluster, token_name, token_fields):
         json_body = existing_token_data if existing_token_data else {}
         json_body.update(token_fields)
         headers = {'If-Match': existing_token_etag or ''}
-        resp = http.post(cluster, 'token', json_body, params={'token': token_name}, headers=headers)
+        resp = http_util.post(cluster, 'token', json_body, params={'token': token_name}, headers=headers)
         process_post_result(resp)
         return 0
     except requests.exceptions.ReadTimeout as rt:
@@ -84,14 +84,17 @@ def create(clusters, args, _):
 def register(add_parser):
     """Adds this sub-command's parser and returns the action function"""
     global create_parser
-    create_parser = add_parser('create', help='create token', description='Create or update a Waiter token. '
-                                                                          'In addition to the optional arguments '
-                                                                          'explicitly listed below, '
-                                                                          'you can optionally provide any Waiter '
-                                                                          'token parameter as a flag. For example, '
-                                                                          'to specify 10 seconds for the '
-                                                                          'grace-period-secs parameter, '
-                                                                          'you can pass --grace-period-secs 10.')
+    create_parser = add_parser('create',
+                               help='create or update token',
+                               description='Create or update a Waiter token. '
+                                           'In addition to the optional arguments '
+                                           'explicitly listed below, '
+                                           'you can optionally provide any Waiter '
+                                           'token parameter as a flag. For example, '
+                                           'to specify 10 seconds for the '
+                                           'grace-period-secs parameter, '
+                                           'you can pass --grace-period-secs 10.',
+                               aliases=['update'])
     create_parser.add_argument('--name', '-n', help='name of service')
     create_parser.add_argument('--version', '-v', help='version of service')
     create_parser.add_argument('--cmd', '-C', help='command to start service')

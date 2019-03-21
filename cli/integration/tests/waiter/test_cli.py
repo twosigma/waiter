@@ -32,7 +32,26 @@ class WaiterCliTest(util.WaiterTest):
         self.assertEqual(0, cp.returncode, cp.stderr)
         try:
             token_data = util.load_token(self.waiter_url, token_name)
-            print(token_data)
+            self.assertIsNotNone(token_data)
+            self.assertEqual('shell', token_data['cmd-type'])
+            self.assertEqual(cmd, token_data['cmd'])
+            self.assertEqual(0.1, token_data['cpus'])
+            self.assertEqual(128, token_data['mem'])
+            self.assertEqual(getpass.getuser(), token_data['owner'])
+            self.assertEqual(getpass.getuser(), token_data['last-update-user'])
+            self.assertEqual({}, token_data['previous'])
+            self.assertEqual(version, token_data['version'])
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_basic_update(self):
+        token_name = self.token_name()
+        version = str(uuid.uuid4())
+        cmd = util.minimal_service_cmd()
+        cp = cli.update_minimal(self.waiter_url, token_name, flags=None, cmd=cmd, cpus=0.1, mem=128, version=version)
+        self.assertEqual(0, cp.returncode, cp.stderr)
+        try:
+            token_data = util.load_token(self.waiter_url, token_name)
             self.assertIsNotNone(token_data)
             self.assertEqual('shell', token_data['cmd-type'])
             self.assertEqual(cmd, token_data['cmd'])
@@ -163,7 +182,7 @@ class WaiterCliTest(util.WaiterTest):
         token_name = self.token_name()
         cp = cli.show(self.waiter_url, token_name)
         self.assertEqual(1, cp.returncode, cp.stderr)
-        self.assertIn('Unable to retrieve token information', cli.decode(cp.stderr))
+        self.assertIn('No matching data found', cli.stdout(cp))
         util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
         try:
             token = util.load_token(self.waiter_url, token_name)
@@ -253,3 +272,19 @@ class WaiterCliTest(util.WaiterTest):
                 cp = cli.create_minimal(token_name=token_name, flags=flags)
                 self.assertEqual(0, cp.returncode, cp.stderr)
                 self.assertIn(f'on {cluster_name_2} cluster', cli.decode(cp.stdout))
+
+    def test_avoid_exit_on_connection_error(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
+        try:
+            config = {'clusters': [{'name': 'foo', 'url': self.waiter_url},
+                                   {'name': 'bar', 'url': 'http://localhost:65535'}]}
+            with cli.temp_config_file(config) as path:
+                flags = f'--config {path}'
+                cp, tokens = cli.show_token(token_name=token_name, flags=flags)
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                self.assertEqual(1, len(tokens), tokens)
+                self.assertEqual(util.load_token(self.waiter_url, token_name), tokens[0])
+                self.assertIn('Encountered connection error with bar', cli.decode(cp.stderr), cli.output(cp))
+        finally:
+            util.delete_token(self.waiter_url, token_name)

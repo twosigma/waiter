@@ -2,7 +2,7 @@ import argparse
 import logging
 from urllib.parse import urlparse
 
-from waiter import configuration, metrics, http, version
+from waiter import configuration, metrics, http_util, version
 from waiter.subcommands import create, show
 
 parser = argparse.ArgumentParser(description='waiter is the Waiter CLI')
@@ -16,8 +16,10 @@ parser.add_argument('--version', help='output version information and exit',
 
 subparsers = parser.add_subparsers(dest='action')
 
+create_or_update = create.register(subparsers.add_parser)
 actions = {
-    'create': create.register(subparsers.add_parser),
+    'create': create_or_update,
+    'update': create_or_update,
     'show': show.register(subparsers.add_parser)
 }
 
@@ -82,7 +84,7 @@ def run(args):
             metrics.initialize(config_map)
             metrics.inc(f'command.{action}.runs')
             clusters = load_target_clusters(config_map, url, cluster)
-            http.configure(config_map)
+            http_util.configure(config_map)
             args = {k: v for k, v in args.items() if v is not None}
             result = actions[action](clusters, args, config_path)
             logging.debug(f'result: {result}')
