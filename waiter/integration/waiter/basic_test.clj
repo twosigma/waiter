@@ -297,11 +297,11 @@
 
 (deftest ^:parallel ^:integration-fast test-basic-health-check-port-index
   (testing-using-waiter-url
-    (let [command (kitchen-cmd "-p $PORT1")
-          headers {:x-waiter-cmd command
-                   :x-waiter-health-check-port-index 1
+    (let [kitchen-command (kitchen-cmd "-p $PORT2")
+          headers {:x-waiter-cmd kitchen-command
+                   :x-waiter-health-check-port-index 2
                    :x-waiter-name (rand-name)
-                   :x-waiter-ports 2}
+                   :x-waiter-ports 3}
           {:keys [service-id] :as response} (make-request-with-debug-info headers #(make-shell-request waiter-url %))]
       (is (not (nil? service-id)))
       (when service-id
@@ -310,12 +310,11 @@
           (assert-response-status response 502)
           (is (str/includes? (-> response :body str) "Request to service backend failed"))
           (is (str/includes? (-> response :headers (get "server")) "waiter/"))
-          (let [service-settings (service-settings waiter-url service-id)
-                active-instances (get-in service-settings [:instances :active-instances])]
-            (is (= command (get-in service-settings [:service-description :cmd])))
-            (is (= 1 (get-in service-settings [:service-description :health-check-port-index])))
-            (is (seq active-instances))
-            (is (every? :healthy? active-instances))))))))
+          (let [{:keys [service-description]} (service-settings waiter-url service-id)
+                {:keys [cmd health-check-port-index ports]} service-description]
+            (is (= kitchen-command cmd))
+            (is (= 2 health-check-port-index))
+            (is (= 3 ports))))))))
 
 (defn- run-backend-proto-service-test
   "Helper method to run tests with various backend protocols"
