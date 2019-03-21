@@ -206,12 +206,13 @@
 (defn wrap-request-info
   "Attaches request info to the request."
   [handler router-id support-info]
-  (fn wrap-request-info-fn [request]
+  (fn wrap-request-info-fn [{:keys [servlet-request] :as request}]
     (-> request
-        (assoc :protocol (request->protocol request)
+        (assoc :client-protocol (request->protocol request)
                :request-id (str (utils/unique-identifier) "-" (-> request utils/request->scheme name))
                :request-time (t/now)
                :router-id router-id
+               :router-protocol (some-> servlet-request .getProtocol)
                :support-info support-info)
         handler)))
 
