@@ -243,13 +243,9 @@
             [{:keys [request-id target-router-id] :as reservation-parameters} cleanup-chan]
             (async/go
               (let [response-result-promise (promise)
-                    response->body (fn [{:keys [body error]}]
-                                     (if error
-                                       (throw error)
-                                       body))
                     default-response-result "work-stealing-error"]
                 (try
-                  (let [{:keys [headers status] :as inter-router-response}
+                  (let [{:keys [body error headers status] :as inter-router-response}
                         (-> (make-inter-router-requests-fn "work-stealing"
                                                            :acceptable-router? #(= target-router-id %)
                                                            :body (-> reservation-parameters
@@ -260,9 +256,10 @@
                                                            :method :post)
                             (get target-router-id)
                             async/<!)
-                        response-result (if (and inter-router-response (<= 200 status 299))
-                                          (-> inter-router-response
-                                              response->body
+                        _ (when error
+                            (throw error))
+                        response-result (if (and inter-router-response status (<= 200 status 299))
+                                          (-> body
                                               async/<! ;; rely on http client library to close the body
                                               str
                                               json/read-str
