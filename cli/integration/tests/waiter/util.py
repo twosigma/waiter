@@ -105,7 +105,7 @@ def minimal_service_cmd(response_text=None):
 
 def minimal_service_description(**kwargs):
     service = {
-        'cmd': os.getenv('WAITER_TEST_DEFAULT_CMD', minimal_service_cmd()),
+        'cmd': os.getenv('WAITER_CLI_TEST_DEFAULT_CMD', minimal_service_cmd()),
         'cpus': float(os.getenv('WAITER_TEST_DEFAULT_CPUS', 1.0)),
         'mem': int(os.getenv('WAITER_TEST_DEFAULT_MEM_MB', 256)),
         'version': 'version-does-not-matter',
