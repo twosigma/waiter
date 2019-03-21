@@ -201,3 +201,25 @@ def write_base_config():
     config = base_config()
     if config:
         write_json(os.path.abspath('.waiter.json'), config)
+
+
+class temp_base_config_file:
+    """
+    A context manager used to generate and subsequently delete a temporary
+    base config file for the CLI. Takes as input the config dictionary to use.
+    """
+
+    def __init__(self, config):
+        # Get the location of the waiter executable so we can add a default `.waiter.json` file
+        cp = subprocess.run(args=['which', command()], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        base_exec = cp.stdout.decode("utf-8").rstrip('\n')
+        base_dir = os.path.dirname(os.path.abspath(base_exec))
+        self.path = os.path.join(base_dir, '.waiter.json')
+        self.config = config
+
+    def __enter__(self):
+        write_json(self.path, self.config)
+        return self.path
+
+    def __exit__(self, _, __, ___):
+        os.remove(self.path)

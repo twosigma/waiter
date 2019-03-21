@@ -1,6 +1,8 @@
 import getpass
 import logging
+import os
 import threading
+import unittest
 import uuid
 
 import pytest
@@ -249,6 +251,27 @@ class WaiterCliTest(util.WaiterTest):
             thread.join()
             self.logger.info('Thread finished')
             util.delete_token(self.waiter_url, token_name)
+
+    @unittest.skipIf('WAITER_TEST_CLI_COMMAND' in os.environ, 'waiter executable may be unknown.')
+    def test_base_config_file(self):
+        token_name = self.token_name()
+        cluster_name_1 = str(uuid.uuid4())
+        config = {'clusters': [{"name": cluster_name_1, "url": self.waiter_url}]}
+        with cli.temp_base_config_file(config):
+            # Use entry in base config file
+            cp = cli.create_minimal(token_name=token_name)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn(f'on {cluster_name_1} cluster', cli.decode(cp.stdout))
+
+            # Overwrite "base" with specified config file
+            cluster_name_2 = str(uuid.uuid4())
+            config = {'clusters': [{"name": cluster_name_2, "url": self.waiter_url}]}
+            with cli.temp_config_file(config) as path:
+                # Verify "base" config is overwritten
+                flags = '--config %s' % path
+                cp = cli.create_minimal(token_name=token_name, flags=flags)
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                self.assertIn(f'on {cluster_name_2} cluster', cli.decode(cp.stdout))
 
     def test_avoid_exit_on_connection_error(self):
         token_name = self.token_name()
