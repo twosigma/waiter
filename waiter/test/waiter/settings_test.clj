@@ -313,9 +313,13 @@
           :scheduler-config {:cache {:ttl 100}
                              :kind :marathon
                              :marathon {:factory-fn "create-marathon-scheduler" :url "http://marathon.example.com:8080"}}
+          :server-options {:truststore "/path/to/truststore.p12"
+                           :truststore-type "pkcs12"
+                           :trust-password "<hidden>"}
           :work-stealing {:offer-help-interval-ms 100
                           :reserve-timeout-ms 1000}
-          :zookeeper {:gc-relative-path "gc-state"
+          :zookeeper {:connect-string "<hidden>"
+                      :gc-relative-path "gc-state"
                       :leader-latch-relative-path "leader-latch"}}
          (sanitize-settings {:example {:foo {:kind :test
                                              :test {:factory-fn "create-test" :param "value-test"}
@@ -331,6 +335,9 @@
                                                 :kind :marathon
                                                 :marathon {:factory-fn "create-marathon-scheduler" :url "http://marathon.example.com:8080"}
                                                 :shell {:factory-fn "create-shell-scheduler" :working-directory "/path/to/some/directory"}}
+                             :server-options {:truststore "/path/to/truststore.p12"
+                                              :truststore-type "pkcs12"
+                                              :trust-password "truststore-password"}
                              :work-stealing {:offer-help-interval-ms 100
                                              :reserve-timeout-ms 1000}
                              :zookeeper {:connect-string "test-connect-string"

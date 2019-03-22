@@ -225,11 +225,13 @@
                              (map? nested-data)
                              (contains? nested-data :factory-fn))))
              (select-keys data))))
-    (cond-> (utils/dissoc-in settings [:zookeeper :connect-string])
+    (cond-> settings
       (get-in settings [:server-options :key-password])
-      (assoc-in [:server-options :key-password] "_hidden_")
+      (assoc-in [:server-options :key-password] "<hidden>")
       (get-in settings [:server-options :trust-password])
-      (assoc-in [:server-options :trust-password] "_hidden_"))))
+      (assoc-in [:server-options :trust-password] "<hidden>")
+      (get-in settings [:zookeeper :connect-string])
+      (assoc-in [:zookeeper :connect-string] "<hidden>"))))
 
 (defn display-settings
   "Endpoint to display the current settings in use."
