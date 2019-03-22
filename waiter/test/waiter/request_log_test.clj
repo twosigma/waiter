@@ -19,11 +19,12 @@
             [waiter.request-log :refer :all]))
 
 (deftest test-request->context
-  (let [request {:headers {"host" "host"
+  (let [request {:client-protocol "HTTP/2.0"
+                 :headers {"host" "host"
                            "origin" "www.origin.org"
                            "user-agent" "test-user-agent"
                            "x-cid" "123"}
-                 :protocol "HTTP/1.1"
+                 :internal-protocol "HTTP/1.1"
                  :query-string "a=1"
                  :remote-addr "127.0.0.1"
                  :request-id "abc"
@@ -32,8 +33,9 @@
                  :scheme "http"
                  :uri "/" }]
     (is (= {:cid "123"
-            :client-protocol "HTTP/1.1"
+            :client-protocol "HTTP/2.0"
             :host "host"
+            :internal-protocol "HTTP/1.1"
             :method "POST"
             :origin "www.origin.org"
             :path "/"

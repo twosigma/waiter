@@ -879,9 +879,11 @@
           include-request-info (utils/param-contains? request-params "include" "request-info")]
       (-> (cond-> {:status "ok"}
             include-request-info
-            (merge
-              (let [request-keys [:character-encoding :content-length :content-type :headers :protocol :query-string
-                                  :request-id :request-method :request-time :router-id :scheme :uri]]
+            (assoc
+              :request-info
+              (let [request-keys [:character-encoding :client-protocol :content-length :content-type :headers
+                                  :internal-protocol :query-string :request-id :request-method :request-time :router-id
+                                  :scheme :uri]]
                 (-> (select-keys request request-keys)
                     (update :headers headers/truncate-header-values)))))
           utils/clj->json-response))
