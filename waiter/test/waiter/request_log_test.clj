@@ -24,17 +24,18 @@
                            "origin" "www.origin.org"
                            "user-agent" "test-user-agent"
                            "x-cid" "123"}
+                 :internal-protocol "HTTP/1.1"
                  :query-string "a=1"
                  :remote-addr "127.0.0.1"
                  :request-id "abc"
                  :request-method :post
                  :request-time (t/date-time 2018 4 11)
-                 :router-protocol "HTTP/1.1"
                  :scheme "http"
                  :uri "/" }]
     (is (= {:cid "123"
             :client-protocol "HTTP/2.0"
             :host "host"
+            :internal-protocol "HTTP/1.1"
             :method "POST"
             :origin "www.origin.org"
             :path "/"
@@ -42,7 +43,6 @@
             :remote-addr "127.0.0.1"
             :request-id "abc"
             :request-time "2018-04-11T00:00:00.000Z"
-            :router-protocol "HTTP/1.1"
             :scheme "http"
             :user-agent "test-user-agent"}
            (request->context request)))))

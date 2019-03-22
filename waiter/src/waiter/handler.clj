@@ -882,7 +882,7 @@
             (assoc
               :request-info
               (let [request-keys [:character-encoding :client-protocol :content-length :content-type :headers
-                                  :query-string :request-id :request-method :request-time :router-id :router-protocol
+                                  :internal-protocol :query-string :request-id :request-method :request-time :router-id
                                   :scheme :uri]]
                 (-> (select-keys request request-keys)
                     (update :headers headers/truncate-header-values)))))
