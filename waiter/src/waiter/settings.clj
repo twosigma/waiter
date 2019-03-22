@@ -214,22 +214,29 @@
 (defn sanitize-settings
   "Sanitizes settings for eventual conversion to JSON"
   [settings]
-  (->> (utils/dissoc-in settings [:zookeeper :connect-string])
-       (walk/postwalk (fn [data]
-                        (if-not (and (map? data) (contains? data :kind))
-                          data
-                          (->> (keys data)
-                               (remove #(let [nested-data (get data %)]
-                                          (and (not= % :kind)
-                                               (not= % (:kind data))
-                                               (map? nested-data)
-                                               (contains? nested-data :factory-fn))))
-                               (select-keys data)))))))
+  (walk/postwalk
+    (fn [data]
+      (if-not (and (map? data) (contains? data :kind))
+        data
+        (->> (keys data)
+             (remove #(let [nested-data (get data %)]
+                        (and (not= % :kind)
+                             (not= % (:kind data))
+                             (map? nested-data)
+                             (contains? nested-data :factory-fn))))
+             (select-keys data))))
+    (cond-> (utils/dissoc-in settings [:zookeeper :connect-string])
+      (get-in settings [:server-options :key-password])
+      (assoc-in [:server-options :key-password] "_hidden_")
+      (get-in settings [:server-options :trust-password])
+      (assoc-in [:server-options :trust-password] "_hidden_"))))
 
 (defn display-settings
   "Endpoint to display the current settings in use."
   [settings]
-  (utils/clj->json-response (into (sorted-map) (sanitize-settings settings))))
+  (-> settings
+      sanitize-settings
+      utils/clj->json-response))
 
 (def settings-defaults
   {:authenticator-config {:kind :one-user
