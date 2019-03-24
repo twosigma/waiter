@@ -1429,6 +1429,15 @@
           (let [response-1 (make-request-with-debug-info request-headers #(make-request waiter-url "/hello" :headers %))]
             (assert-response-status response-1 200)
             (is (= service-id-1 (:service-id response-1))))
+          ;; allow every router to learn about the new instance
+          (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")]
+            (doseq [[_ router-url] (routers waiter-url)]
+              (is (wait-for
+                    (fn []
+                      (let [active-instances (-> (service-settings router-url service-id-1 :cookies cookies)
+                                                 (get-in [:instances :active-instances]))]
+                        (and (seq active-instances)
+                             (some :healthy? active-instances))))))))
           (assert-response-status (post-token waiter-url token-description-2) 200)
           (assert-response-status (make-request waiter-url "/hello" :headers request-headers) 400)
           (assert-response-status (post-token waiter-url token-description-3) 200)
