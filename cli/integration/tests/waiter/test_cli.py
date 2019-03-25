@@ -268,7 +268,7 @@ class WaiterCliTest(util.WaiterTest):
 
     def test_show_env(self):
         token_name = self.token_name()
-        util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
+        util.post_token(self.waiter_url, token_name, {'env': {'FOO': '1', 'BAR': 'baz'}})
         try:
             cp = cli.show(self.waiter_url, token_name)
             self.assertEqual(0, cp.returncode, cp.stderr)
