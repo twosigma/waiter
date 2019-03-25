@@ -828,62 +828,76 @@
                   ([router-state]
                     (timers/start-stop-time!
                       update-state-timer
-                      (let [{:keys [service-id->my-instance->slots service-id->unhealthy-instances service-id->expired-instances
-                                    service-id->starting-instances service-id->deployment-error service-id->instability-issue time]} router-state
-                            incoming-service-ids (set (keys service-id->my-instance->slots))
-                            known-service-ids (set (keys service-id->channel-map))
-                            new-service-ids (set/difference incoming-service-ids known-service-ids)
-                            removed-service-ids (set/difference known-service-ids incoming-service-ids)
-                            service-id->channel-map' (select-keys service-id->channel-map incoming-service-ids)
-                            new-chans (map start-service new-service-ids) ; create new responders
-                            service-id->channel-map'' (if (seq new-chans)
-                                                        (apply assoc service-id->channel-map' (interleave new-service-ids new-chans))
-                                                        service-id->channel-map')]
-                        ;; Destroy deleted responders
-                        (doseq [service-id removed-service-ids]
-                          (log/warn "[service-chan-maintainer] removing" service-id)
-                          (remove-service service-id (service-id->channel-map service-id)))
-                        ;; Update state for responders
-                        (doseq [service-id (keys service-id->channel-map'')]
-                          (let [my-instance->slots (get service-id->my-instance->slots service-id)
-                                healthy-instances (keys my-instance->slots)
-                                unhealthy-instances (get service-id->unhealthy-instances service-id)
-                                expired-instances (get service-id->expired-instances service-id)
-                                starting-instances (get service-id->starting-instances service-id)
-                                deployment-error (get service-id->deployment-error service-id)
-                                instability-issue (get service-id->instability-issue service-id)
-                                update-state-chan (retrieve-channel (get service-id->channel-map'' service-id) :update-state)]
-                            (if (or healthy-instances unhealthy-instances)
-                              (async/put! update-state-chan
-                                          (let [update-state {:healthy-instances healthy-instances
-                                                              :unhealthy-instances unhealthy-instances
-                                                              :expired-instances expired-instances
-                                                              :starting-instances starting-instances
-                                                              :my-instance->slots my-instance->slots
-                                                              :deployment-error deployment-error
-                                                              :instability-issue instability-issue}]
-                                            [update-state time]))
-                              (async/put! update-state-chan [{} time]))))
-                        [service-id->channel-map'' time])))
+                      (try
+                        (let [{:keys [service-id->my-instance->slots service-id->unhealthy-instances service-id->expired-instances
+                                      service-id->starting-instances service-id->deployment-error service-id->instability-issue time]} router-state
+                              incoming-service-ids (set (keys service-id->my-instance->slots))
+                              known-service-ids (set (keys service-id->channel-map))
+                              new-service-ids (set/difference incoming-service-ids known-service-ids)
+                              removed-service-ids (set/difference known-service-ids incoming-service-ids)
+                              service-id->channel-map' (select-keys service-id->channel-map incoming-service-ids)
+                              new-chans (map start-service new-service-ids) ; create new responders
+                              service-id->channel-map'' (if (seq new-chans)
+                                                          (apply assoc service-id->channel-map' (interleave new-service-ids new-chans))
+                                                          service-id->channel-map')]
+                          ;; Destroy deleted responders
+                          (doseq [service-id removed-service-ids]
+                            (log/warn "[service-chan-maintainer] removing" service-id)
+                            (remove-service service-id (service-id->channel-map service-id)))
+                          ;; Update state for responders
+                          (doseq [service-id (keys service-id->channel-map'')]
+                            (try
+                              (let [my-instance->slots (get service-id->my-instance->slots service-id)
+                                    healthy-instances (keys my-instance->slots)
+                                    unhealthy-instances (get service-id->unhealthy-instances service-id)
+                                    expired-instances (get service-id->expired-instances service-id)
+                                    starting-instances (get service-id->starting-instances service-id)
+                                    deployment-error (get service-id->deployment-error service-id)
+                                    instability-issue (get service-id->instability-issue service-id)
+                                    update-state-chan (retrieve-channel (get service-id->channel-map'' service-id) :update-state)]
+                                (if (or healthy-instances unhealthy-instances)
+                                  (async/put! update-state-chan
+                                              (let [update-state {:healthy-instances healthy-instances
+                                                                  :unhealthy-instances unhealthy-instances
+                                                                  :expired-instances expired-instances
+                                                                  :starting-instances starting-instances
+                                                                  :my-instance->slots my-instance->slots
+                                                                  :deployment-error deployment-error
+                                                                  :instability-issue instability-issue}]
+                                                [update-state time]))
+                                  (async/put! update-state-chan [{} time])))
+                              (catch Exception ex
+                                (log/error ex "[service-chan-maintainer] error in updating router state for" service-id)
+                                (throw ex))))
+                          [service-id->channel-map'' time])
+                        (catch Exception ex
+                          (log/error ex "[service-chan-maintainer] error in updating router state")
+                          (throw ex)))))
 
                   request-chan
                   ([message]
                     (let [{:keys [cid method response-chan service-id]} message]
                       (cid/cdebug cid "[service-chan-maintainer]" service-id "received request of type" method)
-                      (let [channel-map (get service-id->channel-map service-id)]
-                        (if channel-map
+                      (try
+                        (if-let [channel-map (get service-id->channel-map service-id)]
                           (let [method-chan (retrieve-channel channel-map method)]
                             (async/put! response-chan method-chan))
                           (do
                             (cid/cdebug cid "[service-chan-maintainer] no channel map found for" service-id)
                             (counters/inc! (metrics/service-counter service-id "maintainer" "not-found"))
                             (async/close! response-chan)))
-                        [service-id->channel-map last-state-update-time])))
+                        [service-id->channel-map last-state-update-time]
+                        (catch Exception ex
+                          (log/error ex "[service-chan-maintainer] error processing request" message)
+                          (throw ex)))))
 
                   query-service-maintainer-chan
                   ([message]
                     (let [{:keys [service-id response-chan]} message]
                       (log/info "[service-chan-maintainer] state has been queried for" service-id)
+                      (when-not (au/chan? response-chan)
+                        (log/error "[service-chan-maintainer] invalid response channel" response-chan)
+                        (throw (ex-info "invalid response channel" {:message message})))
                       (if (str/blank? service-id)
                         (async/put! response-chan {:last-state-update-time last-state-update-time
                                                    :service-id->channel-map service-id->channel-map})
@@ -894,7 +908,7 @@
             (when new-state
               (recur (first new-state) (second new-state)))))
         (catch Exception e
-          (log/error e "Fatal error in service-chan-maintainer")
+          (log/error e "fatal error in service-chan-maintainer")
           (System/exit 1))))
     {:exit-chan exit-chan}))
 
