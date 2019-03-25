@@ -1,14 +1,11 @@
-import argparse
 import logging
 
 import requests
 
 from waiter import terminal, http_util
 from waiter.querying import get_token
-from waiter.util import guard_no_cluster, print_info
+from waiter.util import guard_no_cluster, print_info, TRUE_STRINGS, FALSE_STRINGS, str2bool, response_message
 
-TRUE_STRINGS = ('yes', 'true')
-FALSE_STRINGS = ('no', 'false')
 BOOL_STRINGS = TRUE_STRINGS + FALSE_STRINGS
 
 create_parser = None
@@ -22,11 +19,7 @@ def process_post_result(resp):
         print_info(f'{message}.')
         return
 
-    if 'waiter-error' in resp_json and 'message' in resp_json['waiter-error']:
-        message = resp_json['waiter-error']['message']
-    else:
-        message = 'Encountered unexpected error'
-    raise Exception(f'{message}.')
+    raise Exception(f'{response_message(resp_json)}.')
 
 
 def post_failed_message(cluster_name, reason):
@@ -104,16 +97,6 @@ def register(add_parser):
     create_parser.add_argument('--ports', help='number of ports to reserve for service', type=int)
     create_parser.add_argument('token', nargs=1)
     return create
-
-
-def str2bool(v):
-    """Converts the given string to a boolean, or raises"""
-    if v.lower() in TRUE_STRINGS:
-        return True
-    elif v.lower() in FALSE_STRINGS:
-        return False
-    else:
-        raise argparse.ArgumentTypeError('Boolean value expected.')
 
 
 def add_implicit_arguments(unknown_args):

@@ -1,10 +1,9 @@
 import json
-import logging
 
 from tabulate import tabulate
 
 from waiter.format import format_mem_field, format_timestamp_string, format_field_name
-from waiter.querying import query_across_clusters, get_token, print_no_data
+from waiter.querying import print_no_data, query_token
 from waiter.util import guard_no_cluster
 
 
@@ -62,34 +61,12 @@ def show_data(cluster_name, data, format_fn, token_name):
     return count
 
 
-def get_token_on_cluster(cluster, token_name):
-    """Gets the token with the given name on the given cluster"""
-    token_data, _ = get_token(cluster, token_name, include='metadata')
-    if token_data:
-        return {'count': 1, 'token': token_data}
-    else:
-        logging.info(f'Unable to retrieve token information on {cluster["name"]} ({cluster["url"]}).')
-        return {'count': 0}
-
-
-def query(clusters, token):
-    """
-    Uses query_across_clusters to make the token
-    requests in parallel across the given clusters
-    """
-
-    def submit(cluster, executor):
-        return executor.submit(get_token_on_cluster, cluster, token)
-
-    return query_across_clusters(clusters, submit)
-
-
 def show(clusters, args, _):
     """Prints info for the token with the given token name."""
     guard_no_cluster(clusters)
     as_json = args.get('json')
     token_name = args.get('token')[0]
-    query_result = query(clusters, token_name)
+    query_result = query_token(clusters, token_name)
     if as_json:
         print(json.dumps(query_result))
     else:

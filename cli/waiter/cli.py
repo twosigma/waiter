@@ -3,7 +3,7 @@ import logging
 from urllib.parse import urlparse
 
 from waiter import configuration, metrics, http_util, version
-from waiter.subcommands import create, show
+from waiter.subcommands import create, show, delete
 
 parser = argparse.ArgumentParser(description='waiter is the Waiter CLI')
 parser.add_argument('--cluster', '-c', help='the name of the Waiter cluster to use')
@@ -20,7 +20,8 @@ create_or_update = create.register(subparsers.add_parser)
 actions = {
     'create': create_or_update,
     'update': create_or_update,
-    'show': show.register(subparsers.add_parser)
+    'show': show.register(subparsers.add_parser),
+    'delete': delete.register(subparsers.add_parser)
 }
 
 

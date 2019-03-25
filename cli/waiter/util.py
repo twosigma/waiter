@@ -1,7 +1,12 @@
+import argparse
 import os
 import sys
 
 from waiter import terminal
+
+
+TRUE_STRINGS = ('yes', 'true', 'y')
+FALSE_STRINGS = ('no', 'false', 'n')
 
 
 def deep_merge(a, b):
@@ -36,3 +41,24 @@ def guard_no_cluster(clusters):
     """Throws if no clusters have been specified, either via configuration or via the command line"""
     if not clusters:
         raise Exception('You must specify at least one cluster.')
+
+
+def str2bool(v):
+    """Converts the given string to a boolean, or raises"""
+    if v.lower() in TRUE_STRINGS:
+        return True
+    elif v.lower() in FALSE_STRINGS:
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
+
+def response_message(resp_json):
+    """TODO(DPO)"""
+    if 'waiter-error' in resp_json and 'message' in resp_json['waiter-error']:
+        message = resp_json['waiter-error']['message']
+        if not message.endswith('.'):
+            message = f'{message}.'
+    else:
+        message = 'Encountered unexpected error.'
+    return message
