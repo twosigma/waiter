@@ -289,6 +289,17 @@ class WaiterCliTest(util.WaiterTest):
         finally:
             util.delete_token(self.waiter_url, token_name)
 
+    def test_show_env(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, {'env': {'FOO': '1', 'BAR': 'baz'}})
+        try:
+            cp = cli.show(self.waiter_url, token_name)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('Environment:\n', cli.stdout(cp))
+            self.assertNotIn('Env ', cli.stdout(cp))
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
     def test_delete_basic(self):
         token_name = self.token_name()
         util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
