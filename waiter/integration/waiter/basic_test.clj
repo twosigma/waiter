@@ -201,6 +201,29 @@
         (is (= "waiter_kitchen_test" (service-id->metric-group waiter-url service-id))
             (str "Invalid metric group for " service-id)))
 
+      (testing "trailers support in"
+        (testing "request trailers to waiter"
+          (let [test-trailers {"foo" "bar"
+                               "lorem" "ipsum"}
+                {:keys [body] :as response} (make-request waiter-url "/status"
+                                                          :query-params {"include" "request-info"}
+                                                          :trailers-fn (constantly test-trailers))
+                body-json (json/read-str (str body))]
+            (assert-response-status response 200)
+            (is (= "chunked" (get-in body-json ["request-info" "headers" "transfer-encoding"])))
+            (is (= test-trailers (get-in body-json ["request-info" "trailers"])))))
+
+        (testing "response trailers from backend"
+          (let [request-headers (assoc request-headers
+                                  :x-kitchen-chunk-size 30000
+                                  :x-kitchen-response-size 100000
+                                  :x-kitchen-trailer-fie "foe"
+                                  :x-kitchen-trailer-foo "bar"
+                                  :x-kitchen-trailer-lorem "ipsum")
+                {:keys [trailers] :as response} (make-kitchen-request waiter-url request-headers :path "/chunked")]
+            (assert-response-status response 200)
+            (is (= {"fie" "foe", "foo" "bar", "lorem" "ipsum"} trailers)))))
+
       (delete-service waiter-url service-id))))
 
 (deftest ^:parallel ^:integration-fast test-basic-service-validation-from-on-the-fly-headers

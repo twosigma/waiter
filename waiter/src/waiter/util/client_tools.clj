@@ -253,7 +253,7 @@
 (defn make-request
   ([waiter-url path &
     {:keys [body client cookies content-type disable-auth form-params headers
-            method multipart query-params verbose]
+            method multipart query-params trailers-fn verbose]
      :or {body nil
           client http-client
           cookies []
@@ -273,7 +273,7 @@
          (log/info "request headers:" (into (sorted-map) request-headers)))
        (let [waiter-auth-cookie (some #(= authentication/AUTH-COOKIE-NAME (:name %)) cookies)
              add-spnego-auth (and (not disable-auth) use-spnego (not waiter-auth-cookie))
-             {:keys [body headers status]}
+             {:keys [body headers status trailers]}
              (async/<!! (http/request
                           client
                           (cond-> {:body body
@@ -286,7 +286,8 @@
                                   add-spnego-auth (assoc :auth (spnego/spnego-authentication (URI. request-url)))
                                   form-params (assoc :form-params form-params)
                                   (not (str/blank? content-type)) (assoc :content-type content-type)
-                                  cookies (assoc :cookies (map (fn [c] [(:name c) (:value c)]) cookies)))))
+                                  cookies (assoc :cookies (map (fn [c] [(:name c) (:value c)]) cookies))
+                                  trailers-fn (assoc :trailers-fn trailers-fn))))
              response-body (when body (async/<!! body))]
          (when verbose
            (log/info (get request-headers "x-cid") "response size:" (count (str response-body))))
@@ -294,7 +295,8 @@
           :cookies (parse-cookies (get headers "set-cookie"))
           :headers headers
           :request-headers request-headers
-          :status status})
+          :status status
+          :trailers (when trailers (async/<!! trailers))})
        (catch Exception e
          (when verbose
            (log/info (get request-headers "x-cid") "error in obtaining response" (.getMessage e)))
