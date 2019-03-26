@@ -289,18 +289,28 @@ class WaiterCliTest(util.WaiterTest):
         finally:
             util.delete_token(self.waiter_url, token_name)
 
-    def test_delete_token_single_service(self):
+    def test_delete_basic(self):
         token_name = self.token_name()
         util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
         try:
-            config = {'clusters': [{'name': 'foo', 'url': self.waiter_url},
-                                   {'name': 'bar', 'url': 'http://localhost:65535'}]}
-            with cli.temp_config_file(config) as path:
-                flags = f'--config {path}'
-                cp, tokens = cli.show_token(token_name=token_name, flags=flags)
-                self.assertEqual(0, cp.returncode, cp.stderr)
-                self.assertEqual(1, len(tokens), tokens)
-                self.assertEqual(util.load_token(self.waiter_url, token_name), tokens[0])
-                self.assertIn('Encountered connection error with bar', cli.decode(cp.stderr), cli.output(cp))
+            cp = cli.delete(self.waiter_url, token_name)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            resp_json = util.load_token(self.waiter_url, token_name, expected_status_code=404)
+            self.assertIn('waiter-error', resp_json)
+        finally:
+            util.delete_token(self.waiter_url, token_name, assert_response=False)
+
+    def test_delete_single_service(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, util.minimal_service_description())
+        try:
+            resp = util.ping_token(self.waiter_url, token_name)
+            try:
+                cp = cli.delete(self.waiter_url, token_name)
+                self.assertEqual(1, cp.returncode, cli.output(cp))
+                self.assertIn('There is one service using token', cli.stdout(cp))
+                self.assertIn('Please kill this service before deleting the token', cli.stdout(cp))
+            finally:
+                util.kill_service(self.waiter_url, resp.headers['x-waiter-service-id'])
         finally:
             util.delete_token(self.waiter_url, token_name)

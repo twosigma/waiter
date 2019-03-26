@@ -223,3 +223,10 @@ class temp_base_config_file:
 
     def __exit__(self, _, __, ___):
         os.remove(self.path)
+
+
+def delete(waiter_url=None, token_name=None, flags=None):
+    """Deletes a token via the CLI"""
+    args = f"delete {token_name}"
+    cp = cli(args, waiter_url, flags)
+    return cp

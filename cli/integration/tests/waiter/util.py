@@ -161,3 +161,25 @@ def load_json_file(path):
         logging.info(f'{path} is not a file')
 
     return content
+
+
+def ping_token(waiter_url, token_name, assert_response=True, expected_status_code=200):
+    headers = {
+        'X-Waiter-Token': token_name,
+        'X-Waiter-Debug': 'true',
+        'Content-Type': 'application/json'
+    }
+    response = session.get(f'{waiter_url}', headers=headers)
+    if assert_response:
+        assert \
+            expected_status_code == response.status_code, \
+            f'Expected {expected_status_code}, got {response.status_code} with body {response.text}'
+    return response
+
+
+def kill_service(waiter_url, service_id, assert_response=True, expected_status_code=200):
+    response = session.delete(f'{waiter_url}/apps/{service_id}')
+    if assert_response:
+        logging.debug(f'Response status code: {response.status_code}')
+        assert expected_status_code == response.status_code, response.text
+    return response
