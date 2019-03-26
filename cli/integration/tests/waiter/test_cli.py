@@ -304,6 +304,7 @@ class WaiterCliTest(util.WaiterTest):
         token_name = self.token_name()
         util.post_token(self.waiter_url, token_name, util.minimal_service_description())
         try:
+            self.logger.info(f'Token: {util.load_token(self.waiter_url, token_name)}')
             resp = util.ping_token(self.waiter_url, token_name)
             service_id = resp.headers['x-waiter-service-id']
             try:
