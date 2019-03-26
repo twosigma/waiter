@@ -47,6 +47,6 @@ curl -s ${WAITER_URI}/settings | jq .port
 
 # Run the integration tests
 export WAITER_URI=127.0.0.1:${WAITER_PORT}
-export WAITER_CLI_TEST_DEFAULT_CMD="${ROOT_DIR}/kitchen/bin/kitchen --port \${PORT0}"
+export WAITER_CLI_TEST_DEFAULT_CMD="${ROOT_DIR}/test-apps/kitchen/bin/kitchen --port \${PORT0}"
 cd ${CLI_DIR}/integration
 pytest
