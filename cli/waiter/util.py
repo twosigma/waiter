@@ -54,7 +54,7 @@ def str2bool(v):
 
 
 def response_message(resp_json):
-    """TODO(DPO)"""
+    """Pulls the error message out of a Waiter response"""
     if 'waiter-error' in resp_json and 'message' in resp_json['waiter-error']:
         message = resp_json['waiter-error']['message']
         if not message.endswith('.'):
