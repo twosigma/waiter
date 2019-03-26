@@ -1,4 +1,5 @@
 import getpass
+import json
 import logging
 import os
 import threading
@@ -326,5 +327,33 @@ class WaiterCliTest(util.WaiterTest):
                 self.assertIn(service_id, cli.stdout(cp))
             finally:
                 util.kill_service(self.waiter_url, service_id)
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_delete_multiple_services(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, util.minimal_service_description())
+        try:
+            self.logger.info(f'Token: {util.load_token(self.waiter_url, token_name)}')
+            resp = util.ping_token(self.waiter_url, token_name)
+            service_id_1 = resp.headers['x-waiter-service-id']
+            try:
+                util.post_token(self.waiter_url, token_name, util.minimal_service_description())
+                self.logger.info(f'Token: {util.load_token(self.waiter_url, token_name)}')
+                resp = util.ping_token(self.waiter_url, token_name)
+                service_id_2 = resp.headers['x-waiter-service-id']
+                try:
+                    services_for_token = util.services_for_token(self.waiter_url, token_name)
+                    self.logger.info(f'Services for token {token_name}: {json.dumps(services_for_token, indent=2)}')
+                    cp = cli.delete(self.waiter_url, token_name)
+                    self.assertEqual(1, cp.returncode, cli.output(cp))
+                    self.assertIn('There are 2 services using token', cli.stdout(cp))
+                    self.assertIn('Please kill these services before deleting the token', cli.stdout(cp))
+                    self.assertIn(service_id_1, cli.stdout(cp))
+                    self.assertIn(service_id_2, cli.stdout(cp))
+                finally:
+                    util.kill_service(self.waiter_url, service_id_2)
+            finally:
+                util.kill_service(self.waiter_url, service_id_1)
         finally:
             util.delete_token(self.waiter_url, token_name)
