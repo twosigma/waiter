@@ -442,10 +442,11 @@
     (if port-index (subs authority (inc port-index)) (str default))))
 
 (defn request->scheme
-  "Extracts the scheme from the request."
+  "Extracts the scheme from the request, and returns it as a keyword."
   [{:keys [headers scheme]}]
   (let [{:strs [x-forwarded-proto]} headers]
-    (or x-forwarded-proto scheme)))
+    (or (some-> x-forwarded-proto str/lower-case keyword)
+        scheme)))
 
 (defn same-origin
   "Returns true if the host and origin are non-nil and are equivalent."

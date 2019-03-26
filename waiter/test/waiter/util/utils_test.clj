@@ -502,6 +502,19 @@
   (is (= "1234" (authority->port "www.example.com:1234")))
   (is (= "80" (authority->port "www.example2.com:80"))))
 
+(deftest test-request->scheme
+  (is (= :http (request->scheme {:headers {"x-forwarded-proto" "http"}})))
+  (is (= :http (request->scheme {:headers {"x-forwarded-proto" "HTTP"}})))
+  (is (= :http (request->scheme {:headers {"x-forwarded-proto" "http"} :scheme :http})))
+  (is (= :http (request->scheme {:headers {"x-forwarded-proto" "http"} :scheme :https})))
+  (is (= :http (request->scheme {:scheme :http})))
+
+  (is (= :https (request->scheme {:headers {"x-forwarded-proto" "https"}})))
+  (is (= :https (request->scheme {:headers {"x-forwarded-proto" "HTTPS"}})))
+  (is (= :https (request->scheme {:headers {"x-forwarded-proto" "https"} :scheme :http})))
+  (is (= :https (request->scheme {:headers {"x-forwarded-proto" "https"} :scheme :https})))
+  (is (= :https (request->scheme {:scheme :https}))))
+
 (deftest test-same-origin
   (is (not (same-origin nil)))
   (is (not (same-origin {})))
