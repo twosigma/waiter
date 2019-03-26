@@ -305,12 +305,14 @@ class WaiterCliTest(util.WaiterTest):
         util.post_token(self.waiter_url, token_name, util.minimal_service_description())
         try:
             resp = util.ping_token(self.waiter_url, token_name)
+            service_id = resp.headers['x-waiter-service-id']
             try:
                 cp = cli.delete(self.waiter_url, token_name)
                 self.assertEqual(1, cp.returncode, cli.output(cp))
                 self.assertIn('There is one service using token', cli.stdout(cp))
                 self.assertIn('Please kill this service before deleting the token', cli.stdout(cp))
+                self.assertIn(service_id, cli.stdout(cp))
             finally:
-                util.kill_service(self.waiter_url, resp.headers['x-waiter-service-id'])
+                util.kill_service(self.waiter_url, service_id)
         finally:
             util.delete_token(self.waiter_url, token_name)
