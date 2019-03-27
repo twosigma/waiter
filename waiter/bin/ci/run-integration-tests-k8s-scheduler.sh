@@ -40,6 +40,7 @@ bash +x ${DIR}/monitor-pods.sh &
 
 # Run the integration tests
 export INTEGRATION_TEST_CUSTOM_IMAGE="twosigma/integration"
+export INTEGRATION_TEST_KITCHEN_IMAGE="twosigma/kitchen"
 export LEIN_TEST_THREADS=4
 export WAITER_TEST_KITCHEN_CMD=/opt/kitchen/kitchen
 export WAITER_AUTH_RUN_AS_USER=${USER}

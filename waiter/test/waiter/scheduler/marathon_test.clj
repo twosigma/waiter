@@ -794,7 +794,16 @@
 
       (testing "should work with valid configuration"
         (is (instance? MarathonScheduler (create-marathon-scheduler valid-config)))
-        (is (instance? MarathonScheduler (create-marathon-scheduler (dissoc valid-config :force-kill-after-ms))))))))
+        (is (instance? MarathonScheduler (create-marathon-scheduler (dissoc valid-config :force-kill-after-ms)))))
+
+      (testing "validate service - normal"
+        (scheduler/validate-service
+          (create-marathon-scheduler (assoc valid-config :service-id->service-description-fn (constantly {}))) nil))
+      (testing "validate service - test that image can't be set"
+        (is (thrown? Throwable (scheduler/validate-service
+                                 (create-marathon-scheduler (assoc valid-config
+                                                              :service-id->service-description-fn
+                                                              (constantly {"image" "twosigma/kitchen"}))) nil)))))))
 
 (deftest test-process-kill-instance-request
   (let [marathon-api (Object.)

@@ -893,4 +893,13 @@
         (is (thrown? Throwable (create-cook-scheduler-helper (assoc valid-config :search-interval-days 0)))))
 
       (testing "should work with valid configuration"
-        (is (instance? CookScheduler (create-cook-scheduler-helper valid-config)))))))
+        (is (instance? CookScheduler (create-cook-scheduler-helper valid-config))))
+
+      (testing "validate service - normal"
+        (scheduler/validate-service
+          (create-cook-scheduler-helper (assoc valid-config :service-id->service-description-fn (constantly {}))) nil))
+      (testing "validate service - test that image can't be set"
+        (is (thrown? Throwable (scheduler/validate-service
+                                 (create-cook-scheduler-helper (assoc valid-config
+                                                                 :service-id->service-description-fn
+                                                                 (constantly {"image" "twosigma/kitchen"}))) nil)))))))
