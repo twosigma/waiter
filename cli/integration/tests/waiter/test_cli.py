@@ -183,12 +183,24 @@ class WaiterCliTest(util.WaiterTest):
         cp = cli.show(self.waiter_url, token_name)
         self.assertEqual(1, cp.returncode, cp.stderr)
         self.assertIn('No matching data found', cli.stdout(cp))
-        util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
+        token_definition = {
+            'cmd-type': 'shell',
+            'health-check-url': '/foo',
+            'min-instances': 1,
+            'max-instances': 2,
+            'permitted-user': '*'
+        }
+        util.post_token(self.waiter_url, token_name, token_definition)
         try:
             token = util.load_token(self.waiter_url, token_name)
             self.assertIsNotNone(token)
             cp = cli.show(self.waiter_url, token_name)
             self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('Command type', cli.stdout(cp))
+            self.assertIn('Health check endpoint', cli.stdout(cp))
+            self.assertIn('Minimum instances', cli.stdout(cp))
+            self.assertIn('Maximum instances', cli.stdout(cp))
+            self.assertIn('Permitted user(s)', cli.stdout(cp))
         finally:
             util.delete_token(self.waiter_url, token_name)
 
