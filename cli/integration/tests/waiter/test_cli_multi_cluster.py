@@ -38,7 +38,7 @@ class MultiWaiterCliTest(util.WaiterTest):
             version_2 = str(uuid.uuid4())
             util.post_token(self.waiter_url_2, token_name, {'version': version_2})
             try:
-                # Single query for both jobs, federated across clusters
+                # Single query for the token name, federated across clusters
                 config = self.__two_cluster_config()
                 with cli.temp_config_file(config) as path:
                     cp, tokens = cli.show_token(token_name=token_name, flags='--config %s' % path)
