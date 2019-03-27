@@ -34,20 +34,27 @@ class MultiWaiterCliTest(util.WaiterTest):
         version_1 = str(uuid.uuid4())
         util.post_token(self.waiter_url_1, token_name, {'version': version_1})
         try:
-            # Create in cluster #2
-            version_2 = str(uuid.uuid4())
-            util.post_token(self.waiter_url_2, token_name, {'version': version_2})
-            try:
-                # Single query for the token name, federated across clusters
-                config = self.__two_cluster_config()
-                with cli.temp_config_file(config) as path:
+            # Single query for the token name, federated across clusters
+            config = self.__two_cluster_config()
+            with cli.temp_config_file(config) as path:
+                cp, tokens = cli.show_token(token_name=token_name, flags='--config %s' % path)
+                versions = [t['version'] for t in tokens]
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                self.assertEqual(1, len(tokens), tokens)
+                self.assertIn(version_1, versions)
+
+                # Create in cluster #2
+                version_2 = str(uuid.uuid4())
+                util.post_token(self.waiter_url_2, token_name, {'version': version_2})
+                try:
+                    # Again, single query for the token name, federated across clusters
                     cp, tokens = cli.show_token(token_name=token_name, flags='--config %s' % path)
                     versions = [t['version'] for t in tokens]
                     self.assertEqual(0, cp.returncode, cp.stderr)
                     self.assertEqual(2, len(tokens), tokens)
                     self.assertIn(version_1, versions)
                     self.assertIn(version_2, versions)
-            finally:
-                util.delete_token(self.waiter_url_2, token_name)
+                finally:
+                    util.delete_token(self.waiter_url_2, token_name)
         finally:
             util.delete_token(self.waiter_url_1, token_name)

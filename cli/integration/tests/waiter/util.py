@@ -165,7 +165,7 @@ def load_json_file(path):
 
 def multi_cluster_tests_enabled():
     """
-    Returns true if the WAITER_TEST_MULTI_CLUSTER environment variable is set,
+    Returns true if the WAITER_TEST_MULTI_CLUSTER environment variable is set to "true",
     indicating that multiple Waiter instances are running.
     """
-    return os.getenv('WAITER_TEST_MULTI_CLUSTER') is not None
+    return os.getenv('WAITER_TEST_MULTI_CLUSTER', None) == 'true'
