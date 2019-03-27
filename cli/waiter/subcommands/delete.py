@@ -2,7 +2,7 @@ import logging
 
 from waiter import http_util, terminal
 from waiter.querying import query_token, print_no_data
-from waiter.util import guard_no_cluster, str2bool, response_message
+from waiter.util import guard_no_cluster, str2bool, response_message, print_error
 
 
 def delete_token_on_cluster(cluster, token_name, token_etag):
@@ -11,27 +11,23 @@ def delete_token_on_cluster(cluster, token_name, token_etag):
     try:
         # Retrieve all services that are using the token
         resp = http_util.get(cluster, '/apps', params={'token': token_name})
-        logging.debug(f'Response status code: {resp.status_code}')
         if resp.status_code == 200:
             services = resp.json()
-            # If there are any services, print an error and return
             num_services = len(services)
             if num_services > 0:
                 if num_services == 1:
-                    print(terminal.failed(
-                        f'There is one service using token {token_name} in {cluster_name}:\n'))
+                    print_error(f'There is one service using token {token_name} in {cluster_name}:\n')
                 else:
-                    print(terminal.failed(
-                        f'There are {num_services} services using token {token_name} in {cluster_name}:\n'))
+                    print_error(f'There are {num_services} services using token {token_name} in {cluster_name}:\n')
                 for service in services:
-                    print(f'  {service["url"]}')
+                    print_error(f'  {service["url"]}')
                 if num_services == 1:
-                    print(terminal.failed('\nPlease kill this service before deleting the token it relies on.'))
+                    print_error('\nPlease kill this service before deleting the token it relies on.')
                 else:
-                    print(terminal.failed('\nPlease kill these services before deleting the token they rely on.'))
+                    print_error('\nPlease kill these services before deleting the token they rely on.')
                 return False
         else:
-            print(terminal.failed(response_message(resp.json())))
+            print_error(response_message(resp.json()))
             return False
 
         # Delete the token
@@ -46,12 +42,12 @@ def delete_token_on_cluster(cluster, token_name, token_etag):
             print(f'Successfully deleted {token_name} in {cluster_name}.')
             return True
         else:
-            print(terminal.failed(response_message(resp.json())))
+            print_error(response_message(resp.json()))
             return False
     except Exception as e:
         message = f'Encountered error while deleting token {token_name} in {cluster_name}.'
         logging.error(e, message)
-        print(message)
+        print_error(message)
 
 
 def delete(clusters, args, _):

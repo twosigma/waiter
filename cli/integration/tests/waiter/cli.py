@@ -24,6 +24,11 @@ def stdout(cp):
     return decode(cp.stdout).strip()
 
 
+def stderr(cp):
+    """Returns the UTF-8 decoded and stripped stderr of the given CompletedProcess"""
+    return decode(cp.stderr).strip()
+
+
 def sh(cmd, stdin=None, env=None, wait_for_exit=True):
     """Runs command using subprocess.run"""
     logging.info(cmd + (f' # stdin: {decode(stdin)}' if stdin else ''))

@@ -19,7 +19,7 @@ def process_post_result(resp):
         print_info(f'{message}.')
         return
 
-    raise Exception(f'{response_message(resp_json)}.')
+    raise Exception(f'{response_message(resp_json)}')
 
 
 def post_failed_message(cluster_name, reason):
