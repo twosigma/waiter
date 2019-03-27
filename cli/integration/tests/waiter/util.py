@@ -161,3 +161,11 @@ def load_json_file(path):
         logging.info(f'{path} is not a file')
 
     return content
+
+
+def multi_cluster_tests_enabled():
+    """
+    Returns true if the WAITER_TEST_MULTI_CLUSTER environment variable is set,
+    indicating that multiple Waiter instances are running.
+    """
+    return os.getenv('WAITER_TEST_MULTI_CLUSTER') is not None
