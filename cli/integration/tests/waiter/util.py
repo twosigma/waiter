@@ -195,3 +195,11 @@ def services_for_token(waiter_url, token_name, assert_response=True, expected_st
             expected_status_code == response.status_code, \
             f'Expected {expected_status_code}, got {response.status_code} with body {response.text}'
     return response.json()
+
+  
+def multi_cluster_tests_enabled():
+    """
+    Returns true if the WAITER_TEST_MULTI_CLUSTER environment variable is set to "true",
+    indicating that multiple Waiter instances are running.
+    """
+    return os.getenv('WAITER_TEST_MULTI_CLUSTER', None) == 'true'
