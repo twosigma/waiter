@@ -230,8 +230,8 @@ class temp_base_config_file:
         os.remove(self.path)
 
 
-def delete(waiter_url=None, token_name=None, flags=None):
+def delete(waiter_url=None, token_name=None, flags=None, delete_flags=None):
     """Deletes a token via the CLI"""
-    args = f"delete {token_name}"
+    args = f"delete {token_name} {delete_flags or ''}"
     cp = cli(args, waiter_url, flags)
     return cp

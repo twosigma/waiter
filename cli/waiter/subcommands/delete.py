@@ -73,7 +73,10 @@ def delete(clusters, args, _):
         cluster_names_found = [p[0] for p in cluster_data_pairs]
         print(f'Token {terminal.bold(token_name)} exists in {num_clusters} clusters: {", ".join(cluster_names_found)}.')
         for cluster_name, data in cluster_data_pairs:
-            should_delete = str2bool(input(f'Delete token in {terminal.bold(cluster_name)}? '))
+            if args.get('force', False):
+                should_delete = True
+            else:
+                should_delete = str2bool(input(f'Delete token in {terminal.bold(cluster_name)}? '))
             if should_delete:
                 cluster = clusters_by_name[cluster_name]
                 success = delete_token_on_cluster(cluster, token_name, data['etag'])
@@ -85,4 +88,6 @@ def register(add_parser):
     """Adds this sub-command's parser and returns the action function"""
     parser = add_parser('delete', help='delete token by name')
     parser.add_argument('token', nargs=1)
+    parser.add_argument('--force', '-f', help='delete on all clusters where present, never prompt',
+                        dest='force', action='store_true')
     return delete
