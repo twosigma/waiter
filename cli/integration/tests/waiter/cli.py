@@ -77,6 +77,12 @@ def create(waiter_url=None, token_name=None, flags=None, create_flags=None):
     return cp
 
 
+def update(waiter_url=None, token_name=None, flags=None, create_flags=None):
+    """Updates a token via the CLI"""
+    cp = create_or_update('update', waiter_url, token_name, flags, create_flags)
+    return cp
+
+
 def create_or_update_from_service_description(subcommand, waiter_url, token_name, service, flags=None):
     """Creates or updates a token via the CLI, using the provided service fields"""
     create_flags = \
