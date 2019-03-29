@@ -179,6 +179,11 @@ class WaiterCliTest(util.WaiterTest):
         finally:
             util.delete_token(self.waiter_url, token_name)
 
+    def test_create_help_text(self):
+        cp = cli.create(create_flags='--help')
+        self.assertEqual(0, cp.returncode, cp.stderr)
+        self.assertIn('memory (in MiB) to reserve', cli.stdout(cp))
+
     def test_basic_show(self):
         token_name = self.token_name()
         cp = cli.show(self.waiter_url, token_name)
@@ -189,7 +194,8 @@ class WaiterCliTest(util.WaiterTest):
             'health-check-url': '/foo',
             'min-instances': 1,
             'max-instances': 2,
-            'permitted-user': '*'
+            'permitted-user': '*',
+            'mem': 1024
         }
         util.post_token(self.waiter_url, token_name, token_definition)
         try:
@@ -202,6 +208,8 @@ class WaiterCliTest(util.WaiterTest):
             self.assertIn('Minimum instances', cli.stdout(cp))
             self.assertIn('Maximum instances', cli.stdout(cp))
             self.assertIn('Permitted user(s)', cli.stdout(cp))
+            self.assertIn(f'=== {self.waiter_url} / {token_name} ===', cli.stdout(cp))
+            self.assertIn('1 GiB', cli.stdout(cp))
         finally:
             util.delete_token(self.waiter_url, token_name)
 

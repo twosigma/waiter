@@ -2,9 +2,9 @@ import arrow
 import humanfriendly
 
 
-def format_memory_amount(megabytes):
-    """Formats an amount, in MB, to be human-readable"""
-    return humanfriendly.format_size(megabytes * 1000 * 1000)
+def format_memory_amount(mebibytes):
+    """Formats an amount, in MiB, to be human-readable"""
+    return humanfriendly.format_size(mebibytes * 1024 * 1024, binary=True)
 
 
 def format_mem_field(job):
