@@ -166,10 +166,10 @@ def load_json_file(path):
 
 def ping_token(waiter_url, token_name, assert_response=False, expected_status_code=200):
     headers = {
-        'X-Waiter-Token': token_name,
+        'Content-Type': 'application/json',
         'X-Waiter-Debug': 'true',
         'X-Waiter-Fallback-Period-Secs': '0',
-        'Content-Type': 'application/json'
+        'X-Waiter-Token': token_name
     }
     response = session.get(f'{waiter_url}', headers=headers)
     if assert_response:
