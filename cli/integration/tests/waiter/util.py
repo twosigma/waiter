@@ -5,6 +5,7 @@ import logging
 import os
 import random
 import string
+import uuid
 from datetime import datetime
 
 import unittest
@@ -108,7 +109,7 @@ def minimal_service_description(**kwargs):
         'cmd': os.getenv('WAITER_CLI_TEST_DEFAULT_CMD', minimal_service_cmd()),
         'cpus': float(os.getenv('WAITER_TEST_DEFAULT_CPUS', 1.0)),
         'mem': int(os.getenv('WAITER_TEST_DEFAULT_MEM_MB', 256)),
-        'version': 'version-does-not-matter',
+        'version': str(uuid.uuid4()),
         'cmd-type': 'shell'
     }
     service.update(kwargs)
@@ -163,6 +164,39 @@ def load_json_file(path):
     return content
 
 
+def ping_token(waiter_url, token_name, assert_response=False, expected_status_code=200):
+    headers = {
+        'Content-Type': 'application/json',
+        'X-Waiter-Debug': 'true',
+        'X-Waiter-Fallback-Period-Secs': '0',
+        'X-Waiter-Token': token_name
+    }
+    response = session.get(f'{waiter_url}', headers=headers)
+    if assert_response:
+        assert \
+            expected_status_code == response.status_code, \
+            f'Expected {expected_status_code}, got {response.status_code} with body {response.text}'
+    return response
+
+
+def kill_service(waiter_url, service_id, assert_response=True, expected_status_code=200):
+    response = session.delete(f'{waiter_url}/apps/{service_id}')
+    if assert_response:
+        logging.debug(f'Response status code: {response.status_code}')
+        assert expected_status_code == response.status_code, response.text
+    return response
+
+
+def services_for_token(waiter_url, token_name, assert_response=True, expected_status_code=200):
+    headers = {'Content-Type': 'application/json'}
+    response = session.get(f'{waiter_url}/apps', headers=headers, params={'token': token_name})
+    if assert_response:
+        assert \
+            expected_status_code == response.status_code, \
+            f'Expected {expected_status_code}, got {response.status_code} with body {response.text}'
+    return response.json()
+
+  
 def multi_cluster_tests_enabled():
     """
     Returns true if the WAITER_TEST_MULTI_CLUSTER environment variable is set to "true",

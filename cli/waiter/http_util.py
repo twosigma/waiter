@@ -47,20 +47,20 @@ def configure(config):
 
 def __post(url, json_body, params=None, **kwargs):
     """Sends a POST with the json payload to the given url"""
-    logging.info(f'POST {url} with body {json_body} and headers {kwargs.get("headers", {})}')
+    logging.debug(f'POST {url} with body {json_body} and headers {kwargs.get("headers", {})}')
     return session.post(url, json=json_body, timeout=timeouts, params=params, **kwargs)
 
 
 def __get(url, params=None, **kwargs):
     """Sends a GET with params to the given url"""
-    logging.info(f'GET {url} with params {params}')
+    logging.debug(f'GET {url} with params {params}')
     return session.get(url, params=params, timeout=timeouts, **kwargs)
 
 
-def __delete(url, params=None):
+def __delete(url, params=None, headers=None):
     """Sends a DELETE with params to the given url"""
-    logging.info(f'DELETE {url} with params {params}')
-    return session.delete(url, params=params, timeout=timeouts)
+    logging.debug(f'DELETE {url} with params {params} and headers {headers}')
+    return session.delete(url, params=params, timeout=timeouts, headers=headers)
 
 
 def __make_url(cluster, endpoint):
@@ -89,10 +89,11 @@ def get(cluster, endpoint, params):
     return resp
 
 
-def delete(cluster, endpoint, params):
+def delete(cluster, endpoint, params=None, headers=None):
     """DELETEs data corresponding to the given params on cluster at /endpoint"""
     url = __make_url(cluster, endpoint)
-    resp = __delete(url, params)
+    default_headers = {'Accept': 'application/json'}
+    resp = __delete(url, params, headers={**default_headers, **headers})
     logging.info(f'DELETE response: {resp.text}')
     return resp
 

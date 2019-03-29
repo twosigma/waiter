@@ -24,6 +24,11 @@ def stdout(cp):
     return decode(cp.stdout).strip()
 
 
+def stderr(cp):
+    """Returns the UTF-8 decoded and stripped stderr of the given CompletedProcess"""
+    return decode(cp.stderr).strip()
+
+
 def sh(cmd, stdin=None, env=None, wait_for_exit=True):
     """Runs command using subprocess.run"""
     logging.info(cmd + (f' # stdin: {decode(stdin)}' if stdin else ''))
@@ -223,3 +228,10 @@ class temp_base_config_file:
 
     def __exit__(self, _, __, ___):
         os.remove(self.path)
+
+
+def delete(waiter_url=None, token_name=None, flags=None, delete_flags=None):
+    """Deletes a token via the CLI"""
+    args = f"delete {token_name} {delete_flags or ''}"
+    cp = cli(args, waiter_url, flags)
+    return cp

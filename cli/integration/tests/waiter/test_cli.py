@@ -1,4 +1,5 @@
 import getpass
+import json
 import logging
 import os
 import threading
@@ -234,7 +235,7 @@ class WaiterCliTest(util.WaiterTest):
         finally:
             util.delete_token(self.waiter_url, token_name)
 
-    def test_if_match(self):
+    def test_create_if_match(self):
 
         def encountered_stale_token_error(cp):
             self.logger.info(f'Return code: {cp.returncode}, output: {cli.output(cp)}')
@@ -311,3 +312,98 @@ class WaiterCliTest(util.WaiterTest):
             self.assertNotIn('Env ', cli.stdout(cp))
         finally:
             util.delete_token(self.waiter_url, token_name)
+
+    def test_delete_basic(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
+        try:
+            cp = cli.delete(self.waiter_url, token_name)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('Deleting token', cli.stdout(cp))
+            self.assertIn('Successfully deleted', cli.stdout(cp))
+            resp_json = util.load_token(self.waiter_url, token_name, expected_status_code=404)
+            self.assertIn('waiter-error', resp_json)
+        finally:
+            util.delete_token(self.waiter_url, token_name, assert_response=False)
+
+    def test_delete_single_service(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, util.minimal_service_description())
+        try:
+            self.logger.info(f'Token: {util.load_token(self.waiter_url, token_name)}')
+            resp = util.ping_token(self.waiter_url, token_name)
+            service_id = resp.headers['x-waiter-service-id']
+            try:
+                cp = cli.delete(self.waiter_url, token_name)
+                self.assertEqual(1, cp.returncode, cli.output(cp))
+                self.assertIn('There is one service using token', cli.stderr(cp))
+                self.assertIn('Please kill this service before deleting the token', cli.stderr(cp))
+                self.assertIn(service_id, cli.stderr(cp))
+            finally:
+                util.kill_service(self.waiter_url, service_id)
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_delete_multiple_services(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, util.minimal_service_description())
+        try:
+            self.logger.info(f'Token: {util.load_token(self.waiter_url, token_name)}')
+            resp = util.ping_token(self.waiter_url, token_name)
+            service_id_1 = resp.headers['x-waiter-service-id']
+            try:
+                util.post_token(self.waiter_url, token_name, util.minimal_service_description())
+                self.logger.info(f'Token: {util.load_token(self.waiter_url, token_name)}')
+                resp = util.ping_token(self.waiter_url, token_name)
+                service_id_2 = resp.headers['x-waiter-service-id']
+                try:
+                    services_for_token = util.services_for_token(self.waiter_url, token_name)
+                    self.logger.info(f'Services for token {token_name}: {json.dumps(services_for_token, indent=2)}')
+                    cp = cli.delete(self.waiter_url, token_name)
+                    self.assertEqual(1, cp.returncode, cli.output(cp))
+                    self.assertIn('There are 2 services using token', cli.stderr(cp))
+                    self.assertIn('Please kill these services before deleting the token', cli.stderr(cp))
+                    self.assertIn(service_id_1, cli.stderr(cp))
+                    self.assertIn(service_id_2, cli.stderr(cp))
+                finally:
+                    util.kill_service(self.waiter_url, service_id_2)
+            finally:
+                util.kill_service(self.waiter_url, service_id_1)
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_delete_if_match(self):
+
+        def encountered_stale_token_error(cp):
+            self.logger.info(f'Return code: {cp.returncode}, output: {cli.output(cp)}')
+            assert 1 == cp.returncode
+            assert 'stale token' in cli.decode(cp.stderr)
+            return True
+
+        token_name = self.token_name()
+        keep_running = True
+
+        def update_token_loop():
+            mem = 1
+            while keep_running:
+                util.post_token(self.waiter_url, token_name, {'mem': mem})
+                mem += 1
+
+        util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
+        thread = threading.Thread(target=update_token_loop)
+        try:
+            thread.start()
+            util.wait_until(lambda: cli.delete(self.waiter_url, token_name),
+                            encountered_stale_token_error,
+                            wait_interval_ms=0)
+        finally:
+            keep_running = False
+            thread.join()
+            self.logger.info('Thread finished')
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_delete_non_existent_token(self):
+        token_name = self.token_name()
+        cp = cli.delete(self.waiter_url, token_name)
+        self.assertEqual(1, cp.returncode, cp.stderr)
+        self.assertIn('No matching data found', cli.stdout(cp))

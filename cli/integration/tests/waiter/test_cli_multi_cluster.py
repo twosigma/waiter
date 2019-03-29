@@ -58,3 +58,57 @@ class MultiWaiterCliTest(util.WaiterTest):
                     util.delete_token(self.waiter_url_2, token_name)
         finally:
             util.delete_token(self.waiter_url_1, token_name)
+
+    def test_federated_delete(self):
+        # Create in cluster #1
+        token_name = self.token_name()
+        version_1 = str(uuid.uuid4())
+        util.post_token(self.waiter_url_1, token_name, {'version': version_1})
+        try:
+            # Create in cluster #2
+            version_2 = str(uuid.uuid4())
+            util.post_token(self.waiter_url_2, token_name, {'version': version_2})
+            try:
+                config = self.__two_cluster_config()
+                with cli.temp_config_file(config) as path:
+                    # Delete the token in both clusters
+                    cp = cli.delete(token_name=token_name, flags='--config %s' % path, delete_flags='--force')
+                    self.assertEqual(0, cp.returncode, cp.stderr)
+                    self.assertIn('exists in 2 clusters', cli.stdout(cp))
+                    self.assertIn('waiter1', cli.stdout(cp))
+                    self.assertIn('waiter2', cli.stdout(cp))
+                    self.assertEqual(2, cli.stdout(cp).count('Deleting token'))
+                    self.assertEqual(2, cli.stdout(cp).count('Successfully deleted'))
+                    util.load_token(self.waiter_url_1, token_name, expected_status_code=404)
+                    util.load_token(self.waiter_url_2, token_name, expected_status_code=404)
+            finally:
+                util.delete_token(self.waiter_url_2, token_name, assert_response=False)
+        finally:
+            util.delete_token(self.waiter_url_1, token_name, assert_response=False)
+
+    def test_delete_single_cluster(self):
+        # Create in cluster #1
+        token_name = self.token_name()
+        version_1 = str(uuid.uuid4())
+        util.post_token(self.waiter_url_1, token_name, {'version': version_1})
+        try:
+            # Create in cluster #2
+            version_2 = str(uuid.uuid4())
+            util.post_token(self.waiter_url_2, token_name, {'version': version_2})
+            try:
+                config = self.__two_cluster_config()
+                with cli.temp_config_file(config) as path:
+                    # Delete the token in one cluster only
+                    cp = cli.delete(token_name=token_name, flags=f'--config {path} --cluster waiter2')
+                    self.assertEqual(0, cp.returncode, cp.stderr)
+                    self.assertNotIn('exists in 2 clusters', cli.stdout(cp))
+                    self.assertNotIn('waiter1', cli.stdout(cp))
+                    self.assertIn('waiter2', cli.stdout(cp))
+                    self.assertEqual(1, cli.stdout(cp).count('Deleting token'))
+                    self.assertEqual(1, cli.stdout(cp).count('Successfully deleted'))
+                    util.load_token(self.waiter_url_1, token_name, expected_status_code=200)
+                    util.load_token(self.waiter_url_2, token_name, expected_status_code=404)
+            finally:
+                util.delete_token(self.waiter_url_2, token_name, assert_response=False)
+        finally:
+            util.delete_token(self.waiter_url_1, token_name, assert_response=True)
