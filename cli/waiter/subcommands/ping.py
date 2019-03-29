@@ -19,7 +19,7 @@ def ping_token_on_cluster(cluster, token_name, health_check_endpoint):
         resp = http_util.get(cluster, health_check_endpoint, headers=headers)
         logging.debug(f'Response status code: {resp.status_code}')
         if resp.status_code == 200:
-            print(terminal.success(f'Successfully pinged {token_name} in {cluster_name}:'))
+            print(terminal.success(f'Successfully pinged {token_name} in {cluster_name}.'))
             print(resp.text)
             return True
         else:
