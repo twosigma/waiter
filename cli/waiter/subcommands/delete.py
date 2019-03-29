@@ -33,8 +33,8 @@ def delete_token_on_cluster(cluster, token_name, token_etag):
         # Delete the token
         print(f'Deleting token {terminal.bold(token_name)} in {terminal.bold(cluster_name)}...')
         headers = {
-            'X-Waiter-Token': token_name,
-            'If-Match': token_etag
+            'If-Match': token_etag,
+            'X-Waiter-Token': token_name
         }
         resp = http_util.delete(cluster, '/token', headers=headers)
         logging.debug(f'Response status code: {resp.status_code}')
