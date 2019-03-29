@@ -53,7 +53,7 @@ def __post(url, json_body, params=None, **kwargs):
 
 def __get(url, params=None, **kwargs):
     """Sends a GET with params to the given url"""
-    logging.info(f'GET {url} with params {params}')
+    logging.info(f'GET {url} with params {params} and headers {kwargs.get("headers", {})}')
     return session.get(url, params=params, timeout=timeouts, **kwargs)
 
 
@@ -80,10 +80,13 @@ def post(cluster, endpoint, json_body, params=None, headers=None):
     return resp
 
 
-def get(cluster, endpoint, params):
+def get(cluster, endpoint, params=None, headers=None):
     """GETs data corresponding to the given params from cluster at /endpoint"""
+    if headers is None:
+        headers = {}
     url = __make_url(cluster, endpoint)
-    resp = __get(url, params, headers={'Accept': 'application/json'})
+    default_headers = {'Accept': 'application/json'}
+    resp = __get(url, params, headers={**default_headers, **headers})
     resp.headers.pop('Set-Cookie', None)
     logging.info(f'GET response: {resp.text} (headers: {resp.headers})')
     return resp
