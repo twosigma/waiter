@@ -293,6 +293,7 @@
                              "pragma" "no-cache"
                              "proxy-authenticate" "proxy-authenticate value"
                              "proxy-authorization" "proxy-authorization value"
+                             "proxy-connection" "keep-alive"
                              "referer" "http://www.test-referer.com"
                              "te" "trailers, deflate"
                              "trailers" "trailer-name-1, trailer-name-2"
@@ -326,7 +327,7 @@
                                         (is (= (-> (dissoc passthrough-headers "expect" "authorization"
                                                            "connection" "keep-alive" "proxy-authenticate" "proxy-authorization"
                                                            "te" "trailers" "transfer-encoding" "upgrade")
-                                                   (merge {"x-waiter-auth-principal"          "test-user"
+                                                   (merge {"x-waiter-auth-principal" "test-user"
                                                            "x-waiter-authenticated-principal" "test-user@test.com"}))
                                                (:headers request-config)))
                                         (is (= proto-version (:version request-config)))))]

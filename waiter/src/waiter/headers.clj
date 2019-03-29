@@ -88,11 +88,12 @@
       truncated-headers)))
 
 (defn dissoc-hop-by-hop-headers
-  "Remove the hop-by-hop headers as specified in
-   https://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html#sec13.5.1"
-  [headers]
-  (dissoc headers "connection" "keep-alive" "proxy-authenticate" "proxy-authorization" "te" "trailers"
-          "transfer-encoding" "upgrade"))
+  "Proxies must remove hop-by-hop headers before forwarding messages — both requests and responses.
+   Remove the hop-by-hop headers as specified in https://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html#sec13.5.1"
+  [{:strs [connection] :as headers}]
+  (let [connection-headers (map str/trim (str/split (str connection) #","))]
+    (apply dissoc headers "connection" "keep-alive" "proxy-authenticate" "proxy-authorization"
+           "te" "trailers" "transfer-encoding" "upgrade" connection-headers)))
 
 (defn assoc-auth-headers
   "`assoc`s the x-waiter-auth-principal and x-waiter-authenticated-principal headers if the

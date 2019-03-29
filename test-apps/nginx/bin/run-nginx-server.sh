@@ -5,12 +5,28 @@
 # Launches kitchen fronted by a nginx instance to handle
 # incoming requests using the specified protocol.
 # Supported protocols are: http, https, h2c, and h2.
+# Expects the following environment variables to be set:
+# - KITCHEN_CMD the command to run kitchen, port will be specified with the -p flag
+# - MESOS_SANDBOX the sandbox directory location
+# - PORT0 the port nginx server will listen on for configured protocol requests
+# - PORT1 the port nginx server will listen on for http/1.1 requests
+# - PORT2 the port the kitchen server will listen
 
 set -ux
 
 # Log a message to stdout
-nginx_log() {
+function nginx_log() {
   printf '%s run-nginx-server.sh: %s\n' "$(date +'%Y-%m-%dT%H:%M:%S%z')" "$1"
+}
+
+function wait_for_kitchen {
+    URI=${1}
+    while ! curl -s ${URI} >/dev/null;
+    do
+        nginx_log "kitchen is not listening on ${URI} yet"
+        sleep 2.0
+    done
+    nginx_log "connected to kitchen on ${URI}!"
 }
 
 nginx_log "starting..."
@@ -62,10 +78,17 @@ openssl req -x509 -nodes -days 30 -newkey rsa:2048 \
 nginx_log "generating config file at ${MESOS_SANDBOX}/nginx-${PROTO_VERSION}-server.conf"
 export NGINX_HTTP2="${NGINX_HTTP2}"
 export NGINX_SSL="${NGINX_SSL}"
-envsubst '${NGINX_HTTP2} ${NGINX_SSL} ${PORT0} ${PORT1}' \
+envsubst '${NGINX_HTTP2} ${NGINX_SSL} ${PORT0} ${PORT1} ${PORT2}' \
   < "${BASE_DIR}/data/nginx-template.conf" > "${MESOS_SANDBOX}/nginx-${PROTO_VERSION}-server.conf"
 
-nginx_log "launching nginx listening on ports ${PORT0} and ${PORT1}"
+KITCHEN_CMD=$(echo "${KITCHEN_CMD}" | tr -d '"')
+nginx_log "kitchen executable is ${KITCHEN_CMD}"
+nginx_log "launching kitchen listening on port ${PORT2}"
+${KITCHEN_CMD} -p ${PORT2} &
+# Wait for waiter to be listening
+wait_for_kitchen "http://127.0.0.1:${PORT2}"
+
+nginx_log "launching nginx listening on port ${PORT0} and ${PORT1} and forwarding to ${PORT2}"
 ${NGINX_CMD} -c "${MESOS_SANDBOX}/nginx-${PROTO_VERSION}-server.conf" -p ${MESOS_SANDBOX}
 
 nginx_log "exiting."

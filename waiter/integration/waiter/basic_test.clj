@@ -322,21 +322,32 @@
   (let [nginx-command (nginx-server-command backend-proto)
         request-headers {:x-waiter-backend-proto backend-proto
                          :x-waiter-cmd nginx-command
+                         :x-waiter-env-kitchen_cmd (kitchen-cmd)
                          :x-waiter-health-check-port-index health-check-port-index
                          :x-waiter-name (rand-name)
-                         :x-waiter-ports 2}
-        {:keys [headers service-id] :as response}
+                         :x-waiter-ports 3}
+        {:keys [headers request-headers service-id] :as response}
         (make-request-with-debug-info request-headers #(make-shell-request waiter-url % :path "/request-info"))]
     (with-service-cleanup
       service-id
       (is service-id)
       (assert-response-status response 200)
-      (let [{:strs [x-nginx-client-proto x-nginx-client-scheme]} headers]
+      (let [{:strs [x-nginx-client-proto x-nginx-client-scheme x-waiter-backend-proto]} headers]
         (is (= backend-proto-version x-nginx-client-proto))
-        (is (= backend-scheme x-nginx-client-scheme)))
+        (is (= backend-scheme x-nginx-client-scheme))
+        (is (= backend-proto x-waiter-backend-proto)))
       (let [service-settings (service-settings waiter-url service-id)]
         (is (= backend-proto (get-in service-settings [:service-description :backend-proto])))
-        (is (= nginx-command (get-in service-settings [:service-description :cmd])))))))
+        (is (= nginx-command (get-in service-settings [:service-description :cmd]))))
+      (testing "streaming"
+        (let [kitchen-response-size 200000
+              request-headers (assoc request-headers
+                                :x-kitchen-chunk-delay 10
+                                :x-kitchen-chunk-size 2000
+                                :x-kitchen-response-size kitchen-response-size)
+              response (make-shell-request waiter-url request-headers :path "/chunked")]
+          (assert-response-status response 200)
+          (is (= kitchen-response-size (-> response :body str .getBytes count))))))))
 
 (deftest ^:parallel ^:integration-fast test-http-backend-proto-service
   (testing-using-waiter-url
