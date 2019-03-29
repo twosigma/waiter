@@ -407,3 +407,49 @@ class WaiterCliTest(util.WaiterTest):
         cp = cli.delete(self.waiter_url, token_name)
         self.assertEqual(1, cp.returncode, cp.stderr)
         self.assertIn('No matching data found', cli.stdout(cp))
+
+    def test_ping_basic(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, util.minimal_service_description())
+        try:
+            self.assertEqual(0, len(util.services_for_token(self.waiter_url, token_name)))
+            cp = cli.ping(self.waiter_url, token_name)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('Pinging token', cli.stdout(cp))
+            self.assertIn('Successfully pinged', cli.stdout(cp))
+            self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_ping_error(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
+        try:
+            self.assertEqual(0, len(util.services_for_token(self.waiter_url, token_name)))
+            cp = cli.ping(self.waiter_url, token_name)
+            self.assertEqual(1, cp.returncode, cp.stderr)
+            self.assertIn('Pinging token', cli.stdout(cp))
+            self.assertIn('token improperly configured', cli.stderr(cp))
+            self.assertEqual(0, len(util.services_for_token(self.waiter_url, token_name)))
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_ping_non_existent_token(self):
+        token_name = self.token_name()
+        cp = cli.ping(self.waiter_url, token_name)
+        self.assertEqual(1, cp.returncode, cp.stderr)
+        self.assertIn('No matching data found', cli.stdout(cp))
+
+    def test_ping_custom_health_check_endpoint(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, util.minimal_service_description(**{'health-check-url': '/sleep'}))
+        try:
+            self.assertEqual(0, len(util.services_for_token(self.waiter_url, token_name)))
+            cp = cli.ping(self.waiter_url, token_name)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('Pinging token', cli.stdout(cp))
+            self.assertIn('/sleep', cli.stdout(cp))
+            self.assertIn('Successfully pinged', cli.stdout(cp))
+            self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
+        finally:
+            util.delete_token(self.waiter_url, token_name)
