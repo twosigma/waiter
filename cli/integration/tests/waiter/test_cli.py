@@ -184,6 +184,46 @@ class WaiterCliTest(util.WaiterTest):
         self.assertEqual(0, cp.returncode, cp.stderr)
         self.assertIn('memory (in MiB) to reserve', cli.stdout(cp))
 
+    def test_implicit_update_args(self):
+        cp = cli.create(create_flags='--help')
+        self.assertEqual(0, cp.returncode, cp.stderr)
+        self.assertIn('--cpus', cli.stdout(cp))
+        self.assertNotIn('--https-redirect', cli.stdout(cp))
+        self.assertNotIn('--fallback-period-secs', cli.stdout(cp))
+        self.assertNotIn('--idle-timeout-mins', cli.stdout(cp))
+        self.assertNotIn('--max-instances', cli.stdout(cp))
+        self.assertNotIn('--restart-backoff-factor', cli.stdout(cp))
+        token_name = self.token_name()
+        cp = cli.update(self.waiter_url, token_name, create_flags='--https-redirect true '
+                                                                  '--cpus 0.1 '
+                                                                  '--fallback-period-secs 10 '
+                                                                  '--idle-timeout-mins 1 '
+                                                                  '--max-instances 100 '
+                                                                  '--restart-backoff-factor 1.1')
+        self.assertEqual(0, cp.returncode, cp.stderr)
+        try:
+            token = util.load_token(self.waiter_url, token_name)
+            self.assertTrue(token['https-redirect'])
+            self.assertEqual(10, token['fallback-period-secs'])
+            self.assertEqual(1, token['idle-timeout-mins'])
+            self.assertEqual(100, token['max-instances'])
+            self.assertEqual(1.1, token['restart-backoff-factor'])
+            cp = cli.update(self.waiter_url, token_name, create_flags='--https-redirect false '
+                                                                      '--cpus 0.1 '
+                                                                      '--fallback-period-secs 20 '
+                                                                      '--idle-timeout-mins 2 '
+                                                                      '--max-instances 200 '
+                                                                      '--restart-backoff-factor 2.2')
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            token = util.load_token(self.waiter_url, token_name)
+            self.assertFalse(token['https-redirect'])
+            self.assertEqual(20, token['fallback-period-secs'])
+            self.assertEqual(2, token['idle-timeout-mins'])
+            self.assertEqual(200, token['max-instances'])
+            self.assertEqual(2.2, token['restart-backoff-factor'])
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
     def test_basic_show(self):
         token_name = self.token_name()
         cp = cli.show(self.waiter_url, token_name)
@@ -415,3 +455,49 @@ class WaiterCliTest(util.WaiterTest):
         cp = cli.delete(self.waiter_url, token_name)
         self.assertEqual(1, cp.returncode, cp.stderr)
         self.assertIn('No matching data found', cli.stdout(cp))
+
+    def test_ping_basic(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, util.minimal_service_description())
+        try:
+            self.assertEqual(0, len(util.services_for_token(self.waiter_url, token_name)))
+            cp = cli.ping(self.waiter_url, token_name)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('Pinging token', cli.stdout(cp))
+            self.assertIn('Successfully pinged', cli.stdout(cp))
+            self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_ping_error(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
+        try:
+            self.assertEqual(0, len(util.services_for_token(self.waiter_url, token_name)))
+            cp = cli.ping(self.waiter_url, token_name)
+            self.assertEqual(1, cp.returncode, cp.stderr)
+            self.assertIn('Pinging token', cli.stdout(cp))
+            self.assertIn('token improperly configured', cli.stderr(cp))
+            self.assertEqual(0, len(util.services_for_token(self.waiter_url, token_name)))
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_ping_non_existent_token(self):
+        token_name = self.token_name()
+        cp = cli.ping(self.waiter_url, token_name)
+        self.assertEqual(1, cp.returncode, cp.stderr)
+        self.assertIn('No matching data found', cli.stdout(cp))
+
+    def test_ping_custom_health_check_endpoint(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, util.minimal_service_description(**{'health-check-url': '/sleep'}))
+        try:
+            self.assertEqual(0, len(util.services_for_token(self.waiter_url, token_name)))
+            cp = cli.ping(self.waiter_url, token_name)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('Pinging token', cli.stdout(cp))
+            self.assertIn('/sleep', cli.stdout(cp))
+            self.assertIn('Successfully pinged', cli.stdout(cp))
+            self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
+        finally:
+            util.delete_token(self.waiter_url, token_name)

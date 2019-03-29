@@ -112,3 +112,27 @@ class MultiWaiterCliTest(util.WaiterTest):
                 util.delete_token(self.waiter_url_2, token_name, assert_response=False)
         finally:
             util.delete_token(self.waiter_url_1, token_name, assert_response=True)
+
+    def test_federated_ping(self):
+        # Create in cluster #1
+        token_name = self.token_name()
+        util.post_token(self.waiter_url_1, token_name, util.minimal_service_description())
+        try:
+            # Create in cluster #2
+            util.post_token(self.waiter_url_2, token_name, util.minimal_service_description())
+            try:
+                config = self.__two_cluster_config()
+                with cli.temp_config_file(config) as path:
+                    # Ping the token in both clusters
+                    cp = cli.ping(token_name=token_name, flags=f'--config {path}')
+                    self.assertEqual(0, cp.returncode, cp.stderr)
+                    self.assertIn('waiter1', cli.stdout(cp))
+                    self.assertIn('waiter2', cli.stdout(cp))
+                    self.assertEqual(2, cli.stdout(cp).count('Pinging token'))
+                    self.assertEqual(2, cli.stdout(cp).count('Successfully pinged'))
+                    self.assertEqual(1, len(util.services_for_token(self.waiter_url_1, token_name)))
+                    self.assertEqual(1, len(util.services_for_token(self.waiter_url_2, token_name)))
+            finally:
+                util.delete_token(self.waiter_url_2, token_name)
+        finally:
+            util.delete_token(self.waiter_url_1, token_name)

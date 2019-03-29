@@ -77,6 +77,12 @@ def create(waiter_url=None, token_name=None, flags=None, create_flags=None):
     return cp
 
 
+def update(waiter_url=None, token_name=None, flags=None, create_flags=None):
+    """Updates a token via the CLI"""
+    cp = create_or_update('update', waiter_url, token_name, flags, create_flags)
+    return cp
+
+
 def create_or_update_from_service_description(subcommand, waiter_url, token_name, service, flags=None):
     """Creates or updates a token via the CLI, using the provided service fields"""
     create_flags = \
@@ -233,5 +239,12 @@ class temp_base_config_file:
 def delete(waiter_url=None, token_name=None, flags=None, delete_flags=None):
     """Deletes a token via the CLI"""
     args = f"delete {token_name} {delete_flags or ''}"
+    cp = cli(args, waiter_url, flags)
+    return cp
+
+
+def ping(waiter_url=None, token_name=None, flags=None):
+    """Pings a token via the CLI"""
+    args = f'ping {token_name}'
     cp = cli(args, waiter_url, flags)
     return cp
