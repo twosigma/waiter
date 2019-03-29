@@ -469,7 +469,6 @@ class WaiterCliTest(util.WaiterTest):
             cp = cli.ping(self.waiter_url, token_name)
             self.assertEqual(1, cp.returncode, cp.stderr)
             self.assertIn('Pinging token', cli.stdout(cp))
-            self.assertIn('token improperly configured', cli.stderr(cp))
             self.assertEqual(0, len(util.services_for_token(self.waiter_url, token_name)))
         finally:
             util.delete_token(self.waiter_url, token_name)
