@@ -255,6 +255,7 @@
         scheduler-state-chan (async/chan 1)
         timeout-chan (async/chan 1)
         service-id->service-description-fn (fn [id] {"backend-proto" "http"
+                                                     "health-check-proto" "https"
                                                      "health-check-port-index" 2
                                                      "health-check-url" (str "/" id)})
         started-at (t/minus (clock) (t/hours 1))
@@ -268,7 +269,7 @@
                                                              :failed-instances []}})
         available? (fn [{:keys [id]} proto port-index url]
                      (async/go (cond
-                                 (and (= "s1.i1" id) (= "http" proto) (= 2 port-index) (= "/s1" url))
+                                 (and (= "s1.i1" id) (= "https" proto) (= 2 port-index) (= "/s1" url))
                                  {:healthy? true, :status 200}
                                  :else
                                  {:healthy? false, :status 400})))
@@ -499,6 +500,7 @@
 
 (deftest test-available?
   (let [http-client (Object.)
+        health-check-proto "http"
         service-instance {:extra-ports [81] :host "www.example.com" :port 80}]
     (with-redefs [http/get (fn [in-http-client in-health-check-url]
                              (is (= http-client in-http-client))
@@ -506,13 +508,13 @@
                              (let [response-chan (async/promise-chan)]
                                (async/>!! response-chan {:status 200})
                                response-chan))]
-      (let [resp (async/<!! (available? http-client service-instance "http" 0 "/health-check"))]
+      (let [resp (async/<!! (available? http-client service-instance health-check-proto 0 "/health-check"))]
         (is (= {:error nil, :healthy? true, :status 200} resp))))
     (with-redefs [http/get (fn [in-http-client in-health-check-url]
                              (is (= http-client in-http-client))
                              (is (= "http://www.example.com:81/health-check" in-health-check-url))
                              (throw (IllegalArgumentException. "Unable to make request")))]
-      (let [resp (async/<!! (available? http-client service-instance "http" 1 "/health-check"))]
+      (let [resp (async/<!! (available? http-client service-instance health-check-proto 1 "/health-check"))]
         (is (= {:healthy? false} resp))))))
 
 (defmacro check-trackers

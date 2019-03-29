@@ -213,6 +213,7 @@
                    :concurrency-level 10
                    :cpus 1
                    :distribution-scheme "simple"
+                   :health-check-proto "h2"
                    :health-check-url "/status"
                    :mem 512
                    :metric-group "baz"
@@ -318,36 +319,40 @@
 
 (defn- run-backend-proto-service-test
   "Helper method to run tests with various backend protocols"
-  [waiter-url backend-proto health-check-port-index backend-scheme backend-proto-version]
-  (let [nginx-command (nginx-server-command backend-proto)
-        request-headers {:x-waiter-backend-proto backend-proto
-                         :x-waiter-cmd nginx-command
-                         :x-waiter-env-kitchen_cmd (kitchen-cmd)
-                         :x-waiter-health-check-port-index health-check-port-index
-                         :x-waiter-name (rand-name)
-                         :x-waiter-ports 3}
-        {:keys [headers request-headers service-id] :as response}
-        (make-request-with-debug-info request-headers #(make-shell-request waiter-url % :path "/request-info"))]
-    (with-service-cleanup
-      service-id
-      (is service-id)
-      (assert-response-status response 200)
-      (let [{:strs [x-nginx-client-proto x-nginx-client-scheme x-waiter-backend-proto]} headers]
-        (is (= backend-proto-version x-nginx-client-proto))
-        (is (= backend-scheme x-nginx-client-scheme))
-        (is (= backend-proto x-waiter-backend-proto)))
-      (let [service-settings (service-settings waiter-url service-id)]
-        (is (= backend-proto (get-in service-settings [:service-description :backend-proto])))
-        (is (= nginx-command (get-in service-settings [:service-description :cmd]))))
-      (testing "streaming"
-        (let [kitchen-response-size 200000
-              request-headers (assoc request-headers
-                                :x-kitchen-chunk-delay 10
-                                :x-kitchen-chunk-size 2000
-                                :x-kitchen-response-size kitchen-response-size)
-              response (make-shell-request waiter-url request-headers :path "/chunked")]
-          (assert-response-status response 200)
-          (is (= kitchen-response-size (-> response :body str .getBytes count))))))))
+  ([waiter-url backend-proto health-check-port-index backend-scheme backend-proto-version]
+    (run-backend-proto-service-test
+      waiter-url backend-proto backend-proto health-check-port-index backend-scheme backend-proto-version))
+  ([waiter-url backend-proto health-check-proto health-check-port-index backend-scheme backend-proto-version]
+    (let [nginx-command (nginx-server-command backend-proto)
+          request-headers {:x-waiter-backend-proto backend-proto
+                           :x-waiter-cmd nginx-command
+                           :x-waiter-env-kitchen_cmd (kitchen-cmd)
+                           :x-waiter-health-check-port-index health-check-port-index
+                           :x-waiter-health-check-proto health-check-proto
+                           :x-waiter-name (rand-name)
+                           :x-waiter-ports 3}
+          {:keys [headers request-headers service-id] :as response}
+          (make-request-with-debug-info request-headers #(make-shell-request waiter-url % :path "/request-info"))]
+      (with-service-cleanup
+        service-id
+        (is service-id)
+        (assert-response-status response 200)
+        (let [{:strs [x-nginx-client-proto x-nginx-client-scheme x-waiter-backend-proto]} headers]
+          (is (= backend-proto-version x-nginx-client-proto))
+          (is (= backend-scheme x-nginx-client-scheme))
+          (is (= backend-proto x-waiter-backend-proto)))
+        (let [service-settings (service-settings waiter-url service-id)]
+          (is (= backend-proto (get-in service-settings [:service-description :backend-proto])))
+          (is (= nginx-command (get-in service-settings [:service-description :cmd]))))
+        (testing "streaming"
+          (let [kitchen-response-size 200000
+                request-headers (assoc request-headers
+                                  :x-kitchen-chunk-delay 10
+                                  :x-kitchen-chunk-size 2000
+                                  :x-kitchen-response-size kitchen-response-size)
+                response (make-shell-request waiter-url request-headers :path "/chunked")]
+            (assert-response-status response 200)
+            (is (= kitchen-response-size (-> response :body str .getBytes count)))))))))
 
 (deftest ^:parallel ^:integration-fast test-http-backend-proto-service
   (testing-using-waiter-url
@@ -368,6 +373,11 @@
 (deftest ^:parallel ^:integration-fast test-h2-backend-proto-service-health-check-on-port0
   (testing-using-waiter-url
     (run-backend-proto-service-test waiter-url "h2" 0 "https" "HTTP/2.0")))
+
+(deftest ^:parallel ^:integration-fast test-health-check-proto
+  (testing-using-waiter-url
+    ;; PORT2 is running kitchen without SSL enabled
+    (run-backend-proto-service-test waiter-url "h2" "http" 2 "https" "HTTP/2.0")))
 
 (deftest ^:parallel ^:integration-fast test-basic-unsupported-command-type
   (testing-using-waiter-url

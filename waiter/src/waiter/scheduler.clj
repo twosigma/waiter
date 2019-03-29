@@ -228,11 +228,11 @@
 (defn available?
   "Async go block which returns the status code and success of a health check.
    Returns {:healthy? false} if such a connection cannot be established."
-  [http-client {:keys [host port] :as service-instance} health-check-proto health-check-port-index health-check-path]
+  [http-client {:keys [host port] :as service-instance} protocol health-check-port-index health-check-path]
   (async/go
     (try
       (if (and (pos? port) host)
-        (let [instance-health-check-url (health-check-url service-instance health-check-proto health-check-port-index health-check-path)
+        (let [instance-health-check-url (health-check-url service-instance protocol health-check-port-index health-check-path)
               {:keys [status error]} (async/<! (http/get http-client instance-health-check-url))
               error-flag (cond
                            (instance? ConnectException error) :connect-exception
@@ -396,7 +396,7 @@
          service->service-instances' {}]
     (if-not service
       service->service-instances'
-      (let [{:strs [backend-proto health-check-port-index health-check-url]} (service-id->service-description-fn (:id service))
+      (let [{:strs [backend-proto health-check-proto health-check-port-index health-check-url]} (service-id->service-description-fn (:id service))
             connection-errors #{:connect-exception :hangup-exception :timeout-exception}
             update-unhealthy-instance (fn [instance status error]
                                         (-> instance
@@ -410,6 +410,7 @@
 
                                                               (not (contains? connection-errors error))
                                                               (conj :has-responded))))))
+            protocol (or health-check-proto backend-proto)
             health-check-refs (map (fn [instance]
                                      (let [chan (async/promise-chan)]
                                        (if (:healthy? instance)
@@ -419,7 +420,7 @@
                                                          (if healthy?
                                                            (assoc instance :healthy? true)
                                                            (update-unhealthy-instance instance status error))))
-                                           (available? instance backend-proto health-check-port-index health-check-url)))
+                                           (available? instance protocol health-check-port-index health-check-url)))
                                        chan))
                                    active-instances)]
         (recur rest (assoc service->service-instances' service

@@ -449,8 +449,9 @@
             exit-codes-check #(associate-exit-codes % port->reservation-atom port-grace-period-ms)]
         (reduce
           (fn [id->service' {:keys [service id->instance] :as service-entry}]
-            (let [{:strs [backend-proto health-check-port-index health-check-url grace-period-secs]} (:service-description service)
-                  health-check #(update-instance-health % backend-proto health-check-port-index health-check-url http-client)
+            (let [{:strs [backend-proto health-check-port-index health-check-proto health-check-url grace-period-secs]} (:service-description service)
+                  protocol (or health-check-proto backend-proto)
+                  health-check #(update-instance-health % protocol health-check-port-index health-check-url http-client)
                   limits-check #(enforce-instance-limits % (:shell-scheduler/mem service) pid->memory port->reservation-atom port-grace-period-ms)
                   grace-period-check #(enforce-grace-period % grace-period-secs port->reservation-atom port-grace-period-ms)
                   id->instance' (pc/map-vals (comp grace-period-check health-check limits-check exit-codes-check) id->instance)
