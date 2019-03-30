@@ -2,6 +2,7 @@ import json
 
 from tabulate import tabulate
 
+from waiter import terminal
 from waiter.format import format_mem_field, format_timestamp_string, format_field_name
 from waiter.querying import print_no_data, query_token
 from waiter.util import guard_no_cluster
@@ -9,8 +10,7 @@ from waiter.util import guard_no_cluster
 
 def tabulate_token(cluster_name, token, token_name):
     """Given a token, returns a string containing tables for the fields"""
-    table = [['Cluster', cluster_name],
-             ['Owner', token['owner']]]
+    table = [['Owner', token['owner']]]
     if token.get('name'):
         table.append(['Name', token['name']])
     if token.get('cpus'):
@@ -48,7 +48,7 @@ def tabulate_token(cluster_name, token, token_name):
     last_update_time = format_timestamp_string(token['last-update-time'])
     last_update_user = token['last-update-user']
     return f'\n' \
-           f'=== Token: {token_name} ===\n' \
+           f'=== {terminal.bold(cluster_name)} / {terminal.bold(token_name)} ===\n' \
            f'\n' \
            f'Last Updated: {last_update_time} ({last_update_user})\n' \
            f'\n' \

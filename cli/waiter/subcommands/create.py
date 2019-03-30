@@ -93,7 +93,7 @@ def register(add_parser):
     create_parser.add_argument('--cmd', '-C', help='command to start service')
     create_parser.add_argument('--cmd-type', '-t', help='command type of service (e.g. "shell")', dest='cmd-type')
     create_parser.add_argument('--cpus', '-c', help='cpus to reserve for service', type=float)
-    create_parser.add_argument('--mem', '-m', help='memory to reserve for service', type=int)
+    create_parser.add_argument('--mem', '-m', help='memory (in MiB) to reserve for service', type=int)
     create_parser.add_argument('--ports', help='number of ports to reserve for service', type=int)
     create_parser.add_argument('token', nargs=1)
     return create
