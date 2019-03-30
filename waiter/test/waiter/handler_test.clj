@@ -143,8 +143,8 @@
                      :request-method :http-method
                      :route-params (make-route-params "local")}
             make-http-request-fn (fn [instance in-request end-route metric-group backend-proto]
-                                   (is (= {:host "host" :port "port" :protocol "http" :service-id service-id}
-                                          (select-keys instance [:host :port :protocol :service-id])))
+                                   (is (= {:host "host" :port "port" :service-id service-id}
+                                          (select-keys instance [:host :port :service-id])))
                                    (is (= request in-request))
                                    (is (= (-> request :route-params :location) end-route))
                                    (is (= "test-metric-group" metric-group))
@@ -191,8 +191,8 @@
                              :request-method request-method,
                              :route-params (make-route-params router-type)}
                     make-http-request-fn (fn [instance in-request end-route metric-group backend-proto]
-                                           (is (= {:host "host" :port "port" :protocol "http" :service-id service-id}
-                                                  (select-keys instance [:host :port :protocol :service-id])))
+                                           (is (= {:host "host" :port "port" :service-id service-id}
+                                                  (select-keys instance [:host :port :service-id])))
                                            (is (= request in-request))
                                            (is (= (-> request :route-params :location) end-route))
                                            (is (= "test-metric-group" metric-group))
@@ -298,8 +298,8 @@
                      :route-params (make-route-params "local")
                      :request-method :http-method}
             make-http-request-fn (fn [instance in-request end-route metric-group backend-proto]
-                                   (is (= {:host "host" :port "port" :protocol "http" :service-id service-id}
-                                          (select-keys instance [:host :port :protocol :service-id])))
+                                   (is (= {:host "host" :port "port" :service-id service-id}
+                                          (select-keys instance [:host :port :service-id])))
                                    (is (= request in-request))
                                    (is (= (-> request :route-params :location) end-route))
                                    (is (= "test-metric-group" metric-group))
@@ -350,8 +350,8 @@
                              :request-method request-method
                              :route-params (make-route-params router-type)}
                     make-http-request-fn (fn [instance in-request end-route metric-group backend-proto]
-                                           (is (= {:host "host" :port "port" :protocol "http" :service-id service-id}
-                                                  (select-keys instance [:host :port :protocol :service-id])))
+                                           (is (= {:host "host" :port "port" :service-id service-id}
+                                                  (select-keys instance [:host :port :service-id])))
                                            (is (= request in-request))
                                            (is (= (-> request :route-params :location) end-route))
                                            (is (= "test-metric-group" metric-group))

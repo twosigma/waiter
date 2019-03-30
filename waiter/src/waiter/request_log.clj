@@ -60,7 +60,6 @@
       instance (assoc :instance-host (:host instance)
                       :instance-id (:id instance)
                       :instance-port (:port instance)
-                      :instance-proto (:protocol instance)
                       :get-instance-latency-ns get-instance-latency-ns)
       latest-service-id (assoc :latest-service-id latest-service-id)
       principal (assoc :principal principal)

@@ -58,7 +58,8 @@
           instance-request-properties (prepare-request-properties-fn instance-request-properties waiter-headers)
           proto-version (hu/backend-protocol->http-version backend-proto)]
       (make-request-fn http-clients make-basic-auth-fn service-id->password-fn instance request
-                       instance-request-properties passthrough-headers end-route metric-group proto-version))))
+                       instance-request-properties passthrough-headers end-route metric-group
+                       backend-proto proto-version))))
 
 (defn- async-make-http-request
   "Helper function for async status/result handlers."
@@ -70,7 +71,7 @@
                       {:log-level :info :route-params route-params :status 400 :uri uri})))
     (counters/inc! (metrics/service-counter service-id "request-counts" counter-name))
     (let [{:strs [backend-proto metric-group]} (service-id->service-description-fn service-id)
-          instance (scheduler/make-ServiceInstance {:host host :port port :protocol backend-proto :service-id service-id})
+          instance (scheduler/make-ServiceInstance {:host host :port port :service-id service-id})
           _ (log/info request-id counter-name "relative location is" location)]
       (make-http-request-fn instance request location metric-group backend-proto))))
 
@@ -120,7 +121,7 @@
             (async/<! (async-make-http-request "async-status" make-http-request-fn service-id->service-description-fn request))]
         (when error (throw error))
         (let [{:strs [backend-proto]} (service-id->service-description-fn service-id)
-              endpoint (scheduler/end-point-url {:host host :port port :protocol backend-proto} location)
+              endpoint (scheduler/end-point-url backend-proto host port location)
               location-header (get-in backend-response [:headers "location"])
               location-url (async-req/normalize-location-header endpoint location-header)
               relative-location? (str/starts-with? (str location-url) "/")]

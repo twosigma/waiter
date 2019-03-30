@@ -123,10 +123,6 @@
       (is (thrown-with-msg? ExceptionInfo #"The command to run was not supplied"
                             (launch-instance "foo" {"backend-proto" "http" "ports" 1 "mem" 32} (work-dir) {} nil nil))))
 
-    (testing "with https backend proto"
-      (let [{:keys [protocol]} (launch-instance "foo" {"backend-proto" "https" "cmd" "ls" "ports" 1 "mem" 32} "scheduler" {} (atom {}) [2000 3000])]
-        (is (= "https" protocol))))
-
     (testing "should throw if enough ports aren't available"
       (is (thrown-with-msg? ExceptionInfo #"Unable to reserve 4 ports"
                             (launch-instance "bar" {"backend-proto" "http" "cmd" "echo 1" "ports" 4 "mem" 32} (work-dir) {} (atom {}) [5100 5102]))))
@@ -494,7 +490,6 @@
                                           :service-id "foo"
                                           :started-at started-at
                                           :port port
-                                          :protocol "http"
                                           :log-directory instance-dir
                                           :shell-scheduler/working-directory instance-dir
                                           :shell-scheduler/pid fake-pid})}
@@ -618,7 +613,6 @@
           :id instance-id
           :log-directory (str "/tmp/" service-id "/" instance-id)
           :message nil
-          :protocol "http"
           :service-id service-id
           :shell-scheduler/working-directory (str "/tmp/" service-id "/" instance-id)}
          config))

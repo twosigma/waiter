@@ -66,7 +66,6 @@
    ^String host
    port
    extra-ports
-   ^String protocol
    ^String log-directory
    ^String message])
 
@@ -190,24 +189,23 @@
 
 (defn base-url
   "Returns the url at which the service definition resides."
-  [{:keys [host port protocol]}]
+  [^String protocol ^String host port]
   (let [scheme (hu/backend-proto->scheme protocol)]
     (str scheme "://" host ":" port)))
 
 (defn end-point-url
   "Returns the endpoint url which can be queried on the url specified by the url-info map."
-  [url-info ^String end-point]
-  (str (base-url url-info)
+  [^String protocol ^String host port ^String end-point]
+  (str (base-url protocol host port)
        (if (and end-point (str/starts-with? end-point "/")) end-point (str "/" end-point))))
 
 (defn health-check-url
   "Returns the health check url which can be queried on the service instance."
-  [{:keys [extra-ports] :as service-instance} health-check-port-index health-check-path]
-  (if (zero? health-check-port-index)
-    (end-point-url service-instance health-check-path)
-    (let [health-check-port (->> health-check-port-index dec (nth extra-ports))]
-      (-> (assoc service-instance :port health-check-port)
-          (end-point-url health-check-path)))))
+  [{:keys [extra-ports host port]} health-check-proto health-check-port-index health-check-path]
+  (let [url-port (if (pos? health-check-port-index)
+                   (->> health-check-port-index dec (nth extra-ports))
+                   port)]
+    (end-point-url health-check-proto host url-port health-check-path)))
 
 (defn log-health-check-issues
   "Logs messages based on the type of error (if any) encountered by a health check"
@@ -230,11 +228,11 @@
 (defn available?
   "Async go block which returns the status code and success of a health check.
    Returns {:healthy? false} if such a connection cannot be established."
-  [http-client {:keys [host port] :as service-instance} health-check-port-index health-check-path]
+  [http-client {:keys [host port] :as service-instance} health-check-proto health-check-port-index health-check-path]
   (async/go
     (try
       (if (and (pos? port) host)
-        (let [instance-health-check-url (health-check-url service-instance health-check-port-index health-check-path)
+        (let [instance-health-check-url (health-check-url service-instance health-check-proto health-check-port-index health-check-path)
               {:keys [status error]} (async/<! (http/get http-client instance-health-check-url))
               error-flag (cond
                            (instance? ConnectException error) :connect-exception
@@ -398,7 +396,7 @@
          service->service-instances' {}]
     (if-not service
       service->service-instances'
-      (let [{:strs [health-check-port-index health-check-url]} (service-id->service-description-fn (:id service))
+      (let [{:strs [backend-proto health-check-port-index health-check-url]} (service-id->service-description-fn (:id service))
             connection-errors #{:connect-exception :hangup-exception :timeout-exception}
             update-unhealthy-instance (fn [instance status error]
                                         (-> instance
@@ -421,7 +419,7 @@
                                                          (if healthy?
                                                            (assoc instance :healthy? true)
                                                            (update-unhealthy-instance instance status error))))
-                                           (available? instance health-check-port-index health-check-url)))
+                                           (available? instance backend-proto health-check-port-index health-check-url)))
                                        chan))
                                    active-instances)]
         (recur rest (assoc service->service-instances' service

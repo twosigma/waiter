@@ -418,7 +418,6 @@
                              :log-directory "/sandbox/directory"
                              :message "test reason"
                              :port 1234
-                             :protocol "http"
                              :service-id "service-id"
                              :started-at (tc/from-long start-time)}
           actual-job {:instances [{:exit_code 0

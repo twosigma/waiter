@@ -61,7 +61,6 @@
                         "www.scheduler-test.example.com"
                         1234
                         []
-                        "proto"
                         "log-dir"
                         "instance-message")]
     (testing (str "Test record ServiceInstance")
@@ -72,11 +71,8 @@
       (is (= 200 (:health-check-status test-instance)))
       (is (= "www.scheduler-test.example.com" (:host test-instance)))
       (is (= 1234 (:port test-instance)))
-      (is (= "proto" (:protocol test-instance)))
       (is (= "log-dir" (:log-directory test-instance)))
-      (is (= "instance-message" (:message test-instance)))
-      (is (= "proto://www.scheduler-test.example.com:1234" (base-url test-instance)))
-      (is (= "proto://www.scheduler-test.example.com:1234/test-end-point" (end-point-url test-instance "test-end-point"))))))
+      (is (= "instance-message" (:message test-instance))))))
 
 (deftest test-instance->service-id
   (let [test-cases [
@@ -258,21 +254,24 @@
   (let [clock t/now
         scheduler-state-chan (async/chan 1)
         timeout-chan (async/chan 1)
-        service-id->service-description-fn (fn [id] {"health-check-port-index" 2
+        service-id->service-description-fn (fn [id] {"backend-proto" "http"
+                                                     "health-check-port-index" 2
                                                      "health-check-url" (str "/" id)})
         started-at (t/minus (clock) (t/hours 1))
-        instance1 (->ServiceInstance "s1.i1" "s1" started-at nil nil #{} nil "host" 123 [] "proto" "/log" "test")
-        instance2 (->ServiceInstance "s1.i2" "s1" started-at true nil #{} nil "host" 123 [] "proto" "/log" "test")
-        instance3 (->ServiceInstance "s1.i3" "s1" started-at nil nil #{} nil "host" 123 [] "proto" "/log" "test")
+        instance1 (->ServiceInstance "s1.i1" "s1" started-at nil nil #{} nil "host" 123 [] "/log" "test")
+        instance2 (->ServiceInstance "s1.i2" "s1" started-at true nil #{} nil "host" 123 [] "/log" "test")
+        instance3 (->ServiceInstance "s1.i3" "s1" started-at nil nil #{} nil "host" 123 [] "/log" "test")
         get-service->instances (constantly
                                  {(->Service "s1" {} {} {}) {:active-instances [instance1 instance2 instance3]
                                                              :failed-instances []}
                                   (->Service "s2" {} {} {}) {:active-instances []
                                                              :failed-instances []}})
-        available? (fn [{:keys [id]} port-index url]
+        available? (fn [{:keys [id]} proto port-index url]
                      (async/go (cond
-                                 (and (= "s1.i1" id) (= 2 port-index) (= "/s1" url)) {:healthy? true, :status 200}
-                                 :else {:healthy? false, :status 400})))
+                                 (and (= "s1.i1" id) (= "http" proto) (= 2 port-index) (= "/s1" url))
+                                 {:healthy? true, :status 200}
+                                 :else
+                                 {:healthy? false, :status 400})))
         start-time-ms (.getMillis (clock))
         failed-check-threshold 5
         scheduler-name "test-scheduler"
@@ -336,7 +335,7 @@
 (deftest test-start-health-checks
   (let [available-instance "id1"
         service {:id "s1"}
-        available? (fn [instance _ _]
+        available? (fn [instance _ _ _]
                      (async/go
                        (let [healthy? (= (:id instance) available-instance)]
                          {:healthy? healthy?
@@ -371,7 +370,7 @@
 (deftest test-do-health-checks
   (let [available-instance "id1"
         service {:id "s1"}
-        available? (fn [{:keys [id]} _ _]
+        available? (fn [{:keys [id]} _ _ _]
                      (async/go
                        (let [healthy? (= id available-instance)]
                          {:healthy? healthy?
@@ -500,20 +499,20 @@
 
 (deftest test-available?
   (let [http-client (Object.)
-        service-instance {:extra-ports [81] :host "www.example.com" :port 80 :protocol "http"}]
+        service-instance {:extra-ports [81] :host "www.example.com" :port 80}]
     (with-redefs [http/get (fn [in-http-client in-health-check-url]
                              (is (= http-client in-http-client))
                              (is (= "http://www.example.com:80/health-check" in-health-check-url))
                              (let [response-chan (async/promise-chan)]
                                (async/>!! response-chan {:status 200})
                                response-chan))]
-      (let [resp (async/<!! (available? http-client service-instance 0 "/health-check"))]
+      (let [resp (async/<!! (available? http-client service-instance "http" 0 "/health-check"))]
         (is (= {:error nil, :healthy? true, :status 200} resp))))
     (with-redefs [http/get (fn [in-http-client in-health-check-url]
                              (is (= http-client in-http-client))
                              (is (= "http://www.example.com:81/health-check" in-health-check-url))
                              (throw (IllegalArgumentException. "Unable to make request")))]
-      (let [resp (async/<!! (available? http-client service-instance 1 "/health-check"))]
+      (let [resp (async/<!! (available? http-client service-instance "http" 1 "/health-check"))]
         (is (= {:healthy? false} resp))))))
 
 (defmacro check-trackers

@@ -210,7 +210,7 @@
     (is (not (async/>!! out :out-data)))))
 
 (deftest test-make-request
-  (let [instance {:host "www.host.com", :port 1234, :service-id "test-service-id"}
+  (let [instance {:host "www.host.com" :port 1234 :service-id "test-service-id"}
         request {}
         request-properties {:async-request-timeout-ms 1
                             :connection-timeout-ms 2
@@ -284,9 +284,8 @@
         (cid/with-correlation-id
           test-cid
           (let [websocket-client nil
-                instance (assoc instance :protocol "http")
                 response (make-request websocket-client service-id->password-fn instance request request-properties
-                                       passthrough-headers end-route nil proto-version)
+                                       passthrough-headers end-route nil "http" proto-version)
                 response-map (async/<!! response)]
             (is (= #{:ctrl-mult :request} (-> response-map keys set)))
             (is (= connect-request (:request response-map)))))))
@@ -304,9 +303,8 @@
         (cid/with-correlation-id
           test-cid
           (let [websocket-client nil
-                instance (assoc instance :protocol "https")
                 response (make-request websocket-client service-id->password-fn instance request request-properties
-                                       passthrough-headers end-route nil proto-version)
+                                       passthrough-headers end-route nil "https" proto-version)
                 response-map (async/<!! response)]
             (is (= #{:ctrl-mult :request} (-> response-map keys set)))
             (is (= connect-request (:request response-map)))))))
@@ -321,9 +319,8 @@
                                            (is request-callback)
                                            (throw test-exception))]
           (let [websocket-client nil
-                instance (assoc instance :protocol "http")
                 response (make-request websocket-client service-id->password-fn instance request request-properties
-                                       passthrough-headers end-route nil proto-version)]
+                                       passthrough-headers end-route nil "http" proto-version)]
             (is (= {:error test-exception} (async/<!! response)))))))))
 
 (deftest test-watch-ctrl-chan

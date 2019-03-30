@@ -264,7 +264,8 @@
             "http://www.example.com:1234/query/for/status")))))
 
 (deftest test-make-request
-  (let [instance {:service-id "test-service-id", :host "example.com", :port 8080, :protocol "http"}
+  (let [instance {:service-id "test-service-id", :host "example.com", :port 8080}
+        backend-proto "http"
         request {:authorization/principal "test-user@test.com"
                  :authorization/user "test-user"
                  :body "body"}
@@ -335,7 +336,7 @@
         (let [request-method-fn-call-counter (atom 0)]
           (with-redefs [http/request (http-request-mock-factory passthrough-headers request-method-fn-call-counter)]
             (make-request http-clients make-basic-auth-fn service-id->password-fn instance request request-properties
-                          passthrough-headers end-route nil proto-version)
+                          passthrough-headers end-route nil backend-proto proto-version)
             (is (= 1 @request-method-fn-call-counter)))))
 
       (testing "make-request:headers-long-content-length"
@@ -349,7 +350,7 @@
                           (is (= "request_bytes" metric))
                           (deliver statsd-inc-call-value value))]
             (make-request http-clients make-basic-auth-fn service-id->password-fn instance request request-properties
-                          passthrough-headers end-route nil proto-version)
+                          passthrough-headers end-route nil backend-proto proto-version)
             (is (= 1 @request-method-fn-call-counter))
             (is (= 1234123412341234 (deref statsd-inc-call-value 0 :statsd-inc-not-called)))))))))
 

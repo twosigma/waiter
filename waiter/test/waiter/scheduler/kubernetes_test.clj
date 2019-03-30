@@ -113,7 +113,6 @@
                                         {:service-id->service-description-fn (constantly service-description)})
         replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description)]
     (is (= {:waiter/port-count "3"
-            :waiter/protocol "http"
             :waiter/service-id "test-service-id"}
            (get-in replicaset-spec [:spec :template :metadata :annotations])))))
 
@@ -342,7 +341,6 @@
                              :labels {:app "test-app-1234"
                                       :waiter-cluster "waiter"}
                              :annotations {:waiter/port-count "1"
-                                           :waiter/protocol "https"
                                            :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.11"
@@ -355,7 +353,6 @@
                              :labels {:app "test-app-1234"
                                       :waiter-cluster "waiter"}
                              :annotations {:waiter/port-count "1"
-                                           :waiter/protocol "https"
                                            :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.12"
@@ -368,7 +365,6 @@
                              :labels {:app "test-app-6789"
                                       :waiter-cluster "waiter"}
                              :annotations {:waiter/port-count "1"
-                                           :waiter/protocol "http"
                                            :waiter/service-id "test-app-6789"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.13"
@@ -381,7 +377,6 @@
                              :labels {:app "test-app-6789"
                                       :waiter-cluster "waiter"}
                              :annotations {:waiter/port-count "1"
-                                           :waiter/protocol "http"
                                            :waiter/service-id "test-app-6789"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.14"
@@ -396,7 +391,6 @@
                              :labels {:app "test-app-6789"
                                       :waiter-cluster "waiter"}
                              :annotations {:waiter/port-count "1"
-                                           :waiter/protocol "http"
                                            :waiter/service-id "test-app-6789"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.15"
@@ -416,7 +410,6 @@
                         :id "test-app-1234.test-app-1234-abcd1-0"
                         :log-directory "/home/myself/r0"
                         :port 8080
-                        :protocol "https"
                         :service-id "test-app-1234"
                         :started-at (du/str-to-date "2014-09-13T00:24:46Z" k8s-timestamp-format)})
                      (scheduler/make-ServiceInstance
@@ -425,7 +418,6 @@
                         :id "test-app-1234.test-app-1234-abcd2-0"
                         :log-directory "/home/myself/r0"
                         :port 8080
-                        :protocol "https"
                         :service-id "test-app-1234"
                         :started-at (du/str-to-date "2014-09-13T00:24:47Z" k8s-timestamp-format)})]
                     :failed-instances []}
@@ -439,7 +431,6 @@
                         :id "test-app-6789.test-app-6789-abcd1-0"
                         :log-directory "/home/myself/r0"
                         :port 8080
-                        :protocol "http"
                         :service-id "test-app-6789"
                         :started-at (du/str-to-date "2014-09-13T00:24:35Z" k8s-timestamp-format)})
                      (scheduler/make-ServiceInstance
@@ -448,7 +439,6 @@
                         :id "test-app-6789.test-app-6789-abcd2-1"
                         :log-directory "/home/myself/r1"
                         :port 8080
-                        :protocol "http"
                         :service-id "test-app-6789"
                         :started-at (du/str-to-date "2014-09-13T00:24:37Z" k8s-timestamp-format)})
                      (scheduler/make-ServiceInstance
@@ -457,7 +447,6 @@
                         :id "test-app-6789.test-app-6789-abcd3-0"
                         :log-directory "/home/myself/r0"
                         :port 8080
-                        :protocol "http"
                         :service-id "test-app-6789"
                         :started-at (du/str-to-date "2014-09-13T00:24:38Z" k8s-timestamp-format)})]
                     :failed-instances
@@ -468,7 +457,6 @@
                         :id "test-app-6789.test-app-6789-abcd2-0"
                         :log-directory "/home/myself/r0"
                         :port 8080
-                        :protocol "http"
                         :service-id "test-app-6789"
                         :started-at (du/str-to-date "2014-09-13T00:24:36Z" k8s-timestamp-format)})]})
         dummy-scheduler (make-dummy-scheduler ["test-app-1234" "test-app-6789"])
@@ -490,7 +478,6 @@
                     :log-directory "/home/myself/r0"
                     :k8s/namespace "myself"
                     :port 8080
-                    :protocol "https"
                     :service-id service-id
                     :started-at (du/str-to-date "2014-09-13T00:24:56Z" k8s-timestamp-format)})
         dummy-scheduler (make-dummy-scheduler [service-id])
@@ -922,7 +909,6 @@
                              :labels {:app "test-app-1234"
                                       :waiter-cluster "waiter"}
                              :annotations {:waiter/port-count "1"
-                                           :waiter/protocol "https"
                                            :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.11"
@@ -935,7 +921,6 @@
                              :labels {:app "test-app-1234"
                                       :waiter-cluster "waiter"}
                              :annotations {:waiter/port-count "1"
-                                           :waiter/protocol "https"
                                            :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.12"
@@ -950,7 +935,6 @@
                               :labels {:app "test-app-1234"
                                        :waiter-cluster "waiter"}
                               :annotations {:waiter/port-count "1"
-                                            :waiter/protocol "https"
                                             :waiter/service-id "test-app-1234"}
                               :resourceVersion "1001"}
                    :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
@@ -965,7 +949,6 @@
                               :labels {:app "test-app-1234"
                                        :waiter-cluster "waiter"}
                               :annotations {:waiter/port-count "1"
-                                            :waiter/protocol "https"
                                             :waiter/service-id "test-app-1234"}
                               :resourceVersion "1002"}
                    :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
@@ -976,7 +959,6 @@
          {:type "DELETED"
           :object {:metadata {:name "test-app-1234-abcd1"
                               :annotations {:waiter/port-count "1"
-                                            :waiter/protocol "https"
                                             :waiter/service-id "test-app-1234"}
                               :resourceVersion "1003"}}}]
 
@@ -1158,7 +1140,6 @@
                              :labels {:app "test-app-1234"
                                       :waiter-cluster "waiter"}
                              :annotations {:waiter/port-count "1"
-                                           :waiter/protocol "https"
                                            :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.11"
@@ -1171,7 +1152,6 @@
                              :labels {:app "test-app-1234"
                                       :waiter-cluster "waiter"}
                              :annotations {:waiter/port-count "1"
-                                           :waiter/protocol "https"
                                            :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.12"
@@ -1188,7 +1168,6 @@
                              :labels {:app "test-app-1234"
                                       :waiter-cluster "waiter"}
                              :annotations {:waiter/port-count "1"
-                                           :waiter/protocol "https"
                                            :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.11"
@@ -1201,7 +1180,6 @@
                              :labels {:app "test-app-1234"
                                       :waiter-cluster "waiter"}
                              :annotations {:waiter/port-count "1"
-                                           :waiter/protocol "https"
                                            :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.12"
@@ -1214,7 +1192,6 @@
                               :labels {:app "test-app-1234"
                                        :waiter-cluster "waiter"}
                               :annotations {:waiter/port-count "1"
-                                            :waiter/protocol "https"
                                             :waiter/service-id "test-app-1234"}
                               :resourceVersion "1002"}
                    :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
@@ -1230,7 +1207,6 @@
                               :labels {:app "test-app-1234"
                                        :waiter-cluster "waiter"}
                               :annotations {:waiter/port-count "1"
-                                            :waiter/protocol "https"
                                             :waiter/service-id "test-app-1234"}
                               :resourceVersion "1001"}
                    :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
@@ -1245,7 +1221,6 @@
                               :labels {:app "test-app-1234"
                                        :waiter-cluster "waiter"}
                               :annotations {:waiter/port-count "1"
-                                            :waiter/protocol "https"
                                             :waiter/service-id "test-app-1234"}
                               :resourceVersion "1002"}
                    :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
@@ -1256,7 +1231,6 @@
          {:type "DELETED"
           :object {:metadata {:name "test-app-1234-abcd1"
                               :annotations {:waiter/port-count "1"
-                                            :waiter/protocol "https"
                                             :waiter/service-id "test-app-1234"}
                               :resourceVersion "1004"}}}]
 

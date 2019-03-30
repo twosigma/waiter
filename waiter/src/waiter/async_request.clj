@@ -149,7 +149,7 @@
    service-id metric-group backend-proto {:keys [host port] :as instance}
    {:keys [request-id] :as reason-map} request-properties location query-string]
   (let [correlation-id (cid/get-correlation-id)
-        status-endpoint (scheduler/end-point-url instance location)
+        status-endpoint (scheduler/end-point-url backend-proto host port location)
         _ (log/info "status endpoint for async request is" status-endpoint query-string)
         {:keys [async-check-interval-ms async-request-timeout-ms]} request-properties
         exit-chan (async/chan 1)]

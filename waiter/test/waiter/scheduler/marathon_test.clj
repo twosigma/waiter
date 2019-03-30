@@ -34,20 +34,17 @@
                           :name "response-data->service-instances no response"
                           :marathon-response nil
                           :expected-response {:active-instances []
-                                              :failed-instances []}
-                          :service-id->service-description {}},
+                                              :failed-instances []}},
                          {
                           :name "response-data->service-instances empty response"
                           :marathon-response {}
                           :expected-response {:active-instances []
-                                              :failed-instances []}
-                          :service-id->service-description {}},
+                                              :failed-instances []}},
                          {
                           :name "response-data->service-instances empty-app response"
                           :marathon-response {:app {}}
                           :expected-response {:active-instances []
-                                              :failed-instances []}
-                          :service-id->service-description {}},
+                                              :failed-instances []}},
                          {
                           :name "response-data->service-instances valid response with task failure"
                           :marathon-response
@@ -112,7 +109,6 @@
                                                   :log-directory nil,
                                                   :message nil,
                                                   :port 31045,
-                                                  :protocol "https",
                                                   :service-id "test-app-1234",
                                                   :started-at (du/str-to-date "2014-09-13T00:24:46.959Z" formatter-marathon)}),
                                                (scheduler/make-ServiceInstance
@@ -123,7 +119,6 @@
                                                   :log-directory nil,
                                                   :message nil,
                                                   :port 31234,
-                                                  :protocol "https",
                                                   :service-id "test-app-1234",
                                                   :started-at (du/str-to-date "2014-09-13T00:24:56.965Z" formatter-marathon)}),
                                                (scheduler/make-ServiceInstance
@@ -134,7 +129,6 @@
                                                   :log-directory nil,
                                                   :message nil,
                                                   :port 41234,
-                                                  :protocol "https",
                                                   :service-id "test-app-1234",
                                                   :started-at (du/str-to-date "2014-09-14T00:24:46.965Z" formatter-marathon)}))
                            :failed-instances (list
@@ -146,11 +140,8 @@
                                                   :log-directory nil,
                                                   :message "Abnormal executor termination",
                                                   :port 0,
-                                                  :protocol "https",
                                                   :service-id "test-app-1234",
-                                                  :started-at (du/str-to-date "2014-09-12T23:23:41.711Z" formatter-marathon)}))}
-                          :service-id->service-description {"test-app-1234" {"backend-proto" "https"
-                                                                             "health-check-port-index" 0}}},
+                                                  :started-at (du/str-to-date "2014-09-12T23:23:41.711Z" formatter-marathon)}))}},
                          {
                           :name "response-data->service-instances valid response without task failure"
                           :marathon-response
@@ -210,7 +201,6 @@
                                                   :log-directory "/slave-dir/S234842/frameworks/F123445/executors/test-app-1234.A/runs/latest",
                                                   :message nil,
                                                   :port 31045,
-                                                  :protocol "http",
                                                   :service-id "test-app-1234",
                                                   :started-at (du/str-to-date "2014-09-13T00:24:46.959Z" formatter-marathon)}),
                                                (scheduler/make-ServiceInstance
@@ -221,7 +211,6 @@
                                                   :log-directory nil,
                                                   :message nil,
                                                   :port 31234,
-                                                  :protocol "http",
                                                   :service-id "test-app-1234",
                                                   :started-at (du/str-to-date "2014-09-13T00:24:46.965Z" formatter-marathon)}),
                                                (scheduler/make-ServiceInstance
@@ -232,13 +221,10 @@
                                                   :log-directory "/slave-dir/S651616/frameworks/F123445/executors/test-app-1234.C/runs/latest",
                                                   :message nil,
                                                   :port 41234,
-                                                  :protocol "http",
                                                   :service-id "test-app-1234",
                                                   :started-at (du/str-to-date "2014-09-13T00:24:46.965Z" formatter-marathon)}))
-                           :failed-instances []}
-                          :service-id->service-description {"test-app-1234" {"backend-proto" "http"
-                                                                             "health-check-port-index" 0}}})]
-    (doseq [{:keys [expected-response marathon-response name service-id->service-description]} test-cases]
+                           :failed-instances []}})]
+    (doseq [{:keys [expected-response marathon-response name]} test-cases]
       (testing (str "Test " name)
         (let [framework-id (:framework-id marathon-response)
               service-id->failed-instances-transient-store (atom {})
@@ -247,8 +233,7 @@
                                 [:app]
                                 (fn [] framework-id)
                                 {:slave-directory "/slave-dir"}
-                                service-id->failed-instances-transient-store
-                                service-id->service-description)]
+                                service-id->failed-instances-transient-store)]
           (is (= expected-response actual-response) (str name))
           (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store []))))))
 
@@ -342,7 +327,6 @@
                          :healthy? true
                          :host "10.141.141.11"
                          :port 31045
-                         :protocol "https"
                          :started-at (du/str-to-date "2014-09-13T00:24:46.959Z" formatter-marathon)})
                       (scheduler/make-ServiceInstance
                         {:id "test-app-1234.B"
@@ -350,7 +334,6 @@
                          :healthy? true
                          :host "10.141.141.12"
                          :port 31234
-                         :protocol "https"
                          :started-at (du/str-to-date "2014-09-13T00:24:46.965Z" formatter-marathon)}))
                     :failed-instances []}
                    (scheduler/make-Service {:id "test-app-6789", :instances 3, :task-count 3})
@@ -362,7 +345,6 @@
                          :healthy? true
                          :host "10.141.141.11"
                          :port 31045
-                         :protocol "http"
                          :started-at (du/str-to-date "2014-09-13T00:24:46.959Z" formatter-marathon)})
                       (scheduler/make-ServiceInstance
                         {:id "test-app-6789.B"
@@ -370,7 +352,6 @@
                          :healthy? nil
                          :host "10.141.141.12"
                          :port 36789
-                         :protocol "http"
                          :started-at (du/str-to-date "2014-09-13T00:24:56.965Z" formatter-marathon)})
                       (scheduler/make-ServiceInstance
                         {:id "test-app-6789.C"
@@ -378,7 +359,6 @@
                          :healthy? false
                          :host "10.141.141.13"
                          :port 46789
-                         :protocol "http"
                          :started-at (du/str-to-date "2014-09-14T00:24:46.965Z" formatter-marathon)}))
                     :failed-instances
                     (list
@@ -388,14 +368,11 @@
                          :healthy? false
                          :host "10.141.141.10"
                          :port 0
-                         :protocol "http"
                          :started-at (du/str-to-date "2014-09-12T23:23:41.711Z" formatter-marathon)
                          :message "Abnormal executor termination"}))})
         service-id->failed-instances-transient-store (atom {})
-        service-id->service-description {"test-app-1234" {"backend-proto" "https" "health-check-port-index" 0}
-                                         "test-app-6789" {"backend-proto" "http" "health-check-port-index" 0}}
         actual (response-data->service->service-instances
-                 input (fn [] nil) nil service-id->failed-instances-transient-store service-id->service-description)]
+                 input (fn [] nil) nil service-id->failed-instances-transient-store)]
     (is (= expected actual))
     (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store [])))
 

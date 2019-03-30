@@ -224,7 +224,8 @@
     (if (utils/request->debug-enabled? request)
       (let [response (handler request)
             add-headers (fn [{:keys [descriptor instance] :as response}]
-                          (let [backend-directory (:log-directory instance)
+                          (let [{:strs [backend-proto]} (:service-description descriptor)
+                                backend-directory (:log-directory instance)
                                 backend-log-url (when backend-directory
                                                   (generate-log-url-fn instance))
                                 request-date (when request-time
@@ -239,7 +240,7 @@
                                               instance (assoc "x-waiter-backend-id" (:id instance)
                                                               "x-waiter-backend-host" (:host instance)
                                                               "x-waiter-backend-port" (str (:port instance))
-                                                              "x-waiter-backend-proto" (:protocol instance))
+                                                              "x-waiter-backend-proto" backend-proto)
                                               backend-directory (assoc "x-waiter-backend-directory" backend-directory
                                                                        "x-waiter-backend-log-url" backend-log-url))))))]
         (ru/update-response response add-headers))
@@ -699,8 +700,8 @@
                                                     {:conn-timeout health-check-timeout-ms
                                                      :socket-timeout health-check-timeout-ms
                                                      :user-agent (str "waiter-syncer/" (str/join (take 7 git-version)))})
-                                      available? (fn scheduler-available? [service-instance health-check-port-index health-check-path]
-                                                   (scheduler/available? http-client service-instance health-check-port-index health-check-path))]
+                                      available? (fn scheduler-available? [service-instance health-check-proto health-check-port-index health-check-path]
+                                                   (scheduler/available? http-client service-instance health-check-proto health-check-port-index health-check-path))]
                                   (fn start-scheduler-syncer-fn
                                     [scheduler-name get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs]
                                     (let [timeout-chan (->> (t/seconds scheduler-syncer-interval-secs)
@@ -1152,9 +1153,10 @@
                                    (fn default-websocket-handler-fn [request]
                                      (let [password (first passwords)
                                            make-request-fn (fn make-ws-request
-                                                             [instance request request-properties passthrough-headers end-route metric-group proto-version]
+                                                             [instance request request-properties passthrough-headers end-route metric-group
+                                                              backend-proto proto-version]
                                                              (ws/make-request websocket-client service-id->password-fn instance request request-properties
-                                                                              passthrough-headers end-route metric-group proto-version))
+                                                                              passthrough-headers end-route metric-group backend-proto proto-version))
                                            process-request-fn (fn process-request-fn [request]
                                                                 (pr/process make-request-fn instance-rpc-chan start-new-service-fn
                                                                             instance-request-properties determine-priority-fn ws/process-response!
@@ -1193,10 +1195,11 @@
                                 [:state http-clients instance-rpc-chan local-usage-agent interstitial-state-atom]
                                 wrap-auth-bypass-fn wrap-descriptor-fn wrap-https-redirect-fn wrap-secure-request-fn
                                 wrap-service-discovery-fn]
-                         (let [make-request-fn (fn [instance request request-properties passthrough-headers end-route metric-group proto-version]
+                         (let [make-request-fn (fn [instance request request-properties passthrough-headers end-route metric-group
+                                                    backend-proto proto-version]
                                                  (pr/make-request http-clients make-basic-auth-fn service-id->password-fn
                                                                   instance request request-properties passthrough-headers
-                                                                  end-route metric-group proto-version))
+                                                                  end-route metric-group backend-proto  proto-version))
                                process-response-fn (partial pr/process-http-response post-process-async-request-response-fn)
                                inner-process-request-fn (fn inner-process-request [request]
                                                           (pr/process make-request-fn instance-rpc-chan start-new-service-fn
