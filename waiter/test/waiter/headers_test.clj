@@ -152,3 +152,23 @@
       (let [token (str/join (repeat 30 "foo"))]
         (is (= 90 (count token)))
         (is (= {"x-waiter-token" token} (truncate-header-values {"x-waiter-token" token})))))))
+
+(deftest test-dissoc-hop-by-hop-headers
+  (let [headers {"connection" "keep-alive, foo, lorem, ipsum"
+                 "content" "text/html"
+                 "content-encoding" "gzip"
+                 "bar" "bar-value"
+                 "foo" "foo-value"
+                 "lorem" "lorem-value"
+                 "keep-alive" "timeout=5, max=1000"
+                 "proxy-connection" "keep-alive"
+                 "referer" "http://www.test-referer.com"
+                 "te" "trailers, deflate"
+                 "transfer-encoding" "trailers, deflate"
+                 "upgrade" "http/2.0, https/1.3, irc/6.9, rta/x11, websocket"}]
+    (is (= {"bar" "bar-value"
+            "content" "text/html"
+            "content-encoding" "gzip"
+            "proxy-connection" "keep-alive"
+            "referer" "http://www.test-referer.com"}
+           (dissoc-hop-by-hop-headers headers)))))

@@ -499,6 +499,7 @@
                           (catch Exception e
                             (async/close! request-state-chan)
                             (handle-process-exception e request)))
+                        (update :headers headers/dissoc-hop-by-hop-headers)
                         (assoc :get-instance-latency-ns instance-elapsed
                                :instance instance
                                :protocol proto-version)
