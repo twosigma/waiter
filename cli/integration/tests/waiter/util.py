@@ -175,10 +175,11 @@ def ping_token(waiter_url, token_name):
     assert 200 == response.status_code, f'Expected 200, got {response.status_code} with body {response.text}'
     service_id = response.headers['x-waiter-service-id']
     max_wait_ms = session.get(f'{waiter_url}/settings').json()['scheduler-syncer-interval-secs'] * 2 * 1000
+    auth_cookie = {'x-waiter-auth': response.cookies['x-waiter-auth']}
     routers = session.get(f'{waiter_url}/state/maintainer').json()['state']['routers']
     for router_id, router_url in routers.items():
         logging.debug(f'Waiting for at most {max_wait_ms} ms for service to appear on {router_url}')
-        wait_until(lambda: requests.get(f'{router_url.rstrip("/")}/apps', cookies=response.cookies),
+        wait_until(lambda: requests.get(f'{router_url.rstrip("/")}/apps', cookies=auth_cookie),
                    lambda r: next(s['service-id'] for s in r.json() if s['service-id'] == service_id),
                    max_wait_ms=max_wait_ms)
     return service_id
