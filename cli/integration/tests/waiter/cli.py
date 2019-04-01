@@ -61,6 +61,7 @@ def cli(args, waiter_url=None, flags=None, stdin=None, env=None, wait_for_exit=T
     url_flag = f'--url {waiter_url}' if waiter_url else ''
     other_flags = f'{flags}' if flags else ''
     cp = sh(f'{command()} {url_flag} {other_flags} {args}', stdin, env, wait_for_exit)
+    logging.debug(output(cp))
     return cp
 
 

@@ -164,7 +164,7 @@ def load_json_file(path):
     return content
 
 
-def ping_token(waiter_url, token_name, assert_response=False, expected_status_code=200):
+def ping_token(waiter_url, token_name):
     headers = {
         'Content-Type': 'application/json',
         'X-Waiter-Debug': 'true',
@@ -172,11 +172,16 @@ def ping_token(waiter_url, token_name, assert_response=False, expected_status_co
         'X-Waiter-Token': token_name
     }
     response = session.get(f'{waiter_url}', headers=headers)
-    if assert_response:
-        assert \
-            expected_status_code == response.status_code, \
-            f'Expected {expected_status_code}, got {response.status_code} with body {response.text}'
-    return response
+    assert 200 == response.status_code, f'Expected 200, got {response.status_code} with body {response.text}'
+    service_id = response.headers['x-waiter-service-id']
+    max_wait_ms = session.get(f'{waiter_url}/settings').json()['scheduler-syncer-interval-secs'] * 2 * 1000
+    routers = session.get(f'{waiter_url}/state/maintainer').json()['state']['routers']
+    for router_id, router_url in routers.items():
+        logging.debug(f'Waiting for at most {max_wait_ms} ms for service to appear on {router_url}')
+        wait_until(lambda: session.get(f'{router_url.rstrip("/")}/apps', cookies=response.cookies),
+                   lambda r: next(s['service-id'] for s in r.json() if s['service-id'] == service_id),
+                   max_wait_ms=max_wait_ms)
+    return service_id
 
 
 def kill_service(waiter_url, service_id, assert_response=True, expected_status_code=200):
