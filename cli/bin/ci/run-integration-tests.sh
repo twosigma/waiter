@@ -45,8 +45,7 @@ if [[ $? -ne 0 ]]; then
   echo "$(date +%H:%M:%S) timed out waiting for waiter to start listening"
   exit 1
 fi
-curl -s ${WAITER_URI}/state | jq
-curl -s ${WAITER_URI}/settings | jq .port
+curl -s ${WAITER_URI}/state
 
 if [[ -z ${WAITER_URI_2+x} ]]; then
     export WAITER_URI_2=127.0.0.1:9191
@@ -61,8 +60,7 @@ if [[ $? -ne 0 ]]; then
   echo "$(date +%H:%M:%S) timed out waiting for waiter to start listening"
   exit 1
 fi
-curl -s ${WAITER_URI_2}/state | jq
-curl -s ${WAITER_URI_2}/settings | jq .port
+curl -s ${WAITER_URI_2}/state
 
 # Run the integration tests
 export WAITER_URI=127.0.0.1:${WAITER_PORT}
