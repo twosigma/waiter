@@ -379,8 +379,7 @@ class WaiterCliTest(util.WaiterTest):
         util.post_token(self.waiter_url, token_name, util.minimal_service_description())
         try:
             self.logger.info(f'Token: {util.load_token(self.waiter_url, token_name)}')
-            resp = util.ping_token(self.waiter_url, token_name)
-            service_id = resp.headers['x-waiter-service-id']
+            service_id = util.ping_token(self.waiter_url, token_name)
             try:
                 cp = cli.delete(self.waiter_url, token_name)
                 self.assertEqual(1, cp.returncode, cli.output(cp))
@@ -397,13 +396,11 @@ class WaiterCliTest(util.WaiterTest):
         util.post_token(self.waiter_url, token_name, util.minimal_service_description())
         try:
             self.logger.info(f'Token: {util.load_token(self.waiter_url, token_name)}')
-            resp = util.ping_token(self.waiter_url, token_name)
-            service_id_1 = resp.headers['x-waiter-service-id']
+            service_id_1 = util.ping_token(self.waiter_url, token_name)
             try:
                 util.post_token(self.waiter_url, token_name, util.minimal_service_description())
                 self.logger.info(f'Token: {util.load_token(self.waiter_url, token_name)}')
-                resp = util.ping_token(self.waiter_url, token_name)
-                service_id_2 = resp.headers['x-waiter-service-id']
+                service_id_2 = util.ping_token(self.waiter_url, token_name)
                 try:
                     services_for_token = util.services_for_token(self.waiter_url, token_name)
                     self.logger.info(f'Services for token {token_name}: {json.dumps(services_for_token, indent=2)}')
