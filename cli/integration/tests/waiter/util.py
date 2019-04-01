@@ -178,7 +178,7 @@ def ping_token(waiter_url, token_name):
     routers = session.get(f'{waiter_url}/state/maintainer').json()['state']['routers']
     for router_id, router_url in routers.items():
         logging.debug(f'Waiting for at most {max_wait_ms} ms for service to appear on {router_url}')
-        wait_until(lambda: session.get(f'{router_url.rstrip("/")}/apps', cookies=response.cookies),
+        wait_until(lambda: requests.get(f'{router_url.rstrip("/")}/apps', cookies=response.cookies),
                    lambda r: next(s['service-id'] for s in r.json() if s['service-id'] == service_id),
                    max_wait_ms=max_wait_ms)
     return service_id
