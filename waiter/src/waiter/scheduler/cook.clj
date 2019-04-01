@@ -252,7 +252,6 @@
        :log-directory (-> job-instance :sandbox_directory)
        :message (-> job-instance :reason_string)
        :port job-port
-       :protocol (-> job :labels :backend-proto)
        :service-id (-> job :labels :service-id)
        :started-at (-> job-instance :start_time tc/from-long)})))
 

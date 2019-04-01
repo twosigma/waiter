@@ -165,7 +165,7 @@
 
 (defn launch-instance
   "Launches a new process for the given service-id"
-  [service-id {:strs [backend-proto cmd ports]} working-dir-base-path environment port->reservation-atom port-range]
+  [service-id {:strs [cmd ports]} working-dir-base-path environment port->reservation-atom port-range]
   (when-not cmd
     (throw (ex-info "The command to run was not supplied" {:service-id service-id})))
   (let [reserved-ports (reserve-ports! ports port->reservation-atom port-range)
@@ -184,7 +184,6 @@
        :host (str "127.0.0." (inc (rand-int 10)))
        :port (first reserved-ports)
        :extra-ports (-> reserved-ports rest vec)
-       :protocol backend-proto
        :log-directory working-directory
        :shell-scheduler/process process
        :shell-scheduler/working-directory working-directory
@@ -317,10 +316,10 @@
 
 (defn perform-health-check
   "Runs a synchronous health check against instance and returns true if it was successful"
-  [{:keys [port] :as instance} health-check-port-index health-check-path http-client]
+  [{:keys [port] :as instance} health-check-proto health-check-port-index health-check-path http-client]
   (if (pos? port)
     (let [_ (log/debug "running health check against" instance)
-          instance-health-check-url (scheduler/health-check-url instance health-check-port-index health-check-path)
+          instance-health-check-url (scheduler/health-check-url instance health-check-proto health-check-port-index health-check-path)
           {:keys [status error]} (async/<!! (http/get http-client instance-health-check-url))]
       (scheduler/log-health-check-issues instance instance-health-check-url status error)
       (and (not error) (<= 200 status 299)))
@@ -328,9 +327,9 @@
 
 (defn- update-instance-health
   "Runs a health check against instance"
-  [instance health-check-port-index health-check-url http-client]
+  [instance health-check-proto health-check-port-index health-check-url http-client]
   (if (active? instance)
-    (assoc instance :healthy? (perform-health-check instance health-check-port-index health-check-url http-client))
+    (assoc instance :healthy? (perform-health-check instance health-check-proto health-check-port-index health-check-url http-client))
     instance))
 
 (defn- alive?
@@ -450,8 +449,8 @@
             exit-codes-check #(associate-exit-codes % port->reservation-atom port-grace-period-ms)]
         (reduce
           (fn [id->service' {:keys [service id->instance] :as service-entry}]
-            (let [{:strs [health-check-port-index health-check-url grace-period-secs]} (:service-description service)
-                  health-check #(update-instance-health % health-check-port-index health-check-url http-client)
+            (let [{:strs [backend-proto health-check-port-index health-check-url grace-period-secs]} (:service-description service)
+                  health-check #(update-instance-health % backend-proto health-check-port-index health-check-url http-client)
                   limits-check #(enforce-instance-limits % (:shell-scheduler/mem service) pid->memory port->reservation-atom port-grace-period-ms)
                   grace-period-check #(enforce-grace-period % grace-period-secs port->reservation-atom port-grace-period-ms)
                   id->instance' (pc/map-vals (comp grace-period-check health-check limits-check exit-codes-check) id->instance)

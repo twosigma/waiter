@@ -283,7 +283,7 @@
       (is (= "remote" @terminate-call-atom)))))
 
 (deftest test-post-process-async-request-response
-  (let [{:keys [host port] :as instance} {:host "www.example.com", :port 1234, :protocol "proto"}
+  (let [{:keys [host port] :as instance} {:host "www.example.com", :port 1234}
         router-id "my-router-id"
         service-id "test-service-id"
         metric-group "test-metric-group"

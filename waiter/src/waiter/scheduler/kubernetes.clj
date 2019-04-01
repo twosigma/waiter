@@ -213,7 +213,6 @@
          :k8s/restart-count restart-count
          :log-directory (log-dir-path namespace restart-count)
          :port port0
-         :protocol (get-in pod [:metadata :annotations :waiter/protocol])
          :service-id (k8s-object->service-id pod)
          :started-at (-> pod
                          (get-in [:status :startTime])
@@ -700,7 +699,6 @@
                     (for [i (range ports)]
                       {:name (str "PORT" i) :value (str (+ port0 i))})))
         k8s-name (service-id->k8s-app-name scheduler service-id)
-        backend-protocol-lower (string/lower-case backend-proto)
         health-check-scheme (-> backend-proto http-utils/backend-proto->scheme string/upper-case)
         health-check-url (sd/service-description->health-check-url service-description)
         memory (str mem "Mi")]
@@ -715,7 +713,6 @@
               :selector {:matchLabels {:app k8s-name
                                        :waiter-cluster cluster-name}}
               :template {:metadata {:annotations {:waiter/port-count (str ports)
-                                                  :waiter/protocol backend-protocol-lower
                                                   :waiter/service-id service-id}
                                     :labels {:app k8s-name
                                              :waiter-cluster cluster-name}}

@@ -203,9 +203,9 @@
 
 (defn make-request
   "Makes an asynchronous http request to the instance endpoint and returns a channel."
-  [http-clients make-basic-auth-fn service-id->password-fn instance {:keys [body query-string request-method] :as request}
-   {:keys [initial-socket-timeout-ms output-buffer-size]} passthrough-headers end-route metric-group proto-version]
-  (let [instance-endpoint (scheduler/end-point-url instance end-route)
+  [http-clients make-basic-auth-fn service-id->password-fn {:keys [host port] :as instance} {:keys [body query-string request-method] :as request}
+   {:keys [initial-socket-timeout-ms output-buffer-size]} passthrough-headers end-route metric-group backend-proto proto-version]
+  (let [instance-endpoint (scheduler/end-point-url backend-proto host port end-route)
         service-id (scheduler/instance->service-id instance)
         service-password (service-id->password-fn service-id)
         ; Removing expect may be dangerous http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html, but makes requests 3x faster =}
@@ -225,8 +225,7 @@
         (log/error e "Unable to track content-length on request")))
     (when waiter-debug-enabled?
       (log/info "connecting to" instance-endpoint "using" proto-version))
-    (-> instance
-        :protocol
+    (-> backend-proto
         (hu/select-http-client http-clients)
         (make-http-request
           make-basic-auth-fn request-method instance-endpoint query-string headers body service-password
@@ -475,7 +474,7 @@
                                                  (metrics/service-timer service-id "backend-response")
                                                  (async/<!
                                                    (make-request-fn instance request instance-request-properties
-                                                                    passthrough-headers uri metric-group proto-version)))
+                                                                    passthrough-headers uri metric-group backend-proto proto-version)))
                                 response-elapsed (:elapsed timed-response)
                                 {:keys [error] :as response} (:out timed-response)]
                             (statsd/histo! metric-group "backend_response" response-elapsed)
