@@ -37,10 +37,18 @@
    Valid values are 'disabled' and 'standard'."
   (s/constrained non-empty-string #{"disabled" "standard"} 'invalid-authentication))
 
-(def valid-backend-proto
-  "Validator for the backend-proto parameter.
-   Valid values are 'h2', 'h2c', 'http', or 'https'."
-  (s/constrained non-empty-string #{"h2" "h2c" "http" "https"} 'invalid-backend-proto))
+(let [valid-backend-protos #{"h2" "h2c" "http" "https"}
+      valid-health-check-protos (conj valid-backend-protos nil)]
+
+  (def valid-backend-proto
+    "Validator for the backend-proto parameter.
+     Valid values are 'h2', 'h2c', 'http', or 'https'."
+    (s/pred #(contains? valid-backend-protos %) 'invalid-backend-proto))
+
+  (def valid-health-check-proto
+    "Validator for the health-check-proto parameter.
+     Valid non-nil values are 'h2', 'h2c', 'http', or 'https'."
+    (s/pred #(contains? valid-health-check-protos %) 'invalid-health-check-proto)))
 
 (def valid-metric-group
   "Validator for metric group names. Valid names must:

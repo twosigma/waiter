@@ -665,7 +665,7 @@
            replicaset-api-version service-id->password-fn] :as scheduler}
    service-id
    {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs health-check-max-consecutive-failures
-           health-check-port-index image mem min-instances ports run-as-user] :as service-description}
+           health-check-port-index health-check-proto image mem min-instances ports run-as-user] :as service-description}
    {:keys [default-container-image log-bucket-url] :as context}]
   (let [work-path (str "/home/" run-as-user)
         home-path (str work-path "/latest")
@@ -699,7 +699,7 @@
                     (for [i (range ports)]
                       {:name (str "PORT" i) :value (str (+ port0 i))})))
         k8s-name (service-id->k8s-app-name scheduler service-id)
-        health-check-scheme (-> backend-proto http-utils/backend-proto->scheme string/upper-case)
+        health-check-scheme (-> (or health-check-proto backend-proto) http-utils/backend-proto->scheme string/upper-case)
         health-check-url (sd/service-description->health-check-url service-description)
         memory (str mem "Mi")]
     (cond->

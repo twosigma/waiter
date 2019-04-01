@@ -134,6 +134,7 @@
                                                    (s/required-key "health-check-interval-secs") schema/positive-int
                                                    (s/required-key "health-check-max-consecutive-failures") schema/positive-int
                                                    (s/required-key "health-check-port-index") schema/valid-health-check-port-index
+                                                   (s/required-key "health-check-proto") schema/valid-health-check-proto
                                                    (s/required-key "health-check-url") schema/non-empty-string
                                                    (s/required-key "idle-timeout-mins") schema/positive-int
                                                    (s/required-key "instance-expiry-mins") schema/non-negative-int
@@ -406,6 +407,7 @@
                                   "health-check-interval-secs" 10
                                   "health-check-max-consecutive-failures" 5
                                   "health-check-port-index" 0
+                                  "health-check-proto" nil
                                   "health-check-url" "/status"
                                   "idle-timeout-mins" 30
                                   "instance-expiry-mins" 7200 ; 5 days

@@ -129,11 +129,13 @@
        (let [job-instance (-> job :instances first)
              host (-> job-instance :hostname)
              port (job->port job)
-             protocol (-> job :labels :backend-proto)
+             protocol (or (some-> job :labels :health-check-proto)
+                          (some-> job :labels :backend-proto))
              health-check-url (-> job :labels :health-check-url)
              task-id (-> job-instance :task_id)]
          (when (and host port protocol health-check-url)
-           (instance-healthy? task-id (str protocol "://" host ":" port health-check-url))))))
+           (let [scheme (http-utils/backend-proto->scheme protocol)]
+             (instance-healthy? task-id (str scheme "://" host ":" port health-check-url)))))))
 
 ;; Helper Methods
 
@@ -141,8 +143,8 @@
   (defn create-job-description
     "Create the Cook job description for a service."
     [service-id service-description service-id->password-fn home-path-prefix instance-priority backend-port]
-    (let [{:strs [backend-proto cmd cmd-type cpus health-check-url instance-expiry-mins mem name ports
-                  run-as-user version]} service-description
+    (let [{:strs [backend-proto cmd cmd-type cpus health-check-proto health-check-url instance-expiry-mins
+                  mem name ports run-as-user version]} service-description
           job-uuid (str (UUID/randomUUID)) ;; TODO Use "less random" UUIDs for better Cook cache performance.
           _ (log/info "creating a new job for" service-id "with uuid" job-uuid)
           home-path (str home-path-prefix run-as-user)
@@ -173,7 +175,8 @@
                                         :service-id service-id
                                         :source "waiter"
                                         :user run-as-user}
-                                 backend-port (assoc :backend-port (str backend-port)))
+                                 backend-port (assoc :backend-port (str backend-port))
+                                 health-check-proto (assoc :health-check-proto health-check-proto))
                        :max-retries 1
                        ;; extend max runtime past instance expiry as there may be a delay in killing it
                        :max-runtime (-> instance-expiry-mins
