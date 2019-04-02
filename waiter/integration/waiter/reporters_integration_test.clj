@@ -33,31 +33,33 @@
   (testing-using-waiter-url
     (let [{:keys [service-id cookies]}
           (make-request-with-debug-info {:x-waiter-name (rand-name)} #(make-kitchen-request waiter-url %))]
-      (doseq [router-url (vals (routers waiter-url))]
-        (let [{:keys [graphite]} (get-in (waiter-settings router-url :cookies cookies) [:metrics-config :codahale-reporters])]
-          (when graphite
-            (let [{:keys [period-ms]} graphite]
-              (is (wait-for-period period-ms #(-> (get-graphite-reporter-state router-url cookies)
-                                                  (get "last-report-successful")
-                                                  some?)))
-              (let [state (get-graphite-reporter-state router-url cookies)
-                    last-event-time-str "last-reporting-time"
-                    last-event-time (get state last-event-time-str)
-                    last-report-successful (get state "last-report-successful")
-                    _ (is last-report-successful)
-                    _ (is last-event-time)
-                    last-event-time-ms (-> last-event-time du/str-to-date .getMillis)
-                    next-last-event-time-ms (wait-for-period
-                                              period-ms
-                                              #(let [next-last-event-time-ms (-> (get-graphite-reporter-state router-url cookies)
-                                                                                 (get last-event-time-str)
-                                                                                 du/str-to-date
-                                                                                 .getMillis)]
-                                                 (if (not= next-last-event-time-ms last-event-time-ms)
-                                                   next-last-event-time-ms nil)))
-                    ;; expected precision for system "sleep" calls. a sleep call will sleep the right duration within 500 ms.
-                    sleep_precision 2000]
-                (is next-last-event-time-ms)
-                (when next-last-event-time-ms
-                  (is (< (Math/abs (- next-last-event-time-ms last-event-time-ms period-ms))
-                         sleep_precision)))))))))))
+      (with-service-cleanup
+        service-id
+        (doseq [router-url (vals (routers waiter-url))]
+          (let [{:keys [graphite]} (get-in (waiter-settings router-url :cookies cookies) [:metrics-config :codahale-reporters])]
+            (when graphite
+              (let [{:keys [period-ms]} graphite]
+                (is (wait-for-period period-ms #(-> (get-graphite-reporter-state router-url cookies)
+                                                    (get "last-report-successful")
+                                                    some?)))
+                (let [state (get-graphite-reporter-state router-url cookies)
+                      last-event-time-str "last-reporting-time"
+                      last-event-time (get state last-event-time-str)
+                      last-report-successful (get state "last-report-successful")
+                      _ (is last-report-successful)
+                      _ (is last-event-time)
+                      last-event-time-ms (-> last-event-time du/str-to-date .getMillis)
+                      next-last-event-time-ms (wait-for-period
+                                                period-ms
+                                                #(let [next-last-event-time-ms (-> (get-graphite-reporter-state router-url cookies)
+                                                                                   (get last-event-time-str)
+                                                                                   du/str-to-date
+                                                                                   .getMillis)]
+                                                   (if (not= next-last-event-time-ms last-event-time-ms)
+                                                     next-last-event-time-ms nil)))
+                      ;; expected precision for system "sleep" calls. a sleep call will sleep the right duration within 500 ms.
+                      sleep_precision 2000]
+                  (is next-last-event-time-ms)
+                  (when next-last-event-time-ms
+                    (is (< (Math/abs (- next-last-event-time-ms last-event-time-ms period-ms))
+                           sleep_precision))))))))))))
