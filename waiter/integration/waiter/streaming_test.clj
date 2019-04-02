@@ -25,13 +25,20 @@
           file-path "test-files/big.txt"
           service-name (rand-name)
           post-body (slurp file-path)
-          headers {:x-waiter-name service-name, :x-kitchen-echo "true"}
-          make-request #(make-kitchen-request waiter-url headers :body post-body)
-          response (make-request)
+          make-request #(make-kitchen-request waiter-url %1 :body post-body)
           metrics-sync-interval-ms (get-in (waiter-settings waiter-url) [:metrics-config :metrics-sync-interval-ms])
+          headers {:x-cid (str service-name "-canary")
+                   :x-kitchen-echo "true"
+                   :x-waiter-name service-name}
+          response (make-request headers)
           service-id (retrieve-service-id waiter-url (:request-headers response))
           epsilon 0.01]
-      (dotimes [_ 49] (make-request))
+      (assert-response-status response 200)
+      (dotimes [n 49]
+        (let [headers (assoc headers :x-cid (str service-name "-iter" n))
+              {:keys [body] :as response} (make-request headers)]
+          (assert-response-status response 200)
+          (is (= post-body body))))
       ; wait to allow metrics to be aggregated
       (let [sleep-period (max (* 20 metrics-sync-interval-ms) 10000)]
         (log/debug "sleeping for" sleep-period "ms")
@@ -39,8 +46,14 @@
       ; assert request response size metrics
       (let [service-settings (service-settings waiter-url service-id)
             _ (log/info "metrics" (get service-settings :metrics))
-            request-size-histogram (get-in service-settings [:metrics :aggregate :histograms :request-size])
-            response-size-histogram (get-in service-settings [:metrics :aggregate :histograms :response-size])]
+            aggregate-metrics (get-in service-settings [:metrics :aggregate])
+            request-counts (get-in aggregate-metrics [:counters :request-counts])
+            request-size-histogram (get-in aggregate-metrics [:histograms :request-size])
+            response-size-histogram (get-in aggregate-metrics [:histograms :response-size])]
+        (is (zero? (:outstanding request-counts)) (-> aggregate-metrics))
+        (is (zero? (:streaming request-counts)))
+        (is (= 50 (:successful request-counts)))
+        (is (= 50 (:total request-counts)))
         (is (= 50 (get-in request-size-histogram [:count] 0))
             (str "request-size-histogram: " request-size-histogram))
         (is (->> (- file-size-double (get-in request-size-histogram [:value :0.0] 0.0)) (double) (Math/abs) (>= epsilon))

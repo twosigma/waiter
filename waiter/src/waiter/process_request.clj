@@ -276,15 +276,15 @@
                       (try
                         (confirm-live-connection)
                         (let [buffer (timers/start-stop-time! stream-read-body (async/<! body))
-                              bytes-read (if buffer
-                                           (count buffer)
-                                           -1)]
+                              bytes-read (if buffer (count buffer) -1)]
                           (if-not (= -1 bytes-read)
                             (do
                               (meters/mark! throughput-meter bytes-read)
-                              (if (timers/start-stop-time!
-                                    stream-onto-resp-chan
-                                    (au/timed-offer! resp-chan buffer streaming-timeout-ms)) ; don't wait forever to write to server
+                              (if (or (zero? bytes-read) ;; don't write empty buffer, channel may be potentially closed
+                                      (timers/start-stop-time!
+                                        stream-onto-resp-chan
+                                        ;; don't wait forever to write to server
+                                        (au/timed-offer! resp-chan buffer streaming-timeout-ms)))
                                 [(+ bytes-streamed bytes-read) true]
                                 (let [ex (ex-info "Unable to stream, back pressure in resp-chan. Is connection live?"
                                                   {:cid (cid/get-correlation-id), :bytes-streamed bytes-streamed})]
