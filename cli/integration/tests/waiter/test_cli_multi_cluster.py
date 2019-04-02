@@ -133,6 +133,38 @@ class MultiWaiterCliTest(util.WaiterTest):
                     self.assertEqual(1, len(util.services_for_token(self.waiter_url_1, token_name)))
                     self.assertEqual(1, len(util.services_for_token(self.waiter_url_2, token_name)))
             finally:
+                util.kill_services_using_token(self.waiter_url_2, token_name)
                 util.delete_token(self.waiter_url_2, token_name)
         finally:
+            util.kill_services_using_token(self.waiter_url_1, token_name)
+            util.delete_token(self.waiter_url_1, token_name)
+
+    def test_federated_kill(self):
+        # Create in cluster #1
+        token_name = self.token_name()
+        util.post_token(self.waiter_url_1, token_name, util.minimal_service_description())
+        try:
+            # Create in cluster #2
+            util.post_token(self.waiter_url_2, token_name, util.minimal_service_description())
+            try:
+                # Ping the token in both clusters
+                util.ping_token(self.waiter_url_1, token_name)
+                util.ping_token(self.waiter_url_2, token_name)
+
+                # Kill the services in both clusters
+                config = self.__two_cluster_config()
+                with cli.temp_config_file(config) as path:
+                    cp = cli.kill(token_name=token_name, flags=f'--config {path}', kill_flags='--force')
+                    self.assertEqual(0, cp.returncode, cp.stderr)
+                    self.assertIn('waiter1', cli.stdout(cp))
+                    self.assertIn('waiter2', cli.stdout(cp))
+                    self.assertEqual(2, cli.stdout(cp).count('Killing service'))
+                    self.assertEqual(2, cli.stdout(cp).count('Successfully killed'))
+                    self.assertEqual(0, len(util.services_for_token(self.waiter_url_1, token_name)))
+                    self.assertEqual(0, len(util.services_for_token(self.waiter_url_2, token_name)))
+            finally:
+                util.kill_services_using_token(self.waiter_url_2, token_name)
+                util.delete_token(self.waiter_url_2, token_name)
+        finally:
+            util.kill_services_using_token(self.waiter_url_1, token_name)
             util.delete_token(self.waiter_url_1, token_name)

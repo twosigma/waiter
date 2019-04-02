@@ -1,9 +1,9 @@
-import argparse
 import os
 import sys
+import time
+from datetime import datetime, timedelta
 
 from waiter import terminal
-
 
 TRUE_STRINGS = ('yes', 'true', 'y')
 FALSE_STRINGS = ('no', 'false', 'n')
@@ -44,13 +44,13 @@ def guard_no_cluster(clusters):
 
 
 def str2bool(v):
-    """Converts the given string to a boolean, or raises"""
+    """Converts the given string to a boolean, or returns None"""
     if v.lower() in TRUE_STRINGS:
         return True
     elif v.lower() in FALSE_STRINGS:
         return False
     else:
-        raise argparse.ArgumentTypeError('Boolean value expected.')
+        return None
 
 
 def response_message(resp_json):
@@ -62,3 +62,27 @@ def response_message(resp_json):
     else:
         message = 'Encountered unexpected error.'
     return message
+
+
+def wait_until(pred, timeout=30, interval=5):
+    """
+    Wait, retrying a predicate until it is True, or the
+    timeout value has been exceeded.
+    """
+    if timeout:
+        finish = datetime.now() + timedelta(seconds=timeout)
+    else:
+        finish = None
+
+    while True:
+        result = pred()
+
+        if result:
+            break
+
+        if finish and datetime.now() >= finish:
+            break
+
+        time.sleep(interval)
+
+    return result

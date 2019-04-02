@@ -82,7 +82,6 @@ def get_services_on_cluster(cluster, token_name):
     if services:
         return {'count': len(services), 'services': services}
     else:
-        logging.info(f'Unable to retrieve services information on {cluster["name"]} ({cluster["url"]}).')
         return {'count': 0}
 
 
