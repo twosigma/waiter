@@ -15,7 +15,6 @@
 ;;
 (ns waiter.token-request-test
   (:require [clj-time.core :as t]
-            [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.test :refer :all]
@@ -1034,34 +1033,26 @@
                 {:keys [body status]} (make-request-with-debug-info request-headers kitchen-request)]
             (is (= 400 status))
             (is (str/includes? body "Some params cannot be configured"))))
-        (let [service-ids (->> [(async/thread
-                                  (run-token-param-support
-                                    waiter-url kitchen-request
-                                    {:x-waiter-token token}
-                                    {:BINARY binary :FEE "FIE" :FOO "BAR"}))
-                                (async/thread
-                                  (run-token-param-support
-                                    waiter-url kitchen-request
-                                    {:x-waiter-param-fee "value-1p" :x-waiter-token token}
-                                    {:BINARY binary :FEE "value-1p" :FOO "BAR"}))
-                                (async/thread
-                                  (run-token-param-support
-                                    waiter-url kitchen-request
-                                    {:x-waiter-allowed-params ["FEE" "FII" "FOO"] :x-waiter-param-fee "value-1p" :x-waiter-token token}
-                                    {:BINARY binary :FEE "value-1p" :FOO "BAR"}))
-                                (async/thread
-                                  (run-token-param-support
-                                    waiter-url kitchen-request
-                                    {:x-waiter-allowed-params "FEE,FOO" :x-waiter-param-fee "value-1p" :x-waiter-token token}
-                                    {:BINARY binary :FEE "value-1p" :FOO "BAR"}))
-                                (async/thread
-                                  (run-token-param-support
-                                    waiter-url kitchen-request
-                                    {:x-waiter-param-fee "value-1p" :x-waiter-param-foo "value-2p" :x-waiter-token token}
-                                    {:BINARY binary :FEE "value-1p" :FOO "value-2p"}))]
-                               (map async/<!!)
-                               doall
-                               (into #{}))]
+        (let [service-ids (set [(run-token-param-support
+                                  waiter-url kitchen-request
+                                  {:x-waiter-token token}
+                                  {:BINARY binary :FEE "FIE" :FOO "BAR"})
+                                (run-token-param-support
+                                  waiter-url kitchen-request
+                                  {:x-waiter-param-fee "value-1p" :x-waiter-token token}
+                                  {:BINARY binary :FEE "value-1p" :FOO "BAR"})
+                                (run-token-param-support
+                                  waiter-url kitchen-request
+                                  {:x-waiter-allowed-params ["FEE" "FII" "FOO"] :x-waiter-param-fee "value-1p" :x-waiter-token token}
+                                  {:BINARY binary :FEE "value-1p" :FOO "BAR"})
+                                (run-token-param-support
+                                  waiter-url kitchen-request
+                                  {:x-waiter-allowed-params "FEE,FOO" :x-waiter-param-fee "value-1p" :x-waiter-token token}
+                                  {:BINARY binary :FEE "value-1p" :FOO "BAR"})
+                                (run-token-param-support
+                                  waiter-url kitchen-request
+                                  {:x-waiter-param-fee "value-1p" :x-waiter-param-foo "value-2p" :x-waiter-token token}
+                                  {:BINARY binary :FEE "value-1p" :FOO "value-2p"})])]
           (is (= 5 (count service-ids)) "Unique service-ids were not created!"))
         (finally
           (delete-token-and-assert waiter-url token)

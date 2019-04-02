@@ -377,7 +377,7 @@
 (deftest ^:parallel ^:integration-fast test-health-check-proto
   (testing-using-waiter-url
     ;; PORT2 is running kitchen without SSL enabled
-    (run-backend-proto-service-test waiter-url "h2" "http" 2 "https" "HTTP/2.0")))
+    (run-backend-proto-service-test waiter-url "h2" "https" 1 "https" "HTTP/2.0")))
 
 (deftest ^:parallel ^:integration-fast test-basic-unsupported-command-type
   (testing-using-waiter-url
