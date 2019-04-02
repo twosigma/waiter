@@ -62,3 +62,14 @@ def response_message(resp_json):
     else:
         message = 'Encountered unexpected error.'
     return message
+
+
+def check_positive(value):
+    """Checks that the given value is a positive integer"""
+    try:
+        integer = int(value)
+    except:
+        raise argparse.ArgumentTypeError(f'{value} is not an integer')
+    if integer <= 0:
+        raise argparse.ArgumentTypeError(f'{value} is not a positive integer')
+    return integer

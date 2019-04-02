@@ -10,12 +10,19 @@ from waiter.util import print_error
 
 session = None
 timeouts = None
+adapters_module = None
+
+
+def set_retries(retries):
+    """Sets the number of retries to use"""
+    session.mount('http://', adapters_module.HTTPAdapter(max_retries=retries))
 
 
 def configure(config):
     """Configures HTTP timeouts and retries to be used"""
     global session
     global timeouts
+    global adapters_module
     http_config = config.get('http')
     modules_config = http_config.get('modules')
     session_module_name = modules_config.get('session-module')
@@ -29,9 +36,8 @@ def configure(config):
     timeouts = (connect_timeout, read_timeout)
     logging.debug('using http timeouts: %s', timeouts)
     retries = http_config.get('retries')
-    http_adapter = adapters_module.HTTPAdapter(max_retries=retries)
     session = session_module.Session()
-    session.mount('http://', http_adapter)
+    set_retries(retries)
     session.headers['User-Agent'] = f"waiter/{waiter.version.VERSION} ({session.headers['User-Agent']})"
     auth_config = http_config.get('auth', None)
     if auth_config:
@@ -51,10 +57,13 @@ def __post(url, json_body, params=None, **kwargs):
     return session.post(url, json=json_body, timeout=timeouts, params=params, **kwargs)
 
 
-def __get(url, params=None, **kwargs):
+def __get(url, params=None, read_timeout=None, **kwargs):
     """Sends a GET with params to the given url"""
     logging.debug(f'GET {url} with params {params} and headers {kwargs.get("headers", {})}')
-    return session.get(url, params=params, timeout=timeouts, **kwargs)
+    get_timeouts = timeouts
+    if read_timeout is not None:
+        get_timeouts = (timeouts[0], read_timeout)
+    return session.get(url, params=params, timeout=get_timeouts, **kwargs)
 
 
 def __delete(url, params=None, headers=None):
@@ -80,13 +89,13 @@ def post(cluster, endpoint, json_body, params=None, headers=None):
     return resp
 
 
-def get(cluster, endpoint, params=None, headers=None):
+def get(cluster, endpoint, params=None, headers=None, read_timeout=None):
     """GETs data corresponding to the given params from cluster at /endpoint"""
     if headers is None:
         headers = {}
     url = __make_url(cluster, endpoint)
     default_headers = {'Accept': 'application/json'}
-    resp = __get(url, params, headers={**default_headers, **headers})
+    resp = __get(url, params, headers={**default_headers, **headers}, read_timeout=read_timeout)
     resp.headers.pop('Set-Cookie', None)
     logging.info(f'GET response: {resp.text} (headers: {resp.headers})')
     return resp
