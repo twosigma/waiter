@@ -21,24 +21,28 @@
 
 (deftest ^:parallel ^:integration-fast test-streaming
   (testing-using-waiter-url
-    (let [file-size-double 690606.0
-          file-path "test-files/big.txt"
+    (let [file-path "test-files/big.txt"
           service-name (rand-name)
           post-body (slurp file-path)
-          make-request #(make-kitchen-request waiter-url %1 :body post-body)
+          body-size (count (.getBytes post-body "utf-8"))
           metrics-sync-interval-ms (get-in (waiter-settings waiter-url) [:metrics-config :metrics-sync-interval-ms])
           headers {:x-cid (str service-name "-canary")
                    :x-kitchen-echo "true"
                    :x-waiter-name service-name}
-          response (make-request headers)
-          service-id (retrieve-service-id waiter-url (:request-headers response))
-          epsilon 0.01]
-      (assert-response-status response 200)
-      (dotimes [n 49]
-        (let [headers (assoc headers :x-cid (str service-name "-iter" n))
-              {:keys [body] :as response} (make-request headers)]
-          (assert-response-status response 200)
-          (is (= post-body body))))
+          {:keys [request-headers] :as canary-response} (make-kitchen-request waiter-url headers)
+          service-id (retrieve-service-id waiter-url request-headers)
+          epsilon 0.01
+          num-streaming-requests 50]
+      (assert-response-status canary-response 200)
+      (dotimes [n num-streaming-requests]
+        (let [request-cid (str service-name "-iter" n)
+              headers (assoc headers
+                        :content-length body-size
+                        :content-type "application/octet-stream"
+                        :x-cid request-cid)
+              {:keys [body] :as response} (make-kitchen-request waiter-url headers :body post-body)]
+          (is (= 200 (:status response)) (str "Request correlation-id: " request-cid))
+          (is (= post-body body) (str (:status response) (:headers response)))))
       ; wait to allow metrics to be aggregated
       (let [sleep-period (max (* 20 metrics-sync-interval-ms) 10000)]
         (log/debug "sleeping for" sleep-period "ms")
@@ -52,23 +56,27 @@
             response-size-histogram (get-in aggregate-metrics [:histograms :response-size])]
         (is (zero? (:outstanding request-counts)) (-> aggregate-metrics))
         (is (zero? (:streaming request-counts)))
-        (is (= 50 (:successful request-counts)))
-        (is (= 50 (:total request-counts)))
-        (is (= 50 (get-in request-size-histogram [:count] 0))
+        (is (= (inc num-streaming-requests) (:successful request-counts)))
+        (is (= (inc num-streaming-requests) (:total request-counts)))
+        ;; there is no content length on the canary request
+        (is (= num-streaming-requests (get-in request-size-histogram [:count] 0))
             (str "request-size-histogram: " request-size-histogram))
-        (is (->> (- file-size-double (get-in request-size-histogram [:value :0.0] 0.0)) (double) (Math/abs) (>= epsilon))
+        (is (->> (- body-size (get-in request-size-histogram [:value :0.0] 0.0)) (double) (Math/abs) (>= epsilon))
             (str "request-size-histogram: " request-size-histogram))
-        (is (= 50 (get-in response-size-histogram [:count]))
+        (is (= (inc num-streaming-requests) (get-in response-size-histogram [:count]))
             (str "response-size-histogram: " response-size-histogram))
-        (is (->> (- file-size-double (get-in response-size-histogram [:value :0.0] 0.0)) (double) (Math/abs) (>= epsilon))
+        ;; all (canary and streaming) response sizes are logged
+        (is (->> (get-in response-size-histogram [:value :0.0] 0.0) (double) (Math/abs) (>= epsilon))
+            (str "response-size-histogram: " response-size-histogram))
+        (is (->> (- body-size (get-in response-size-histogram [:value :0.25] 0.0)) (double) (Math/abs) (>= epsilon))
             (str "response-size-histogram: " response-size-histogram)))
       (delete-service waiter-url service-id))))
 
 (deftest ^:parallel ^:integration-fast test-large-request
   (testing-using-waiter-url
     (let [request-body (apply str (take 2000000 (repeat "hello")))
-         headers {:x-waiter-name (rand-name), :x-kitchen-echo true}
-         {:keys [body request-headers] :as response} (make-kitchen-request waiter-url headers :body request-body)]
+          headers {:x-waiter-name (rand-name), :x-kitchen-echo true}
+          {:keys [body request-headers] :as response} (make-kitchen-request waiter-url headers :body request-body)]
       (assert-response-status response 200)
       (is (= (count request-body) (count body)))
       (delete-service waiter-url (retrieve-service-id waiter-url request-headers)))))
