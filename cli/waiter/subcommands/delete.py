@@ -1,7 +1,7 @@
 import logging
 
 from waiter import http_util, terminal
-from waiter.querying import query_token, print_no_data, services_using_token
+from waiter.querying import query_token, print_no_data, get_services_using_token
 from waiter.util import guard_no_cluster, str2bool, response_message, print_error
 
 
@@ -10,7 +10,7 @@ def delete_token_on_cluster(cluster, token_name, token_etag):
     cluster_name = cluster['name']
     try:
         # Retrieve all services that are using the token
-        services = services_using_token(cluster, token_name)
+        services = get_services_using_token(cluster, token_name)
         if services is not None:
             num_services = len(services)
             if num_services > 0:

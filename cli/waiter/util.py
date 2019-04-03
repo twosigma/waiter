@@ -1,3 +1,4 @@
+import argparse
 import os
 import sys
 import time
@@ -86,3 +87,14 @@ def wait_until(pred, timeout=30, interval=5):
         time.sleep(interval)
 
     return result
+
+
+def check_positive(value):
+    """Checks that the given value is a positive integer"""
+    try:
+        integer = int(value)
+    except:
+        raise argparse.ArgumentTypeError(f'{value} is not an integer')
+    if integer <= 0:
+        raise argparse.ArgumentTypeError(f'{value} is not a positive integer')
+    return integer
