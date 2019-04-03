@@ -220,7 +220,16 @@
         (is (thrown? Throwable (create-shell-scheduler (assoc valid-config :port-grace-period-ms 0))))
         (is (thrown? Throwable (create-shell-scheduler (assoc valid-config :failed-instance-retry-interval-ms 0))))
         (is (thrown? Throwable (create-shell-scheduler (assoc valid-config :health-check-interval-ms 0))))
-        (is (thrown? Throwable (create-shell-scheduler (assoc valid-config :work-directory ""))))))))
+        (is (thrown? Throwable (create-shell-scheduler (assoc valid-config :work-directory "")))))
+
+      (testing "validate service - normal"
+        (scheduler/validate-service
+          (create-shell-scheduler (assoc valid-config :service-id->service-description-fn (constantly {}))) nil))
+      (testing "validate service - test that image can't be set"
+        (is (thrown? Throwable (scheduler/validate-service
+                                 (create-shell-scheduler (assoc valid-config
+                                                           :service-id->service-description-fn
+                                                           (constantly {"image" "twosigma/kitchen"}))) nil)))))))
 
 (deftest test-reserve-port!
   (testing "Reserving a port"

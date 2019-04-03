@@ -888,6 +888,11 @@
   [waiter-url]
   (= "marathon" (retrieve-default-scheduler-name waiter-url)))
 
+(defn using-shell?
+  "Returns true if Waiter is configured to use Shell Scheduler for scheduling"
+  [waiter-url]
+  (= "shell" (retrieve-default-scheduler-name waiter-url)))
+
 (defn can-query-for-grace-period?
   "Returns true if Waiter supports querying for grace period"
   [waiter-url]
