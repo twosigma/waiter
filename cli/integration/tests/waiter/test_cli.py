@@ -461,7 +461,7 @@ class WaiterCliTest(util.WaiterTest):
             cp = cli.ping(self.waiter_url, token_name)
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertIn('Pinging token', cli.stdout(cp))
-            self.assertIn('Successfully pinged', cli.stdout(cp))
+            self.assertIn('successful', cli.stdout(cp))
             self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
         finally:
             util.delete_token(self.waiter_url, token_name)
@@ -493,7 +493,6 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertIn('Pinging token', cli.stdout(cp))
             self.assertIn('/sleep', cli.stdout(cp))
-            self.assertIn('Successfully pinged', cli.stdout(cp))
             self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
         finally:
             util.delete_token(self.waiter_url, token_name)
@@ -505,7 +504,6 @@ class WaiterCliTest(util.WaiterTest):
         try:
             cp = cli.ping(self.waiter_url, token_name, ping_flags='--timeout 300')
             self.assertEqual(0, cp.returncode, cp.stderr)
-            self.assertIn('Successfully pinged', cli.stdout(cp))
             util.kill_services_using_token(self.waiter_url, token_name)
             cp = cli.ping(self.waiter_url, token_name, ping_flags='--timeout 10')
             self.assertEqual(1, cp.returncode, cp.stderr)

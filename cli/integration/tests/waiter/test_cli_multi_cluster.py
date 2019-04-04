@@ -129,7 +129,6 @@ class MultiWaiterCliTest(util.WaiterTest):
                     self.assertIn('waiter1', cli.stdout(cp))
                     self.assertIn('waiter2', cli.stdout(cp))
                     self.assertEqual(2, cli.stdout(cp).count('Pinging token'))
-                    self.assertEqual(2, cli.stdout(cp).count('Successfully pinged'))
                     self.assertEqual(1, len(util.services_for_token(self.waiter_url_1, token_name)))
                     self.assertEqual(1, len(util.services_for_token(self.waiter_url_2, token_name)))
             finally:
