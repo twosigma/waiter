@@ -133,11 +133,9 @@ class MultiWaiterCliTest(util.WaiterTest):
                     self.assertEqual(1, len(util.services_for_token(self.waiter_url_1, token_name)))
                     self.assertEqual(1, len(util.services_for_token(self.waiter_url_2, token_name)))
             finally:
-                util.kill_services_using_token(self.waiter_url_2, token_name)
-                util.delete_token(self.waiter_url_2, token_name)
+                util.delete_token(self.waiter_url_2, token_name, kill_services=True)
         finally:
-            util.kill_services_using_token(self.waiter_url_1, token_name)
-            util.delete_token(self.waiter_url_1, token_name)
+            util.delete_token(self.waiter_url_1, token_name, kill_services=True)
 
     def test_federated_kill(self):
         # Create in cluster #1
@@ -163,8 +161,6 @@ class MultiWaiterCliTest(util.WaiterTest):
                     self.assertEqual(0, len(util.services_for_token(self.waiter_url_1, token_name)))
                     self.assertEqual(0, len(util.services_for_token(self.waiter_url_2, token_name)))
             finally:
-                util.kill_services_using_token(self.waiter_url_2, token_name)
-                util.delete_token(self.waiter_url_2, token_name)
+                util.delete_token(self.waiter_url_2, token_name, kill_services=True)
         finally:
-            util.kill_services_using_token(self.waiter_url_1, token_name)
-            util.delete_token(self.waiter_url_1, token_name)
+            util.delete_token(self.waiter_url_1, token_name, kill_services=True)
