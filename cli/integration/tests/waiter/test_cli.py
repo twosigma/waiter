@@ -555,3 +555,38 @@ class WaiterCliTest(util.WaiterTest):
             self.assertIn('Timeout waiting for service to die', cli.stderr(cp))
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
+
+    def test_kill_services_sorted(self):
+        token_name = self.token_name()
+        service_description_1 = util.minimal_service_description()
+        util.post_token(self.waiter_url, token_name, service_description_1)
+        try:
+            # Create two services for the token
+            service_id_1 = util.ping_token(self.waiter_url, token_name)
+            service_description_2 = util.minimal_service_description()
+            util.post_token(self.waiter_url, token_name, service_description_2)
+            service_id_2 = util.ping_token(self.waiter_url, token_name)
+
+            # Kill the two services and assert the sort order
+            cp = cli.kill(self.waiter_url, token_name, kill_flags='--force')
+            stdout = cli.stdout(cp)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn(service_id_1, stdout)
+            self.assertIn(service_id_2, stdout)
+            self.assertLess(stdout.index(service_id_2), stdout.index(service_id_1))
+
+            # Re-create the same two services, in the opposite order
+            util.post_token(self.waiter_url, token_name, service_description_2)
+            util.ping_token(self.waiter_url, token_name)
+            util.post_token(self.waiter_url, token_name, service_description_1)
+            util.ping_token(self.waiter_url, token_name)
+
+            # Kill the two services and assert the (different) sort order
+            cp = cli.kill(self.waiter_url, token_name, kill_flags='--force')
+            stdout = cli.stdout(cp)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn(service_id_1, stdout)
+            self.assertIn(service_id_2, stdout)
+            self.assertLess(stdout.index(service_id_1), stdout.index(service_id_2))
+        finally:
+            util.delete_token(self.waiter_url, token_name, kill_services=True)

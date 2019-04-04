@@ -1,4 +1,5 @@
 import logging
+from operator import itemgetter
 
 from tabulate import tabulate
 
@@ -61,7 +62,8 @@ def kill(clusters, args, _):
     clusters_by_name = {c['name']: c for c in clusters}
     overall_success = True
     for cluster_name, data in cluster_data_pairs:
-        for service in data['services']:
+        services = sorted(data['services'], key=itemgetter('last-request-time'), reverse=True)
+        for service in services:
             service_id = service['service-id']
             if args.get('force', False) or num_services == 1:
                 should_kill = True
