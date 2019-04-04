@@ -106,7 +106,7 @@ def minimal_service_cmd():
 
 def minimal_service_description(**kwargs):
     service = {
-        'cmd': os.getenv('WAITER_CLI_TEST_DEFAULT_CMD', minimal_service_cmd()),
+        'cmd': default_cmd(),
         'cpus': float(os.getenv('WAITER_TEST_DEFAULT_CPUS', 1.0)),
         'mem': int(os.getenv('WAITER_TEST_DEFAULT_MEM_MB', 256)),
         'version': str(uuid.uuid4()),
@@ -114,6 +114,10 @@ def minimal_service_description(**kwargs):
     }
     service.update(kwargs)
     return service
+
+
+def default_cmd():
+    return os.getenv('WAITER_CLI_TEST_DEFAULT_CMD', minimal_service_cmd())
 
 
 def wait_until(query, predicate, max_wait_ms=DEFAULT_TIMEOUT_MS, wait_interval_ms=DEFAULT_WAIT_INTERVAL_MS):

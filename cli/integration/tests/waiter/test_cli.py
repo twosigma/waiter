@@ -500,7 +500,7 @@ class WaiterCliTest(util.WaiterTest):
 
     def test_ping_timeout(self):
         token_name = self.token_name()
-        command = f'{util.minimal_service_cmd()} --start-up-sleep-ms 20000'
+        command = f'{util.default_cmd()} --start-up-sleep-ms 20000'
         util.post_token(self.waiter_url, token_name, util.minimal_service_description(cmd=command))
         try:
             cp = cli.ping(self.waiter_url, token_name, ping_flags='--timeout 300')
