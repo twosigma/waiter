@@ -513,3 +513,27 @@ class WaiterCliTest(util.WaiterTest):
         finally:
             util.kill_services_using_token(self.waiter_url, token_name)
             util.delete_token(self.waiter_url, token_name)
+
+    def test_create_does_not_patch(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
+        try:
+            cp = cli.create_from_service_description(self.waiter_url, token_name, {'mem': 128})
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            token_data = util.load_token(self.waiter_url, token_name)
+            self.assertFalse('cpus' in token_data)
+            self.assertEqual(128, token_data['mem'])
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_update_does_patch(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
+        try:
+            cp = cli.update_from_service_description(self.waiter_url, token_name, {'mem': 128})
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            token_data = util.load_token(self.waiter_url, token_name)
+            self.assertEqual(0.1, token_data['cpus'])
+            self.assertEqual(128, token_data['mem'])
+        finally:
+            util.delete_token(self.waiter_url, token_name)
