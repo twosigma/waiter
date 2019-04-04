@@ -3,7 +3,7 @@ import logging
 from urllib.parse import urlparse
 
 from waiter import configuration, http_util, metrics, version
-from waiter.subcommands import create, delete, ping, show
+from waiter.subcommands import create, delete, ping, show, update
 
 parser = argparse.ArgumentParser(description='waiter is the Waiter CLI')
 parser.add_argument('--cluster', '-c', help='the name of the Waiter cluster to use')
@@ -16,13 +16,12 @@ parser.add_argument('--version', help='output version information and exit',
 
 subparsers = parser.add_subparsers(dest='action')
 
-create_or_update = create.register(subparsers.add_parser)
 actions = {
-    'create': create_or_update,
+    'create': create.register(subparsers.add_parser),
     'delete': delete.register(subparsers.add_parser),
     'ping': ping.register(subparsers.add_parser),
     'show': show.register(subparsers.add_parser),
-    'update': create_or_update
+    'update': update.register(subparsers.add_parser)
 }
 
 
@@ -57,8 +56,10 @@ def run(args):
     sub-commands (actions) if necessary.
     """
     args, unknown_args = parser.parse_known_args(args)
-    if args.action == 'create' or args.action == 'update':
+    if args.action == 'create':
         create.add_implicit_arguments(unknown_args)
+    elif args.action == 'update':
+        update.add_implicit_arguments(unknown_args)
     args = parser.parse_args()
     args = vars(args)
 

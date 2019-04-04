@@ -322,7 +322,7 @@ class WaiterCliTest(util.WaiterTest):
             # Use entry in base config file
             cp = cli.create_minimal(token_name=token_name)
             self.assertEqual(0, cp.returncode, cp.stderr)
-            self.assertIn(f'on {cluster_name_1} cluster', cli.decode(cp.stdout))
+            self.assertIn(f'on {cluster_name_1}', cli.decode(cp.stdout))
 
             # Overwrite "base" with specified config file
             cluster_name_2 = str(uuid.uuid4())
@@ -332,7 +332,7 @@ class WaiterCliTest(util.WaiterTest):
                 flags = '--config %s' % path
                 cp = cli.create_minimal(token_name=token_name, flags=flags)
                 self.assertEqual(0, cp.returncode, cp.stderr)
-                self.assertIn(f'on {cluster_name_2} cluster', cli.decode(cp.stdout))
+                self.assertIn(f'on {cluster_name_2}', cli.decode(cp.stdout))
 
     def test_avoid_exit_on_connection_error(self):
         token_name = self.token_name()
