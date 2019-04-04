@@ -1,5 +1,6 @@
 import functools
 import importlib
+import inspect
 import json
 import logging
 import os
@@ -95,13 +96,12 @@ def post_token(waiter_url, token_name, token_definition, assert_response=True, e
     return response.json()
 
 
-def minimal_service_cmd(response_text=None):
-    if response_text is None:
-        response_text = 'OK'
-    return f'RESPONSE="HTTP/1.1 200 OK\\r\\n\\r\\n{response_text}"; ' \
-           'while { printf "$RESPONSE"; } | nc -l "$PORT0"; do ' \
-           '  echo "====="; ' \
-           'done'
+def minimal_service_cmd():
+    this_dir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+    kitchen = os.path.join(this_dir, os.pardir, os.pardir, os.pardir, os.pardir,
+                           'test-apps', 'kitchen', 'bin', 'kitchen')
+    kitchen = os.path.abspath(kitchen)
+    return f'{kitchen} -p $PORT0'
 
 
 def minimal_service_description(**kwargs):
@@ -209,3 +209,12 @@ def multi_cluster_tests_enabled():
     indicating that multiple Waiter instances are running.
     """
     return os.getenv('WAITER_TEST_MULTI_CLUSTER', None) == 'true'
+
+
+def kill_services_using_token(waiter_url, token_name):
+    services = services_for_token(waiter_url, token_name)
+    for service in services:
+        service_id = service['service-id']
+        kill_service(waiter_url, service_id)
+        wait_until(lambda: services_for_token(waiter_url, token_name),
+                   lambda svcs: service_id not in [s['service-id'] for s in svcs])
