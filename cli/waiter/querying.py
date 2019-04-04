@@ -67,3 +67,30 @@ def query_token(clusters, token):
         return executor.submit(get_token_on_cluster, cluster, token)
 
     return query_across_clusters(clusters, submit)
+
+
+def get_service(cluster, service_id):
+    """Retrieves the service with the given service id"""
+    params = {'effective-parameters': True}
+    endpoint = f'/apps/{service_id}'
+    service, _ = http_util.make_data_request(cluster, lambda: http_util.get(cluster, endpoint, params=params))
+    return service
+
+
+def get_service_on_cluster(cluster, service_id):
+    """Gets the service with the given service id on the given cluster"""
+    service = get_service(cluster, service_id)
+    if service:
+        return {'count': 1, 'service': service}
+    else:
+        return {'count': 0}
+
+
+def query_service(clusters, service_id):
+    """
+    Uses query_across_clusters to make the service
+    requests in parallel across the given clusters
+    """
+    return query_across_clusters(
+        clusters,
+        lambda cluster, executor: executor.submit(get_service_on_cluster, cluster, service_id))
