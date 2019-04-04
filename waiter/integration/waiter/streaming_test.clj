@@ -42,7 +42,7 @@
                         :x-cid request-cid)
               {:keys [body] :as response} (make-kitchen-request waiter-url headers :body post-body)]
           (is (= 200 (:status response)) (str "Request correlation-id: " request-cid))
-          (is (= post-body body) (str (:status response) (:headers response)))))
+          (is (.equals post-body body) (str response)))) ;; avoids printing the post-body when assertion fails
       ; wait to allow metrics to be aggregated
       (let [sleep-period (max (* 20 metrics-sync-interval-ms) 10000)]
         (log/debug "sleeping for" sleep-period "ms")
@@ -59,16 +59,14 @@
         (is (= (inc num-streaming-requests) (:successful request-counts)))
         (is (= (inc num-streaming-requests) (:total request-counts)))
         ;; there is no content length on the canary request
-        (is (= num-streaming-requests (get-in request-size-histogram [:count] 0))
+        (is (= num-streaming-requests (get request-size-histogram :count 0))
             (str "request-size-histogram: " request-size-histogram))
-        (is (->> (- body-size (get-in request-size-histogram [:value :0.0] 0.0)) (double) (Math/abs) (>= epsilon))
+        (is (->> (get-in request-size-histogram [:value :1.0] 0.0) (- body-size) Math/abs (>= epsilon))
             (str "request-size-histogram: " request-size-histogram))
-        (is (= (inc num-streaming-requests) (get-in response-size-histogram [:count]))
+        (is (= (inc num-streaming-requests) (get response-size-histogram :count))
             (str "response-size-histogram: " response-size-histogram))
         ;; all (canary and streaming) response sizes are logged
-        (is (->> (get-in response-size-histogram [:value :0.0] 0.0) (double) (Math/abs) (>= epsilon))
-            (str "response-size-histogram: " response-size-histogram))
-        (is (->> (- body-size (get-in response-size-histogram [:value :0.25] 0.0)) (double) (Math/abs) (>= epsilon))
+        (is (->> (get-in response-size-histogram [:value :1.0] 0.0) (- body-size) Math/abs (>= epsilon))
             (str "response-size-histogram: " response-size-histogram)))
       (delete-service waiter-url service-id))))
 
