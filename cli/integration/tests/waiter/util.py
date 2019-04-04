@@ -220,6 +220,9 @@ def kill_services_using_token(waiter_url, token_name):
     services = services_for_token(waiter_url, token_name)
     for service in services:
         try:
-            kill_service(waiter_url, service['service-id'])
+            service_id = service['service-id']
+            kill_service(waiter_url, service_id)
+            wait_until(lambda: services_for_token(waiter_url, token_name),
+                       lambda svcs: service_id not in [s['service-id'] for s in svcs])
         except:
             logging.exception(f'Encountered exception trying to kill service: {service}')

@@ -838,7 +838,16 @@
                                                                                                              :refresh-value secret-value})))))
               (is (ct/wait-for #(= secret-value @k8s-api-auth-str) :interval 1 :timeout 10))
               (finally
-                (@kill-task-fn)))))))))
+                (@kill-task-fn)))))
+
+        (testing "validate service - normal"
+          (scheduler/validate-service
+            (kubernetes-scheduler (assoc base-config :service-id->service-description-fn (constantly {}))) nil))
+        (testing "validate service - test that image can be set"
+          (scheduler/validate-service
+            (kubernetes-scheduler (assoc base-config
+                                    :service-id->service-description-fn
+                                    (constantly {"image" "twosigma/kitchen"}))) nil))))))
 
 (deftest test-start-k8s-watch!
   (let [service-id "test-app-1234"

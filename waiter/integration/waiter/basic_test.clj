@@ -1013,3 +1013,20 @@
             (is (service waiter-url service-id {}) (str service-id "not found in /apps endpoint")))
           (doseq [service-id service-ids]
             (delete-service waiter-url service-id)))))))
+
+(deftest ^:parallel ^:integration-slow test-image-field-validation
+  (testing-using-waiter-url
+    (let [make-kitchen-request-fn #(let [response (make-kitchen-request
+                                                    waiter-url
+                                                    {:x-waiter-name (rand-name)
+                                                     :x-waiter-image %1}
+                                                    :path "/hello")
+                                         _ (assert-response-status response %2)])]
+      (cond (using-k8s? waiter-url)
+            (let [kitchen-image (System/getenv "INTEGRATION_TEST_KITCHEN_IMAGE")
+                  _ (is (not (str/blank? kitchen-image)) "You must provide a kitchen image in the INTEGRATION_TEST_KITCHEN_IMAGE environment variable")]
+              (make-kitchen-request-fn kitchen-image 200))
+            (or (using-cook? waiter-url)
+                (using-marathon? waiter-url)
+                (using-shell? waiter-url))
+            (make-kitchen-request-fn "dummy/image" 500)))))

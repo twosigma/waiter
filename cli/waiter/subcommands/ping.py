@@ -2,10 +2,10 @@ import logging
 
 from waiter import http_util, terminal
 from waiter.querying import query_token, print_no_data
-from waiter.util import guard_no_cluster, response_message, print_error
+from waiter.util import guard_no_cluster, response_message, print_error, check_positive
 
 
-def ping_token_on_cluster(cluster, token_name, health_check_endpoint):
+def ping_token_on_cluster(cluster, token_name, health_check_endpoint, timeout):
     """Pings the token with the given token name in the given cluster."""
     cluster_name = cluster['name']
     try:
@@ -16,7 +16,7 @@ def ping_token_on_cluster(cluster, token_name, health_check_endpoint):
             'X-Waiter-Token': token_name,
             'X-Waiter-Fallback-Period-Secs': '0'
         }
-        resp = http_util.get(cluster, health_check_endpoint, headers=headers)
+        resp = http_util.get(cluster, health_check_endpoint, headers=headers, read_timeout=timeout)
         logging.debug(f'Response status code: {resp.status_code}')
         if resp.status_code == 200:
             print(terminal.success(f'Successfully pinged {token_name} in {cluster_name}.'))
@@ -25,9 +25,9 @@ def ping_token_on_cluster(cluster, token_name, health_check_endpoint):
         else:
             print_error(response_message(resp.json()))
             return False
-    except Exception as e:
+    except Exception:
         message = f'Encountered error while pinging token {token_name} in {cluster_name}.'
-        logging.error(e, message)
+        logging.exception(message)
         print_error(message)
 
 
@@ -40,12 +40,14 @@ def ping(clusters, args, _):
         print_no_data(clusters)
         return 1
 
+    http_util.set_retries(0)
     cluster_data_pairs = sorted(query_result['clusters'].items())
     clusters_by_name = {c['name']: c for c in clusters}
     overall_success = True
     for cluster_name, data in cluster_data_pairs:
         cluster = clusters_by_name[cluster_name]
-        success = ping_token_on_cluster(cluster, token_name, data['token'].get('health-check-url', '/status'))
+        health_check_endpoint = data['token'].get('health-check-url', '/status')
+        success = ping_token_on_cluster(cluster, token_name, health_check_endpoint, args.get('timeout', None))
         overall_success = overall_success and success
     return 0 if overall_success else 1
 
@@ -54,4 +56,6 @@ def register(add_parser):
     """Adds this sub-command's parser and returns the action function"""
     parser = add_parser('ping', help='ping token by name')
     parser.add_argument('token', nargs=1)
+    parser.add_argument('--timeout', '-t', help='read timeout (in seconds) for ping request',
+                        type=check_positive, default=60)
     return ping

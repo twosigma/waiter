@@ -490,8 +490,9 @@
      :syncer (retrieve-syncer-state-fn)})
 
   (validate-service [_ service-id]
-    (let [{:strs [run-as-user]} (service-id->service-description-fn service-id)]
-      (authz/check-user authorizer run-as-user service-id))))
+    (let [{:strs [run-as-user image]} (service-id->service-description-fn service-id)]
+      (authz/check-user authorizer run-as-user service-id)
+      (when image (throw (ex-info "Image field is set. Images are not supported with Cook scheduler" {:image image}))))))
 
 (s/defn ^:always-validate create-cook-scheduler
   "Returns a new CookScheduler with the provided configuration."

@@ -261,8 +261,8 @@
                                       (and (not content-type) body) (assoc :content-type "application/json"))))]
       (scheduler/log "response from K8s API server:" result)
       result)
-    (catch [:status 400] _
-      (log/error "malformed K8s API request: " url options))
+    (catch [:status 400] response
+      (log/error "malformed K8s API request: " url options response))
     (catch [:client http-client] response
       (log/error "request to K8s API server failed: " url options body response)
       (ss/throw+ response))))
