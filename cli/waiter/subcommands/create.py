@@ -1,3 +1,4 @@
+import argparse
 import logging
 
 import requests
@@ -99,6 +100,15 @@ def register(add_parser):
     return create
 
 
+def boolean_string(s):
+    """Converts the given string to a boolean, or raises"""
+    b = str2bool(s)
+    if b is None:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+    else:
+        return b
+
+
 def add_implicit_arguments(unknown_args):
     """
     Given the list of "unknown" args, dynamically adds proper arguments to
@@ -113,7 +123,7 @@ def add_implicit_arguments(unknown_args):
             elif arg.endswith('-factor'):
                 arg_type = float
             elif (i + 1) < num_unknown_args and unknown_args[i + 1].lower() in BOOL_STRINGS:
-                arg_type = str2bool
+                arg_type = boolean_string
             else:
                 arg_type = None
             create_parser.add_argument(arg, dest=arg.lstrip('-'), type=arg_type)

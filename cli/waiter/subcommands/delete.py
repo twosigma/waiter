@@ -1,7 +1,7 @@
 import logging
 
 from waiter import http_util, terminal
-from waiter.querying import query_token, print_no_data
+from waiter.querying import query_token, print_no_data, get_services_using_token
 from waiter.util import guard_no_cluster, str2bool, response_message, print_error
 
 
@@ -10,9 +10,8 @@ def delete_token_on_cluster(cluster, token_name, token_etag):
     cluster_name = cluster['name']
     try:
         # Retrieve all services that are using the token
-        resp = http_util.get(cluster, '/apps', params={'token': token_name})
-        if resp.status_code == 200:
-            services = resp.json()
+        services = get_services_using_token(cluster, token_name)
+        if services is not None:
             num_services = len(services)
             if num_services > 0:
                 if num_services == 1:
@@ -27,7 +26,7 @@ def delete_token_on_cluster(cluster, token_name, token_etag):
                     print_error('\nPlease kill these services before deleting the token they rely on.')
                 return False
         else:
-            print_error(response_message(resp.json()))
+            print_error(f'Unable to retrieve services using token {token_name} in {cluster_name}.')
             return False
 
         # Delete the token

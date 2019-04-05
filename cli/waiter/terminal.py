@@ -27,6 +27,10 @@ def success(s):
     return colorize(s, Color.GREEN)
 
 
+def running(s):
+    return colorize(s, Color.CYAN)
+
+
 def reason(s):
     return colorize(s, Color.RED)
 
