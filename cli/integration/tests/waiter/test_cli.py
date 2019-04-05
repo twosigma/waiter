@@ -618,7 +618,7 @@ class WaiterCliTest(util.WaiterTest):
             service_id = util.ping_token(self.waiter_url, token_name)
             util.kill_services_using_token(self.waiter_url, token_name)
             self.assertEqual(0, len(util.services_for_token(self.waiter_url, token_name)))
-            cp = cli.ping(self.waiter_url, ping_flags=f'--service-id {service_id}')
+            cp = cli.ping(self.waiter_url, service_id, ping_flags='--service-id')
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertIn('Pinging service', cli.stdout(cp))
             self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
@@ -627,11 +627,8 @@ class WaiterCliTest(util.WaiterTest):
 
     def test_ping_invalid_args(self):
         cp = cli.ping(self.waiter_url)
-        self.assertEqual(1, cp.returncode, cp.stderr)
-        self.assertIn('must provide either a token name or service id', cli.stderr(cp))
-        cp = cli.ping(self.waiter_url, token_name='foo', ping_flags='--service-id bar')
-        self.assertEqual(1, cp.returncode, cp.stderr)
-        self.assertIn('cannot provide both a token name and a service id', cli.stderr(cp))
+        self.assertEqual(2, cp.returncode, cp.stderr)
+        self.assertIn('the following arguments are required: token-or-service-id', cli.stderr(cp))
 
     def test_ping_correct_endpoint(self):
         token_name = self.token_name()
@@ -651,7 +648,7 @@ class WaiterCliTest(util.WaiterTest):
             self.assertIn('/status', cli.stdout(cp))
 
             # Pinging the service id should use /sleep
-            cp = cli.ping(self.waiter_url, ping_flags=f'--service-id {service_id}')
+            cp = cli.ping(self.waiter_url, service_id, ping_flags='--service-id')
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertIn('/sleep', cli.stdout(cp))
         finally:

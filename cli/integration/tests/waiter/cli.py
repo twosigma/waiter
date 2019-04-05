@@ -244,9 +244,9 @@ def delete(waiter_url=None, token_name=None, flags=None, delete_flags=None):
     return cp
 
 
-def ping(waiter_url=None, token_name=None, flags=None, ping_flags=None):
+def ping(waiter_url=None, token_name_or_service_id=None, flags=None, ping_flags=None):
     """Pings a token via the CLI"""
-    args = f'ping {token_name or ""} {ping_flags or ""}'
+    args = f'ping {token_name_or_service_id or ""} {ping_flags or ""}'
     cp = cli(args, waiter_url, flags)
     return cp
 

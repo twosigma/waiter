@@ -49,18 +49,12 @@ def ping_service_on_cluster(cluster, service_id, health_check_endpoint, timeout)
 def ping(clusters, args, _):
     """Pings the token with the given token name."""
     guard_no_cluster(clusters)
-    token_name = args.get('token')
-    service_id = args.get('service-id', None)
-
-    if token_name and service_id:
-        raise Exception('You cannot provide both a token name and a service id.')
-
-    if token_name:
-        query_result = query_token(clusters, token_name)
-    elif service_id:
-        query_result = query_service(clusters, service_id)
+    token_name_or_service_id = args.get('token-or-service-id')
+    is_service_id = args.get('is-service-id', False)
+    if is_service_id:
+        query_result = query_service(clusters, token_name_or_service_id)
     else:
-        raise Exception('You must provide either a token name or service id (via --service-id).')
+        query_result = query_token(clusters, token_name_or_service_id)
 
     if query_result['count'] == 0:
         print_no_data(clusters)
@@ -73,12 +67,12 @@ def ping(clusters, args, _):
     overall_success = True
     for cluster_name, data in cluster_data_pairs:
         cluster = clusters_by_name[cluster_name]
-        if service_id:
+        if is_service_id:
             health_check_endpoint = data['service']['effective-parameters'].get('health-check-url', '/status')
-            success = ping_service_on_cluster(cluster, service_id, health_check_endpoint, timeout)
+            success = ping_service_on_cluster(cluster, token_name_or_service_id, health_check_endpoint, timeout)
         else:
             health_check_endpoint = data['token'].get('health-check-url', '/status')
-            success = ping_token_on_cluster(cluster, token_name, health_check_endpoint, timeout)
+            success = ping_token_on_cluster(cluster, token_name_or_service_id, health_check_endpoint, timeout)
         overall_success = overall_success and success
     return 0 if overall_success else 1
 
@@ -86,8 +80,9 @@ def ping(clusters, args, _):
 def register(add_parser):
     """Adds this sub-command's parser and returns the action function"""
     parser = add_parser('ping', help='ping token by name')
-    parser.add_argument('token', nargs='?')
+    parser.add_argument('token-or-service-id')
     parser.add_argument('--timeout', '-t', help='read timeout (in seconds) for ping request',
                         type=check_positive, default=60)
-    parser.add_argument('--service-id', '-s', help='service id for ping request', dest='service-id')
+    parser.add_argument('--service-id', '-s', help='ping by service id instead of token',
+                        dest='is-service-id', action='store_true')
     return ping
