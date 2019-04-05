@@ -171,6 +171,17 @@ def load_json_file(path):
     return content
 
 
+def wait_until_routers(waiter_url, predicate):
+    auth_cookie = {'x-waiter-auth': session.cookies['x-waiter-auth']}
+    max_wait_ms = session.get(f'{waiter_url}/settings').json()['scheduler-syncer-interval-secs'] * 2 * 1000
+    routers = session.get(f'{waiter_url}/state/maintainer').json()['state']['routers']
+    for _, router_url in routers.items():
+        logging.debug(f'Waiting for at most {max_wait_ms}ms on {router_url}')
+        wait_until(lambda: requests.get(f'{router_url.rstrip("/")}/apps', cookies=auth_cookie).json(),
+                   predicate,
+                   max_wait_ms=max_wait_ms)
+
+
 def ping_token(waiter_url, token_name):
     headers = {
         'Content-Type': 'application/json',
@@ -180,24 +191,15 @@ def ping_token(waiter_url, token_name):
     }
     response = session.get(f'{waiter_url}', headers=headers)
     assert 200 == response.status_code, f'Expected 200, got {response.status_code} with body {response.text}'
-    auth_cookie = {'x-waiter-auth': session.cookies['x-waiter-auth']}
     service_id = response.headers['x-waiter-service-id']
-    max_wait_ms = session.get(f'{waiter_url}/settings').json()['scheduler-syncer-interval-secs'] * 2 * 1000
-    routers = session.get(f'{waiter_url}/state/maintainer').json()['state']['routers']
-    for router_id, router_url in routers.items():
-        logging.debug(f'Waiting for at most {max_wait_ms}ms for service to appear on {router_url}')
-        wait_until(lambda: requests.get(f'{router_url.rstrip("/")}/apps', cookies=auth_cookie),
-                   lambda r: next(s['service-id'] for s in r.json() if s['service-id'] == service_id),
-                   max_wait_ms=max_wait_ms)
+    wait_until_routers(waiter_url, lambda services: any(s['service-id'] == service_id for s in services))
     return service_id
 
 
-def kill_service(waiter_url, service_id, assert_response=True, expected_status_code=200):
+def kill_service(waiter_url, service_id):
     response = session.delete(f'{waiter_url}/apps/{service_id}')
-    if assert_response:
-        logging.debug(f'Response status code: {response.status_code}')
-        assert expected_status_code == response.status_code, response.text
-    return response
+    assert 200 == response.status_code, f'Expected 200, got {response.status_code} with body {response.text}'
+    wait_until_routers(waiter_url, lambda services: not any(s['service-id'] == service_id for s in services))
 
 
 def services_for_token(waiter_url, token_name, assert_response=True, expected_status_code=200):
