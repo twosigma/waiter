@@ -103,6 +103,8 @@ def get(cluster, endpoint, params=None, headers=None, read_timeout=None):
 
 def delete(cluster, endpoint, params=None, headers=None):
     """DELETEs data corresponding to the given params on cluster at /endpoint"""
+    if headers is None:
+        headers = {}
     url = __make_url(cluster, endpoint)
     default_headers = {'Accept': 'application/json'}
     resp = __delete(url, params, headers={**default_headers, **headers})
@@ -137,4 +139,4 @@ def make_data_request(cluster, make_request_fn):
         logging.exception(ioe)
     except json.decoder.JSONDecodeError as jde:
         logging.exception(jde)
-    return [], {}
+    return None, {}

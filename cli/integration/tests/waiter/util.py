@@ -207,7 +207,9 @@ def services_for_token(waiter_url, token_name, assert_response=True, expected_st
         assert \
             expected_status_code == response.status_code, \
             f'Expected {expected_status_code}, got {response.status_code} with body {response.text}'
-    return response.json()
+    services = response.json()
+    logging.info(f'{len(services)} service(s) using token {token_name}')
+    return services
 
   
 def multi_cluster_tests_enabled():
@@ -221,7 +223,10 @@ def multi_cluster_tests_enabled():
 def kill_services_using_token(waiter_url, token_name):
     services = services_for_token(waiter_url, token_name)
     for service in services:
-        service_id = service['service-id']
-        kill_service(waiter_url, service_id)
-        wait_until(lambda: services_for_token(waiter_url, token_name),
-                   lambda svcs: service_id not in [s['service-id'] for s in svcs])
+        try:
+            service_id = service['service-id']
+            kill_service(waiter_url, service_id)
+            wait_until(lambda: services_for_token(waiter_url, token_name),
+                       lambda svcs: service_id not in [s['service-id'] for s in svcs])
+        except:
+            logging.exception(f'Encountered exception trying to kill service: {service}')
