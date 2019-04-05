@@ -255,3 +255,10 @@ def ping(waiter_url=None, token_name=None, flags=None, ping_flags=None):
     args = f'ping {token_name} {ping_flags or ""}'
     cp = cli(args, waiter_url, flags)
     return cp
+
+
+def kill(waiter_url=None, token_name=None, flags=None, kill_flags=None):
+    """Kills services using a token via the CLI"""
+    args = f'kill {token_name} {kill_flags or ""}'
+    cp = cli(args, waiter_url, flags)
+    return cp

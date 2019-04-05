@@ -464,7 +464,7 @@ class WaiterCliTest(util.WaiterTest):
             self.assertIn('Successfully pinged', cli.stdout(cp))
             self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
         finally:
-            util.delete_token(self.waiter_url, token_name)
+            util.delete_token(self.waiter_url, token_name, kill_services=True)
 
     def test_ping_error(self):
         token_name = self.token_name()
@@ -476,7 +476,7 @@ class WaiterCliTest(util.WaiterTest):
             self.assertIn('Pinging token', cli.stdout(cp))
             self.assertEqual(0, len(util.services_for_token(self.waiter_url, token_name)))
         finally:
-            util.delete_token(self.waiter_url, token_name)
+            util.delete_token(self.waiter_url, token_name, kill_services=True)
 
     def test_ping_non_existent_token(self):
         token_name = self.token_name()
@@ -496,11 +496,110 @@ class WaiterCliTest(util.WaiterTest):
             self.assertIn('Successfully pinged', cli.stdout(cp))
             self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
         finally:
+            util.delete_token(self.waiter_url, token_name, kill_services=True)
+
+    def test_kill_basic(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, util.minimal_service_description())
+        try:
+            service_id = util.ping_token(self.waiter_url, token_name)
+            self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
+            cp = cli.kill(self.waiter_url, token_name)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('Killing service', cli.stdout(cp))
+            self.assertIn(service_id, cli.stdout(cp))
+            self.assertIn('Successfully killed', cli.stdout(cp))
+            self.assertEqual(0, len(util.services_for_token(self.waiter_url, token_name)))
+        finally:
+            util.delete_token(self.waiter_url, token_name, kill_services=True)
+
+    def test_kill_no_services(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, util.minimal_service_description())
+        try:
+            cp = cli.kill(self.waiter_url, token_name)
+            self.assertEqual(1, cp.returncode, cp.stderr)
+            self.assertIn('There are no services using token', cli.stdout(cp))
+        finally:
             util.delete_token(self.waiter_url, token_name)
 
+    def test_kill_multiple_services(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, util.minimal_service_description())
+        try:
+            service_id_1 = util.ping_token(self.waiter_url, token_name)
+            util.post_token(self.waiter_url, token_name, util.minimal_service_description())
+            service_id_2 = util.ping_token(self.waiter_url, token_name)
+            self.assertEqual(2, len(util.services_for_token(self.waiter_url, token_name)))
+            cp = cli.kill(self.waiter_url, token_name, kill_flags='--force')
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('There are 2 services using token', cli.stdout(cp))
+            self.assertEqual(2, cli.stdout(cp).count('Killing service'))
+            self.assertEqual(2, cli.stdout(cp).count('Successfully killed'))
+            self.assertIn(service_id_1, cli.stdout(cp))
+            self.assertIn(service_id_2, cli.stdout(cp))
+            self.assertEqual(0, len(util.services_for_token(self.waiter_url, token_name)))
+        finally:
+            util.delete_token(self.waiter_url, token_name, kill_services=True)
+
+    def test_kill_timeout(self):
+        token_name = self.token_name()
+
+        def ping_then_kill_with_small_timeout():
+            util.ping_token(self.waiter_url, token_name)
+            assert 1 == len(util.services_for_token(self.waiter_url, token_name))
+            return cli.kill(self.waiter_url, token_name, kill_flags='--timeout 1')
+
+        def kill_timed_out(cp):
+            self.logger.info(f'Return code: {cp.returncode}')
+            assert 1 == cp.returncode
+            assert 'Timeout waiting for service to die' in cli.stderr(cp)
+            return True
+
+        util.post_token(self.waiter_url, token_name, util.minimal_service_description())
+        try:
+            util.wait_until(ping_then_kill_with_small_timeout, kill_timed_out)
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_kill_services_sorted(self):
+        token_name = self.token_name()
+        service_description_1 = util.minimal_service_description()
+        util.post_token(self.waiter_url, token_name, service_description_1)
+        try:
+            # Create two services for the token
+            service_id_1 = util.ping_token(self.waiter_url, token_name)
+            service_description_2 = util.minimal_service_description()
+            util.post_token(self.waiter_url, token_name, service_description_2)
+            service_id_2 = util.ping_token(self.waiter_url, token_name)
+
+            # Kill the two services and assert the sort order
+            cp = cli.kill(self.waiter_url, token_name, kill_flags='--force')
+            stdout = cli.stdout(cp)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn(service_id_1, stdout)
+            self.assertIn(service_id_2, stdout)
+            self.assertLess(stdout.index(service_id_2), stdout.index(service_id_1))
+
+            # Re-create the same two services, in the opposite order
+            util.post_token(self.waiter_url, token_name, service_description_2)
+            util.ping_token(self.waiter_url, token_name)
+            util.post_token(self.waiter_url, token_name, service_description_1)
+            util.ping_token(self.waiter_url, token_name)
+
+            # Kill the two services and assert the (different) sort order
+            cp = cli.kill(self.waiter_url, token_name, kill_flags='--force')
+            stdout = cli.stdout(cp)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn(service_id_1, stdout)
+            self.assertIn(service_id_2, stdout)
+            self.assertLess(stdout.index(service_id_1), stdout.index(service_id_2))
+        finally:
+            util.delete_token(self.waiter_url, token_name, kill_services=True)
+            
     def test_ping_timeout(self):
         token_name = self.token_name()
-        command = f'{util.minimal_service_cmd()} --start-up-sleep-ms 20000'
+        command = f'{util.default_cmd()} --start-up-sleep-ms 20000'
         util.post_token(self.waiter_url, token_name, util.minimal_service_description(cmd=command))
         try:
             cp = cli.ping(self.waiter_url, token_name, ping_flags='--timeout 300')

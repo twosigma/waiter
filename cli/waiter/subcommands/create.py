@@ -1,4 +1,6 @@
 from functools import partial
+import argparse
+import logging
 
 from waiter import token_post
 
@@ -12,6 +14,15 @@ def register(add_parser):
     parser = token_post.register_argument_parser(add_parser, action)
     token_post.add_arguments(parser)
     return partial(token_post.create_or_update_token, action=action)
+
+
+def boolean_string(s):
+    """Converts the given string to a boolean, or raises"""
+    b = str2bool(s)
+    if b is None:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+    else:
+        return b
 
 
 def add_implicit_arguments(unknown_args):

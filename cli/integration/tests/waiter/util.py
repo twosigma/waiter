@@ -64,7 +64,10 @@ def init_waiter_session(*waiter_urls):
         _wait_for_waiter(waiter_url)
 
 
-def delete_token(waiter_url, token_name, assert_response=True, expected_status_code=200):
+def delete_token(waiter_url, token_name, assert_response=True, expected_status_code=200, kill_services=False):
+    if kill_services:
+        kill_services_using_token(waiter_url, token_name)
+
     response = session.delete(f'{waiter_url}/token', headers={'X-Waiter-Token': token_name})
     if assert_response:
         logging.debug(f'Response status code: {response.status_code}')
@@ -106,7 +109,7 @@ def minimal_service_cmd():
 
 def minimal_service_description(**kwargs):
     service = {
-        'cmd': os.getenv('WAITER_CLI_TEST_DEFAULT_CMD', minimal_service_cmd()),
+        'cmd': default_cmd(),
         'cpus': float(os.getenv('WAITER_TEST_DEFAULT_CPUS', 1.0)),
         'mem': int(os.getenv('WAITER_TEST_DEFAULT_MEM_MB', 256)),
         'version': str(uuid.uuid4()),
@@ -114,6 +117,10 @@ def minimal_service_description(**kwargs):
     }
     service.update(kwargs)
     return service
+
+
+def default_cmd():
+    return os.getenv('WAITER_CLI_TEST_DEFAULT_CMD', minimal_service_cmd())
 
 
 def wait_until(query, predicate, max_wait_ms=DEFAULT_TIMEOUT_MS, wait_interval_ms=DEFAULT_WAIT_INTERVAL_MS):
@@ -200,7 +207,9 @@ def services_for_token(waiter_url, token_name, assert_response=True, expected_st
         assert \
             expected_status_code == response.status_code, \
             f'Expected {expected_status_code}, got {response.status_code} with body {response.text}'
-    return response.json()
+    services = response.json()
+    logging.info(f'{len(services)} service(s) using token {token_name}')
+    return services
 
   
 def multi_cluster_tests_enabled():
@@ -214,7 +223,10 @@ def multi_cluster_tests_enabled():
 def kill_services_using_token(waiter_url, token_name):
     services = services_for_token(waiter_url, token_name)
     for service in services:
-        service_id = service['service-id']
-        kill_service(waiter_url, service_id)
-        wait_until(lambda: services_for_token(waiter_url, token_name),
-                   lambda svcs: service_id not in [s['service-id'] for s in svcs])
+        try:
+            service_id = service['service-id']
+            kill_service(waiter_url, service_id)
+            wait_until(lambda: services_for_token(waiter_url, token_name),
+                       lambda svcs: service_id not in [s['service-id'] for s in svcs])
+        except:
+            logging.exception(f'Encountered exception trying to kill service: {service}')
