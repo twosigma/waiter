@@ -6,7 +6,7 @@ from waiter.util import guard_no_cluster, response_message, print_error, check_p
 
 
 def ping_on_cluster(cluster, health_check_endpoint, timeout, token_name):
-    """Pings using the given headers in the given cluster."""
+    """Pings using the given token name (or ^SERVICE-ID#) in the given cluster."""
     cluster_name = cluster['name']
     try:
         headers = {
@@ -51,6 +51,10 @@ def ping(clusters, args, _):
     guard_no_cluster(clusters)
     token_name = args.get('token')
     service_id = args.get('service-id', None)
+
+    if token_name and service_id:
+        raise Exception('You cannot provide both a token name and a service id.')
+
     if token_name:
         query_result = query_token(clusters, token_name)
     elif service_id:
