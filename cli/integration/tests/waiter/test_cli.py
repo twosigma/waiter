@@ -32,6 +32,7 @@ class WaiterCliTest(util.WaiterTest):
         cp = cli.create_minimal(self.waiter_url, token_name, flags=None, cmd=cmd, cpus=0.1, mem=128, version=version)
         self.assertEqual(0, cp.returncode, cp.stderr)
         try:
+            self.assertIn('Attempting to create', cli.stdout(cp))
             token_data = util.load_token(self.waiter_url, token_name)
             self.assertIsNotNone(token_data)
             self.assertEqual('shell', token_data['cmd-type'])
@@ -52,6 +53,7 @@ class WaiterCliTest(util.WaiterTest):
         cp = cli.update_minimal(self.waiter_url, token_name, flags=None, cmd=cmd, cpus=0.1, mem=128, version=version)
         self.assertEqual(0, cp.returncode, cp.stderr)
         try:
+            self.assertIn('Attempting to update', cli.stdout(cp))
             token_data = util.load_token(self.waiter_url, token_name)
             self.assertIsNotNone(token_data)
             self.assertEqual('shell', token_data['cmd-type'])

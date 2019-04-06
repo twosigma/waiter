@@ -11,8 +11,14 @@ BOOL_STRINGS = TRUE_STRINGS + FALSE_STRINGS
 
 
 class Action(Enum):
-    CREATE = 1
-    UPDATE = 2
+    CREATE = 'create'
+    UPDATE = 'update'
+
+    def __str__(self):
+        return f'{self.value}'
+
+    def should_patch(self):
+        return self is Action.UPDATE
 
 
 def process_post_result(resp):
@@ -38,9 +44,8 @@ def create_or_update(cluster, token_name, token_fields, action):
 
     existing_token_data, existing_token_etag = get_token(cluster, token_name)
     try:
-        print_info(f'Attempting to {"create" if action == Action.CREATE else "update"} '
-                   f'token on {terminal.bold(cluster_name)}...')
-        json_body = existing_token_data if existing_token_data and action == Action.UPDATE else {}
+        print_info(f'Attempting to {action} token on {terminal.bold(cluster_name)}...')
+        json_body = existing_token_data if existing_token_data and action.should_patch() else {}
         json_body.update(token_fields)
         headers = {'If-Match': existing_token_etag or ''}
         resp = http_util.post(cluster, 'token', json_body, params={'token': token_name}, headers=headers)
