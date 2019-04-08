@@ -3,7 +3,7 @@ import logging
 from urllib.parse import urlparse
 
 from waiter import configuration, http_util, metrics, version
-from waiter.subcommands import create, delete, kill, ping, show
+from waiter.subcommands import create, delete, kill, ping, show, update
 
 parser = argparse.ArgumentParser(description='waiter is the Waiter CLI')
 parser.add_argument('--cluster', '-c', help='the name of the Waiter cluster to use')
@@ -16,14 +16,27 @@ parser.add_argument('--version', help='output version information and exit',
 
 subparsers = parser.add_subparsers(dest='action')
 
-create_or_update = create.register(subparsers.add_parser)
 actions = {
-    'create': create_or_update,
-    'delete': delete.register(subparsers.add_parser),
-    'kill': kill.register(subparsers.add_parser),
-    'ping': ping.register(subparsers.add_parser),
-    'show': show.register(subparsers.add_parser),
-    'update': create_or_update
+    'create': {
+        'run-function': create.register(subparsers.add_parser),
+        'implicit-args-function': create.add_implicit_arguments
+    },
+    'delete': {
+        'run-function': delete.register(subparsers.add_parser)
+    },
+    'kill': {
+        'run-function': kill.register(subparsers.add_parser)
+    },
+    'ping': {
+        'run-function': ping.register(subparsers.add_parser)
+    },
+    'show': {
+        'run-function': show.register(subparsers.add_parser)
+    },
+    'update': {
+        'run-function': update.register(subparsers.add_parser),
+        'implicit-args-function': update.add_implicit_arguments
+    }
 }
 
 
@@ -58,8 +71,11 @@ def run(args):
     sub-commands (actions) if necessary.
     """
     args, unknown_args = parser.parse_known_args(args)
-    if args.action == 'create' or args.action == 'update':
-        create.add_implicit_arguments(unknown_args)
+    if args.action:
+        add_implicit_arguments = actions[args.action].get('implicit-args-function', None)
+        if add_implicit_arguments:
+            add_implicit_arguments(unknown_args)
+
     args = parser.parse_args()
     args = vars(args)
 
@@ -89,7 +105,7 @@ def run(args):
             clusters = load_target_clusters(config_map, url, cluster)
             http_util.configure(config_map)
             args = {k: v for k, v in args.items() if v is not None}
-            result = actions[action](clusters, args, config_path)
+            result = actions[action]['run-function'](clusters, args, config_path)
             logging.debug(f'result: {result}')
             if result == 0:
                 metrics.inc(f'command.{action}.result.success')

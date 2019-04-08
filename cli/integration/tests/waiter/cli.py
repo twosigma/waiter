@@ -87,11 +87,11 @@ def update(waiter_url=None, token_name=None, flags=None, create_flags=None):
 def create_or_update_from_service_description(subcommand, waiter_url, token_name, service, flags=None):
     """Creates or updates a token via the CLI, using the provided service fields"""
     create_flags = \
-        f"--cmd '{service['cmd']}' " \
-        f"--cpus {service['cpus']} " \
-        f"--mem {service['mem']} " \
-        f"--cmd-type {service['cmd-type']} " \
-        f"--version {service['version']}"
+        (f"--cmd '{service['cmd']}' " if 'cmd' in service else '') + \
+        (f"--cpus {service['cpus']} " if 'cpus' in service else '') + \
+        (f"--mem {service['mem']} " if 'mem' in service else '') + \
+        (f"--cmd-type {service['cmd-type']} " if 'cmd-type' in service else '') + \
+        (f"--version {service['version']}" if 'version' in service else '')
     cp = create_or_update(subcommand, waiter_url, token_name, flags=flags, create_flags=create_flags)
     return cp
 
@@ -99,6 +99,12 @@ def create_or_update_from_service_description(subcommand, waiter_url, token_name
 def create_from_service_description(waiter_url, token_name, service, flags=None):
     """Creates a token via the CLI, using the provided service fields"""
     cp = create_or_update_from_service_description('create', waiter_url, token_name, service, flags)
+    return cp
+
+
+def update_from_service_description(waiter_url, token_name, service, flags=None):
+    """Updates a token via the CLI, using the provided service fields"""
+    cp = create_or_update_from_service_description('update', waiter_url, token_name, service, flags)
     return cp
 
 
