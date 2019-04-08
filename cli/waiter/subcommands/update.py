@@ -8,7 +8,7 @@ parser = None
 def register(add_parser):
     """Adds this sub-command's parser and returns the action function"""
     global parser
-    action = token_post.Action.CREATE
+    action = token_post.Action.UPDATE
     parser = token_post.register_argument_parser(add_parser, action)
     token_post.add_arguments(parser)
     return partial(token_post.create_or_update_token, action=action)

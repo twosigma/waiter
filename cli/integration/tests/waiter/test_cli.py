@@ -32,6 +32,7 @@ class WaiterCliTest(util.WaiterTest):
         cp = cli.create_minimal(self.waiter_url, token_name, flags=None, cmd=cmd, cpus=0.1, mem=128, version=version)
         self.assertEqual(0, cp.returncode, cp.stderr)
         try:
+            self.assertIn('Attempting to create', cli.stdout(cp))
             token_data = util.load_token(self.waiter_url, token_name)
             self.assertIsNotNone(token_data)
             self.assertEqual('shell', token_data['cmd-type'])
@@ -52,6 +53,7 @@ class WaiterCliTest(util.WaiterTest):
         cp = cli.update_minimal(self.waiter_url, token_name, flags=None, cmd=cmd, cpus=0.1, mem=128, version=version)
         self.assertEqual(0, cp.returncode, cp.stderr)
         try:
+            self.assertIn('Attempting to update', cli.stdout(cp))
             token_data = util.load_token(self.waiter_url, token_name)
             self.assertIsNotNone(token_data)
             self.assertEqual('shell', token_data['cmd-type'])
@@ -322,7 +324,7 @@ class WaiterCliTest(util.WaiterTest):
             # Use entry in base config file
             cp = cli.create_minimal(token_name=token_name)
             self.assertEqual(0, cp.returncode, cp.stderr)
-            self.assertIn(f'on {cluster_name_1} cluster', cli.decode(cp.stdout))
+            self.assertIn(f'on {cluster_name_1}', cli.decode(cp.stdout))
 
             # Overwrite "base" with specified config file
             cluster_name_2 = str(uuid.uuid4())
@@ -332,7 +334,7 @@ class WaiterCliTest(util.WaiterTest):
                 flags = '--config %s' % path
                 cp = cli.create_minimal(token_name=token_name, flags=flags)
                 self.assertEqual(0, cp.returncode, cp.stderr)
-                self.assertIn(f'on {cluster_name_2} cluster', cli.decode(cp.stdout))
+                self.assertIn(f'on {cluster_name_2}', cli.decode(cp.stdout))
 
     def test_avoid_exit_on_connection_error(self):
         token_name = self.token_name()
@@ -611,4 +613,28 @@ class WaiterCliTest(util.WaiterTest):
             self.assertIn('Encountered error', cli.stderr(cp))
         finally:
             util.kill_services_using_token(self.waiter_url, token_name)
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_create_does_not_patch(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
+        try:
+            cp = cli.create_from_service_description(self.waiter_url, token_name, {'mem': 128})
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            token_data = util.load_token(self.waiter_url, token_name)
+            self.assertFalse('cpus' in token_data)
+            self.assertEqual(128, token_data['mem'])
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_update_does_patch(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
+        try:
+            cp = cli.update_from_service_description(self.waiter_url, token_name, {'mem': 128})
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            token_data = util.load_token(self.waiter_url, token_name)
+            self.assertEqual(0.1, token_data['cpus'])
+            self.assertEqual(128, token_data['mem'])
+        finally:
             util.delete_token(self.waiter_url, token_name)
