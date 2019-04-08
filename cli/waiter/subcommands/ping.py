@@ -68,9 +68,11 @@ def ping(clusters, args, _):
     for cluster_name, data in cluster_data_pairs:
         cluster = clusters_by_name[cluster_name]
         if is_service_id:
-            health_check_endpoint = data['service']['effective-parameters'].get('health-check-url', '/status')
+            health_check_endpoint = data['service']['effective-parameters']['health-check-url']
             success = ping_service_on_cluster(cluster, token_name_or_service_id, health_check_endpoint, timeout)
         else:
+            # We are hard-coding the default health-check-url here to /status; this could
+            # alternatively be retrieved from /settings, but we want to skip the extra request
             health_check_endpoint = data['token'].get('health-check-url', '/status')
             success = ping_token_on_cluster(cluster, token_name_or_service_id, health_check_endpoint, timeout)
         overall_success = overall_success and success
