@@ -679,3 +679,35 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(128, token_data['mem'])
         finally:
             util.delete_token(self.waiter_url, token_name)
+
+    def test_kill_service_id(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, util.minimal_service_description())
+        try:
+            service_id = util.ping_token(self.waiter_url, token_name)
+            self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
+            cp = cli.kill(self.waiter_url, service_id, kill_flags='--service-id')
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('Killing service', cli.stdout(cp))
+            services_for_token = util.services_for_token(self.waiter_url, token_name)
+            self.assertEqual(0, len(services_for_token), json.dumps(services_for_token, indent=2))
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_kill_bogus_service_id(self):
+        cp = cli.kill(self.waiter_url, uuid.uuid4(), kill_flags='--service-id')
+        self.assertEqual(1, cp.returncode, cp.stderr)
+        self.assertIn('No matching data found', cli.stdout(cp))
+
+    def test_kill_inactive_service_id(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, util.minimal_service_description())
+        try:
+            service_id = util.ping_token(self.waiter_url, token_name)
+            util.kill_services_using_token(self.waiter_url, token_name)
+            self.assertEqual(0, len(util.services_for_token(self.waiter_url, token_name)))
+            cp = cli.kill(self.waiter_url, service_id, kill_flags='--service-id')
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('cannot be killed because it is already Inactive', cli.stdout(cp))
+        finally:
+            util.delete_token(self.waiter_url, token_name, kill_services=True)
