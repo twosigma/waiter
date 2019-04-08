@@ -124,12 +124,11 @@ class MultiWaiterCliTest(util.WaiterTest):
                 config = self.__two_cluster_config()
                 with cli.temp_config_file(config) as path:
                     # Ping the token in both clusters
-                    cp = cli.ping(token_name=token_name, flags=f'--config {path}')
+                    cp = cli.ping(token_name_or_service_id=token_name, flags=f'--config {path}')
                     self.assertEqual(0, cp.returncode, cp.stderr)
                     self.assertIn('waiter1', cli.stdout(cp))
                     self.assertIn('waiter2', cli.stdout(cp))
                     self.assertEqual(2, cli.stdout(cp).count('Pinging token'))
-                    self.assertEqual(2, cli.stdout(cp).count('Successfully pinged'))
                     self.assertEqual(1, len(util.services_for_token(self.waiter_url_1, token_name)))
                     self.assertEqual(1, len(util.services_for_token(self.waiter_url_2, token_name)))
             finally:

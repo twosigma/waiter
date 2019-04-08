@@ -463,7 +463,7 @@ class WaiterCliTest(util.WaiterTest):
             cp = cli.ping(self.waiter_url, token_name)
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertIn('Pinging token', cli.stdout(cp))
-            self.assertIn('Successfully pinged', cli.stdout(cp))
+            self.assertIn('successful', cli.stdout(cp))
             self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
@@ -495,7 +495,6 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertIn('Pinging token', cli.stdout(cp))
             self.assertIn('/sleep', cli.stdout(cp))
-            self.assertIn('Successfully pinged', cli.stdout(cp))
             self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
@@ -606,7 +605,6 @@ class WaiterCliTest(util.WaiterTest):
         try:
             cp = cli.ping(self.waiter_url, token_name, ping_flags='--timeout 300')
             self.assertEqual(0, cp.returncode, cp.stderr)
-            self.assertIn('Successfully pinged', cli.stdout(cp))
             util.kill_services_using_token(self.waiter_url, token_name)
             cp = cli.ping(self.waiter_url, token_name, ping_flags='--timeout 10')
             self.assertEqual(1, cp.returncode, cp.stderr)
@@ -615,6 +613,49 @@ class WaiterCliTest(util.WaiterTest):
             util.kill_services_using_token(self.waiter_url, token_name)
             util.delete_token(self.waiter_url, token_name)
 
+    def test_ping_service_id(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, util.minimal_service_description())
+        try:
+            service_id = util.ping_token(self.waiter_url, token_name)
+            util.kill_services_using_token(self.waiter_url, token_name)
+            self.assertEqual(0, len(util.services_for_token(self.waiter_url, token_name)))
+            cp = cli.ping(self.waiter_url, service_id, ping_flags='--service-id')
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('Pinging service', cli.stdout(cp))
+            self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
+        finally:
+            util.delete_token(self.waiter_url, token_name, kill_services=True)
+
+    def test_ping_invalid_args(self):
+        cp = cli.ping(self.waiter_url)
+        self.assertEqual(2, cp.returncode, cp.stderr)
+        self.assertIn('the following arguments are required: token-or-service-id', cli.stderr(cp))
+
+    def test_ping_correct_endpoint(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name,
+                        util.minimal_service_description(**{'health-check-url': '/sleep'}))
+        try:
+            # Grab the service id for the /sleep version
+            service_id = util.ping_token(self.waiter_url, token_name)
+
+            # Update the health check url to /status
+            util.post_token(self.waiter_url, token_name,
+                            util.minimal_service_description(**{'health-check-url': '/status'}))
+
+            # Pinging the token should use /status
+            cp = cli.ping(self.waiter_url, token_name)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('/status', cli.stdout(cp))
+
+            # Pinging the service id should use /sleep
+            cp = cli.ping(self.waiter_url, service_id, ping_flags='--service-id')
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('/sleep', cli.stdout(cp))
+        finally:
+            util.delete_token(self.waiter_url, token_name, kill_services=True)
+            
     def test_create_does_not_patch(self):
         token_name = self.token_name()
         util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
