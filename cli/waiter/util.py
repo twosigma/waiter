@@ -1,4 +1,6 @@
 import argparse
+import json
+import logging
 import os
 import sys
 import time
@@ -98,3 +100,20 @@ def check_positive(value):
     if integer <= 0:
         raise argparse.ArgumentTypeError(f'{value} is not a positive integer')
     return integer
+
+
+def load_json_file(path):
+    """Decode a JSON formatted file."""
+    content = None
+
+    if os.path.isfile(path):
+        with open(path) as json_file:
+            try:
+                logging.debug(f'attempting to load json from {path}')
+                content = json.load(json_file)
+            except Exception:
+                pass
+    else:
+        logging.info(f'{path} is not a file')
+
+    return content

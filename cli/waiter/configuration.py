@@ -3,7 +3,7 @@ import logging
 import os
 import sys
 
-from waiter.util import deep_merge
+from waiter.util import deep_merge, load_json_file
 
 # Base locations to check for configuration files, relative to the executable.
 # Always tries to load these in.
@@ -25,28 +25,11 @@ DEFAULT_CONFIG = {'http': {'retries': 2,
                               'timeout': 0.15}}
 
 
-def __load_json_file(path):
-    """Decode a JSON formatted file."""
-    content = None
-
-    if os.path.isfile(path):
-        with open(path) as json_file:
-            try:
-                logging.debug(f'attempting to load json configuration from {path}')
-                content = json.load(json_file)
-            except Exception:
-                pass
-    else:
-        logging.info(f'{path} is not a file')
-
-    return content
-
-
 def __load_first_json_file(paths):
     """Returns the contents of the first parseable JSON file in a list of paths."""
     if paths is None:
         paths = []
-    contents = ((os.path.abspath(p), __load_json_file(os.path.abspath(p))) for p in paths if p)
+    contents = ((os.path.abspath(p), load_json_file(os.path.abspath(p))) for p in paths if p)
     return next(((p, c) for p, c in contents if c), (None, None))
 
 
