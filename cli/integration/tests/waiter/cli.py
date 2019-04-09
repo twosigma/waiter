@@ -257,8 +257,8 @@ def ping(waiter_url=None, token_name_or_service_id=None, flags=None, ping_flags=
     return cp
 
 
-def kill(waiter_url=None, token_name=None, flags=None, kill_flags=None):
+def kill(waiter_url=None, token_name_or_service_id=None, flags=None, kill_flags=None):
     """Kills services using a token via the CLI"""
-    args = f'kill {token_name} {kill_flags or ""}'
+    args = f'kill {token_name_or_service_id} {kill_flags or ""}'
     cp = cli(args, waiter_url, flags)
     return cp
