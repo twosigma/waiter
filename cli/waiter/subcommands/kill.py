@@ -1,19 +1,20 @@
 import logging
 from operator import itemgetter
+from urllib.parse import urljoin
 
 from tabulate import tabulate
 
 from waiter import http_util, terminal
 from waiter.format import format_timestamp_string
-from waiter.querying import query_services, get_services_using_token
+from waiter.querying import get_service, print_no_data, query_service, query_services
 from waiter.util import guard_no_cluster, str2bool, response_message, print_error, wait_until, check_positive
 
 
-def kill_service_on_cluster(cluster, service_id, token_name, timeout_seconds):
+def kill_service_on_cluster(cluster, service_id, timeout_seconds):
     """Kills the service with the given service id in the given cluster."""
 
     def service_is_killed():
-        return not any(s['service-id'] == service_id for s in get_services_using_token(cluster, token_name))
+        return get_service(cluster, service_id)['status'] == 'Inactive'
 
     cluster_name = cluster['name']
     try:
@@ -41,6 +42,8 @@ def format_status(status):
     """Formats service status"""
     if status == 'Running':
         return terminal.running(status)
+    elif status == 'Inactive':
+        return terminal.inactive(status)
     else:
         return status
 
@@ -48,31 +51,59 @@ def format_status(status):
 def kill(clusters, args, _):
     """Kills the service(s) using the given token name."""
     guard_no_cluster(clusters)
-    token_name = args.get('token')[0]
-    query_result = query_services(clusters, token_name)
-    num_services = query_result['count']
-    if num_services == 0:
-        clusters_text = ' / '.join([terminal.bold(c['name']) for c in clusters])
-        print(f'There are no services using token {terminal.bold(token_name)} in {clusters_text}.')
-        return 1
-    elif num_services > 1:
-        print(f'There are {num_services} services using token {terminal.bold(token_name)}:')
+    token_name_or_service_id = args.get('token-or-service-id')
+    is_service_id = args.get('is-service-id', False)
+    if is_service_id:
+        query_result = query_service(clusters, token_name_or_service_id)
+        num_services = query_result['count']
+        if num_services == 0:
+            print_no_data(clusters)
+            return 1
+    else:
+        query_result = query_services(clusters, token_name_or_service_id)
+        num_services = query_result['count']
+        if num_services == 0:
+            clusters_text = ' / '.join([terminal.bold(c['name']) for c in clusters])
+            print(f'There are no services using token {terminal.bold(token_name_or_service_id)} in {clusters_text}.')
+            return 1
+        elif num_services > 1:
+            print(f'There are {num_services} services using token {terminal.bold(token_name_or_service_id)}:')
 
     cluster_data_pairs = sorted(query_result['clusters'].items())
     clusters_by_name = {c['name']: c for c in clusters}
     overall_success = True
     for cluster_name, data in cluster_data_pairs:
-        services = sorted(data['services'], key=itemgetter('last-request-time'), reverse=True)
+        if is_service_id:
+            service = data['service']
+            service['service-id'] = token_name_or_service_id
+            services = [service]
+        else:
+            services = sorted(data['services'], key=itemgetter('last-request-time'), reverse=True)
+
         for service in services:
             service_id = service['service-id']
+            cluster = clusters_by_name[cluster_name]
+            status_string = service['status']
+            status = format_status(status_string)
+            inactive = status_string == 'Inactive'
+            should_kill = False
             if args.get('force', False) or num_services == 1:
                 should_kill = True
             else:
-                status = format_status(service['status'])
-                healthy_count = service['instance-counts']['healthy-instances']
-                unhealthy_count = service['instance-counts']['unhealthy-instances']
-                last_request_time = format_timestamp_string(service['last-request-time'])
-                url = service['url']
+                url = urljoin(cluster['url'], f'apps/{service_id}')
+                if is_service_id:
+                    active_instances = service['instances']['active-instances']
+                    healthy_count = len([i for i in active_instances if i['healthy?']])
+                    unhealthy_count = len([i for i in active_instances if not i['healthy?']])
+                else:
+                    healthy_count = service['instance-counts']['healthy-instances']
+                    unhealthy_count = service['instance-counts']['unhealthy-instances']
+
+                if 'last-request-time' in service:
+                    last_request_time = format_timestamp_string(service['last-request-time'])
+                else:
+                    last_request_time = 'n/a'
+
                 table = [['Status', status],
                          ['Healthy', healthy_count],
                          ['Unhealthy', unhealthy_count],
@@ -84,11 +115,17 @@ def kill(clusters, args, _):
                       f'Last Request: {last_request_time}\n'
                       f'\n'
                       f'{table_text}\n')
-                answer = input(f'Kill service in {terminal.bold(cluster_name)}? ')
-                should_kill = str2bool(answer)
+                if not inactive:
+                    answer = input(f'Kill service in {terminal.bold(cluster_name)}? ')
+                    should_kill = str2bool(answer)
+
+            if inactive:
+                print(f'Service {terminal.bold(service_id)} on {terminal.bold(cluster_name)} cannot be killed because '
+                      f'it is already {status}.')
+                should_kill = False
+
             if should_kill:
-                cluster = clusters_by_name[cluster_name]
-                success = kill_service_on_cluster(cluster, service_id, token_name, args['timeout'])
+                success = kill_service_on_cluster(cluster, service_id, args['timeout'])
                 overall_success = overall_success and success
     return 0 if overall_success else 1
 
@@ -96,8 +133,10 @@ def kill(clusters, args, _):
 def register(add_parser):
     """Adds this sub-command's parser and returns the action function"""
     parser = add_parser('kill', help='kill services')
-    parser.add_argument('token', nargs=1)
+    parser.add_argument('token-or-service-id')
     parser.add_argument('--force', '-f', help='kill all services, never prompt', dest='force', action='store_true')
     parser.add_argument('--timeout', '-t', help='timeout (in seconds) for kill to complete',
                         type=check_positive, default=30)
+    parser.add_argument('--service-id', '-s', help='kill by service id instead of token',
+                        dest='is-service-id', action='store_true')
     return kill

@@ -82,6 +82,8 @@ def get_service_on_cluster(cluster, service_id):
     service = get_service(cluster, service_id)
     if service:
         return {'count': 1, 'service': service}
+    else:
+        return {'count': 0}
                      
                      
 def get_services_using_token(cluster, token_name):

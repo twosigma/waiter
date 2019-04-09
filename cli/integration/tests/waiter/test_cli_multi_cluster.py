@@ -151,7 +151,7 @@ class MultiWaiterCliTest(util.WaiterTest):
                 # Kill the services in both clusters
                 config = self.__two_cluster_config()
                 with cli.temp_config_file(config) as path:
-                    cp = cli.kill(token_name=token_name, flags=f'--config {path}', kill_flags='--force')
+                    cp = cli.kill(token_name_or_service_id=token_name, flags=f'--config {path}', kill_flags='--force')
                     self.assertEqual(0, cp.returncode, cp.stderr)
                     self.assertIn('waiter1', cli.stdout(cp))
                     self.assertIn('waiter2', cli.stdout(cp))
@@ -159,6 +159,49 @@ class MultiWaiterCliTest(util.WaiterTest):
                     self.assertEqual(2, cli.stdout(cp).count('Successfully killed'))
                     self.assertEqual(0, len(util.services_for_token(self.waiter_url_1, token_name)))
                     self.assertEqual(0, len(util.services_for_token(self.waiter_url_2, token_name)))
+            finally:
+                util.delete_token(self.waiter_url_2, token_name, kill_services=True)
+        finally:
+            util.delete_token(self.waiter_url_1, token_name, kill_services=True)
+
+    def test_federated_kill_service_id(self):
+        # Create in cluster #1
+        token_name = self.token_name()
+        service_description = util.minimal_service_description()
+        util.post_token(self.waiter_url_1, token_name, service_description)
+        try:
+            # Create in cluster #2
+            util.post_token(self.waiter_url_2, token_name, service_description)
+            try:
+                # Ping the token in both clusters
+                service_id_1 = util.ping_token(self.waiter_url_1, token_name)
+                service_id_2 = util.ping_token(self.waiter_url_2, token_name)
+                self.assertEqual(service_id_1, service_id_2)
+
+                # Kill the services in both clusters
+                util.kill_services_using_token(self.waiter_url_1, token_name)
+                util.kill_services_using_token(self.waiter_url_2, token_name)
+
+                # Attempt to kill using the CLI
+                config = self.__two_cluster_config()
+                with cli.temp_config_file(config) as path:
+                    # First with --force
+                    cp = cli.kill(token_name_or_service_id=service_id_1, flags=f'--config {path}',
+                                  kill_flags='--force --service-id')
+                    self.assertEqual(0, cp.returncode, cp.stderr)
+                    self.assertIn('waiter1', cli.stdout(cp))
+                    self.assertIn('waiter2', cli.stdout(cp))
+                    self.assertEqual(2, cli.stdout(cp).count('cannot be killed because it is already Inactive'))
+
+                    # Then, without --force
+                    cp = cli.kill(token_name_or_service_id=service_id_1, flags=f'--config {path}',
+                                  kill_flags='--service-id')
+                    self.assertEqual(0, cp.returncode, cp.stderr)
+                    self.assertIn(f'waiter1 / {service_id_1}', cli.stdout(cp))
+                    self.assertIn(f'waiter2 / {service_id_2}', cli.stdout(cp))
+                    self.assertIn(f'{self.waiter_url_1}/apps/{service_id_1}', cli.stdout(cp))
+                    self.assertIn(f'{self.waiter_url_2}/apps/{service_id_2}', cli.stdout(cp))
+                    self.assertEqual(2, cli.stdout(cp).count('cannot be killed because it is already Inactive'))
             finally:
                 util.delete_token(self.waiter_url_2, token_name, kill_services=True)
         finally:
