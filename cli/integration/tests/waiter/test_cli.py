@@ -2,6 +2,7 @@ import getpass
 import json
 import logging
 import os
+import tempfile
 import threading
 import unittest
 import uuid
@@ -680,6 +681,45 @@ class WaiterCliTest(util.WaiterTest):
         finally:
             util.delete_token(self.waiter_url, token_name)
 
+    def test_create_token_json(self):
+        token_name = self.token_name()
+        with cli.temp_token_file({'cpus': 0.1, 'mem': 128}) as path:
+            cp = cli.create(self.waiter_url, token_name, create_flags=f'--json {path}')
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            try:
+                token_data = util.load_token(self.waiter_url, token_name)
+                self.assertEqual(0.1, token_data['cpus'])
+                self.assertEqual(128, token_data['mem'])
+            finally:
+                util.delete_token(self.waiter_url, token_name)
+
+    def test_update_token_json(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, {'cpus': 0.1, 'mem': 128, 'cmd': 'foo'})
+        try:
+            with cli.temp_token_file({'cpus': 0.2, 'mem': 256}) as path:
+                cp = cli.update(self.waiter_url, token_name, create_flags=f'--json {path}')
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                token_data = util.load_token(self.waiter_url, token_name)
+                self.assertEqual(0.2, token_data['cpus'])
+                self.assertEqual(256, token_data['mem'])
+                self.assertEqual('foo', token_data['cmd'])
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_post_token_json_and_flags(self):
+        token_name = self.token_name()
+        cp = cli.update(self.waiter_url, token_name, create_flags='--json foo.json --cpus 0.1')
+        self.assertEqual(1, cp.returncode, cp.stderr)
+        self.assertIn('cannot specify both a token JSON file and token field flags', cli.stderr(cp))
+
+    def test_post_token_json_invalid(self):
+        token_name = self.token_name()
+        with tempfile.NamedTemporaryFile(delete=True) as file:
+            cp = cli.update(self.waiter_url, token_name, create_flags=f'--json {file.name}')
+            self.assertEqual(1, cp.returncode, cp.stderr)
+            self.assertIn('Unable to load token JSON from', cli.stderr(cp))
+            
     def test_kill_service_id(self):
         token_name = self.token_name()
         util.post_token(self.waiter_url, token_name, util.minimal_service_description())

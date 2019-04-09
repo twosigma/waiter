@@ -5,7 +5,8 @@ import requests
 
 from waiter import terminal, http_util
 from waiter.querying import get_token
-from waiter.util import FALSE_STRINGS, print_info, response_message, TRUE_STRINGS, guard_no_cluster, str2bool
+from waiter.util import FALSE_STRINGS, print_info, response_message, TRUE_STRINGS, guard_no_cluster, str2bool, \
+    load_json_file
 
 BOOL_STRINGS = TRUE_STRINGS + FALSE_STRINGS
 
@@ -80,7 +81,16 @@ def create_or_update_token(clusters, args, _, action):
     else:
         cluster = clusters[0]
     token_name = args.pop('token')
-    token_fields = args
+    json_file = args.pop('json', None)
+    if json_file:
+        if len(args) > 0:
+            raise Exception('You cannot specify both a token JSON file and token field flags at the same time.')
+
+        token_fields = load_json_file(json_file)
+        if not token_fields:
+            raise Exception(f'Unable to load token JSON from {json_file}.')
+    else:
+        token_fields = args
     return create_or_update(cluster, token_name, token_fields, action)
 
 
@@ -93,6 +103,7 @@ def add_arguments(parser):
     parser.add_argument('--cpus', '-c', help='cpus to reserve for service', type=float)
     parser.add_argument('--mem', '-m', help='memory (in MiB) to reserve for service', type=int)
     parser.add_argument('--ports', help='number of ports to reserve for service', type=int)
+    parser.add_argument('--json', help='provide the data in a JSON file', dest='json')
     parser.add_argument('token', nargs=1)
 
 

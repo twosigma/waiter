@@ -169,6 +169,28 @@ class temp_config_file:
         os.remove(self.path)
 
 
+class temp_token_file:
+    """
+    A context manager used to generate and subsequently delete a temporary
+    token JSON file for the CLI. Takes as input the token dictionary to use.
+    """
+
+    def __init__(self, token_data):
+        self.token_data = token_data
+
+    def write_temp_json(self):
+        path = tempfile.NamedTemporaryFile(delete=False).name
+        write_json(path, self.token_data)
+        return path
+
+    def __enter__(self):
+        self.path = self.write_temp_json()
+        return self.path
+
+    def __exit__(self, _, __, ___):
+        os.remove(self.path)
+
+
 def show(waiter_url=None, token_name=None, flags=None, show_flags=None):
     """Shows a token via the CLI"""
     args = f"show {token_name} {show_flags or ''}"
