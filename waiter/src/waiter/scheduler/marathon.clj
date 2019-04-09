@@ -244,16 +244,16 @@
   (let [apps (marathon/get-apps marathon-api query-params)]
     (filter #(is-waiter-service?-fn (app->waiter-service-id %)) (:apps apps))))
 
-(defn image->constraints
+(defn make-constraints
   "Use image field to look up Mesos agent CLUSTER constraints."
-  [image-aliases image]
-  (if-let [{:keys [attribute value]} (get image-aliases image)]
+  [image->constraints image]
+  (if-let [{:keys [attribute value]} (get image->constraints image)]
     [[attribute "CLUSTER" value]]
     []))
 
 (defn marathon-descriptor
   "Returns the descriptor to be used by Marathon to create new apps."
-  [{:keys [image-aliases]} home-path-prefix service-id->password-fn {:keys [service-id service-description]}]
+  [{:keys [image->constraints]} home-path-prefix service-id->password-fn {:keys [service-id service-description]}]
   (let [health-check-url (sd/service-description->health-check-url service-description)
         {:strs [backend-proto cmd cmd-type cpus disk grace-period-secs health-check-interval-secs
                 health-check-max-consecutive-failures health-check-port-index health-check-proto
@@ -268,7 +268,7 @@
      :env (scheduler/environment service-id service-description service-id->password-fn home-path)
      :user run-as-user
      :cmd cmd
-     :constraints (image->constraints image-aliases image)
+     :constraints (make-constraints image->constraints image)
      :disk disk
      :mem mem
      :ports (-> ports (repeat 0) vec)
@@ -349,7 +349,7 @@
                               service-id->kill-info-store service-id->out-of-sync-state-store
                               service-id->password-fn service-id->service-description-fn
                               force-kill-after-ms is-waiter-service?-fn sync-deployment-maintainer-atom
-                              retrieve-syncer-state-fn authorizer image-aliases]
+                              retrieve-syncer-state-fn authorizer image->constraints]
 
   scheduler/ServiceScheduler
 
@@ -464,9 +464,9 @@
   (validate-service [_ service-id]
     (let [{:strs [run-as-user image]} (service-id->service-description-fn service-id)]
       (authz/check-user authorizer run-as-user service-id)
-      (when (and image (not (contains? image-aliases image)))
-        (throw (ex-info (str "Image field is set, but is not a known alias. "
-                             "Only specified image aliases are supported with Marathon scheduler")
+      (when (and image (not (contains? image->constraints image)))
+        (throw (ex-info (str "Image field is set, but has no matching mesos constraints. "
+                             "Only images with specified constraints are supported with Marathon scheduler")
                         {:image image}))))))
 
 (defn- get-apps-with-deployments
@@ -595,7 +595,7 @@
            ;; functions provided in the context
            is-waiter-service?-fn leader?-fn scheduler-name scheduler-state-chan scheduler-syncer-interval-secs
            service-id->password-fn service-id->service-description-fn start-scheduler-syncer-fn
-           image-aliases]}]
+           image->constraints]}]
   {:pre [(schema/contains-kind-sub-map? authorizer)
          (not (str/blank? url))
          (or (nil? slave-directory) (not (str/blank? slave-directory)))
@@ -614,7 +614,7 @@
          (fn? service-id->password-fn)
          (fn? service-id->service-description-fn)
          (fn? start-scheduler-syncer-fn)
-         (or (nil? image-aliases) (map? image-aliases))]}
+         (or (nil? image->constraints) (map? image->constraints))]}
   (when (or (not slave-directory) (not mesos-slave-port))
     (log/info "scheduler mesos-slave-port or slave-directory is missing, log directory and url support will be disabled"))
   (let [authorizer (utils/create-component authorizer)
@@ -639,7 +639,7 @@
                              service-id->out-of-sync-state-store service-id->password-fn
                              service-id->service-description-fn force-kill-after-ms is-waiter-service?-fn
                              sync-deployment-maintainer-atom retrieve-syncer-state-fn authorizer
-                             image-aliases)
+                             image->constraints)
         sync-deployment-maintainer (start-sync-deployment-maintainer
                                      leader?-fn service-id->out-of-sync-state-store marathon-scheduler sync-deployment)]
     (reset! sync-deployment-maintainer-atom sync-deployment-maintainer)

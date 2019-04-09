@@ -647,7 +647,7 @@
                  (->> (assoc service-description "image" "alias/p1")
                       (assoc {:service-id service-id} :service-description)
                       (marathon-descriptor (create-marathon-scheduler
-                                             :image-aliases
+                                             :image->constraints
                                              {"alias/p1" {:attribute "platform" :value "p1"}
                                               "alias/p2" {:attribute "platform" :value "p2"}})
                                            home-path-prefix service-id->password-fn)))))))))
@@ -791,7 +791,7 @@
       (testing "validate service - test known image alias"
         (scheduler/validate-service
           (create-marathon-scheduler (assoc valid-config
-                                       :image-aliases
+                                       :image->constraints
                                        {"alias/p1" {:attribute "platform" :value "p1"}
                                         "alias/p2" {:attribute "platform" :value "p2"}}
                                        :service-id->service-description-fn

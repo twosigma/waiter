@@ -42,8 +42,8 @@
                                :http-options {:conn-timeout 10000
                                               :socket-timeout 10000
                                               :spnego-auth false}
-                               :image-aliases {"alias/p1" {:attribute "platform" :value "p1"}
-                                               "alias/p2" {:attribute "platform" :value "p2"}}}}
+                               :image->constraints {"alias/p1" {:attribute "platform" :value "p1"}
+                                                    "alias/p2" {:attribute "platform" :value "p2"}}}}
 
  ; ---------- CORS ----------
  :cors-config {:kind :allow-all}
