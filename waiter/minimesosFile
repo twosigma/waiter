@@ -11,6 +11,7 @@ minimesos {
         imageTag = "latest"
         loggingLevel = "# INHERIT FROM CLUSTER"
         portNumber = 5051
+        attributes = "platform:p1"
 
         resources {
             cpu {
@@ -40,6 +41,7 @@ minimesos {
         imageTag = "latest"
         loggingLevel = "# INHERIT FROM CLUSTER"
         portNumber = 5051
+        attributes = "platform:p1"
 
         resources {
             cpu {
@@ -69,6 +71,7 @@ minimesos {
         imageTag = "latest"
         loggingLevel = "# INHERIT FROM CLUSTER"
         portNumber = 5051
+        attributes = "platform:p2"
 
         resources {
             cpu {
@@ -98,6 +101,7 @@ minimesos {
         imageTag = "latest"
         loggingLevel = "# INHERIT FROM CLUSTER"
         portNumber = 5051
+        attributes = "platform:p2"
 
         resources {
             cpu {

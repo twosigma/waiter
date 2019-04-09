@@ -1026,6 +1026,10 @@
             (let [kitchen-image (System/getenv "INTEGRATION_TEST_KITCHEN_IMAGE")
                   _ (is (not (str/blank? kitchen-image)) "You must provide a kitchen image in the INTEGRATION_TEST_KITCHEN_IMAGE environment variable")]
               (make-kitchen-request-fn kitchen-image 200))
+            (using-marathon? waiter-url)
+            (let [custom-image (System/getenv "INTEGRATION_TEST_CUSTOM_IMAGE_ALIAS")
+                  _ (is (not (str/blank? custom-image)) "You must provide a custom image in the INTEGRATION_TEST_CUSTOM_IMAGE_ALIAS environment variable")]
+              (make-kitchen-request-fn custom-image 200))
             (or (using-cook? waiter-url)
                 (using-marathon? waiter-url)
                 (using-shell? waiter-url))

@@ -32,6 +32,9 @@ popd
 ${WAITER_DIR}/bin/run-using-minimesos.sh ${WAITER_PORT} &
 
 # Run the integration tests
+export INTEGRATION_TEST_CUSTOM_IMAGE_ALIAS="alias/p1"
+export INTEGRATION_TEST_CUSTOM_IMAGE_ALIAS_CONSTRAINT_ATTRIBUTE="platform"
+export INTEGRATION_TEST_CUSTOM_IMAGE_ALIAS_CONSTRAINT_VALUE="p1"
 export WAITER_TEST_KITCHEN_CMD=/opt/kitchen/kitchen
 export WAITER_TEST_NGINX_CMD=/opt/nginx/bin/run-nginx-server.sh
 export WAITER_URI=127.0.0.1:${WAITER_PORT}
