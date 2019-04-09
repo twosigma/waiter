@@ -662,10 +662,10 @@
 (defn compute-image
   "Compute the image to use for the service"
   [image default-container-image image-aliases]
-  (let [unaliased-image (or image default-container-image)]
-    (if-let [resolved-alias (get image-aliases unaliased-image)]
+  (let [unresolved-image (or image default-container-image)]
+    (if-let [resolved-alias (get image-aliases unresolved-image)]
       resolved-alias
-      unaliased-image)))
+      unresolved-image)))
 
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."

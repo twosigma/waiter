@@ -486,7 +486,8 @@
                                               :socket-timeout 10000}
 
                                ;; Map of image aliases to mesos attributes. If one of these aliases is specified in the `image` field of the service,
-                               ;; then the service will be restricted to mesos agents with the matching attribute.
+                               ;; then the service will be restricted to mesos agents with the matching attribute. Those agents are expected
+                               ;; to be compatible with the image alias.
                                :image-aliases {"alias/sample-alias" {:attribute "sample-attribute" :value "sample-value"}}
 
                                ;; Marathon will fail deployments (e.g. scale-down) if there is an existing deployment in
