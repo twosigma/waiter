@@ -719,7 +719,7 @@ class WaiterCliTest(util.WaiterTest):
             cp = cli.update(self.waiter_url, token_name, create_flags=f'--json {file.name}')
             self.assertEqual(1, cp.returncode, cp.stderr)
             self.assertIn('Unable to load token JSON from', cli.stderr(cp))
-
+            
     def test_kill_service_id(self):
         token_name = self.token_name()
         util.post_token(self.waiter_url, token_name, util.minimal_service_description())
