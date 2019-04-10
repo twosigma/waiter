@@ -1,22 +1,11 @@
 {
  ; ---------- Cluster ----------
 
+ :cluster-config {:name #config/env "WAITER_CLUSTER_NAME"}
+
  :zookeeper {
              ;; Use an in-process ZK (not for production use):
              :connect-string :in-process}
-
- ; ---------- Metrics - Internal ----------
-
- :metrics-config {
-                  :codahale-reporters {
-                                       :graphite {
-                                                  :factory-fn waiter.reporter/graphite-reporter
-                                                  :filter-regex #config/regex "^jvm.*|^waiter.*"
-                                                  :host "localhost"
-                                                  :period-ms 6000
-                                                  :pickled? true
-                                                  :prefix "waiter-internal"
-                                                  :port #config/env-int "GRAPHITE_SERVER_PORT"}}}
 
  ; ---------- Network ----------
 
