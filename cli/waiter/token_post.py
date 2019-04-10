@@ -4,7 +4,7 @@ from enum import Enum
 import requests
 
 from waiter import terminal, http_util
-from waiter.querying import get_token
+from waiter.querying import get_token, query_token
 from waiter.util import FALSE_STRINGS, print_info, response_message, TRUE_STRINGS, guard_no_cluster, str2bool, \
     load_json_file
 
@@ -68,6 +68,7 @@ def create_or_update_token(clusters, args, _, action):
     """Creates (or updates) a Waiter token"""
     guard_no_cluster(clusters)
     logging.debug('args: %s' % args)
+    token_name = args.pop('token')
     if len(clusters) > 1:
         default_for_create = [c for c in clusters if c.get('default-for-create', False)]
         num_default_create_clusters = len(default_for_create)
@@ -78,9 +79,15 @@ def create_or_update_token(clusters, args, _, action):
             raise Exception('You have "default-for-create" set to true for more than one cluster.')
         else:
             cluster = default_for_create[0]
+            query_result = query_token(clusters, token_name)
+            if query_result['count'] > 0:
+                cluster_names_with_token = list(query_result['clusters'].keys())
+                if cluster['name'] not in cluster_names_with_token:
+                    cluster = next(c for c in clusters if c['name'] == cluster_names_with_token[0])
+                    logging.debug(f'token already exists in: {cluster}')
     else:
         cluster = clusters[0]
-    token_name = args.pop('token')
+
     json_file = args.pop('json', None)
     if json_file:
         if len(args) > 0:

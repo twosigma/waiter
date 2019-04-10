@@ -197,7 +197,7 @@ class WaiterCliTest(util.WaiterTest):
         self.assertNotIn('--max-instances', cli.stdout(cp))
         self.assertNotIn('--restart-backoff-factor', cli.stdout(cp))
         token_name = self.token_name()
-        cp = cli.update(self.waiter_url, token_name, create_flags='--https-redirect true '
+        cp = cli.update(self.waiter_url, token_name, update_flags='--https-redirect true '
                                                                   '--cpus 0.1 '
                                                                   '--fallback-period-secs 10 '
                                                                   '--idle-timeout-mins 1 '
@@ -211,7 +211,7 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(1, token['idle-timeout-mins'])
             self.assertEqual(100, token['max-instances'])
             self.assertEqual(1.1, token['restart-backoff-factor'])
-            cp = cli.update(self.waiter_url, token_name, create_flags='--https-redirect false '
+            cp = cli.update(self.waiter_url, token_name, update_flags='--https-redirect false '
                                                                       '--cpus 0.1 '
                                                                       '--fallback-period-secs 20 '
                                                                       '--idle-timeout-mins 2 '
@@ -698,7 +698,7 @@ class WaiterCliTest(util.WaiterTest):
         util.post_token(self.waiter_url, token_name, {'cpus': 0.1, 'mem': 128, 'cmd': 'foo'})
         try:
             with cli.temp_token_file({'cpus': 0.2, 'mem': 256}) as path:
-                cp = cli.update(self.waiter_url, token_name, create_flags=f'--json {path}')
+                cp = cli.update(self.waiter_url, token_name, update_flags=f'--json {path}')
                 self.assertEqual(0, cp.returncode, cp.stderr)
                 token_data = util.load_token(self.waiter_url, token_name)
                 self.assertEqual(0.2, token_data['cpus'])
@@ -709,14 +709,14 @@ class WaiterCliTest(util.WaiterTest):
 
     def test_post_token_json_and_flags(self):
         token_name = self.token_name()
-        cp = cli.update(self.waiter_url, token_name, create_flags='--json foo.json --cpus 0.1')
+        cp = cli.update(self.waiter_url, token_name, update_flags='--json foo.json --cpus 0.1')
         self.assertEqual(1, cp.returncode, cp.stderr)
         self.assertIn('cannot specify both a token JSON file and token field flags', cli.stderr(cp))
 
     def test_post_token_json_invalid(self):
         token_name = self.token_name()
         with tempfile.NamedTemporaryFile(delete=True) as file:
-            cp = cli.update(self.waiter_url, token_name, create_flags=f'--json {file.name}')
+            cp = cli.update(self.waiter_url, token_name, update_flags=f'--json {file.name}')
             self.assertEqual(1, cp.returncode, cp.stderr)
             self.assertIn('Unable to load token JSON from', cli.stderr(cp))
             

@@ -78,9 +78,9 @@ def create(waiter_url=None, token_name=None, flags=None, create_flags=None):
     return cp
 
 
-def update(waiter_url=None, token_name=None, flags=None, create_flags=None):
+def update(waiter_url=None, token_name=None, flags=None, update_flags=None):
     """Updates a token via the CLI"""
-    cp = create_or_update('update', waiter_url, token_name, flags, create_flags)
+    cp = create_or_update('update', waiter_url, token_name, flags, update_flags)
     return cp
 
 
