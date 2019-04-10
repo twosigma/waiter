@@ -22,7 +22,8 @@ TEST_APPS_DIR=${WAITER_DIR}/../test-apps
 ${DIR}/minikube-setup.sh
 
 # Start S3 test server
-if [[ $TEST_SELECTOR =~ heavy$ ]]; then
+# (currently disabled on Travis due to load issues)
+if [[ "$TRAVIS" != true && $TEST_SELECTOR =~ heavy$ ]]; then
     ${DIR}/s3-server-setup.sh
     S3SERVER_IP=$(docker inspect s3server | jq -r '.[0].NetworkSettings.Networks.bridge.IPAddress')
     export WAITER_S3_BUCKET=http://$S3SERVER_IP:8000/waiter-service-logs
