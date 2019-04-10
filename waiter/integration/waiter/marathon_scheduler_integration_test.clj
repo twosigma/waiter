@@ -21,21 +21,21 @@
 (deftest ^:parallel ^:integration-slow test-marathon-image-alias
   (testing-using-waiter-url
     (when (using-marathon? waiter-url)
-      (let [custom-image-alias (System/getenv "INTEGRATION_TEST_CUSTOM_IMAGE_ALIAS")
-            _ (is (not (string/blank? custom-image-alias)) "You must provide an image alias in the INTEGRATION_TEST_CUSTOM_IMAGE_ALIAS environment variable")
-            constraint-attribute (System/getenv "INTEGRATION_TEST_CUSTOM_IMAGE_ALIAS_CONSTRAINT_ATTRIBUTE")
-            _ (is (not (string/blank? constraint-attribute)) "You must provide a constraint attribute in the INTEGRATION_TEST_CUSTOM_IMAGE_ALIAS_CONSTRAINT_ATTRIBUTE environment variable")
-            constraint-value (System/getenv "INTEGRATION_TEST_CUSTOM_IMAGE_ALIAS_CONSTRAINT_VALUE")
-            _ (is (not (string/blank? constraint-value)) "You must provide a constraint value in the INTEGRATION_TEST_CUSTOM_IMAGE_ALIAS_CONSTRAINT_VALUE environment variable")]
+      (let [custom-image-alias (System/getenv "INTEGRATION_TEST_IMAGE_CONSTRAINT_ALIAS")
+            _ (is (not (string/blank? custom-image-alias)) "You must provide an image alias in the INTEGRATION_TEST_IMAGE_CONSTRAINT_ALIAS environment variable")
+            constraint-attribute (System/getenv "INTEGRATION_TEST_IMAGE_CONSTRAINT_ATTRIBUTE")
+            _ (is (not (string/blank? constraint-attribute)) "You must provide a constraint attribute in the INTEGRATION_TEST_IMAGE_CONSTRAINT_ATTRIBUTE environment variable")
+            constraint-value (System/getenv "INTEGRATION_TEST_IMAGE_CONSTRAINT_VALUE")
+            _ (is (not (string/blank? constraint-value)) "You must provide a constraint value in the INTEGRATION_TEST_IMAGE_CONSTRAINT_VALUE environment variable")]
         (verify-marathon-image-alias waiter-url custom-image-alias constraint-attribute constraint-value)))))
 
 
 (deftest ^:parallel ^:integration-slow test-marathon-image-alias-2
   (testing-using-waiter-url
     (when (using-marathon? waiter-url)
-      (let [custom-image-alias (System/getenv "INTEGRATION_TEST_CUSTOM_IMAGE_ALIAS_2")
-            constraint-attribute (System/getenv "INTEGRATION_TEST_CUSTOM_IMAGE_ALIAS_CONSTRAINT_ATTRIBUTE_2")
-            constraint-value (System/getenv "INTEGRATION_TEST_CUSTOM_IMAGE_ALIAS_CONSTRAINT_VALUE_2")]
+      (let [custom-image-alias (System/getenv "INTEGRATION_TEST_IMAGE_CONSTRAINT_ALIAS_2")
+            constraint-attribute (System/getenv "INTEGRATION_TEST_IMAGE_CONSTRAINT_ATTRIBUTE_2")
+            constraint-value (System/getenv "INTEGRATION_TEST_IMAGE_CONSTRAINT_VALUE_2")]
         (when (and custom-image-alias constraint-attribute constraint-value)
           (verify-marathon-image-alias waiter-url custom-image-alias constraint-attribute constraint-value))))))
 

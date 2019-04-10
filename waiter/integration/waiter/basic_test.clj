@@ -1027,8 +1027,8 @@
                   _ (is (not (str/blank? kitchen-image)) "You must provide a kitchen image in the INTEGRATION_TEST_KITCHEN_IMAGE environment variable")]
               (make-kitchen-request-fn kitchen-image 200))
             (using-marathon? waiter-url)
-            (let [custom-image-alias (System/getenv "INTEGRATION_TEST_CUSTOM_IMAGE_ALIAS")
-                  _ (is (not (str/blank? custom-image-alias)) "You must provide an image alias in the INTEGRATION_TEST_CUSTOM_IMAGE_ALIAS environment variable")]
+            (let [custom-image-alias (System/getenv "INTEGRATION_TEST_IMAGE_CONSTRAINT_ALIAS")
+                  _ (is (not (str/blank? custom-image-alias)) "You must provide an image alias in the INTEGRATION_TEST_IMAGE_CONSTRAINT_ALIAS environment variable")]
               (make-kitchen-request-fn custom-image-alias 200))
             (or (using-cook? waiter-url)
                 (using-marathon? waiter-url)
