@@ -21,6 +21,7 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.tools.namespace.find :as find]
+            [waiter.config :as config]
             [waiter.correlation-id :as cid]
             [waiter.util.client-tools :as ct])
   (:import java.io.ByteArrayOutputStream
@@ -236,3 +237,11 @@
     (when-not (zero? error)
       (throw (ex-info (str error " error(s)") m)))))
 
+(defmacro with-config
+  "Runs the body under the specified config."
+  [config-value & body]
+  `(let [test-config# (promise)
+         config-value# ~config-value]
+     (deliver test-config# config-value#)
+     (with-redefs [config/config-promise test-config#]
+       ~@body)))

@@ -25,6 +25,7 @@
             [slingshot.slingshot :as ss]
             [waiter.scheduler :as scheduler]
             [waiter.scheduler.kubernetes :refer :all]
+            [waiter.test-helpers :as th]
             [waiter.util.client-tools :as ct]
             [waiter.util.http-utils :as hu]
             [waiter.util.date-utils :as du])
@@ -108,24 +109,30 @@
      (is (= expected# actual#))))
 
 (deftest replicaset-spec-health-check-port-index
-  (let [service-description (assoc dummy-service-description "health-check-port-index"  2 "ports" 3)
-        scheduler (make-dummy-scheduler ["test-service-id"]
-                                        {:service-id->service-description-fn (constantly service-description)})
-        replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description)]
-    (is (= {:waiter/port-count "3"
-            :waiter/service-id "test-service-id"}
-           (get-in replicaset-spec [:spec :template :metadata :annotations])))))
+  (th/with-config
+    {:cluster-config {:name "test-cluster"}}
+    (let [service-description (assoc dummy-service-description "health-check-port-index" 2 "ports" 3)
+          scheduler (make-dummy-scheduler ["test-service-id"]
+                                          {:service-id->service-description-fn (constantly service-description)})
+          replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description)]
+      (is (= {:waiter/port-count "3"
+              :waiter/service-id "test-service-id"}
+             (get-in replicaset-spec [:spec :template :metadata :annotations]))))))
 
 (deftest replicaset-spec-no-image
-  (let [scheduler (make-dummy-scheduler ["test-service-id"])
-        replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" dummy-service-description)]
-    (is (= "twosigma/waiter-test-apps:latest" (get-in replicaset-spec [:spec :template :spec :containers 0 :image])))))
+  (th/with-config
+    {:cluster-config {:name "test-cluster"}}
+    (let [scheduler (make-dummy-scheduler ["test-service-id"])
+          replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" dummy-service-description)]
+      (is (= "twosigma/waiter-test-apps:latest" (get-in replicaset-spec [:spec :template :spec :containers 0 :image]))))))
 
 (deftest replicaset-spec-custom-image
-  (let [scheduler (make-dummy-scheduler ["test-service-id"])
-        replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id"
-                          (assoc dummy-service-description "image" "custom/image"))]
-    (is (= "custom/image" (get-in replicaset-spec [:spec :template :spec :containers 0 :image])))))
+  (th/with-config
+    {:cluster-config {:name "test-cluster"}}
+    (let [scheduler (make-dummy-scheduler ["test-service-id"])
+          replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id"
+                            (assoc dummy-service-description "image" "custom/image"))]
+      (is (= "custom/image" (get-in replicaset-spec [:spec :template :spec :containers 0 :image]))))))
 
 (deftest test-service-id->k8s-app-name
   (let [base-scheduler-spec {:pod-suffix-length default-pod-suffix-length}
@@ -567,47 +574,51 @@
         (is (= expected-result actual-result))))))
 
 (deftest test-create-app
-  (let [service-id "test-service-id"
-        service {:service-id service-id}
-        descriptor {:service-description dummy-service-description
-                    :service-id service-id}
-        dummy-scheduler (make-dummy-scheduler [service-id])]
-    (testing "unsuccessful-create: app already exists"
-      (let [actual (with-redefs [service-id->service (constantly service)]
-                     (scheduler/create-service-if-new dummy-scheduler descriptor))]
-        (is (nil? actual))))
-    (with-redefs [service-id->service (constantly nil)]
-      (testing "unsuccessful-create: service creation conflict (already running)"
-        (let [actual (with-redefs [api-request (fn mocked-api-request [& _]
-                                                 (ss/throw+ {:status 409}))]
-                       (scheduler/create-service-if-new dummy-scheduler descriptor))]
-          (is (nil? actual))))
-      (testing "unsuccessful-create: internal error"
-        (let [actual (with-redefs [api-request (fn mocked-api-request [& _]
-                                                 (throw-exception))]
-                       (scheduler/create-service-if-new dummy-scheduler descriptor))]
-          (is (nil? actual))))
-      (testing "successful create"
-        (let [actual (with-redefs [api-request (constantly service)
-                                   replicaset->Service identity]
-                       (scheduler/create-service-if-new dummy-scheduler descriptor))]
-          (is (= service actual)))))))
-
-(deftest test-keywords-in-replicaset-spec
-  (testing "namespaced keywords in annotation keys and values correctly converted"
+  (th/with-config
+    {:cluster-config {:name "test-cluster"}}
     (let [service-id "test-service-id"
+          service {:service-id service-id}
           descriptor {:service-description dummy-service-description
                       :service-id service-id}
-          dummy-scheduler (-> (make-dummy-scheduler [service-id])
-                              (update :replicaset-spec-builder-fn
-                                      (fn [base-spec-builder-fn]
-                                        (fn [scheduler service-id context]
-                                          (-> (base-spec-builder-fn scheduler service-id context)
-                                              (assoc-in [:metadata :annotations] {:waiter/x :waiter/y}))))))]
-      (let [spec-json (with-redefs [api-request (fn [_ _ & {:keys [body]}] body)
-                                    replicaset->Service identity]
-                        (create-service descriptor dummy-scheduler))]
-        (is (str/includes? spec-json "\"annotations\":{\"waiter/x\":\"waiter/y\"}"))))))
+          dummy-scheduler (make-dummy-scheduler [service-id])]
+      (testing "unsuccessful-create: app already exists"
+        (let [actual (with-redefs [service-id->service (constantly service)]
+                       (scheduler/create-service-if-new dummy-scheduler descriptor))]
+          (is (nil? actual))))
+      (with-redefs [service-id->service (constantly nil)]
+        (testing "unsuccessful-create: service creation conflict (already running)"
+          (let [actual (with-redefs [api-request (fn mocked-api-request [& _]
+                                                   (ss/throw+ {:status 409}))]
+                         (scheduler/create-service-if-new dummy-scheduler descriptor))]
+            (is (nil? actual))))
+        (testing "unsuccessful-create: internal error"
+          (let [actual (with-redefs [api-request (fn mocked-api-request [& _]
+                                                   (throw-exception))]
+                         (scheduler/create-service-if-new dummy-scheduler descriptor))]
+            (is (nil? actual))))
+        (testing "successful create"
+          (let [actual (with-redefs [api-request (constantly service)
+                                     replicaset->Service identity]
+                         (scheduler/create-service-if-new dummy-scheduler descriptor))]
+            (is (= service actual))))))))
+
+(deftest test-keywords-in-replicaset-spec
+  (th/with-config
+    {:cluster-config {:name "test-cluster"}}
+    (testing "namespaced keywords in annotation keys and values correctly converted"
+      (let [service-id "test-service-id"
+            descriptor {:service-description dummy-service-description
+                        :service-id service-id}
+            dummy-scheduler (-> (make-dummy-scheduler [service-id])
+                                (update :replicaset-spec-builder-fn
+                                        (fn [base-spec-builder-fn]
+                                          (fn [scheduler service-id context]
+                                            (-> (base-spec-builder-fn scheduler service-id context)
+                                                (assoc-in [:metadata :annotations] {:waiter/x :waiter/y}))))))]
+        (let [spec-json (with-redefs [api-request (fn [_ _ & {:keys [body]}] body)
+                                      replicaset->Service identity]
+                          (create-service descriptor dummy-scheduler))]
+          (is (str/includes? spec-json "\"annotations\":{\"waiter/x\":\"waiter/y\"}")))))))
 
 (deftest test-delete-service
   (let [service-id "test-service-id"

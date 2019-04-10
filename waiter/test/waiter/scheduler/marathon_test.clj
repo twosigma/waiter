@@ -25,6 +25,7 @@
             [waiter.mesos.marathon :as marathon]
             [waiter.mesos.mesos :as mesos]
             [waiter.scheduler :as scheduler]
+            [waiter.test-helpers :as th]
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
   (:import waiter.scheduler.marathon.MarathonScheduler))
@@ -584,66 +585,69 @@
       map->MarathonScheduler))
 
 (deftest test-marathon-descriptor
-  (let [service-id->password-fn (fn [service-id] (str service-id "-password"))]
-    (testing "basic-test-with-defaults"
-      (let [expected {:id "test-service-1"
-                      :labels {:source "waiter"
-                               :user "test-user"}
-                      :env {"BAZ" "quux"
-                            "FOO" "bar"
-                            "HOME" "/home/path/test-user"
-                            "LOGNAME" "test-user"
-                            "USER" "test-user"
-                            "WAITER_CONCURRENCY_LEVEL" "1"
-                            "WAITER_CPUS" "1"
-                            "WAITER_MEM_MB" "1536"
-                            "WAITER_PASSWORD" "test-service-1-password"
-                            "WAITER_SERVICE_ID" "test-service-1"
-                            "WAITER_USERNAME" "waiter"}
-                      :cmd "test-command"
-                      :cpus 1
-                      :disk nil
-                      :mem 1536
-                      :healthChecks [{:protocol "HTTP"
-                                      :path "/status"
-                                      :gracePeriodSeconds 111
-                                      :intervalSeconds 10
-                                      :portIndex 0
-                                      :timeoutSeconds 20
-                                      :maxConsecutiveFailures 5}]
-                      :backoffFactor 2
-                      :ports [0 0]
-                      :user "test-user"}
-            home-path-prefix "/home/path/"
-            service-id "test-service-1"
-            service-description {"backend-proto" "http"
-                                 "cmd" "test-command"
-                                 "concurrency-level" 1
-                                 "cpus" 1
-                                 "mem" 1536
-                                 "run-as-user" "test-user"
-                                 "ports" 2
-                                 "restart-backoff-factor" 2
-                                 "grace-period-secs" 111
-                                 "health-check-interval-secs" 10
-                                 "health-check-max-consecutive-failures" 5
-                                 "health-check-port-index" 0
-                                 "env" {"FOO" "bar"
-                                        "BAZ" "quux"}}
-            actual (default-marathon-descriptor-builder
-                     home-path-prefix service-id->password-fn
-                     {:service-id service-id, :service-description service-description} nil)]
-        (is (= expected actual))
+  (th/with-config
+    {:cluster-config {:name "test-cluster"}}
+    (let [service-id->password-fn (fn [service-id] (str service-id "-password"))]
+      (testing "basic-test-with-defaults"
+        (let [expected {:id "test-service-1"
+                        :labels {:source "waiter"
+                                 :user "test-user"}
+                        :env {"BAZ" "quux"
+                              "FOO" "bar"
+                              "HOME" "/home/path/test-user"
+                              "LOGNAME" "test-user"
+                              "USER" "test-user"
+                              "WAITER_CLUSTER_NAME" "test-cluster"
+                              "WAITER_CONCURRENCY_LEVEL" "1"
+                              "WAITER_CPUS" "1"
+                              "WAITER_MEM_MB" "1536"
+                              "WAITER_PASSWORD" "test-service-1-password"
+                              "WAITER_SERVICE_ID" "test-service-1"
+                              "WAITER_USERNAME" "waiter"}
+                        :cmd "test-command"
+                        :cpus 1
+                        :disk nil
+                        :mem 1536
+                        :healthChecks [{:protocol "HTTP"
+                                        :path "/status"
+                                        :gracePeriodSeconds 111
+                                        :intervalSeconds 10
+                                        :portIndex 0
+                                        :timeoutSeconds 20
+                                        :maxConsecutiveFailures 5}]
+                        :backoffFactor 2
+                        :ports [0 0]
+                        :user "test-user"}
+              home-path-prefix "/home/path/"
+              service-id "test-service-1"
+              service-description {"backend-proto" "http"
+                                   "cmd" "test-command"
+                                   "concurrency-level" 1
+                                   "cpus" 1
+                                   "mem" 1536
+                                   "run-as-user" "test-user"
+                                   "ports" 2
+                                   "restart-backoff-factor" 2
+                                   "grace-period-secs" 111
+                                   "health-check-interval-secs" 10
+                                   "health-check-max-consecutive-failures" 5
+                                   "health-check-port-index" 0
+                                   "env" {"FOO" "bar"
+                                          "BAZ" "quux"}}
+              actual (default-marathon-descriptor-builder
+                       home-path-prefix service-id->password-fn
+                       {:service-id service-id, :service-description service-description} nil)]
+          (is (= expected actual))
 
-        (testing "health-check-port-index of 2"
-          (is (= (-> expected
-                     (assoc-in [:healthChecks 0 :portIndex] 2)
-                     (assoc :ports [0 0 0]))
-                 (default-marathon-descriptor-builder
-                   home-path-prefix service-id->password-fn
-                   (->> (assoc service-description "health-check-port-index" 2 "ports" 3)
-                        (assoc {:service-id service-id} :service-description))
-                   nil))))))))
+          (testing "health-check-port-index of 2"
+            (is (= (-> expected
+                       (assoc-in [:healthChecks 0 :portIndex] 2)
+                       (assoc :ports [0 0 0]))
+                   (default-marathon-descriptor-builder
+                     home-path-prefix service-id->password-fn
+                     (->> (assoc service-description "health-check-port-index" 2 "ports" 3)
+                          (assoc {:service-id service-id} :service-description))
+                     nil)))))))))
 
 (deftest test-kill-instance-last-force-kill-time-store
   (let [current-time (t/now)

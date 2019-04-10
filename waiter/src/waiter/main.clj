@@ -25,6 +25,7 @@
             [plumbing.graph :as graph]
             [qbits.jet.server :as server]
             [schema.core :as s]
+            [waiter.config :as config]
             [waiter.cors :as cors]
             [waiter.core :as core]
             [waiter.correlation-id :as cid]
@@ -110,6 +111,7 @@
                      :started-at (du/date-to-str (t/now)))]
       (log/info "core.async threadpool configured to use" async-threads "threads.")
       (log/info "loaded settings:\n" (with-out-str (clojure.pprint/pprint settings)))
+      (config/initialize-config settings)
       (let [app-map (wire-app settings)]
         ((graph/eager-compile app-map) {})))
     (catch Throwable e

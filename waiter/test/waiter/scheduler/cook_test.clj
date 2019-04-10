@@ -21,6 +21,7 @@
             [waiter.scheduler.cook :refer :all]
             [waiter.mesos.mesos :as mesos]
             [waiter.scheduler :as scheduler]
+            [waiter.test-helpers :as th]
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as http-utils]
             [waiter.util.utils :as utils])
@@ -256,108 +257,111 @@
                                      :health-check-url "/healthy"}})))))
 
 (deftest test-create-job-description
-  (let [service-id->password-fn (fn [service-id] (str service-id "-password"))
-        home-path-prefix "/home/path/"
-        service-id "test-service-1"
-        service-description {"backend-proto" "http"
-                             "cmd" "test-command"
-                             "concurrency-level" 1
-                             "cpus" 1
-                             "mem" 1536
-                             "run-as-user" "test-user"
-                             "ports" 2
-                             "restart-backoff-factor" 2
-                             "grace-period-secs" 111
-                             "health-check-interval-secs" 10
-                             "health-check-max-consecutive-failures" 5
-                             "health-check-port-index" 0
-                             "health-check-url" "/health-check"
-                             "instance-expiry-mins" 3600
-                             "env" {"FOO" "bar"
-                                    "BAZ" "quux"}
-                             "name" "test-service"
-                             "version" "123456"}
-        instance-priority 75
-        expected-job {:application {:name "test-service"
-                                    :version "123456"}
-                      :command "test-command"
-                      :cpus 1
-                      :disable-mea-culpa-retries true
-                      :env {"BAZ" "quux"
-                            "FOO" "bar"
-                            "HOME" "/home/path/test-user"
-                            "LOGNAME" "test-user"
-                            "USER" "test-user"
-                            "WAITER_CONCURRENCY_LEVEL" "1"
-                            "WAITER_CPUS" "1"
-                            "WAITER_MEM_MB" "1536"
-                            "WAITER_PASSWORD" "test-service-1-password"
-                            "WAITER_SERVICE_ID" "test-service-1"
-                            "WAITER_USERNAME" "waiter"}
-                      :executor "cook"
-                      :labels {:backend-proto "http"
-                               :health-check-url "/health-check"
-                               :service-id "test-service-1"
-                               :source "waiter"
-                               :user "test-user"}
-                      :max-retries 1
-                      :max-runtime 216300000
-                      :mem 1536
-                      :ports 2
-                      :priority 75}]
+  (th/with-config
+    {:cluster-config {:name "test-cluster"}}
+    (let [service-id->password-fn (fn [service-id] (str service-id "-password"))
+          home-path-prefix "/home/path/"
+          service-id "test-service-1"
+          service-description {"backend-proto" "http"
+                               "cmd" "test-command"
+                               "concurrency-level" 1
+                               "cpus" 1
+                               "mem" 1536
+                               "run-as-user" "test-user"
+                               "ports" 2
+                               "restart-backoff-factor" 2
+                               "grace-period-secs" 111
+                               "health-check-interval-secs" 10
+                               "health-check-max-consecutive-failures" 5
+                               "health-check-port-index" 0
+                               "health-check-url" "/health-check"
+                               "instance-expiry-mins" 3600
+                               "env" {"FOO" "bar"
+                                      "BAZ" "quux"}
+                               "name" "test-service"
+                               "version" "123456"}
+          instance-priority 75
+          expected-job {:application {:name "test-service"
+                                      :version "123456"}
+                        :command "test-command"
+                        :cpus 1
+                        :disable-mea-culpa-retries true
+                        :env {"BAZ" "quux"
+                              "FOO" "bar"
+                              "HOME" "/home/path/test-user"
+                              "LOGNAME" "test-user"
+                              "USER" "test-user"
+                              "WAITER_CLUSTER_NAME" "test-cluster"
+                              "WAITER_CONCURRENCY_LEVEL" "1"
+                              "WAITER_CPUS" "1"
+                              "WAITER_MEM_MB" "1536"
+                              "WAITER_PASSWORD" "test-service-1-password"
+                              "WAITER_SERVICE_ID" "test-service-1"
+                              "WAITER_USERNAME" "waiter"}
+                        :executor "cook"
+                        :labels {:backend-proto "http"
+                                 :health-check-url "/health-check"
+                                 :service-id "test-service-1"
+                                 :source "waiter"
+                                 :user "test-user"}
+                        :max-retries 1
+                        :max-runtime 216300000
+                        :mem 1536
+                        :ports 2
+                        :priority 75}]
 
-    (testing "basic-test-with-defaults"
-      (let [backend-port nil
-            actual (create-job-description
-                     service-id service-description service-id->password-fn home-path-prefix
-                     instance-priority backend-port)
-            job-uuid (-> actual :jobs first :uuid)
-            expected {:jobs [(assoc expected-job
-                               :name (str "test-service-1." job-uuid)
-                               :uuid job-uuid)]}]
-        (is (= expected actual))))
+      (testing "basic-test-with-defaults"
+        (let [backend-port nil
+              actual (create-job-description
+                       service-id service-description service-id->password-fn home-path-prefix
+                       instance-priority backend-port)
+              job-uuid (-> actual :jobs first :uuid)
+              expected {:jobs [(assoc expected-job
+                                 :name (str "test-service-1." job-uuid)
+                                 :uuid job-uuid)]}]
+          (is (= expected actual))))
 
-    (testing "basic-test-custom-port"
-      (let [service-description service-description
-            backend-port 4567
-            actual (create-job-description
-                     service-id service-description service-id->password-fn home-path-prefix
-                     instance-priority backend-port)
-            job-uuid (-> actual :jobs first :uuid)
-            expected {:jobs [(-> expected-job
-                                 (assoc :name (str "test-service-1." job-uuid) :uuid job-uuid)
-                                 (update :labels assoc :backend-port "4567"))]}]
-        (is (= expected actual))))
+      (testing "basic-test-custom-port"
+        (let [service-description service-description
+              backend-port 4567
+              actual (create-job-description
+                       service-id service-description service-id->password-fn home-path-prefix
+                       instance-priority backend-port)
+              job-uuid (-> actual :jobs first :uuid)
+              expected {:jobs [(-> expected-job
+                                   (assoc :name (str "test-service-1." job-uuid) :uuid job-uuid)
+                                   (update :labels assoc :backend-port "4567"))]}]
+          (is (= expected actual))))
 
-    (testing "basic-test-with-docker-image"
-      (let [service-description (assoc service-description
-                                  "cmd-type" "docker"
-                                  "version" "foo/bar:baz")
-            backend-port nil
-            actual (create-job-description
-                     service-id service-description service-id->password-fn home-path-prefix
-                     instance-priority backend-port)
-            job-uuid (-> actual :jobs first :uuid)
-            expected {:jobs [(assoc expected-job
-                               :application {:name "test-service"
-                                             :version "baz"}
-                               :container {:docker {:force-pull-image false
-                                                    :image "namespace:foo,name:bar,label:baz"
-                                                    :network "HOST"}
-                                           :type "docker"}
-                               :name (str "test-service-1." job-uuid)
-                               :uuid job-uuid)]}]
-        (is (= expected actual)))
+      (testing "basic-test-with-docker-image"
+        (let [service-description (assoc service-description
+                                    "cmd-type" "docker"
+                                    "version" "foo/bar:baz")
+              backend-port nil
+              actual (create-job-description
+                       service-id service-description service-id->password-fn home-path-prefix
+                       instance-priority backend-port)
+              job-uuid (-> actual :jobs first :uuid)
+              expected {:jobs [(assoc expected-job
+                                 :application {:name "test-service"
+                                               :version "baz"}
+                                 :container {:docker {:force-pull-image false
+                                                      :image "namespace:foo,name:bar,label:baz"
+                                                      :network "HOST"}
+                                             :type "docker"}
+                                 :name (str "test-service-1." job-uuid)
+                                 :uuid job-uuid)]}]
+          (is (= expected actual)))
 
-      (is (thrown-with-msg?
-            ExceptionInfo #"to use container support format version as namespace/name:label"
-            (let [service-description (assoc service-description
-                                        "cmd-type" "docker"
-                                        "version" "foo/bar-baz")
-                  backend-port nil]
-              (create-job-description
-                service-id service-description service-id->password-fn home-path-prefix
-                instance-priority backend-port)))))))
+        (is (thrown-with-msg?
+              ExceptionInfo #"to use container support format version as namespace/name:label"
+              (let [service-description (assoc service-description
+                                          "cmd-type" "docker"
+                                          "version" "foo/bar-baz")
+                    backend-port nil]
+                (create-job-description
+                  service-id service-description service-id->password-fn home-path-prefix
+                  instance-priority backend-port))))))))
 
 (deftest test-determine-instance-priority
   (let [allowed-priorities [75 70 65 60 55]]
