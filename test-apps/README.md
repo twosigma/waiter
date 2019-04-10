@@ -10,3 +10,6 @@ The following test apps are included:
 - nginx: 
   An nginx server that responds to cleartext and secure http/1.1 and http/2 requests. 
   It is mainly used to test http/2 backend-proto support.
+- sediment:  
+  An jetty server that responds to cleartext http/1.1 and http/2 requests. 
+  It is mainly used to test trailers support.
