@@ -206,3 +206,27 @@ class MultiWaiterCliTest(util.WaiterTest):
                 util.delete_token(self.waiter_url_2, token_name, kill_services=True)
         finally:
             util.delete_token(self.waiter_url_1, token_name, kill_services=True)
+
+    def test_update_non_default_cluster(self):
+        # Set up the config so that cluster #1 is the default
+        config = {'clusters': [{'name': 'waiter1', 'url': self.waiter_url_1, 'default-for-create': True},
+                               {'name': 'waiter2', 'url': self.waiter_url_2}]}
+
+        # Create in cluster #2 (the non-default)
+        token_name = self.token_name()
+        service_description = util.minimal_service_description()
+        util.post_token(self.waiter_url_2, token_name, service_description)
+        try:
+            # Update using the CLI, which should update in cluster #2
+            with cli.temp_config_file(config) as path:
+                version = str(uuid.uuid4())
+                cp = cli.update(token_name=token_name, flags=f'--config {path}', update_flags=f'--version {version}')
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                self.assertNotIn('waiter1', cli.stdout(cp))
+                self.assertIn('waiter2', cli.stdout(cp))
+                token_1 = util.load_token(self.waiter_url_1, token_name, expected_status_code=404)
+                token_2 = util.load_token(self.waiter_url_2, token_name, expected_status_code=200)
+                self.assertNotIn('version', token_1)
+                self.assertEqual(version, token_2['version'])
+        finally:
+            util.delete_token(self.waiter_url_2, token_name)
