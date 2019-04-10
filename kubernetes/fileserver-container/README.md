@@ -16,4 +16,4 @@ in the container's environment to the desired port number.
 
 ## Building the Docker image
 
-    docker build -t twosigma/waiter-fileserver .
+    docker build -t "twosigma/waiter-fileserver:$(date +%Y%m%d)" .
