@@ -20,10 +20,13 @@ def init_token_json(_, args, __):
     """Creates (or updates) a Waiter token"""
     logging.debug('args: %s' % args)
     file = os.path.abspath(args.pop('file'))
-    print(f'Writing token JSON to {file}.')
-    token_fields = deep_merge(DEFAULTS, args)
-    with open(file, 'w') as outfile:
-        json.dump(token_fields, outfile, indent=2)
+    if os.path.isfile(file) and not args.pop('force'):
+        raise Exception(f'There is already a file at {file}. Use --force if you want to overwrite it.')
+    else:
+        print(f'Writing token JSON to {file}.')
+        token_fields = deep_merge(DEFAULTS, args)
+        with open(file, 'w') as outfile:
+            json.dump(token_fields, outfile, indent=2)
 
 
 def register(add_parser):
@@ -32,7 +35,8 @@ def register(add_parser):
     action = token_post.Action.INIT
     parser = token_post.register_argument_parser(add_parser, action)
     token_post.add_token_flags(parser)
-    parser.add_argument('--file', '-f', help='name of file to write token JSON to', default='token.json')
+    parser.add_argument('--file', '-F', help='name of file to write token JSON to', default='token.json')
+    parser.add_argument('--force', '-f', help='overwrite existing file', dest='force', action='store_true')
     return init_token_json
 
 

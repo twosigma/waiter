@@ -755,7 +755,7 @@ class WaiterCliTest(util.WaiterTest):
     def test_init_basic(self):
         token_name = self.token_name()
         with tempfile.NamedTemporaryFile(delete=True) as file:
-            cp = cli.init(self.waiter_url, init_flags=f"--cmd '{util.default_cmd()}' --file {file.name}")
+            cp = cli.init(self.waiter_url, init_flags=f"--cmd '{util.default_cmd()}' --file {file.name} --force")
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertIn('Writing token JSON', cli.stdout(cp))
             token_definition = util.load_json_file(file.name)
@@ -785,7 +785,8 @@ class WaiterCliTest(util.WaiterTest):
                 '--idle-timeout-mins 1 ' \
                 '--max-instances 100 ' \
                 '--restart-backoff-factor 1.1 ' \
-                f'--file {file.name} '
+                f'--file {file.name} ' \
+                '--force'
             cp = cli.init(self.waiter_url, init_flags=init_flags)
             self.assertEqual(0, cp.returncode, cp.stderr)
             token_definition = util.load_json_file(file.name)
@@ -804,3 +805,13 @@ class WaiterCliTest(util.WaiterTest):
                 self.assertEqual(1.1, token['restart-backoff-factor'])
             finally:
                 util.delete_token(self.waiter_url, token_name)
+
+    def test_init_existing_file(self):
+        with tempfile.NamedTemporaryFile(delete=True) as file:
+            self.assertTrue(os.path.isfile(file.name))
+            cp = cli.init(self.waiter_url, init_flags=f"--cmd '{util.default_cmd()}' --file {file.name}")
+            self.assertEqual(1, cp.returncode, cp.stderr)
+            self.assertIn('There is already a file', cli.stderr(cp))
+            cp = cli.init(self.waiter_url, init_flags=f"--cmd '{util.default_cmd()}' --file {file.name} --force")
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('Writing token JSON', cli.stdout(cp))
