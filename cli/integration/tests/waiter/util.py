@@ -202,7 +202,7 @@ def kill_service(waiter_url, service_id):
     wait_until_routers(waiter_url, lambda services: not any(s['service-id'] == service_id for s in services))
 
 
-def services_for_token(waiter_url, token_name, assert_response=True, expected_status_code=200):
+def services_for_token(waiter_url, token_name, assert_response=True, expected_status_code=200, log_services=False):
     headers = {'Content-Type': 'application/json'}
     response = session.get(f'{waiter_url}/apps', headers=headers, params={'token': token_name})
     if assert_response:
@@ -211,9 +211,11 @@ def services_for_token(waiter_url, token_name, assert_response=True, expected_st
             f'Expected {expected_status_code}, got {response.status_code} with body {response.text}'
     services = response.json()
     logging.info(f'{len(services)} service(s) using token {token_name}')
+    if log_services:
+        logging.info(f'Services: {json.dumps(services, indent=2)}')
     return services
 
-  
+
 def multi_cluster_tests_enabled():
     """
     Returns true if the WAITER_TEST_MULTI_CLUSTER environment variable is set to "true",
@@ -232,3 +234,7 @@ def kill_services_using_token(waiter_url, token_name):
                        lambda svcs: service_id not in [s['service-id'] for s in svcs])
         except:
             logging.exception(f'Encountered exception trying to kill service: {service}')
+
+
+def wait_until_no_services_for_token(waiter_url, token_name):
+    wait_until(lambda: services_for_token(waiter_url, token_name, log_services=True), lambda svcs: len(svcs) == 0)

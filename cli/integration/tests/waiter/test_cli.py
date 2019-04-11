@@ -300,7 +300,7 @@ class WaiterCliTest(util.WaiterTest):
         def update_token_loop():
             mem = 1
             while keep_running:
-                util.post_token(self.waiter_url, token_name, {'mem': mem})
+                util.post_token(self.waiter_url, token_name, {'mem': mem}, assert_response=False)
                 mem += 1
 
         util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
@@ -434,7 +434,7 @@ class WaiterCliTest(util.WaiterTest):
         def update_token_loop():
             mem = 1
             while keep_running:
-                util.post_token(self.waiter_url, token_name, {'mem': mem})
+                util.post_token(self.waiter_url, token_name, {'mem': mem}, assert_response=False)
                 mem += 1
 
         util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
@@ -448,7 +448,7 @@ class WaiterCliTest(util.WaiterTest):
             keep_running = False
             thread.join()
             self.logger.info('Thread finished')
-            util.delete_token(self.waiter_url, token_name)
+            util.delete_token(self.waiter_url, token_name, assert_response=False)
 
     def test_delete_non_existent_token(self):
         token_name = self.token_name()
@@ -511,7 +511,7 @@ class WaiterCliTest(util.WaiterTest):
             self.assertIn('Killing service', cli.stdout(cp))
             self.assertIn(service_id, cli.stdout(cp))
             self.assertIn('Successfully killed', cli.stdout(cp))
-            self.assertEqual(0, len(util.services_for_token(self.waiter_url, token_name)))
+            util.wait_until_no_services_for_token(self.waiter_url, token_name)
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
 
@@ -540,7 +540,7 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(2, cli.stdout(cp).count('Successfully killed'))
             self.assertIn(service_id_1, cli.stdout(cp))
             self.assertIn(service_id_2, cli.stdout(cp))
-            self.assertEqual(0, len(util.services_for_token(self.waiter_url, token_name)))
+            util.wait_until_no_services_for_token(self.waiter_url, token_name)
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
 
@@ -729,8 +729,7 @@ class WaiterCliTest(util.WaiterTest):
             cp = cli.kill(self.waiter_url, service_id, kill_flags='--service-id')
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertIn('Killing service', cli.stdout(cp))
-            services_for_token = util.services_for_token(self.waiter_url, token_name)
-            self.assertEqual(0, len(services_for_token), json.dumps(services_for_token, indent=2))
+            util.wait_until_no_services_for_token(self.waiter_url, token_name)
         finally:
             util.delete_token(self.waiter_url, token_name)
 
