@@ -265,7 +265,7 @@
       (try
         (let [response-promise (promise)
               ctrl-promise (promise)
-              client http-client
+              client http1-client
               websocket-client (websocket-client-factory)]
           (doto (.getPolicy websocket-client)
             (.setAsyncWriteTimeout (-> 1 t/minutes t/in-millis))

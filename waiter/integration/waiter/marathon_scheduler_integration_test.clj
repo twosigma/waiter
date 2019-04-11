@@ -13,7 +13,7 @@
              :x-waiter-image custom-image-alias}
             #(make-kitchen-request waiter-url % :method :get :path "/"))
           attributes (:attributes (http/http-request
-                                    http-client
+                                    http1-client
                                     (str "http://" x-waiter-backend-host ":5051/state.json")))]
       (is (= constraint-value ((keyword constraint-attribute) attributes)))
       (delete-service waiter-url service-id))))
