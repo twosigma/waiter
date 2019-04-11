@@ -18,7 +18,7 @@
       (is (= constraint-value ((keyword constraint-attribute) attributes)))
       (delete-service waiter-url service-id))))
 
-(deftest ^:parallel ^:integration-slow test-marathon-image-alias
+(deftest ^:parallel ^:integration-slow ^:explicit test-marathon-image-alias
   (testing-using-waiter-url
     (when (using-marathon? waiter-url)
       (let [custom-image-alias (System/getenv "INTEGRATION_TEST_IMAGE_CONSTRAINT_ALIAS")
@@ -30,7 +30,7 @@
         (verify-marathon-image-alias waiter-url custom-image-alias constraint-attribute constraint-value)))))
 
 
-(deftest ^:parallel ^:integration-slow test-marathon-image-alias-2
+(deftest ^:parallel ^:integration-slow ^:explicit test-marathon-image-alias-2
   (testing-using-waiter-url
     (when (using-marathon? waiter-url)
       (let [custom-image-alias (System/getenv "INTEGRATION_TEST_IMAGE_CONSTRAINT_ALIAS_2")
