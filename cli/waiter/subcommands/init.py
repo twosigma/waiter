@@ -20,7 +20,8 @@ def init_token_json(_, args, __):
     """Creates (or updates) a Waiter token"""
     logging.debug('args: %s' % args)
     file = os.path.abspath(args.pop('file'))
-    if os.path.isfile(file) and not args.pop('force'):
+    should_overwrite = args.pop('force')
+    if os.path.isfile(file) and not should_overwrite:
         raise Exception(f'There is already a file at {file}. Use --force if you want to overwrite it.')
     else:
         print(f'Writing token JSON to {file}.')

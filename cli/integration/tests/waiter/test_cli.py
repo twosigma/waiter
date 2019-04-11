@@ -719,7 +719,7 @@ class WaiterCliTest(util.WaiterTest):
             cp = cli.update(self.waiter_url, token_name, update_flags=f'--json {file.name}')
             self.assertEqual(1, cp.returncode, cp.stderr)
             self.assertIn('Unable to load token JSON from', cli.stderr(cp))
-            
+
     def test_kill_service_id(self):
         token_name = self.token_name()
         util.post_token(self.waiter_url, token_name, util.minimal_service_description())
@@ -754,11 +754,13 @@ class WaiterCliTest(util.WaiterTest):
 
     def test_init_basic(self):
         token_name = self.token_name()
-        with tempfile.NamedTemporaryFile(delete=True) as file:
-            cp = cli.init(self.waiter_url, init_flags=f"--cmd '{util.default_cmd()}' --file {file.name} --force")
-            self.assertEqual(0, cp.returncode, cp.stderr)
-            self.assertIn('Writing token JSON', cli.stdout(cp))
-            token_definition = util.load_json_file(file.name)
+        filename = str(uuid.uuid4())
+        flags = f"--cmd '{util.default_cmd()}' --file {filename} --cmd-type shell"
+        cp = cli.init(self.waiter_url, init_flags=flags)
+        self.assertEqual(0, cp.returncode, cp.stderr)
+        self.assertIn('Writing token JSON', cli.stdout(cp))
+        try:
+            token_definition = util.load_json_file(filename)
             self.logger.info(f'Token definition: {json.dumps(token_definition, indent=2)}')
             util.post_token(self.waiter_url, token_name, token_definition)
             try:
@@ -766,6 +768,8 @@ class WaiterCliTest(util.WaiterTest):
                 self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
             finally:
                 util.delete_token(self.waiter_url, token_name, kill_services=True)
+        finally:
+            os.remove(filename)
 
     def test_implicit_init_args(self):
         cp = cli.init(init_flags='--help')
