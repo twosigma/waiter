@@ -174,7 +174,7 @@
         request-cid
         (log/info "request received:"
                   (-> (dissoc request :body :ctrl :in :out :request-time :server-name :server-port :servlet-request
-                              :ssl-client-cert :support-info)
+                              :ssl-client-cert :support-info :trailers-fn)
                       (update :headers headers/truncate-header-values)))
         (let [response (handler request)
               get-request-cid (fn get-request-cid [] request-cid)]
