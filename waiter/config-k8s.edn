@@ -40,6 +40,7 @@
                                  :log-bucket-sync-secs 5
                                  :log-bucket-url #config/env-default ["WAITER_S3_BUCKET" nil]
                                  :pod-sigkill-delay-secs 1
+                                 :replicaset-spec-builder {:image-aliases {"alias/integration" "twosigma/integration:latest"}}
                                  :url "http://localhost:8001"}}
 
  ; ---------- Error Handling ----------

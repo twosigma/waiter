@@ -1399,3 +1399,16 @@
     ;; Kill the watch threads
     (.stop rs-watch-thread)
     (.stop pods-watch-thread)))
+
+
+(deftest test-compute-image
+  (let [image-aliases {"to-resolve" "resolved"}]
+    (testing "no aliases"
+      (is (= "an/image" (compute-image "an/image" nil nil)))
+      (is (= "an/image" (compute-image nil "an/image" nil))))
+    (testing "aliases, alias found"
+      (is (= "resolved" (compute-image "to-resolve" nil image-aliases)))
+      (is (= "resolved" (compute-image nil "to-resolve" image-aliases))))
+    (testing "aliases, alias not found"
+      (is (= "an/image" (compute-image "an/image" nil image-aliases)))
+      (is (= "an/image" (compute-image nil "an/image" image-aliases))))))

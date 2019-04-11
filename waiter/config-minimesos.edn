@@ -41,7 +41,9 @@
                                :mesos-slave-port 5051
                                :http-options {:conn-timeout 10000
                                               :socket-timeout 10000
-                                              :spnego-auth false}}}
+                                              :spnego-auth false}
+                               :image->constraints {"alias/p1" {:attribute "platform" :value "p1"}
+                                                    "alias/p2" {:attribute "platform" :value "p2"}}}}
 
  ; ---------- CORS ----------
  :cors-config {:kind :allow-all}

@@ -383,7 +383,10 @@
                                                            ;; any additional configuration data needed for the implementation should be included here.
                                                            :factory-fn waiter.scheduler.kubernetes/default-replicaset-builder
                                                            ;; The default factory function accepts an option for the docker container to use in the pod.
-                                                           :default-container-image "twosigma/kitchen:latest"}
+                                                           :default-container-image "twosigma/kitchen:latest"
+                                                           ;; Map of image aliases. One of these aliases can be specified in the `image` field and the
+                                                           ;; resolved image will be used.
+                                                           :image-aliases {"alias/sample-alias" "real/image"}}
 
                                  ;; The authorizer is used by the scheduler to verify that a user has the proper permissions
                                  ;; to create services on the underlying scheduler platform.
@@ -481,6 +484,11 @@
                                ;; The HTTP options that will be used when accessing Marathon:
                                :http-options {:conn-timeout 10000
                                               :socket-timeout 10000}
+
+                               ;; Map of images to mesos constraints. If the `image` field of the service matches, then
+                               ;; the service will be restricted to mesos agents with the matching attribute. Those
+                               ;; agents are expected to be compatible with the image.
+                               :image->constraints {"alias/sample-alias" {:attribute "sample-attribute" :value "sample-value"}}
 
                                ;; Marathon will fail deployments (e.g. scale-down) if there is an existing deployment in
                                ;; flight; this represents the amount of time (milliseconds) Waiter will tolerate failed

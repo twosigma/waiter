@@ -659,6 +659,12 @@
                           service-description->namespace)]
       (authz/check-user authorizer run-as-user service-id))))
 
+(defn compute-image
+  "Compute the image to use for the service"
+  [image default-container-image image-aliases]
+  (let [unresolved-image (or image default-container-image)]
+    (get image-aliases unresolved-image unresolved-image)))
+
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
   [{:keys [cluster-name fileserver pod-base-port pod-sigkill-delay-secs
@@ -666,7 +672,7 @@
    service-id
    {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs health-check-max-consecutive-failures
            health-check-port-index health-check-proto image mem min-instances ports run-as-user] :as service-description}
-   {:keys [default-container-image log-bucket-url] :as context}]
+   {:keys [default-container-image log-bucket-url image-aliases] :as context}]
   (let [work-path (str "/home/" run-as-user)
         home-path (str work-path "/latest")
         base-env (scheduler/environment service-id service-description
@@ -718,7 +724,7 @@
                                              :waiter-cluster cluster-name}}
                          :spec {:containers [{:command ["/usr/bin/waiter-init" cmd]
                                               :env env
-                                              :image (or image default-container-image)
+                                              :image (compute-image image default-container-image image-aliases)
                                               :imagePullPolicy "IfNotPresent"
                                               :livenessProbe {:httpGet {:path health-check-url
                                                                         :port health-check-port

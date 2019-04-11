@@ -102,7 +102,7 @@
                          :x-waiter-scale-up-factor 0.99}
           request-fn (fn [target-url cookies]
                        (make-kitchen-request target-url extra-headers :cookies cookies))
-          _ "Making canary request..."
+          _ (log/info "Making canary request...")
           {:keys [cookies] :as first-request} (request-fn waiter-url {})
           service-id (retrieve-service-id waiter-url (:request-headers first-request))]
       (log/info "service-id:" service-id)

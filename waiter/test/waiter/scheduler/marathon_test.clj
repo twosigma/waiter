@@ -562,6 +562,27 @@
                                    :path "/path/to/instance2/directory/dir4"})]
         (is (= expected-result (mesos/retrieve-directory-content-from-host mesos-api host directory)))))))
 
+(defn- create-marathon-scheduler
+  [& {:as marathon-config}]
+  (-> {:authorizer {:kind :default
+                    :default {:factory-fn 'waiter.authorization/noop-authorizer}}
+       :force-kill-after-ms 1000
+       :home-path-prefix "/home/path/"
+       :is-waiter-service?-fn (constantly true)
+       :marathon-api {}
+       :mesos-api {}
+       :retrieve-framework-id-fn (constantly nil)
+       :retrieve-syncer-state-fn (constantly {})
+       :scheduler-name "marathon"
+       :service-id->failed-instances-transient-store (atom {})
+       :service-id->kill-info-store (atom {})
+       :service-id->out-of-sync-state-store (atom {})
+       :service-id->password-fn #(str % ".password")
+       :service-id->service-description (constantly nil)
+       :sync-deployment-maintainer-atom (atom nil)}
+      (merge marathon-config)
+      map->MarathonScheduler))
+
 (deftest test-marathon-descriptor
   (let [service-id->password-fn (fn [service-id] (str service-id "-password"))]
     (testing "basic-test-with-defaults"
@@ -579,6 +600,7 @@
                             "WAITER_SERVICE_ID" "test-service-1"
                             "WAITER_USERNAME" "waiter"}
                       :cmd "test-command"
+                      :constraints []
                       :cpus 1
                       :disk nil
                       :mem 1536
@@ -607,7 +629,7 @@
                                  "health-check-port-index" 0
                                  "env" {"FOO" "bar"
                                         "BAZ" "quux"}}
-            actual (marathon-descriptor home-path-prefix service-id->password-fn
+            actual (marathon-descriptor (create-marathon-scheduler) home-path-prefix service-id->password-fn
                                         {:service-id service-id, :service-description service-description})]
         (is (= expected actual))
 
@@ -617,28 +639,18 @@
                      (assoc :ports [0 0 0]))
                  (->> (assoc service-description "health-check-port-index" 2 "ports" 3)
                       (assoc {:service-id service-id} :service-description)
-                      (marathon-descriptor home-path-prefix service-id->password-fn)))))))))
+                      (marathon-descriptor (create-marathon-scheduler) home-path-prefix service-id->password-fn)))))
 
-(defn- create-marathon-scheduler
-  [& {:as marathon-config}]
-  (-> {:authorizer {:kind :default
-                    :default {:factory-fn 'waiter.authorization/noop-authorizer}}
-       :force-kill-after-ms 1000
-       :home-path-prefix "/home/path/"
-       :is-waiter-service?-fn (constantly true)
-       :marathon-api {}
-       :mesos-api {}
-       :retrieve-framework-id-fn (constantly nil)
-       :retrieve-syncer-state-fn (constantly {})
-       :scheduler-name "marathon"
-       :service-id->failed-instances-transient-store (atom {})
-       :service-id->kill-info-store (atom {})
-       :service-id->out-of-sync-state-store (atom {})
-       :service-id->password-fn #(str % ".password")
-       :service-id->service-description (constantly nil)
-       :sync-deployment-maintainer-atom (atom nil)}
-      (merge marathon-config)
-      map->MarathonScheduler))
+        (testing "constraint-from-image-alias"
+          (is (= (-> expected
+                     (assoc :constraints [["platform" "CLUSTER" "p1"]]))
+                 (->> (assoc service-description "image" "alias/p1")
+                      (assoc {:service-id service-id} :service-description)
+                      (marathon-descriptor (create-marathon-scheduler
+                                             :image->constraints
+                                             {"alias/p1" {:attribute "platform" :value "p1"}
+                                              "alias/p2" {:attribute "platform" :value "p2"}})
+                                           home-path-prefix service-id->password-fn)))))))))
 
 (deftest test-kill-instance-last-force-kill-time-store
   (let [current-time (t/now)
@@ -776,7 +788,15 @@
       (testing "validate service - normal"
         (scheduler/validate-service
           (create-marathon-scheduler (assoc valid-config :service-id->service-description-fn (constantly {}))) nil))
-      (testing "validate service - test that image can't be set"
+      (testing "validate service - test known image alias"
+        (scheduler/validate-service
+          (create-marathon-scheduler (assoc valid-config
+                                       :image->constraints
+                                       {"alias/p1" {:attribute "platform" :value "p1"}
+                                        "alias/p2" {:attribute "platform" :value "p2"}}
+                                       :service-id->service-description-fn
+                                       (constantly {"image" "alias/p1"}))) nil))
+      (testing "validate service - test unknown image alias"
         (is (thrown? Throwable (scheduler/validate-service
                                  (create-marathon-scheduler (assoc valid-config
                                                               :service-id->service-description-fn
