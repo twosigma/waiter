@@ -6,7 +6,11 @@
 set -ex
 
 TEST_APPS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && cd .. && pwd )"
-NAME=twosigma/kitchen
+NAME=twosigma/waiter-test-apps
+
+pushd ${TEST_APPS_DIR}/sediment
+mvn clean package
+popd
 
 cd ${TEST_APPS_DIR}
 echo "Building docker images for ${NAME}"

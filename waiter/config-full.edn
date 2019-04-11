@@ -383,7 +383,7 @@
                                                            ;; any additional configuration data needed for the implementation should be included here.
                                                            :factory-fn waiter.scheduler.kubernetes/default-replicaset-builder
                                                            ;; The default factory function accepts an option for the docker container to use in the pod.
-                                                           :default-container-image "twosigma/kitchen:latest"
+                                                           :default-container-image "twosigma/waiter-test-apps:latest"
                                                            ;; Map of image aliases. One of these aliases can be specified in the `image` field and the
                                                            ;; resolved image will be used.
                                                            :image-aliases {"alias/sample-alias" "real/image"}}

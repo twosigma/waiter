@@ -61,7 +61,7 @@
       :replicaset-api-version "extensions/v1beta1"
       :replicaset-spec-builder-fn #(waiter.scheduler.kubernetes/default-replicaset-builder
                                      %1 %2 %3
-                                     {:default-container-image "twosigma/kitchen:latest"})
+                                     {:default-container-image "twosigma/waiter-test-apps:latest"})
       :service-id->failed-instances-transient-store (atom {})
       :service-id->password-fn #(str "password-" %)
       :service-id->service-description-fn (pc/map-from-keys (constantly {"health-check-port-index" 0
@@ -119,7 +119,7 @@
 (deftest replicaset-spec-no-image
   (let [scheduler (make-dummy-scheduler ["test-service-id"])
         replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" dummy-service-description)]
-    (is (= "twosigma/kitchen:latest" (get-in replicaset-spec [:spec :template :spec :containers 0 :image])))))
+    (is (= "twosigma/waiter-test-apps:latest" (get-in replicaset-spec [:spec :template :spec :containers 0 :image])))))
 
 (deftest replicaset-spec-custom-image
   (let [scheduler (make-dummy-scheduler ["test-service-id"])
@@ -786,7 +786,7 @@
                     :pod-suffix-length default-pod-suffix-length
                     :replicaset-api-version "extensions/v1beta1"
                     :replicaset-spec-builder {:factory-fn 'waiter.scheduler.kubernetes/default-replicaset-builder
-                                              :default-container-image "twosigma/kitchen:latest"}
+                                              :default-container-image "twosigma/waiter-test-apps:latest"}
                     :url "http://127.0.0.1:8001"}
         base-config (merge context k8s-config)]
     (with-redefs [start-pods-watch! (constantly nil)
@@ -847,7 +847,7 @@
           (scheduler/validate-service
             (kubernetes-scheduler (assoc base-config
                                     :service-id->service-description-fn
-                                    (constantly {"image" "twosigma/kitchen"}))) nil))))))
+                                    (constantly {"image" "twosigma/waiter-test-apps"}))) nil))))))
 
 (deftest test-start-k8s-watch!
   (let [service-id "test-app-1234"
