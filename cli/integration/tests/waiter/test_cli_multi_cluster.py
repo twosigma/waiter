@@ -202,6 +202,7 @@ class MultiWaiterCliTest(util.WaiterTest):
                     self.assertIn(f'{self.waiter_url_1}/apps/{service_id_1}', cli.stdout(cp))
                     self.assertIn(f'{self.waiter_url_2}/apps/{service_id_2}', cli.stdout(cp))
                     self.assertEqual(2, cli.stdout(cp).count('cannot be killed because it is already Inactive'))
+                    self.assertEqual(2, cli.stdout(cp).count('Run as user'))
             finally:
                 util.delete_token(self.waiter_url_2, token_name, kill_services=True)
         finally:

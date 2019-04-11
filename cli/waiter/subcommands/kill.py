@@ -104,10 +104,12 @@ def kill(clusters, args, _):
                 else:
                     last_request_time = 'n/a'
 
+                run_as_user = service['service-description']['run-as-user']
                 table = [['Status', status],
                          ['Healthy', healthy_count],
                          ['Unhealthy', unhealthy_count],
-                         ['URL', url]]
+                         ['URL', url],
+                         ['Run as user', run_as_user]]
                 table_text = tabulate(table, tablefmt='plain')
                 print(f'\n'
                       f'=== {terminal.bold(cluster_name)} / {terminal.bold(service_id)} ===\n'
