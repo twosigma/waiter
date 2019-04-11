@@ -15,11 +15,11 @@ nc -kl localhost ${GRAPHITE_SERVER_PORT} > /dev/null &
 
 # Start waiter
 : ${WAITER_PORT:=9091}
-${ROOT_DIR}/waiter/bin/run-using-shell-scheduler.sh ${WAITER_PORT} &
+${ROOT_DIR}/waiter/bin/run-using-shell-scheduler.sh ${WAITER_PORT} waiter1 &
 
 # Start a second waiter
 : ${WAITER_PORT_2:=9191}
-${ROOT_DIR}/waiter/bin/run-using-shell-scheduler.sh ${WAITER_PORT_2} &
+${ROOT_DIR}/waiter/bin/run-using-shell-scheduler.sh ${WAITER_PORT_2} waiter2 &
 
 function wait_for_waiter {
     URI=${1}

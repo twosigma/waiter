@@ -230,3 +230,36 @@ class MultiWaiterCliTest(util.WaiterTest):
                 self.assertEqual(version, token_2['version'])
         finally:
             util.delete_token(self.waiter_url_2, token_name)
+
+    def test_ping_via_token_cluster(self):
+        # Create in cluster #1
+        token_name = self.token_name()
+        token_data = util.minimal_service_description()
+        util.post_token(self.waiter_url_1, token_name, token_data)
+        try:
+            # Create in cluster #2
+            token_data['cluster'] = util.load_token(self.waiter_url_1, token_name)['cluster']
+            util.post_token(self.waiter_url_2, token_name, token_data)
+            try:
+                config = self.__two_cluster_config()
+                with cli.temp_config_file(config) as path:
+                    # Ping the token, which should only ping in cluster #1
+                    cp = cli.ping(token_name_or_service_id=token_name, flags=f'--config {path}')
+                    self.assertEqual(0, cp.returncode, cp.stderr)
+                    self.assertIn('waiter1', cli.stdout(cp))
+                    self.assertEqual(1, cli.stdout(cp).count('Pinging token'))
+                    self.assertEqual(1, cli.stdout(cp).count('Not pinging token'))
+                    self.assertEqual(1, len(util.services_for_token(self.waiter_url_1, token_name)))
+                    self.assertEqual(0, len(util.services_for_token(self.waiter_url_2, token_name)))
+
+                    # Ping the token in cluster #2 explicitly
+                    cp = cli.ping(token_name_or_service_id=token_name, flags=f'--config {path} --cluster waiter2')
+                    self.assertEqual(0, cp.returncode, cp.stderr)
+                    self.assertIn('waiter2', cli.stdout(cp))
+                    self.assertEqual(1, cli.stdout(cp).count('Pinging token'))
+                    self.assertEqual(0, cli.stdout(cp).count('Not pinging token'))
+                    self.assertEqual(1, len(util.services_for_token(self.waiter_url_2, token_name)))
+            finally:
+                util.delete_token(self.waiter_url_2, token_name, kill_services=True)
+        finally:
+            util.delete_token(self.waiter_url_1, token_name, kill_services=True)

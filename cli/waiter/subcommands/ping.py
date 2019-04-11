@@ -71,12 +71,28 @@ def ping(clusters, args, _):
             health_check_endpoint = data['service']['effective-parameters']['health-check-url']
             success = ping_service_on_cluster(cluster, token_name_or_service_id, health_check_endpoint, timeout)
         else:
-            # We are hard-coding the default health-check-url here to /status; this could
-            # alternatively be retrieved from /settings, but we want to skip the extra request
-            health_check_endpoint = data['token'].get('health-check-url', '/status')
-            success = ping_token_on_cluster(cluster, token_name_or_service_id, health_check_endpoint, timeout)
+            token_data = data['token']
+            token_cluster_name = token_data['cluster'].upper()
+            if len(clusters) == 1 or token_explicitly_created_on_cluster(cluster, token_cluster_name):
+                # We are hard-coding the default health-check-url here to /status; this could
+                # alternatively be retrieved from /settings, but we want to skip the extra request
+                health_check_endpoint = token_data.get('health-check-url', '/status')
+                success = ping_token_on_cluster(cluster, token_name_or_service_id, health_check_endpoint, timeout)
+            else:
+                print(f'Not pinging token {terminal.bold(token_name_or_service_id)} '
+                      f'in {terminal.bold(cluster_name)} '
+                      f'because it was created in {terminal.bold(token_cluster_name)}.')
+                success = True
         overall_success = overall_success and success
     return 0 if overall_success else 1
+
+
+def token_explicitly_created_on_cluster(cluster, token_cluster_name):
+    """Returns true if the given token cluster matches the configured cluster name of the given cluster"""
+    cluster_settings, _ = http_util.make_data_request(cluster, lambda: http_util.get(cluster, '/settings'))
+    cluster_config_name = cluster_settings['cluster-config']['name'].upper()
+    created_on_this_cluster = token_cluster_name == cluster_config_name
+    return created_on_this_cluster
 
 
 def register(add_parser):

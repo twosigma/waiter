@@ -269,20 +269,20 @@
 
 (deftest test-validate-shell-settings
   (testing "Test validating shell scheduler settings"
-    (let [graphite-server-port 5555
-          port 12345
-          run-as-user "foo"]
+    (let [port 12345
+          run-as-user "foo"
+          cluster-name "bar"]
       (with-redefs [env (fn [name _]
                           (case name
-                            "GRAPHITE_SERVER_PORT" (str graphite-server-port)
                             "WAITER_PORT" (str port)
                             "WAITER_AUTH_RUN_AS_USER" run-as-user
+                            "WAITER_CLUSTER_NAME" cluster-name
                             (throw (ex-info "Unexpected environment variable" {:name name}))))]
         (let [settings (load-shell-settings)]
           (is (nil? (s/check settings-schema settings)))
-          (is (= graphite-server-port (get-in settings [:metrics-config :codahale-reporters :graphite :port])))
           (is (= port (:port settings)))
-          (is (= run-as-user (get-in settings [:authenticator-config :one-user :run-as-user]))))))))
+          (is (= run-as-user (get-in settings [:authenticator-config :one-user :run-as-user])))
+          (is (= cluster-name (get-in settings [:cluster-config :name]))))))))
 
 (deftest test-validate-composite-settings
   (testing "Test validating composite scheduler settings"
