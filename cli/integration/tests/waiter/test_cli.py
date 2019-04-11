@@ -598,7 +598,7 @@ class WaiterCliTest(util.WaiterTest):
             self.assertLess(stdout.index(service_id_1), stdout.index(service_id_2))
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
-            
+
     def test_ping_timeout(self):
         token_name = self.token_name()
         command = f'{util.default_cmd()} --start-up-sleep-ms 20000'
@@ -656,7 +656,7 @@ class WaiterCliTest(util.WaiterTest):
             self.assertIn('/sleep', cli.stdout(cp))
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
-            
+
     def test_create_does_not_patch(self):
         token_name = self.token_name()
         util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
@@ -751,3 +751,67 @@ class WaiterCliTest(util.WaiterTest):
             self.assertIn('cannot be killed because it is already Inactive', cli.stdout(cp))
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
+
+    def test_init_basic(self):
+        token_name = self.token_name()
+        with tempfile.NamedTemporaryFile(delete=True) as file:
+            cp = cli.init(self.waiter_url, init_flags=f"--cmd '{util.default_cmd()}' --file {file.name} --force")
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('Writing token JSON', cli.stdout(cp))
+            token_definition = util.load_json_file(file.name)
+            self.logger.info(f'Token definition: {json.dumps(token_definition, indent=2)}')
+            util.post_token(self.waiter_url, token_name, token_definition)
+            try:
+                util.ping_token(self.waiter_url, token_name)
+                self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
+            finally:
+                util.delete_token(self.waiter_url, token_name, kill_services=True)
+
+    def test_implicit_init_args(self):
+        cp = cli.init(init_flags='--help')
+        self.assertEqual(0, cp.returncode, cp.stderr)
+        self.assertIn('--cpus', cli.stdout(cp))
+        self.assertNotIn('--https-redirect', cli.stdout(cp))
+        self.assertNotIn('--fallback-period-secs', cli.stdout(cp))
+        self.assertNotIn('--idle-timeout-mins', cli.stdout(cp))
+        self.assertNotIn('--max-instances', cli.stdout(cp))
+        self.assertNotIn('--restart-backoff-factor', cli.stdout(cp))
+        token_name = self.token_name()
+        with tempfile.NamedTemporaryFile(delete=True) as file:
+            init_flags = \
+                '--https-redirect true ' \
+                '--cpus 0.1 ' \
+                '--fallback-period-secs 10 ' \
+                '--idle-timeout-mins 1 ' \
+                '--max-instances 100 ' \
+                '--restart-backoff-factor 1.1 ' \
+                f'--file {file.name} ' \
+                '--force'
+            cp = cli.init(self.waiter_url, init_flags=init_flags)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            token_definition = util.load_json_file(file.name)
+            self.logger.info(f'Token definition: {json.dumps(token_definition, indent=2)}')
+            util.post_token(self.waiter_url, token_name, token_definition)
+            try:
+                token = util.load_token(self.waiter_url, token_name)
+                self.assertEqual('your command goes here', token['cmd'])
+                self.assertEqual('your version goes here', token['version'])
+                self.assertEqual(0.1, token['cpus'])
+                self.assertEqual(2048, token['mem'])
+                self.assertTrue(token['https-redirect'])
+                self.assertEqual(10, token['fallback-period-secs'])
+                self.assertEqual(1, token['idle-timeout-mins'])
+                self.assertEqual(100, token['max-instances'])
+                self.assertEqual(1.1, token['restart-backoff-factor'])
+            finally:
+                util.delete_token(self.waiter_url, token_name)
+
+    def test_init_existing_file(self):
+        with tempfile.NamedTemporaryFile(delete=True) as file:
+            self.assertTrue(os.path.isfile(file.name))
+            cp = cli.init(self.waiter_url, init_flags=f"--cmd '{util.default_cmd()}' --file {file.name}")
+            self.assertEqual(1, cp.returncode, cp.stderr)
+            self.assertIn('There is already a file', cli.stderr(cp))
+            cp = cli.init(self.waiter_url, init_flags=f"--cmd '{util.default_cmd()}' --file {file.name} --force")
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('Writing token JSON', cli.stdout(cp))

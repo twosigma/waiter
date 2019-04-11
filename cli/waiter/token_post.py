@@ -14,6 +14,7 @@ BOOL_STRINGS = TRUE_STRINGS + FALSE_STRINGS
 class Action(Enum):
     CREATE = 'create'
     UPDATE = 'update'
+    INIT = 'init'
 
     def __str__(self):
         return f'{self.value}'
@@ -103,6 +104,13 @@ def create_or_update_token(clusters, args, _, action):
 
 def add_arguments(parser):
     """Adds arguments to the given parser"""
+    add_token_flags(parser)
+    parser.add_argument('--json', help='provide the data in a JSON file', dest='json')
+    parser.add_argument('token', nargs=1)
+
+
+def add_token_flags(parser):
+    """Adds the "core" token-field flags to the given parser"""
     parser.add_argument('--name', '-n', help='name of service')
     parser.add_argument('--version', '-v', help='version of service')
     parser.add_argument('--cmd', '-C', help='command to start service')
@@ -110,13 +118,11 @@ def add_arguments(parser):
     parser.add_argument('--cpus', '-c', help='cpus to reserve for service', type=float)
     parser.add_argument('--mem', '-m', help='memory (in MiB) to reserve for service', type=int)
     parser.add_argument('--ports', help='number of ports to reserve for service', type=int)
-    parser.add_argument('--json', help='provide the data in a JSON file', dest='json')
-    parser.add_argument('token', nargs=1)
 
 
 def register_argument_parser(add_parser, action):
     """Calls add_parser for the given sub-command (create or update) and returns the parser"""
-    sub_command = 'create' if action == Action.CREATE else 'update'
+    sub_command = str(action)
     return add_parser(sub_command,
                       help=f'{sub_command} token',
                       description=f'{sub_command.capitalize()} a Waiter token. '

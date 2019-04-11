@@ -284,3 +284,10 @@ def kill(waiter_url=None, token_name_or_service_id=None, flags=None, kill_flags=
     args = f'kill {token_name_or_service_id} {kill_flags or ""}'
     cp = cli(args, waiter_url, flags)
     return cp
+
+
+def init(waiter_url=None, flags=None, init_flags=None):
+    """Creates a barebones token JSON file via the CLI"""
+    args = f'init {init_flags or ""}'
+    cp = cli(args, waiter_url, flags)
+    return cp
