@@ -18,20 +18,15 @@
 (def ^:private config-promise (promise))
 
 (defn initialize-config
-  "Initializes the config."
+  "Initializes the config that represents the settings used to launch the current Waiter router.
+   The config is constant for the lifetime of the Waiter router."
   [config-value]
-  (if-not (realized? config-promise)
-    (deliver config-promise config-value)
-    (throw (IllegalStateException. "The config has already been initialized"))))
-
-(defn- check-config-initialized
-  "Throws an exception if the config has not been initialized."
-  []
-  (when-not (realized? config-promise)
-    (throw (IllegalStateException. "The config has not been initialized"))))
+  (deliver config-promise config-value)
+  (when-not (= @config-promise config-value)
+    (throw (IllegalStateException. "The config has already been initialized to a different value"))))
 
 (defn retrieve-cluster-name
   "Retrieves the configured cluster name."
   []
-  (check-config-initialized)
+  {:pre [(realized? config-promise)]}
   (get-in @config-promise [:cluster-config :name]))
