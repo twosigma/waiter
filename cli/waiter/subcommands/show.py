@@ -1,6 +1,5 @@
 import collections
 import json
-from operator import itemgetter
 
 from tabulate import tabulate
 
@@ -13,7 +12,7 @@ from waiter.util import guard_no_cluster
 def tabulate_token_services(services):
     """Returns a table displaying the service info"""
     if len(services) > 0:
-        services = sorted(services, key=lambda s: s.get('last-request-time', ''), reverse=True)
+        services = sorted(services, key=lambda s: s.get('last-request-time', None) or '', reverse=True)
         rows = [collections.OrderedDict([('Service Id', s['service-id']),
                                          ('Run as user', s['service-description']['run-as-user']),
                                          ('CPUs', s['service-description']['cpus']),
