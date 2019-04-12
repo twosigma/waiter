@@ -44,3 +44,12 @@ def format_status(status):
         return terminal.starting(status)
     else:
         return status
+
+
+def format_last_request_time(service):
+    """Formats the last request time of the given service"""
+    if 'last-request-time' in service and service['last-request-time']:
+        last_request_time = format_timestamp_string(service['last-request-time'])
+    else:
+        last_request_time = 'n/a'
+    return last_request_time

@@ -4,7 +4,7 @@ from urllib.parse import urljoin
 from tabulate import tabulate
 
 from waiter import http_util, terminal
-from waiter.format import format_timestamp_string, format_status
+from waiter.format import format_last_request_time, format_status
 from waiter.querying import get_service, print_no_data, query_service, query_services
 from waiter.util import guard_no_cluster, str2bool, response_message, print_error, wait_until, check_positive
 
@@ -88,11 +88,7 @@ def kill(clusters, args, _):
                     healthy_count = service['instance-counts']['healthy-instances']
                     unhealthy_count = service['instance-counts']['unhealthy-instances']
 
-                if 'last-request-time' in service:
-                    last_request_time = format_timestamp_string(service['last-request-time'])
-                else:
-                    last_request_time = 'n/a'
-
+                last_request_time = format_last_request_time(service)
                 run_as_user = service['service-description']['run-as-user']
                 table = [['Status', status],
                          ['Healthy', healthy_count],

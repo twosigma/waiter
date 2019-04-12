@@ -4,7 +4,9 @@ import json
 from tabulate import tabulate
 
 from waiter import terminal
-from waiter.format import format_mem_field, format_timestamp_string, format_field_name, format_status
+from waiter.format import format_field_name, format_last_request_time, format_mem_field, format_status, \
+    format_timestamp_string
+
 from waiter.querying import print_no_data, query_token
 from waiter.util import guard_no_cluster
 
@@ -18,7 +20,8 @@ def tabulate_token_services(services):
                                          ('CPUs', s['service-description']['cpus']),
                                          ('Memory', format_mem_field(s['service-description'])),
                                          ('Version', s['service-description']['version']),
-                                         ('Status', format_status(s['status']))])
+                                         ('Status', format_status(s['status'])),
+                                         ('Last request', format_last_request_time(s))])
                 for s in services]
         service_table = tabulate(rows, headers='keys', tablefmt='plain')
         return f'\n\n{service_table}'
