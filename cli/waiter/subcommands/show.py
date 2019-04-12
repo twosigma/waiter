@@ -4,8 +4,8 @@ import json
 from tabulate import tabulate
 
 from waiter import terminal
-from waiter.format import format_field_name, format_last_request_time, format_mem_field, format_status, \
-    format_timestamp_string
+from waiter.format import format_field_name, format_last_request_time, format_mem_field, format_memory_amount, \
+    format_status, format_timestamp_string
 
 from waiter.querying import print_no_data, query_token
 from waiter.util import guard_no_cluster
@@ -13,7 +13,17 @@ from waiter.util import guard_no_cluster
 
 def tabulate_token_services(services):
     """Returns a table displaying the service info"""
-    if len(services) > 0:
+    num_services = len(services)
+    if num_services > 0:
+        num_failing_services = len([s for s in services if s['status'] == 'Failing'])
+        total_mem_usage = format_memory_amount(sum(s['service-description']['mem'] for s in services))
+        total_cpu_usage = sum(s['service-description']['cpus'] for s in services)
+        table = [['# Services', num_services],
+                 ['# Failing', num_failing_services],
+                 ['Total Memory', total_mem_usage],
+                 ['Total CPU', total_cpu_usage]]
+        summary_table = tabulate(table, tablefmt='plain')
+
         services = sorted(services, key=lambda s: s.get('last-request-time', None) or '', reverse=True)
         rows = [collections.OrderedDict([('Service Id', s['service-id']),
                                          ('Run as user', s['service-description']['run-as-user']),
@@ -24,7 +34,7 @@ def tabulate_token_services(services):
                                          ('Last request', format_last_request_time(s))])
                 for s in services]
         service_table = tabulate(rows, headers='keys', tablefmt='plain')
-        return f'\n\n{service_table}'
+        return f'\n\n{summary_table}\n\n{service_table}'
     else:
         return ''
 
@@ -70,15 +80,15 @@ def tabulate_token(cluster_name, token, token_name, services):
     last_update_user = token['last-update-user']
     service_table = tabulate_token_services(services)
     return f'\n' \
-           f'=== {terminal.bold(cluster_name)} / {terminal.bold(token_name)} ===\n' \
-           f'\n' \
-           f'Last Updated: {last_update_time} ({last_update_user})\n' \
-           f'\n' \
-           f'{table_text}\n' \
-           f'\n' \
-           f'{token_command}' \
-           f'{environment}' \
-           f'{service_table}'
+        f'=== {terminal.bold(cluster_name)} / {terminal.bold(token_name)} ===\n' \
+        f'\n' \
+        f'Last Updated: {last_update_time} ({last_update_user})\n' \
+        f'\n' \
+        f'{table_text}\n' \
+        f'\n' \
+        f'{token_command}' \
+        f'{environment}' \
+        f'{service_table}'
 
 
 def show(clusters, args, _):
