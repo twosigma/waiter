@@ -5,7 +5,7 @@ from urllib.parse import urljoin
 from tabulate import tabulate
 
 from waiter import http_util, terminal
-from waiter.format import format_timestamp_string
+from waiter.format import format_timestamp_string, format_status
 from waiter.querying import get_service, print_no_data, query_service, query_services
 from waiter.util import guard_no_cluster, str2bool, response_message, print_error, wait_until, check_positive
 
@@ -36,16 +36,6 @@ def kill_service_on_cluster(cluster, service_id, timeout_seconds):
         message = f'Encountered error while killing {service_id} in {cluster_name}.'
         logging.exception(message)
         print_error(message)
-
-
-def format_status(status):
-    """Formats service status"""
-    if status == 'Running':
-        return terminal.running(status)
-    elif status == 'Inactive':
-        return terminal.inactive(status)
-    else:
-        return status
 
 
 def kill(clusters, args, _):

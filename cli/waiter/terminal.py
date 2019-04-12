@@ -35,6 +35,10 @@ def inactive(s):
     return colorize(s, Color.YELLOW)
 
 
+def starting(s):
+    return colorize(s, Color.BLUE)
+
+
 def reason(s):
     return colorize(s, Color.RED)
 

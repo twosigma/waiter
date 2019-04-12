@@ -1,6 +1,8 @@
 import arrow
 import humanfriendly
 
+from waiter import terminal
+
 
 def format_memory_amount(mebibytes):
     """Formats an amount, in MiB, to be human-readable"""
@@ -28,3 +30,17 @@ def format_field_name(s):
         parts[0] = 'maximum'
     with_spaces = ' '.join(parts)
     return with_spaces.capitalize()
+
+
+def format_status(status):
+    """Formats service status"""
+    if status == 'Running':
+        return terminal.running(status)
+    elif status == 'Inactive':
+        return terminal.inactive(status)
+    elif status == 'Failing':
+        return terminal.failed(status)
+    elif status == 'Starting':
+        return terminal.starting(status)
+    else:
+        return status

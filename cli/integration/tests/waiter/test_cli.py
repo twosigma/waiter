@@ -818,3 +818,30 @@ class WaiterCliTest(util.WaiterTest):
             cp = cli.init(self.waiter_url, init_flags=f"--cmd '{util.default_cmd()}' --file {file.name} --force")
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertIn('Writing token JSON', cli.stdout(cp))
+
+    def test_show_services_using_token(self):
+        token_name = self.token_name()
+        custom_fields = {
+            'permitted-user': getpass.getuser(),
+            'run-as-user': getpass.getuser()
+        }
+        service_description_1 = util.minimal_service_description(**custom_fields)
+        util.post_token(self.waiter_url, token_name, service_description_1)
+        try:
+            service_id_1 = util.ping_token(self.waiter_url, token_name)
+            custom_fields['cmd'] = 'exit 1'
+            service_description_2 = util.minimal_service_description(**custom_fields)
+            util.post_token(self.waiter_url, token_name, service_description_2)
+            service_id_2 = util.ping_token(self.waiter_url, token_name, expected_status_code=503)
+            cp, services = cli.show_token_services(self.waiter_url, token_name=token_name)
+            self.logger.info(f'Services: {json.dumps(services, indent=2)}')
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertEqual(2, len(services), services)
+            service_1 = next(s for s in services if s['service-id'] == service_id_1)
+            service_2 = next(s for s in services if s['service-id'] == service_id_2)
+            self.assertEqual(service_description_1, service_1['service-description'])
+            self.assertEqual(service_description_2, service_2['service-description'])
+            self.assertEqual('Running', service_1['status'])
+            self.assertEqual('Failing', service_2['status'])
+        finally:
+            util.delete_token(self.waiter_url, token_name)
