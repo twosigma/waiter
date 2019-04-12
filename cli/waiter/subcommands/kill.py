@@ -68,7 +68,7 @@ def kill(clusters, args, _):
             service['service-id'] = token_name_or_service_id
             services = [service]
         else:
-            services = sorted(data['services'], key=itemgetter('last-request-time'), reverse=True)
+            services = sorted(data['services'], key=lambda s: s.get('last-request-time', ''), reverse=True)
 
         for service in services:
             service_id = service['service-id']
