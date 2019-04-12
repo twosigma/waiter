@@ -301,7 +301,7 @@
                                                           :status 200}}]
         (is (= {"www.cluster-1.com" {:code :success/token-match}
                 "www.cluster-2.com" {:code :error/tokens-deleted
-                                     :details {:message "token deleted on both clusters should be handled separately"}}}
+                                     :details {:message "soft-deleted tokens should have already been hard-deleted"}}}
                (sync-token-on-clusters waiter-api cluster-urls test-token token-description-1 cluster-url->token-data)))))
 
     (testing "sync cluster same owner, different parameters and root"

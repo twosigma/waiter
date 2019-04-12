@@ -106,7 +106,7 @@
                   (and (get latest-token-description "deleted")
                        (get description "deleted"))
                   {:code :error/tokens-deleted
-                   :details {:message "token deleted on both clusters should be handled separately"}}
+                   :details {:message "soft-deleted tokens should have already been hard-deleted"}}
 
                   ;; active token, content the same irrespective of system metadata keys but roots different
                   (and (seq description)
