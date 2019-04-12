@@ -21,7 +21,7 @@ def tabulate_token_services(services):
         table = [['# Services', num_services],
                  ['# Failing', num_failing_services],
                  ['Total Memory', total_mem_usage],
-                 ['Total CPU', total_cpu_usage]]
+                 ['Total CPUs', total_cpu_usage]]
         summary_table = tabulate(table, tablefmt='plain')
 
         services = sorted(services, key=lambda s: s.get('last-request-time', None) or '', reverse=True)
