@@ -11,7 +11,15 @@ from waiter.querying import print_no_data, query_token
 from waiter.util import guard_no_cluster
 
 
-def tabulate_token_services(services):
+def format_using_current_token(service, token_etag):
+    """TODO(DPO)"""
+    if any(token['version'] == token_etag for source in service['source-tokens'] for token in source):
+        return terminal.success(u'\u2714')
+    else:
+        return u'\u274c'
+
+
+def tabulate_token_services(services, token_etag):
     """Returns a table displaying the service info"""
     num_services = len(services)
     if num_services > 0:
@@ -31,7 +39,8 @@ def tabulate_token_services(services):
                                          ('Memory', format_mem_field(s['service-description'])),
                                          ('Version', s['service-description']['version']),
                                          ('Status', format_status(s['status'])),
-                                         ('Last request', format_last_request_time(s))])
+                                         ('Last request', format_last_request_time(s)),
+                                         ('Current?', format_using_current_token(s, token_etag))])
                 for s in services]
         service_table = tabulate(rows, headers='keys', tablefmt='plain')
         return f'\n\n{summary_table}\n\n{service_table}'
@@ -39,7 +48,7 @@ def tabulate_token_services(services):
         return ''
 
 
-def tabulate_token(cluster_name, token, token_name, services):
+def tabulate_token(cluster_name, token, token_name, services, token_etag):
     """Given a token, returns a string containing tables for the fields"""
     table = [['Owner', token['owner']]]
     if token.get('name'):
@@ -78,7 +87,7 @@ def tabulate_token(cluster_name, token, token_name, services):
     table_text = tabulate(table, tablefmt='plain')
     last_update_time = format_timestamp_string(token['last-update-time'])
     last_update_user = f' ({token["last-update-user"]})' if 'last-update-user' in token else ''
-    service_table = tabulate_token_services(services)
+    service_table = tabulate_token_services(services, token_etag)
     return f'\n' \
         f'=== {terminal.bold(cluster_name)} / {terminal.bold(token_name)} ===\n' \
         f'\n' \
@@ -103,7 +112,7 @@ def show(clusters, args, _):
     else:
         for cluster_name, entities in sorted(query_result['clusters'].items()):
             services = entities['services'] if include_services else []
-            print(tabulate_token(cluster_name, entities['token'], token_name, services))
+            print(tabulate_token(cluster_name, entities['token'], token_name, services, entities['etag']))
             print()
 
     if query_result['count'] > 0:
