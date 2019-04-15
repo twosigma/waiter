@@ -77,12 +77,12 @@ def tabulate_token(cluster_name, token, token_name, services):
 
     table_text = tabulate(table, tablefmt='plain')
     last_update_time = format_timestamp_string(token['last-update-time'])
-    last_update_user = token['last-update-user']
+    last_update_user = f' ({token["last-update-user"]})' if 'last-update-user' in token else ''
     service_table = tabulate_token_services(services)
     return f'\n' \
         f'=== {terminal.bold(cluster_name)} / {terminal.bold(token_name)} ===\n' \
         f'\n' \
-        f'Last Updated: {last_update_time} ({last_update_user})\n' \
+        f'Last Updated: {last_update_time}{last_update_user}\n' \
         f'\n' \
         f'{table_text}\n' \
         f'\n' \
