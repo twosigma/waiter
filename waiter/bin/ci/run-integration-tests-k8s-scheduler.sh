@@ -32,14 +32,14 @@ fi
 ${CONTAINERS_DIR}/bin/build-docker-images.sh
 
 # Start waiter
-export WAITER_PORT=9091
+: ${WAITER_PORT:=9091}
 ${WAITER_DIR}/bin/run-using-k8s.sh ${WAITER_PORT} &
 
 # Start monitoring state of Kubernetes pods
 bash +x ${DIR}/monitor-pods.sh &
 
 # Run the integration tests
-export INTEGRATION_TEST_CUSTOM_IMAGE="twosigma/integration"
+export INTEGRATION_TEST_CUSTOM_IMAGE="twosigma/integration:latest"
 export INTEGRATION_TEST_CUSTOM_IMAGE_ALIAS="alias/integration"
 export INTEGRATION_TEST_KITCHEN_IMAGE="twosigma/waiter-test-apps"
 export LEIN_TEST_THREADS=4

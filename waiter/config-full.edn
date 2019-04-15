@@ -382,6 +382,10 @@
                                                            ;; Since this map is passed as the context argument to the factory function,
                                                            ;; any additional configuration data needed for the implementation should be included here.
                                                            :factory-fn waiter.scheduler.kubernetes/default-replicaset-builder
+                                                           ;; Vector of commands with which to prefix the user's cmd string when launching the container.
+                                                           ;; E.g., it may be necessary to delegate launching the user's command to a waiter-init script,
+                                                           ;; which is in turn launched by dumb-init for zombie process handling.
+                                                           :container-init-commands ["waiter-k8s-init"]
                                                            ;; The default factory function accepts an option for the docker container to use in the pod.
                                                            :default-container-image "twosigma/waiter-test-apps:latest"
                                                            ;; Map of image aliases. One of these aliases can be specified in the `image` field and the
@@ -495,7 +499,10 @@
 
                                :marathon-descriptor-builder {;; Factory function which creates a descriptor used by Marathon to create new apps.
                                                              ;; Any additional configuration data needed for the implementation should be included here.
-                                                             :factory-fn waiter.scheduler.marathon/default-marathon-descriptor-builder}
+                                                             :factory-fn waiter.scheduler.marathon/default-marathon-descriptor-builder
+                                                             ;; Vector of commands with which to prefix the user's cmd string when launching the container.
+                                                             ;; E.g., it may be necessary to delegate launching the user's command to a waiter-init script.
+                                                             :container-init-commands ["waiter-mesos-init"]}
 
                                ;; The port on which the mesos agents are listening.
                                ;; This is an optional parameter.
