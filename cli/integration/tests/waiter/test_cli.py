@@ -850,7 +850,7 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(service_description_1, service_1['service-description'])
             self.assertEqual(service_description_2, service_2['service-description'])
             self.assertEqual('Running', service_1['status'])
-            self.assertEqual('Failing', service_2['status'])
+            self.assertIn(service_2['status'], ['Failing', 'Starting'])
 
             # Run show without --json
             cp = cli.show(self.waiter_url, token_name)
@@ -860,7 +860,7 @@ class WaiterCliTest(util.WaiterTest):
             self.assertIsNotNone(re.search('^Total Memory\\s+384 MiB$', cli.stdout(cp), re.MULTILINE))
             self.assertIsNotNone(re.search('^Total CPUs\\s+0\\.3$', cli.stdout(cp), re.MULTILINE))
             self.assertIsNotNone(re.search(f'^{service_id_1}.+Running', cli.stdout(cp), re.MULTILINE))
-            self.assertIsNotNone(re.search(f'^{service_id_2}.+Failing', cli.stdout(cp), re.MULTILINE))
+            self.assertIsNotNone(re.search(f'^{service_id_2}.+(Failing|Starting)', cli.stdout(cp), re.MULTILINE))
 
             # Run show without --json and with --no-services
             cp = cli.show(self.waiter_url, token_name, show_flags='--no-services')
@@ -870,6 +870,6 @@ class WaiterCliTest(util.WaiterTest):
             self.assertIsNone(re.search('^Total Memory\\s+384 MiB$', cli.stdout(cp), re.MULTILINE))
             self.assertIsNone(re.search('^Total CPUs\\s+0\\.3$', cli.stdout(cp), re.MULTILINE))
             self.assertIsNone(re.search(f'^{service_id_1}.+Running', cli.stdout(cp), re.MULTILINE))
-            self.assertIsNone(re.search(f'^{service_id_2}.+Failing', cli.stdout(cp), re.MULTILINE))
+            self.assertIsNone(re.search(f'^{service_id_2}.+(Failing|Starting)', cli.stdout(cp), re.MULTILINE))
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
