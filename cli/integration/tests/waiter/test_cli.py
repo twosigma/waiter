@@ -855,11 +855,21 @@ class WaiterCliTest(util.WaiterTest):
             # Run show without --json
             cp = cli.show(self.waiter_url, token_name)
             self.assertEqual(0, cp.returncode, cp.stderr)
-            self.assertIsNotNone(re.search('^# Services\s+2$', cli.stdout(cp), re.MULTILINE))
-            self.assertIsNotNone(re.search('^# Failing\s+1$', cli.stdout(cp), re.MULTILINE))
-            self.assertIsNotNone(re.search('^Total Memory\s+384 MiB$', cli.stdout(cp), re.MULTILINE))
-            self.assertIsNotNone(re.search('^Total CPUs\s+0\.3$', cli.stdout(cp), re.MULTILINE))
+            self.assertIsNotNone(re.search('^# Services\\s+2$', cli.stdout(cp), re.MULTILINE))
+            self.assertIsNotNone(re.search('^# Failing\\s+1$', cli.stdout(cp), re.MULTILINE))
+            self.assertIsNotNone(re.search('^Total Memory\\s+384 MiB$', cli.stdout(cp), re.MULTILINE))
+            self.assertIsNotNone(re.search('^Total CPUs\\s+0\\.3$', cli.stdout(cp), re.MULTILINE))
             self.assertIsNotNone(re.search(f'^{service_id_1}.+Running', cli.stdout(cp), re.MULTILINE))
             self.assertIsNotNone(re.search(f'^{service_id_2}.+Failing', cli.stdout(cp), re.MULTILINE))
+
+            # Run show without --json and with --no-services
+            cp = cli.show(self.waiter_url, token_name, show_flags='--no-services')
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIsNone(re.search('^# Services\\s+2$', cli.stdout(cp), re.MULTILINE))
+            self.assertIsNone(re.search('^# Failing\\s+1$', cli.stdout(cp), re.MULTILINE))
+            self.assertIsNone(re.search('^Total Memory\\s+384 MiB$', cli.stdout(cp), re.MULTILINE))
+            self.assertIsNone(re.search('^Total CPUs\\s+0\\.3$', cli.stdout(cp), re.MULTILINE))
+            self.assertIsNone(re.search(f'^{service_id_1}.+Running', cli.stdout(cp), re.MULTILINE))
+            self.assertIsNone(re.search(f'^{service_id_2}.+Failing', cli.stdout(cp), re.MULTILINE))
         finally:
-            util.delete_token(self.waiter_url, token_name)
+            util.delete_token(self.waiter_url, token_name, kill_services=True)

@@ -96,12 +96,14 @@ def show(clusters, args, _):
     guard_no_cluster(clusters)
     as_json = args.get('json')
     token_name = args.get('token')[0]
-    query_result = query_token(clusters, token_name, include_services=True)
+    include_services = not args.get('no-services')
+    query_result = query_token(clusters, token_name, include_services=include_services)
     if as_json:
         print(json.dumps(query_result))
     else:
         for cluster_name, entities in sorted(query_result['clusters'].items()):
-            print(tabulate_token(cluster_name, entities['token'], token_name, entities['services']))
+            services = entities['services'] if include_services else []
+            print(tabulate_token(cluster_name, entities['token'], token_name, services))
             print()
 
     if query_result['count'] > 0:
@@ -117,4 +119,6 @@ def register(add_parser):
     show_parser = add_parser('show', help='show token by name')
     show_parser.add_argument('token', nargs=1)
     show_parser.add_argument('--json', help='show the data in JSON format', dest='json', action='store_true')
+    show_parser.add_argument('--no-services', help="don't show the token's services",
+                             dest='no-services', action='store_true')
     return show
