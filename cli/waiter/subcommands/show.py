@@ -12,11 +12,12 @@ from waiter.util import guard_no_cluster
 
 
 def format_using_current_token(service, token_etag):
-    """TODO(DPO)"""
-    if any(token['version'] == token_etag for source in service['source-tokens'] for token in source):
-        return terminal.success(u'\u2714')
+    """Formats the "Current?" column for the given service"""
+    is_current = any(token['version'] == token_etag for source in service['source-tokens'] for token in source)
+    if is_current:
+        return terminal.success(u'\u2714')  # ✔
     else:
-        return u'\u274c'
+        return u'\u2717'  # ✗
 
 
 def tabulate_token_services(services, token_etag):
