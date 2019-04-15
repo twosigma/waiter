@@ -2,6 +2,7 @@ import getpass
 import json
 import logging
 import os
+import re
 import tempfile
 import threading
 import unittest
@@ -823,16 +824,23 @@ class WaiterCliTest(util.WaiterTest):
         token_name = self.token_name()
         custom_fields = {
             'permitted-user': getpass.getuser(),
-            'run-as-user': getpass.getuser()
+            'run-as-user': getpass.getuser(),
+            'cpus': 0.1,
+            'mem': 128
         }
         service_description_1 = util.minimal_service_description(**custom_fields)
         util.post_token(self.waiter_url, token_name, service_description_1)
         try:
+            # Create 2 services, 1 running and 1 failing due to a bad command
             service_id_1 = util.ping_token(self.waiter_url, token_name)
             custom_fields['cmd'] = 'exit 1'
+            custom_fields['cpus'] = 0.2
+            custom_fields['mem'] = 256
             service_description_2 = util.minimal_service_description(**custom_fields)
             util.post_token(self.waiter_url, token_name, service_description_2)
             service_id_2 = util.ping_token(self.waiter_url, token_name, expected_status_code=503)
+
+            # Run show with --json
             cp, services = cli.show_token_services(self.waiter_url, token_name=token_name)
             self.logger.info(f'Services: {json.dumps(services, indent=2)}')
             self.assertEqual(0, cp.returncode, cp.stderr)
@@ -843,5 +851,15 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(service_description_2, service_2['service-description'])
             self.assertEqual('Running', service_1['status'])
             self.assertEqual('Failing', service_2['status'])
+
+            # Run show without --json
+            cp = cli.show(self.waiter_url, token_name)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIsNotNone(re.search('^# Services\s+2$', cli.stdout(cp), re.MULTILINE))
+            self.assertIsNotNone(re.search('^# Failing\s+1$', cli.stdout(cp), re.MULTILINE))
+            self.assertIsNotNone(re.search('^Total Memory\s+384 MiB$', cli.stdout(cp), re.MULTILINE))
+            self.assertIsNotNone(re.search('^Total CPUs\s+0\.3$', cli.stdout(cp), re.MULTILINE))
+            self.assertIsNotNone(re.search(f'^{service_id_1}.+Running', cli.stdout(cp), re.MULTILINE))
+            self.assertIsNotNone(re.search(f'^{service_id_2}.+Failing', cli.stdout(cp), re.MULTILINE))
         finally:
             util.delete_token(self.waiter_url, token_name)
