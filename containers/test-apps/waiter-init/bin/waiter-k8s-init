@@ -14,7 +14,7 @@ waiter_child_pid=
 
 # Log a message to stderr
 waiter_init_log() {
-    printf '%s waiter-init> %s\n' "$(date +'%Y-%m-%dT%H:%M:%S%z')" "$1" >&2
+    printf '%s waiter-k8s-init> %s\n' "$(date +'%Y-%m-%dT%H:%M:%S%z')" "$1" >&2
 }
 
 # Catch the first SIGTERM sent by Kubernetes on pod deletion,

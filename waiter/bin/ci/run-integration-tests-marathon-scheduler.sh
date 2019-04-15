@@ -11,7 +11,7 @@
 
 set -e
 
-export WAITER_PORT=9091
+: ${WAITER_PORT:=9091}
 TEST_COMMAND=${1:-parallel-test}
 TEST_SELECTOR=${2:-integration}
 

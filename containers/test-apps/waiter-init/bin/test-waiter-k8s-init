@@ -1,6 +1,6 @@
 #!/bin/bash
 
-: ${TARGET:=./bin/waiter-init}
+: ${TARGET:=./bin/waiter-k8s-init}
 failures=0
 
 start_test() {
