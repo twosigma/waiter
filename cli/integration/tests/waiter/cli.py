@@ -213,6 +213,13 @@ def show_token(waiter_url=None, token_name=None, flags=None):
     return cp, tokens
 
 
+def show_token_services(waiter_url=None, token_name=None, flags=None):
+    """Shows the token JSON corresponding to the given token name's services"""
+    cp, data = __show_json(waiter_url, token_name, flags)
+    services = [s for entities in data['clusters'].values() for s in entities['services']]
+    return cp, services
+
+
 def output(cp):
     """Returns a string containing the stdout and stderr from the given CompletedProcess"""
     return f'\nstdout:\n{stdout(cp)}\n\nstderr:\n{decode(cp.stderr)}'

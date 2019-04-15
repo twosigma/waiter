@@ -1,11 +1,10 @@
 import logging
-from operator import itemgetter
 from urllib.parse import urljoin
 
 from tabulate import tabulate
 
 from waiter import http_util, terminal
-from waiter.format import format_timestamp_string
+from waiter.format import format_last_request_time, format_status
 from waiter.querying import get_service, print_no_data, query_service, query_services
 from waiter.util import guard_no_cluster, str2bool, response_message, print_error, wait_until, check_positive
 
@@ -38,16 +37,6 @@ def kill_service_on_cluster(cluster, service_id, timeout_seconds):
         print_error(message)
 
 
-def format_status(status):
-    """Formats service status"""
-    if status == 'Running':
-        return terminal.running(status)
-    elif status == 'Inactive':
-        return terminal.inactive(status)
-    else:
-        return status
-
-
 def kill(clusters, args, _):
     """Kills the service(s) using the given token name."""
     guard_no_cluster(clusters)
@@ -78,7 +67,7 @@ def kill(clusters, args, _):
             service['service-id'] = token_name_or_service_id
             services = [service]
         else:
-            services = sorted(data['services'], key=itemgetter('last-request-time'), reverse=True)
+            services = sorted(data['services'], key=lambda s: s.get('last-request-time', None) or '', reverse=True)
 
         for service in services:
             service_id = service['service-id']
@@ -99,11 +88,7 @@ def kill(clusters, args, _):
                     healthy_count = service['instance-counts']['healthy-instances']
                     unhealthy_count = service['instance-counts']['unhealthy-instances']
 
-                if 'last-request-time' in service:
-                    last_request_time = format_timestamp_string(service['last-request-time'])
-                else:
-                    last_request_time = 'n/a'
-
+                last_request_time = format_last_request_time(service)
                 run_as_user = service['service-description']['run-as-user']
                 table = [['Status', status],
                          ['Healthy', healthy_count],

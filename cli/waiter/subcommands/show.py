@@ -1,14 +1,55 @@
+import collections
 import json
 
 from tabulate import tabulate
 
 from waiter import terminal
-from waiter.format import format_mem_field, format_timestamp_string, format_field_name
+from waiter.format import format_field_name, format_last_request_time, format_mem_field, format_memory_amount, \
+    format_status, format_timestamp_string
+
 from waiter.querying import print_no_data, query_token
 from waiter.util import guard_no_cluster
 
 
-def tabulate_token(cluster_name, token, token_name):
+def format_using_current_token(service, token_etag):
+    """Formats the "Current?" column for the given service"""
+    is_current = any(token['version'] == token_etag for source in service['source-tokens'] for token in source)
+    if is_current:
+        return terminal.success(u'\u2714')  # ✔
+    else:
+        return u'\u2717'  # ✗
+
+
+def tabulate_token_services(services, token_etag):
+    """Returns a table displaying the service info"""
+    num_services = len(services)
+    if num_services > 0:
+        num_failing_services = len([s for s in services if s['status'] == 'Failing'])
+        total_mem_usage = format_memory_amount(sum(s['service-description']['mem'] for s in services))
+        total_cpu_usage = round(sum(s['service-description']['cpus'] for s in services), 2)
+        table = [['# Services', num_services],
+                 ['# Failing', num_failing_services],
+                 ['Total Memory', total_mem_usage],
+                 ['Total CPUs', total_cpu_usage]]
+        summary_table = tabulate(table, tablefmt='plain')
+
+        services = sorted(services, key=lambda s: s.get('last-request-time', None) or '', reverse=True)
+        rows = [collections.OrderedDict([('Service Id', s['service-id']),
+                                         ('Run as user', s['service-description']['run-as-user']),
+                                         ('CPUs', s['service-description']['cpus']),
+                                         ('Memory', format_mem_field(s['service-description'])),
+                                         ('Version', s['service-description']['version']),
+                                         ('Status', format_status(s['status'])),
+                                         ('Last request', format_last_request_time(s)),
+                                         ('Current?', format_using_current_token(s, token_etag))])
+                for s in services]
+        service_table = tabulate(rows, headers='keys', tablefmt='plain')
+        return f'\n\n{summary_table}\n\n{service_table}'
+    else:
+        return ''
+
+
+def tabulate_token(cluster_name, token, token_name, services, token_etag):
     """Given a token, returns a string containing tables for the fields"""
     table = [['Owner', token['owner']]]
     if token.get('name'):
@@ -46,26 +87,18 @@ def tabulate_token(cluster_name, token, token_name):
 
     table_text = tabulate(table, tablefmt='plain')
     last_update_time = format_timestamp_string(token['last-update-time'])
-    last_update_user = token['last-update-user']
+    last_update_user = f' ({token["last-update-user"]})' if 'last-update-user' in token else ''
+    service_table = tabulate_token_services(services, token_etag)
     return f'\n' \
-           f'=== {terminal.bold(cluster_name)} / {terminal.bold(token_name)} ===\n' \
-           f'\n' \
-           f'Last Updated: {last_update_time} ({last_update_user})\n' \
-           f'\n' \
-           f'{table_text}\n' \
-           f'\n' \
-           f'{token_command}' \
-           f'{environment}'
-
-
-def show_data(cluster_name, data, format_fn, token_name):
-    """Iterates over the data collection and formats and prints each element"""
-    count = len(data)
-    if count > 0:
-        output = format_fn(cluster_name, data, token_name)
-        print(output)
-        print()
-    return count
+        f'=== {terminal.bold(cluster_name)} / {terminal.bold(token_name)} ===\n' \
+        f'\n' \
+        f'Last Updated: {last_update_time}{last_update_user}\n' \
+        f'\n' \
+        f'{table_text}\n' \
+        f'\n' \
+        f'{token_command}' \
+        f'{environment}' \
+        f'{service_table}'
 
 
 def show(clusters, args, _):
@@ -73,12 +106,15 @@ def show(clusters, args, _):
     guard_no_cluster(clusters)
     as_json = args.get('json')
     token_name = args.get('token')[0]
-    query_result = query_token(clusters, token_name)
+    include_services = not args.get('no-services')
+    query_result = query_token(clusters, token_name, include_services=include_services)
     if as_json:
         print(json.dumps(query_result))
     else:
         for cluster_name, entities in sorted(query_result['clusters'].items()):
-            show_data(cluster_name, entities['token'], tabulate_token, token_name)
+            services = entities['services'] if include_services else []
+            print(tabulate_token(cluster_name, entities['token'], token_name, services, entities['etag']))
+            print()
 
     if query_result['count'] > 0:
         return 0
@@ -93,4 +129,6 @@ def register(add_parser):
     show_parser = add_parser('show', help='show token by name')
     show_parser.add_argument('token', nargs=1)
     show_parser.add_argument('--json', help='show the data in JSON format', dest='json', action='store_true')
+    show_parser.add_argument('--no-services', help="don't show the token's services",
+                             dest='no-services', action='store_true')
     return show

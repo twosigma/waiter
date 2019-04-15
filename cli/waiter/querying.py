@@ -47,24 +47,27 @@ def print_no_data(clusters):
     print(no_data_message(clusters))
 
 
-def get_token_on_cluster(cluster, token_name):
+def get_token_on_cluster(cluster, token_name, include_services=False):
     """Gets the token with the given name on the given cluster"""
     token_data, token_etag = get_token(cluster, token_name, include='metadata')
     if token_data:
-        return {'count': 1, 'token': token_data, 'etag': token_etag}
+        data = {'count': 1, 'token': token_data, 'etag': token_etag}
+        if include_services:
+            data['services'] = get_services_using_token(cluster, token_name)
+        return data
     else:
         logging.info(f'Unable to retrieve token information on {cluster["name"]} ({cluster["url"]}).')
         return {'count': 0}
 
 
-def query_token(clusters, token):
+def query_token(clusters, token, include_services=False):
     """
     Uses query_across_clusters to make the token
     requests in parallel across the given clusters
     """
 
     def submit(cluster, executor):
-        return executor.submit(get_token_on_cluster, cluster, token)
+        return executor.submit(get_token_on_cluster, cluster, token, include_services)
 
     return query_across_clusters(clusters, submit)
 

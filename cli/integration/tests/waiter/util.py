@@ -182,7 +182,7 @@ def wait_until_routers(waiter_url, predicate):
                    max_wait_ms=max_wait_ms)
 
 
-def ping_token(waiter_url, token_name):
+def ping_token(waiter_url, token_name, expected_status_code=200):
     headers = {
         'Content-Type': 'application/json',
         'X-Waiter-Debug': 'true',
@@ -190,7 +190,9 @@ def ping_token(waiter_url, token_name):
         'X-Waiter-Token': token_name
     }
     response = session.get(f'{waiter_url}', headers=headers)
-    assert 200 == response.status_code, f'Expected 200, got {response.status_code} with body {response.text}'
+    assert \
+        expected_status_code == response.status_code, \
+        f'Expected {expected_status_code}, got {response.status_code} with body {response.text} '
     service_id = response.headers['x-waiter-service-id']
     wait_until_routers(waiter_url, lambda services: any(s['service-id'] == service_id for s in services))
     return service_id
