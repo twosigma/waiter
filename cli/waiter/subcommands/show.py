@@ -17,7 +17,7 @@ def tabulate_token_services(services):
     if num_services > 0:
         num_failing_services = len([s for s in services if s['status'] == 'Failing'])
         total_mem_usage = format_memory_amount(sum(s['service-description']['mem'] for s in services))
-        total_cpu_usage = sum(s['service-description']['cpus'] for s in services)
+        total_cpu_usage = round(sum(s['service-description']['cpus'] for s in services), 2)
         table = [['# Services', num_services],
                  ['# Failing', num_failing_services],
                  ['Total Memory', total_mem_usage],
