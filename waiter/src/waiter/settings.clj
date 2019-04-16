@@ -366,6 +366,7 @@
                                  :http-options {:conn-timeout 10000
                                                 :socket-timeout 10000
                                                 :spnego-auth false}
+                                 :marathon-descriptor-builder {:factory-fn 'waiter.scheduler.marathon/default-marathon-descriptor-builder}
                                  :force-kill-after-ms 60000
                                  :framework-id-ttl 900000
                                  :sync-deployment {:interval-ms (-> 15 t/seconds t/in-millis)
