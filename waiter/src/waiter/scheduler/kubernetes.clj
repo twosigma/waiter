@@ -122,6 +122,11 @@
   [k8s-obj]
   (get-in k8s-obj [:metadata :name]))
 
+(defn k8s-object->namespace
+  "Get the namespace from a ReplicaSet or Pod's metadata"
+  [k8s-obj]
+  (get-in k8s-obj [:metadata :namespace]))
+
 (defn k8s-object->resource-version
   "Get the resource version from a Kubernetes API response object.
    Valid on ReplicaSets, Pods, and watch-update objects."
@@ -200,7 +205,7 @@
   (try
     (let [port0 (get-in pod [:spec :containers 0 :ports 0 :containerPort])
           restart-count (get-in pod [:status :containerStatuses 0 :restartCount])
-          namespace (get-in pod [:metadata :namespace])]
+          namespace (k8s-object->namespace pod)]
       (scheduler/make-ServiceInstance
         {:extra-ports (->> (get-in pod [:metadata :annotations :waiter/port-count])
                            Integer/parseInt range next (mapv #(+ port0 %)))
@@ -908,8 +913,10 @@
                                   (assoc-in state [:pods-metadata :timestamp :watch] now)
                                   (assoc-in state [:pods-metadata :version :watch] version)))
                         (let [old-pod (get-in old-state [:service-id->pod-id->pod service-id pod-id])
-                              [pod-fields pod-fields'] (data/diff old-pod pod)]
-                          (scheduler/log "pod state update:" update-type version pod-fields "->" pod-fields')))))}
+                              [pod-fields pod-fields'] (data/diff old-pod pod)
+                              pod-ns (k8s-object->namespace pod)
+                              pod-handle (str pod-ns "/" pod-id)]
+                          (scheduler/log "pod state update:" update-type pod-handle version pod-fields "->" pod-fields')))))}
       (merge options))))
 
 (defn global-rs-state-query
