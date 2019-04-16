@@ -600,7 +600,6 @@
                             "WAITER_SERVICE_ID" "test-service-1"
                             "WAITER_USERNAME" "waiter"}
                       :cmd "test-command"
-                      :constraints []
                       :cpus 1
                       :disk nil
                       :mem 1536
@@ -629,28 +628,20 @@
                                  "health-check-port-index" 0
                                  "env" {"FOO" "bar"
                                         "BAZ" "quux"}}
-            actual (marathon-descriptor (create-marathon-scheduler) home-path-prefix service-id->password-fn
-                                        {:service-id service-id, :service-description service-description})]
+            actual (default-marathon-descriptor-builder
+                     home-path-prefix service-id->password-fn
+                     {:service-id service-id, :service-description service-description} nil)]
         (is (= expected actual))
 
         (testing "health-check-port-index of 2"
           (is (= (-> expected
                      (assoc-in [:healthChecks 0 :portIndex] 2)
                      (assoc :ports [0 0 0]))
-                 (->> (assoc service-description "health-check-port-index" 2 "ports" 3)
-                      (assoc {:service-id service-id} :service-description)
-                      (marathon-descriptor (create-marathon-scheduler) home-path-prefix service-id->password-fn)))))
-
-        (testing "constraint-from-image-alias"
-          (is (= (-> expected
-                     (assoc :constraints [["platform" "CLUSTER" "p1"]]))
-                 (->> (assoc service-description "image" "alias/p1")
-                      (assoc {:service-id service-id} :service-description)
-                      (marathon-descriptor (create-marathon-scheduler
-                                             :image->constraints
-                                             {"alias/p1" {:attribute "platform" :value "p1"}
-                                              "alias/p2" {:attribute "platform" :value "p2"}})
-                                           home-path-prefix service-id->password-fn)))))))))
+                 (default-marathon-descriptor-builder
+                   home-path-prefix service-id->password-fn
+                   (->> (assoc service-description "health-check-port-index" 2 "ports" 3)
+                        (assoc {:service-id service-id} :service-description))
+                   nil))))))))
 
 (deftest test-kill-instance-last-force-kill-time-store
   (let [current-time (t/now)
@@ -758,6 +749,7 @@
                                          :default {:factory-fn 'waiter.authorization/noop-authorizer}}
                             :force-kill-after-ms 60000
                             :framework-id-ttl 900000
+                            :marathon-descriptor-builder {:factory-fn 'waiter.scheduler.marathon/default-marathon-descriptor-builder}
                             :home-path-prefix "/home/"
                             :http-options {:conn-timeout 10000 :socket-timeout 10000}
                             :mesos-slave-port 5051
@@ -788,15 +780,7 @@
       (testing "validate service - normal"
         (scheduler/validate-service
           (create-marathon-scheduler (assoc valid-config :service-id->service-description-fn (constantly {}))) nil))
-      (testing "validate service - test known image alias"
-        (scheduler/validate-service
-          (create-marathon-scheduler (assoc valid-config
-                                       :image->constraints
-                                       {"alias/p1" {:attribute "platform" :value "p1"}
-                                        "alias/p2" {:attribute "platform" :value "p2"}}
-                                       :service-id->service-description-fn
-                                       (constantly {"image" "alias/p1"}))) nil))
-      (testing "validate service - test unknown image alias"
+      (testing "validate service - test that image can't be set"
         (is (thrown? Throwable (scheduler/validate-service
                                  (create-marathon-scheduler (assoc valid-config
                                                               :service-id->service-description-fn
