@@ -92,30 +92,26 @@
 (defn replicaset->Service
   "Convert a Kubernetes ReplicaSet JSON response into a Waiter Service record."
   [replicaset-json]
-  (if (= "Failure" (:status replicaset-json))
-    (do
-      (log/info "encountered error response in ReplicaSet query:" replicaset-json)
-      nil)
-    (try
-      (pc/letk
-        [[spec
-          [:metadata name namespace [:annotations waiter/service-id]]
-          [:status {replicas 0} {availableReplicas 0} {readyReplicas 0} {unavailableReplicas 0}]]
-         replicaset-json
-         requested (get spec :replicas 0)
-         staged (- replicas (+ availableReplicas unavailableReplicas))]
-        (scheduler/make-Service
-          {:id service-id
-           :instances requested
-           :k8s/app-name name
-           :k8s/namespace namespace
-           :task-count replicas
-           :task-stats {:healthy readyReplicas
-                        :running (- replicas staged)
-                        :staged staged
-                        :unhealthy (- replicas readyReplicas staged)}}))
-      (catch Throwable t
-        (log/error t "error converting ReplicaSet to Waiter Service")))))
+  (try
+    (pc/letk
+      [[spec
+        [:metadata name namespace [:annotations waiter/service-id]]
+        [:status {replicas 0} {availableReplicas 0} {readyReplicas 0} {unavailableReplicas 0}]]
+       replicaset-json
+       requested (get spec :replicas 0)
+       staged (- replicas (+ availableReplicas unavailableReplicas))]
+      (scheduler/make-Service
+        {:id service-id
+         :instances requested
+         :k8s/app-name name
+         :k8s/namespace namespace
+         :task-count replicas
+         :task-stats {:healthy readyReplicas
+                      :running (- replicas staged)
+                      :staged staged
+                      :unhealthy (- replicas readyReplicas staged)}}))
+    (catch Throwable t
+      (log/error t "error converting ReplicaSet to Waiter Service"))))
 
 (defn k8s-object->id
   "Get the id (name) from a ReplicaSet or Pod's metadata"
@@ -235,19 +231,31 @@
   "Make a long-lived HTTP request to the Kubernetes API server using the configured authentication.
    If data is provided via :body, the application/json content type is added automatically.
    The response payload (if any) is returned as a lazy seq of parsed JSON objects."
-  ([url] (streaming-api-request url {}))
-  ([url {:keys [keyword-keys?] :or {keyword-keys? true}}]
-   (let [auth-str @k8s-api-auth-str
-         request-options (cond-> {:as :stream}
-                           auth-str (assoc :headers {"Authorization" auth-str}))
-         {:keys [body error status] :as response} (clj-http/get url request-options)]
-     (when error
-       (throw error))
-     (when-not (<= 200 status 299)
-       (ss/throw+ response))
-     (-> body
-         InputStreamReader.
-         (cheshire/parsed-seq keyword-keys?)))))
+  [url]
+  (let [keyword-keys? true
+        auth-str @k8s-api-auth-str
+        request-options (cond-> {:as :stream}
+                          auth-str (assoc :headers {"Authorization" auth-str}))
+        {:keys [body error status] :as response} (clj-http/get url request-options)]
+    (when error
+      (throw error))
+    (when-not (<= 200 status 299)
+      (ss/throw+ response))
+    (-> body
+        InputStreamReader.
+        (cheshire/parsed-seq keyword-keys?))))
+
+(defn streaming-watch-api-request
+  "Make a long-lived watch connection to the Kubernetes API server via the streaming-api-request function.
+   If a Failure error is found in the response object stream, an exception is thrown."
+  [resource-name url]
+  (for [update-json (streaming-api-request url)]
+    (if (and (= "ERROR" (:type update-json))
+             (= "Failure" (-> update-json :object :status)))
+      (throw (ex-info "k8s watch connection failed"
+                      {:watch-resource resource-name
+                       :watch-response update-json}))
+      update-json)))
 
 (defn api-request
   "Make an HTTP request to the Kubernetes API server using the configured authentication.
@@ -819,7 +827,7 @@
   "Default options for start-k8s-watch! daemon threads."
   {:api-request-fn api-request
    :exit-on-error? true
-   :streaming-api-request-fn streaming-api-request
+   :streaming-api-request-fn streaming-watch-api-request
    :watch-retries 0})
 
 (def retry-watch-runner
@@ -843,15 +851,19 @@
             (retry-watch-runner
               (fn k8s-watch-retried-thunk []
                 (try
+                  (log/info "prepping" resource-name "watch with global sync")
                   (loop [version (reset-watch-state! scheduler options)
                          iter 0]
+                    (log/info "starting" resource-name "watch connection, iteration" iter)
                     (timers/start-stop-time!
                       (metrics/waiter-timer "scheduler" scheduler-name "state-watch")
                       (let [watch-url (str resource-url "&watch=true&resourceVersion=" version)]
                         ;; process updates forever (unless there's an exception)
-                        (doseq [json-object (streaming-api-request-fn watch-url)]
+                        (doseq [json-object (streaming-api-request-fn resource-name watch-url)]
                           (when json-object
-                            (update-fn json-object)))))
+                            (if (= "ERROR" (:type json-object))
+                              (log/info "received error update in watch" resource-name json-object)
+                              (update-fn json-object))))))
                     ;; when the watch connection closed normally (i.e., no HTTP error code response),
                     ;; retry the watch (before falling back to the global query again) `watch-retries` times.
                     (when (< iter watch-retries)
@@ -862,9 +874,7 @@
                     (throw e))))))
           (catch Throwable t
             (when exit-on-error?
-              (log/error t "unrecoverable error in" resource-name "state watch thread, terminating waiter.")))
-          (finally
-            (when exit-on-error?
+              (log/error t "unrecoverable error in" resource-name "state watch thread, terminating waiter.")
               (System/exit 1))))))
     (.setDaemon true)
     (.start)))
@@ -903,20 +913,19 @@
                           service-id (k8s-object->service-id pod)
                           version (k8s-object->resource-version pod)
                           old-state @watch-state]
-                      (when (not= "ERROR" update-type)
-                        (swap! watch-state
-                               #(as-> % state
-                                  (case update-type
-                                    "ADDED" (assoc-in state [:service-id->pod-id->pod service-id pod-id] pod)
-                                    "MODIFIED" (assoc-in state [:service-id->pod-id->pod service-id pod-id] pod)
-                                    "DELETED" (utils/dissoc-in state [:service-id->pod-id->pod service-id pod-id]))
-                                  (assoc-in state [:pods-metadata :timestamp :watch] now)
-                                  (assoc-in state [:pods-metadata :version :watch] version)))
-                        (let [old-pod (get-in old-state [:service-id->pod-id->pod service-id pod-id])
-                              [pod-fields pod-fields'] (data/diff old-pod pod)
-                              pod-ns (k8s-object->namespace pod)
-                              pod-handle (str pod-ns "/" pod-id)]
-                          (scheduler/log "pod state update:" update-type pod-handle version pod-fields "->" pod-fields')))))}
+                      (swap! watch-state
+                             #(as-> % state
+                                (case update-type
+                                  "ADDED" (assoc-in state [:service-id->pod-id->pod service-id pod-id] pod)
+                                  "MODIFIED" (assoc-in state [:service-id->pod-id->pod service-id pod-id] pod)
+                                  "DELETED" (utils/dissoc-in state [:service-id->pod-id->pod service-id pod-id]))
+                                (assoc-in state [:pods-metadata :timestamp :watch] now)
+                                (assoc-in state [:pods-metadata :version :watch] version)))
+                      (let [old-pod (get-in old-state [:service-id->pod-id->pod service-id pod-id])
+                            [pod-fields pod-fields'] (data/diff old-pod pod)
+                            pod-ns (k8s-object->namespace pod)
+                            pod-handle (str pod-ns "/" pod-id)]
+                        (scheduler/log "pod state update:" update-type pod-handle version pod-fields "->" pod-fields'))))}
       (merge options))))
 
 (defn global-rs-state-query
@@ -949,15 +958,14 @@
                           version (k8s-object->resource-version rs)]
                       (when service
                         (scheduler/log "rs state update:" update-type version service)
-                        (when (not= "ERROR" update-type)
-                          (swap! watch-state
-                                 #(as-> % state
-                                    (case update-type
-                                      "ADDED" (assoc-in state [:service-id->service service-id] service)
-                                      "MODIFIED" (assoc-in state [:service-id->service service-id] service)
-                                      "DELETED" (utils/dissoc-in state [:service-id->service service-id]))
-                                    (assoc-in state [:rs-metadata :timestamp :watch] now)
-                                    (assoc-in state [:rs-metadata :version :watch] version)))))))}
+                        (swap! watch-state
+                               #(as-> % state
+                                  (case update-type
+                                    "ADDED" (assoc-in state [:service-id->service service-id] service)
+                                    "MODIFIED" (assoc-in state [:service-id->service service-id] service)
+                                    "DELETED" (utils/dissoc-in state [:service-id->service service-id]))
+                                  (assoc-in state [:rs-metadata :timestamp :watch] now)
+                                  (assoc-in state [:rs-metadata :version :watch] version))))))}
       (merge options))))
 
 (defn kubernetes-scheduler
