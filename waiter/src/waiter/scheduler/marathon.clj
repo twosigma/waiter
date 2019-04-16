@@ -628,8 +628,8 @@
                                                utils/resolve-symbol
                                                deref)]
                                      (assert (fn? f) "Marathon descriptor builder function must be a Clojure fn")
-                                     (fn [scheduler service-id service-description]
-                                       (f scheduler service-id service-description marathon-descriptor-builder)))
+                                     (fn [home-path-prefix service-id->password-fn descriptor]
+                                       (f home-path-prefix service-id->password-fn descriptor marathon-descriptor-builder)))
         marathon-scheduler (->MarathonScheduler
                              scheduler-name marathon-api mesos-api retrieve-framework-id-fn home-path-prefix
                              service-id->failed-instances-transient-store service-id->last-force-kill-store
