@@ -257,7 +257,6 @@
                       {:cmd-type cmd-type
                        :service-description service-description
                        :service-id service-id})))
-    (println health-check-proto backend-proto)
     {:id service-id
      :env (scheduler/environment service-id service-description service-id->password-fn home-path)
      :user run-as-user
@@ -581,11 +580,10 @@
   "Returns a new MarathonScheduler with the provided configuration.
    Validates the configuration against marathon-scheduler-schema and throws if it's not valid."
   [{:keys [authorizer home-path-prefix http-options force-kill-after-ms framework-id-ttl
-           mesos-slave-port slave-directory sync-deployment url
+           marathon-descriptor-builder mesos-slave-port slave-directory sync-deployment url
            ;; functions provided in the context
            is-waiter-service?-fn leader?-fn scheduler-name scheduler-state-chan scheduler-syncer-interval-secs
-           service-id->password-fn service-id->service-description-fn start-scheduler-syncer-fn
-           marathon-descriptor-builder]}]
+           service-id->password-fn service-id->service-description-fn start-scheduler-syncer-fn]}]
   {:pre [(schema/contains-kind-sub-map? authorizer)
          (not (str/blank? url))
          (or (nil? slave-directory) (not (str/blank? slave-directory)))
