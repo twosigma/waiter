@@ -1,3 +1,18 @@
+/*
+ * Copyright (c) Two Sigma Open Source, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *  http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.twosigma.waiter.sediment;
 
 import com.google.gson.Gson;
@@ -14,14 +29,11 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -105,8 +117,8 @@ public class Servlet extends HttpServlet {
     }
 
     private void handleTrailersRequest(final Request request, final Response response) throws IOException {
-        final Map<String, Object> infoMap = populateRequestInfo(request);
-        final String responseBody = new Gson().toJson(infoMap);
+        final RequestInfo requestInfo = populateRequestInfo(request);
+        final String responseBody = new Gson().toJson(requestInfo);
         final byte[] outputBytes = responseBody.getBytes();
 
         final HttpFields trailer = createResponseTrailers(request);
@@ -156,70 +168,49 @@ public class Servlet extends HttpServlet {
         }
     }
 
-    private static Map<String, Object> convertFieldsToMap(final Collection<String> names, final Function<String, Object> retrieveValue) {
-        final Map<String, Object> result = new HashMap<>();
-        for (String name : names) {
-            result.put(name, retrieveValue.apply(name));
-        }
-        return result;
-    }
+    private static RequestInfo populateRequestInfo(final Request request) throws IOException {
 
-    private static Map<String, Object> populateRequestInfo(final Request request) throws IOException {
-
-        // read body so it is safe to read trailers
         final long bodyLength = slurpRequest(request.getInputStream());
 
-        final Map<String, Object> info = new HashMap<>();
-
-        info.put("body-length", String.valueOf(bodyLength));
-        if (request.getContentLengthLong() >= 0) {
-            info.put("content-length", String.valueOf(request.getContentLengthLong()));
+        final Map<String, String> headers = new HashMap<>();
+        for (final String name : Collections.list(request.getHeaderNames())) {
+            final List<String> values = Collections.list(request.getHeaders(name));
+            final String value = values.size() == 1 ? values.get(0) : String.join(", ", values);
+            headers.put(name, value);
         }
-        info.put("context-path", request.getContextPath());
-        info.put("headers",
-            convertFieldsToMap(
-                Collections.list(request.getHeaderNames()),
-                (name) -> {
-                    final List<String> headerValues = Collections.list(request.getHeaders(name));
-                    if (headerValues.size() == 1) {
-                        return headerValues.get(0);
-                    } else {
-                        return headerValues;
-                    }
-                }));
-        info.put("path-info", request.getPathInfo());
-        info.put("protocol", request.getProtocol());
-        info.put("method", request.getMethod());
-        info.put("query-parameters",
-            convertFieldsToMap(
-                Collections.list(request.getParameterNames()),
-                (name) -> {
-                    final List<String> headerValues = Arrays.asList(request.getParameterValues(name));
-                    if (headerValues.size() == 1) {
-                        return headerValues.get(0);
-                    } else {
-                        return headerValues;
-                    }
-                }
-            ));
-        info.put("request-uri", request.getRequestURI());
-        info.put("scheme", request.getScheme());
+
+        final Map<String, String> params = new HashMap<>();
+        for (final String name : Collections.list(request.getParameterNames())) {
+            final String[] values = request.getParameterValues(name);
+            final String value = values.length == 1 ? values[0] : String.join(", ", values);
+            params.put(name, value);
+        }
+
+        final Map<String, String> trailers = new HashMap<>();
         final HttpFields requestTrailers = request.getTrailers();
         if (requestTrailers != null) {
-            info.put("trailers",
-                convertFieldsToMap(
-                    requestTrailers.getFieldNamesCollection(),
-                    (name) -> {
-                        final List<String> trailerValues = Collections.list(requestTrailers.getValues(name));
-                        if (trailerValues.size() == 1) {
-                            return trailerValues.get(0);
-                        } else {
-                            return trailerValues;
-                        }
-                    }));
+            for (final String name : requestTrailers.getFieldNamesCollection()) {
+                final List<String> values = Collections.list(requestTrailers.getValues(name));
+                final String value = values.size() == 1 ? values.get(0) : String.join(", ", values);
+                trailers.put(name, value);
+            }
         }
-        info.put("user-principal", request.getUserPrincipal() != null ? request.getUserPrincipal().toString() : "");
 
-        return info;
+        final String userPrincipal = request.getUserPrincipal() != null ?
+            request.getUserPrincipal().toString() : "";
+
+        return new RequestInfo(
+            bodyLength,
+            request.getContentLengthLong(),
+            request.getContextPath(),
+            headers,
+            request.getPathInfo(),
+            request.getProtocol(),
+            params,
+            request.getMethod(),
+            request.getRequestURI(),
+            request.getScheme(),
+            trailers,
+            userPrincipal);
     }
 }
