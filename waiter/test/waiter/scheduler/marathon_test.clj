@@ -780,11 +780,11 @@
       (testing "validate service - normal"
         (scheduler/validate-service
           (create-marathon-scheduler (assoc valid-config :service-id->service-description-fn (constantly {}))) nil))
-      (testing "validate service - test that image can't be set"
-        (is (thrown? Throwable (scheduler/validate-service
-                                 (create-marathon-scheduler (assoc valid-config
-                                                              :service-id->service-description-fn
-                                                              (constantly {"image" "twosigma/waiter-test-apps"}))) nil)))))))
+      (testing "validate service - test that image can be set"
+        (scheduler/validate-service
+          (create-marathon-scheduler (assoc valid-config
+                                       :service-id->service-description-fn
+                                       (constantly {"image" "twosigma/waiter-test-apps"}))) nil)))))
 
 (deftest test-process-kill-instance-request
   (let [marathon-api (Object.)
