@@ -5,6 +5,10 @@ cd "$DIR"
 
 TEST_APPS_IMAGE=twosigma/waiter-test-apps
 
+pushd ./courier
+mvn clean package
+popd
+
 pushd ./sediment
 mvn clean package
 popd
