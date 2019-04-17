@@ -700,8 +700,10 @@
                                                     {:conn-timeout health-check-timeout-ms
                                                      :socket-timeout health-check-timeout-ms
                                                      :user-agent (str "waiter-syncer/" (str/join (take 7 git-version)))})
-                                      available? (fn scheduler-available? [service-instance health-check-proto health-check-port-index health-check-path]
-                                                   (scheduler/available? http-client service-instance health-check-proto health-check-port-index health-check-path))]
+                                      available? (fn scheduler-available?
+                                                   [scheduler-name service-instance health-check-proto health-check-port-index health-check-path]
+                                                   (scheduler/available? http-client scheduler-name service-instance health-check-proto
+                                                                         health-check-port-index health-check-path))]
                                   (fn start-scheduler-syncer-fn
                                     [scheduler-name get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs]
                                     (let [timeout-chan (->> (t/seconds scheduler-syncer-interval-secs)

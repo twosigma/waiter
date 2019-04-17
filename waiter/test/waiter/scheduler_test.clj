@@ -17,6 +17,7 @@
   (:require [clj-time.coerce :as tc]
             [clj-time.core :as t]
             [clojure.core.async :as async]
+            [clojure.core.async.impl.protocols :as protocols]
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.walk :as walk]
@@ -31,6 +32,7 @@
             [waiter.util.date-utils :as du])
   (:import (java.net ConnectException SocketTimeoutException)
            (java.util.concurrent TimeoutException)
+           (org.eclipse.jetty.client HttpClient)
            (org.joda.time DateTime)))
 
 (deftest test-record-Service
@@ -267,7 +269,7 @@
                                                              :failed-instances []}
                                   (->Service "s2" {} {} {}) {:active-instances []
                                                              :failed-instances []}})
-        available? (fn [{:keys [id]} proto port-index url]
+        available? (fn [_ {:keys [id]} proto port-index url]
                      (async/go (cond
                                  (and (= "s1.i1" id) (= "https" proto) (= 2 port-index) (= "/s1" url))
                                  {:healthy? true, :status 200}
@@ -336,18 +338,20 @@
 (deftest test-start-health-checks
   (let [available-instance "id1"
         service {:id "s1"}
-        available? (fn [instance _ _ _]
+        available? (fn [_ instance _ _ _]
                      (async/go
                        (let [healthy? (= (:id instance) available-instance)]
                          {:healthy? healthy?
                           :status (if healthy? 200 400)})))
+        scheduler-name "test-scheduler"
         service->service-description-fn (constantly {:health-check-url "/health"})]
     (testing "Does not call available? for healthy apps"
       (let [service->service-instances {service {:active-instances [{:id "id1"
                                                                      :healthy? true}
                                                                     {:id "id2"
                                                                      :healthy? true}]}}
-            service->service-instances' (start-health-checks service->service-instances
+            service->service-instances' (start-health-checks scheduler-name
+                                                             service->service-instances
                                                              (fn [_ _ _] (async/go false))
                                                              service->service-description-fn)
             active-instances (get-in service->service-instances' [service :active-instances])]
@@ -359,7 +363,8 @@
                                                                      :healthy? false}
                                                                     {:id "id3"
                                                                      :healthy? true}]}}
-            service->service-instances' (start-health-checks service->service-instances
+            service->service-instances' (start-health-checks scheduler-name
+                                                             service->service-instances
                                                              available?
                                                              service->service-description-fn)
             active-instances (get-in service->service-instances' [service :active-instances])]
@@ -371,18 +376,20 @@
 (deftest test-do-health-checks
   (let [available-instance "id1"
         service {:id "s1"}
-        available? (fn [{:keys [id]} _ _ _]
+        available? (fn [_ {:keys [id]} _ _ _]
                      (async/go
                        (let [healthy? (= id available-instance)]
                          {:healthy? healthy?
                           :status (if healthy? 200 400)})))
+        scheduler-name "test-scheduler"
         service->service-description-fn (constantly {:health-check-url "/healthy"})
         service->service-instances {service {:active-instances [{:id available-instance}
                                                                 {:id "id2"
                                                                  :healthy? false}
                                                                 {:id "id3"
                                                                  :healthy? true}]}}
-        service->service-instances' (do-health-checks service->service-instances
+        service->service-instances' (do-health-checks scheduler-name
+                                                      service->service-instances
                                                       available?
                                                       service->service-description-fn)]
     (let [[instance1 instance2 instance3] (get-in service->service-instances' [service :active-instances])]
@@ -499,23 +506,38 @@
         (is (= 5 @call-counter))))))
 
 (deftest test-available?
-  (let [http-client (Object.)
+  (let [http-client (HttpClient.)
         health-check-proto "http"
+        scheduler-name "test-scheduler"
         service-instance {:extra-ports [81] :host "www.example.com" :port 80}]
-    (with-redefs [http/get (fn [in-http-client in-health-check-url]
+    (.setConnectTimeout http-client 200)
+    (.setIdleTimeout http-client 200)
+    (with-redefs [http/get (fn [in-http-client in-health-check-url _]
                              (is (= http-client in-http-client))
                              (is (= "http://www.example.com:80/health-check" in-health-check-url))
                              (let [response-chan (async/promise-chan)]
                                (async/>!! response-chan {:status 200})
                                response-chan))]
-      (let [resp (async/<!! (available? http-client service-instance health-check-proto 0 "/health-check"))]
+      (let [resp (async/<!! (available? http-client scheduler-name service-instance health-check-proto 0 "/health-check"))]
         (is (= {:error nil, :healthy? true, :status 200} resp))))
-    (with-redefs [http/get (fn [in-http-client in-health-check-url]
+    (with-redefs [http/get (fn [in-http-client in-health-check-url _]
                              (is (= http-client in-http-client))
                              (is (= "http://www.example.com:81/health-check" in-health-check-url))
                              (throw (IllegalArgumentException. "Unable to make request")))]
-      (let [resp (async/<!! (available? http-client service-instance health-check-proto 1 "/health-check"))]
-        (is (= {:healthy? false} resp))))))
+      (let [resp (async/<!! (available? http-client scheduler-name service-instance health-check-proto 1 "/health-check"))]
+        (is (= {:healthy? false} resp))))
+    (let [abort-chan-atom (atom nil)]
+      (with-redefs [http/get (fn [in-http-client in-health-check-url in-request-config]
+                               (reset! abort-chan-atom (:abort-ch in-request-config))
+                               (is (= http-client in-http-client))
+                               (is (= "http://www.example.com:80/health-check" in-health-check-url))
+                               (async/promise-chan))]
+        (let [resp (async/<!! (available? http-client scheduler-name service-instance health-check-proto 0 "/health-check"))]
+          (is (= {:error :operation-timeout, :healthy? false, :status nil} resp)))
+        (let [abort-chan @abort-chan-atom]
+          (is abort-chan)
+          (is (protocols/closed? abort-chan))
+          (is (instance? TimeoutException (async/<!! abort-chan))))))))
 
 (defmacro check-trackers
   [all-trackers assertion-maps]

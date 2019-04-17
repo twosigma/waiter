@@ -35,6 +35,7 @@
   (:import (java.io EOFException)
            (java.net ConnectException SocketTimeoutException)
            (java.util.concurrent TimeoutException)
+           (org.eclipse.jetty.client HttpClient)
            (org.joda.time DateTime)))
 
 (defmacro log
@@ -228,19 +229,42 @@
 (defn available?
   "Async go block which returns the status code and success of a health check.
    Returns {:healthy? false} if such a connection cannot be established."
-  [http-client {:keys [host port] :as service-instance} protocol health-check-port-index health-check-path]
+  [^HttpClient http-client scheduler-name {:keys [host port] :as service-instance}
+   protocol health-check-port-index health-check-path]
   (async/go
     (try
       (if (and (pos? port) host)
         (let [instance-health-check-url (health-check-url service-instance protocol health-check-port-index health-check-path)
-              {:keys [status error]} (async/<! (http/get http-client instance-health-check-url))
-              error-flag (cond
-                           (instance? ConnectException error) :connect-exception
-                           (instance? EOFException error) :hangup-exception
-                           (instance? SocketTimeoutException error) :timeout-exception
-                           (instance? TimeoutException error) :timeout-exception)]
-          (log-health-check-issues service-instance instance-health-check-url status error)
-          {:healthy? (and (not error) (<= 200 status 299))
+              request-timeout-ms (max (+ (.getConnectTimeout http-client) (.getIdleTimeout http-client)) 200)
+              request-abort-chan (async/promise-chan)
+              health-check-response-chan (http/get http-client instance-health-check-url {:abort-ch request-abort-chan})
+              _ (meters/mark! (metrics/waiter-meter "scheduler" scheduler-name "health-check" "invocation-rate"))
+              {:keys [error-flag status]}
+              (async/alt!
+                health-check-response-chan
+                ([response]
+                  (let [{:keys [error status]} response
+                        error-flag (cond
+                                     (instance? ConnectException error) :connect-exception
+                                     (instance? EOFException error) :hangup-exception
+                                     (instance? SocketTimeoutException error) :timeout-exception
+                                     (instance? TimeoutException error) :timeout-exception)]
+                    (log-health-check-issues service-instance instance-health-check-url status error)
+                    {:error-flag error-flag
+                     :status status}))
+
+                (async/timeout request-timeout-ms)
+                ([_]
+                  (async/>! request-abort-chan (TimeoutException. "Health check request exceeded its allocated time"))
+                  (meters/mark! (metrics/waiter-meter "scheduler" scheduler-name "health-check" "timeout-rate"))
+                  (log/info "health check timed out before receiving response"
+                            {:health-check-path health-check-path
+                             :instance service-instance
+                             :scheduler scheduler-name
+                             :timeout request-timeout-ms})
+                  {:error-flag :operation-timeout}))]
+          (async/close! request-abort-chan)
+          {:healthy? (and (nil? error-flag) (<= 200 status 299))
            :status status
            :error error-flag})
         {:healthy? false})
@@ -391,7 +415,19 @@
 (defn start-health-checks
   "Takes a map from service -> service instances and replaces each active instance with a ref which performs a
    health check if necessary, or returns the instance immediately."
-  [service->service-instances available? service-id->service-description-fn]
+  [scheduler-name service->service-instances available? service-id->service-description-fn]
+  (let [num-unhealthy-instances (reduce
+                                  (fn [accum-count {:keys [active-instances]}]
+                                    (->> active-instances
+                                         (filter #(not (:healthy? %)))
+                                         count
+                                         (+ accum-count)))
+                                  0
+                                  (vals service->service-instances))]
+    (log/info scheduler-name "scheduler has" num-unhealthy-instances "unhealthy instance(s)")
+    (metrics/reset-counter
+      (metrics/waiter-counter "scheduler" scheduler-name "health-checks" "unhealthy-instances")
+      num-unhealthy-instances))
   (loop [[[service {:keys [active-instances] :as instances}] & rest] (seq service->service-instances)
          service->service-instances' {}]
     (if-not service
@@ -420,7 +456,7 @@
                                                          (if healthy?
                                                            (assoc instance :healthy? true)
                                                            (update-unhealthy-instance instance status error))))
-                                           (available? instance protocol health-check-port-index health-check-url)))
+                                           (available? scheduler-name instance protocol health-check-port-index health-check-url)))
                                        chan))
                                    active-instances)]
         (recur rest (assoc service->service-instances' service
@@ -428,8 +464,9 @@
 
 (defn do-health-checks
   "Takes a map from service -> service instances and performs health checks in parallel. Returns a map of service -> service instances."
-  [service->service-instances available? service-id->service-description-fn]
-  (let [service->service-instance-futures (start-health-checks service->service-instances available? service-id->service-description-fn)]
+  [scheduler-name service->service-instances available? service-id->service-description-fn]
+  (let [service->service-instance-futures
+        (start-health-checks scheduler-name service->service-instances available? service-id->service-description-fn)]
     (loop [[[service {:keys [active-instances] :as instances}] & rest] (seq service->service-instance-futures)
            service->service-instances' {}]
       (if-not service
@@ -448,9 +485,11 @@
     (log/trace "scheduler-syncer: querying" scheduler-name "scheduler")
     (if-let [service->service-instances (timers/start-stop-time!
                                           (metrics/waiter-timer "scheduler" scheduler-name "service->available-tasks")
-                                          (do-health-checks (request-available-waiter-services scheduler-name get-service->instances-fn)
-                                                            available?
-                                                            service-id->service-description-fn))]
+                                          (do-health-checks
+                                            scheduler-name
+                                            (request-available-waiter-services scheduler-name get-service->instances-fn)
+                                            available?
+                                            service-id->service-description-fn))]
       (let [available-services (keys service->service-instances)
             available-service-ids (->> available-services (map :id) (set))]
         (log/debug "scheduler-syncer:" scheduler-name "has" (count service->service-instances) "available services:" available-service-ids)
@@ -662,7 +701,7 @@
         instances-requested-delta (+ (count removed-instance-ids)
                                      (- (:requested instance-counts')
                                         (:requested instance-counts)))
-        all-start-times (into instance-scheduling-start-times 
+        all-start-times (into instance-scheduling-start-times
                               (repeat instances-requested-delta current-time))
         ;; 2) Match (and remove) timestamps with now-scheduled (new) instances.
         [matched-start-times unmatched-start-times]

@@ -32,7 +32,7 @@
 
   :dependencies [[bidi "2.1.5"
                   :exclusions [prismatic/schema ring/ring-core]]
-                 [twosigma/jet "0.7.10-20190417_013951-gef581db"
+                 [twosigma/jet "0.7.10-20190417_210947-g70a338b"
                   :exclusions [org.mortbay.jetty.alpn/alpn-boot]]
                  [twosigma/clj-http "1.0.2-20180124_201819-gcdf23e5"
                   :exclusions [commons-codec commons-io org.clojure/tools.reader potemkin slingshot]]
