@@ -40,5 +40,6 @@ export INTEGRATION_TEST_IMAGE_CONSTRAINT_ATTRIBUTE_2="platform"
 export INTEGRATION_TEST_IMAGE_CONSTRAINT_VALUE_2="p2"
 export WAITER_TEST_KITCHEN_CMD=/opt/kitchen/kitchen
 export WAITER_TEST_NGINX_CMD=/opt/nginx/bin/run-nginx-server.sh
+export WAITER_TEST_SEDIMENT_CMD=/opt/sediment/bin/run-sediment-server.sh
 export WAITER_URI=127.0.0.1:${WAITER_PORT}
 ${WAITER_DIR}/bin/test.sh ${TEST_COMMAND} ${TEST_SELECTOR}

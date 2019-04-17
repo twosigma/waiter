@@ -800,7 +800,7 @@
         (is (thrown? Throwable (scheduler/validate-service
                                  (create-marathon-scheduler (assoc valid-config
                                                               :service-id->service-description-fn
-                                                              (constantly {"image" "twosigma/kitchen"}))) nil)))))))
+                                                              (constantly {"image" "twosigma/waiter-test-apps"}))) nil)))))))
 
 (deftest test-process-kill-instance-request
   (let [marathon-api (Object.)

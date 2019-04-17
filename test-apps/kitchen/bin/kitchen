@@ -499,6 +499,8 @@ class Kitchen(HTTPWebSocketsHandler):
             self.__response_bytes = None
             self.__response_length = max_response_size
             self.__status = 200
+            self.__response_trailers = {}
+            self.__trailer_delay_secs = 0
             self.__truncated_length = max_response_size + 1
 
             # Process Kitchen request options
@@ -554,7 +556,17 @@ class Kitchen(HTTPWebSocketsHandler):
                     chunk = bytes(itertools.islice(response_bytes, self.__chunk_size))
                     if len(chunk) == 0:
                         if self.__chunked:
-                            self.wfile.write(b'0\r\n\r\n')
+                            self.wfile.write(b'0\r\n')
+                            if self.__trailer_delay_secs > 0:
+                                # sleep before sending the trailers
+                                self.logger().debug('Sleeping {} secs before sending trailers'.format(self.__trailer_delay_secs))
+                                time.sleep(self.__trailer_delay_secs)
+                            # Send the trailers
+                            for trailer_key, trailer_value in self.__response_trailers.items():
+                                self.wfile.write('{}: {}\r\n'.format(trailer_key, trailer_value).encode('utf-8'))
+                            self.wfile.flush()
+                            self.wfile.write(b'\r\n')
+                            self.wfile.flush()
                         break
                     else:
                         if self.__chunked:
@@ -707,6 +719,16 @@ class Kitchen(HTTPWebSocketsHandler):
         async_expire_ms = self.headers.get('x-kitchen-store-async-response-ms')
         if async_expire_ms and self.__async_req:
             self.__async_req['expire-ms'] = int(async_expire_ms)
+
+        # Pre-trailer sleep
+        pre_trailer_sleep = self.headers.get('x-kitchen-pre-trailer-sleep-ms')
+        if pre_trailer_sleep:
+            self.__trailer_delay_secs = int(pre_trailer_sleep) / 1000.0
+
+        # Trailers we want to send in chunked responses
+        for name, value in self.headers.items() :
+            if str(name).startswith('x-kitchen-trailer-'):
+                self.__response_trailers[name[len('x-kitchen-trailer-'):]] = value
 
     def __process_path(self):
         """Handle logic for all supported Kitchen endpoint paths."""

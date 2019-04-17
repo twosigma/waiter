@@ -901,4 +901,4 @@
         (is (thrown? Throwable (scheduler/validate-service
                                  (create-cook-scheduler-helper (assoc valid-config
                                                                  :service-id->service-description-fn
-                                                                 (constantly {"image" "twosigma/kitchen"}))) nil)))))))
+                                                                 (constantly {"image" "twosigma/waiter-test-apps"}))) nil)))))))

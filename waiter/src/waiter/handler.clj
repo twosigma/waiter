@@ -871,7 +871,7 @@
 (defn status-handler
   "Responds with an 'ok' status.
    Includes representation of request if requested using the include=request-info query param."
-  [{:keys [body] :as request}]
+  [{:keys [body trailers-fn] :as request}]
   (try
     (when (instance? InputStream body)
       (log/info "consuming request body before rendering response")
@@ -884,9 +884,12 @@
               :request-info
               (let [request-keys [:character-encoding :client-protocol :content-length :content-type :headers
                                   :internal-protocol :query-string :request-id :request-method :request-time :router-id
-                                  :scheme :uri]]
-                (-> (select-keys request request-keys)
-                    (update :headers headers/truncate-header-values)))))
+                                  :scheme :uri]
+                    trailers (when trailers-fn (trailers-fn))]
+                (cond-> (-> (select-keys request request-keys)
+                            (update :headers headers/truncate-header-values))
+                  (seq trailers)
+                  (assoc :trailers (headers/truncate-header-values trailers))))))
           utils/clj->json-response))
     (catch Throwable th
       (utils/exception->response th request))))

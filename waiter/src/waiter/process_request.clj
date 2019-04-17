@@ -182,8 +182,8 @@
 
 (defn- make-http-request
   "Makes an asynchronous request to the endpoint using Basic authentication."
-  [^HttpClient http-client make-basic-auth-fn request-method endpoint query-string headers body service-password
-   {:keys [username principal]} idle-timeout output-buffer-size proto-version]
+  [^HttpClient http-client make-basic-auth-fn request-method endpoint query-string headers body trailers-fn
+   service-password {:keys [username principal]} idle-timeout output-buffer-size proto-version]
   (let [auth (make-basic-auth-fn endpoint "waiter" service-password)
         headers (headers/assoc-auth-headers headers username principal)]
     (http/request
@@ -198,12 +198,14 @@
        :idle-timeout idle-timeout
        :method request-method
        :query-string query-string
+       :trailers-fn trailers-fn
        :url endpoint
        :version proto-version})))
 
 (defn make-request
   "Makes an asynchronous http request to the instance endpoint and returns a channel."
-  [http-clients make-basic-auth-fn service-id->password-fn {:keys [host port] :as instance} {:keys [body query-string request-method] :as request}
+  [http-clients make-basic-auth-fn service-id->password-fn {:keys [host port] :as instance}
+   {:keys [body query-string request-method trailers-fn] :as request}
    {:keys [initial-socket-timeout-ms output-buffer-size]} passthrough-headers end-route metric-group backend-proto proto-version]
   (let [instance-endpoint (scheduler/end-point-url backend-proto host port end-route)
         service-id (scheduler/instance->service-id instance)
@@ -228,7 +230,7 @@
     (-> backend-proto
         (hu/select-http-client http-clients)
         (make-http-request
-          make-basic-auth-fn request-method instance-endpoint query-string headers body service-password
+          make-basic-auth-fn request-method instance-endpoint query-string headers body trailers-fn service-password
           (handler/make-auth-user-map request) initial-socket-timeout-ms output-buffer-size proto-version))))
 
 (defn extract-async-request-response-data

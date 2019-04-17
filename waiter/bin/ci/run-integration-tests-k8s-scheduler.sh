@@ -41,10 +41,11 @@ bash +x ${DIR}/monitor-pods.sh &
 # Run the integration tests
 export INTEGRATION_TEST_CUSTOM_IMAGE="twosigma/integration"
 export INTEGRATION_TEST_CUSTOM_IMAGE_ALIAS="alias/integration"
-export INTEGRATION_TEST_KITCHEN_IMAGE="twosigma/kitchen"
+export INTEGRATION_TEST_KITCHEN_IMAGE="twosigma/waiter-test-apps"
 export LEIN_TEST_THREADS=4
 export WAITER_TEST_KITCHEN_CMD=/opt/kitchen/kitchen
 export WAITER_TEST_NGINX_CMD=/opt/nginx/bin/run-nginx-server.sh
+export WAITER_TEST_SEDIMENT_CMD=/opt/sediment/bin/run-sediment-server.sh
 export WAITER_AUTH_RUN_AS_USER=${USER}
 export WAITER_URI=127.0.0.1:${WAITER_PORT}
 ${WAITER_DIR}/bin/test.sh ${TEST_COMMAND} ${TEST_SELECTOR}

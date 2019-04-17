@@ -117,7 +117,8 @@
 
 (def waiter-url "DUMMY-DEF-TO-KEEP-IDE-HAPPY-INSTEAD-WRAP-INSIDE-timing-using-waiter-url")
 
-(def ^:dynamic http-client nil)
+(def ^:dynamic http1-client nil)
+(def ^:dynamic http2-client nil)
 
 (defmacro using-waiter-url
   [& body]
@@ -175,11 +176,12 @@
     (:out)
     (git-show->branch-name)))
 
-(defn make-http-client
-  "Instantiates and returns a new HttpClient without a cookie store"
+(defn make-http-clients
+  "Instantiates and returns http1 and http2 clients without a cookie store"
   []
-  (http-utils/http-client-factory {:clear-content-decoders false
-                                   :user-agent (str "waiter-test/" (retrieve-git-branch))}))
+  (http-utils/prepare-http-clients {:clear-content-decoders false
+                                    :conn-timeout 10000
+                                    :user-agent (str "waiter-test/" (retrieve-git-branch))}))
 
 (defn current-test-name
   "Get the name of the currently-running test."
@@ -194,11 +196,16 @@
          name#
          (timing-using-waiter-url
            name#
-           (binding [http-client (make-http-client)]
-             (try
-               ~@body
-               (finally
-                 (http/stop-client! http-client)))))))))
+           (let [local-http-clients# (make-http-clients)
+                 local-http1-client# (:http1-client local-http-clients#)
+                 local-http2-client# (:http2-client local-http-clients#)]
+             (binding [http1-client local-http1-client#
+                       http2-client local-http2-client#]
+               (try
+                 ~@body
+                 (finally
+                   (http/stop-client! http1-client)
+                   (http/stop-client! http2-client))))))))))
 
 (defn instance-id->service-id [^String instance-id]
   (when (str/index-of instance-id ".") (subs instance-id 0 (str/index-of instance-id "."))))
@@ -253,16 +260,20 @@
 (defn make-request
   ([waiter-url path &
     {:keys [body client cookies content-type disable-auth form-params headers
-            method multipart query-params verbose]
+            method multipart protocol query-params trailers-fn verbose]
      :or {body nil
-          client http-client
           cookies []
           disable-auth false
           headers {}
           method :get
           query-params {}
           verbose false}}]
-   (let [request-url (str
+   (let [client (or client
+                    (when protocol
+                      (http-utils/select-http-client
+                        protocol {:http1-client http1-client :http2-client http2-client}))
+                    http1-client)
+         request-url (str
                        (when-not (str/starts-with? waiter-url HTTP-SCHEME) HTTP-SCHEME)
                        (strip-trailing-slash waiter-url)
                        path)
@@ -273,7 +284,7 @@
          (log/info "request headers:" (into (sorted-map) request-headers)))
        (let [waiter-auth-cookie (some #(= authentication/AUTH-COOKIE-NAME (:name %)) cookies)
              add-spnego-auth (and (not disable-auth) use-spnego (not waiter-auth-cookie))
-             {:keys [body headers status]}
+             {:keys [body headers status trailers]}
              (async/<!! (http/request
                           client
                           (cond-> {:body body
@@ -286,7 +297,8 @@
                                   add-spnego-auth (assoc :auth (spnego/spnego-authentication (URI. request-url)))
                                   form-params (assoc :form-params form-params)
                                   (not (str/blank? content-type)) (assoc :content-type content-type)
-                                  cookies (assoc :cookies (map (fn [c] [(:name c) (:value c)]) cookies)))))
+                                  cookies (assoc :cookies (map (fn [c] [(:name c) (:value c)]) cookies))
+                                  trailers-fn (assoc :trailers-fn trailers-fn))))
              response-body (when body (async/<!! body))]
          (when verbose
            (log/info (get request-headers "x-cid") "response size:" (count (str response-body))))
@@ -294,7 +306,8 @@
           :cookies (parse-cookies (get headers "set-cookie"))
           :headers headers
           :request-headers request-headers
-          :status status})
+          :status status
+          :trailers (when trailers (async/<!! trailers))})
        (catch Exception e
          (when verbose
            (log/info (get request-headers "x-cid") "error in obtaining response" (.getMessage e)))
@@ -330,6 +343,14 @@
       (throw (Exception. "Property waiter.test.nginx.cmd is not set! (try `lein with-profile +test`)"))
       (str raw-command " " backend-proto))))
 
+(defn sediment-server-command
+  "Returns the command to launch the sediment server."
+  [args]
+  (let [raw-command (System/getProperty "waiter.test.sediment.cmd")]
+    (if (str/blank? raw-command)
+      (throw (Exception. "Property waiter.test.sediment.cmd is not set! (try `lein with-profile +test`)"))
+      (str raw-command (when-not (str/blank? args) " ") args))))
+
 (defn kitchen-params
   []
   {:cmd-type "shell"
@@ -350,7 +371,7 @@
 
 (defn make-light-request
   [waiter-url custom-headers &
-   {:keys [body cookies debug method path query-params]
+   {:keys [body cookies debug method path protocol query-params trailers-fn]
     :or {body nil cookies {} debug true method :post path "/endpoint" query-params {}}}]
   (let [headers (cond->
                   (-> {:x-waiter-cpus 0.1
@@ -367,11 +388,13 @@
                   :cookies cookies
                   :headers headers
                   :method method
-                  :query-params query-params)))
+                  :protocol protocol
+                  :query-params query-params
+                  :trailers-fn trailers-fn)))
 
 (defn make-shell-request
   [waiter-url custom-headers &
-   {:keys [body cookies debug method path query-params]
+   {:keys [body cookies debug method path protocol query-params trailers-fn]
     :or {body nil cookies {} debug true method :post path "/endpoint" query-params {}}}]
   (make-light-request
     waiter-url
@@ -384,12 +407,14 @@
     :debug debug
     :method method
     :path path
-    :query-params query-params))
+    :protocol protocol
+    :query-params query-params
+    :trailers-fn trailers-fn))
 
 (defn make-kitchen-request
   "Makes an on-the-fly request to the Kitchen test service."
   [waiter-url custom-headers &
-   {:keys [body cookies debug method path query-params]
+   {:keys [body cookies debug method protocol path query-params]
     :or {body nil cookies {} debug true method :post path "/endpoint" query-params {}}}]
   {:pre [(not (str/blank? waiter-url))]}
   (make-shell-request
@@ -403,6 +428,7 @@
     :debug debug
     :method method
     :path path
+    :protocol protocol
     :query-params query-params))
 
 (defn retrieve-service-id [waiter-url waiter-headers & {:keys [verbose] :or {verbose false}}]
@@ -503,7 +529,7 @@
 (defn num-tasks-running [waiter-url service-id & {:keys [verbose prev-tasks-running] :or {verbose false prev-tasks-running -1}}]
   (let [http-options {:conn-timeout 10000, :socket-timeout 10000, :spnego-auth use-spnego}
         marathon-url (marathon-url waiter-url :verbose verbose)
-        marathon-api (marathon/api-factory http-client http-options marathon-url)
+        marathon-api (marathon/api-factory http1-client http-options marathon-url)
         info-response (marathon/get-app marathon-api service-id)
         tasks-running' (get-in info-response [:app :tasksRunning])]
     (when (not= prev-tasks-running tasks-running')
@@ -514,7 +540,7 @@
   (let [marathon-url (marathon-url waiter-url)]
     (log/info service-id "being scaled to" target-instances "task(s).")
     (let [http-options {:conn-timeout 10000, :socket-timeout 10000, :spnego-auth use-spnego}
-          marathon-api (marathon/api-factory http-client http-options marathon-url)
+          marathon-api (marathon/api-factory http1-client http-options marathon-url)
           old-descriptor (:app (marathon/get-app marathon-api service-id))
           new-descriptor (update-in
                            (select-keys old-descriptor [:id :cmd :mem :cpus :instances])
@@ -597,10 +623,12 @@
                      (> target-count 60) 3
                      :else 2)
         checkpoints (set (map #(quot (* % target-count) num-groups) (range 1 num-groups)))
-        client http-client
+        http1-client-backup http1-client
+        http2-client-backup http2-client
         tasks (map (fn [_]
                      (retrieve-task
-                       (binding [http-client client]
+                       (binding [http1-client http1-client-backup
+                                 http2-client http2-client-backup]
                          (loop [iter-id 1
                                 result []]
                            (dosync (alter start-counter inc))

@@ -32,7 +32,7 @@
 
   :dependencies [[bidi "2.1.5"
                   :exclusions [prismatic/schema ring/ring-core]]
-                 [twosigma/jet "0.7.10-20190319_181636-g5104f1f"
+                 [twosigma/jet "0.7.10-20190417_013951-gef581db"
                   :exclusions [org.mortbay.jetty.alpn/alpn-boot]]
                  [twosigma/clj-http "1.0.2-20180124_201819-gcdf23e5"
                   :exclusions [commons-codec commons-io org.clojure/tools.reader potemkin slingshot]]
@@ -134,7 +134,10 @@
                             (.getCanonicalPath (clojure.java.io/file "../test-apps/kitchen/bin/kitchen"))))
                      ~(str "-Dwaiter.test.nginx.cmd="
                         (or (System/getenv "WAITER_TEST_NGINX_CMD")
-                            (.getCanonicalPath (clojure.java.io/file "../test-apps/nginx/bin/run-nginx-server.sh"))))]
+                          (.getCanonicalPath (clojure.java.io/file "../test-apps/nginx/bin/run-nginx-server.sh"))))
+                     ~(str "-Dwaiter.test.sediment.cmd="
+                        (or (System/getenv "WAITER_TEST_SEDIMENT_CMD")
+                          (.getCanonicalPath (clojure.java.io/file "../test-apps/sediment/bin/run-sediment-server.sh"))))]
                     :parallel-test {:pools {:serial (constantly 1)
                                             :parallel (fn []
                                                         (or (some-> (System/getenv "LEIN_TEST_THREADS") Long/valueOf)

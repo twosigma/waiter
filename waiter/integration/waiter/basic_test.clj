@@ -27,6 +27,7 @@
             [waiter.service-description :as sd]
             [waiter.util.client-tools :refer :all]
             [waiter.util.date-utils :as du]
+            [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
   (:import (java.io ByteArrayInputStream)
            (java.net URLEncoder)))
@@ -201,6 +202,18 @@
         (is (= "waiter_kitchen_test" (service-id->metric-group waiter-url service-id))
             (str "Invalid metric group for " service-id)))
 
+      (testing "trailers support in"
+        (testing "request trailers to waiter"
+          (let [test-trailers {"foo" "bar"
+                               "lorem" "ipsum"}
+                {:keys [body] :as response} (make-request waiter-url "/status"
+                                                          :query-params {"include" "request-info"}
+                                                          :trailers-fn (constantly test-trailers))
+                body-json (json/read-str (str body))]
+            (assert-response-status response 200)
+            (is (= "chunked" (get-in body-json ["request-info" "headers" "transfer-encoding"])))
+            (is (= test-trailers (get-in body-json ["request-info" "trailers"]))))))
+
       (delete-service waiter-url service-id))))
 
 (deftest ^:parallel ^:integration-fast test-basic-service-validation-from-on-the-fly-headers
@@ -320,39 +333,39 @@
 (defn- run-backend-proto-service-test
   "Helper method to run tests with various backend protocols"
   ([waiter-url backend-proto health-check-port-index backend-scheme backend-proto-version]
-    (run-backend-proto-service-test
-      waiter-url backend-proto backend-proto health-check-port-index backend-scheme backend-proto-version))
+   (run-backend-proto-service-test
+     waiter-url backend-proto backend-proto health-check-port-index backend-scheme backend-proto-version))
   ([waiter-url backend-proto health-check-proto health-check-port-index backend-scheme backend-proto-version]
-    (let [nginx-command (nginx-server-command backend-proto)
-          request-headers {:x-waiter-backend-proto backend-proto
-                           :x-waiter-cmd nginx-command
-                           :x-waiter-env-kitchen_cmd (kitchen-cmd)
-                           :x-waiter-health-check-port-index health-check-port-index
-                           :x-waiter-health-check-proto health-check-proto
-                           :x-waiter-name (rand-name)
-                           :x-waiter-ports 3}
-          {:keys [headers request-headers service-id] :as response}
-          (make-request-with-debug-info request-headers #(make-shell-request waiter-url % :path "/request-info"))]
-      (with-service-cleanup
-        service-id
-        (is service-id)
-        (assert-response-status response 200)
-        (let [{:strs [x-nginx-client-proto x-nginx-client-scheme x-waiter-backend-proto]} headers]
-          (is (= backend-proto-version x-nginx-client-proto))
-          (is (= backend-scheme x-nginx-client-scheme))
-          (is (= backend-proto x-waiter-backend-proto)))
-        (let [service-settings (service-settings waiter-url service-id)]
-          (is (= backend-proto (get-in service-settings [:service-description :backend-proto])))
-          (is (= nginx-command (get-in service-settings [:service-description :cmd]))))
-        (testing "streaming"
-          (let [kitchen-response-size 200000
-                request-headers (assoc request-headers
-                                  :x-kitchen-chunk-delay 10
-                                  :x-kitchen-chunk-size 2000
-                                  :x-kitchen-response-size kitchen-response-size)
-                response (make-shell-request waiter-url request-headers :path "/chunked")]
-            (assert-response-status response 200)
-            (is (= kitchen-response-size (-> response :body str .getBytes count)))))))))
+   (let [nginx-command (nginx-server-command backend-proto)
+         request-headers {:x-waiter-backend-proto backend-proto
+                          :x-waiter-cmd nginx-command
+                          :x-waiter-env-kitchen_cmd (kitchen-cmd)
+                          :x-waiter-health-check-port-index health-check-port-index
+                          :x-waiter-health-check-proto health-check-proto
+                          :x-waiter-name (rand-name)
+                          :x-waiter-ports 3}
+         {:keys [headers request-headers service-id] :as response}
+         (make-request-with-debug-info request-headers #(make-shell-request waiter-url % :path "/request-info"))]
+     (with-service-cleanup
+       service-id
+       (is service-id)
+       (assert-response-status response 200)
+       (let [{:strs [x-nginx-client-proto x-nginx-client-scheme x-waiter-backend-proto]} headers]
+         (is (= backend-proto-version x-nginx-client-proto))
+         (is (= backend-scheme x-nginx-client-scheme))
+         (is (= backend-proto x-waiter-backend-proto)))
+       (let [service-settings (service-settings waiter-url service-id)]
+         (is (= backend-proto (get-in service-settings [:service-description :backend-proto])))
+         (is (= nginx-command (get-in service-settings [:service-description :cmd]))))
+       (testing "streaming"
+         (let [kitchen-response-size 200000
+               request-headers (assoc request-headers
+                                 :x-kitchen-chunk-delay 10
+                                 :x-kitchen-chunk-size 2000
+                                 :x-kitchen-response-size kitchen-response-size)
+               response (make-shell-request waiter-url request-headers :path "/chunked")]
+           (assert-response-status response 200)
+           (is (= kitchen-response-size (-> response :body str .getBytes count)))))))))
 
 (deftest ^:parallel ^:integration-fast test-http-backend-proto-service
   (testing-using-waiter-url
@@ -378,6 +391,139 @@
   (testing-using-waiter-url
     ;; PORT2 is running kitchen without SSL enabled
     (run-backend-proto-service-test waiter-url "h2" "https" 1 "https" "HTTP/2.0")))
+
+(defn- run-sediment-trailers-support-test
+  [waiter-url backend-proto]
+  (testing "request and response trailers"
+    (let [request-length 100000
+          long-request (apply str (repeat request-length "a"))
+          sediment-command (sediment-server-command "${PORT0}")
+          request-headers {:x-waiter-backend-proto backend-proto
+                           :x-waiter-cmd sediment-command
+                           :x-waiter-debug true
+                           :x-waiter-mem 512
+                           :x-waiter-name (rand-name)}
+          {:keys [service-id] :as canary-response}
+          (make-request-with-debug-info request-headers #(make-shell-request waiter-url % :path "/status"))]
+      (with-service-cleanup
+        service-id
+        (is service-id)
+        (assert-response-status canary-response 200)
+
+        (let [request-trailer-delay-ms 100
+              response-trailer-delay-ms 100]
+          (doseq [response-status [200 400 500]]
+            (testing (str {:backend-proto backend-proto
+                           :request-trailer-delay-ms request-trailer-delay-ms
+                           :response-status response-status
+                           :response-trailer-delay-ms response-trailer-delay-ms})
+              (let [request-trailers {(rand-name "foo") (rand-name "bar")
+                                      (rand-name "lorem") (rand-name "ipsum")}
+                    response-trailers {(rand-name "fee") (rand-name "fie")
+                                       (rand-name "foe") (rand-name "fum")}
+                    response (make-shell-request
+                               waiter-url
+                               (reduce
+                                 (fn [request-headers [k v]]
+                                   (assoc request-headers
+                                     (str "x-sediment-response-trailer-" k) (str v)))
+                                 (assoc request-headers
+                                   "x-sediment-response-status" response-status
+                                   "x-sediment-sleep-before-response-trailer-ms" response-trailer-delay-ms
+                                   "x-sediment-sleep-after-chunk-send-ms" 100)
+                                 (seq response-trailers))
+                               :body (ByteArrayInputStream. (.getBytes long-request))
+                               :path "/trailers"
+                               :protocol backend-proto
+                               :trailers-fn (fn []
+                                              (Thread/sleep request-trailer-delay-ms)
+                                              request-trailers))
+                    body-json (some-> response :body str json/read-str)
+                    http-version (hu/backend-protocol->http-version backend-proto)]
+                (log/info "response headers:" (:headers response))
+                (assert-response-status response response-status)
+                (is (= http-version (get body-json "protocol")))
+                (when (= "http" backend-proto)
+                  (is (= "chunked" (get-in body-json ["headers" "Transfer-Encoding"]))
+                      (str body-json))
+                  (is (= "chunked" (get-in response [:headers "transfer-encoding"]))
+                      (-> response :headers str)))
+                (is (= request-trailers (get body-json "trailers"))
+                    (-> response :headers str))
+                (is (= response-trailers (some-> response :trailers))
+                    (-> response :headers str))
+                (when-not (= response-trailers (some-> response :trailers))
+                  (if-let [trailers-fn (:trailers-fn response)]
+                    (do
+                      (async/<!! (async/timeout 2000))
+                      (let [delayed-trailers (trailers-fn)]
+                        (log/info "delayed trailers" delayed-trailers)
+                        (is (= response-trailers delayed-trailers)
+                            (str {:actual-trailers delayed-trailers
+                                  :expected-trailers response-trailers}))))
+                    (log/info "trailers-fn not available on response")))))))))))
+
+(deftest ^:parallel ^:integration-fast test-trailers-support-http-proto-sediment
+  (testing-using-waiter-url
+    (run-sediment-trailers-support-test waiter-url "http")))
+
+(deftest ^:parallel ^:integration-fast test-trailers-support-h2c-proto-sediment
+  (testing-using-waiter-url
+    (run-sediment-trailers-support-test waiter-url "h2c")))
+
+(defn- run-kitchen-trailers-support-test
+  [waiter-url backend-proto]
+  (testing "request and response trailers"
+    (let [request-length 100000
+          long-request (apply str (repeat request-length "a"))
+          request-headers {:x-waiter-backend-proto backend-proto
+                           :x-waiter-debug true
+                           :x-waiter-name (rand-name)}
+          {:keys [service-id] :as canary-response}
+          (make-request-with-debug-info request-headers #(make-kitchen-request waiter-url % :path "/status"))]
+      (with-service-cleanup
+        service-id
+        (is service-id)
+        (assert-response-status canary-response 200)
+
+        (doseq [response-trailer-delay-ms [0 1000]]
+          (testing (str {:backend-proto backend-proto
+                         :response-trailer-delay-ms response-trailer-delay-ms})
+            (let [response-trailers {(rand-name "fee") (rand-name "fie")
+                                     (rand-name "foe") (rand-name "fum")}
+                  response (make-kitchen-request
+                             waiter-url
+                             (reduce
+                               (fn [request-headers [k v]]
+                                 (assoc request-headers
+                                   (str "x-kitchen-trailer-" k) (str v)))
+                               (assoc request-headers
+                                 "x-kitchen-pre-trailer-sleep-ms" response-trailer-delay-ms)
+                               (seq response-trailers))
+                             :body (ByteArrayInputStream. (.getBytes long-request))
+                             :path "/chunked"
+                             :protocol backend-proto)]
+              (log/info "response headers:" (:headers response))
+              (assert-response-status response 200)
+              (when (= "http" backend-proto)
+                (is (= "chunked" (get-in response [:headers "transfer-encoding"]))
+                    (-> response :headers str)))
+              (is (= response-trailers (some-> response :trailers))
+                  (-> response :headers str))
+              (when-not (= response-trailers (some-> response :trailers))
+                (if-let [trailers-fn (:trailers-fn response)]
+                  (do
+                    (async/<!! (async/timeout 2000))
+                    (let [delayed-trailers (trailers-fn)]
+                      (log/info "delayed trailers" delayed-trailers)
+                      (is (= response-trailers delayed-trailers)
+                          (str {:actual-trailers delayed-trailers
+                                :expected-trailers response-trailers}))))
+                  (log/info "trailers-fn not available on response"))))))))))
+
+(deftest ^:parallel ^:integration-slow ^:resource-heavy test-trailers-support-http-proto-kitchen
+  (testing-using-waiter-url
+    (run-kitchen-trailers-support-test waiter-url "http")))
 
 (deftest ^:parallel ^:integration-fast test-basic-unsupported-command-type
   (testing-using-waiter-url

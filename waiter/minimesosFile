@@ -7,7 +7,7 @@ minimesos {
     timeout = 60
 
     agent {
-        imageName = "twosigma/kitchen"
+        imageName = "twosigma/waiter-test-apps"
         imageTag = "latest"
         loggingLevel = "# INHERIT FROM CLUSTER"
         portNumber = 5051
@@ -37,7 +37,7 @@ minimesos {
     }
 
     agent {
-        imageName = "twosigma/kitchen"
+        imageName = "twosigma/waiter-test-apps"
         imageTag = "latest"
         loggingLevel = "# INHERIT FROM CLUSTER"
         portNumber = 5051
@@ -67,7 +67,7 @@ minimesos {
     }
 
     agent {
-        imageName = "twosigma/kitchen"
+        imageName = "twosigma/waiter-test-apps"
         imageTag = "latest"
         loggingLevel = "# INHERIT FROM CLUSTER"
         portNumber = 5051
@@ -97,7 +97,7 @@ minimesos {
     }
 
     agent {
-        imageName = "twosigma/kitchen"
+        imageName = "twosigma/waiter-test-apps"
         imageTag = "latest"
         loggingLevel = "# INHERIT FROM CLUSTER"
         portNumber = 5051

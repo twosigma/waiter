@@ -12,3 +12,5 @@ COPY kitchen/bin/waiter-init /usr/bin/waiter-init
 COPY kitchen/bin/kitchen /opt/kitchen/kitchen
 COPY nginx/bin/run-nginx-server.sh /opt/nginx/bin/run-nginx-server.sh
 COPY nginx/data/nginx-template.conf /opt/nginx/data/nginx-template.conf
+COPY sediment/bin/run-sediment-server.sh /opt/sediment/bin/run-sediment-server.sh
+COPY sediment/data/sediment-uberjar.jar /opt/sediment/data/sediment-uberjar.jar
