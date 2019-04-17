@@ -236,12 +236,3 @@
       (throw (ex-info (str fail " failure(s)") m)))
     (when-not (zero? error)
       (throw (ex-info (str error " error(s)") m)))))
-
-(defmacro with-config
-  "Runs the body under the specified config."
-  [config-value & body]
-  `(let [test-config# (promise)
-         config-value# ~config-value]
-     (deliver test-config# config-value#)
-     (with-redefs [config/config-promise test-config#]
-       ~@body)))

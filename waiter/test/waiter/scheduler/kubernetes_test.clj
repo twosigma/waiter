@@ -23,9 +23,9 @@
             [clojure.walk :as walk]
             [plumbing.core :as pc]
             [slingshot.slingshot :as ss]
+            [waiter.config :as config]
             [waiter.scheduler :as scheduler]
             [waiter.scheduler.kubernetes :refer :all]
-            [waiter.test-helpers :as th]
             [waiter.util.client-tools :as ct]
             [waiter.util.http-utils :as hu]
             [waiter.util.date-utils :as du])
@@ -109,8 +109,7 @@
      (is (= expected# actual#))))
 
 (deftest replicaset-spec-health-check-port-index
-  (th/with-config
-    {:cluster-config {:name "test-cluster"}}
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
     (let [service-description (assoc dummy-service-description "health-check-port-index" 2 "ports" 3)
           scheduler (make-dummy-scheduler ["test-service-id"]
                                           {:service-id->service-description-fn (constantly service-description)})
@@ -120,15 +119,13 @@
              (get-in replicaset-spec [:spec :template :metadata :annotations]))))))
 
 (deftest replicaset-spec-no-image
-  (th/with-config
-    {:cluster-config {:name "test-cluster"}}
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
     (let [scheduler (make-dummy-scheduler ["test-service-id"])
           replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" dummy-service-description)]
       (is (= "twosigma/waiter-test-apps:latest" (get-in replicaset-spec [:spec :template :spec :containers 0 :image]))))))
 
 (deftest replicaset-spec-custom-image
-  (th/with-config
-    {:cluster-config {:name "test-cluster"}}
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
     (let [scheduler (make-dummy-scheduler ["test-service-id"])
           replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id"
                             (assoc dummy-service-description "image" "custom/image"))]
@@ -574,8 +571,7 @@
         (is (= expected-result actual-result))))))
 
 (deftest test-create-app
-  (th/with-config
-    {:cluster-config {:name "test-cluster"}}
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
     (let [service-id "test-service-id"
           service {:service-id service-id}
           descriptor {:service-description dummy-service-description
@@ -603,8 +599,7 @@
             (is (= service actual))))))))
 
 (deftest test-keywords-in-replicaset-spec
-  (th/with-config
-    {:cluster-config {:name "test-cluster"}}
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
     (testing "namespaced keywords in annotation keys and values correctly converted"
       (let [service-id "test-service-id"
             descriptor {:service-description dummy-service-description

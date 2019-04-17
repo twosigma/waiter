@@ -18,10 +18,10 @@
             [clj-time.core :as t]
             [clojure.string :as str]
             [clojure.test :refer :all]
+            [waiter.config :as config]
             [waiter.scheduler.cook :refer :all]
             [waiter.mesos.mesos :as mesos]
             [waiter.scheduler :as scheduler]
-            [waiter.test-helpers :as th]
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as http-utils]
             [waiter.util.utils :as utils])
@@ -257,8 +257,7 @@
                                      :health-check-url "/healthy"}})))))
 
 (deftest test-create-job-description
-  (th/with-config
-    {:cluster-config {:name "test-cluster"}}
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
     (let [service-id->password-fn (fn [service-id] (str service-id "-password"))
           home-path-prefix "/home/path/"
           service-id "test-service-1"

@@ -22,9 +22,9 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [qbits.jet.client.http :as http]
+            [waiter.config :as config]
             [waiter.scheduler :as scheduler]
             [waiter.scheduler.shell :refer :all]
-            [waiter.test-helpers :as th]
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
   (:import clojure.lang.ExceptionInfo
@@ -162,8 +162,7 @@
             (is (= (map #(+ % port-range-start) (range 1 num-ports)) extra-ports))))))))
 
 (deftest test-directory-content
-  (th/with-config
-    {:cluster-config {:name "test-cluster"}}
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
     (let [service-description {"backend-proto" "http"
                                "cmd" "echo Hello, World!"
                                "cpus" 4
@@ -251,8 +250,7 @@
                @port->reservation-atom))))))
 
 (deftest test-create-service-if-new
-  (th/with-config
-    {:cluster-config {:name "test-cluster"}}
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
     (let [scheduler (create-shell-scheduler (common-scheduler-config))]
       (is (= {:success true, :result :created, :message "Created foo"}
              (create-test-service scheduler "foo")))
@@ -264,8 +262,7 @@
              (scheduler/delete-service scheduler "foo"))))))
 
 (deftest test-delete-service
-  (th/with-config
-    {:cluster-config {:name "test-cluster"}}
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
     (let [scheduler (create-shell-scheduler (common-scheduler-config))]
       (is (= {:success true, :result :created, :message "Created foo"}
              (create-test-service scheduler "foo")))
@@ -277,8 +274,7 @@
       (is (not (scheduler/service-exists? scheduler "foo"))))))
 
 (deftest test-scale-service
-  (th/with-config
-    {:cluster-config {:name "test-cluster"}}
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
     (let [scheduler-config (common-scheduler-config)
           scheduler (create-shell-scheduler scheduler-config)]
       ;; Bogus service
@@ -317,8 +313,7 @@
                (task-stats scheduler)))))))
 
 (deftest test-kill-instance
-  (th/with-config
-    {:cluster-config {:name "test-cluster"}}
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
     (let [scheduler (create-shell-scheduler (common-scheduler-config))]
       (is (= {:success true, :result :created, :message "Created foo"}
              (create-test-service scheduler "foo")))
@@ -356,8 +351,7 @@
                    (vals @port-reservation-atom)))))))))
 
 (deftest test-health-check-instances
-  (th/with-config
-    {:cluster-config {:name "test-cluster"}}
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
     (let [scheduler-config (common-scheduler-config)
           scheduler (create-shell-scheduler scheduler-config)
           health-check-count-atom (atom 0)]
@@ -383,8 +377,7 @@
         (is (= 1 @health-check-count-atom))))))
 
 (deftest test-should-update-task-stats-in-service
-  (th/with-config
-    {:cluster-config {:name "test-cluster"}}
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
     (let [scheduler-config (common-scheduler-config)
           scheduler (create-shell-scheduler scheduler-config)]
       (is (= {:success true, :result :created, :message "Created foo"}
@@ -401,8 +394,7 @@
              (scheduler/delete-service scheduler "foo"))))))
 
 (deftest test-get-services
-  (th/with-config
-    {:cluster-config {:name "test-cluster"}}
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
     (let [scheduler-config (common-scheduler-config)
           scheduler (create-shell-scheduler scheduler-config)]
       (is (= {:success true, :result :created, :message "Created foo"}
@@ -494,8 +486,7 @@
              (scheduler/delete-service scheduler "baz"))))))
 
 (deftest test-service-id->state
-  (th/with-config
-    {:cluster-config {:name "test-cluster"}}
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
     (let [scheduler (create-shell-scheduler (common-scheduler-config))
           instance-id "bar"
           fake-pid 1234
@@ -585,8 +576,7 @@
             (is (= "Unable to reserve 20 ports" (.getMessage ex)))))))))
 
 (deftest test-retry-failed-instances
-  (th/with-config
-    {:cluster-config {:name "test-cluster"}}
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
     (let [scheduler-config (common-scheduler-config)
           scheduler (create-shell-scheduler scheduler-config)]
       (is (= {:success true, :result :created, :message "Created foo"}
@@ -606,8 +596,7 @@
              (scheduler/delete-service scheduler "foo"))))))
 
 (deftest test-enforce-grace-period
-  (th/with-config
-    {:cluster-config {:name "test-cluster"}}
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
     (let [scheduler-config (common-scheduler-config)
           scheduler (create-shell-scheduler scheduler-config)]
       (is (= {:success true, :result :created, :message "Created foo"}
