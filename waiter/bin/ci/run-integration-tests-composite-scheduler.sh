@@ -17,9 +17,15 @@ TEST_SELECTOR=${2:-integration}
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WAITER_DIR=${DIR}/../..
 TEST_APPS_DIR=${WAITER_DIR}/../containers/test-apps
+COURIER_DIR=${TEST_APPS_DIR}/courier
 KITCHEN_DIR=${TEST_APPS_DIR}/kitchen
 NGINX_DIR=${TEST_APPS_DIR}/nginx
 SEDIMENT_DIR=${TEST_APPS_DIR}/sediment
+
+# prepare courier server build
+pushd ${COURIER_DIR}
+mvn clean package
+popd
 
 # prepare sediment server build
 pushd ${SEDIMENT_DIR}
@@ -31,6 +37,7 @@ popd
 ${WAITER_DIR}/bin/run-using-composite-scheduler.sh ${WAITER_PORT} &
 
 # Run the integration tests
+export WAITER_TEST_COURIER_CMD=${COURIER_DIR}/bin/run-courier-server.sh
 export WAITER_TEST_KITCHEN_CMD=${KITCHEN_DIR}/bin/kitchen
 export WAITER_TEST_NGINX_CMD=${NGINX_DIR}/bin/run-nginx-server.sh
 export WAITER_TEST_SEDIMENT_CMD=${SEDIMENT_DIR}/bin/run-sediment-server.sh

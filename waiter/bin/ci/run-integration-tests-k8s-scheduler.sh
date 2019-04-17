@@ -43,6 +43,7 @@ export INTEGRATION_TEST_CUSTOM_IMAGE="twosigma/integration"
 export INTEGRATION_TEST_CUSTOM_IMAGE_ALIAS="alias/integration"
 export INTEGRATION_TEST_KITCHEN_IMAGE="twosigma/waiter-test-apps"
 export LEIN_TEST_THREADS=4
+export WAITER_TEST_COURIER_CMD=/opt/courier/bin/run-courier-server.sh
 export WAITER_TEST_KITCHEN_CMD=/opt/kitchen/kitchen
 export WAITER_TEST_NGINX_CMD=/opt/nginx/bin/run-nginx-server.sh
 export WAITER_TEST_SEDIMENT_CMD=/opt/sediment/bin/run-sediment-server.sh
