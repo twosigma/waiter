@@ -122,13 +122,11 @@ public class Servlet extends HttpServlet {
         final byte[] outputBytes = responseBody.getBytes();
 
         final HttpFields trailer = createResponseTrailers(request);
-        if (trailer != null) {
-            response.setTrailers(() -> {
-                sleepBasedOnRequestHeader(
-                    request, "x-sediment-sleep-before-response-trailer-ms", "response trailers");
-                return trailer;
-            });
-        }
+        response.setTrailers(() -> {
+            sleepBasedOnRequestHeader(
+                request, "x-sediment-sleep-before-response-trailer-ms", "response trailers");
+            return trailer;
+        });
 
         final String responseStatusString = request.getHeader("x-sediment-response-status");
         if (responseStatusString == null) {
@@ -161,11 +159,7 @@ public class Servlet extends HttpServlet {
                 trailerFields.add(trailerName, request.getHeader(name));
             }
         }
-        if (trailerFields.size() == 0) {
-            return null;
-        } else {
-            return trailerFields;
-        }
+        return trailerFields;
     }
 
     private static RequestInfo populateRequestInfo(final Request request) throws IOException {
