@@ -485,11 +485,6 @@
                                :http-options {:conn-timeout 10000
                                               :socket-timeout 10000}
 
-                               ;; Map of images to mesos constraints. If the `image` field of the service matches, then
-                               ;; the service will be restricted to mesos agents with the matching attribute. Those
-                               ;; agents are expected to be compatible with the image.
-                               :image->constraints {"alias/sample-alias" {:attribute "sample-attribute" :value "sample-value"}}
-
                                ;; Marathon will fail deployments (e.g. scale-down) if there is an existing deployment in
                                ;; flight; this represents the amount of time (milliseconds) Waiter will tolerate failed
                                ;; scale-down deployments before using the force flag when scaling down:
@@ -497,6 +492,10 @@
 
                                ;; How long (milliseconds) to cache the framework id:
                                :framework-id-ttl 900000
+
+                               :marathon-descriptor-builder {;; Factory function which creates a descriptor used by Marathon to create new apps.
+                                                             ;; Any additional configuration data needed for the implementation should be included here.
+                                                             :factory-fn waiter.scheduler.marathon/default-marathon-descriptor-builder}
 
                                ;; The port on which the mesos agents are listening.
                                ;; This is an optional parameter.

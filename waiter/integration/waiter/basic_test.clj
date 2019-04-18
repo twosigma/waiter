@@ -1163,10 +1163,10 @@
 (deftest ^:parallel ^:integration-slow test-image-field-validation
   (testing-using-waiter-url
     (let [make-kitchen-request-fn #(let [{:keys [service-id] :as response} (make-kitchen-request
-                                                    waiter-url
-                                                    {:x-waiter-name (rand-name)
-                                                     :x-waiter-image %1}
-                                                    :path "/hello")]
+                                                                             waiter-url
+                                                                             {:x-waiter-name (rand-name)
+                                                                              :x-waiter-image %1}
+                                                                             :path "/hello")]
                                      (assert-response-status response %2)
                                      (delete-service waiter-url service-id))]
       (cond (using-k8s? waiter-url)
@@ -1174,6 +1174,5 @@
                   _ (is (not (str/blank? kitchen-image)) "You must provide a kitchen image in the INTEGRATION_TEST_KITCHEN_IMAGE environment variable")]
               (make-kitchen-request-fn kitchen-image 200))
             (or (using-cook? waiter-url)
-                (using-marathon? waiter-url)
                 (using-shell? waiter-url))
             (make-kitchen-request-fn "dummy/image" 500)))))

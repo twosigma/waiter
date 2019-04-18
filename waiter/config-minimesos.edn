@@ -42,8 +42,8 @@
                                :http-options {:conn-timeout 10000
                                               :socket-timeout 10000
                                               :spnego-auth false}
-                               :image->constraints {"alias/p1" {:attribute "platform" :value "p1"}
-                                                    "alias/p2" {:attribute "platform" :value "p2"}}}}
+
+                               :marathon-descriptor-builder {:factory-fn waiter.scheduler.marathon/default-marathon-descriptor-builder}}}
 
  ; ---------- CORS ----------
  :cors-config {:kind :allow-all}

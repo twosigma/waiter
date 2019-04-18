@@ -244,20 +244,13 @@
   (let [apps (marathon/get-apps marathon-api query-params)]
     (filter #(is-waiter-service?-fn (app->waiter-service-id %)) (:apps apps))))
 
-(defn make-constraints
-  "Use image field to look up Mesos agent CLUSTER constraints."
-  [image->constraints image]
-  (if-let [{:keys [attribute value]} (get image->constraints image)]
-    [[attribute "CLUSTER" value]]
-    []))
-
-(defn marathon-descriptor
+(defn default-marathon-descriptor-builder
   "Returns the descriptor to be used by Marathon to create new apps."
-  [{:keys [image->constraints]} home-path-prefix service-id->password-fn {:keys [service-id service-description]}]
+  [home-path-prefix service-id->password-fn {:keys [service-id service-description]} _]
   (let [health-check-url (sd/service-description->health-check-url service-description)
         {:strs [backend-proto cmd cmd-type cpus disk grace-period-secs health-check-interval-secs
                 health-check-max-consecutive-failures health-check-port-index health-check-proto
-                image mem ports restart-backoff-factor run-as-user]} service-description
+                mem ports restart-backoff-factor run-as-user]} service-description
         home-path (str home-path-prefix run-as-user)]
     (when (= "docker" cmd-type)
       (throw (ex-info "Unsupported command type on service"
@@ -268,7 +261,6 @@
      :env (scheduler/environment service-id service-description service-id->password-fn home-path)
      :user run-as-user
      :cmd cmd
-     :constraints (make-constraints image->constraints image)
      :disk disk
      :mem mem
      :ports (-> ports (repeat 0) vec)
@@ -349,7 +341,7 @@
                               service-id->kill-info-store service-id->out-of-sync-state-store
                               service-id->password-fn service-id->service-description-fn
                               force-kill-after-ms is-waiter-service?-fn sync-deployment-maintainer-atom
-                              retrieve-syncer-state-fn authorizer image->constraints]
+                              retrieve-syncer-state-fn authorizer marathon-descriptor-builder-fn]
 
   scheduler/ServiceScheduler
 
@@ -382,7 +374,7 @@
   (create-service-if-new [this {:keys [service-id] :as descriptor}]
     (timers/start-stop-time!
       (metrics/waiter-timer "scheduler" scheduler-name "create-service")
-      (let [marathon-descriptor (marathon-descriptor this home-path-prefix service-id->password-fn descriptor)]
+      (let [marathon-descriptor (marathon-descriptor-builder-fn home-path-prefix service-id->password-fn descriptor)]
         (when-not (scheduler/service-exists? this service-id)
           (start-new-service-wrapper marathon-api service-id marathon-descriptor)))))
 
@@ -462,12 +454,8 @@
      :syncer (retrieve-syncer-state-fn)})
 
   (validate-service [_ service-id]
-    (let [{:strs [run-as-user image]} (service-id->service-description-fn service-id)]
-      (authz/check-user authorizer run-as-user service-id)
-      (when (and image (not (contains? image->constraints image)))
-        (throw (ex-info (str "Image field is set, but has no matching mesos constraints. "
-                             "Only images with specified constraints are supported with Marathon scheduler")
-                        {:image image}))))))
+    (let [{:strs [run-as-user]} (service-id->service-description-fn service-id)]
+      (authz/check-user authorizer run-as-user service-id))))
 
 (defn- get-apps-with-deployments
   "Retrieves the apps with the deployment info embedded."
@@ -591,11 +579,10 @@
   "Returns a new MarathonScheduler with the provided configuration.
    Validates the configuration against marathon-scheduler-schema and throws if it's not valid."
   [{:keys [authorizer home-path-prefix http-options force-kill-after-ms framework-id-ttl
-           mesos-slave-port slave-directory sync-deployment url
+           marathon-descriptor-builder mesos-slave-port slave-directory sync-deployment url
            ;; functions provided in the context
            is-waiter-service?-fn leader?-fn scheduler-name scheduler-state-chan scheduler-syncer-interval-secs
-           service-id->password-fn service-id->service-description-fn start-scheduler-syncer-fn
-           image->constraints]}]
+           service-id->password-fn service-id->service-description-fn start-scheduler-syncer-fn]}]
   {:pre [(schema/contains-kind-sub-map? authorizer)
          (not (str/blank? url))
          (or (nil? slave-directory) (not (str/blank? slave-directory)))
@@ -614,7 +601,7 @@
          (fn? service-id->password-fn)
          (fn? service-id->service-description-fn)
          (fn? start-scheduler-syncer-fn)
-         (or (nil? image->constraints) (map? image->constraints))]}
+         (symbol? (:factory-fn marathon-descriptor-builder))]}
   (when (or (not slave-directory) (not mesos-slave-port))
     (log/info "scheduler mesos-slave-port or slave-directory is missing, log directory and url support will be disabled"))
   (let [authorizer (utils/create-component authorizer)
@@ -633,13 +620,20 @@
                                  service-id->failed-instances-transient-store)
         {:keys [retrieve-syncer-state-fn]}
         (start-scheduler-syncer-fn scheduler-name get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs)
+        marathon-descriptor-builder-fn (let [f (-> marathon-descriptor-builder
+                                               :factory-fn
+                                               utils/resolve-symbol
+                                               deref)]
+                                     (assert (fn? f) "Marathon descriptor builder function must be a Clojure fn")
+                                     (fn [home-path-prefix service-id->password-fn descriptor]
+                                       (f home-path-prefix service-id->password-fn descriptor marathon-descriptor-builder)))
         marathon-scheduler (->MarathonScheduler
                              scheduler-name marathon-api mesos-api retrieve-framework-id-fn home-path-prefix
                              service-id->failed-instances-transient-store service-id->last-force-kill-store
                              service-id->out-of-sync-state-store service-id->password-fn
                              service-id->service-description-fn force-kill-after-ms is-waiter-service?-fn
                              sync-deployment-maintainer-atom retrieve-syncer-state-fn authorizer
-                             image->constraints)
+                             marathon-descriptor-builder-fn)
         sync-deployment-maintainer (start-sync-deployment-maintainer
                                      leader?-fn service-id->out-of-sync-state-store marathon-scheduler sync-deployment)]
     (reset! sync-deployment-maintainer-atom sync-deployment-maintainer)
