@@ -290,7 +290,7 @@
                               "HOME" "/home/path/test-user"
                               "LOGNAME" "test-user"
                               "USER" "test-user"
-                              "WAITER_CLUSTER_NAME" "test-cluster"
+                              "WAITER_CLUSTER" "test-cluster"
                               "WAITER_CONCURRENCY_LEVEL" "1"
                               "WAITER_CPUS" "1"
                               "WAITER_MEM_MB" "1536"

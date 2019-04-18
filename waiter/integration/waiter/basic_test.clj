@@ -582,10 +582,10 @@
         (is (= 200 status))
         (testing "waiter configured environment variables"
           (is (every? #(contains? body-json %)
-                      ["HOME" "LOGNAME" "USER" "WAITER_CLUSTER_NAME" "WAITER_CONCURRENCY_LEVEL" "WAITER_CPUS"
+                      ["HOME" "LOGNAME" "USER" "WAITER_CLUSTER" "WAITER_CONCURRENCY_LEVEL" "WAITER_CPUS"
                        "WAITER_MEM_MB" "WAITER_SERVICE_ID" "WAITER_USERNAME"])
               (str body-json))
-          (is (= (setting waiter-url [:cluster-config :name]) (get body-json "WAITER_CLUSTER_NAME")))
+          (is (= (setting waiter-url [:cluster-config :name]) (get body-json "WAITER_CLUSTER")))
           (is (= service-id (get body-json "WAITER_SERVICE_ID"))))
         (testing "on-the-fly environment variables"
           (is (every? #(contains? body-json %) ["BEGIN_DATE" "END_DATE" "TIME2" "TIMESTAMP"])

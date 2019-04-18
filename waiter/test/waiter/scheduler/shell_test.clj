@@ -412,7 +412,7 @@
                     :environment {"HOME" (work-dir)
                                   "LOGNAME" nil
                                   "USER" nil
-                                  "WAITER_CLUSTER_NAME" "test-cluster"
+                                  "WAITER_CLUSTER" "test-cluster"
                                   "WAITER_CONCURRENCY_LEVEL" "1"
                                   "WAITER_CPUS" "2"
                                   "WAITER_MEM_MB" "32"
@@ -436,7 +436,7 @@
                     :environment {"HOME" (work-dir)
                                   "LOGNAME" nil
                                   "USER" nil
-                                  "WAITER_CLUSTER_NAME" "test-cluster"
+                                  "WAITER_CLUSTER" "test-cluster"
                                   "WAITER_CONCURRENCY_LEVEL" "1"
                                   "WAITER_CPUS" "2"
                                   "WAITER_MEM_MB" "32"
@@ -460,7 +460,7 @@
                     :environment {"HOME" (work-dir)
                                   "LOGNAME" nil
                                   "USER" nil
-                                  "WAITER_CLUSTER_NAME" "test-cluster"
+                                  "WAITER_CLUSTER" "test-cluster"
                                   "WAITER_CONCURRENCY_LEVEL" "1"
                                   "WAITER_CPUS" "2"
                                   "WAITER_MEM_MB" "32"
@@ -501,7 +501,7 @@
                                       :environment {"HOME" (work-dir)
                                                     "LOGNAME" nil
                                                     "USER" nil
-                                                    "WAITER_CLUSTER_NAME" "test-cluster"
+                                                    "WAITER_CLUSTER" "test-cluster"
                                                     "WAITER_CONCURRENCY_LEVEL" "1"
                                                     "WAITER_CPUS" "2"
                                                     "WAITER_MEM_MB" "32"

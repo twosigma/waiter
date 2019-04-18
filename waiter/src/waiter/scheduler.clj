@@ -668,7 +668,7 @@
          {"HOME" home-path
           "LOGNAME" run-as-user
           "USER" run-as-user
-          "WAITER_CLUSTER_NAME" (str (config/retrieve-cluster-name))
+          "WAITER_CLUSTER" (str (config/retrieve-cluster-name))
           "WAITER_CONCURRENCY_LEVEL" (str concurrency-level)
           "WAITER_CPUS" (str cpus)
           "WAITER_MEM_MB" (str mem)
