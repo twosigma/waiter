@@ -856,7 +856,7 @@ class WaiterCliTest(util.WaiterTest):
             cp = cli.show(self.waiter_url, token_name)
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertIsNotNone(re.search('^# Services\\s+2$', cli.stdout(cp), re.MULTILINE))
-            self.assertIsNotNone(re.search('^# Failing\\s+1$', cli.stdout(cp), re.MULTILINE))
+            self.assertIsNotNone(re.search('^# Failing\\s+(0|1)$', cli.stdout(cp), re.MULTILINE))
             self.assertIsNotNone(re.search('^Total Memory\\s+384 MiB$', cli.stdout(cp), re.MULTILINE))
             self.assertIsNotNone(re.search('^Total CPUs\\s+0\\.3$', cli.stdout(cp), re.MULTILINE))
             self.assertIsNotNone(re.search(f'^{service_id_1}.+Running.+✗$', cli.stdout(cp), re.MULTILINE))
