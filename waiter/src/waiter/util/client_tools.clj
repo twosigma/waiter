@@ -368,6 +368,14 @@
        (throw (Exception. "Property waiter.test.kitchen.cmd is not set! (try `lein with-profile +test`)"))
        (str cmd (when-not (str/blank? args) " ") args)))))
 
+(defn courier-server-command
+  "Returns the command to launch the courier server."
+  [args]
+  (let [raw-command (System/getProperty "waiter.test.courier.cmd")]
+    (if (str/blank? raw-command)
+      (throw (Exception. "Property waiter.test.courier.cmd is not set! (try `lein with-profile +test`)"))
+      (str raw-command (when-not (str/blank? args) " ") args))))
+
 (defn nginx-server-command
   "Returns the command to launch the nginx server."
   [backend-proto]
