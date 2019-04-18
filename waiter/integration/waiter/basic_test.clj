@@ -1046,3 +1046,57 @@
             (or (using-cook? waiter-url)
                 (using-shell? waiter-url))
             (make-kitchen-request-fn "dummy/image" 500)))))
+
+(deftest ^:parallel ^:integration-fast test-internal-protocol
+  (testing-using-waiter-url
+    (let [{:keys [http2c? http2? ssl-port]} (:server-options (waiter-settings waiter-url))
+          retrieve-client-protocol #(get-in % ["request-info" "client-protocol"])
+          retrieve-internal-protocol #(get-in % ["request-info" "internal-protocol"])
+          retrieve-scheme (fn [body-json]
+                            (or (get-in body-json ["request-info" "headers" "x-forwarded-proto"])
+                                (get-in body-json ["request-info" "scheme"])))]
+      (testing "HTTP/1.1 cleartext request"
+        (let [{:keys [body] :as response} (make-request waiter-url
+                                                        "/status"
+                                                        :client http1-client
+                                                        :query-params {"include" "request-info"})
+              body-json (some-> body str json/read-str)]
+          (assert-response-status response 200)
+          (is (= "HTTP/1.1" (retrieve-client-protocol body-json)) (str body-json))
+          (is (= "HTTP/1.1" (retrieve-internal-protocol body-json)) (str body-json))
+          (is (= "http" (retrieve-scheme body-json)) (str body-json))))
+      (when http2c?
+        (testing "HTTP/2.0 cleartext request"
+          (let [{:keys [body] :as response} (make-request (retrieve-h2c-url waiter-url)
+                                                          "/status"
+                                                          :client http2-client
+                                                          :query-params {"include" "request-info"})
+                body-json (some-> body str json/read-str)]
+            (assert-response-status response 200)
+            (is (= "HTTP/2.0" (retrieve-client-protocol body-json)) (str body-json))
+            (is (= "HTTP/2.0" (retrieve-internal-protocol body-json)) (str body-json))
+            (is (= "http" (retrieve-scheme body-json)) (str body-json)))))
+      (when ssl-port
+        (testing "HTTP/1.1 secure request"
+          (let [{:keys [body] :as response} (make-request (retrieve-ssl-url waiter-url ssl-port)
+                                                          "/status"
+                                                          :client http1-client
+                                                          :query-params {"include" "request-info"}
+                                                          :scheme "https")
+                body-json (some-> body str json/read-str)]
+            (assert-response-status response 200)
+            (is (= "HTTP/1.1" (retrieve-client-protocol body-json)) (str body-json))
+            (is (= "HTTP/1.1" (retrieve-internal-protocol body-json)) (str body-json))
+            (is (= "https" (retrieve-scheme body-json)) (str body-json))))
+        (when http2?
+          (testing "HTTP/2.0 secure request"
+            (let [{:keys [body] :as response} (make-request (retrieve-ssl-url waiter-url ssl-port)
+                                                            "/status"
+                                                            :client http2-client
+                                                            :query-params {"include" "request-info"}
+                                                            :scheme "https")
+                  body-json (some-> body str json/read-str)]
+              (assert-response-status response 200)
+              (is (= "HTTP/2.0" (retrieve-client-protocol body-json)) (str body-json))
+              (is (= "HTTP/2.0" (retrieve-internal-protocol body-json)) (str body-json))
+              (is (= "https" (retrieve-scheme body-json)) (str body-json)))))))))

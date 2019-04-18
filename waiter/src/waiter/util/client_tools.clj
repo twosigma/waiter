@@ -101,6 +101,34 @@
           (log/info "port" port "is already in use, assuming Waiter is running"))
         (str (retrieve-hostname) ":" port)))))
 
+(defn retrieve-h2c-port
+  "Retrieves the Waiter port for receiving h2c requests."
+  [waiter-url]
+  (or (System/getenv "WAITER_H2C_PORT")
+      (second (str/split waiter-url #":" 2))
+      "80"))
+
+(defn retrieve-h2c-url
+  "Retrieves the Waiter url for receiving h2c requests."
+  [waiter-url]
+  (str (first (str/split waiter-url #":" 2))
+       ":"
+       (retrieve-h2c-port waiter-url)))
+
+(defn retrieve-ssl-port
+  "Retrieves the Waiter port for receiving ssl requests."
+  [ssl-port]
+  (or (System/getenv "WAITER_SSL_PORT")
+      ssl-port
+      "443"))
+
+(defn retrieve-ssl-url
+  "Retrieves the Waiter url for receiving ssl requests."
+  [waiter-url ssl-port]
+  (str (first (str/split waiter-url #":" 2))
+       ":"
+       (retrieve-ssl-port ssl-port)))
+
 (defn interval-to-str [^Period interval]
   (let [builder (doto (PeriodFormatterBuilder.)
                   (.printZeroNever)
@@ -260,13 +288,14 @@
 (defn make-request
   ([waiter-url path &
     {:keys [body client cookies content-type disable-auth form-params headers
-            method multipart protocol query-params trailers-fn verbose]
+            method multipart protocol query-params scheme trailers-fn verbose]
      :or {body nil
           cookies []
           disable-auth false
           headers {}
           method :get
           query-params {}
+          scheme "http"
           verbose false}}]
    (let [client (or client
                     (when protocol
@@ -274,7 +303,8 @@
                         protocol {:http1-client http1-client :http2-client http2-client}))
                     http1-client)
          request-url (str
-                       (when-not (str/starts-with? waiter-url HTTP-SCHEME) HTTP-SCHEME)
+                       (when-not (str/starts-with? waiter-url scheme)
+                         (str scheme "://"))
                        (strip-trailing-slash waiter-url)
                        path)
          request-headers (walk/stringify-keys (ensure-cid-in-headers headers))]

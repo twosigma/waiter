@@ -50,6 +50,8 @@
                                       (rand-name "lorem") (rand-name "ipsum")}
                     response-trailers {(rand-name "fee") (rand-name "fie")
                                        (rand-name "foe") (rand-name "fum")}
+                    waiter-url (cond-> waiter-url
+                                 (= "h2c" backend-proto) retrieve-h2c-url)
                     response (make-shell-request
                                waiter-url
                                (reduce
@@ -90,7 +92,7 @@
   (testing-using-waiter-url
     (run-sediment-trailers-support-test waiter-url "http")))
 
-(deftest ^:parallel ^:integration-fast ^:explicit test-trailers-support-h2c-proto-sediment
+(deftest ^:parallel ^:integration-fast test-trailers-support-h2c-proto-sediment
   (testing-using-waiter-url
     (run-sediment-trailers-support-test waiter-url "h2c")))
 
