@@ -43,6 +43,7 @@
   ([scheduler service-id custom-service-description]
    (let [descriptor {:service-description (merge {"backend-proto" "http"
                                                   "cmd" "ls"
+                                                  "concurrency-level" 1
                                                   "cpus" 2
                                                   "grace-period-secs" 10
                                                   "health-check-port-index" 0
@@ -402,6 +403,7 @@
                   :environment {"HOME" (work-dir)
                                 "LOGNAME" nil
                                 "USER" nil
+                                "WAITER_CONCURRENCY_LEVEL" "1"
                                 "WAITER_CPUS" "2"
                                 "WAITER_MEM_MB" "32"
                                 "WAITER_PASSWORD" "foo.password"
@@ -409,6 +411,7 @@
                                 "WAITER_USERNAME" "waiter"}
                   :service-description {"backend-proto" "http"
                                         "cmd" "sleep 10000"
+                                        "concurrency-level" 1
                                         "cpus" 2
                                         "grace-period-secs" 10
                                         "health-check-port-index" 0
@@ -423,6 +426,7 @@
                   :environment {"HOME" (work-dir)
                                 "LOGNAME" nil
                                 "USER" nil
+                                "WAITER_CONCURRENCY_LEVEL" "1"
                                 "WAITER_CPUS" "2"
                                 "WAITER_MEM_MB" "32"
                                 "WAITER_PASSWORD" "bar.password"
@@ -430,6 +434,7 @@
                                 "WAITER_USERNAME" "waiter"}
                   :service-description {"backend-proto" "http"
                                         "cmd" "sleep 10000"
+                                        "concurrency-level" 1
                                         "cpus" 2
                                         "grace-period-secs" 10
                                         "health-check-port-index" 0
@@ -444,6 +449,7 @@
                   :environment {"HOME" (work-dir)
                                 "LOGNAME" nil
                                 "USER" nil
+                                "WAITER_CONCURRENCY_LEVEL" "1"
                                 "WAITER_CPUS" "2"
                                 "WAITER_MEM_MB" "32"
                                 "WAITER_PASSWORD" "baz.password"
@@ -451,6 +457,7 @@
                                 "WAITER_USERNAME" "waiter"}
                   :service-description {"backend-proto" "http"
                                         "cmd" "sleep 10000"
+                                        "concurrency-level" 1
                                         "cpus" 2
                                         "grace-period-secs" 10
                                         "health-check-port-index" 0
@@ -481,6 +488,7 @@
                                     :environment {"HOME" (work-dir)
                                                   "LOGNAME" nil
                                                   "USER" nil
+                                                  "WAITER_CONCURRENCY_LEVEL" "1"
                                                   "WAITER_CPUS" "2"
                                                   "WAITER_MEM_MB" "32"
                                                   "WAITER_PASSWORD" "foo.password"
@@ -488,6 +496,7 @@
                                                   "WAITER_USERNAME" "waiter"}
                                     :service-description {"backend-proto" "http"
                                                           "cmd" "ls"
+                                                          "concurrency-level" 1
                                                           "cpus" 2
                                                           "grace-period-secs" 10
                                                           "health-check-port-index" 0

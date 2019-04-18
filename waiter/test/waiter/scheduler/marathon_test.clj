@@ -594,6 +594,7 @@
                             "HOME" "/home/path/test-user"
                             "LOGNAME" "test-user"
                             "USER" "test-user"
+                            "WAITER_CONCURRENCY_LEVEL" "1"
                             "WAITER_CPUS" "1"
                             "WAITER_MEM_MB" "1536"
                             "WAITER_PASSWORD" "test-service-1-password"
@@ -618,6 +619,7 @@
             service-id "test-service-1"
             service-description {"backend-proto" "http"
                                  "cmd" "test-command"
+                                 "concurrency-level" 1
                                  "cpus" 1
                                  "mem" 1536
                                  "run-as-user" "test-user"

@@ -662,11 +662,12 @@
 
 (defn environment
   "Returns a new environment variable map with some basic variables added in"
-  [service-id {:strs [cpus env mem run-as-user]} service-id->password-fn home-path]
+  [service-id {:strs [concurrency-level cpus env mem run-as-user]} service-id->password-fn home-path]
   (merge env
          {"HOME" home-path
           "LOGNAME" run-as-user
           "USER" run-as-user
+          "WAITER_CONCURRENCY_LEVEL" (str concurrency-level)
           "WAITER_CPUS" (str cpus)
           "WAITER_MEM_MB" (str mem)
           "WAITER_PASSWORD" (service-id->password-fn service-id)
