@@ -89,11 +89,14 @@
 
 (defn dissoc-hop-by-hop-headers
   "Proxies must remove hop-by-hop headers before forwarding messages — both requests and responses.
-   Remove the hop-by-hop headers as specified in https://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html#sec13.5.1"
+   Remove the hop-by-hop headers (except te) specified in:
+   https://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html#sec13.5.1
+   The te header is not removed as it is needed by grpc to detect incompatible proxies:
+   https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-HTTP2.md"
   [{:strs [connection] :as headers}]
   (let [connection-headers (map str/trim (str/split (str connection) #","))]
     (apply dissoc headers "connection" "keep-alive" "proxy-authenticate" "proxy-authorization"
-           "te" "trailers" "transfer-encoding" "upgrade" connection-headers)))
+           "trailers" "transfer-encoding" "upgrade" connection-headers)))
 
 (defn assoc-auth-headers
   "`assoc`s the x-waiter-auth-principal and x-waiter-authenticated-principal headers if the

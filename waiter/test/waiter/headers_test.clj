@@ -170,5 +170,6 @@
             "content" "text/html"
             "content-encoding" "gzip"
             "proxy-connection" "keep-alive"
-            "referer" "http://www.test-referer.com"}
+            "referer" "http://www.test-referer.com"
+            "te" "trailers, deflate"}
            (dissoc-hop-by-hop-headers headers)))))

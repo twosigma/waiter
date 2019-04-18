@@ -327,7 +327,7 @@
                                         (is (= 654321 (:idle-timeout request-config)))
                                         (is (= (-> (dissoc passthrough-headers "expect" "authorization"
                                                            "connection" "keep-alive" "proxy-authenticate" "proxy-authorization"
-                                                           "te" "trailers" "transfer-encoding" "upgrade")
+                                                           "trailers" "transfer-encoding" "upgrade")
                                                    (merge {"x-waiter-auth-principal" "test-user"
                                                            "x-waiter-authenticated-principal" "test-user@test.com"}))
                                                (:headers request-config)))
