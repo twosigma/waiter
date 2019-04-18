@@ -62,6 +62,64 @@ public class Servlet extends HttpServlet {
         }
     }
 
+    private static HttpFields createResponseTrailers(final Request request) {
+        final HttpFields trailerFields = new HttpFields();
+        final String trailerPrefix = "x-sediment-response-trailer-";
+        for (String name : Collections.list(request.getHeaderNames())) {
+            if (name.toLowerCase().startsWith(trailerPrefix)) {
+                final String trailerName = name.substring(trailerPrefix.length());
+                trailerFields.add(trailerName, request.getHeader(name));
+            }
+        }
+        return trailerFields;
+    }
+
+    private static RequestInfo populateRequestInfo(final Request request) throws IOException {
+
+        final long bodyLength = slurpRequest(request.getInputStream());
+
+        final Map<String, String> headers = new HashMap<>();
+        for (final String name : Collections.list(request.getHeaderNames())) {
+            final List<String> values = Collections.list(request.getHeaders(name));
+            final String value = values.size() == 1 ? values.get(0) : String.join(", ", values);
+            headers.put(name, value);
+        }
+
+        final Map<String, String> params = new HashMap<>();
+        for (final String name : Collections.list(request.getParameterNames())) {
+            final String[] values = request.getParameterValues(name);
+            final String value = values.length == 1 ? values[0] : String.join(", ", values);
+            params.put(name, value);
+        }
+
+        final Map<String, String> trailers = new HashMap<>();
+        final HttpFields requestTrailers = request.getTrailers();
+        if (requestTrailers != null) {
+            for (final String name : requestTrailers.getFieldNamesCollection()) {
+                final List<String> values = Collections.list(requestTrailers.getValues(name));
+                final String value = values.size() == 1 ? values.get(0) : String.join(", ", values);
+                trailers.put(name, value);
+            }
+        }
+
+        final String userPrincipal = request.getUserPrincipal() != null ?
+            request.getUserPrincipal().toString() : "";
+
+        return new RequestInfo(
+            bodyLength,
+            request.getContentLengthLong(),
+            request.getContextPath(),
+            headers,
+            request.getPathInfo(),
+            request.getProtocol(),
+            params,
+            request.getMethod(),
+            request.getRequestURI(),
+            request.getScheme(),
+            trailers,
+            userPrincipal);
+    }
+
     static long slurpRequest(final InputStream inputStream) throws IOException {
         long totalBytesRead = 0;
         final byte[] buffer = new byte[32768];
@@ -148,63 +206,5 @@ public class Servlet extends HttpServlet {
             sleepBasedOnRequestHeader(
                 request, "x-sediment-sleep-after-chunk-send-ms", "next chunk");
         }
-    }
-
-    private static HttpFields createResponseTrailers(final Request request) {
-        final HttpFields trailerFields = new HttpFields();
-        final String trailerPrefix = "x-sediment-response-trailer-";
-        for (String name : Collections.list(request.getHeaderNames())) {
-            if (name.toLowerCase().startsWith(trailerPrefix)) {
-                final String trailerName = name.substring(trailerPrefix.length());
-                trailerFields.add(trailerName, request.getHeader(name));
-            }
-        }
-        return trailerFields;
-    }
-
-    private static RequestInfo populateRequestInfo(final Request request) throws IOException {
-
-        final long bodyLength = slurpRequest(request.getInputStream());
-
-        final Map<String, String> headers = new HashMap<>();
-        for (final String name : Collections.list(request.getHeaderNames())) {
-            final List<String> values = Collections.list(request.getHeaders(name));
-            final String value = values.size() == 1 ? values.get(0) : String.join(", ", values);
-            headers.put(name, value);
-        }
-
-        final Map<String, String> params = new HashMap<>();
-        for (final String name : Collections.list(request.getParameterNames())) {
-            final String[] values = request.getParameterValues(name);
-            final String value = values.length == 1 ? values[0] : String.join(", ", values);
-            params.put(name, value);
-        }
-
-        final Map<String, String> trailers = new HashMap<>();
-        final HttpFields requestTrailers = request.getTrailers();
-        if (requestTrailers != null) {
-            for (final String name : requestTrailers.getFieldNamesCollection()) {
-                final List<String> values = Collections.list(requestTrailers.getValues(name));
-                final String value = values.size() == 1 ? values.get(0) : String.join(", ", values);
-                trailers.put(name, value);
-            }
-        }
-
-        final String userPrincipal = request.getUserPrincipal() != null ?
-            request.getUserPrincipal().toString() : "";
-
-        return new RequestInfo(
-            bodyLength,
-            request.getContentLengthLong(),
-            request.getContextPath(),
-            headers,
-            request.getPathInfo(),
-            request.getProtocol(),
-            params,
-            request.getMethod(),
-            request.getRequestURI(),
-            request.getScheme(),
-            trailers,
-            userPrincipal);
     }
 }
