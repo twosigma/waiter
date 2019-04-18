@@ -32,6 +32,14 @@
 
   :dependencies [[bidi "2.1.5"
                   :exclusions [prismatic/schema ring/ring-core]]
+                 [twosigma/courier "1.0.0"
+                  :exclusions [com.google.guava/guava io.grpc/grpc-core]
+                  :scope "test"]
+                 ;; avoids the following:
+                 ;; WARNING!!! version ranges found for:
+                 ;; [com.twosigma.waiter/courier ...] -> [io.grpc/grpc-netty-shaded "1.20.0"] -> [io.grpc/grpc-core "[1.20.0,1.20.0]"]
+                 [io.grpc/grpc-core "1.20.0"
+                  :scope "test"]
                  [twosigma/jet "0.7.10-20190508_061258-gebd9d0a"
                   :exclusions [org.mortbay.jetty.alpn/alpn-boot]]
                  [twosigma/clj-http "1.0.2-20180124_201819-gcdf23e5"
@@ -129,7 +137,10 @@
                      ;; enable remote debugger to connect on port 5005
                      ["-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005"]}
              :test {:jvm-opts
-                    [~(str "-Dwaiter.test.kitchen.cmd="
+                    [~(str "-Dwaiter.test.courier.cmd="
+                        (or (System/getenv "WAITER_TEST_COURIER_CMD")
+                          (.getCanonicalPath (clojure.java.io/file "../containers/test-apps/courier/bin/run-courier-server.sh"))))
+                     ~(str "-Dwaiter.test.kitchen.cmd="
                         (or (System/getenv "WAITER_TEST_KITCHEN_CMD")
                             (.getCanonicalPath (clojure.java.io/file "../containers/test-apps/kitchen/bin/kitchen"))))
                      ~(str "-Dwaiter.test.nginx.cmd="
