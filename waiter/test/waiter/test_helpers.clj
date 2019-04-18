@@ -21,7 +21,6 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.tools.namespace.find :as find]
-            [waiter.config :as config]
             [waiter.correlation-id :as cid]
             [waiter.util.client-tools :as ct])
   (:import java.io.ByteArrayOutputStream
@@ -236,3 +235,4 @@
       (throw (ex-info (str fail " failure(s)") m)))
     (when-not (zero? error)
       (throw (ex-info (str error " error(s)") m)))))
+
