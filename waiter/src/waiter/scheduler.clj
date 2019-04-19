@@ -25,6 +25,7 @@
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [slingshot.slingshot :as ss]
+            [waiter.config :as config]
             [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics]
             [waiter.statsd :as statsd]
@@ -667,6 +668,7 @@
          {"HOME" home-path
           "LOGNAME" run-as-user
           "USER" run-as-user
+          "WAITER_CLUSTER" (str (config/retrieve-cluster-name))
           "WAITER_CONCURRENCY_LEVEL" (str concurrency-level)
           "WAITER_CPUS" (str cpus)
           "WAITER_MEM_MB" (str mem)

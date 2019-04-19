@@ -22,6 +22,7 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [qbits.jet.client.http :as http]
+            [waiter.config :as config]
             [waiter.scheduler :as scheduler]
             [waiter.scheduler.shell :refer :all]
             [waiter.util.date-utils :as du]
@@ -161,21 +162,22 @@
             (is (= (map #(+ % port-range-start) (range 1 num-ports)) extra-ports))))))))
 
 (deftest test-directory-content
-  (let [service-description {"backend-proto" "http"
-                             "cmd" "echo Hello, World!"
-                             "cpus" 4
-                             "mem" 256
-                             "ports" 1}
-        id->service (create-service {} "foo" service-description (constantly "password")
-                                    (work-dir) (atom {}) [0 0] (promise))
-        service-entry (get id->service "foo")
-        [instance-id instance] (-> service-entry :id->instance first)
-        content (directory-content service-entry instance-id "")]
-    (.waitFor (:shell-scheduler/process instance) 100 TimeUnit/MILLISECONDS)
-    (is (= 2 (count content)))
-    (is (some #(= "stdout" (:name %)) content))
-    (is (some #(= "stderr" (:name %)) content))
-    (is (= "Hello, World!\n" (slurp (:url (first (filter #(= "stdout" (:name %)) content))))))))
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
+    (let [service-description {"backend-proto" "http"
+                               "cmd" "echo Hello, World!"
+                               "cpus" 4
+                               "mem" 256
+                               "ports" 1}
+          id->service (create-service {} "foo" service-description (constantly "password")
+                                      (work-dir) (atom {}) [0 0] (promise))
+          service-entry (get id->service "foo")
+          [instance-id instance] (-> service-entry :id->instance first)
+          content (directory-content service-entry instance-id "")]
+      (.waitFor (:shell-scheduler/process instance) 100 TimeUnit/MILLISECONDS)
+      (is (= 2 (count content)))
+      (is (some #(= "stdout" (:name %)) content))
+      (is (some #(= "stderr" (:name %)) content))
+      (is (= "Hello, World!\n" (slurp (:url (first (filter #(= "stdout" (:name %)) content)))))))))
 
 (deftest test-pid
   (testing "Getting the pid of a Process"
@@ -248,79 +250,83 @@
                @port->reservation-atom))))))
 
 (deftest test-create-service-if-new
-  (let [scheduler (create-shell-scheduler (common-scheduler-config))]
-    (is (= {:success true, :result :created, :message "Created foo"}
-           (create-test-service scheduler "foo")))
-    (ensure-agent-finished scheduler)
-    (is (= {:success false, :result :already-exists, :message "foo already exists!"}
-           (create-test-service scheduler "foo")))
-    (ensure-agent-finished scheduler)
-    (is (= {:success true, :result :deleted, :message "Deleted foo"}
-           (scheduler/delete-service scheduler "foo")))))
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
+    (let [scheduler (create-shell-scheduler (common-scheduler-config))]
+      (is (= {:success true, :result :created, :message "Created foo"}
+             (create-test-service scheduler "foo")))
+      (ensure-agent-finished scheduler)
+      (is (= {:success false, :result :already-exists, :message "foo already exists!"}
+             (create-test-service scheduler "foo")))
+      (ensure-agent-finished scheduler)
+      (is (= {:success true, :result :deleted, :message "Deleted foo"}
+             (scheduler/delete-service scheduler "foo"))))))
 
 (deftest test-delete-service
-  (let [scheduler (create-shell-scheduler (common-scheduler-config))]
-    (is (= {:success true, :result :created, :message "Created foo"}
-           (create-test-service scheduler "foo")))
-    (ensure-agent-finished scheduler)
-    (is (scheduler/service-exists? scheduler "foo"))
-    (is (= {:success true, :result :deleted, :message "Deleted foo"}
-           (scheduler/delete-service scheduler "foo")))
-    (ensure-agent-finished scheduler)
-    (is (not (scheduler/service-exists? scheduler "foo")))))
-
-(deftest test-scale-service
-  (let [scheduler-config (common-scheduler-config)
-        scheduler (create-shell-scheduler scheduler-config)]
-    ;; Bogus service
-    (is (= {:success false, :result :no-such-service-exists, :message "bar does not exist!"}
-           (scheduler/scale-service scheduler "bar" 2 false)))
-    (with-redefs [perform-health-check (constantly true)]
-      ;; Create service, instances: 1
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
+    (let [scheduler (create-shell-scheduler (common-scheduler-config))]
       (is (= {:success true, :result :created, :message "Created foo"}
-             (create-test-service scheduler "foo" {"cmd" "sleep 10000"})))
+             (create-test-service scheduler "foo")))
       (ensure-agent-finished scheduler)
       (is (scheduler/service-exists? scheduler "foo"))
-      ;; Scale up, instances: 2
-      (is (= {:success true, :result :scaled, :message "Scaled foo"}
-             (scheduler/scale-service scheduler "foo" 2 false)))
-      (force-maintain-instance-scale scheduler)
-      (force-update-service-health scheduler scheduler-config)
-      (is (= {:running 2, :healthy 2, :unhealthy 0, :staged 0}
-             (task-stats scheduler)))
-      ;; No need to scale down, instances: 2
-      (is (= {:success false, :result :scaling-not-needed, :message "Unable to scale foo"}
-             (scheduler/scale-service scheduler "foo" 1 false)))
+      (is (= {:success true, :result :deleted, :message "Deleted foo"}
+             (scheduler/delete-service scheduler "foo")))
       (ensure-agent-finished scheduler)
-      ;; Successfully kill one instance, instances: 1
-      (let [instance (-> (scheduler/service-id->state scheduler "foo") :id->instance vals first)]
-        (is (= {:killed? true, :success true, :result :deleted, :message (str "Deleted " (:id instance))}
-               (scheduler/kill-instance scheduler instance))))
-      (force-update-service-health scheduler scheduler-config)
-      (is (= {:running 1, :healthy 1, :unhealthy 0, :staged 0}
-             (task-stats scheduler)))
-      ;; Scale up, instances: 2
-      (is (= {:success true, :result :scaled, :message "Scaled foo"}
-             (scheduler/scale-service scheduler "foo" 2 false)))
-      (force-maintain-instance-scale scheduler)
-      (force-update-service-health scheduler scheduler-config)
-      (is (= {:running 2, :healthy 2, :unhealthy 0, :staged 0}
-             (task-stats scheduler))))))
+      (is (not (scheduler/service-exists? scheduler "foo"))))))
+
+(deftest test-scale-service
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
+    (let [scheduler-config (common-scheduler-config)
+          scheduler (create-shell-scheduler scheduler-config)]
+      ;; Bogus service
+      (is (= {:success false, :result :no-such-service-exists, :message "bar does not exist!"}
+             (scheduler/scale-service scheduler "bar" 2 false)))
+      (with-redefs [perform-health-check (constantly true)]
+        ;; Create service, instances: 1
+        (is (= {:success true, :result :created, :message "Created foo"}
+               (create-test-service scheduler "foo" {"cmd" "sleep 10000"})))
+        (ensure-agent-finished scheduler)
+        (is (scheduler/service-exists? scheduler "foo"))
+        ;; Scale up, instances: 2
+        (is (= {:success true, :result :scaled, :message "Scaled foo"}
+               (scheduler/scale-service scheduler "foo" 2 false)))
+        (force-maintain-instance-scale scheduler)
+        (force-update-service-health scheduler scheduler-config)
+        (is (= {:running 2, :healthy 2, :unhealthy 0, :staged 0}
+               (task-stats scheduler)))
+        ;; No need to scale down, instances: 2
+        (is (= {:success false, :result :scaling-not-needed, :message "Unable to scale foo"}
+               (scheduler/scale-service scheduler "foo" 1 false)))
+        (ensure-agent-finished scheduler)
+        ;; Successfully kill one instance, instances: 1
+        (let [instance (-> (scheduler/service-id->state scheduler "foo") :id->instance vals first)]
+          (is (= {:killed? true, :success true, :result :deleted, :message (str "Deleted " (:id instance))}
+                 (scheduler/kill-instance scheduler instance))))
+        (force-update-service-health scheduler scheduler-config)
+        (is (= {:running 1, :healthy 1, :unhealthy 0, :staged 0}
+               (task-stats scheduler)))
+        ;; Scale up, instances: 2
+        (is (= {:success true, :result :scaled, :message "Scaled foo"}
+               (scheduler/scale-service scheduler "foo" 2 false)))
+        (force-maintain-instance-scale scheduler)
+        (force-update-service-health scheduler scheduler-config)
+        (is (= {:running 2, :healthy 2, :unhealthy 0, :staged 0}
+               (task-stats scheduler)))))))
 
 (deftest test-kill-instance
-  (let [scheduler (create-shell-scheduler (common-scheduler-config))]
-    (is (= {:success true, :result :created, :message "Created foo"}
-           (create-test-service scheduler "foo")))
-    (ensure-agent-finished scheduler)
-    (with-redefs [perform-health-check (constantly true)]
-      (let [instance (-> (scheduler/service-id->state scheduler "foo") :id->instance vals first)]
-        (is (= {:killed? true, :success true, :result :deleted, :message (str "Deleted " (:id instance))}
-               (scheduler/kill-instance scheduler instance)))
-        (is (= {:success true, :result :deleted, :message "Deleted foo"}
-               (scheduler/delete-service scheduler "foo")))
-        (ensure-agent-finished scheduler)
-        (is (= {:success false, :result :no-such-service-exists, :message "foo does not exist!"}
-               (scheduler/kill-instance scheduler instance)))))))
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
+    (let [scheduler (create-shell-scheduler (common-scheduler-config))]
+      (is (= {:success true, :result :created, :message "Created foo"}
+             (create-test-service scheduler "foo")))
+      (ensure-agent-finished scheduler)
+      (with-redefs [perform-health-check (constantly true)]
+        (let [instance (-> (scheduler/service-id->state scheduler "foo") :id->instance vals first)]
+          (is (= {:killed? true, :success true, :result :deleted, :message (str "Deleted " (:id instance))}
+                 (scheduler/kill-instance scheduler instance)))
+          (is (= {:success true, :result :deleted, :message "Deleted foo"}
+                 (scheduler/delete-service scheduler "foo")))
+          (ensure-agent-finished scheduler)
+          (is (= {:success false, :result :no-such-service-exists, :message "foo does not exist!"}
+                 (scheduler/kill-instance scheduler instance))))))))
 
 (deftest test-kill-process
   (testing "Killing a process"
@@ -345,192 +351,200 @@
                    (vals @port-reservation-atom)))))))))
 
 (deftest test-health-check-instances
-  (let [scheduler-config (common-scheduler-config)
-        scheduler (create-shell-scheduler scheduler-config)
-        health-check-count-atom (atom 0)]
-    (is (= {:success true, :result :created, :message "Created foo"}
-           (create-test-service scheduler "foo" {"cmd" "sleep 100000"})))
-    (ensure-agent-finished scheduler)
-    (with-redefs [http/get (fn [_ _]
-                             (swap! health-check-count-atom inc)
-                             (let [c (async/chan)]
-                               (async/go (async/>! c {:status 200}))
-                               c))]
-      (let [instance (-> (scheduler/service-id->state scheduler "foo") :id->instance vals first)]
-        ;; We force a health check to occur
-        (force-update-service-health scheduler scheduler-config)
-        (is (= 1 @health-check-count-atom))
-        ;; Kill the single instance of our service
-        (is (= {:killed? true, :success true, :result :deleted, :message (str "Deleted " (:id instance))}
-               (scheduler/kill-instance scheduler instance))))
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
+    (let [scheduler-config (common-scheduler-config)
+          scheduler (create-shell-scheduler scheduler-config)
+          health-check-count-atom (atom 0)]
+      (is (= {:success true, :result :created, :message "Created foo"}
+             (create-test-service scheduler "foo" {"cmd" "sleep 100000"})))
       (ensure-agent-finished scheduler)
-      ;; Force another health check attempt
-      (force-update-service-health scheduler scheduler-config)
-      ;; But, the health check shouldn't happen because the instance is killed
-      (is (= 1 @health-check-count-atom)))))
+      (with-redefs [http/get (fn [_ _]
+                               (swap! health-check-count-atom inc)
+                               (let [c (async/chan)]
+                                 (async/go (async/>! c {:status 200}))
+                                 c))]
+        (let [instance (-> (scheduler/service-id->state scheduler "foo") :id->instance vals first)]
+          ;; We force a health check to occur
+          (force-update-service-health scheduler scheduler-config)
+          (is (= 1 @health-check-count-atom))
+          ;; Kill the single instance of our service
+          (is (= {:killed? true, :success true, :result :deleted, :message (str "Deleted " (:id instance))}
+                 (scheduler/kill-instance scheduler instance))))
+        (ensure-agent-finished scheduler)
+        ;; Force another health check attempt
+        (force-update-service-health scheduler scheduler-config)
+        ;; But, the health check shouldn't happen because the instance is killed
+        (is (= 1 @health-check-count-atom))))))
 
 (deftest test-should-update-task-stats-in-service
-  (let [scheduler-config (common-scheduler-config)
-        scheduler (create-shell-scheduler scheduler-config)]
-    (is (= {:success true, :result :created, :message "Created foo"}
-           (create-test-service scheduler "foo" {"cmd" "sleep 10000"})))
-    (with-redefs [perform-health-check (constantly true)]
-      (force-update-service-health scheduler scheduler-config)
-      (is (= {:running 1, :healthy 1, :unhealthy 0, :staged 0}
-             (task-stats scheduler))))
-    (with-redefs [perform-health-check (constantly false)]
-      (force-update-service-health scheduler scheduler-config)
-      (is (= {:running 1, :healthy 0, :unhealthy 1, :staged 0}
-             (task-stats scheduler))))
-    (is (= {:success true, :result :deleted, :message "Deleted foo"}
-           (scheduler/delete-service scheduler "foo")))))
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
+    (let [scheduler-config (common-scheduler-config)
+          scheduler (create-shell-scheduler scheduler-config)]
+      (is (= {:success true, :result :created, :message "Created foo"}
+             (create-test-service scheduler "foo" {"cmd" "sleep 10000"})))
+      (with-redefs [perform-health-check (constantly true)]
+        (force-update-service-health scheduler scheduler-config)
+        (is (= {:running 1, :healthy 1, :unhealthy 0, :staged 0}
+               (task-stats scheduler))))
+      (with-redefs [perform-health-check (constantly false)]
+        (force-update-service-health scheduler scheduler-config)
+        (is (= {:running 1, :healthy 0, :unhealthy 1, :staged 0}
+               (task-stats scheduler))))
+      (is (= {:success true, :result :deleted, :message "Deleted foo"}
+             (scheduler/delete-service scheduler "foo"))))))
 
 (deftest test-get-services
-  (let [scheduler-config (common-scheduler-config)
-        scheduler (create-shell-scheduler scheduler-config)]
-    (is (= {:success true, :result :created, :message "Created foo"}
-           (create-test-service scheduler "foo" {"cmd" "sleep 10000"})))
-    (is (= {:success true, :result :created, :message "Created bar"}
-           (create-test-service scheduler "bar" {"cmd" "sleep 10000"})))
-    (is (= {:success true, :result :created, :message "Created baz"}
-           (create-test-service scheduler "baz" {"cmd" "sleep 10000"})))
-    (ensure-agent-finished scheduler)
-    (is (= (map scheduler/map->Service
-                [{:id "foo"
-                  :instances 1
-                  :task-count 1
-                  :task-stats {:running 1, :healthy 0, :unhealthy 1, :staged 0}
-                  :environment {"HOME" (work-dir)
-                                "LOGNAME" nil
-                                "USER" nil
-                                "WAITER_CONCURRENCY_LEVEL" "1"
-                                "WAITER_CPUS" "2"
-                                "WAITER_MEM_MB" "32"
-                                "WAITER_PASSWORD" "foo.password"
-                                "WAITER_SERVICE_ID" "foo"
-                                "WAITER_USERNAME" "waiter"}
-                  :service-description {"backend-proto" "http"
-                                        "cmd" "sleep 10000"
-                                        "concurrency-level" 1
-                                        "cpus" 2
-                                        "grace-period-secs" 10
-                                        "health-check-port-index" 0
-                                        "health-check-url" "/health-check-url"
-                                        "mem" 32
-                                        "ports" 1}
-                  :shell-scheduler/mem 32}
-                 {:id "bar"
-                  :instances 1
-                  :task-count 1
-                  :task-stats {:running 1, :healthy 0, :unhealthy 1, :staged 0}
-                  :environment {"HOME" (work-dir)
-                                "LOGNAME" nil
-                                "USER" nil
-                                "WAITER_CONCURRENCY_LEVEL" "1"
-                                "WAITER_CPUS" "2"
-                                "WAITER_MEM_MB" "32"
-                                "WAITER_PASSWORD" "bar.password"
-                                "WAITER_SERVICE_ID" "bar"
-                                "WAITER_USERNAME" "waiter"}
-                  :service-description {"backend-proto" "http"
-                                        "cmd" "sleep 10000"
-                                        "concurrency-level" 1
-                                        "cpus" 2
-                                        "grace-period-secs" 10
-                                        "health-check-port-index" 0
-                                        "health-check-url" "/health-check-url"
-                                        "mem" 32
-                                        "ports" 1}
-                  :shell-scheduler/mem 32}
-                 {:id "baz"
-                  :instances 1
-                  :task-count 1
-                  :task-stats {:running 1, :healthy 0, :unhealthy 1, :staged 0}
-                  :environment {"HOME" (work-dir)
-                                "LOGNAME" nil
-                                "USER" nil
-                                "WAITER_CONCURRENCY_LEVEL" "1"
-                                "WAITER_CPUS" "2"
-                                "WAITER_MEM_MB" "32"
-                                "WAITER_PASSWORD" "baz.password"
-                                "WAITER_SERVICE_ID" "baz"
-                                "WAITER_USERNAME" "waiter"}
-                  :service-description {"backend-proto" "http"
-                                        "cmd" "sleep 10000"
-                                        "concurrency-level" 1
-                                        "cpus" 2
-                                        "grace-period-secs" 10
-                                        "health-check-port-index" 0
-                                        "health-check-url" "/health-check-url"
-                                        "mem" 32
-                                        "ports" 1}
-                  :shell-scheduler/mem 32}])
-           (scheduler/get-services scheduler)))
-    (is (= {:success true, :result :deleted, :message "Deleted foo"}
-           (scheduler/delete-service scheduler "foo")))
-    (is (= {:success true, :result :deleted, :message "Deleted bar"}
-           (scheduler/delete-service scheduler "bar")))
-    (is (= {:success true, :result :deleted, :message "Deleted baz"}
-           (scheduler/delete-service scheduler "baz")))))
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
+    (let [scheduler-config (common-scheduler-config)
+          scheduler (create-shell-scheduler scheduler-config)]
+      (is (= {:success true, :result :created, :message "Created foo"}
+             (create-test-service scheduler "foo" {"cmd" "sleep 10000"})))
+      (is (= {:success true, :result :created, :message "Created bar"}
+             (create-test-service scheduler "bar" {"cmd" "sleep 10000"})))
+      (is (= {:success true, :result :created, :message "Created baz"}
+             (create-test-service scheduler "baz" {"cmd" "sleep 10000"})))
+      (ensure-agent-finished scheduler)
+      (is (= (map scheduler/map->Service
+                  [{:id "foo"
+                    :instances 1
+                    :task-count 1
+                    :task-stats {:running 1, :healthy 0, :unhealthy 1, :staged 0}
+                    :environment {"HOME" (work-dir)
+                                  "LOGNAME" nil
+                                  "USER" nil
+                                  "WAITER_CLUSTER" "test-cluster"
+                                  "WAITER_CONCURRENCY_LEVEL" "1"
+                                  "WAITER_CPUS" "2"
+                                  "WAITER_MEM_MB" "32"
+                                  "WAITER_PASSWORD" "foo.password"
+                                  "WAITER_SERVICE_ID" "foo"
+                                  "WAITER_USERNAME" "waiter"}
+                    :service-description {"backend-proto" "http"
+                                          "cmd" "sleep 10000"
+                                          "concurrency-level" 1
+                                          "cpus" 2
+                                          "grace-period-secs" 10
+                                          "health-check-port-index" 0
+                                          "health-check-url" "/health-check-url"
+                                          "mem" 32
+                                          "ports" 1}
+                    :shell-scheduler/mem 32}
+                   {:id "bar"
+                    :instances 1
+                    :task-count 1
+                    :task-stats {:running 1, :healthy 0, :unhealthy 1, :staged 0}
+                    :environment {"HOME" (work-dir)
+                                  "LOGNAME" nil
+                                  "USER" nil
+                                  "WAITER_CLUSTER" "test-cluster"
+                                  "WAITER_CONCURRENCY_LEVEL" "1"
+                                  "WAITER_CPUS" "2"
+                                  "WAITER_MEM_MB" "32"
+                                  "WAITER_PASSWORD" "bar.password"
+                                  "WAITER_SERVICE_ID" "bar"
+                                  "WAITER_USERNAME" "waiter"}
+                    :service-description {"backend-proto" "http"
+                                          "cmd" "sleep 10000"
+                                          "concurrency-level" 1
+                                          "cpus" 2
+                                          "grace-period-secs" 10
+                                          "health-check-port-index" 0
+                                          "health-check-url" "/health-check-url"
+                                          "mem" 32
+                                          "ports" 1}
+                    :shell-scheduler/mem 32}
+                   {:id "baz"
+                    :instances 1
+                    :task-count 1
+                    :task-stats {:running 1, :healthy 0, :unhealthy 1, :staged 0}
+                    :environment {"HOME" (work-dir)
+                                  "LOGNAME" nil
+                                  "USER" nil
+                                  "WAITER_CLUSTER" "test-cluster"
+                                  "WAITER_CONCURRENCY_LEVEL" "1"
+                                  "WAITER_CPUS" "2"
+                                  "WAITER_MEM_MB" "32"
+                                  "WAITER_PASSWORD" "baz.password"
+                                  "WAITER_SERVICE_ID" "baz"
+                                  "WAITER_USERNAME" "waiter"}
+                    :service-description {"backend-proto" "http"
+                                          "cmd" "sleep 10000"
+                                          "concurrency-level" 1
+                                          "cpus" 2
+                                          "grace-period-secs" 10
+                                          "health-check-port-index" 0
+                                          "health-check-url" "/health-check-url"
+                                          "mem" 32
+                                          "ports" 1}
+                    :shell-scheduler/mem 32}])
+             (scheduler/get-services scheduler)))
+      (is (= {:success true, :result :deleted, :message "Deleted foo"}
+             (scheduler/delete-service scheduler "foo")))
+      (is (= {:success true, :result :deleted, :message "Deleted bar"}
+             (scheduler/delete-service scheduler "bar")))
+      (is (= {:success true, :result :deleted, :message "Deleted baz"}
+             (scheduler/delete-service scheduler "baz"))))))
 
 (deftest test-service-id->state
-  (let [scheduler (create-shell-scheduler (common-scheduler-config))
-        instance-id "bar"
-        fake-pid 1234
-        started-at (t/now)
-        instance-dir (str (work-dir) "/foo/foo." instance-id)
-        port 10000
-        expected-state {:service (scheduler/make-Service
-                                   {:id "foo"
-                                    :instances 1
-                                    :task-count 1
-                                    :task-stats {:running 1, :healthy 0, :unhealthy 1, :staged 0}
-                                    :environment {"HOME" (work-dir)
-                                                  "LOGNAME" nil
-                                                  "USER" nil
-                                                  "WAITER_CONCURRENCY_LEVEL" "1"
-                                                  "WAITER_CPUS" "2"
-                                                  "WAITER_MEM_MB" "32"
-                                                  "WAITER_PASSWORD" "foo.password"
-                                                  "WAITER_SERVICE_ID" "foo"
-                                                  "WAITER_USERNAME" "waiter"}
-                                    :service-description {"backend-proto" "http"
-                                                          "cmd" "ls"
-                                                          "concurrency-level" 1
-                                                          "cpus" 2
-                                                          "grace-period-secs" 10
-                                                          "health-check-port-index" 0
-                                                          "health-check-url" "/health-check-url"
-                                                          "mem" 32
-                                                          "ports" 1}
-                                    :shell-scheduler/mem 32})
-                        :id->instance {"foo.bar"
-                                       (scheduler/make-ServiceInstance
-                                         {:id "foo.bar"
-                                          :service-id "foo"
-                                          :started-at started-at
-                                          :port port
-                                          :log-directory instance-dir
-                                          :shell-scheduler/working-directory instance-dir
-                                          :shell-scheduler/pid fake-pid})}
-                        :syncer {:syncer-state "foo"}}
-        process-keys [:id->instance "foo.bar" :shell-scheduler/process]
-        host-keys [:id->instance "foo.bar" :host]]
-    (with-redefs [pid (constantly fake-pid)
-                  utils/unique-identifier (constantly instance-id)
-                  t/now (constantly started-at)
-                  reserve-port! (constantly port)]
-      (is (= {:success true, :result :created, :message "Created foo"}
-             (create-test-service scheduler "foo"))))
-    (ensure-agent-finished scheduler)
-    (let [result (scheduler/service-id->state scheduler "foo")]
-      (log/debug "service state:" result)
-      (is (= (-> expected-state
-                 (assoc-in process-keys (get-in result process-keys))
-                 (assoc-in host-keys (get-in result host-keys)))
-             result)))
-    (is (= {:success true, :result :deleted, :message "Deleted foo"}
-           (scheduler/delete-service scheduler "foo")))))
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
+    (let [scheduler (create-shell-scheduler (common-scheduler-config))
+          instance-id "bar"
+          fake-pid 1234
+          started-at (t/now)
+          instance-dir (str (work-dir) "/foo/foo." instance-id)
+          port 10000
+          expected-state {:service (scheduler/make-Service
+                                     {:id "foo"
+                                      :instances 1
+                                      :task-count 1
+                                      :task-stats {:running 1, :healthy 0, :unhealthy 1, :staged 0}
+                                      :environment {"HOME" (work-dir)
+                                                    "LOGNAME" nil
+                                                    "USER" nil
+                                                    "WAITER_CLUSTER" "test-cluster"
+                                                    "WAITER_CONCURRENCY_LEVEL" "1"
+                                                    "WAITER_CPUS" "2"
+                                                    "WAITER_MEM_MB" "32"
+                                                    "WAITER_PASSWORD" "foo.password"
+                                                    "WAITER_SERVICE_ID" "foo"
+                                                    "WAITER_USERNAME" "waiter"}
+                                      :service-description {"backend-proto" "http"
+                                                            "cmd" "ls"
+                                                            "concurrency-level" 1
+                                                            "cpus" 2
+                                                            "grace-period-secs" 10
+                                                            "health-check-port-index" 0
+                                                            "health-check-url" "/health-check-url"
+                                                            "mem" 32
+                                                            "ports" 1}
+                                      :shell-scheduler/mem 32})
+                          :id->instance {"foo.bar"
+                                         (scheduler/make-ServiceInstance
+                                           {:id "foo.bar"
+                                            :service-id "foo"
+                                            :started-at started-at
+                                            :port port
+                                            :log-directory instance-dir
+                                            :shell-scheduler/working-directory instance-dir
+                                            :shell-scheduler/pid fake-pid})}
+                          :syncer {:syncer-state "foo"}}
+          process-keys [:id->instance "foo.bar" :shell-scheduler/process]
+          host-keys [:id->instance "foo.bar" :host]]
+      (with-redefs [pid (constantly fake-pid)
+                    utils/unique-identifier (constantly instance-id)
+                    t/now (constantly started-at)
+                    reserve-port! (constantly port)]
+        (is (= {:success true, :result :created, :message "Created foo"}
+               (create-test-service scheduler "foo"))))
+      (ensure-agent-finished scheduler)
+      (let [result (scheduler/service-id->state scheduler "foo")]
+        (log/debug "service state:" result)
+        (is (= (-> expected-state
+                   (assoc-in process-keys (get-in result process-keys))
+                   (assoc-in host-keys (get-in result host-keys)))
+               result)))
+      (is (= {:success true, :result :deleted, :message "Deleted foo"}
+             (scheduler/delete-service scheduler "foo"))))))
 
 (deftest test-port-reserved?
   (let [port->reservation-atom (atom {})
@@ -562,36 +576,38 @@
             (is (= "Unable to reserve 20 ports" (.getMessage ex)))))))))
 
 (deftest test-retry-failed-instances
-  (let [scheduler-config (common-scheduler-config)
-        scheduler (create-shell-scheduler scheduler-config)]
-    (is (= {:success true, :result :created, :message "Created foo"}
-           (create-test-service scheduler "foo" {"cmd" "exit 1" "mem" 0.1})))
-    ;; Instance should get marked as failed
-    (force-update-service-health scheduler scheduler-config)
-    (let [instances (-> (scheduler/service-id->state scheduler "foo") :id->instance vals)
-          failed-instances (filter :failed? instances)]
-      (is (= 1 (count failed-instances))))
-    ;; Loop should continue to launch additional instances after initial failure
-    (force-maintain-instance-scale scheduler)
-    (force-update-service-health scheduler scheduler-config)
-    (let [instances (-> (scheduler/service-id->state scheduler "foo") :id->instance vals)
-          failed-instances (filter :failed? instances)]
-      (is (= 2 (count failed-instances))))
-    (is (= {:success true, :result :deleted, :message "Deleted foo"}
-           (scheduler/delete-service scheduler "foo")))))
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
+    (let [scheduler-config (common-scheduler-config)
+          scheduler (create-shell-scheduler scheduler-config)]
+      (is (= {:success true, :result :created, :message "Created foo"}
+             (create-test-service scheduler "foo" {"cmd" "exit 1" "mem" 0.1})))
+      ;; Instance should get marked as failed
+      (force-update-service-health scheduler scheduler-config)
+      (let [instances (-> (scheduler/service-id->state scheduler "foo") :id->instance vals)
+            failed-instances (filter :failed? instances)]
+        (is (= 1 (count failed-instances))))
+      ;; Loop should continue to launch additional instances after initial failure
+      (force-maintain-instance-scale scheduler)
+      (force-update-service-health scheduler scheduler-config)
+      (let [instances (-> (scheduler/service-id->state scheduler "foo") :id->instance vals)
+            failed-instances (filter :failed? instances)]
+        (is (= 2 (count failed-instances))))
+      (is (= {:success true, :result :deleted, :message "Deleted foo"}
+             (scheduler/delete-service scheduler "foo"))))))
 
 (deftest test-enforce-grace-period
-  (let [scheduler-config (common-scheduler-config)
-        scheduler (create-shell-scheduler scheduler-config)]
-    (is (= {:success true, :result :created, :message "Created foo"}
-           (create-test-service scheduler "foo" {"cmd" "sleep 10000" "grace-period-secs" 0})))
-    ;; Instance should be marked as unhealthy and failed
-    (with-redefs [perform-health-check (constantly false)]
-      (force-update-service-health scheduler scheduler-config))
-    (let [instances (-> (scheduler/service-id->state scheduler "foo") :id->instance vals)
-          failed-instances (filter :failed? instances)]
-      (is (zero? (- (count instances) (count failed-instances))))
-      (is (= 1 (count failed-instances))))))
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
+    (let [scheduler-config (common-scheduler-config)
+          scheduler (create-shell-scheduler scheduler-config)]
+      (is (= {:success true, :result :created, :message "Created foo"}
+             (create-test-service scheduler "foo" {"cmd" "sleep 10000" "grace-period-secs" 0})))
+      ;; Instance should be marked as unhealthy and failed
+      (with-redefs [perform-health-check (constantly false)]
+        (force-update-service-health scheduler scheduler-config))
+      (let [instances (-> (scheduler/service-id->state scheduler "foo") :id->instance vals)
+            failed-instances (filter :failed? instances)]
+        (is (zero? (- (count instances) (count failed-instances))))
+        (is (= 1 (count failed-instances)))))))
 
 (deftest test-pid->memory
   (with-redefs [sh/sh (fn [& _]
