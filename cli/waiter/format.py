@@ -11,7 +11,7 @@ def format_memory_amount(mebibytes):
 
 def format_mem_field(job):
     """Formats the job memory field"""
-    return format_memory_amount(job['mem']) if 'mem' in job else ''
+    return format_memory_amount(job['mem'])
 
 
 def format_timestamp_string(s):
