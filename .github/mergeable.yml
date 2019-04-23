@@ -5,3 +5,5 @@ mergeable:
       - do: label
         must_include:
           regex: '^internal-green$'
+        must_exclude:
+          regex: '^wip$'
