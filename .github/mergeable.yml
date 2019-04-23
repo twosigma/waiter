@@ -4,4 +4,4 @@ mergeable:
     validate:
       - do: label
         must_include:
-          regex: 'internal-green'
+          regex: '^internal-green$'
