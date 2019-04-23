@@ -16,14 +16,6 @@ def query_result_to_cluster_token_pairs(query_result):
     return cluster_token_pairs_sorted
 
 
-def format_command(token):
-    """Truncates the token command to 47 characters + '...', if necessary"""
-    if 'cmd' in token:
-        return token['cmd'] if len(token['cmd']) <= 50 else f'{token["cmd"][:47]}...'
-    else:
-        return ''
-
-
 def print_as_table(query_result):
     """Given a collection of (cluster, token) pairs, formats a table showing the most relevant token fields"""
     cluster_token_pairs = query_result_to_cluster_token_pairs(query_result)
