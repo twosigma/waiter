@@ -264,3 +264,29 @@ class MultiWaiterCliTest(util.WaiterTest):
                 util.delete_token(self.waiter_url_2, token_name, kill_services=True)
         finally:
             util.delete_token(self.waiter_url_1, token_name, kill_services=True)
+
+    def test_federated_tokens(self):
+        # Create in cluster #1
+        token_name = self.token_name()
+        util.post_token(self.waiter_url_1, token_name, util.minimal_service_description())
+        try:
+            # Single query for the tokens, federated across clusters
+            config = self.__two_cluster_config()
+            with cli.temp_config_file(config) as path:
+                cp, tokens = cli.tokens_data(flags='--config %s' % path)
+                tokens = [t for t in tokens if t['token'] == token_name]
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                self.assertEqual(1, len(tokens), tokens)
+
+                # Create in cluster #2
+                util.post_token(self.waiter_url_2, token_name, util.minimal_service_description())
+                try:
+                    # Again, single query for the tokens, federated across clusters
+                    cp, tokens = cli.tokens_data(flags='--config %s' % path)
+                    tokens = [t for t in tokens if t['token'] == token_name]
+                    self.assertEqual(0, cp.returncode, cp.stderr)
+                    self.assertEqual(2, len(tokens), tokens)
+                finally:
+                    util.delete_token(self.waiter_url_2, token_name)
+        finally:
+            util.delete_token(self.waiter_url_1, token_name)

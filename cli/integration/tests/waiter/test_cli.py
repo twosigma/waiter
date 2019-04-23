@@ -326,17 +326,20 @@ class WaiterCliTest(util.WaiterTest):
             # Use entry in base config file
             cp = cli.create_minimal(token_name=token_name)
             self.assertEqual(0, cp.returncode, cp.stderr)
-            self.assertIn(f'on {cluster_name_1}', cli.decode(cp.stdout))
+            try:
+                self.assertIn(f'on {cluster_name_1}', cli.decode(cp.stdout))
 
-            # Overwrite "base" with specified config file
-            cluster_name_2 = str(uuid.uuid4())
-            config = {'clusters': [{"name": cluster_name_2, "url": self.waiter_url}]}
-            with cli.temp_config_file(config) as path:
-                # Verify "base" config is overwritten
-                flags = '--config %s' % path
-                cp = cli.create_minimal(token_name=token_name, flags=flags)
-                self.assertEqual(0, cp.returncode, cp.stderr)
-                self.assertIn(f'on {cluster_name_2}', cli.decode(cp.stdout))
+                # Overwrite "base" with specified config file
+                cluster_name_2 = str(uuid.uuid4())
+                config = {'clusters': [{"name": cluster_name_2, "url": self.waiter_url}]}
+                with cli.temp_config_file(config) as path:
+                    # Verify "base" config is overwritten
+                    flags = '--config %s' % path
+                    cp = cli.create_minimal(token_name=token_name, flags=flags)
+                    self.assertEqual(0, cp.returncode, cp.stderr)
+                    self.assertIn(f'on {cluster_name_2}', cli.decode(cp.stdout))
+            finally:
+                util.delete_token(self.waiter_url, token_name)
 
     def test_avoid_exit_on_connection_error(self):
         token_name = self.token_name()
@@ -873,3 +876,41 @@ class WaiterCliTest(util.WaiterTest):
             self.assertNotIn(service_id_2, cli.stdout(cp))
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
+
+    def test_tokens_basic(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, util.minimal_service_description())
+        try:
+            # Ensure that tokens lists our token
+            cp, tokens = cli.tokens_data(self.waiter_url)
+            token_data = next(t for t in tokens if t['token'] == token_name)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertFalse(token_data['deleted'])
+
+            # Delete the token
+            util.delete_token(self.waiter_url, token_name)
+
+            # Ensure that tokens does not list our token
+            cp, tokens = cli.tokens_data(self.waiter_url)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertFalse(any(t['token'] == token_name for t in tokens))
+        finally:
+            util.delete_token(self.waiter_url, token_name, assert_response=False)
+
+    def test_tokens_sorted(self):
+        token_name_1 = f'foo_{self.token_name()}'
+        util.post_token(self.waiter_url, token_name_1, util.minimal_service_description())
+        try:
+            token_name_2 = f'bar_{self.token_name()}'
+            util.post_token(self.waiter_url, token_name_2, util.minimal_service_description())
+            try:
+                cp = cli.tokens(self.waiter_url)
+                stdout = cli.stdout(cp)
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                self.assertIn(token_name_1, stdout)
+                self.assertIn(token_name_2, stdout)
+                self.assertLess(stdout.index(token_name_2), stdout.index(token_name_1))
+            finally:
+                util.delete_token(self.waiter_url, token_name_2)
+        finally:
+            util.delete_token(self.waiter_url, token_name_1)
