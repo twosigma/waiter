@@ -31,7 +31,7 @@ matrix:
     - name: 'Kitchen tests'
       language: python
       python: "3.6"
-      before_script: cd test-apps/kitchen && ./bin/ci/setup.sh
+      before_script: cd containers/test-apps && ./bin/ci/setup.sh
       script: ./bin/ci/run.sh
 
     - name: 'Token syncer tests'

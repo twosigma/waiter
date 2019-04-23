@@ -16,7 +16,7 @@ TEST_SELECTOR=${2:-integration}
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WAITER_DIR=${DIR}/../..
-TEST_APPS_DIR=${WAITER_DIR}/../test-apps
+CONTAINERS_DIR=${WAITER_DIR}/../containers
 
 # Start minikube
 ${DIR}/minikube-setup.sh
@@ -29,10 +29,10 @@ if [[ $TEST_SELECTOR =~ heavy$ ]]; then
 fi
 
 # Ensure we have the docker image for the pods
-${TEST_APPS_DIR}/bin/build-docker-image.sh
+${CONTAINERS_DIR}/bin/build-docker-images.sh
 
 # Start waiter
-: ${WAITER_PORT:=9091}
+export WAITER_PORT=9091
 ${WAITER_DIR}/bin/run-using-k8s.sh ${WAITER_PORT} &
 
 # Start monitoring state of Kubernetes pods
