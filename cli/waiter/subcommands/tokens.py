@@ -12,7 +12,7 @@ from waiter.util import guard_no_cluster
 def query_result_to_cluster_token_pairs(query_result):
     """Given a query result structure, returns a sequence of (cluster, token) pairs from the result"""
     cluster_token_pairs = ((c, t) for c, e in query_result['clusters'].items() for t in e['tokens'])
-    cluster_token_pairs_sorted = sorted(cluster_token_pairs, key=lambda p: p[1]['token'])
+    cluster_token_pairs_sorted = sorted(cluster_token_pairs, key=lambda p: (p[1]['token'], p[0]))
     return cluster_token_pairs_sorted
 
 
