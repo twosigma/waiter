@@ -263,18 +263,24 @@
 (defn new-configured-cluster-calculator
   "Returns a cluster calculator that returns a constant configured value as the cluster."
   [{:keys [default-cluster]}]
+  {:pre [(not (str/blank? default-cluster))]}
   (reify ClusterCalculator
     (get-default-cluster [_] default-cluster)
     (calculate-cluster [_ _] default-cluster)))
 
 (defn new-regex-cluster-calculator
   "Returns a cluster calculator that uses a regex on the host header to determine the cluster."
-  [{:keys [root-regex default-cluster]}]
+  [{:keys [default-cluster host-regex match->cluster]}]
+  {:pre [(not (str/blank? default-cluster))
+         host-regex
+         match->cluster]}
   (reify ClusterCalculator
     (get-default-cluster [_] default-cluster)
     (calculate-cluster [_ {:keys [headers]}]
-      (or (when-let [host (get headers "host")]
-            (second (re-find root-regex host)))
+      (or (some->> (get headers "host")
+            (re-find host-regex)
+            second
+            match->cluster)
           default-cluster))))
 
 (defn- handle-delete-token-request
