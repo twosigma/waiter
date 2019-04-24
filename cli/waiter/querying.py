@@ -123,3 +123,31 @@ def query_services(clusters, token_name):
     return query_across_clusters(
         clusters,
         lambda cluster, executor: executor.submit(get_services_on_cluster, cluster, token_name))
+
+
+def get_tokens(cluster, user):
+    """Gets the tokens owned by the given user from the given cluster"""
+    params = {'owner': user, 'include': 'metadata'}
+    tokens, _ = http_util.make_data_request(cluster, lambda: http_util.get(cluster, 'tokens', params=params))
+    return tokens
+
+
+def get_tokens_on_cluster(cluster, user):
+    """Gets the tokens owned by the given user on the given cluster"""
+    tokens = get_tokens(cluster, user)
+    if tokens:
+        data = {'count': len(tokens), 'tokens': tokens}
+        return data
+    else:
+        logging.info(f'Unable to retrieve token information on {cluster["name"]} ({cluster["url"]}).')
+        return {'count': 0}
+
+
+def query_tokens(clusters, user):
+    """
+    Uses query_across_clusters to make the token
+    requests in parallel across the given clusters
+    """
+    return query_across_clusters(
+        clusters,
+        lambda cluster, executor: executor.submit(get_tokens_on_cluster, cluster, user))

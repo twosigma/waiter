@@ -3,7 +3,7 @@ import logging
 from urllib.parse import urlparse
 
 from waiter import configuration, http_util, metrics, version
-from waiter.subcommands import create, delete, init, kill, ping, show, update
+from waiter.subcommands import create, delete, init, kill, ping, show, tokens, update
 
 parser = argparse.ArgumentParser(description='waiter is the Waiter CLI')
 parser.add_argument('--cluster', '-c', help='the name of the Waiter cluster to use')
@@ -36,6 +36,9 @@ actions = {
     },
     'show': {
         'run-function': show.register(subparsers.add_parser)
+    },
+    'tokens': {
+        'run-function': tokens.register(subparsers.add_parser)
     },
     'update': {
         'run-function': update.register(subparsers.add_parser),

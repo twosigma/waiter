@@ -209,8 +209,8 @@ def __show_json(waiter_url=None, token_name=None, flags=None):
 def show_token(waiter_url=None, token_name=None, flags=None):
     """Shows the token JSON corresponding to the given token name"""
     cp, data = __show_json(waiter_url, token_name, flags)
-    tokens = [entities['token'] for entities in data['clusters'].values()]
-    return cp, tokens
+    token_list = [entities['token'] for entities in data['clusters'].values()]
+    return cp, token_list
 
 
 def show_token_services(waiter_url=None, token_name=None, flags=None):
@@ -298,3 +298,25 @@ def init(waiter_url=None, flags=None, init_flags=None):
     args = f'init {init_flags or ""}'
     cp = cli(args, waiter_url, flags)
     return cp
+
+
+def tokens(waiter_url=None, flags=None, tokens_flags=None):
+    """Lists tokens via the CLI"""
+    args = f"tokens {tokens_flags or ''}"
+    cp = cli(args, waiter_url, flags)
+    return cp
+
+
+def __tokens_json(waiter_url=None, flags=None):
+    """Invokes tokens with --json, and returns the parsed JSON"""
+    flags = (flags + ' ') if flags else ''
+    cp = tokens(waiter_url, flags, '--json')
+    data = json.loads(stdout(cp))
+    return cp, data
+
+
+def tokens_data(waiter_url=None, flags=None):
+    """Returns the parsed JSON for the token listing"""
+    cp, data = __tokens_json(waiter_url, flags)
+    token_list = [token for entities in data['clusters'].values() for token in entities['tokens']]
+    return cp, token_list

@@ -264,3 +264,40 @@ class MultiWaiterCliTest(util.WaiterTest):
                 util.delete_token(self.waiter_url_2, token_name, kill_services=True)
         finally:
             util.delete_token(self.waiter_url_1, token_name, kill_services=True)
+
+    def test_federated_tokens(self):
+        # Create in cluster #1
+        token_name = self.token_name()
+        util.post_token(self.waiter_url_1, token_name, util.minimal_service_description())
+        try:
+            # Single query for the tokens, federated across clusters
+            cluster_1 = f'foo_{uuid.uuid4()}'
+            cluster_2 = f'bar_{uuid.uuid4()}'
+            config = {'clusters': [{'name': cluster_1, 'url': self.waiter_url_1},
+                                   {'name': cluster_2, 'url': self.waiter_url_2}]}
+            with cli.temp_config_file(config) as path:
+                cp, tokens = cli.tokens_data(flags='--config %s' % path)
+                tokens = [t for t in tokens if t['token'] == token_name]
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                self.assertEqual(1, len(tokens), tokens)
+
+                # Create in cluster #2
+                util.post_token(self.waiter_url_2, token_name, util.minimal_service_description())
+                try:
+                    # Again, single query for the tokens, federated across clusters
+                    cp, tokens = cli.tokens_data(flags='--config %s' % path)
+                    tokens = [t for t in tokens if t['token'] == token_name]
+                    self.assertEqual(0, cp.returncode, cp.stderr)
+                    self.assertEqual(2, len(tokens), tokens)
+
+                    # Test the secondary sort on cluster
+                    cp = cli.tokens(flags='--config %s' % path)
+                    stdout = cli.stdout(cp)
+                    self.assertEqual(0, cp.returncode, cp.stderr)
+                    self.assertIn(cluster_1, stdout)
+                    self.assertIn(cluster_2, stdout)
+                    self.assertLess(stdout.index(cluster_2), stdout.index(cluster_1))
+                finally:
+                    util.delete_token(self.waiter_url_2, token_name)
+        finally:
+            util.delete_token(self.waiter_url_1, token_name)
