@@ -16,7 +16,7 @@ TEST_SELECTOR=${2:-integration}
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WAITER_DIR=${DIR}/../..
-TEST_APPS_DIR=${WAITER_DIR}/../test-apps
+TEST_APPS_DIR=${WAITER_DIR}/../containers/test-apps
 KITCHEN_DIR=${TEST_APPS_DIR}/kitchen
 NGINX_DIR=${TEST_APPS_DIR}/nginx
 SEDIMENT_DIR=${TEST_APPS_DIR}/sediment

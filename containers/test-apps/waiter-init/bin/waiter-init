@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # A wrapper script for the Waiter-specific setup for a user command in a Waiter-K8s pod.
-# The script is usually invoked by prepending it to the user's Waiter command.
+# The script is usually invoked by prepending it to the user's Waiter command array.
 # If this script is invoked by dumb-init (github.com/Yelp/dumb-init) or a similar utility,
 # please ensure that it is run in single-child mode.
 #

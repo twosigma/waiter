@@ -343,7 +343,7 @@
                                                 :default {:factory-fn 'waiter.authorization/noop-authorizer}}
                                    :cluster-name "waiter"
                                    :fileserver {:cmd ["/bin/fileserver-start"]
-                                                :image "twosigma/waiter-fileserver:20190410"
+                                                :image "twosigma/waiter-fileserver"
                                                 :resources {:cpu 0.1 :mem 128}
                                                 :scheme "http"}
                                    :http-options {:conn-timeout 10000

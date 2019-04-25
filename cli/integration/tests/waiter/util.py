@@ -102,7 +102,7 @@ def post_token(waiter_url, token_name, token_definition, assert_response=True, e
 def minimal_service_cmd():
     this_dir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
     kitchen = os.path.join(this_dir, os.pardir, os.pardir, os.pardir, os.pardir,
-                           'test-apps', 'kitchen', 'bin', 'kitchen')
+                           'containers', 'test-apps', 'kitchen', 'bin', 'kitchen')
     kitchen = os.path.abspath(kitchen)
     return f'{kitchen} -p $PORT0'
 

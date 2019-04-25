@@ -16,7 +16,7 @@ TEST_SELECTOR=${2:-integration}
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_DIR=${DIR}/../../../
 WAITER_DIR=${PROJECT_DIR}/waiter
-KITCHEN_DIR=${PROJECT_DIR}/test-apps/kitchen
+KITCHEN_DIR=${PROJECT_DIR}/containers/test-apps/kitchen
 SYNCER_DIR=${PROJECT_DIR}/token-syncer
 
 pushd ${WAITER_DIR}

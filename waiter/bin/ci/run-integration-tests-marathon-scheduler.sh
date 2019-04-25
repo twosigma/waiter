@@ -11,25 +11,27 @@
 
 set -e
 
+export WAITER_PORT=9091
 TEST_COMMAND=${1:-parallel-test}
 TEST_SELECTOR=${2:-integration}
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WAITER_DIR=${DIR}/../..
-TEST_APPS_DIR=${WAITER_DIR}/../test-apps
+TEST_APPS_DIR=${WAITER_DIR}/../containers/test-apps
 
 # Build mesos agent container with Kitchen packed in
 ${TEST_APPS_DIR}/bin/build-docker-image.sh
 
-# Start minimesos
-export MINIMESOS_CMD=${DIR}/minimesos
-pushd ${WAITER_DIR}
-${MINIMESOS_CMD} up
-popd
+if [ -n "$CONTINUOUS_INTEGRATION" ]; then
+    # Start minimesos
+    export MINIMESOS_CMD=${DIR}/minimesos
+    pushd ${WAITER_DIR}
+    ${MINIMESOS_CMD} up
+    popd
 
-# Start waiter
-: ${WAITER_PORT:=9091}
-${WAITER_DIR}/bin/run-using-minimesos.sh ${WAITER_PORT} &
+    # Start waiter
+    ${WAITER_DIR}/bin/run-using-minimesos.sh ${WAITER_PORT} &
+fi
 
 # Run the integration tests
 export WAITER_TEST_KITCHEN_CMD=/opt/kitchen/kitchen
