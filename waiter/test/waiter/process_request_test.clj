@@ -315,9 +315,8 @@
           service-id->password-fn (fn service-id->password-fn [service-id]
                                     (is (= "test-service-id" service-id))
                                     app-password)
-          proto-version "HTTP/1.0"
           http-clients {:http1-client (http/client)}
-          http-request-mock-factory (fn [passthrough-headers request-method-fn-call-counter]
+          http-request-mock-factory (fn [passthrough-headers request-method-fn-call-counter proto-version]
                                       (fn [^HttpClient _ request-config]
                                         (swap! request-method-fn-call-counter inc)
                                         (is (= expected-endpoint (:url request-config)))
@@ -325,25 +324,36 @@
                                         (is (:auth request-config))
                                         (is (= "body" (:body request-config)))
                                         (is (= 654321 (:idle-timeout request-config)))
-                                        (is (= (-> (dissoc passthrough-headers "expect" "authorization"
+                                        (is (= (-> (apply dissoc passthrough-headers (if (= proto-version "HTTP/2.0") [] ["te"]))
+                                                   (dissoc "expect" "authorization"
                                                            "connection" "keep-alive" "proxy-authenticate" "proxy-authorization"
-                                                           "te" "trailers" "transfer-encoding" "upgrade")
+                                                           "trailers" "transfer-encoding" "upgrade")
                                                    (merge {"x-waiter-auth-principal" "test-user"
                                                            "x-waiter-authenticated-principal" "test-user@test.com"}))
                                                (:headers request-config)))
                                         (is (= proto-version (:version request-config)))))]
-      (testing "make-request:headers"
-        (let [request-method-fn-call-counter (atom 0)]
-          (with-redefs [http/request (http-request-mock-factory passthrough-headers request-method-fn-call-counter)]
+      (testing "make-request:headers:HTTP/1.0"
+        (let [proto-version "HTTP/1.0"
+              request-method-fn-call-counter (atom 0)]
+          (with-redefs [http/request (http-request-mock-factory passthrough-headers request-method-fn-call-counter proto-version)]
+            (make-request http-clients make-basic-auth-fn service-id->password-fn instance request request-properties
+                          passthrough-headers end-route nil backend-proto proto-version)
+            (is (= 1 @request-method-fn-call-counter)))))
+
+      (testing "make-request:headers:HTTP/2.0"
+        (let [proto-version "HTTP/2.0"
+              request-method-fn-call-counter (atom 0)]
+          (with-redefs [http/request (http-request-mock-factory passthrough-headers request-method-fn-call-counter proto-version)]
             (make-request http-clients make-basic-auth-fn service-id->password-fn instance request request-properties
                           passthrough-headers end-route nil backend-proto proto-version)
             (is (= 1 @request-method-fn-call-counter)))))
 
       (testing "make-request:headers-long-content-length"
-        (let [request-method-fn-call-counter (atom 0)
+        (let [proto-version "HTTP/1.0"
+              request-method-fn-call-counter (atom 0)
               passthrough-headers (assoc passthrough-headers "content-length" "1234123412341234")
               statsd-inc-call-value (promise)]
-          (with-redefs [http/request (http-request-mock-factory passthrough-headers request-method-fn-call-counter)
+          (with-redefs [http/request (http-request-mock-factory passthrough-headers request-method-fn-call-counter proto-version)
                         statsd/inc!
                         (fn [metric-group metric value]
                           (is (nil? metric-group))

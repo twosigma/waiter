@@ -213,7 +213,7 @@
         ; Removing expect may be dangerous http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html, but makes requests 3x faster =}
         ; Also remove hop-by-hop headers https://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html#sec13.5.1
         headers (-> (dissoc passthrough-headers "authorization" "expect")
-                    (headers/dissoc-hop-by-hop-headers)
+                    (headers/dissoc-hop-by-hop-headers proto-version)
                     (assoc "cookie" (auth/remove-auth-cookie (get passthrough-headers "cookie"))))
         waiter-debug-enabled? (utils/request->debug-enabled? request)]
     (try
@@ -500,7 +500,7 @@
                           (catch Exception e
                             (async/close! request-state-chan)
                             (handle-process-exception e request)))
-                        (update :headers headers/dissoc-hop-by-hop-headers)
+                        (update :headers headers/dissoc-hop-by-hop-headers proto-version)
                         (assoc :get-instance-latency-ns instance-elapsed
                                :instance instance
                                :protocol proto-version)

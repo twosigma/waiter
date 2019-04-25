@@ -87,13 +87,24 @@
       (assoc truncated-headers "x-waiter-token" token)
       truncated-headers)))
 
+(defn- retrieve-proto-specific-hop-by-hop-headers
+  "Determines the protocol version specific hop-by-hop headers."
+  [proto-version]
+  (when (not= "HTTP/2.0" proto-version) ["te"]))
+
 (defn dissoc-hop-by-hop-headers
   "Proxies must remove hop-by-hop headers before forwarding messages — both requests and responses.
-   Remove the hop-by-hop headers as specified in https://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html#sec13.5.1"
-  [{:strs [connection] :as headers}]
-  (let [connection-headers (map str/trim (str/split (str connection) #","))]
-    (apply dissoc headers "connection" "keep-alive" "proxy-authenticate" "proxy-authorization"
-           "te" "trailers" "transfer-encoding" "upgrade" connection-headers)))
+   Remove the hop-by-hop headers (except te) specified in:
+   https://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html#sec13.5.1
+   The te header is not removed for HTTP/2.0 requests as it is needed by grpc to detect incompatible proxies:
+   https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-HTTP2.md"
+  [{:strs [connection] :as headers} proto-version]
+  (let [force-remove-headers (retrieve-proto-specific-hop-by-hop-headers proto-version)
+        connection-headers (map str/trim (str/split (str connection) #","))]
+    (cond-> (dissoc headers "connection" "keep-alive" "proxy-authenticate" "proxy-authorization"
+                   "trailers" "transfer-encoding" "upgrade")
+      (seq force-remove-headers) (as-> $ (apply dissoc $ force-remove-headers))
+      (seq connection-headers) (as-> $ (apply dissoc $ connection-headers)))))
 
 (defn assoc-auth-headers
   "`assoc`s the x-waiter-auth-principal and x-waiter-authenticated-principal headers if the
