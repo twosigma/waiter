@@ -46,9 +46,7 @@
         cluster-calculator-config (-> settings-json
                                       (get-in [:token-config :cluster-calculator])
                                       (update :kind keyword)
-                                      (as-> $ (cond-> (update-in $ [(:kind $) :factory-fn] symbol)
-                                                (= :regex (:kind $))
-                                                (update-in [:regex :root-regex] re-pattern))))
+                                      (as-> $ (update-in $ [(:kind $) :factory-fn] symbol)))
         cluster-calculator (utils/create-component cluster-calculator-config
                                                    :context {:default-cluster default-cluster})]
     (token/calculate-cluster cluster-calculator {:headers {"host" waiter-url}})))

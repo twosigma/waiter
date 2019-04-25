@@ -54,36 +54,30 @@
 
 (deftest test-constant-cluster-calculator
   (let [default-cluster "test-cluster"
-        cluster-calculator (new-configured-cluster-calculator {:default-cluster default-cluster})]
-    (is (= default-cluster (get-default-cluster cluster-calculator)))
-    (is (= default-cluster (calculate-cluster cluster-calculator {})))
-    (is (= default-cluster (calculate-cluster cluster-calculator {:headers {"host" "test.com"}})))
-    (is (= default-cluster (calculate-cluster cluster-calculator {:headers {"host" "waiter.localtest.me"}})))
-    (is (= default-cluster (calculate-cluster cluster-calculator {:headers {"host" "waiter-foo.localtest.me"}})))
-    (is (= default-cluster (calculate-cluster cluster-calculator {:headers {"host" "waiter-foo-bar.localtest.me:1234"}})))
-    (is (= default-cluster (calculate-cluster cluster-calculator {:headers {"host" "waiter-foo.bar.localtest.me"}})))))
-
-(deftest test-regex-cluster-calculator
-  (let [root-regex #"waiter-(.*).localtest.me*(:.*)?"
-        default-cluster "test-cluster"
-        cluster-calculator (new-regex-cluster-calculator {:root-regex root-regex
-                                                    :default-cluster default-cluster})]
-    (is (= default-cluster (get-default-cluster cluster-calculator)))
-    (is (= default-cluster (calculate-cluster cluster-calculator {})))
-    (is (= default-cluster (calculate-cluster cluster-calculator {:headers {"host" "test.com"}})))
-    (is (= default-cluster (calculate-cluster cluster-calculator {:headers {"host" "waiter.localtest.me"}})))
-    (is (= "foo" (calculate-cluster cluster-calculator {:headers {"host" "waiter-foo.localtest.me"}})))
-    (is (= "foo-bar" (calculate-cluster cluster-calculator {:headers {"host" "waiter-foo-bar.localtest.me"}})))
-    (is (= "foo.bar" (calculate-cluster cluster-calculator {:headers {"host" "waiter-foo.bar.localtest.me"}})))
-    (is (= default-cluster (calculate-cluster cluster-calculator {:headers {"host" "test.com:1234"}})))
-    (is (= default-cluster (calculate-cluster cluster-calculator {:headers {"host" "waiter.localtest.me:1234"}})))
-    (is (= "foo" (calculate-cluster cluster-calculator {:headers {"host" "waiter-foo.localtest.me:1234"}})))
-    (is (= "foo-bar" (calculate-cluster cluster-calculator {:headers {"host" "waiter-foo-bar.localtest.me:1234"}})))
-    (is (= "foo.bar" (calculate-cluster cluster-calculator {:headers {"host" "waiter-foo.bar.localtest.me:1234"}})))))
+        cluster-calculator-1 (new-configured-cluster-calculator {:default-cluster default-cluster
+                                                               :host->cluster {}})
+        cluster-calculator-2 (new-configured-cluster-calculator {:default-cluster default-cluster
+                                                                 :host->cluster {"waiter.localtest.me" "bar"
+                                                                                 "waiter-foo.localtest.me" "foo"}})]
+    (is (= default-cluster (get-default-cluster cluster-calculator-1)))
+    (is (= default-cluster (get-default-cluster cluster-calculator-2)))
+    (is (= default-cluster (calculate-cluster cluster-calculator-1 {})))
+    (is (= default-cluster (calculate-cluster cluster-calculator-2 {})))
+    (is (= default-cluster (calculate-cluster cluster-calculator-1 {:headers {"host" "test.com"}})))
+    (is (= default-cluster (calculate-cluster cluster-calculator-2 {:headers {"host" "test.com"}})))
+    (is (= default-cluster (calculate-cluster cluster-calculator-1 {:headers {"host" "waiter.localtest.me"}})))
+    (is (= "bar" (calculate-cluster cluster-calculator-2 {:headers {"host" "waiter.localtest.me"}})))
+    (is (= default-cluster (calculate-cluster cluster-calculator-1 {:headers {"host" "waiter-foo.localtest.me"}})))
+    (is (= "foo" (calculate-cluster cluster-calculator-2 {:headers {"host" "waiter-foo.localtest.me"}})))
+    (is (= default-cluster (calculate-cluster cluster-calculator-1 {:headers {"host" "waiter-foo-bar.localtest.me:1234"}})))
+    (is (= default-cluster (calculate-cluster cluster-calculator-2 {:headers {"host" "waiter-foo-bar.localtest.me:1234"}})))
+    (is (= default-cluster (calculate-cluster cluster-calculator-1 {:headers {"host" "waiter-foo.bar.localtest.me"}})))
+    (is (= default-cluster (calculate-cluster cluster-calculator-2 {:headers {"host" "waiter-foo.bar.localtest.me"}})))))
 
 (defn- run-handle-token-request
   [kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn request]
-  (let [cluster-calculator (new-configured-cluster-calculator {:default-cluster (str token-root "-cluster")})]
+  (let [cluster-calculator (new-configured-cluster-calculator {:default-cluster (str token-root "-cluster")
+                                                               :host->cluster {}})]
     (handle-token-request clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner
                           waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
                           request)))
