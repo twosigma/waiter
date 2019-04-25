@@ -843,20 +843,13 @@
 
  :token-config {
                 ;; Define the calculator that compute the root assigned to a token when they are created.
-                :cluster-calculator {;; :kind :configured create a calculator that always assigns root as :cluster-config :name
+                :cluster-calculator {;; :kind :configured create a calculator that looks up the cluster name using a configured map.
+                                     ;; When not matching entry is found in the map, the cluster is defined as :cluster-config :name
                                      :kind :configured
-                                     :configured {:factory-fn 'waiter.token/new-configured-cluster-calculator}
-
-                                     ;; :kind :regex create a calculator that uses a regex and a map to determine the cluster name
-                                     ;; :kind :regex
-                                     :regex {:factory-fn 'waiter.token/new-regex-cluster-calculator
-                                             ;; A regex to determine the root from the incoming request host header.
-                                             ;; The first group from the match is used to determine the root using match->cluster.
-                                             ;; If no match is found, it defaults to the :cluster-config :name.
-                                             :host-regex #config/regex "^waiter-([a-zA-Z][0-9a-zA-Z\\-]*)"
-                                             ;; The entry against the first group of the regex match is used to determine the cluster
-                                             :match->cluster {"alias" "name"
-                                                              "name" "name"}}}
+                                     :configured {:factory-fn 'waiter.token/new-configured-cluster-calculator
+                                                  ;; The map that contains supported host to cluster name mappings.
+                                                  :host->cluster {"waiter-alias.example.com" "foo"
+                                                                  "waiter-foo.example.com" "foo"}}}
 
                 ;; Configures the amount of history we store for a token.
                 ;; It must be a positive integer.

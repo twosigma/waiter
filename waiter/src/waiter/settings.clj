@@ -429,11 +429,8 @@
                    :link {:type :url
                           :value "http://github.com/twosigma/waiter"}}]
    :token-config {:cluster-calculator {:kind :configured
-                                       :configured {:factory-fn 'waiter.token/new-configured-cluster-calculator}
-                                       :regex {:factory-fn 'waiter.token/new-regex-cluster-calculator
-                                               :host-regex #"^waiter-([a-zA-Z][0-9a-zA-Z\\-]*)"
-                                               :match->cluster {"alias" "name"
-                                                                "name" "name"}}}
+                                       :configured {:factory-fn 'waiter.token/new-configured-cluster-calculator
+                                                    :host->cluster {}}}
                   :history-length 5
                   :limit-per-owner 1000
                   :token-defaults {"fallback-period-secs" (-> 5 t/minutes t/in-seconds)

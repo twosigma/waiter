@@ -261,27 +261,20 @@
     "Returns the token root computed by using the incoming request"))
 
 (defn new-configured-cluster-calculator
-  "Returns a cluster calculator that returns a constant configured value as the cluster."
-  [{:keys [default-cluster]}]
-  {:pre [(not (str/blank? default-cluster))]}
-  (reify ClusterCalculator
-    (get-default-cluster [_] default-cluster)
-    (calculate-cluster [_ _] default-cluster)))
-
-(defn new-regex-cluster-calculator
-  "Returns a cluster calculator that uses a regex on the host header to determine the cluster."
-  [{:keys [default-cluster host-regex match->cluster]}]
+  "Returns a cluster calculator that looks up the cluster name based on the host name when configured in host->cluster.
+   Else it returns the default configured value as the cluster."
+  [{:keys [default-cluster host->cluster]}]
   {:pre [(not (str/blank? default-cluster))
-         host-regex
-         match->cluster]}
+         host->cluster]}
   (reify ClusterCalculator
     (get-default-cluster [_] default-cluster)
     (calculate-cluster [_ {:keys [headers]}]
-      (or (some->> (get headers "host")
-            (re-find host-regex)
-            second
-            match->cluster)
-          default-cluster))))
+      (-> (get headers "host")
+          str
+          (str/split #":")
+          first
+          host->cluster
+          (or default-cluster)))))
 
 (defn- handle-delete-token-request
   "Deletes the token configuration if found."
