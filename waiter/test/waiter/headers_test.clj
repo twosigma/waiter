@@ -172,4 +172,10 @@
             "proxy-connection" "keep-alive"
             "referer" "http://www.test-referer.com"
             "te" "trailers, deflate"}
-           (dissoc-hop-by-hop-headers headers)))))
+           (dissoc-hop-by-hop-headers headers "HTTP/2.0")))
+    (is (= {"bar" "bar-value"
+            "content" "text/html"
+            "content-encoding" "gzip"
+            "proxy-connection" "keep-alive"
+            "referer" "http://www.test-referer.com"}
+           (dissoc-hop-by-hop-headers headers "HTTP/1.0")))))

@@ -140,12 +140,12 @@
 
 (defn make-request
   "Makes an asynchronous websocket request to the instance endpoint and returns a channel."
-  [websocket-client service-id->password-fn {:keys [host port] :as instance} ws-request request-properties passthrough-headers end-route _ backend-proto _]
+  [websocket-client service-id->password-fn {:keys [host port] :as instance} ws-request request-properties passthrough-headers end-route _ backend-proto proto-version]
   (let [ws-middleware (fn ws-middleware [_ ^UpgradeRequest request]
                         (let [service-password (-> instance scheduler/instance->service-id service-id->password-fn)
                               headers
                               (-> (dissoc passthrough-headers "content-length" "expect" "authorization")
-                                  (headers/dissoc-hop-by-hop-headers)
+                                  (headers/dissoc-hop-by-hop-headers proto-version)
                                   (dissoc-forbidden-headers)
                                   (assoc "Authorization" (str "Basic " (String. ^bytes (b64/encode (.getBytes (str "waiter:" service-password) "utf-8")) "utf-8")))
                                   (headers/assoc-auth-headers (:authorization/user ws-request) (:authorization/principal ws-request))
