@@ -287,6 +287,7 @@ class WaiterCliTest(util.WaiterTest):
         finally:
             util.delete_token(self.waiter_url, token_name)
 
+    @pytest.mark.serial
     def test_create_if_match(self):
 
         def encountered_stale_token_error(cp):
@@ -424,6 +425,7 @@ class WaiterCliTest(util.WaiterTest):
         finally:
             util.delete_token(self.waiter_url, token_name)
 
+    @pytest.mark.serial
     def test_delete_if_match(self):
 
         def encountered_stale_token_error(cp):
