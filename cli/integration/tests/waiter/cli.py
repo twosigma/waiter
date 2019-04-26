@@ -67,7 +67,7 @@ def cli(args, waiter_url=None, flags=None, stdin=None, env=None, wait_for_exit=T
 
 def create_or_update(subcommand, waiter_url=None, token_name=None, flags=None, create_flags=None):
     """Creates or updates a token via the CLI"""
-    args = f"{subcommand} {token_name} {create_flags or ''}"
+    args = f"{subcommand} {token_name or ''} {create_flags or ''}"
     cp = cli(args, waiter_url, flags)
     return cp
 

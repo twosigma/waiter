@@ -69,7 +69,26 @@ def create_or_update_token(clusters, args, _, action):
     """Creates (or updates) a Waiter token"""
     guard_no_cluster(clusters)
     logging.debug('args: %s' % args)
-    token_name = args.pop('token')
+    token_name_from_args = args.pop('token', None)
+    json_file = args.pop('json', None)
+    if json_file:
+        if len(args) > 0:
+            raise Exception('You cannot specify both a token JSON file and token field flags at the same time.')
+
+        token_fields = load_json_file(json_file)
+        if not token_fields:
+            raise Exception(f'Unable to load token JSON from {json_file}.')
+    else:
+        token_fields = args
+
+    token_name_from_json = token_fields.pop('token', None)
+    if token_name_from_args and token_name_from_json:
+        raise Exception('You cannot specify the token name both as an argument and in the token JSON file.')
+
+    token_name = token_name_from_args or token_name_from_json
+    if not token_name:
+        raise Exception('You must specify the token name either as an argument or in a token JSON file via --json.')
+
     if len(clusters) > 1:
         default_for_create = [c for c in clusters if c.get('default-for-create', False)]
         num_default_create_clusters = len(default_for_create)
@@ -89,16 +108,6 @@ def create_or_update_token(clusters, args, _, action):
     else:
         cluster = clusters[0]
 
-    json_file = args.pop('json', None)
-    if json_file:
-        if len(args) > 0:
-            raise Exception('You cannot specify both a token JSON file and token field flags at the same time.')
-
-        token_fields = load_json_file(json_file)
-        if not token_fields:
-            raise Exception(f'Unable to load token JSON from {json_file}.')
-    else:
-        token_fields = args
     return create_or_update(cluster, token_name, token_fields, action)
 
 
@@ -106,7 +115,7 @@ def add_arguments(parser):
     """Adds arguments to the given parser"""
     add_token_flags(parser)
     parser.add_argument('--json', help='provide the data in a JSON file', dest='json')
-    parser.add_argument('token', nargs=1)
+    parser.add_argument('token', nargs='?')
 
 
 def add_token_flags(parser):

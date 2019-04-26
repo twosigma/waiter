@@ -916,3 +916,45 @@ class WaiterCliTest(util.WaiterTest):
                 util.delete_token(self.waiter_url, token_name_2)
         finally:
             util.delete_token(self.waiter_url, token_name_1)
+
+    def test_create_token_json_containing_token_name(self):
+        token_name = self.token_name()
+        with cli.temp_token_file({'token': token_name, 'cpus': 0.1, 'mem': 128}) as path:
+            cp = cli.create(self.waiter_url, create_flags=f'--json {path}')
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            try:
+                token_data = util.load_token(self.waiter_url, token_name)
+                self.assertEqual(0.1, token_data['cpus'])
+                self.assertEqual(128, token_data['mem'])
+            finally:
+                util.delete_token(self.waiter_url, token_name)
+
+    def test_update_token_json_containing_token_name(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, {'cpus': 0.1, 'mem': 128, 'cmd': 'foo'})
+        try:
+            with cli.temp_token_file({'token': token_name, 'cpus': 0.2, 'mem': 256}) as path:
+                cp = cli.update(self.waiter_url, update_flags=f'--json {path}')
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                token_data = util.load_token(self.waiter_url, token_name)
+                self.assertEqual(0.2, token_data['cpus'])
+                self.assertEqual(256, token_data['mem'])
+                self.assertEqual('foo', token_data['cmd'])
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_post_token_over_specified_token_name(self):
+        token_name = self.token_name()
+        with cli.temp_token_file({'token': token_name}) as path:
+            cp = cli.create(self.waiter_url, token_name, create_flags=f'--json {path}')
+            self.assertEqual(1, cp.returncode, cp.stderr)
+            self.assertIn('cannot specify the token name both as an argument and in the token JSON', cli.stderr(cp))
+
+    def test_post_token_no_token_name(self):
+        cp = cli.create(self.waiter_url)
+        self.assertEqual(1, cp.returncode, cp.stderr)
+        self.assertIn('must specify the token name', cli.stderr(cp))
+        with cli.temp_token_file({'cpus': 0.1}) as path:
+            cp = cli.create(self.waiter_url, create_flags=f'--json {path}')
+            self.assertEqual(1, cp.returncode, cp.stderr)
+            self.assertIn('must specify the token name', cli.stderr(cp))
