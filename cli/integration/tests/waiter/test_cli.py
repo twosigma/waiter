@@ -760,7 +760,7 @@ class WaiterCliTest(util.WaiterTest):
     def test_init_basic(self):
         token_name = self.token_name()
         filename = str(uuid.uuid4())
-        flags = f"--cmd '{util.default_cmd()}' --file {filename} --cmd-type shell"
+        flags = f"--cmd '{util.default_cmd()}' --file {filename} --cmd-type shell --health-check-url /status"
         cp = cli.init(self.waiter_url, init_flags=flags)
         self.assertEqual(0, cp.returncode, cp.stderr)
         self.assertIn('Writing token JSON', cli.stdout(cp))
@@ -769,6 +769,18 @@ class WaiterCliTest(util.WaiterTest):
             self.logger.info(f'Token definition: {json.dumps(token_definition, indent=2)}')
             util.post_token(self.waiter_url, token_name, token_definition)
             try:
+                token = util.load_token(self.waiter_url, token_name)
+                self.assertEqual('your-app-name', token['name'])
+                self.assertEqual('your-metric-group', token['metric-group'])
+                self.assertEqual('shell', token['cmd-type'])
+                self.assertEqual(util.default_cmd(), token['cmd'])
+                self.assertEqual('your version', token['version'])
+                self.assertEqual(0.1, token['cpus'])
+                self.assertEqual(2048, token['mem'])
+                self.assertEqual('/status', token['health-check-url'])
+                self.assertEqual(120, token['concurrency-level'])
+                self.assertEqual('*', token['permitted-user'])
+                self.assertEqual(getpass.getuser(), token['run-as-user'])
                 util.ping_token(self.waiter_url, token_name)
                 self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
             finally:
@@ -803,8 +815,8 @@ class WaiterCliTest(util.WaiterTest):
             util.post_token(self.waiter_url, token_name, token_definition)
             try:
                 token = util.load_token(self.waiter_url, token_name)
-                self.assertEqual('your command goes here', token['cmd'])
-                self.assertEqual('your version goes here', token['version'])
+                self.assertEqual('your command', token['cmd'])
+                self.assertEqual('your version', token['version'])
                 self.assertEqual(0.1, token['cpus'])
                 self.assertEqual(2048, token['mem'])
                 self.assertTrue(token['https-redirect'])
