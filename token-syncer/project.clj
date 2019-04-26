@@ -14,7 +14,7 @@
 ;; limitations under the License.
 ;;
 (defproject token-syncer "0.1.0-SNAPSHOT"
-  :dependencies [[twosigma/jet "0.7.10-20190417_013951-gef581db"]
+  :dependencies [[twosigma/jet "0.7.10-20190426_181314-g8d0a48b"]
                  [clj-time "0.15.1"]
                  [commons-codec/commons-codec "1.11"]
                  [org.clojure/clojure "1.10.0"]
