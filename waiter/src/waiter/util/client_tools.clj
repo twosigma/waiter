@@ -360,7 +360,7 @@
    :health-check-url "/status"
    :idle-timeout-mins 10
    :mem 256
-   :metric-group "waiter_kitchen_test"
+   :metric-group "waiter_test"
    :version "version-does-not-matter"})
 
 (defn kitchen-request-headers
@@ -421,7 +421,7 @@
     waiter-url
     (merge
       {:x-waiter-cmd (kitchen-cmd "-p $PORT0")
-       :x-waiter-metric-group "waiter_kitchen_test"}
+       :x-waiter-metric-group "waiter_test"}
       custom-headers)
     :body body
     :cookies cookies

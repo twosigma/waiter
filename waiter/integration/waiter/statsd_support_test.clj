@@ -21,11 +21,11 @@
 (deftest ^:parallel ^:integration-fast test-header-metric-group
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
-                   :x-waiter-metric-group "foo"}
+                   :x-waiter-metric-group "waiter_test_foo"}
           {:keys [status service-id] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
           value (:metric-group (response->service-description waiter-url response))]
       (is (= 200 status))
-      (is (= "foo" value))
+      (is (= "waiter_test_foo" value))
       (delete-service waiter-url service-id))))
 
 (defn statsd-enabled?

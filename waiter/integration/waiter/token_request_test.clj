@@ -429,6 +429,9 @@
       (doseq [service-id @service-ids-atom]
         (delete-service waiter-url service-id)))))
 
+(defn- service-id->metadata-id [waiter-url service-id]
+  (get-in (service-settings waiter-url service-id) [:service-description :metadata :id]))
+
 (deftest ^:parallel ^:integration-fast test-hostname-token
   (testing-using-waiter-url
     (let [service-id-prefix (rand-name)
@@ -441,14 +444,16 @@
           (log/info "basic hostname as token test")
           (let [current-user (retrieve-username)
                 service-description (assoc (kitchen-request-headers)
-                                           :x-waiter-metric-group token-prefix
+                                           :x-waiter-metric-group "waiter_test"
+                                           :x-waiter-name token-prefix
                                            :x-waiter-permitted-user "*"
                                            :x-waiter-run-as-user current-user)]
             (testing "hostname-token-creation"
               (log/info "creating configuration using token" token)
               (let [{:keys [body status]}
                     (post-token waiter-url {:health-check-url "/probe"
-                                            :metric-group token-prefix
+                                            :metric-group "waiter_test"
+                                            :metadata {"id" token-prefix}
                                             :name service-id-prefix
                                             :token token})]
                 (when (not= 200 status)
@@ -461,7 +466,8 @@
                 (is (= {"cluster" token-cluster
                         "health-check-url" "/probe"
                         "last-update-user" (retrieve-username)
-                        "metric-group" token-prefix
+                        "metadata" {"id" token-prefix}
+                        "metric-group" "waiter_test"
                         "name" service-id-prefix
                         "owner" (retrieve-username)
                         "previous" {}
@@ -476,11 +482,12 @@
                     response (make-request waiter-url path :headers request-headers)
                     service-id (retrieve-service-id waiter-url (:request-headers response))]
                 (assert-response-status response 200)
-                (is (= (name-from-service-description waiter-url service-id) service-id-prefix))
+                (is (= token-prefix (name-from-service-description waiter-url service-id)))
                 (is (= #{(make-source-tokens-entries waiter-url token)}
                        (service-id->source-tokens-entries waiter-url service-id)))
-                (is (= token-prefix (service-id->metric-group waiter-url service-id))
-                    (str {:service-id service-id :token token})))
+                (is (= "waiter_test" (service-id->metric-group waiter-url service-id))
+                    (str {:service-id service-id :token token}))
+                (is (= token-prefix (service-id->metadata-id waiter-url service-id))))
 
               (log/info "request with hostname token" token "along with x-waiter headers except permitted-user")
               (let [request-headers (merge (dissoc service-description :x-waiter-permitted-user) {"host" token})
@@ -488,11 +495,12 @@
                     response (make-request waiter-url path :headers request-headers)
                     service-id (retrieve-service-id waiter-url (:request-headers response))]
                 (assert-response-status response 200)
-                (is (= (name-from-service-description waiter-url service-id) service-id-prefix))
+                (is (= token-prefix (name-from-service-description waiter-url service-id)))
                 (is (= #{(make-source-tokens-entries waiter-url token)}
                        (service-id->source-tokens-entries waiter-url service-id)))
-                (is (= token-prefix (service-id->metric-group waiter-url service-id))
+                (is (= "waiter_test" (service-id->metric-group waiter-url service-id))
                     (str {:service-id service-id :token token}))
+                (is (= token-prefix (service-id->metadata-id waiter-url service-id)))
                 ;; the above request hashes to a different service-id than the rest of the test, so we need to cleanup
                 (delete-service waiter-url service-id))
 
@@ -502,11 +510,12 @@
                     response (make-request waiter-url path :headers request-headers)
                     service-id (retrieve-service-id waiter-url (:request-headers response))]
                 (assert-response-status response 200)
-                (is (= (name-from-service-description waiter-url service-id) service-id-prefix))
+                (is (= token-prefix (name-from-service-description waiter-url service-id)))
                 (is (= #{(make-source-tokens-entries waiter-url token)}
                        (service-id->source-tokens-entries waiter-url service-id)))
-                (is (= token-prefix (service-id->metric-group waiter-url service-id))
+                (is (= "waiter_test" (service-id->metric-group waiter-url service-id))
                     (str {:service-id service-id :token token}))
+                (is (= token-prefix (service-id->metadata-id waiter-url service-id)))
 
                 (testing "backend request headers"
                   (let [{:keys [body] :as response} (make-request waiter-url "/request-info" :headers request-headers)
@@ -534,13 +543,13 @@
                     {:keys [headers request-headers] :as response} (make-request waiter-url path :headers request-headers)
                     service-id (retrieve-service-id waiter-url request-headers)]
                 (assert-response-status response 200)
-                (is (= (name-from-service-description waiter-url service-id) service-id-prefix))
+                (is (= token-prefix (name-from-service-description waiter-url service-id)))
                 (is (= #{(make-source-tokens-entries waiter-url token)}
                        (service-id->source-tokens-entries waiter-url service-id)))
                 (is (every? #(not (str/blank? (get headers %)))
                             (concat required-response-headers (retrieve-debug-response-headers waiter-url)))
                     (str headers))
-                (is (= token-prefix (service-id->metric-group waiter-url service-id))
+                (is (= "waiter_test" (service-id->metric-group waiter-url service-id))
                     (str {:service-id service-id :token token}))
                 (delete-service waiter-url service-id))))
           (finally
