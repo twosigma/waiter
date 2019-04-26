@@ -1,3 +1,4 @@
+import getpass
 import json
 import logging
 import os
@@ -9,10 +10,16 @@ parser = None
 
 
 DEFAULTS = {
-    'cmd': 'your command goes here',
-    'version': 'your version goes here',
+    'name': 'your-app-name',
+    'metric-group': 'your-metric-group',
+    'cmd': 'your command',
+    'version': 'your version',
     'cpus': 0.1,
-    'mem': 2048
+    'mem': 2048,
+    'health-check-url': '/your-health-check-endpoint',
+    'concurrency-level': 120,
+    'permitted-user': '*',
+    'run-as-user': getpass.getuser()
 }
 
 
