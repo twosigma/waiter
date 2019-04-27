@@ -358,6 +358,7 @@
                                    :pod-suffix-length 5
                                    :replicaset-api-version "extensions/v1beta1"
                                    :replicaset-spec-builder {:factory-fn 'waiter.scheduler.kubernetes/default-replicaset-builder
+                                                             :container-init-commands ["waiter-k8s-init"]
                                                              :default-container-image "twosigma/waiter-test-apps:latest"}}
                       :marathon {:factory-fn 'waiter.scheduler.marathon/marathon-scheduler
                                  :authorizer {:kind :default
@@ -366,7 +367,8 @@
                                  :http-options {:conn-timeout 10000
                                                 :socket-timeout 10000
                                                 :spnego-auth false}
-                                 :marathon-descriptor-builder {:factory-fn 'waiter.scheduler.marathon/default-marathon-descriptor-builder}
+                                 :marathon-descriptor-builder {:factory-fn 'waiter.scheduler.marathon/default-marathon-descriptor-builder
+                                                               :container-init-commands ["waiter-mesos-init"]}
                                  :force-kill-after-ms 60000
                                  :framework-id-ttl 900000
                                  :sync-deployment {:interval-ms (-> 15 t/seconds t/in-millis)

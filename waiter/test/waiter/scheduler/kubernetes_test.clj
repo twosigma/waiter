@@ -62,7 +62,8 @@
       :replicaset-api-version "extensions/v1beta1"
       :replicaset-spec-builder-fn #(waiter.scheduler.kubernetes/default-replicaset-builder
                                      %1 %2 %3
-                                     {:default-container-image "twosigma/waiter-test-apps:latest"})
+                                     {:container-init-commands ["waiter-k8s-init"]
+                                      :default-container-image "twosigma/waiter-test-apps:latest"})
       :service-id->failed-instances-transient-store (atom {})
       :service-id->password-fn #(str "password-" %)
       :service-id->service-description-fn (pc/map-from-keys (constantly {"health-check-port-index" 0
@@ -792,6 +793,7 @@
                     :pod-suffix-length default-pod-suffix-length
                     :replicaset-api-version "extensions/v1beta1"
                     :replicaset-spec-builder {:factory-fn 'waiter.scheduler.kubernetes/default-replicaset-builder
+                                              :container-init-commands ["waiter-k8s-init"]
                                               :default-container-image "twosigma/waiter-test-apps:latest"}
                     :url "http://127.0.0.1:8001"}
         base-config (merge context k8s-config)]

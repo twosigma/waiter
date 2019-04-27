@@ -247,8 +247,7 @@
 (defn default-marathon-descriptor-builder
   "Returns the descriptor to be used by Marathon to create new apps."
   [home-path-prefix service-id->password-fn {:keys [service-id service-description]} {:keys [container-init-commands]}]
-  (let [base-command-vector (vec (or container-init-commands ["waiter-mesos-init"]))
-        health-check-url (sd/service-description->health-check-url service-description)
+  (let [health-check-url (sd/service-description->health-check-url service-description)
         {:strs [backend-proto cmd cmd-type cpus disk grace-period-secs health-check-interval-secs
                 health-check-max-consecutive-failures health-check-port-index health-check-proto
                 mem ports restart-backoff-factor run-as-user]} service-description
@@ -261,7 +260,7 @@
     {:id service-id
      :env (scheduler/environment service-id service-description service-id->password-fn home-path)
      :user run-as-user
-     :args (conj base-command-vector cmd)
+     :args (conj (vec container-init-commands) cmd)
      :disk disk
      :mem mem
      :ports (-> ports (repeat 0) vec)

@@ -688,7 +688,6 @@
    {:keys [container-init-commands default-container-image log-bucket-url image-aliases] :as context}]
   (let [work-path (str "/home/" run-as-user)
         home-path (str work-path "/latest")
-        base-command-vector (vec (or container-init-commands ["waiter-k8s-init"]))
         base-env (scheduler/environment service-id service-description
                                         service-id->password-fn home-path)
         ;; We include the default log-bucket-sync-secs value in the total-sigkill-delay-secs
@@ -737,7 +736,7 @@
                                                   :waiter/service-id service-id}
                                     :labels {:app k8s-name
                                              :waiter-cluster cluster-name}}
-                         :spec {:containers [{:command (conj base-command-vector cmd)
+                         :spec {:containers [{:command (conj (vec container-init-commands) cmd)
                                               :env env
                                               :image (compute-image image default-container-image image-aliases)
                                               :imagePullPolicy "IfNotPresent"
