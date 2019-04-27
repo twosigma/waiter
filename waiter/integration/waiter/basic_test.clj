@@ -450,7 +450,7 @@
         (testing "waiter configured environment variables"
           (is (every? #(contains? body-json %)
                       ["HOME" "LOGNAME" "USER" "WAITER_CLUSTER" "WAITER_CONCURRENCY_LEVEL" "WAITER_CPUS"
-                       "WAITER_MEM_MB" "WAITER_SERVICE_ID" "WAITER_USERNAME"])
+                       "WAITER_MEM_MB" "WAITER_SANDBOX" "WAITER_SERVICE_ID" "WAITER_USERNAME"])
               (str body-json))
           (is (= (setting waiter-url [:cluster-config :name]) (get body-json "WAITER_CLUSTER")))
           (is (= service-id (get body-json "WAITER_SERVICE_ID"))))
