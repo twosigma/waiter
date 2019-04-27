@@ -586,7 +586,8 @@
 
 (deftest test-marathon-descriptor
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
-    (let [service-id->password-fn (fn [service-id] (str service-id "-password"))]
+    (let [service-id->password-fn (fn [service-id] (str service-id "-password"))
+          descriptor-builder-ctx {:container-init-commands ["waiter-mesos-init"]}]
       (testing "basic-test-with-defaults"
         (let [expected {:id "test-service-1"
                         :labels {:source "waiter"
@@ -635,7 +636,8 @@
                                           "BAZ" "quux"}}
               actual (default-marathon-descriptor-builder
                        home-path-prefix service-id->password-fn
-                       {:service-id service-id, :service-description service-description} nil)]
+                       {:service-id service-id, :service-description service-description}
+                       descriptor-builder-ctx)]
           (is (= expected actual))
 
           (testing "health-check-port-index of 2"
@@ -646,7 +648,7 @@
                      home-path-prefix service-id->password-fn
                      (->> (assoc service-description "health-check-port-index" 2 "ports" 3)
                           (assoc {:service-id service-id} :service-description))
-                     nil)))))))))
+                     descriptor-builder-ctx)))))))))
 
 (deftest test-kill-instance-last-force-kill-time-store
   (let [current-time (t/now)
