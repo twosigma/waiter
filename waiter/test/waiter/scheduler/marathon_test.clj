@@ -754,7 +754,8 @@
                                          :default {:factory-fn 'waiter.authorization/noop-authorizer}}
                             :force-kill-after-ms 60000
                             :framework-id-ttl 900000
-                            :marathon-descriptor-builder {:factory-fn 'waiter.scheduler.marathon/default-marathon-descriptor-builder}
+                            :marathon-descriptor-builder {:factory-fn 'waiter.scheduler.marathon/default-marathon-descriptor-builder
+                                                          :container-init-commands ["waiter-mesos-init"]}
                             :home-path-prefix "/home/"
                             :http-options {:conn-timeout 10000 :socket-timeout 10000}
                             :mesos-slave-port 5051
