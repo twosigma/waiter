@@ -63,19 +63,10 @@ wait_for_server 'minikube cluster' "kubectl get nodes -o jsonpath='${JSONPATH}' 
 kubectl cluster-info
 kubectl version
 
-# Create test user's namespace
-kubectl create -f - <<EOF
-{
-  "kind": "Namespace",
-  "apiVersion": "v1",
-  "metadata": {
-    "name": "${USER}",
-    "labels": {
-      "name": "${USER}"
-    }
-  }
-}
-EOF
+# Create test user namespaces
+for k8s_user in $USER waiter; do
+    kubectl create -f - <<< '{"kind":"Namespace","apiVersion":"v1","metadata":{"name":"'$k8s_user'","labels":{"name":"'$k8s_user'"}}}'
+done
 
 # Start Kubernetes proxy for access to API server
 kubectl proxy --port=8001 &

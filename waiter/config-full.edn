@@ -388,6 +388,8 @@
                                                            :container-init-commands ["waiter-k8s-init"]
                                                            ;; The default factory function accepts an option for the docker container to use in the pod.
                                                            :default-container-image "twosigma/waiter-test-apps:latest"
+                                                           ;; The default namespace to use for Kubernetes objects created by Waiter
+                                                           :default-namespace "waiter"
                                                            ;; Map of image aliases. One of these aliases can be specified in the `image` field and the
                                                            ;; resolved image will be used.
                                                            :image-aliases {"alias/sample-alias" "real/image"}}

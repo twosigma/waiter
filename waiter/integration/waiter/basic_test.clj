@@ -556,7 +556,7 @@
 
         (testing "should provide effective service description when requested"
           (let [service (service waiter-url service-id {"effective-parameters" "true"})]
-            (is (= (disj sd/service-parameter-keys "scheduler" "image")
+            (is (= (disj sd/service-parameter-keys "scheduler" "image" "namespace")
                    (set (keys (get service "effective-parameters")))))))
 
         (delete-service waiter-url service-id))

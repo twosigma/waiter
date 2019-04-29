@@ -6,5 +6,5 @@ while true; do
     sleep ${cycle_delay_secs}
     printf '\n***** Kubernetes pod state at %s *****\n%s\n\n' \
         "$(date +'%H:%M:%S')" \
-        "$(kubectl --namespace=${USER} get pods 2>&1)"
+        "$(kubectl get --all-namespaces pods 2>&1 | grep -v ^kube-system)"
 done

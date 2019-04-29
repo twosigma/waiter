@@ -250,7 +250,7 @@
   (let [health-check-url (sd/service-description->health-check-url service-description)
         {:strs [backend-proto cmd cmd-type cpus disk grace-period-secs health-check-interval-secs
                 health-check-max-consecutive-failures health-check-port-index health-check-proto
-                mem ports restart-backoff-factor run-as-user]} service-description
+                mem namespace ports restart-backoff-factor run-as-user]} service-description
         home-path (str home-path-prefix run-as-user)]
     (when (= "docker" cmd-type)
       (throw (ex-info "Unsupported command type on service"
@@ -273,8 +273,10 @@
                      :timeoutSeconds 20
                      :maxConsecutiveFailures health-check-max-consecutive-failures}]
      :backoffFactor restart-backoff-factor
-     :labels {:source "waiter"
-              :user run-as-user}}))
+     :labels (cond-> {:source "waiter"
+                      :user run-as-user}
+               (some? namespace)
+               (assoc :namespace namespace))}))
 
 (defn- start-new-service
   "Helper function to start a service with the specified descriptor."

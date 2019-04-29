@@ -283,13 +283,10 @@
       (log/error "request to K8s API server failed: " url options body response)
       (ss/throw+ response))))
 
-(defn- retrieve-run-as-user
-  "Get the correspoinding run-as-user for a service-id,
-   looked up via the corresponding service-description."
+(defn- retrieve-service-description
+  "Get the correspoinding service-description for a service-id."
   [{:keys [service-id->service-description-fn]} service-id]
-  (-> service-id
-      service-id->service-description-fn
-      (get "run-as-user")))
+  (service-id->service-description-fn service-id))
 
 (defn- get-services
   "Get all Waiter Services (reified as ReplicaSets) running in this Kubernetes cluster."
@@ -616,7 +613,7 @@
                         (str "/")
                         (not (string/starts-with? browse-path "/"))
                         (->> (str "/")))
-          run-as-user (retrieve-run-as-user scheduler service-id)
+          {:strs [run-as-user]} (retrieve-service-description scheduler service-id)
           pod (get-in @watch-state [:service-id->pod-id->pod service-id pod-name])]
       (ss/try+
         (if (pod-logs-live? pod)
@@ -673,8 +670,14 @@
      :watch-state @watch-state})
 
   (validate-service [this service-id]
-    (let [run-as-user (retrieve-run-as-user this service-id)]
-      (authz/check-user authorizer run-as-user service-id))))
+    (let [{:strs [namespace run-as-user]} (retrieve-service-description this service-id)]
+      (authz/check-user authorizer run-as-user service-id)
+      ;; currently, if manually specified, the namespace *must* match the run-as-user
+      ;; (but we expect the common case to be falling back to the default)
+      (when (and (some? namespace)
+                 (not= namespace run-as-user))
+        (throw (ex-info "Service namespace must either be omitted or match the run-as-user."
+                        {:namespace namespace :run-as-user run-as-user :status 403}))))))
 
 (defn compute-image
   "Compute the image to use for the service"
@@ -688,8 +691,10 @@
            replicaset-api-version service-id->password-fn] :as scheduler}
    service-id
    {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs health-check-max-consecutive-failures
-           health-check-port-index health-check-proto image mem min-instances ports run-as-user] :as service-description}
-   {:keys [container-init-commands default-container-image log-bucket-url image-aliases] :as context}]
+           health-check-port-index health-check-proto image mem min-instances namespace ports run-as-user]
+    :as service-description}
+   {:keys [container-init-commands default-container-image default-namespace log-bucket-url image-aliases]
+    :as context}]
   (let [work-path (str "/home/" run-as-user)
         home-path (str work-path "/latest")
         base-env (scheduler/environment service-id service-description
@@ -734,8 +739,7 @@
                            :waiter-cluster cluster-name
                            :waiter/user run-as-user}
                   :name k8s-name
-                  ;; TODO - set namespace via x-waiter-namespace service parameter
-                  :namespace run-as-user}
+                  :namespace (or namespace default-namespace run-as-user)}
        :spec {:replicas min-instances
               :selector {:matchLabels {:app k8s-name
                                        :waiter-cluster cluster-name

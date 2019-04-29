@@ -160,3 +160,39 @@
               (if (string/starts-with? (str file-link) "http")
                 (assert-response-status (make-request-fn file-link) 200)
                 (log/warn "test-basic-logs did not verify file link:" stdout-file-link)))))))))
+
+(deftest ^:parallel ^:integration-fast test-pod-namespace
+  (testing-using-waiter-url
+    (when (using-k8s? waiter-url)
+      (let [current-user (retrieve-username)
+            cookies (all-cookies waiter-url)
+            router-url (-> waiter-url routers first val)]
+        (testing "Default namespace"
+          (let [{:keys [service-id]} (make-request-with-debug-info
+                                       {:x-waiter-name (rand-name)}
+                                       #(make-kitchen-request waiter-url % :path "/hello"))]
+            (with-service-cleanup
+              service-id
+              (let [{:keys [body] :as response} (make-request router-url "/state/scheduler" :method :get :cookies cookies)
+                    _ (assert-response-status response 200)
+                    body-json (-> body str try-parse-json)
+                    watch-state-json (get-watch-state body-json)
+                    pod-spec (-> watch-state-json (get-in ["service-id->pod-id->pod" service-id]) first val)
+                    pod-namespace (get-in pod-spec ["metadata" "namespace"])]
+                (is (some? pod-spec))
+                (is (not= current-user pod-namespace))))))
+        (testing "Custom namespace"
+          (let [{:keys [service-id]} (make-request-with-debug-info
+                                       {:x-waiter-name (rand-name)
+                                        :x-waiter-namespace current-user}
+                                       #(make-kitchen-request waiter-url % :path "/hello"))]
+            (with-service-cleanup
+              service-id
+              (let [{:keys [body] :as response} (make-request router-url "/state/scheduler" :method :get :cookies cookies)
+                    _ (assert-response-status response 200)
+                    body-json (-> body str try-parse-json)
+                    watch-state-json (get-watch-state body-json)
+                    pod-spec (-> watch-state-json (get-in ["service-id->pod-id->pod" service-id]) first val)
+                    pod-namespace (get-in pod-spec ["metadata" "namespace"])]
+                (is (some? pod-spec))
+                (is (= current-user pod-namespace))))))))))

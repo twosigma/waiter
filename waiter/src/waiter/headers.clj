@@ -25,7 +25,7 @@
 ;; authentication is intentionally missing from this list as we do not support it as an on-the-fly header
 (def ^:const params-with-str-value
   #{"allowed-params" "backend-proto" "cmd" "cmd-type" "distribution-scheme" "endpoint-path" "health-check-proto"
-    "health-check-url" "image" "metric-group" "name" "permitted-user" "run-as-user" "token" "version"})
+    "health-check-url" "image" "metric-group" "name" "namespace" "permitted-user" "run-as-user" "token" "version"})
 
 (def ^:const waiter-headers-with-str-value (set (map #(str waiter-header-prefix %) params-with-str-value)))
 

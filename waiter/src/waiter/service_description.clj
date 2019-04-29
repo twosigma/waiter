@@ -72,6 +72,7 @@
                                               #(< (count %) 100))
    (s/optional-key "metric-group") schema/valid-metric-group
    (s/optional-key "name") schema/non-empty-string
+   (s/optional-key "namespace") schema/non-empty-string
    (s/optional-key "permitted-user") schema/non-empty-string
    (s/optional-key "ports") schema/valid-number-of-ports
    ; start-up related
@@ -120,7 +121,7 @@
 
 (def ^:const service-non-override-keys
   #{"allowed-params" "backend-proto" "cmd" "cmd-type" "cpus" "env" "health-check-port-index" "health-check-proto"
-    "health-check-url" "image" "mem" "metadata" "metric-group" "name" "permitted-user" "ports" "run-as-user"
+    "health-check-url" "image" "mem" "metadata" "metric-group" "name" "namespace" "permitted-user" "ports" "run-as-user"
     "scheduler" "version"})
 
 ; keys used as parameters in the service description
