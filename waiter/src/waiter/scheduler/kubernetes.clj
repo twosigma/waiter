@@ -283,7 +283,9 @@
       (log/error "request to K8s API server failed: " url options body response)
       (ss/throw+ response))))
 
-(defn- get-service-user
+(defn- retrieve-run-as-user
+  "Get the correspoinding run-as-user for a service-id,
+   looked up via the corresponding service-description."
   [{:keys [service-id->service-description-fn]} service-id]
   (-> service-id
       service-id->service-description-fn
@@ -614,7 +616,7 @@
                         (str "/")
                         (not (string/starts-with? browse-path "/"))
                         (->> (str "/")))
-          run-as-user (get-service-user scheduler service-id)
+          run-as-user (retrieve-run-as-user scheduler service-id)
           pod (get-in @watch-state [:service-id->pod-id->pod service-id pod-name])]
       (ss/try+
         (if (pod-logs-live? pod)
@@ -671,7 +673,7 @@
      :watch-state @watch-state})
 
   (validate-service [this service-id]
-    (let [run-as-user (get-service-user this service-id)]
+    (let [run-as-user (retrieve-run-as-user this service-id)]
       (authz/check-user authorizer run-as-user service-id))))
 
 (defn compute-image
@@ -732,7 +734,7 @@
                            :waiter-cluster cluster-name
                            :waiter/user run-as-user}
                   :name k8s-name
-                  ;; TODO - set namespace via run-in-namespace service parameter
+                  ;; TODO - set namespace via x-waiter-namespace service parameter
                   :namespace run-as-user}
        :spec {:replicas min-instances
               :selector {:matchLabels {:app k8s-name
