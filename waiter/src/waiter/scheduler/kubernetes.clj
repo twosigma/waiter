@@ -155,9 +155,9 @@
       :pod-name pod-name
       :restart-number restart-number}))
 
-(defn- log-dir-path [namespace restart-count]
+(defn- log-dir-path [user restart-count]
   "Build log directory path string for a containter run."
-  (str "/home/" namespace "/r" restart-count))
+  (str "/home/" user "/r" restart-count))
 
 (defn- killed-by-k8s?
   "Determine whether a pod was killed (restarted) by its corresponding Kubernetes liveness checks."
@@ -185,7 +185,7 @@
                                                 :flags failure-flags
                                                 :healthy? false
                                                 :id newest-failure-id
-                                                :log-directory (log-dir-path (:k8s/namespace live-instance)
+                                                :log-directory (log-dir-path (:k8s/user live-instance)
                                                                              (dec restart-count))
                                                 :started-at newest-failure-start-time)
                                         ;; To match the behavior of the marathon scheduler,
@@ -201,7 +201,9 @@
   (try
     (let [port0 (get-in pod [:spec :containers 0 :ports 0 :containerPort])
           restart-count (get-in pod [:status :containerStatuses 0 :restartCount])
-          namespace (k8s-object->namespace pod)]
+          run-as-user (or (get-in pod [:metadata :labels :waiter/user])
+                          ;; falling back to namespace for legacy pods missing the waiter/user label
+                          (k8s-object->namespace pod))]
       (scheduler/make-ServiceInstance
         {:extra-ports (->> (get-in pod [:metadata :annotations :waiter/port-count])
                            Integer/parseInt range next (mapv #(+ port0 %)))
@@ -209,10 +211,11 @@
          :host (get-in pod [:status :podIP])
          :id (pod->instance-id pod)
          :k8s/app-name (get-in pod [:metadata :labels :app])
-         :k8s/namespace namespace
+         :k8s/namespace (k8s-object->namespace pod)
          :k8s/pod-name (k8s-object->id pod)
          :k8s/restart-count restart-count
-         :log-directory (log-dir-path namespace restart-count)
+         :k8s/user run-as-user
+         :log-directory (log-dir-path run-as-user restart-count)
          :port port0
          :service-id (k8s-object->service-id pod)
          :started-at (-> pod
@@ -280,9 +283,11 @@
       (log/error "request to K8s API server failed: " url options body response)
       (ss/throw+ response))))
 
-(defn- service-description->namespace
-  [{:strs [run-as-user]}]
-  run-as-user)
+(defn- get-service-user
+  [{:keys [service-id->service-description-fn]} service-id]
+  (-> service-id
+      service-id->service-description-fn
+      (get "run-as-user")))
 
 (defn- get-services
   "Get all Waiter Services (reified as ReplicaSets) running in this Kubernetes cluster."
@@ -446,11 +451,12 @@
                       {:cmd-type cmd-type
                        :service-description service-description
                        :service-id service-id}))))
-  (let [spec-json (replicaset-spec-builder-fn scheduler service-id service-description)
+  (let [rs-spec (replicaset-spec-builder-fn scheduler service-id service-description)
+        request-namespace (k8s-object->namespace rs-spec)
         request-url (str api-server-url "/apis/" replicaset-api-version "/namespaces/"
-                         (service-description->namespace service-description) "/replicasets")
+                         request-namespace "/replicasets")
         response-json (api-request request-url scheduler
-                                   :body (utils/clj->json spec-json)
+                                   :body (utils/clj->json rs-spec)
                                    :request-method :post)
         service (some-> response-json replicaset->Service)]
     (when-not service
@@ -596,8 +602,8 @@
          :message "Error while scaling waiter service"})))
 
   (retrieve-directory-content
-    [{:keys [http-client log-bucket-url service-id->service-description-fn watch-state]
-      {:keys [port scheme]} :fileserver}
+    [{:keys [http-client log-bucket-url watch-state]
+      {:keys [port scheme]} :fileserver :as scheduler}
      service-id instance-id host browse-path]
     (let [{:keys [_ pod-name restart-number]} (unpack-instance-id instance-id)
           instance-base-dir (str "r" restart-number)
@@ -608,9 +614,7 @@
                         (str "/")
                         (not (string/starts-with? browse-path "/"))
                         (->> (str "/")))
-          run-as-user (-> service-id
-                          service-id->service-description-fn
-                          service-description->namespace)
+          run-as-user (get-service-user scheduler service-id)
           pod (get-in @watch-state [:service-id->pod-id->pod service-id pod-name])]
       (ss/try+
         (if (pod-logs-live? pod)
@@ -666,10 +670,8 @@
      :syncer (retrieve-syncer-state-fn)
      :watch-state @watch-state})
 
-  (validate-service [_ service-id]
-    (let [run-as-user (-> service-id
-                          service-id->service-description-fn
-                          service-description->namespace)]
+  (validate-service [this service-id]
+    (let [run-as-user (get-service-user this service-id)]
       (authz/check-user authorizer run-as-user service-id))))
 
 (defn compute-image
@@ -727,15 +729,20 @@
        :apiVersion replicaset-api-version
        :metadata {:annotations {:waiter/service-id service-id}
                   :labels {:app k8s-name
-                           :waiter-cluster cluster-name}
-                  :name k8s-name}
+                           :waiter-cluster cluster-name
+                           :waiter/user run-as-user}
+                  :name k8s-name
+                  ;; TODO - set namespace via run-in-namespace service parameter
+                  :namespace run-as-user}
        :spec {:replicas min-instances
               :selector {:matchLabels {:app k8s-name
-                                       :waiter-cluster cluster-name}}
+                                       :waiter-cluster cluster-name
+                                       :waiter/user run-as-user}}
               :template {:metadata {:annotations {:waiter/port-count (str ports)
                                                   :waiter/service-id service-id}
                                     :labels {:app k8s-name
-                                             :waiter-cluster cluster-name}}
+                                             :waiter-cluster cluster-name
+                                             :waiter/user run-as-user}}
                          :spec {:containers [{:command (conj (vec container-init-commands) cmd)
                                               :env env
                                               :image (compute-image image default-container-image image-aliases)
