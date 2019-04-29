@@ -69,7 +69,7 @@
     (let [auth-cookie-value (auth-cookie waiter-url)
           ws-response-atom (atom [])
           waiter-headers (assoc (kitchen-request-headers)
-                           "x-waiter-metric-group" "test-ws-support"
+                           "x-waiter-metric-group" "waiter_ws_test"
                            "x-waiter-name" (rand-name))]
       (is auth-cookie-value)
       (try
@@ -103,7 +103,7 @@
     (let [auth-cookie-value (auth-cookie waiter-url)
           ws-response-atom (atom [])
           waiter-headers (assoc (kitchen-request-headers)
-                           "x-waiter-metric-group" "test-ws-support"
+                           "x-waiter-metric-group" "waiter_ws_test"
                            "x-waiter-name" (rand-name))]
       (is auth-cookie-value)
       (try
@@ -139,7 +139,7 @@
     (let [auth-cookie-value (auth-cookie waiter-url)
           ws-response-atom (atom [])
           waiter-headers (assoc (kitchen-request-headers)
-                           "x-waiter-metric-group" "test-ws-support"
+                           "x-waiter-metric-group" "waiter_ws_test"
                            "x-waiter-name" (rand-name))]
       (is auth-cookie-value)
       (try
@@ -172,7 +172,7 @@
           inter-request-interval-ms (+ metrics-sync-interval-ms 1000)
           auth-cookie-value (auth-cookie waiter-url)
           waiter-headers (assoc (kitchen-request-headers)
-                           :x-waiter-metric-group "test-ws-support"
+                           :x-waiter-metric-group "waiter_ws_test"
                            :x-waiter-name (rand-name))
           _ (make-kitchen-request waiter-url waiter-headers :method :get)
           {:keys [headers service-id] :as canary-response}
@@ -224,7 +224,7 @@
     (let [auth-cookie-value (auth-cookie waiter-url)
           send-success-after-timeout-atom (atom true)
           waiter-headers (assoc (kitchen-request-headers)
-                           "x-waiter-metric-group" "test-ws-support"
+                           "x-waiter-metric-group" "waiter_ws_test"
                            "x-waiter-name" (rand-name))]
       (is auth-cookie-value)
       (try
@@ -262,7 +262,7 @@
     (let [auth-cookie-value (auth-cookie waiter-url)
           send-success-after-timeout-atom (atom true)
           waiter-headers (assoc (kitchen-request-headers)
-                           "x-waiter-metric-group" "test-ws-support"
+                           "x-waiter-metric-group" "waiter_ws_test"
                            "x-waiter-name" (rand-name)
                            "x-waiter-max-instances" "1"
                            "x-waiter-concurrency-level" "20")]
@@ -316,7 +316,7 @@
           process-mem 1024
           waiter-headers (-> (kitchen-request-headers)
                              (assoc :x-waiter-mem process-mem
-                                    :x-waiter-metric-group "test-ws-support"
+                                    :x-waiter-metric-group "waiter_ws_test"
                                     :x-waiter-name (rand-name))
                              (update :x-waiter-cmd
                                      (fn [cmd] (str cmd ;; on-the-fly doesn't support x-waiter-env
@@ -366,7 +366,7 @@
     (let [auth-cookie-value (auth-cookie waiter-url)
           uncorrupted-data-streamed-atom (atom false)
           waiter-headers (assoc (kitchen-request-headers)
-                           "x-waiter-metric-group" "test-ws-support"
+                           "x-waiter-metric-group" "waiter_ws_test"
                            "x-waiter-name" (rand-name))]
       (is auth-cookie-value)
       (try
@@ -463,7 +463,7 @@
           iteration-results-atom (atom {})
           concurrency-level 3
           waiter-headers (assoc (kitchen-request-headers)
-                           "x-waiter-metric-group" "test-ws-support"
+                           "x-waiter-metric-group" "waiter_ws_test"
                            "x-waiter-name" (rand-name)
                            "x-waiter-concurrency-level" concurrency-level
                            "x-waiter-scale-up-factor" 0.99

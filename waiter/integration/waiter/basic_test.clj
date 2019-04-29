@@ -198,8 +198,8 @@
               (assert-response-status response 200)
               (is (not (str/starts-with? (str (get headers "server")) "waiter")) (str "headers:" headers))))))
 
-      (testing "metric group should be waiter_kitchen_test"
-        (is (= "waiter_kitchen_test" (service-id->metric-group waiter-url service-id))
+      (testing "metric group should be waiter_test"
+        (is (= "waiter_test" (service-id->metric-group waiter-url service-id))
             (str "Invalid metric group for " service-id)))
 
       (testing "trailers support in"
@@ -229,7 +229,7 @@
                    :health-check-proto "h2"
                    :health-check-url "/status"
                    :mem 512
-                   :metric-group "baz"
+                   :metric-group "waiter_test"
                    :name (rand-name)
                    :ports 2
                    :version "1"}
@@ -910,7 +910,7 @@
                                          (assoc
                                            :concurrency-level 20
                                            :interstitial-secs interstitial-secs
-                                           :metric-group "waiter_kitchen_test"
+                                           :metric-group "waiter_test"
                                            :name token
                                            :permitted-user (retrieve-username)
                                            :run-as-user (retrieve-username)
