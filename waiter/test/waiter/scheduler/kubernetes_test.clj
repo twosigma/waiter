@@ -96,7 +96,7 @@
         (instance? Service x)
         (dissoc x :k8s/app-name :k8s/namespace)
         (instance? ServiceInstance x)
-        (dissoc x :k8s/app-name :k8s/namespace :k8s/pod-name :k8s/restart-count)
+        (dissoc x :k8s/app-name :k8s/namespace :k8s/pod-name :k8s/restart-count :k8s/user)
         :else x))
     walkable-collection))
 
@@ -317,11 +317,10 @@
          :items [{:metadata {:name "test-app-1234"
                              :namespace "myself"
                              :labels {:app "test-app-1234"
-                                      :waiter-cluster "waiter"}
+                                      :waiter-cluster "waiter"
+                                      :waiter/user "myself"}
                              :annotations {:waiter/service-id "test-app-1234"}}
-                  :spec {:replicas 2
-                         :selector {:matchLabels {:app "test-app-1234"
-                                                  :waiter-cluster "waiter"}}}
+                  :spec {:replicas 2}
                   :status {:replicas 2
                            :readyReplicas 2
                            :availableReplicas 2}}
@@ -330,9 +329,7 @@
                              :labels {:app "test-app-6789"
                                       :waiter-cluster "waiter"}
                              :annotations {:waiter/service-id "test-app-6789"}}
-                  :spec {:replicas 3
-                         :selector {:matchLabels {:app "test-app-6789"
-                                                  :waiter-cluster "waiter"}}}
+                  :spec {:replicas 3}
                   :status {:replicas 3
                            :readyReplicas 1
                            :availableReplicas 2
@@ -344,7 +341,8 @@
          :items [{:metadata {:name "test-app-1234-abcd1"
                              :namespace "myself"
                              :labels {:app "test-app-1234"
-                                      :waiter-cluster "waiter"}
+                                      :waiter-cluster "waiter"
+                                      :waiter/user "myself"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
@@ -356,7 +354,8 @@
                  {:metadata {:name "test-app-1234-abcd2"
                              :namespace "myself"
                              :labels {:app "test-app-1234"
-                                      :waiter-cluster "waiter"}
+                                      :waiter-cluster "waiter"
+                                      :waiter/user "myself"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
@@ -368,7 +367,8 @@
                  {:metadata {:name "test-app-6789-abcd1"
                              :namespace "myself"
                              :labels {:app "test-app-6789"
-                                      :waiter-cluster "waiter"}
+                                      :waiter-cluster "waiter"
+                                      :waiter/user "myself"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-6789"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
@@ -380,7 +380,8 @@
                  {:metadata {:name "test-app-6789-abcd2"
                              :namespace "myself"
                              :labels {:app "test-app-6789"
-                                      :waiter-cluster "waiter"}
+                                      :waiter-cluster "waiter"
+                                      :waiter/user "myself"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-6789"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
@@ -394,7 +395,8 @@
                  {:metadata {:name "test-app-6789-abcd3"
                              :namespace "myself"
                              :labels {:app "test-app-6789"
-                                      :waiter-cluster "waiter"}
+                                      :waiter-cluster "waiter"
+                                      :waiter/user "myself"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-6789"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
