@@ -238,5 +238,10 @@ def kill_services_using_token(waiter_url, token_name):
             logging.exception(f'Encountered exception trying to kill service: {service}')
 
 
+def wait_until_services_for_token(waiter_url, token_name, expected_num_services):
+    wait_until(lambda: services_for_token(waiter_url, token_name, log_services=True),
+               lambda svcs: len(svcs) == expected_num_services)
+
+
 def wait_until_no_services_for_token(waiter_url, token_name):
-    wait_until(lambda: services_for_token(waiter_url, token_name, log_services=True), lambda svcs: len(svcs) == 0)
+    wait_until_services_for_token(waiter_url, token_name, 0)
