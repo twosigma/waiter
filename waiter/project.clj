@@ -93,9 +93,6 @@
                  [org.clojure/tools.logging "0.4.1"]
                  [org.clojure/tools.namespace "0.2.11"]
                  [org.clojure/tools.reader "1.3.2"]
-                 ;; use maven to download this jar so we can set up the boot classpath
-                 [org.mortbay.jetty.alpn/alpn-boot "8.1.13.v20181017"
-                  :scope "provided"]
                  [org.opensaml/opensaml "2.6.4"
                   :exclusions [commons-codec]]
                  [org.slf4j/slf4j-log4j12 "1.7.25"
@@ -131,10 +128,7 @@
              "-Dclojure.core.async.pool-size=64"
              ~(str "-Dwaiter.logFilePrefix=" (System/getenv "WAITER_LOG_FILE_PREFIX"))
              "-XX:+UseG1GC"
-             "-XX:MaxGCPauseMillis=50"
-             ~(str "-Xbootclasspath/p:"
-                (or (System/getenv "WAITER_MAVEN_LOCAL_REPO") (str (System/getenv "HOME") "/.m2/repository"))
-                "/org/mortbay/jetty/alpn/alpn-boot/8.1.13.v20181017/alpn-boot-8.1.13.v20181017.jar")]
+             "-XX:MaxGCPauseMillis=50"]
   :filespecs [{:type :fn
                :fn (fn [p]
                      {:type :bytes :path "git-log"
