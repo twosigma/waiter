@@ -900,6 +900,22 @@
                           :health-check-url "/not-used"}
             response (post-token waiter-url service-desc)]
         (is (str/includes? (:body response) "Token must match pattern"))
+        (assert-response-status response 400)))
+
+    (testing "can't create token with bad namespace"
+      (let [service-desc {:name (rand-name "notused")
+                          :cpus 1
+                          :debug true
+                          :mem 1024
+                          :version "universe b10452d0b0380ce61764543847085631ee3d7af9"
+                          :token "token-with-bad-namespace"
+                          :cmd "not-used"
+                          :permitted-user "*"
+                          :namespace "not-run-as-user"
+                          :run-as-user (retrieve-username)
+                          :health-check-url "/not-used"}
+            response (post-token waiter-url service-desc)]
+        (is (str/includes? (:body response) "Service namespace must either be omitted or match the run-as-user"))
         (assert-response-status response 400)))))
 
 (deftest ^:parallel ^:integration-fast test-token-metadata
