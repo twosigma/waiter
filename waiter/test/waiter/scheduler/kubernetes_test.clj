@@ -140,14 +140,7 @@
                                               {:service-id->service-description-fn (constantly service-description)})
               replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description)]
           (is (nil? (scheduler/validate-service scheduler service-id)))
-          (is (= target-namespace (get-in replicaset-spec [:metadata :namespace])))))
-      (testing "Invalid custom namespace"
-        (let [target-namespace "not-the-run-as-user"
-              service-description (assoc dummy-service-description "namespace" target-namespace)
-              scheduler (make-dummy-scheduler [service-id]
-                                              {:service-id->service-description-fn (constantly service-description)})]
-          (is (thrown? Exception #"Service namespace must either be omitted or match the run-as-user"
-                       (scheduler/validate-service scheduler service-id))))))))
+          (is (= target-namespace (get-in replicaset-spec [:metadata :namespace]))))))))
 
 (deftest replicaset-spec-no-image
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]

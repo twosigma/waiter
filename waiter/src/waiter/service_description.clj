@@ -499,6 +499,14 @@
         (sling/throw+ {:type :service-description-error
                        :friendly-error-message (str "The health check port index (" health-check-port-index ") "
                                                     "must be smaller than ports (" ports ")")
+                       :status 400})))
+
+    ;; currently, if manually specified, the namespace *must* match the run-as-user
+    ;; (but we expect the common case to be falling back to the default)
+    (let [{:strs [namespace run-as-user]} service-description-to-use]
+      (when (and (some? namespace) (not= namespace run-as-user))
+        (sling/throw+ {:type :service-description-error
+                       :friendly-error-message "Service namespace must either be omitted or match the run-as-user."
                        :status 400})))))
 
 (defprotocol ServiceDescriptionBuilder

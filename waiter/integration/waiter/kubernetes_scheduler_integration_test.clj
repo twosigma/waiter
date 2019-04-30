@@ -161,38 +161,33 @@
                 (assert-response-status (make-request-fn file-link) 200)
                 (log/warn "test-basic-logs did not verify file link:" stdout-file-link)))))))))
 
+(defn- check-pod-namespace
+  [waiter-url namespace-arg expected-namespace]
+  (let [cookies (all-cookies waiter-url)
+        router-url (-> waiter-url routers first val)
+        testing-suffix (if namespace-arg "custom" "default")
+        {:keys [service-id]} (make-request-with-debug-info
+                               (cond-> {:x-waiter-name (str (rand-name) "-" testing-suffix)}
+                                 namespace-arg
+                                 (assoc :x-waiter-namespace namespace-arg))
+                               #(make-kitchen-request waiter-url % :path "/hello"))]
+    (with-service-cleanup
+      service-id
+      (let [{:keys [body] :as response} (make-request router-url "/state/scheduler" :method :get :cookies cookies)
+            _ (assert-response-status response 200)
+            body-json (-> body str try-parse-json)
+            watch-state-json (get-watch-state body-json)
+            pod-spec (-> watch-state-json (get-in ["service-id->pod-id->pod" service-id]) first val)
+            pod-namespace (get-in pod-spec ["metadata" "namespace"])]
+        (is (some? pod-spec))
+        (is (= expected-namespace pod-namespace))))))
+
 (deftest ^:parallel ^:integration-fast test-pod-namespace
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
       (let [current-user (retrieve-username)
-            cookies (all-cookies waiter-url)
-            router-url (-> waiter-url routers first val)]
+            default-namespace (-> waiter-url default-scheduler-settings :replicaset-spec-builder :default-namespace)]
         (testing "Default namespace"
-          (let [{:keys [service-id]} (make-request-with-debug-info
-                                       {:x-waiter-name (rand-name)}
-                                       #(make-kitchen-request waiter-url % :path "/hello"))]
-            (with-service-cleanup
-              service-id
-              (let [{:keys [body] :as response} (make-request router-url "/state/scheduler" :method :get :cookies cookies)
-                    _ (assert-response-status response 200)
-                    body-json (-> body str try-parse-json)
-                    watch-state-json (get-watch-state body-json)
-                    pod-spec (-> watch-state-json (get-in ["service-id->pod-id->pod" service-id]) first val)
-                    pod-namespace (get-in pod-spec ["metadata" "namespace"])]
-                (is (some? pod-spec))
-                (is (not= current-user pod-namespace))))))
+          (check-pod-namespace waiter-url nil default-namespace))
         (testing "Custom namespace"
-          (let [{:keys [service-id]} (make-request-with-debug-info
-                                       {:x-waiter-name (rand-name)
-                                        :x-waiter-namespace current-user}
-                                       #(make-kitchen-request waiter-url % :path "/hello"))]
-            (with-service-cleanup
-              service-id
-              (let [{:keys [body] :as response} (make-request router-url "/state/scheduler" :method :get :cookies cookies)
-                    _ (assert-response-status response 200)
-                    body-json (-> body str try-parse-json)
-                    watch-state-json (get-watch-state body-json)
-                    pod-spec (-> watch-state-json (get-in ["service-id->pod-id->pod" service-id]) first val)
-                    pod-namespace (get-in pod-spec ["metadata" "namespace"])]
-                (is (some? pod-spec))
-                (is (= current-user pod-namespace))))))))))
+          (check-pod-namespace waiter-url current-user current-user))))))

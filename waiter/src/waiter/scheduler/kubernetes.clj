@@ -671,13 +671,7 @@
 
   (validate-service [this service-id]
     (let [{:strs [namespace run-as-user]} (retrieve-service-description this service-id)]
-      (authz/check-user authorizer run-as-user service-id)
-      ;; currently, if manually specified, the namespace *must* match the run-as-user
-      ;; (but we expect the common case to be falling back to the default)
-      (when (and (some? namespace)
-                 (not= namespace run-as-user))
-        (throw (ex-info "Service namespace must either be omitted or match the run-as-user."
-                        {:namespace namespace :run-as-user run-as-user :status 403}))))))
+      (authz/check-user authorizer run-as-user service-id))))
 
 (defn compute-image
   "Compute the image to use for the service"
@@ -739,7 +733,7 @@
                            :waiter-cluster cluster-name
                            :waiter/user run-as-user}
                   :name k8s-name
-                  :namespace (or namespace default-namespace run-as-user)}
+                  :namespace (or namespace default-namespace)}
        :spec {:replicas min-instances
               :selector {:matchLabels {:app k8s-name
                                        :waiter-cluster cluster-name
