@@ -166,11 +166,17 @@
   (let [cookies (all-cookies waiter-url)
         router-url (-> waiter-url routers first val)
         testing-suffix (if namespace-arg "custom" "default")
-        {:keys [service-id]} (make-request-with-debug-info
-                               (cond-> {:x-waiter-name (str (rand-name) "-" testing-suffix)}
-                                 namespace-arg
-                                 (assoc :x-waiter-namespace namespace-arg))
-                               #(make-kitchen-request waiter-url % :path "/hello"))]
+        {:keys [body error service-id status]}
+        (make-request-with-debug-info
+          (cond-> {:x-waiter-name (str (rand-name) "-" testing-suffix)}
+            namespace-arg
+            (assoc :x-waiter-namespace namespace-arg))
+          #(make-kitchen-request waiter-url % :path "/hello"))]
+    (when-not (= 200 status)
+      (throw (ex-info "Failed to create service"
+                      {:response-body body
+                       :response-status status}
+                      error)))
     (with-service-cleanup
       service-id
       (let [{:keys [body] :as response} (make-request router-url "/state/scheduler" :method :get :cookies cookies)
@@ -190,4 +196,7 @@
         (testing "Default namespace"
           (check-pod-namespace waiter-url nil default-namespace))
         (testing "Custom namespace"
-          (check-pod-namespace waiter-url current-user current-user))))))
+          (check-pod-namespace waiter-url current-user current-user))
+        (testing "Invalid namespace"
+          (is (thrown? Exception #"Service namespace must either be omitted or match the run-as-user"
+                       (check-pod-namespace waiter-url "not-current-user" current-user))))))))
