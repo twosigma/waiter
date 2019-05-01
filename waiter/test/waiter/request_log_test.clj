@@ -56,7 +56,8 @@
                                                      "version" "service-version"}}
                   :get-instance-latency-ns 500
                   :handle-request-latency-ns 2000
-                  :headers {"server" "foo-bar"}
+                  :headers {"content-type" "application/xml"
+                            "server" "foo-bar"}
                   :instance {:host "instance-host"
                              :id "instance-id"
                              :port 123}
@@ -73,6 +74,7 @@
             :latest-service-id "latest-service-id"
             :metric-group "service-metric-group"
             :principal "principal@DOMAIN.COM"
+            :response-content-type "application/xml"
             :server "foo-bar"
             :service-id "service-id"
             :service-name "service-name"
@@ -85,8 +87,9 @@
     (with-redefs [log (fn [log-data]
                         (swap! log-entries conj log-data))]
       (let [handler (wrap-log (fn [_] {:status 200}))
-            request {:headers {"x-cid" "123"
-                               "host" "host"}
+            request {:headers {"content-type" "text/plain"
+                               "host" "host"
+                               "x-cid" "123"}
                      :remote-addr "127.0.0.1"
                      :request-id "abc"
                      :scheme :http
@@ -99,6 +102,7 @@
                 :host "host"
                 :path "/path"
                 :remote-addr "127.0.0.1"
+                :request-content-type "text/plain"
                 :request-id "abc"
                 :scheme "http"
                 :status 200}

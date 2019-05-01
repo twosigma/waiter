@@ -30,7 +30,7 @@
 (defn request->context
   "Convert a request into a context suitable for logging."
   [{:keys [client-protocol headers internal-protocol query-string remote-addr request-id request-method request-time uri] :as request}]
-  (let [{:strs [host origin user-agent x-cid x-forwarded-for]} headers]
+  (let [{:strs [content-type host origin user-agent x-cid x-forwarded-for]} headers]
     (cond-> {:cid x-cid
              :host host
              :path uri
@@ -42,6 +42,7 @@
       client-protocol (assoc :client-protocol client-protocol)
       internal-protocol (assoc :internal-protocol internal-protocol)
       query-string (assoc :query-string query-string)
+      content-type (assoc :request-content-type content-type)
       request-time (assoc :request-time (du/date-to-str request-time))
       user-agent (assoc :user-agent user-agent))))
 
@@ -50,9 +51,10 @@
   [{:keys [authorization/principal backend-response-latency-ns descriptor latest-service-id get-instance-latency-ns
            handle-request-latency-ns headers instance protocol status] :as response}]
   (let [{:keys [service-id service-description]} descriptor
-        server (get headers "server")]
+        {:strs [content-type server]} headers]
     (cond-> {:status (or status 200)}
       backend-response-latency-ns (assoc :backend-response-latency-ns backend-response-latency-ns)
+      content-type (assoc :response-content-type content-type)
       descriptor (assoc :metric-group (get service-description "metric-group")
                         :service-id service-id
                         :service-name (get service-description "name")
