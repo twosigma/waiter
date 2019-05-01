@@ -689,6 +689,10 @@
     :as service-description}
    {:keys [container-init-commands default-container-image default-namespace log-bucket-url image-aliases]
     :as context}]
+  (when-not (or image default-container-image)
+    (throw (ex-info "Waiter configuration is missing a default image for Kubernetes pods" {})))
+  (when-not (or namespace default-namespace)
+    (throw (ex-info "Waiter configuration is missing a default namespace for Kubernetes pods" {})))
   (let [work-path (str "/home/" run-as-user)
         home-path (str work-path "/latest")
         base-env (scheduler/environment service-id service-description
