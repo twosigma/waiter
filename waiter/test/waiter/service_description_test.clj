@@ -2065,7 +2065,24 @@
                                                  "mem is 40960 but the max allowed is 32768")
                     :status 400
                     :type :service-description-error}
-                   (select-keys (ex-data ex) [:friendly-error-message :status :type])))))))))
+                   (select-keys (ex-data ex) [:friendly-error-message :status :type])))))))
+
+    (testing "validate-service-description-namespace-default"
+      (is (nil? (validate builder basic-service-description validation-settings))))
+
+    (testing "validate-service-description-namespace-custom"
+      (is (nil? (validate builder
+                          (assoc basic-service-description
+                                 "namespace" "some-user"
+                                 "run-as-user" "some-user")
+                          validation-settings))))
+
+    (testing "validate-service-description-namespace-invalid"
+      (is (thrown? Exception #"Service namespace must either be omitted or match the run-as-user"
+                   (validate builder
+                             (assoc basic-service-description
+                                    "namespace" "not-the-current-user")
+                             validation-settings))))))
 
 (deftest test-retrieve-most-recently-modified-token
   (testing "all tokens have last-update-time"

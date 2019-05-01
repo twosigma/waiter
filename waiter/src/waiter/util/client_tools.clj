@@ -893,6 +893,15 @@
         app-info-map (walk/keywordize-keys (try-parse-json (:body app-info-response)))]
     (:gracePeriodSeconds (first (:healthChecks (:app app-info-map))))))
 
+(defn default-scheduler-settings
+  "Return the default 'leaf-level' scheduler's settings map"
+  [waiter-url]
+  (let [{:keys [kind] :as top-settings} (-> waiter-url waiter-settings :scheduler-config)
+        settings (get top-settings (keyword kind))]
+    (if-let [default-sub-scheduler (:default-scheduler settings)]
+      (get-in settings [:components (keyword default-sub-scheduler)])
+      settings)))
+
 (defn retrieve-default-scheduler-name
   "Return the name of the default 'leaf-level' scheduler"
   [waiter-url]

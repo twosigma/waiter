@@ -41,6 +41,7 @@
                                  :log-bucket-url #config/env-default ["WAITER_S3_BUCKET" nil]
                                  :pod-sigkill-delay-secs 1
                                  :replicaset-spec-builder {:default-container-image "twosigma/waiter-test-apps"
+                                                           :default-namespace "waiter"
                                                            :image-aliases {"alias/integration" "twosigma/integration"}}
                                  :url "http://localhost:8001"}}
 

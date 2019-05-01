@@ -590,7 +590,8 @@
           descriptor-builder-ctx {:container-init-commands ["waiter-mesos-init"]}]
       (testing "basic-test-with-defaults"
         (let [expected {:id "test-service-1"
-                        :labels {:source "waiter"
+                        :labels {:namespace "test-user"
+                                 :source "waiter"
                                  :user "test-user"}
                         :env {"BAZ" "quux"
                               "FOO" "bar"
@@ -625,6 +626,7 @@
                                    "concurrency-level" 1
                                    "cpus" 1
                                    "mem" 1536
+                                   "namespace" "test-user"
                                    "run-as-user" "test-user"
                                    "ports" 2
                                    "restart-backoff-factor" 2

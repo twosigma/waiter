@@ -831,6 +831,56 @@
             (is (= #{(make-source-tokens-entries waiter-url token)}
                    (service-id->source-tokens-entries waiter-url service-id-2)))))))))
 
+(deftest ^:parallel ^:integration-fast test-namespace-token
+  (testing-using-waiter-url
+    (log/info "basic token with namespace field test")
+    (let [service-id-prefix (rand-name)
+          target-user (retrieve-username)
+          token (create-token-name waiter-url service-id-prefix)]
+      (try
+        (log/info "creating configuration using token" token)
+        (let [token-definition (assoc
+                                 (kitchen-request-headers :prefix "")
+                                 :name service-id-prefix
+                                 :namespace target-user
+                                 :run-as-user target-user
+                                 :token token)
+              {:keys [body status]} (post-token waiter-url token-definition)]
+          (when (not= 200 status)
+            (log/info "error:" body)
+            (is (not body))))
+        (log/info "created configuration using token" token)
+        (log/info "retrieving configuration for token" token)
+        (let [token-response (get-token waiter-url token)
+              response-body (str (:body token-response))]
+          (when (not (str/includes? response-body service-id-prefix))
+            (log/info response-body))
+          (assert-response-status token-response 200)
+          (is (str/includes? response-body service-id-prefix))
+          (let [{:strs [namespace run-as-user] :as token-json} (try-parse-json response-body)]
+            (is (= target-user run-as-user))
+            (is (= target-user namespace))))
+        (log/info "asserted retrieval of configuration for token" token)
+        (finally
+          (delete-token-and-assert waiter-url token))))
+
+    (testing "can't create token with bad namespace"
+      (let [service-desc {:name (rand-name "notused")
+                          :cpus 1
+                          :debug true
+                          :mem 1024
+                          :version "universe b10452d0b0380ce61764543847085631ee3d7af9"
+                          :token "token-with-bad-namespace"
+                          :cmd "not-used"
+                          :permitted-user "*"
+                          :namespace "not-run-as-user"
+                          :run-as-user (retrieve-username)
+                          :health-check-url "/not-used"}
+            response (post-token waiter-url service-desc)]
+        (is (str/includes? (:body response) "Service namespace must either be omitted or match the run-as-user"))
+        (assert-response-status response 400)))))
+
+
 (deftest ^:parallel ^:integration-fast test-bad-token
   (testing-using-waiter-url
 

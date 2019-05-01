@@ -27,8 +27,9 @@
             [waiter.scheduler :as scheduler]
             [waiter.scheduler.kubernetes :refer :all]
             [waiter.util.client-tools :as ct]
+            [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
-            [waiter.util.date-utils :as du])
+            [waiter.util.utils :as utils])
   (:import (waiter.scheduler Service ServiceInstance)
            (waiter.scheduler.kubernetes KubernetesScheduler)))
 
@@ -41,6 +42,8 @@
        (.setStackTrace (make-array StackTraceElement 0)))))
 
 (def ^:const default-pod-suffix-length 5)
+
+(def dummy-scheduler-default-namespace "waiter")
 
 (defn- make-dummy-scheduler
   ([service-ids] (make-dummy-scheduler service-ids {}))
@@ -63,6 +66,7 @@
       :replicaset-spec-builder-fn #(waiter.scheduler.kubernetes/default-replicaset-builder
                                      %1 %2 %3
                                      {:container-init-commands ["waiter-k8s-init"]
+                                      :default-namespace dummy-scheduler-default-namespace
                                       :default-container-image "twosigma/waiter-test-apps:latest"})
       :service-id->failed-instances-transient-store (atom {})
       :service-id->password-fn #(str "password-" %)
@@ -72,6 +76,7 @@
       :scheduler-name "dummy-scheduler"
       :watch-state (atom nil)}
      (merge args)
+     (update-in [:authorizer] utils/create-component)
      map->KubernetesScheduler)))
 
 (def dummy-service-description
@@ -118,6 +123,24 @@
       (is (= {:waiter/port-count "3"
               :waiter/service-id "test-service-id"}
              (get-in replicaset-spec [:spec :template :metadata :annotations]))))))
+
+(deftest replicaset-spec-namespace
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
+    (let [service-id "test-service-id"]
+      (testing "Default namespace"
+        (let [scheduler (make-dummy-scheduler [service-id]
+                                              {:service-id->service-description-fn (constantly dummy-service-description)})
+              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id dummy-service-description)]
+          (is (nil? (scheduler/validate-service scheduler service-id)))
+          (is (= dummy-scheduler-default-namespace (get-in replicaset-spec [:metadata :namespace])))))
+      (testing "Valid custom namespace"
+        (let [target-namespace "myself"
+              service-description (assoc dummy-service-description "namespace" target-namespace)
+              scheduler (make-dummy-scheduler [service-id]
+                                              {:service-id->service-description-fn (constantly service-description)})
+              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description)]
+          (is (nil? (scheduler/validate-service scheduler service-id)))
+          (is (= target-namespace (get-in replicaset-spec [:metadata :namespace]))))))))
 
 (deftest replicaset-spec-no-image
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]

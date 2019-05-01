@@ -160,3 +160,43 @@
               (if (string/starts-with? (str file-link) "http")
                 (assert-response-status (make-request-fn file-link) 200)
                 (log/warn "test-basic-logs did not verify file link:" stdout-file-link)))))))))
+
+(defn- check-pod-namespace
+  [waiter-url namespace-arg expected-namespace]
+  (let [cookies (all-cookies waiter-url)
+        router-url (-> waiter-url routers first val)
+        testing-suffix (if namespace-arg "custom" "default")
+        {:keys [body error service-id status]}
+        (make-request-with-debug-info
+          (cond-> {:x-waiter-name (str (rand-name) "-" testing-suffix)}
+            namespace-arg
+            (assoc :x-waiter-namespace namespace-arg))
+          #(make-kitchen-request waiter-url % :path "/hello"))]
+    (when-not (= 200 status)
+      (throw (ex-info "Failed to create service"
+                      {:response-body body
+                       :response-status status}
+                      error)))
+    (with-service-cleanup
+      service-id
+      (let [{:keys [body] :as response} (make-request router-url "/state/scheduler" :method :get :cookies cookies)
+            _ (assert-response-status response 200)
+            body-json (-> body str try-parse-json)
+            watch-state-json (get-watch-state body-json)
+            pod-spec (-> watch-state-json (get-in ["service-id->pod-id->pod" service-id]) first val)
+            pod-namespace (get-in pod-spec ["metadata" "namespace"])]
+        (is (some? pod-spec))
+        (is (= expected-namespace pod-namespace))))))
+
+(deftest ^:parallel ^:integration-fast test-pod-namespace
+  (testing-using-waiter-url
+    (when (using-k8s? waiter-url)
+      (let [current-user (retrieve-username)
+            default-namespace (-> waiter-url default-scheduler-settings :replicaset-spec-builder :default-namespace)]
+        (testing "Default namespace"
+          (check-pod-namespace waiter-url nil default-namespace))
+        (testing "Custom namespace"
+          (check-pod-namespace waiter-url current-user current-user))
+        (testing "Invalid namespace"
+          (is (thrown? Exception #"Service namespace must either be omitted or match the run-as-user"
+                       (check-pod-namespace waiter-url "not-current-user" current-user))))))))
