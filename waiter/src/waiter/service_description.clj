@@ -600,6 +600,8 @@
   [kv-store ^String token allowed-keys error-on-missing include-deleted]
   (let [{:strs [deleted run-as-user] :as token-data}
         (when token
+          (when error-on-missing
+            (validate-token token))
           (try
             (kv/fetch kv-store token)
             (catch Exception e
@@ -607,7 +609,6 @@
                 (do
                   ; Check whether the exception is because the token is invalid
                   (log/info e "Error in kv-store fetch")
-                  (validate-token token)
                   ; Token was valid, re-throw exception
                   (throw e))
                 (log/info e "Ignoring kv-store fetch exception")))))
