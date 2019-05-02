@@ -558,16 +558,16 @@
    (when-not (str/blank? service-id)
      (try
        ((utils/retry-strategy {:delay-multiplier 1.2, :inital-delay-ms 250, :max-retries limit})
-        (fn []
-          (let [app-delete-path (str "/apps/" service-id "?force=true")
-                delete-response (make-request waiter-url app-delete-path :method :delete)
-                delete-json (try-parse-json (:body delete-response))
-                delete-success (true? (get delete-json "success"))
-                no-such-service (= "no-such-service-exists" (get delete-json "result"))]
-            (log/debug "Delete response for" service-id ":" delete-json)
-            (when (and (not delete-success) (not no-such-service))
-              (log/warn "Unable to delete" service-id)
-              (throw (Exception. (str "Unable to delete" service-id)))))))
+         (fn []
+           (let [app-delete-path (str "/apps/" service-id "?force=true")
+                 delete-response (make-request waiter-url app-delete-path :method :delete)
+                 delete-json (try-parse-json (:body delete-response))
+                 delete-success (true? (get delete-json "success"))
+                 no-such-service (= "no-such-service-exists" (get delete-json "result"))]
+             (log/debug "Delete response for" service-id ":" delete-json)
+             (when (and (not delete-success) (not no-such-service))
+               (log/warn "Unable to delete" service-id)
+               (throw (Exception. (str "Unable to delete" service-id)))))))
        (catch Exception _
          (try
            (scale-service-to waiter-url service-id 0)

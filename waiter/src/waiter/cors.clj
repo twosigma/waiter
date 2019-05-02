@@ -72,8 +72,8 @@
             {:strs [origin]} headers
             bless #(if (and origin (request-allowed? cors-validator request))
                      (cond-> (update-in % [:headers] assoc
-                                          "Access-Control-Allow-Origin" origin
-                                          "Access-Control-Allow-Credentials" "true")
+                                        "Access-Control-Allow-Origin" origin
+                                        "Access-Control-Allow-Credentials" "true")
                        (and exposed-headers-str ;; exposed headers are configured
                             (not (utils/same-origin request)) ;; CORS request
                             (waiter-request? request)) ;; request made to a waiter router

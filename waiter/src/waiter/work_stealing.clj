@@ -143,65 +143,65 @@
                        (async/alt!
                          exit-chan
                          ([data]
-                          (log/info label "exit channel received" data)
-                          (when (not= :exit data)
-                            current-state))
+                           (log/info label "exit channel received" data)
+                           (when (not= :exit data)
+                             current-state))
 
                          cleanup-chan
                          ([data]
-                          (let [{:keys [request-id status]} data]
-                            (if-let [{:keys [target-router-id] :as work-stealer} (get request-id->work-stealer request-id)]
-                              (do
-                                (log/info label "releasing instance reserved for request" request-id)
-                                (release-instance-fn (assoc work-stealer :status status))
-                                (counters/inc! (metrics/service-counter service-id "work-stealing" "sent-to" target-router-id "releases"))
-                                (counters/dec! (metrics/service-counter service-id "work-stealing" "sent-to" "in-flight"))
-                                (assoc current-state :request-id->work-stealer (dissoc request-id->work-stealer request-id)))
-                              current-state)))
+                           (let [{:keys [request-id status]} data]
+                             (if-let [{:keys [target-router-id] :as work-stealer} (get request-id->work-stealer request-id)]
+                               (do
+                                 (log/info label "releasing instance reserved for request" request-id)
+                                 (release-instance-fn (assoc work-stealer :status status))
+                                 (counters/inc! (metrics/service-counter service-id "work-stealing" "sent-to" target-router-id "releases"))
+                                 (counters/dec! (metrics/service-counter service-id "work-stealing" "sent-to" "in-flight"))
+                                 (assoc current-state :request-id->work-stealer (dissoc request-id->work-stealer request-id)))
+                               current-state)))
 
                          timeout-chan
                          ([_]
-                          (let [router-id->metrics (service-id->router-id->metrics service-id)
-                                _ (log/trace label "received metrics from" (count router-id->metrics) "routers")
-                                offerable-slots (-> (router-id->metrics router-id)
-                                                    compute-help-required
-                                                    unchecked-negate)
-                                router-id->help-required (-> router-id->metrics
-                                                             (dissoc router-id)
-                                                             (router-id->metrics->router-id->help-required))]
-                            (log/trace label "can make up to" offerable-slots "work-stealing offers this iteration")
-                            (-> (if (and (pos? offerable-slots)
-                                         (seq router-id->help-required))
-                                  (async/<!
-                                    (make-work-stealing-offers
-                                      label offer-help-fn reserve-instance-fn current-state offerable-slots
-                                      router-id->help-required cleanup-chan router-id service-id))
-                                  (do
-                                    (log/debug label "no work-stealing offers this iteration"
-                                               {:metrics (router-id->metrics router-id)
-                                                :slots {:offerable offerable-slots
-                                                        :offered (count request-id->work-stealer)}})
-                                    current-state))
-                                (assoc :timeout-chan (timeout-chan-factory)))))
+                           (let [router-id->metrics (service-id->router-id->metrics service-id)
+                                 _ (log/trace label "received metrics from" (count router-id->metrics) "routers")
+                                 offerable-slots (-> (router-id->metrics router-id)
+                                                     compute-help-required
+                                                     unchecked-negate)
+                                 router-id->help-required (-> router-id->metrics
+                                                              (dissoc router-id)
+                                                              (router-id->metrics->router-id->help-required))]
+                             (log/trace label "can make up to" offerable-slots "work-stealing offers this iteration")
+                             (-> (if (and (pos? offerable-slots)
+                                          (seq router-id->help-required))
+                                   (async/<!
+                                     (make-work-stealing-offers
+                                       label offer-help-fn reserve-instance-fn current-state offerable-slots
+                                       router-id->help-required cleanup-chan router-id service-id))
+                                   (do
+                                     (log/debug label "no work-stealing offers this iteration"
+                                                {:metrics (router-id->metrics router-id)
+                                                 :slots {:offerable offerable-slots
+                                                         :offered (count request-id->work-stealer)}})
+                                     current-state))
+                                 (assoc :timeout-chan (timeout-chan-factory)))))
 
                          query-chan
                          ([data]
-                          (let [{:keys [response-chan]} data
-                                router-id->metrics (service-id->router-id->metrics service-id)
-                                offerable-slots (-> (router-id->metrics router-id)
-                                                    compute-help-required
-                                                    unchecked-negate)
-                                router-id->help-required (-> router-id->metrics
-                                                             (dissoc router-id)
-                                                             (router-id->metrics->router-id->help-required))]
-                            (log/info label "state has been queried")
-                            (async/put! response-chan (-> current-state
-                                                          (dissoc :timeout-chan)
-                                                          (assoc :router-id->help-required router-id->help-required
-                                                                 :router-id->metrics router-id->metrics
-                                                                 :slots {:offerable offerable-slots
-                                                                         :offered (count request-id->work-stealer)})))
-                            current-state))
+                           (let [{:keys [response-chan]} data
+                                 router-id->metrics (service-id->router-id->metrics service-id)
+                                 offerable-slots (-> (router-id->metrics router-id)
+                                                     compute-help-required
+                                                     unchecked-negate)
+                                 router-id->help-required (-> router-id->metrics
+                                                              (dissoc router-id)
+                                                              (router-id->metrics->router-id->help-required))]
+                             (log/info label "state has been queried")
+                             (async/put! response-chan (-> current-state
+                                                           (dissoc :timeout-chan)
+                                                           (assoc :router-id->help-required router-id->help-required
+                                                                  :router-id->metrics router-id->metrics
+                                                                  :slots {:offerable offerable-slots
+                                                                          :offered (count request-id->work-stealer)})))
+                             current-state))
 
                          :priority true)]
               (recur (assoc new-state :iteration (inc iteration))))))

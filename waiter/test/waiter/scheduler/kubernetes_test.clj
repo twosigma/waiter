@@ -129,7 +129,7 @@
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
     (let [scheduler (make-dummy-scheduler ["test-service-id"])
           replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id"
-                           (assoc dummy-service-description "image" "custom/image"))]
+                            (assoc dummy-service-description "image" "custom/image"))]
       (is (= "custom/image" (get-in replicaset-spec [:spec :template :spec :containers 0 :image]))))))
 
 (deftest test-service-id->k8s-app-name
