@@ -771,12 +771,10 @@
   (->> service-ids
        (filter
          (fn [service-id]
-           (if (or (fetch-core kv-store service-id :refresh false)
-                   (do
-                     (log/info "refreshing the service description for" service-id)
-                     (fetch-core kv-store service-id :refresh true)))
-             true
-             (log/warn "filtering" service-id "as no matching service description was found"))))
+           (or (fetch-core kv-store service-id :refresh false)
+               (log/info "refreshing the service description for" service-id)
+               (fetch-core kv-store service-id :refresh true)
+               (log/warn "filtering" service-id "as no matching service description was found"))))
        set))
 
 (let [service-id->key #(str "^STATUS#" %)]
