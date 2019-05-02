@@ -42,7 +42,7 @@
   (fn wrap-cors-preflight-fn [request]
     (if (preflight-request? request)
       (do
-        (counters/inc!  (metrics/waiter-counter "requests" "cors-preflight"))
+        (counters/inc! (metrics/waiter-counter "requests" "cors-preflight"))
         (let [{:keys [headers request-method]} request
               {:strs [origin]} headers]
           (when-not origin

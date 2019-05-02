@@ -72,7 +72,7 @@
   ([filter-regex ^PrintStream output]
    (let [state-atom (atom {:run-state :created})
          console-reporter (-> (cond-> (ConsoleReporter/forRegistry mc/default-registry)
-                                      output (.outputTo output))
+                                output (.outputTo output))
                               (.filter (filter-regex->metric-filter filter-regex))
                               (.convertRatesTo TimeUnit/SECONDS)
                               (.convertDurationsTo TimeUnit/SECONDS)

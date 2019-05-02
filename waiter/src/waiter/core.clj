@@ -233,16 +233,16 @@
                             (update response :headers
                                     (fn [headers]
                                       (cond-> headers
-                                              request-time (assoc "x-waiter-request-date" request-date)
-                                              request-id (assoc "x-waiter-request-id" request-id)
-                                              router-id (assoc "x-waiter-router-id" router-id)
-                                              descriptor (assoc "x-waiter-service-id" (:service-id descriptor))
-                                              instance (assoc "x-waiter-backend-id" (:id instance)
-                                                              "x-waiter-backend-host" (:host instance)
-                                                              "x-waiter-backend-port" (str (:port instance))
-                                                              "x-waiter-backend-proto" backend-proto)
-                                              backend-directory (assoc "x-waiter-backend-directory" backend-directory
-                                                                       "x-waiter-backend-log-url" backend-log-url))))))]
+                                        request-time (assoc "x-waiter-request-date" request-date)
+                                        request-id (assoc "x-waiter-request-id" request-id)
+                                        router-id (assoc "x-waiter-router-id" router-id)
+                                        descriptor (assoc "x-waiter-service-id" (:service-id descriptor))
+                                        instance (assoc "x-waiter-backend-id" (:id instance)
+                                                        "x-waiter-backend-host" (:host instance)
+                                                        "x-waiter-backend-port" (str (:port instance))
+                                                        "x-waiter-backend-proto" backend-proto)
+                                        backend-directory (assoc "x-waiter-backend-directory" backend-directory
+                                                                 "x-waiter-backend-log-url" backend-log-url))))))]
         (ru/update-response response add-headers))
       (handler request))))
 
@@ -555,8 +555,8 @@
    :router-metrics-agent (pc/fnk [router-id] (metrics-sync/new-router-metrics-agent router-id {}))
    :router-id (pc/fnk [[:settings router-id-prefix]]
                 (cond->> (utils/unique-identifier)
-                         (not (str/blank? router-id-prefix))
-                         (str (str/replace router-id-prefix #"[@.]" "-") "-")))
+                  (not (str/blank? router-id-prefix))
+                  (str (str/replace router-id-prefix #"[@.]" "-") "-")))
    :scaling-timeout-config (pc/fnk [[:settings
                                      [:blacklist-config blacklist-backoff-base-time-ms max-blacklist-time-ms]
                                      [:scaling inter-kill-request-wait-time-ms]]]
@@ -1201,7 +1201,7 @@
                                                     backend-proto proto-version]
                                                  (pr/make-request http-clients make-basic-auth-fn service-id->password-fn
                                                                   instance request request-properties passthrough-headers
-                                                                  end-route metric-group backend-proto  proto-version))
+                                                                  end-route metric-group backend-proto proto-version))
                                process-response-fn (partial pr/process-http-response post-process-async-request-response-fn)
                                inner-process-request-fn (fn inner-process-request [request]
                                                           (pr/process make-request-fn instance-rpc-chan start-new-service-fn

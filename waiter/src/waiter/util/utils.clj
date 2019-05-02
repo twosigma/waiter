@@ -149,7 +149,7 @@
   [data-map]
   (json/write-str
     data-map
-    :escape-slash false  ; escaping the slashes makes the json harder to read
+    :escape-slash false ; escaping the slashes makes the json harder to read
     :key-fn stringify-keys
     :value-fn stringify-elements))
 
@@ -338,23 +338,23 @@
   [{:keys [delay-multiplier inital-delay-ms max-delay-ms max-retries]
     :or {delay-multiplier 1.0
          inital-delay-ms 100
-         max-delay-ms 300000  ; 300k millis = 5 minutes
+         max-delay-ms 300000 ; 300k millis = 5 minutes
          max-retries 10}}]
-    (fn [body-function]
-      (loop [num-tries 1
-             current-delay-ms inital-delay-ms]
-        (let [{:keys [success result]}
-              (try
-                {:success true, :result (body-function)}
-                (catch Exception ex
-                  {:success false, :result ex}))]
-          (cond
-            success result
-            (>= num-tries max-retries) (throw result)
-            :else (let [delay-ms (long (min max-delay-ms current-delay-ms))]
-                    (log/info "sleeping" delay-ms "ms before retry" (str "#" num-tries))
-                    (sleep delay-ms)
-                    (recur (inc num-tries) (* delay-ms delay-multiplier))))))))
+  (fn [body-function]
+    (loop [num-tries 1
+           current-delay-ms inital-delay-ms]
+      (let [{:keys [success result]}
+            (try
+              {:success true, :result (body-function)}
+              (catch Exception ex
+                {:success false, :result ex}))]
+        (cond
+          success result
+          (>= num-tries max-retries) (throw result)
+          :else (let [delay-ms (long (min max-delay-ms current-delay-ms))]
+                  (log/info "sleeping" delay-ms "ms before retry" (str "#" num-tries))
+                  (sleep delay-ms)
+                  (recur (inc num-tries) (* delay-ms delay-multiplier))))))))
 
 (defn unique-identifier
   "Generates a new unique id using the time and a random value."

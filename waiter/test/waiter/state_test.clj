@@ -982,16 +982,16 @@
 
 (deftest test-get-instability-issue
   (let [test-cases (list {:name "multiple-oom-flags", :failed-instances
-                                [{:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}}
-                                 {:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}}],
+                          [{:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}}
+                           {:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}}],
                           :expected :not-enough-memory}
                          {:name "no-failed-instances", :failed-instances [], :expected nil}
                          {:name "no-oom-flags-failed-instances", :failed-instances
-                                [{:message "Command exited with status" :exit-code 1}], :expected nil}
+                          [{:message "Command exited with status" :exit-code 1}], :expected nil}
                          {:name "single-oom-flag", :failed-instances
-                                [{:message "Command exited with status" :exit-code 1}
-                                 {:message "Command exited with status" :exit-code 1}
-                                 {:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}}],
+                          [{:message "Command exited with status" :exit-code 1}
+                           {:message "Command exited with status" :exit-code 1}
+                           {:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}}],
                           :expected :not-enough-memory})]
     (doseq [{:keys [name failed-instances expected]} test-cases]
       (testing (str "Test " name)

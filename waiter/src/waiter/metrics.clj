@@ -188,7 +188,7 @@
                    (let [assoc-if (fn [transient-map metrics-keys map-key]
                                     (let [value (get-in metrics metrics-keys)]
                                       (cond-> transient-map
-                                              value (assoc! map-key value))))
+                                        value (assoc! map-key value))))
                          transient-map (transient {})]
                      (-> transient-map
                          (assoc-if ["counters" "instance-counts" "slots-available"] "slots-available")

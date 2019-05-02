@@ -389,7 +389,7 @@
       (scheduler/suppress-transient-server-exceptions
         (str "service-exists?[" service-id "]")
         (some->> (service-id->service-description-fn service-id)
-                 (retrieve-jobs cook-api search-interval service-id)))
+          (retrieve-jobs cook-api search-interval service-id)))
       (catch [:status 404] _
         (log/warn "service-exists?: service" service-id "does not exist!"))))
 

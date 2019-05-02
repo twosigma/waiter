@@ -323,12 +323,12 @@
                                    :method method
                                    :query-string query-params
                                    :url request-url}
-                                  multipart (assoc :multipart multipart)
-                                  add-spnego-auth (assoc :auth (spnego/spnego-authentication (URI. request-url)))
-                                  form-params (assoc :form-params form-params)
-                                  (not (str/blank? content-type)) (assoc :content-type content-type)
-                                  cookies (assoc :cookies (map (fn [c] [(:name c) (:value c)]) cookies))
-                                  trailers-fn (assoc :trailers-fn trailers-fn))))
+                            multipart (assoc :multipart multipart)
+                            add-spnego-auth (assoc :auth (spnego/spnego-authentication (URI. request-url)))
+                            form-params (assoc :form-params form-params)
+                            (not (str/blank? content-type)) (assoc :content-type content-type)
+                            cookies (assoc :cookies (map (fn [c] [(:name c) (:value c)]) cookies))
+                            trailers-fn (assoc :trailers-fn trailers-fn))))
              response-body (when body (async/<!! body))]
          (when verbose
            (log/info (get request-headers "x-cid") "response size:" (count (str response-body))))
@@ -484,7 +484,7 @@
         settings-result (make-request waiter-url settings-path :cookies cookies :query-params query-params)]
     (log/debug "service" service-id ":" settings-result)
     (cond-> (some-> settings-result :body try-parse-json)
-            keywordize-keys walk/keywordize-keys)))
+      keywordize-keys walk/keywordize-keys)))
 
 (defn service-state [waiter-url service-id & {:keys [cookies] :or {cookies {}}}]
   (let [state-result (make-request waiter-url (str "/state/" service-id) :cookies cookies)
@@ -527,7 +527,7 @@
     (log/debug "routers retrieved from /state:" routers-raw)
     (pc/map-vals (fn [router-url]
                    (cond-> router-url
-                           (str/starts-with? router-url HTTP-SCHEME) (str/replace HTTP-SCHEME "")))
+                     (str/starts-with? router-url HTTP-SCHEME) (str/replace HTTP-SCHEME "")))
                  routers-raw)))
 
 (defn router-endpoint
@@ -714,7 +714,7 @@
   [waiter-url token & {:keys [hard-delete headers] :or {hard-delete true}}]
   (log/info "deleting token" token {:hard-delete hard-delete})
   (let [headers (cond->> headers
-                         (and hard-delete (nil? headers)) (attach-token-etag waiter-url token))
+                  (and hard-delete (nil? headers)) (attach-token-etag waiter-url token))
         response (make-request waiter-url "/token"
                                :headers (assoc headers "host" token)
                                :method :delete
@@ -871,8 +871,8 @@
         slave-directory (get-in settings [:scheduler-config :slave-directory])]
     (cond-> ["x-waiter-backend-id" "x-waiter-backend-host" "x-waiter-backend-port" "x-waiter-backend-proto"
              "x-waiter-backend-response-ns" "x-waiter-get-available-instance-ns" "x-waiter-router-id"]
-            (and mesos-slave-port slave-directory)
-            (concat ["x-waiter-backend-directory" "x-waiter-backend-log-url"]))))
+      (and mesos-slave-port slave-directory)
+      (concat ["x-waiter-backend-directory" "x-waiter-backend-log-url"]))))
 
 (defn rand-router-url
   "Returns a random router url from the routers in the specified cluster"
@@ -1010,11 +1010,11 @@
   "Returns the service-ids of services known to be running at specified router."
   [router-url & {:keys [cookies] :or {cookies {}}}]
   (some->> (make-request router-url "/apps" :cookies cookies)
-           :body
-           json/read-str
-           walk/keywordize-keys
-           (map :service-id)
-           set))
+    :body
+    json/read-str
+    walk/keywordize-keys
+    (map :service-id)
+    set))
 
 (defn active-instances
   "Returns the active instances for the given service-id"

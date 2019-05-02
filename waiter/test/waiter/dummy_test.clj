@@ -18,4 +18,4 @@
 
 
 (deftest test-addition
-         (is (= 7 (+ 3 4))))
+  (is (= 7 (+ 3 4))))

@@ -296,12 +296,12 @@
   [error-data]
   (when (= 409 (some-> error-data :error :status))
     (some->> error-data
-             :deployment-info
-             (some (fn [{:keys [currentActions] :as deployment}]
-                     (and (some (fn [{:keys [action]}]
-                                  (= "StopApplication" action))
-                                currentActions)
-                          deployment))))))
+      :deployment-info
+      (some (fn [{:keys [currentActions] :as deployment}]
+              (and (some (fn [{:keys [action]}]
+                           (= "StopApplication" action))
+                         currentActions)
+                   deployment))))))
 
 (defn start-new-service-wrapper
   "Starts the service with the specified descriptor.
@@ -623,12 +623,12 @@
         {:keys [retrieve-syncer-state-fn]}
         (start-scheduler-syncer-fn scheduler-name get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs)
         marathon-descriptor-builder-fn (let [f (-> marathon-descriptor-builder
-                                               :factory-fn
-                                               utils/resolve-symbol
-                                               deref)]
-                                     (assert (fn? f) "Marathon descriptor builder function must be a Clojure fn")
-                                     (fn [home-path-prefix service-id->password-fn descriptor]
-                                       (f home-path-prefix service-id->password-fn descriptor marathon-descriptor-builder)))
+                                                   :factory-fn
+                                                   utils/resolve-symbol
+                                                   deref)]
+                                         (assert (fn? f) "Marathon descriptor builder function must be a Clojure fn")
+                                         (fn [home-path-prefix service-id->password-fn descriptor]
+                                           (f home-path-prefix service-id->password-fn descriptor marathon-descriptor-builder)))
         marathon-scheduler (->MarathonScheduler
                              scheduler-name marathon-api mesos-api retrieve-framework-id-fn home-path-prefix
                              service-id->failed-instances-transient-store service-id->last-force-kill-store

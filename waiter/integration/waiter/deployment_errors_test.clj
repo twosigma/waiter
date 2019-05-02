@@ -71,7 +71,8 @@
                    :x-waiter-health-check-max-consecutive-failures 1
                    :x-waiter-queue-timeout 600000}
           response (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
-      (with-service-cleanup (response->service-id response)
+      (with-service-cleanup
+        (response->service-id response)
         (assert-deployment-error response :invalid-health-check-response)))))
 
 (deftest ^:parallel ^:integration-slow test-cannot-connect
@@ -84,7 +85,8 @@
                    :x-waiter-health-check-max-consecutive-failures 1
                    :x-waiter-queue-timeout 600000}
           response (make-request-with-debug-info headers #(make-shell-request waiter-url %))]
-      (with-service-cleanup (response->service-id response)
+      (with-service-cleanup
+        (response->service-id response)
         (assert-deployment-error response :cannot-connect)))))
 
 (deftest ^:parallel ^:integration-slow test-health-check-timed-out
@@ -97,7 +99,8 @@
                    :x-waiter-health-check-max-consecutive-failures 1
                    :x-waiter-queue-timeout 600000}
           response (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
-      (with-service-cleanup (response->service-id response)
+      (with-service-cleanup
+        (response->service-id response)
         (assert-deployment-error response :health-check-timed-out)))))
 
 (deftest ^:parallel ^:integration-fast test-health-check-requires-authentication
@@ -105,7 +108,8 @@
     (let [headers {:x-waiter-name (rand-name)
                    :x-waiter-health-check-url "/bad-status?status=401"}
           response (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
-      (with-service-cleanup (response->service-id response)
+      (with-service-cleanup
+        (response->service-id response)
         (assert-deployment-error response :health-check-requires-authentication)))))
 
 ; Marked explicit because not all servers use cgroups to limit memory (this error is not reproducible on testing platforms)
@@ -114,7 +118,8 @@
     (let [headers {:x-waiter-name (rand-name)
                    :x-waiter-mem 1}
           response (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
-      (with-service-cleanup (response->service-id response)
+      (with-service-cleanup
+        (response->service-id response)
         (assert-deployment-error response :not-enough-memory)))))
 
 (deftest ^:parallel ^:integration-fast test-bad-startup-command
@@ -123,5 +128,6 @@
                    ; misspelled command (invalid prefix asdf)
                    :x-waiter-cmd (str "asdf" (kitchen-cmd "-p $PORT0"))}
           response (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
-      (with-service-cleanup (response->service-id response)
+      (with-service-cleanup
+        (response->service-id response)
         (assert-deployment-error response :bad-startup-command)))))

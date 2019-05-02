@@ -80,8 +80,8 @@
         ;; check slot metrics
         (let [metrics-routers (keys (get-in service-settings [:metrics :routers]))]
           (doseq [router metrics-routers]
-          (let [slots-in-use (get-in service-settings [:metrics :routers router :counters :instance-counts :slots-in-use])]
-            (is (zero? slots-in-use) (str "Expected zero slots-in-use, but found " slots-in-use " in router " (name router))))))
+            (let [slots-in-use (get-in service-settings [:metrics :routers router :counters :instance-counts :slots-in-use])]
+              (is (zero? slots-in-use) (str "Expected zero slots-in-use, but found " slots-in-use " in router " (name router))))))
 
         ;; cleanup
         (log/info "Deleting" service-id)

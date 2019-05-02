@@ -57,27 +57,27 @@
                     {:timeout-chan (async/timeout max-update-interval)
                      :last-updated (t/now)
                      :continue-looping true}]
-                   (let [[args chan] (async/alts! [exit-chan timeout-chan query-chan] :priority true)
-                         new-state
-                         (condp = chan
-                           exit-chan (assoc current-state :continue-looping false)
-                           timeout-chan
-                           (do
-                             (refresh-prestash-cache prestash-cache host)
-                             (assoc current-state :timeout-chan (async/timeout max-update-interval)
-                                    :last-updated (t/now)))
-                           query-chan
-                           (let [{:keys [response-chan]} args]
-                             (if (t/before? (t/now) (t/plus last-updated (t/millis min-update-interval)))
-                               (do
-                                 (async/>! response-chan @prestash-cache)
-                                 current-state)
-                               (let [users (refresh-prestash-cache prestash-cache host)]
-                                 (async/>! response-chan users)
-                                 (assoc current-state :timeout-chan (async/timeout max-update-interval)
-                                        :last-updated (t/now))))))]
-                     (when (:continue-looping new-state)
-                       (recur new-state))))
+      (let [[args chan] (async/alts! [exit-chan timeout-chan query-chan] :priority true)
+            new-state
+            (condp = chan
+              exit-chan (assoc current-state :continue-looping false)
+              timeout-chan
+              (do
+                (refresh-prestash-cache prestash-cache host)
+                (assoc current-state :timeout-chan (async/timeout max-update-interval)
+                                     :last-updated (t/now)))
+              query-chan
+              (let [{:keys [response-chan]} args]
+                (if (t/before? (t/now) (t/plus last-updated (t/millis min-update-interval)))
+                  (do
+                    (async/>! response-chan @prestash-cache)
+                    current-state)
+                  (let [users (refresh-prestash-cache prestash-cache host)]
+                    (async/>! response-chan users)
+                    (assoc current-state :timeout-chan (async/timeout max-update-interval)
+                                         :last-updated (t/now))))))]
+        (when (:continue-looping new-state)
+          (recur new-state))))
     {:exit-chan exit-chan
      :query-chan query-chan}))
 

@@ -44,13 +44,13 @@
 (deftest positive-fraction-less-than-or-equal-to-1-test
   (s/validate positive-fraction-less-than-or-equal-to-1 0.1)
   (is (thrown? Exception (s/validate positive-fraction-less-than-or-equal-to-1 0)))
-  (s/validate positive-fraction-less-than-or-equal-to-1 1) 
+  (s/validate positive-fraction-less-than-or-equal-to-1 1)
   (is (thrown? Exception (s/validate positive-fraction-less-than-or-equal-to-1 -1))))
 
 (deftest greater-than-or-equal-to-0-less-than-1-test
   (s/validate greater-than-or-equal-to-0-less-than-1 0.1)
-  (s/validate greater-than-or-equal-to-0-less-than-1 0) 
-  (is (thrown? Exception (s/validate greater-than-or-equal-to-0-less-than-1 1))) 
+  (s/validate greater-than-or-equal-to-0-less-than-1 0)
+  (is (thrown? Exception (s/validate greater-than-or-equal-to-0-less-than-1 1)))
   (is (thrown? Exception (s/validate greater-than-or-equal-to-0-less-than-1 -1))))
 
 (deftest valid-metric-group-test

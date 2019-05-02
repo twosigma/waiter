@@ -373,10 +373,10 @@
                 services (json/read-str body)
                 service-tokens (mapcat (fn [entry]
                                          (some->> entry
-                                                  walk/keywordize-keys
-                                                  :source-tokens
-                                                  flatten
-                                                  (map :token)))
+                                           walk/keywordize-keys
+                                           :source-tokens
+                                           flatten
+                                           (map :token)))
                                        services)]
             (assert-response-status response 200)
             (is (= (count @service-ids-atom) (count service-tokens))
@@ -393,10 +393,10 @@
                 services (json/read-str body)
                 service-tokens (mapcat (fn [entry]
                                          (some->> entry
-                                                  walk/keywordize-keys
-                                                  :source-tokens
-                                                  flatten
-                                                  (map :token)))
+                                           walk/keywordize-keys
+                                           :source-tokens
+                                           flatten
+                                           (map :token)))
                                        services)]
             (assert-response-status response 200)
             (is (= 3 (count service-tokens))
@@ -414,10 +414,10 @@
                   services (json/read-str body)
                   service-token-versions (mapcat (fn [entry]
                                                    (some->> entry
-                                                            walk/keywordize-keys
-                                                            :source-tokens
-                                                            flatten
-                                                            (map :version)))
+                                                     walk/keywordize-keys
+                                                     :source-tokens
+                                                     flatten
+                                                     (map :version)))
                                                  services)]
               (assert-response-status response 200)
               (is (= 1 (count service-token-versions))
@@ -444,10 +444,10 @@
           (log/info "basic hostname as token test")
           (let [current-user (retrieve-username)
                 service-description (assoc (kitchen-request-headers)
-                                           :x-waiter-metric-group "waiter_test"
-                                           :x-waiter-name token-prefix
-                                           :x-waiter-permitted-user "*"
-                                           :x-waiter-run-as-user current-user)]
+                                      :x-waiter-metric-group "waiter_test"
+                                      :x-waiter-name token-prefix
+                                      :x-waiter-permitted-user "*"
+                                      :x-waiter-run-as-user current-user)]
             (testing "hostname-token-creation"
               (log/info "creating configuration using token" token)
               (let [{:keys [body status]}
@@ -811,7 +811,7 @@
 (deftest ^:parallel ^:integration-fast ^:explicit test-on-the-fly-to-token
   (testing-using-waiter-url
     (let [name-string (rand-name)
-          {:keys[cookies] :as canary-response}
+          {:keys [cookies] :as canary-response}
           (make-request-with-debug-info {:x-waiter-name name-string} #(make-kitchen-request waiter-url %))
           service-id-1 (:service-id canary-response)]
       (with-service-cleanup
