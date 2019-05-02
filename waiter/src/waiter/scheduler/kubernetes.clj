@@ -747,7 +747,13 @@
                                     :labels {:app k8s-name
                                              :waiter-cluster cluster-name
                                              :waiter/user run-as-user}}
-                         :spec {:containers [{:command (conj (vec container-init-commands) cmd)
+                         :spec {;; Service account tokens allow easy access to the k8s api server,
+                                ;; but this is only enabled when the x-waiter-namespace is set explicitly
+                                ;; (i.e., don't give arbitrary users access to the default namespace's token).
+                                ;; Note that even if the run-as-user matches the default namespace,
+                                ;; the token is still not mounted unless the namespace was explicitly set.
+                                :automountServiceAccountToken (= namespace run-as-user)
+                                :containers [{:command (conj (vec container-init-commands) cmd)
                                               :env env
                                               :image (compute-image image default-container-image image-aliases)
                                               :imagePullPolicy "IfNotPresent"
