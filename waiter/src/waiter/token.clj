@@ -337,17 +337,17 @@
         (utils/clj->json-response
           (cond-> (merge service-parameter-template
                          (select-keys token-metadata sd/user-metadata-keys))
-                  show-metadata
-                  (merge (cond-> (loop [loop-token-metadata (select-keys token-metadata sd/system-metadata-keys)
-                                        nested-last-update-time-path ["last-update-time"]]
-                                   (if (get-in loop-token-metadata nested-last-update-time-path)
-                                     (recur (update-in loop-token-metadata nested-last-update-time-path epoch-time->date-time)
-                                            (concat ["previous"] nested-last-update-time-path))
-                                     loop-token-metadata))
-                           (not (contains? token-metadata "cluster"))
-                           (assoc "cluster" (get-default-cluster cluster-calculator))
-                           (not (contains? token-metadata "root"))
-                           (assoc "root" token-root))))
+            show-metadata
+            (merge (cond-> (loop [loop-token-metadata (select-keys token-metadata sd/system-metadata-keys)
+                                  nested-last-update-time-path ["last-update-time"]]
+                             (if (get-in loop-token-metadata nested-last-update-time-path)
+                               (recur (update-in loop-token-metadata nested-last-update-time-path epoch-time->date-time)
+                                      (concat ["previous"] nested-last-update-time-path))
+                               loop-token-metadata))
+                     (not (contains? token-metadata "cluster"))
+                     (assoc "cluster" (get-default-cluster cluster-calculator))
+                     (not (contains? token-metadata "root"))
+                     (assoc "root" token-root))))
           :headers {"etag" token-hash}))
       (throw (ex-info (str "Couldn't find token " token)
                       {:headers {"etag" token-hash}

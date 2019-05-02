@@ -102,7 +102,7 @@
   (let [force-remove-headers (retrieve-proto-specific-hop-by-hop-headers proto-version)
         connection-headers (map str/trim (str/split (str connection) #","))]
     (cond-> (dissoc headers "connection" "keep-alive" "proxy-authenticate" "proxy-authorization"
-                   "trailers" "transfer-encoding" "upgrade")
+                    "trailers" "transfer-encoding" "upgrade")
       (seq force-remove-headers) (as-> $ (apply dissoc $ force-remove-headers))
       (seq connection-headers) (as-> $ (apply dissoc $ connection-headers)))))
 
@@ -111,5 +111,5 @@
    username and principal are non-nil, respectively."
   [headers username principal]
   (cond-> headers
-          username (assoc "x-waiter-auth-principal" username)
-          principal (assoc "x-waiter-authenticated-principal" principal)))
+    username (assoc "x-waiter-auth-principal" username)
+    principal (assoc "x-waiter-authenticated-principal" principal)))

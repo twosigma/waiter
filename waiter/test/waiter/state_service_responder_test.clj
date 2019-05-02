@@ -64,8 +64,8 @@
                            (when (not= expected actual)
                              (let [sanitize-data-fn (fn [data]
                                                       (cond->> data
-                                                               (map? data) (into (sorted-map))
-                                                               (instance? PersistentQueue data) (vec)))]
+                                                        (map? data) (into (sorted-map))
+                                                        (instance? PersistentQueue data) (vec)))]
                                (println (first *testing-vars*) ":" (name item-key))
                                (println "Expected: " (sanitize-data-fn expected))
                                (println "Actual:   " (sanitize-data-fn actual))))
@@ -80,11 +80,11 @@
         (check-fn :sorted-instance-ids)
         (check-fn :work-stealing-queue)
         (let [expected-counter-map (cond-> {}
-                                           (:instance-id->blacklist-expiry-time expected-state)
-                                           (assoc "blacklisted" (count (:instance-id->blacklist-expiry-time expected-state)))
-                                           (:instance-id->state expected-state)
-                                           (merge (let [[slots-assigned slots-used slots-available] (compute-slots-values (:instance-id->state expected-state))]
-                                                    {"slots-assigned" slots-assigned "slots-available" slots-available "slots-in-use" slots-used})))]
+                                     (:instance-id->blacklist-expiry-time expected-state)
+                                     (assoc "blacklisted" (count (:instance-id->blacklist-expiry-time expected-state)))
+                                     (:instance-id->state expected-state)
+                                     (merge (let [[slots-assigned slots-used slots-available] (compute-slots-values (:instance-id->state expected-state))]
+                                              {"slots-assigned" slots-assigned "slots-available" slots-available "slots-in-use" slots-used})))]
           (assert-instance-counters expected-counter-map))
         actual-state)))
 

@@ -133,8 +133,8 @@
                                            throw-exceptions true}}]
    (try
      (cond-> (.delete curator)
-             delete-children (.deletingChildrenIfNeeded)
-             true (.forPath path))
+       delete-children (.deletingChildrenIfNeeded)
+       true (.forPath path))
      {:result :success}
      (catch KeeperException$NoNodeException e
        (log/info path "does not exist!")
@@ -150,7 +150,7 @@
   "Gets the children of a ZK node."
   ([^CuratorFramework curator path & {:keys [ignore-does-not-exist]
                                       :or {ignore-does-not-exist false}}]
-   (try 
+   (try
      (.. curator
          (getChildren)
          (forPath path))
@@ -174,10 +174,10 @@
   [^CuratorFramework curator lock-path timeout-ms f]
   (let [mutex (InterProcessMutex. curator lock-path)]
     (when-not (.acquire mutex timeout-ms TimeUnit/MILLISECONDS)
-      (throw (ex-info "Could not acquire lock." 
+      (throw (ex-info "Could not acquire lock."
                       {:timeout-ms timeout-ms
                        :lock-path lock-path})))
-    (try 
+    (try
       (f)
       (catch Exception e
         (log/error e "Error during synchronized")

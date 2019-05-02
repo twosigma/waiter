@@ -31,7 +31,7 @@
                  :request-method :post
                  :request-time (t/date-time 2018 4 11)
                  :scheme "http"
-                 :uri "/" }]
+                 :uri "/"}]
     (is (= {:cid "123"
             :client-protocol "HTTP/2.0"
             :host "host"
@@ -94,7 +94,7 @@
                      :request-id "abc"
                      :scheme :http
                      :uri "/path"}
-            response (handler request)
+            _ (handler request)
             log-entry (first @log-entries)]
 
         (is (:handle-request-latency-ns log-entry))

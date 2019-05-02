@@ -26,7 +26,7 @@
       (loop [mock (first mock-fns)
              remaining (rest mock-fns)]
         (let [{:keys [response-chan]} (async/<!! instance-rpc-chan)
-                c (async/chan 1)]
+              c (async/chan 1)]
           (async/>!! response-chan c)
           (mock (async/<!! c)))
         (recur (first remaining) (rest remaining)))

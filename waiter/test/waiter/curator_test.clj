@@ -133,7 +133,8 @@
                         (fn [_]
                           (async/thread
                             (dotimes [_ calls-per-thread]
-                              (synchronize curator "/lock" 100000
+                              (synchronize
+                                curator "/lock" 100000
                                 (fn []
                                   (reset! counter (inc @counter)))))))
                         (range num-threads))]
@@ -152,13 +153,15 @@
       (.start curator)
       (testing "synchronize-fail-to-acquire-lock"
         (is (thrown-with-msg?
-              clojure.lang.ExceptionInfo 
+              clojure.lang.ExceptionInfo
               #"^Could not acquire lock.$"
-              (let [chan (async/chan)
-                    locking-thread (async/thread 
-                                     (synchronize curator "/lock-fail" 100 (fn [] 
-                                                                             (async/>!! chan :go)
-                                                                             (Thread/sleep 1000))))]
+              (let [chan (async/promise-chan)]
+                (async/thread
+                  (synchronize
+                    curator "/lock-fail" 100
+                    (fn []
+                      (async/>!! chan :go)
+                      (Thread/sleep 1000))))
                 ; wait for lock to be acquired
                 (async/<!! chan)
                 (synchronize curator "/lock-fail" 100 nil)))))

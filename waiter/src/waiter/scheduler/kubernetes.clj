@@ -150,10 +150,10 @@
 (defn- unpack-instance-id
   "Extract the service-id, pod name, and pod restart-number from an instance-id."
   [instance-id]
-   (let [[_ service-id pod-name restart-number] (re-find #"^([-a-z0-9]+)\.([-a-z0-9]+)-(\d+)$" instance-id)]
-     {:service-id service-id
-      :pod-name pod-name
-      :restart-number restart-number}))
+  (let [[_ service-id pod-name restart-number] (re-find #"^([-a-z0-9]+)\.([-a-z0-9]+)-(\d+)$" instance-id)]
+    {:service-id service-id
+     :pod-name pod-name
+     :restart-number restart-number}))
 
 (defn- log-dir-path [user restart-count]
   "Build log directory path string for a containter run."
@@ -273,8 +273,8 @@
                    (pc/mapply http-utils/http-request http-client url
                               :accept "application/json"
                               (cond-> options
-                                      auth-str (assoc-in [:headers "Authorization"] auth-str)
-                                      (and (not content-type) body) (assoc :content-type "application/json"))))]
+                                auth-str (assoc-in [:headers "Authorization"] auth-str)
+                                (and (not content-type) body) (assoc :content-type "application/json"))))]
       (scheduler/log "response from K8s API server:" result)
       result)
     (catch [:status 400] response
@@ -901,8 +901,8 @@
   [scheduler options pods-url]
   (let [{:keys [items version]} (global-state-query scheduler options pods-url)
         service-id->pod-id->pod (->> items
-                                      (group-by k8s-object->service-id)
-                                      (pc/map-vals (partial pc/map-from-vals k8s-object->id)))]
+                                     (group-by k8s-object->service-id)
+                                     (pc/map-vals (partial pc/map-from-vals k8s-object->id)))]
     {:service-id->pod-id->pod service-id->pod-id->pod
      :version version}))
 
@@ -1021,8 +1021,8 @@
                         http-utils/http-client-factory)
         service-id->failed-instances-transient-store (atom {})
         replicaset-spec-builder-ctx (assoc replicaset-spec-builder
-                                           :log-bucket-sync-secs log-bucket-sync-secs
-                                           :log-bucket-url log-bucket-url)
+                                      :log-bucket-sync-secs log-bucket-sync-secs
+                                      :log-bucket-url log-bucket-url)
         replicaset-spec-builder-fn (let [f (-> replicaset-spec-builder
                                                :factory-fn
                                                utils/resolve-symbol

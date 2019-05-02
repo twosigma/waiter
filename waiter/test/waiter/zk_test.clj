@@ -28,7 +28,7 @@
   (connect-to zk-string)
   ...)"
   [[connect-string] & body]
-  `(let [zk#             (TestingServer.)
+  `(let [zk# (TestingServer.)
          ~connect-string (.getConnectString zk#)]
      (try
        ~@body
@@ -44,7 +44,7 @@
   (.start curator)
   ...)"
   [[connect-string curator] & body]
-  `(let [retry-policy#   (BoundedExponentialBackoffRetry. 100 120000 10)
+  `(let [retry-policy# (BoundedExponentialBackoffRetry. 100 120000 10)
          ~curator (CuratorFrameworkFactory/newClient ~connect-string
                                                      180000
                                                      30000

@@ -129,7 +129,7 @@
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
     (let [scheduler (make-dummy-scheduler ["test-service-id"])
           replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id"
-                            (assoc dummy-service-description "image" "custom/image"))]
+                           (assoc dummy-service-description "image" "custom/image"))]
       (is (= "custom/image" (get-in replicaset-spec [:spec :template :spec :containers 0 :image]))))))
 
 (deftest test-service-id->k8s-app-name
@@ -1207,17 +1207,17 @@
                                                 :ready true
                                                 :restartCount 0}]}}
                  {:metadata {:name "test-app-1234-abcd3"
-                              :namespace "myself"
-                              :labels {:app "test-app-1234"
-                                       :waiter-cluster "waiter"}
-                              :annotations {:waiter/port-count "1"
-                                            :waiter/service-id "test-app-1234"}
-                              :resourceVersion "1002"}
-                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
-                   :status {:podIP "10.141.141.13"
-                            :startTime "2014-09-13T00:24:48Z"
-                            :containerStatuses [{:name "test-app-1234"
-                                                 :restartCount 0}]}}]}
+                             :namespace "myself"
+                             :labels {:app "test-app-1234"
+                                      :waiter-cluster "waiter"}
+                             :annotations {:waiter/port-count "1"
+                                           :waiter/service-id "test-app-1234"}
+                             :resourceVersion "1002"}
+                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
+                  :status {:podIP "10.141.141.13"
+                           :startTime "2014-09-13T00:24:48Z"
+                           :containerStatuses [{:name "test-app-1234"
+                                                :restartCount 0}]}}]}
 
         pods-watch-updates
         [{:type "MODIFIED"

@@ -244,26 +244,26 @@
               (async/alt!
                 health-check-response-chan
                 ([response]
-                  (let [{:keys [error status]} response
-                        error-flag (cond
-                                     (instance? ConnectException error) :connect-exception
-                                     (instance? EOFException error) :hangup-exception
-                                     (instance? SocketTimeoutException error) :timeout-exception
-                                     (instance? TimeoutException error) :timeout-exception)]
-                    (log-health-check-issues service-instance instance-health-check-url status error)
-                    {:error-flag error-flag
-                     :status status}))
+                 (let [{:keys [error status]} response
+                       error-flag (cond
+                                    (instance? ConnectException error) :connect-exception
+                                    (instance? EOFException error) :hangup-exception
+                                    (instance? SocketTimeoutException error) :timeout-exception
+                                    (instance? TimeoutException error) :timeout-exception)]
+                   (log-health-check-issues service-instance instance-health-check-url status error)
+                   {:error-flag error-flag
+                    :status status}))
 
                 (async/timeout request-timeout-ms)
                 ([_]
-                  (async/>! request-abort-chan (TimeoutException. "Health check request exceeded its allocated time"))
-                  (meters/mark! (metrics/waiter-meter "scheduler" scheduler-name "health-check" "timeout-rate"))
-                  (log/info "health check timed out before receiving response"
-                            {:health-check-path health-check-path
-                             :instance service-instance
-                             :scheduler scheduler-name
-                             :timeout request-timeout-ms})
-                  {:error-flag :operation-timeout}))]
+                 (async/>! request-abort-chan (TimeoutException. "Health check request exceeded its allocated time"))
+                 (meters/mark! (metrics/waiter-meter "scheduler" scheduler-name "health-check" "timeout-rate"))
+                 (log/info "health check timed out before receiving response"
+                           {:health-check-path health-check-path
+                            :instance service-instance
+                            :scheduler scheduler-name
+                            :timeout request-timeout-ms})
+                 {:error-flag :operation-timeout}))]
           (async/close! request-abort-chan)
           {:healthy? (and (nil? error-flag) (<= 200 status 299))
            :status status
@@ -442,11 +442,11 @@
                                             (update :flags
                                                     (fn [flags]
                                                       (cond-> flags
-                                                              (not= error :connect-exception)
-                                                              (conj :has-connected)
+                                                        (not= error :connect-exception)
+                                                        (conj :has-connected)
 
-                                                              (not (contains? connection-errors error))
-                                                              (conj :has-responded))))))
+                                                        (not (contains? connection-errors error))
+                                                        (conj :has-responded))))))
             protocol (or health-check-proto backend-proto)
             health-check-refs (map (fn [instance]
                                      (let [chan (async/promise-chan)]
@@ -515,11 +515,11 @@
                   (retrieve-instances-for-service service-id active-instances)
                   instance-id->tracked-failed-instance'
                   ((fnil into {}) instance-id->tracked-failed-instance
-                    (keep (fn [[instance-id unhealthy-instance]]
-                            (when (and (not (contains? active-instance-ids instance-id))
-                                       (>= (or (get instance-id->failed-health-check-count instance-id) 0) failed-check-threshold))
-                              [instance-id (update-in unhealthy-instance [:flags] conj :never-passed-health-checks)]))
-                          instance-id->unhealthy-instance))
+                   (keep (fn [[instance-id unhealthy-instance]]
+                           (when (and (not (contains? active-instance-ids instance-id))
+                                      (>= (or (get instance-id->failed-health-check-count instance-id) 0) failed-check-threshold))
+                             [instance-id (update-in unhealthy-instance [:flags] conj :never-passed-health-checks)]))
+                         instance-id->unhealthy-instance))
                   all-failed-instances
                   (-> (fn [failed-instance tracked-instance]
                         (-> failed-instance
@@ -532,12 +532,12 @@
                                         (conj scheduler-messages
                                               [:update-service-instances
                                                (assoc service-instance-info
-                                                      :failed-instances all-failed-instances
-                                                      :instance-counts {:healthy (count healthy-instances)
-                                                                        :requested instances
-                                                                        :scheduled task-count}
-                                                      :scheduler-sync-time request-instances-time
-                                                      :service-id service-id)])
+                                                 :failed-instances all-failed-instances
+                                                 :instance-counts {:healthy (count healthy-instances)
+                                                                   :requested instances
+                                                                   :scheduled task-count}
+                                                 :scheduler-sync-time request-instances-time
+                                                 :service-id service-id)])
                                         scheduler-messages)
                   instance-id->unhealthy-instance' (->> unhealthy-instances
                                                         (map (fn [{:keys [id] :as instance}]
@@ -555,7 +555,7 @@
                               :instance-id->tracked-failed-instance instance-id->tracked-failed-instance'
                               :instance-id->failed-health-check-count instance-id->failed-health-check-count'})
                 (cond-> healthy-service-ids
-                        (seq healthy-instances) (conj service-id))
+                  (seq healthy-instances) (conj service-id))
                 scheduler-messages'
                 remaining))
             (let [summary-message [:update-available-services
@@ -573,8 +573,8 @@
   "Retrieves the scheduler and syncer state either for the entire scheduler or when provided for a specific service."
   ([syncer-state] syncer-state)
   ([{:keys [last-update-time service-id->health-check-context]} service-id]
-    (let [health-check-context (get service-id->health-check-context service-id)]
-      (assoc health-check-context :last-update-time last-update-time))))
+   (let [health-check-context (get service-id->health-check-context service-id)]
+     (assoc health-check-context :last-update-time last-update-time))))
 
 (defn start-scheduler-syncer
   "Starts loop to query marathon for the service and instance statuses,
@@ -605,37 +605,37 @@
                      (async/alt!
                        exit-chan
                        ([message]
-                         (log/warn "stopping scheduler-syncer")
-                         (when (not= :exit message)
-                           (throw (ex-info "Stopping scheduler-syncer" {:time (t/now), :reason message}))))
+                        (log/warn "stopping scheduler-syncer")
+                        (when (not= :exit message)
+                          (throw (ex-info "Stopping scheduler-syncer" {:time (t/now), :reason message}))))
 
                        state-query-chan
                        ([{:keys [response-chan service-id]}]
-                         (async/>! response-chan
-                                   (if service-id
-                                     (retrieve-syncer-state current-state service-id)
-                                     (retrieve-syncer-state current-state)))
-                         current-state)
+                        (async/>! response-chan
+                                  (if service-id
+                                    (retrieve-syncer-state current-state service-id)
+                                    (retrieve-syncer-state current-state)))
+                        current-state)
 
                        timeout-chan
                        ([]
-                         (try
-                           (timers/start-stop-time!
-                             (metrics/waiter-timer "scheduler" scheduler-name "syncer")
-                             (let [{:keys [service-id->health-check-context scheduler-messages]}
-                                   (update-scheduler-state
-                                     scheduler-name get-service->instances-fn service-id->service-description-fn available?
-                                     failed-check-threshold service-id->health-check-context)]
-                               (when scheduler-messages
-                                 (async/>! scheduler-state-chan scheduler-messages))
-                               (assoc current-state
-                                 :last-update-time (clock)
-                                 :service-id->health-check-context service-id->health-check-context)))
-                           (catch Throwable th
-                             (log/error th "scheduler-syncer unable to receive updates")
-                             (counters/inc! (metrics/waiter-counter "scheduler" scheduler-name "syncer" "errors"))
-                             (meters/mark! (metrics/waiter-meter "scheduler" scheduler-name "syncer" "error-rate"))
-                             current-state)))
+                        (try
+                          (timers/start-stop-time!
+                            (metrics/waiter-timer "scheduler" scheduler-name "syncer")
+                            (let [{:keys [service-id->health-check-context scheduler-messages]}
+                                  (update-scheduler-state
+                                    scheduler-name get-service->instances-fn service-id->service-description-fn available?
+                                    failed-check-threshold service-id->health-check-context)]
+                              (when scheduler-messages
+                                (async/>! scheduler-state-chan scheduler-messages))
+                              (assoc current-state
+                                :last-update-time (clock)
+                                :service-id->health-check-context service-id->health-check-context)))
+                          (catch Throwable th
+                            (log/error th "scheduler-syncer unable to receive updates")
+                            (counters/inc! (metrics/waiter-counter "scheduler" scheduler-name "syncer" "errors"))
+                            (meters/mark! (metrics/waiter-meter "scheduler" scheduler-name "syncer" "error-rate"))
+                            current-state)))
                        :priority true)]
             (recur next-state)))
         (catch Exception e
@@ -657,9 +657,9 @@
   (swap! transient-store
          (fn [service-id->failed-instances]
            (update-in service-id->failed-instances [service-id]
-                      #(cond-> (or % (initial-value-fn))
-                               (= max-instances-to-keep (count %)) (remove-fn)
-                               true (conj instance-entry))))))
+                                                   #(cond-> (or % (initial-value-fn))
+                                                      (= max-instances-to-keep (count %)) (remove-fn)
+                                                      true (conj instance-entry))))))
 
 (defn environment
   "Returns a new environment variable map with some basic variables added in"
@@ -844,10 +844,10 @@
                              (du/interval->nanoseconds duration)))))
         ;; tracker-state' for this service
         (assoc tracker-state
-               :instance-counts instance-counts'
-               :instance-scheduling-start-times outstanding-instance-start-times
-               :known-instance-ids known-instance-ids'
-               :starting-instance-id->start-timestamp outstanding-instance-id->start-timestamp)))))
+          :instance-counts instance-counts'
+          :instance-scheduling-start-times outstanding-instance-start-times
+          :known-instance-ids known-instance-ids'
+          :starting-instance-id->start-timestamp outstanding-instance-id->start-timestamp)))))
 
 (defn build-initial-service-launch-trackers
   "Build the initially-observed state for the launch-metrics-maintainer's state loop
@@ -928,7 +928,7 @@
                           :previous-iteration iteration
                           :service-id->launch-tracker service-id->launch-tracker'}))
 
-                     :else  ;; ignoring out-of-order state updates
+                     :else ;; ignoring out-of-order state updates
                      current-state))
 
                   query-chan
@@ -937,9 +937,9 @@
                    (let [sanitized-state
                          (update-in
                            current-state [:service-id->launch-tracker]
-                           (partial
-                             pc/map-vals
-                             #(dissoc % :service-schedule-timer :service-startup-timer)))]
+                                         (partial
+                                           pc/map-vals
+                                           #(dissoc % :service-schedule-timer :service-startup-timer)))]
                      (async/put! response-chan sanitized-state))
                    current-state)
                   :priority true)]

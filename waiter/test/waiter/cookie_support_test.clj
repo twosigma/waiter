@@ -42,7 +42,7 @@
   (is (= "bar=\"x-waiter-auth=this is a real cookie\"" (remove-cookie "x-waiter-auth=auth-value; bar=\"x-waiter-auth=this is a real cookie\""
                                                                       "x-waiter-auth")))
   (is (= "bar=x-waiter-auth=this is a real cookie" (remove-cookie "x-waiter-auth=auth-value; bar=x-waiter-auth=this is a real cookie"
-                                                                      "x-waiter-auth")))
+                                                                  "x-waiter-auth")))
   (is (= "a=b; c=d" (remove-cookie "a=b; x-waiter-auth=auth; c=d" "x-waiter-auth"))))
 
 (deftest test-add-encoded-cookie

@@ -99,7 +99,7 @@
 (defrecord SingleUserAuthenticator [run-as-user password]
   Authenticator
   (wrap-auth-handler [_ request-handler]
-    (fn anonymous-handler [request] 
+    (fn anonymous-handler [request]
       (handle-request-auth request-handler request run-as-user run-as-user password))))
 
 (defn one-user-authenticator

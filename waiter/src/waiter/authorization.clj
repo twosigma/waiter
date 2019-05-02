@@ -55,7 +55,7 @@
 (defn administer-token?
   "Returns whether the auth-user is allowed to administer the specified token."
   [entitlement-manager auth-user token token-metadata]
-    (authorized? entitlement-manager auth-user :admin (make-token-resource token token-metadata)))
+  (authorized? entitlement-manager auth-user :admin (make-token-resource token token-metadata)))
 
 (defn run-as?
   "Helper function that checks the whether the auth-user has privileges to run as the run-as-user."

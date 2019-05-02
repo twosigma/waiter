@@ -119,7 +119,7 @@
                   principal (when (.isEstablished gss-context)
                               (gss-get-principal gss-context))]
               (async/>!! response-chan {:principal principal
-                                            :token token}))
+                                        :token token}))
             (catch Throwable th
               (log/error th "error while performing kerberos auth")
               (async/>!! response-chan {:error th}))

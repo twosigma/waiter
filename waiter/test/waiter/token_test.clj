@@ -55,7 +55,7 @@
 (deftest test-constant-cluster-calculator
   (let [default-cluster "test-cluster"
         cluster-calculator-1 (new-configured-cluster-calculator {:default-cluster default-cluster
-                                                               :host->cluster {}})
+                                                                 :host->cluster {}})
         cluster-calculator-2 (new-configured-cluster-calculator {:default-cluster default-cluster
                                                                  :host->cluster {"waiter.localtest.me" "bar"
                                                                                  "waiter-foo.localtest.me" "foo"}})]

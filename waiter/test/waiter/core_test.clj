@@ -1434,8 +1434,8 @@
   (is (= "FOO/BAR" (request->protocol {:headers {"x-forwarded-proto-version" "Foo/Bar"}
                                        :servlet-request (Object.)})))
   (is (= "HTTP/1.1" (request->protocol {:scheme :http
-                                                 :servlet-request (reify ServletRequest
-                                                                    (getProtocol [_] "HTTP/1.1"))})))
+                                        :servlet-request (reify ServletRequest
+                                                           (getProtocol [_] "HTTP/1.1"))})))
   (is (= "WS" (request->protocol {:scheme :ws})))
   (is (= "WS" (request->protocol {:headers {} :scheme :ws})))
   (is (= "WS/13" (request->protocol {:headers {"sec-websocket-version" "13"} :scheme :ws}))))
