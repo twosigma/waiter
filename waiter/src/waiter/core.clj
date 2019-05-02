@@ -34,6 +34,7 @@
             [slingshot.slingshot :refer [try+]]
             [waiter.async-request :as async-req]
             [waiter.auth.authentication :as auth]
+            [waiter.auth.saml :as saml]
             [waiter.authorization :as authz]
             [waiter.cookie-support :as cookie-support]
             [waiter.correlation-id :as cid]
@@ -129,7 +130,9 @@
                                      :async-result-handler-fn
                                      ["/status/" :request-id "/" :router-id "/" :service-id "/" :host "/" :port "/" [#".+" :location]]
                                      :async-status-handler-fn}
-                     "waiter-auth" :waiter-auth-handler-fn
+                     "waiter-auth" {"" :waiter-auth-handler-fn
+                                    "/saml" {"/acs" :waiter-auth-saml-acs-handler-fn
+                                             "/metadata" :waiter-auth-saml-metadata-handler-fn}}
                      "waiter-consent" {"" :waiter-acknowledge-consent-handler-fn
                                        ["/" [#".*" :path]] :waiter-request-consent-handler-fn}
                      "waiter-interstitial" {["/" [#".*" :path]] :waiter-request-interstitial-handler-fn}
@@ -528,8 +531,10 @@
 (def state
   {:async-request-store-atom (pc/fnk [] (atom {}))
    :authenticator (pc/fnk [[:settings authenticator-config]
+                           waiter-hostnames
                            passwords]
-                    (utils/create-component authenticator-config :context {:password (first passwords)}))
+                    (utils/create-component authenticator-config :context {:password (first passwords)
+                                                                           :hostname (first waiter-hostnames)}))
    :clock (pc/fnk [] t/now)
    :cors-validator (pc/fnk [[:settings cors-config]]
                      (utils/create-component cors-config))
@@ -1486,6 +1491,13 @@
                              (wrap-secure-request-fn
                                (fn waiter-auth-handler-fn [request]
                                  {:body (str (:authorization/user request)), :status 200})))
+   :waiter-auth-saml-acs-handler-fn (pc/fnk [[:state authenticator]]
+                                      (fn waiter-auth-saml-acs-handler-fn [request]
+                                        (saml/saml-acs-handler request authenticator)))
+   :waiter-auth-saml-metadata-handler-fn (pc/fnk [wrap-secure-request-fn]
+                                           (wrap-secure-request-fn
+                                             (fn waiter-auth-saml-metadata-handler-fn [request]
+                                               {:body "", :status 200}))) ;TODO FIXME
    :waiter-acknowledge-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template
                                                     token->token-metadata]
                                                    [:settings consent-expiry-days]

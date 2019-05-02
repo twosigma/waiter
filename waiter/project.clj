@@ -64,6 +64,7 @@
                    clj-time/clj-time
                    org.clojure/core.async]]
                  [joda-time "2.10.1"]
+                 [stas_ghost/saml20-clj "0.1.13"]
                  [twosigma/metrics-clojure "2.6.0-20180124_201441-g72cee16"
                   :exclusions [org.clojure/clojure io.netty/netty org.slf4j/slf4j-api]]
                  [metrics-clojure-jvm "2.10.0"

@@ -217,7 +217,15 @@
                                    :keep-alive-mins 5
                                    ;; the maximum number of request waiting for Kerberos auth before server responds
                                    ;; with a 503 temporarily unavailable
-                                   :max-queue-length 1000}}
+                                   :max-queue-length 1000}
+                        ;; :kind :saml enables authentication using SAML SP-initiated SSO flow
+                        ;; https://docs.pingidentity.com/bundle/pf_sm_supportedStandards_pf83/page/task/spInitiatedSsoRedirectPost.html
+                        ;:kind :saml
+                        :saml {:factory-fn waiter.auth.saml/saml-authenticator
+                               ;; URI of the Identity Provider
+                               :idp-uri "https://idp-host/idp-endpoint"
+                               ;; URI of the signing certificate used by the Identity Provider
+                               :idp-cert-uri "file:///path/idp.crt"}}
 
  ;; Waiter supports the run-as-requester feature to launch a service as the requesting user.
  ;; Triggering this feature without passing explicit headers requires providing an explicit consent and storing this in a cookie.
