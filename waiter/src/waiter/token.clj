@@ -201,9 +201,9 @@
     "List all tokens for a given user."
     [kv-store owner]
     (let [owner->owner-key (kv/fetch kv-store token-owners-key)]
-      (if-let [owner-key (owner->owner-key owner)]
+      (if-let [owner-key (get owner->owner-key owner)]
         (kv/fetch kv-store owner-key)
-        (throw (ex-info "no owner-key found" {:owner owner :status 500})))))
+        (log/info "no owner-key found for owner" owner))))
 
   (defn list-token-owners
     "List token owners."

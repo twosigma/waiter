@@ -1880,7 +1880,7 @@
                            (f)))
         kv-store (kv/->LocalKeyValueStore (atom {}))
         entitlement-manager (reify authz/EntitlementManager
-                              (authorized? [_ _ _ _] (throw (UnsupportedOperationException. "enexpected call"))))
+                              (authorized? [_ _ _ _] (throw (UnsupportedOperationException. "unexpected call"))))
         handle-list-tokens-request (wrap-handler-json-response handle-list-tokens-request)
         last-update-time-seed (clock-millis)
         token->token-hash (fn [token] (sd/token-data->token-hash (kv/fetch kv-store token)))]
@@ -1992,6 +1992,10 @@
                 "owner" "owner1"
                 "token" "token2"}}
              (set (json/read-str body)))))
+    (let [request {:query-string "owner=does-not-exist" :request-method :get}
+          {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
+      (is (= 200 status))
+      (is (= [] (json/read-str body))))
     (let [request {:headers {"accept" "application/json"}
                    :request-method :post}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)
