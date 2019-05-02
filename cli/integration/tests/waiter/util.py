@@ -64,11 +64,19 @@ def init_waiter_session(*waiter_urls):
         _wait_for_waiter(waiter_url)
 
 
+def cid():
+    return f'waiter-tests-{uuid.uuid4()}'
+
+
 def delete_token(waiter_url, token_name, assert_response=True, expected_status_code=200, kill_services=False):
     if kill_services:
         kill_services_using_token(waiter_url, token_name)
 
-    response = session.delete(f'{waiter_url}/token', headers={'X-Waiter-Token': token_name})
+    headers = {
+        'X-Waiter-Token': token_name,
+        'x-cid': cid()
+    }
+    response = session.delete(f'{waiter_url}/token', headers=headers)
     if assert_response:
         logging.debug(f'Response status code: {response.status_code}')
         assert expected_status_code == response.status_code, response.text
@@ -77,8 +85,9 @@ def delete_token(waiter_url, token_name, assert_response=True, expected_status_c
 
 def load_token(waiter_url, token_name, assert_response=True, expected_status_code=200):
     headers = {
+        'Content-Type': 'application/json',
         'X-Waiter-Token': token_name,
-        'Content-Type': 'application/json'
+        'x-cid': cid()
     }
     params = {'include': 'metadata'}
     response = session.get(f'{waiter_url}/token', headers=headers, params=params)
@@ -90,7 +99,10 @@ def load_token(waiter_url, token_name, assert_response=True, expected_status_cod
 
 
 def post_token(waiter_url, token_name, token_definition, assert_response=True, expected_status_code=200):
-    headers = {'Content-Type': 'application/json'}
+    headers = {
+        'Content-Type': 'application/json',
+        'x-cid': cid()
+    }
     response = session.post(f'{waiter_url}/token', headers=headers, json=token_definition, params={'token': token_name})
     if assert_response:
         assert \
@@ -187,7 +199,8 @@ def ping_token(waiter_url, token_name, expected_status_code=200):
         'Content-Type': 'application/json',
         'X-Waiter-Debug': 'true',
         'X-Waiter-Fallback-Period-Secs': '0',
-        'X-Waiter-Token': token_name
+        'X-Waiter-Token': token_name,
+        'x-cid': cid()
     }
     response = session.get(f'{waiter_url}', headers=headers)
     assert \
@@ -199,13 +212,17 @@ def ping_token(waiter_url, token_name, expected_status_code=200):
 
 
 def kill_service(waiter_url, service_id):
-    response = session.delete(f'{waiter_url}/apps/{service_id}')
+    headers = {'x-cid': cid()}
+    response = session.delete(f'{waiter_url}/apps/{service_id}', headers=headers)
     assert 200 == response.status_code, f'Expected 200, got {response.status_code} with body {response.text}'
     wait_until_routers(waiter_url, lambda services: not any(s['service-id'] == service_id for s in services))
 
 
 def services_for_token(waiter_url, token_name, assert_response=True, expected_status_code=200, log_services=False):
-    headers = {'Content-Type': 'application/json'}
+    headers = {
+        'Content-Type': 'application/json',
+        'x-cid': cid()
+    }
     response = session.get(f'{waiter_url}/apps', headers=headers, params={'token': token_name})
     if assert_response:
         assert \

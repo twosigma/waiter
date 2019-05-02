@@ -1,6 +1,7 @@
 import importlib
 import json
 import logging
+import uuid
 from urllib.parse import urljoin
 
 import requests
@@ -77,12 +78,20 @@ def __make_url(cluster, endpoint):
     return urljoin(cluster['url'], endpoint)
 
 
+def default_http_headers():
+    """Returns the default HTTP headers, including a random CID in x-cid"""
+    return {
+        'Accept': 'application/json',
+        'x-cid': f'waiter-{waiter.version.VERSION}-{uuid.uuid4()}'
+    }
+
+
 def post(cluster, endpoint, json_body, params=None, headers=None):
     """POSTs data to cluster at /endpoint"""
     if headers is None:
         headers = {}
     url = __make_url(cluster, endpoint)
-    default_headers = {'Accept': 'application/json'}
+    default_headers = default_http_headers()
     resp = __post(url, json_body, params=params, headers={**default_headers, **headers})
     resp.headers.pop('Set-Cookie', None)
     logging.info(f'POST response: {resp.text} (headers: {resp.headers})')
@@ -94,7 +103,7 @@ def get(cluster, endpoint, params=None, headers=None, read_timeout=None):
     if headers is None:
         headers = {}
     url = __make_url(cluster, endpoint)
-    default_headers = {'Accept': 'application/json'}
+    default_headers = default_http_headers()
     resp = __get(url, params, headers={**default_headers, **headers}, read_timeout=read_timeout)
     resp.headers.pop('Set-Cookie', None)
     logging.info(f'GET response: {resp.text} (headers: {resp.headers})')
@@ -106,7 +115,7 @@ def delete(cluster, endpoint, params=None, headers=None):
     if headers is None:
         headers = {}
     url = __make_url(cluster, endpoint)
-    default_headers = {'Accept': 'application/json'}
+    default_headers = default_http_headers()
     resp = __delete(url, params, headers={**default_headers, **headers})
     logging.info(f'DELETE response: {resp.text}')
     return resp
