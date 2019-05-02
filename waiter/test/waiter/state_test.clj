@@ -1008,7 +1008,7 @@
         service-id->service-description-fn (constantly {"concurrency-level" 1
                                                         "grace-period-secs" 30
                                                         "instance-expiry-mins" 1})
-        refresh-service-descriptions-fn (constantly true)
+        refresh-service-descriptions-fn identity
         service-id "service-1"
         instance {:id (str service-id ".1")
                   :started-at (t/minus (t/now) (t/minutes 2))}
@@ -1041,6 +1041,54 @@
       (is (empty? (get service-id->expired-instances service-id))))
     (async/>!! exit-chan :exit)))
 
+(deftest test-router-state-maintainer-ignores-unknown-services
+  (let [scheduler-state-chan (async/chan 1)
+        router-chan (async/chan 1)
+        router-id "router.0"
+        router-state-push-chan (async/chan 1)
+        exit-chan (async/chan 1)
+        service-id->service-description-fn (fn [service-id]
+                                             (when-not (str/includes? service-id "unknown")
+                                               {"concurrency-level" 1
+                                                "grace-period-secs" 30
+                                                "instance-expiry-mins" 100}))
+        refresh-service-descriptions-fn #(set (filter service-id->service-description-fn %))
+        service-id-1 "service-1"
+        service-id-2 "service-2-unknown"
+        instance-1 {:id (str service-id-1 ".1")
+                    :started-at (t/minus (t/now) (t/minutes 2))}
+        instance-2 {:id (str service-id-2 ".1")
+                    :started-at (t/minus (t/now) (t/minutes 4))}
+        deployment-error-config {:min-failed-instances 2
+                                 :min-hosts 2}]
+    (let [{:keys [router-state-push-mult]}
+          (start-router-state-maintainer
+            scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn
+            refresh-service-descriptions-fn dummy-deployment-error-config-fn deployment-error-config)]
+      (async/tap router-state-push-mult router-state-push-chan))
+    (async/>!! router-chan {router-id (str "http://www." router-id ".com")})
+    (async/>!! scheduler-state-chan [[:update-available-services {:available-service-ids #{service-id-1 service-id-2}
+                                                                  :scheduler-sync-time (t/now)}]])
+    (async/<!! router-state-push-chan)
+    (async/>!! scheduler-state-chan [[:update-service-instances {:healthy-instances [instance-1]
+                                                                 :unhealthy-instances []
+                                                                 :sorted-instance-ids [(:id instance-1)]
+                                                                 :service-id service-id-1
+                                                                 :scheduler-sync-time (t/now)}]
+                                     [:update-service-instances {:healthy-instances [instance-2]
+                                                                 :unhealthy-instances []
+                                                                 :sorted-instance-ids [(:id instance-2)]
+                                                                 :service-id service-id-2
+                                                                 :scheduler-sync-time (t/now)}]])
+    (let [{:keys [all-available-service-ids service-id->healthy-instances service-id->expired-instances]}
+          (async/<!! router-state-push-chan)]
+      (is (= #{service-id-1} all-available-service-ids))
+      (is (= [instance-1] (get service-id->healthy-instances service-id-1)))
+      (is (empty? (get service-id->expired-instances service-id-1)))
+      (is (empty? (get service-id->healthy-instances service-id-2)))
+      (is (empty? (get service-id->expired-instances service-id-2))))
+    (async/>!! exit-chan :exit)))
+
 (deftest test-router-state-maintainer-removes-killed-instances
   (let [scheduler-state-chan (async/chan 1)
         router-chan (async/chan 1)
@@ -1048,7 +1096,7 @@
         router-state-push-chan (async/chan 1)
         exit-chan (async/chan 1)
         service-id->service-description-fn (constantly {"concurrency-level" 1 "grace-period-secs" 30 "instance-expiry-mins" 4})
-        refresh-service-descriptions-fn (constantly true)
+        refresh-service-descriptions-fn identity
         service-id "service-1"
         make-instance (fn [index]
                         {:id (str service-id "." index)
@@ -1271,7 +1319,7 @@
                                                       {"concurrency-level" concurrency-level
                                                        "instance-expiry-mins" service-num
                                                        "grace-period-secs" grace-period-secs}))
-        refresh-service-descriptions-fn (constantly true)
+        refresh-service-descriptions-fn identity
         deployment-error-config {:grace-period-ms (* grace-period-secs 1000)
                                  :min-failed-instances 1
                                  :min-hosts 1}]

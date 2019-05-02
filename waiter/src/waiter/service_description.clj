@@ -765,12 +765,19 @@
           (throw (ex-info "No description found!" {:service-id service-id})))))))
 
 (defn refresh-service-descriptions
-  "Refreshes missing service descriptions for the specified service ids."
+  "Refreshes missing service descriptions for the specified service ids.
+   Returns the set of service-ids which have valid service descriptions."
   [kv-store service-ids]
-  (doseq [service-id service-ids]
-    (when-not (fetch-core kv-store service-id :refresh false)
-      (log/info "refreshing the service description for" service-id)
-      (fetch-core kv-store service-id :nil-on-missing? false :refresh true))))
+  (->> service-ids
+       (filter
+         (fn [service-id]
+           (if (or (fetch-core kv-store service-id :refresh false)
+                   (do
+                     (log/info "refreshing the service description for" service-id)
+                     (fetch-core kv-store service-id :refresh true)))
+             true
+             (log/warn "filtering" service-id "as no matching service description was found"))))
+       set))
 
 (let [service-id->key #(str "^STATUS#" %)]
   (defn suspend-service

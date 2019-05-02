@@ -1651,7 +1651,11 @@
     (is (nil? (kv/fetch cache-kv-store (service-id->key service-id-3))))
     (is (= (service-id->service-description service-id-4) (kv/fetch cache-kv-store (service-id->key service-id-4))))
 
-    (refresh-service-descriptions cache-kv-store #{service-id-1 service-id-2 service-id-3 service-id-4})
+    (let [service-ids #{service-id-1 service-id-2 service-id-3 service-id-4}]
+      (->> (conj service-ids "service-id-unknown1" "service-id-unknown2")
+           (refresh-service-descriptions cache-kv-store)
+           (= service-ids)
+           (is)))
 
     (is (= (service-id->service-description service-id-1) (kv/fetch cache-kv-store (service-id->key service-id-1))))
     (is (= (service-id->service-description service-id-2) (kv/fetch cache-kv-store (service-id->key service-id-2))))
