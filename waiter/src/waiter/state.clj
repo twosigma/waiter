@@ -1244,7 +1244,7 @@
                                   (case message-type
                                     :update-available-services
                                     (let [{:keys [available-service-ids scheduler-sync-time]} message-data
-                                          all-available-service-ids' available-service-ids
+                                          all-available-service-ids' (refresh-service-descriptions-fn available-service-ids)
                                           services-without-instances (remove #(contains? service-id->my-instance->slots %) all-available-service-ids')
                                           service-id->healthy-instances' (select-keys service-id->healthy-instances all-available-service-ids')
                                           service-id->killed-instances' (select-keys service-id->killed-instances all-available-service-ids')
@@ -1262,7 +1262,6 @@
                                                   (count service-id->healthy-instances') "services with healthy instances and"
                                                   (count services-without-instances) "services without instances:"
                                                   (vec services-without-instances)))
-                                      (refresh-service-descriptions-fn all-available-service-ids')
                                       (assoc loop-state
                                         :all-available-service-ids all-available-service-ids'
                                         :service-id->healthy-instances service-id->healthy-instances'
@@ -1280,51 +1279,55 @@
                                     (let [{:keys [service-id healthy-instances unhealthy-instances failed-instances instance-counts scheduler-sync-time]} message-data
                                           service-id->healthy-instances' (assoc service-id->healthy-instances service-id healthy-instances)
                                           service-id->unhealthy-instances' (assoc service-id->unhealthy-instances service-id unhealthy-instances)
-                                          service-description (service-id->service-description-fn service-id)
-                                          grace-period-secs (t/seconds (int (get service-description "grace-period-secs")))
-                                          expiry-mins-int (int (get service-description "instance-expiry-mins"))
-                                          expiry-mins (t/minutes expiry-mins-int)
-                                          expired-instances (filter #(and (pos? expiry-mins-int)
-                                                                          (du/older-than? scheduler-sync-time expiry-mins %))
-                                                                    healthy-instances)
-                                          starting-instances (filter #(not (du/older-than? scheduler-sync-time grace-period-secs %)) unhealthy-instances)
-                                          service-id->expired-instances' (assoc service-id->expired-instances service-id expired-instances)
-                                          service-id->starting-instances' (assoc service-id->starting-instances service-id starting-instances)
-                                          service-id->failed-instances' (assoc service-id->failed-instances service-id failed-instances)
-                                          service-id->instance-counts' (assoc service-id->instance-counts service-id instance-counts)
-                                          deployment-error-config (merge default-deployment-error-config
-                                                                         (service-id->deployment-error-config-fn service-id))
-                                          deployment-error (get-deployment-error healthy-instances unhealthy-instances failed-instances deployment-error-config)
-                                          service-id->deployment-error' (if deployment-error
-                                                                          (assoc service-id->deployment-error service-id deployment-error)
-                                                                          (dissoc service-id->deployment-error service-id))
-                                          instability-issue (get-instability-issue failed-instances)
-                                          service-id->instability-issue' (if instability-issue
-                                                                           (assoc service-id->instability-issue service-id instability-issue)
-                                                                           (dissoc service-id->instability-issue service-id))]
-                                      (when (or (not= (get service-id->healthy-instances service-id) healthy-instances)
-                                                (not= (get service-id->unhealthy-instances service-id) unhealthy-instances))
-                                        (let [curr-instance-ids (set (map :id healthy-instances))
-                                              prev-instance-ids (set (map :id (get service-id->healthy-instances service-id)))
-                                              new-instance-ids (filterv (complement prev-instance-ids) curr-instance-ids)
-                                              rem-instance-ids (filterv (complement curr-instance-ids) prev-instance-ids)
-                                              unhealthy-instance-ids (mapv :id (get service-id->unhealthy-instances' service-id))]
-                                          (log/info "update-healthy-instances:" service-id "has"
-                                                    (count healthy-instances) "healthy instance(s) and"
-                                                    (count unhealthy-instance-ids) "unhealthy instance(s)."
-                                                    (if (seq new-instance-ids) (str "New healthy instances: " new-instance-ids ".") "")
-                                                    (if (seq rem-instance-ids) (str "Removed healthy instances: " rem-instance-ids ".") "")
-                                                    (if (seq unhealthy-instance-ids) (str "Unhealthy instances: " unhealthy-instance-ids ".") ""))))
-                                      (assoc loop-state
-                                        :service-id->deployment-error service-id->deployment-error'
-                                        :service-id->expired-instances service-id->expired-instances'
-                                        :service-id->failed-instances service-id->failed-instances'
-                                        :service-id->healthy-instances service-id->healthy-instances'
-                                        :service-id->instability-issue service-id->instability-issue'
-                                        :service-id->instance-counts service-id->instance-counts'
-                                        :service-id->starting-instances service-id->starting-instances'
-                                        :service-id->unhealthy-instances service-id->unhealthy-instances'
-                                        :time scheduler-sync-time))
+                                          service-description (service-id->service-description-fn service-id)]
+                                      (if-not (seq service-description)
+                                        (do
+                                          (log/info "skipping instances of unknown service" service-id)
+                                          loop-state)
+                                        (let [grace-period-secs (t/seconds (int (get service-description "grace-period-secs")))
+                                              expiry-mins-int (int (get service-description "instance-expiry-mins"))
+                                              expiry-mins (t/minutes expiry-mins-int)
+                                              expired-instances (filter #(and (pos? expiry-mins-int)
+                                                                              (du/older-than? scheduler-sync-time expiry-mins %))
+                                                                        healthy-instances)
+                                              starting-instances (filter #(not (du/older-than? scheduler-sync-time grace-period-secs %)) unhealthy-instances)
+                                              service-id->expired-instances' (assoc service-id->expired-instances service-id expired-instances)
+                                              service-id->starting-instances' (assoc service-id->starting-instances service-id starting-instances)
+                                              service-id->failed-instances' (assoc service-id->failed-instances service-id failed-instances)
+                                              service-id->instance-counts' (assoc service-id->instance-counts service-id instance-counts)
+                                              deployment-error-config (merge default-deployment-error-config
+                                                                             (service-id->deployment-error-config-fn service-id))
+                                              deployment-error (get-deployment-error healthy-instances unhealthy-instances failed-instances deployment-error-config)
+                                              service-id->deployment-error' (if deployment-error
+                                                                              (assoc service-id->deployment-error service-id deployment-error)
+                                                                              (dissoc service-id->deployment-error service-id))
+                                              instability-issue (get-instability-issue failed-instances)
+                                              service-id->instability-issue' (if instability-issue
+                                                                               (assoc service-id->instability-issue service-id instability-issue)
+                                                                               (dissoc service-id->instability-issue service-id))]
+                                          (when (or (not= (get service-id->healthy-instances service-id) healthy-instances)
+                                                    (not= (get service-id->unhealthy-instances service-id) unhealthy-instances))
+                                            (let [curr-instance-ids (set (map :id healthy-instances))
+                                                  prev-instance-ids (set (map :id (get service-id->healthy-instances service-id)))
+                                                  new-instance-ids (filterv (complement prev-instance-ids) curr-instance-ids)
+                                                  rem-instance-ids (filterv (complement curr-instance-ids) prev-instance-ids)
+                                                  unhealthy-instance-ids (mapv :id (get service-id->unhealthy-instances' service-id))]
+                                              (log/info "update-healthy-instances:" service-id "has"
+                                                        (count healthy-instances) "healthy instance(s) and"
+                                                        (count unhealthy-instance-ids) "unhealthy instance(s)."
+                                                        (if (seq new-instance-ids) (str "New healthy instances: " new-instance-ids ".") "")
+                                                        (if (seq rem-instance-ids) (str "Removed healthy instances: " rem-instance-ids ".") "")
+                                                        (if (seq unhealthy-instance-ids) (str "Unhealthy instances: " unhealthy-instance-ids ".") ""))))
+                                          (assoc loop-state
+                                            :service-id->deployment-error service-id->deployment-error'
+                                            :service-id->expired-instances service-id->expired-instances'
+                                            :service-id->failed-instances service-id->failed-instances'
+                                            :service-id->healthy-instances service-id->healthy-instances'
+                                            :service-id->instability-issue service-id->instability-issue'
+                                            :service-id->instance-counts service-id->instance-counts'
+                                            :service-id->starting-instances service-id->starting-instances'
+                                            :service-id->unhealthy-instances service-id->unhealthy-instances'
+                                            :time scheduler-sync-time))))
 
                                     ; default value
                                     (do
