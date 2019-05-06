@@ -200,3 +200,34 @@
         (testing "Invalid namespace"
           (is (thrown? Exception #"Service namespace must either be omitted or match the run-as-user"
                        (check-pod-namespace waiter-url "not-current-user" current-user))))))))
+
+(defn- get-pod-service-account
+  [waiter-url namespace-arg user]
+  (let [{:keys [body error service-id status]}
+        (make-request-with-debug-info
+          (cond->
+            {:x-waiter-name (rand-name)
+             :x-waiter-cmd (str "env SERVICE_ACCOUNT=\"$(grep -hs . /var/run/secrets/kubernetes.io/serviceaccount/namespace)\" "
+                                (kitchen-cmd "-p $PORT0"))}
+            namespace-arg
+            (assoc :x-waiter-namespace namespace-arg))
+        #(make-kitchen-request waiter-url % :path "/environment"))]
+    (when-not (= 200 status)
+      (throw (ex-info "Failed to create service"
+                      {:response-body body
+                       :response-status status}
+                      error)))
+    (with-service-cleanup
+      service-id
+      (-> body str try-parse-json (get "SERVICE_ACCOUNT")))))
+
+(deftest ^:parallel ^:integration-fast test-service-account-injection
+  (testing-using-waiter-url
+    (when (using-k8s? waiter-url)
+      (let [current-user (retrieve-username)]
+        (testing "No service account with default namespace"
+          (let [service-account (get-pod-service-account waiter-url nil current-user)]
+            (is (string/blank? service-account))))
+        (testing "Has service account with custom namespace"
+          (let [service-account (get-pod-service-account waiter-url current-user current-user)]
+            (is (= current-user service-account))))))))
