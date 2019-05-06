@@ -918,12 +918,12 @@
 
     (testing "can't use invalid token"
       (let [response (make-request waiter-url "/pathabc" :headers {"X-Waiter-Token" "bad/token"})]
-        (is (str/includes? (:body response) "Token must match pattern"))
+        (is (str/includes? (:body response) "Token not found: bad/token"))
         (assert-response-status response 400)))
 
     (testing "can't use invalid token with host set"
       (let [response (make-request waiter-url "/pathabc" :headers {"host" "missing_token" "X-Waiter-Token" "bad/token"})]
-        (is (str/includes? (:body response) "Token must match pattern"))
+        (is (str/includes? (:body response) "Token not found: bad/token"))
         (assert-response-status response 400)))
 
     (testing "can't use missing token with host set"

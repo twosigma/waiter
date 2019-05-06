@@ -605,11 +605,8 @@
             (catch Exception e
               (if error-on-missing
                 (do
-                  ; Check whether the exception is because the token is invalid
                   (log/info e "Error in kv-store fetch")
-                  (validate-token token)
-                  ; Token was valid, re-throw exception
-                  (throw e))
+                  (throw (ex-info (str "Token not found: " token) {:status 400} e)))
                 (log/info e "Ignoring kv-store fetch exception")))))
         token-data (when (seq token-data) ; populate token owner for backwards compatibility
                      (-> token-data
