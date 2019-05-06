@@ -15,9 +15,9 @@ def format_using_current_token(service, token_etag):
     """Formats the "Current?" column for the given service"""
     is_current = any(token['version'] == token_etag for source in service['source-tokens'] for token in source)
     if is_current:
-        return terminal.success(u'\u2714')  # ✔
+        return terminal.success('Current')
     else:
-        return u'\u2717'  # ✗
+        return 'Not Current'
 
 
 def tabulate_token_services(services, token_etag):
