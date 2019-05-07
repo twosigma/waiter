@@ -1047,7 +1047,7 @@
                 (using-shell? waiter-url))
             (make-kitchen-request-fn "dummy/image" 500)))))
 
-(deftest ^:parallel ^:integration-fast test-internal-protocol
+(deftest ^:parallel ^:integration-fast ^:explicit test-internal-protocol
   (testing-using-waiter-url
     (let [{:keys [http2c? http2? ssl-port]} (:server-options (waiter-settings waiter-url))
           retrieve-client-protocol #(get-in % ["request-info" "client-protocol"])
