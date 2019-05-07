@@ -92,7 +92,7 @@
   (testing-using-waiter-url
     (run-sediment-trailers-support-test waiter-url "http")))
 
-(deftest ^:parallel ^:integration-fast test-trailers-support-h2c-proto-sediment
+(deftest ^:parallel ^:integration-fast ^:explicit test-trailers-support-h2c-proto-sediment
   (testing-using-waiter-url
     (run-sediment-trailers-support-test waiter-url "h2c")))
 
