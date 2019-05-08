@@ -186,6 +186,7 @@
    service-password {:keys [username principal]} idle-timeout output-buffer-size proto-version]
   (let [auth (make-basic-auth-fn endpoint "waiter" service-password)
         headers (headers/assoc-auth-headers headers username principal)]
+    (log/info "backend request headers" headers) ;; TODO shams remove log statement
     (http/request
       http-client
       {:as :bytes
@@ -365,7 +366,8 @@
    It includes book-keeping for async requests and asycnhronously streaming the content."
   [post-process-async-request-response-fn _ instance-request-properties descriptor instance
    {:keys [uri] :as request} reason-map reservation-status-promise confirm-live-connection-with-abort
-   request-state-chan {:keys [status] :as response}]
+   request-state-chan {:keys [headers status] :as response}]
+  (log/info "backend response headers" headers) ;; TODO shams remove log statement
   (let [{:keys [service-description service-id]} descriptor
         {:strs [backend-proto metric-group]} service-description
         waiter-debug-enabled? (utils/request->debug-enabled? request)
@@ -385,7 +387,14 @@
                             resp-chan instance-request-properties reservation-status-promise
                             request-state-chan metric-group waiter-debug-enabled?
                             (metrics/stream-metric-map service-id))
-      (-> (cond-> response
+      ;; TODO shams remove update expression
+      (-> (cond-> (update response :trailers
+                          (fn [trailers]
+                            (when trailers
+                              (async/go
+                                (let [trailers-map (async/<! trailers)]
+                                  (log/info "backend response trailers" trailers-map)
+                                  trailers-map)))))
             location (post-process-async-request-response-fn
                        service-id metric-group backend-proto instance (handler/make-auth-user-map request)
                        reason-map instance-request-properties location query-string))
