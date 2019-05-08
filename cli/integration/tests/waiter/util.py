@@ -83,13 +83,15 @@ def delete_token(waiter_url, token_name, assert_response=True, expected_status_c
     return response
 
 
-def load_token(waiter_url, token_name, assert_response=True, expected_status_code=200):
+def load_token(waiter_url, token_name, assert_response=True, expected_status_code=200, params=None):
+    if params is None:
+        params = {'include': 'metadata'}
+
     headers = {
         'Content-Type': 'application/json',
         'X-Waiter-Token': token_name,
         'x-cid': cid()
     }
-    params = {'include': 'metadata'}
     response = session.get(f'{waiter_url}/token', headers=headers, params=params)
     if assert_response:
         assert \
@@ -104,11 +106,20 @@ def post_token(waiter_url, token_name, token_definition, assert_response=True, e
         'x-cid': cid()
     }
     response = session.post(f'{waiter_url}/token', headers=headers, json=token_definition, params={'token': token_name})
+    logging.debug(f'Response headers: {response.headers}')
+    response_json = response.json()
     if assert_response:
         assert \
             expected_status_code == response.status_code, \
             f'Expected {expected_status_code}, got {response.status_code} with body {response.text}'
-    return response.json()
+        fetched_token = load_token(waiter_url, token_name, params={})
+        del fetched_token['owner']
+        if 'cluster' in token_definition:
+            del token_definition['cluster']
+        assert \
+            token_definition == fetched_token, \
+            f'Expected {json.dumps(token_definition, indent=2)}, got {json.dumps(fetched_token, indent=2)}'
+    return response_json
 
 
 def minimal_service_cmd():
