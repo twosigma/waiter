@@ -554,6 +554,7 @@ class WaiterCliTest(util.WaiterTest):
         token_name = self.token_name()
 
         def ping_then_kill_with_small_timeout():
+            util.post_token(self.waiter_url, token_name, util.minimal_service_description())
             util.ping_token(self.waiter_url, token_name)
             assert 1 == len(util.services_for_token(self.waiter_url, token_name))
             return cli.kill(self.waiter_url, token_name, kill_flags='--timeout 1')
@@ -564,7 +565,6 @@ class WaiterCliTest(util.WaiterTest):
             assert 'Timeout waiting for service to die' in cli.stderr(cp)
             return True
 
-        util.post_token(self.waiter_url, token_name, util.minimal_service_description())
         try:
             util.wait_until(ping_then_kill_with_small_timeout, kill_timed_out)
         finally:
