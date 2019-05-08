@@ -89,8 +89,9 @@
 
 (defn- retrieve-proto-specific-hop-by-hop-headers
   "Determines the protocol version specific hop-by-hop headers."
-  [proto-version]
-  (when (not= "HTTP/2.0" proto-version) ["te"]))
+  [{:strs [content-type]} proto-version]
+  (when-not (and (= "HTTP/2.0" proto-version) (= content-type "application/grpc"))
+    ["te"]))
 
 (defn dissoc-hop-by-hop-headers
   "Proxies must remove hop-by-hop headers before forwarding messages — both requests and responses.
@@ -99,7 +100,7 @@
    The te header is not removed for HTTP/2.0 requests as it is needed by grpc to detect incompatible proxies:
    https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-HTTP2.md"
   [{:strs [connection] :as headers} proto-version]
-  (let [force-remove-headers (retrieve-proto-specific-hop-by-hop-headers proto-version)
+  (let [force-remove-headers (retrieve-proto-specific-hop-by-hop-headers headers proto-version)
         connection-headers (map str/trim (str/split (str connection) #","))]
     (cond-> (dissoc headers "connection" "keep-alive" "proxy-authenticate" "proxy-authorization"
                     "trailers" "transfer-encoding" "upgrade")

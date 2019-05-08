@@ -155,8 +155,8 @@
 
 (deftest test-dissoc-hop-by-hop-headers
   (let [headers {"connection" "keep-alive, foo, lorem, ipsum"
-                 "content" "text/html"
                  "content-encoding" "gzip"
+                 "content-type" "text/html"
                  "bar" "bar-value"
                  "foo" "foo-value"
                  "lorem" "lorem-value"
@@ -167,15 +167,23 @@
                  "transfer-encoding" "trailers, deflate"
                  "upgrade" "http/2.0, https/1.3, irc/6.9, rta/x11, websocket"}]
     (is (= {"bar" "bar-value"
-            "content" "text/html"
             "content-encoding" "gzip"
+            "content-type" "text/html"
+            "proxy-connection" "keep-alive"
+            "referer" "http://www.test-referer.com"}
+           (dissoc-hop-by-hop-headers headers "HTTP/2.0")))
+    (is (= {"bar" "bar-value"
+            "content-encoding" "gzip"
+            "content-type" "application/grpc"
             "proxy-connection" "keep-alive"
             "referer" "http://www.test-referer.com"
             "te" "trailers, deflate"}
-           (dissoc-hop-by-hop-headers headers "HTTP/2.0")))
+           (-> headers
+             (assoc "content-type" "application/grpc")
+             (dissoc-hop-by-hop-headers "HTTP/2.0"))))
     (is (= {"bar" "bar-value"
-            "content" "text/html"
             "content-encoding" "gzip"
+            "content-type" "text/html"
             "proxy-connection" "keep-alive"
             "referer" "http://www.test-referer.com"}
            (dissoc-hop-by-hop-headers headers "HTTP/1.0")))))
