@@ -324,10 +324,10 @@
                                         (is (:auth request-config))
                                         (is (= "body" (:body request-config)))
                                         (is (= 654321 (:idle-timeout request-config)))
-                                        (is (= (-> (apply dissoc passthrough-headers (if (= proto-version "HTTP/2.0") [] ["te"]))
+                                        (is (= (-> passthrough-headers
                                                    (dissoc "expect" "authorization"
                                                            "connection" "keep-alive" "proxy-authenticate" "proxy-authorization"
-                                                           "trailers" "transfer-encoding" "upgrade")
+                                                           "te" "trailers" "transfer-encoding" "upgrade")
                                                    (merge {"x-waiter-auth-principal" "test-user"
                                                            "x-waiter-authenticated-principal" "test-user@test.com"}))
                                                (:headers request-config)))
