@@ -1,4 +1,6 @@
+import json
 import logging
+import sys
 from enum import Enum
 
 import requests
@@ -65,6 +67,29 @@ def create_or_update(cluster, token_name, token_fields, action):
         print_info(f'{message}\n')
 
 
+def parse_raw_token_spec(r):
+    """
+    Parse a JSON string containing raw token data.
+    Token data must be a dict of token attributes.
+    Throws a ValueError if there is a problem parsing the data.
+    """
+    try:
+        content = json.loads(r)
+        if type(content) is dict:
+            return content
+        else:
+            raise ValueError('Invalid format for raw token')
+    except Exception:
+        raise ValueError('Malformed JSON for raw token')
+
+
+def read_token_from_stdin():
+    """Prompts for and then reads token JSON from stdin"""
+    print('Enter the raw token JSON (press Ctrl+D on a blank line to submit)', file=sys.stderr)
+    token_json = sys.stdin.read()
+    return token_json
+
+
 def create_or_update_token(clusters, args, _, action):
     """Creates (or updates) a Waiter token"""
     guard_no_cluster(clusters)
@@ -75,9 +100,13 @@ def create_or_update_token(clusters, args, _, action):
         if len(args) > 0:
             raise Exception('You cannot specify both a token JSON file and token field flags at the same time.')
 
-        token_fields = load_json_file(json_file)
-        if not token_fields:
-            raise Exception(f'Unable to load token JSON from {json_file}.')
+        if json_file == '-':
+            token_json = read_token_from_stdin()
+            token_fields = parse_raw_token_spec(token_json)
+        else:
+            token_fields = load_json_file(json_file)
+            if not token_fields:
+                raise Exception(f'Unable to load token JSON from {json_file}.')
     else:
         token_fields = args
 
