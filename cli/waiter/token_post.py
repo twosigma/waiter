@@ -75,12 +75,13 @@ def parse_raw_token_spec(r):
     """
     try:
         content = json.loads(r)
-        if type(content) is dict:
-            return content
-        else:
-            raise ValueError('Invalid format for raw token')
     except Exception:
-        raise ValueError('Malformed JSON for raw token')
+        raise ValueError('Malformed JSON for raw token.')
+
+    if type(content) is dict:
+        return content
+    else:
+        raise ValueError('Token must be a dictionary of attributes.')
 
 
 def read_token_from_stdin():

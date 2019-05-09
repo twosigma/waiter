@@ -746,6 +746,17 @@ class WaiterCliTest(util.WaiterTest):
 
     def test_post_token_json_invalid(self):
         token_name = self.token_name()
+
+        stdin = json.dumps([]).encode('utf8')
+        cp = cli.update(self.waiter_url, token_name, update_flags=f'--json -', stdin=stdin)
+        self.assertEqual(1, cp.returncode, cp.stderr)
+        self.assertIn('Token must be a dictionary', cli.stderr(cp))
+
+        stdin = '{"mem": 128'.encode('utf8')
+        cp = cli.update(self.waiter_url, token_name, update_flags=f'--json -', stdin=stdin)
+        self.assertEqual(1, cp.returncode, cp.stderr)
+        self.assertIn('Malformed JSON', cli.stderr(cp))
+
         with tempfile.NamedTemporaryFile(delete=True) as file:
             cp = cli.update(self.waiter_url, token_name, update_flags=f'--json {file.name}')
             self.assertEqual(1, cp.returncode, cp.stderr)
