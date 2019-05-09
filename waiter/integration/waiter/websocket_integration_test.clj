@@ -219,7 +219,7 @@
                     (t/equal? minimum-last-request-time service-last-request-time))
                 (str [minimum-last-request-time service-last-request-time]))))))))
 
-(deftest ^:parallel ^:integration-fast test-request-socket-timeout
+(deftest ^:parallel ^:integration-fast ^:explicit test-request-socket-timeout
   (testing-using-waiter-url
     (let [auth-cookie-value (auth-cookie waiter-url)
           send-success-after-timeout-atom (atom true)
