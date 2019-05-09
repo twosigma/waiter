@@ -4,13 +4,13 @@ import os
 import pty
 import shlex
 
-# Manually create a TTY that we can use as the default STDIN
 import subprocess
 import tempfile
 from fcntl import fcntl, F_GETFL, F_SETFL
 
 from tests.waiter import util
 
+# Manually create a TTY that we can use as the default STDIN
 _STDIN_TTY = pty.openpty()[1]
 
 
@@ -65,22 +65,22 @@ def cli(args, waiter_url=None, flags=None, stdin=None, env=None, wait_for_exit=T
     return cp
 
 
-def create_or_update(subcommand, waiter_url=None, token_name=None, flags=None, create_flags=None):
+def create_or_update(subcommand, waiter_url=None, token_name=None, flags=None, create_flags=None, stdin=None):
     """Creates or updates a token via the CLI"""
     args = f"{subcommand} {token_name or ''} {create_flags or ''}"
-    cp = cli(args, waiter_url, flags)
+    cp = cli(args, waiter_url, flags, stdin)
     return cp
 
 
-def create(waiter_url=None, token_name=None, flags=None, create_flags=None):
+def create(waiter_url=None, token_name=None, flags=None, create_flags=None, stdin=None):
     """Creates a token via the CLI"""
-    cp = create_or_update('create', waiter_url, token_name, flags, create_flags)
+    cp = create_or_update('create', waiter_url, token_name, flags, create_flags, stdin)
     return cp
 
 
-def update(waiter_url=None, token_name=None, flags=None, update_flags=None):
+def update(waiter_url=None, token_name=None, flags=None, update_flags=None, stdin=None):
     """Updates a token via the CLI"""
-    cp = create_or_update('update', waiter_url, token_name, flags, update_flags)
+    cp = create_or_update('update', waiter_url, token_name, flags, update_flags, stdin)
     return cp
 
 
