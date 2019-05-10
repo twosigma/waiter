@@ -891,10 +891,22 @@
                                                                         service-description-based-on-headers)
                                                                  ; param headers need to update the environment
                                                                  merge-params)
+          raw-run-as-user (get service-description-from-headers-and-token-sources "run-as-user")
+          raw-namespace (get service-description-from-headers-and-token-sources "namespace")
           sanitized-service-description-from-sources (cond-> service-description-from-headers-and-token-sources
                                                        ;; * run-as-user is the same as a missing run-as-user
-                                                       (= "*" (get service-description-from-headers-and-token-sources "run-as-user"))
-                                                       (dissoc service-description-from-headers-and-token-sources "run-as-user"))
+                                                       (= "*" raw-run-as-user)
+                                                       (dissoc "run-as-user")
+                                                       ;; * namespace means match the current user (for use with run-as-requestor)
+                                                       (= "*" raw-namespace)
+                                                       (assoc "namespace" username))
+          sanitized-run-as-user (get sanitized-service-description-from-sources "run-as-user")
+          _ (when (and (= "*" raw-namespace) (some? sanitized-run-as-user))
+              (throw (ex-info "Cannot use namespace * with specific run-as-user"
+                              {:namespace raw-namespace :run-as-user raw-run-as-user :status 400})))
+          _ (when (and (nil? sanitized-run-as-user) (some? raw-namespace) (not= "*" raw-namespace))
+              (throw (ex-info "Cannot use run-as-requestor with a specific namespace"
+                              {:namespace raw-namespace :run-as-user raw-run-as-user :status 400})))
           sanitized-metadata-description (sanitize-metadata sanitized-service-description-from-sources)
           ; run-as-user will not be set if description-from-headers or the token description contains it.
           ; else rely on presence of x-waiter headers to set the run-as-user

@@ -2080,6 +2080,27 @@
                                  "run-as-user" "some-user")
                           validation-settings))))
 
+    (testing "validate-service-description-namespace-star"
+      (is (nil? (validate builder
+                          (assoc basic-service-description
+                                 "namespace" "*")
+                          validation-settings))))
+
+    (testing "validate-service-description-namespace-invalid"
+      (is (thrown? Exception #"Cannot use run-as-requestor with a specific namespace"
+                   (validate builder
+                             (assoc basic-service-description
+                                    "namespace" "some-user")
+                             validation-settings))))
+
+    (testing "validate-service-description-namespace-invalid"
+      (is (thrown? Exception #"Cannot use namespace \* with specific run-as-user"
+                   (validate builder
+                             (assoc basic-service-description
+                                    "namespace" "*"
+                                    "run-as-user" "some-user")
+                             validation-settings))))
+
     (testing "validate-service-description-namespace-invalid"
       (is (thrown? Exception #"Service namespace must either be omitted or match the run-as-user"
                    (validate builder
