@@ -35,7 +35,7 @@
 (def valid-authentication
   "Validator for the authentication parameter.
    Valid values are 'disabled' and 'standard'."
-  (s/constrained non-empty-string #{"disabled" "standard"} 'invalid-authentication))
+  (s/constrained non-empty-string #{"disabled" "saml" "standard"} 'invalid-authentication))
 
 (let [valid-backend-protos #{"h2" "h2c" "http" "https"}
       valid-health-check-protos (conj valid-backend-protos nil)]

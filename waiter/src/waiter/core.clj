@@ -533,8 +533,9 @@
    :authenticator (pc/fnk [[:settings authenticator-config]
                            waiter-hostnames
                            passwords]
-                    (utils/create-component authenticator-config :context {:password (first passwords)
-                                                                           :hostname (first waiter-hostnames)}))
+                    (utils/create-component authenticator-config :context {:authenticator-config authenticator-config
+                                                                           :hostname (first waiter-hostnames)
+                                                                           :password (first passwords)}))
    :clock (pc/fnk [] t/now)
    :cors-validator (pc/fnk [[:settings cors-config]]
                      (utils/create-component cors-config))

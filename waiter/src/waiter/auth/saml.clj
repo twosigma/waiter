@@ -80,12 +80,10 @@
         (.validate validator signature)
         true
         (catch org.opensaml.xml.validation.ValidationException ex
-          (log/warn "Signature NOT valid")
-          (log/warn (.getMessage ex))
+          (log/warn "Signature NOT valid" (.getMessage ex))
           false)))
-    true                                                    ;; if not signature is present
+    false ;; if not signature is present
     ))
-
 
 (defn saml-acs-handler
   "Endpoint for POSTs to Waiter with IdP-signed credentials. If signature is valid, redirect to originally requested resource."
@@ -101,11 +99,11 @@
     (when-not valid-signature?
       (throw (ex-info "Could not authenticate user. Invalid SAML response signature." {:status 400})))
     (let [saml-info (when valid-signature? (saml-sp/saml-resp->assertions saml-response nil))
-          saml-attrs (get-in saml-info [:assertions 0 :attrs])
+          saml-attrs (-> saml-info (:assertions) (first) (:attrs))
           ; https://docs.microsoft.com/en-us/windows-server/identity/ad-fs/technical-reference/the-role-of-claims
           saml-principal (get saml-attrs "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"
                               (get saml-attrs "email"))
-          {:keys [authorization/principal authorization/user]} (auth/auth-params-map saml-principal)]
+          {:keys [authorization/principal authorization/user]} (auth/auth-params-map (first saml-principal))]
       (auth/handle-request-auth (constantly {:status 303
                                              :headers {"Location" relay-state}
                                              :body ""})
