@@ -67,6 +67,7 @@
         (let [request-headers (assoc request-headers :accept "text/plain")
               {:keys [body headers]} (make-kitchen-request waiter-url request-headers :path "/request-info")
               body-json (json/read-str (str body))]
+          (is (= (some-> http1-client .getUserAgentField .getValue) (get-in body-json ["headers" "user-agent"])) (str body))
           (is (= "application/json" (get headers "content-type")) (str headers))
           (is (every? #(get-in body-json ["headers" %]) ["authorization" "x-cid" "x-waiter-auth-principal"]) (str body))
           (is (nil? (get-in body-json ["headers" "content-type"])) (str body))
