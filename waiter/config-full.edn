@@ -225,7 +225,9 @@
                         :saml {:factory-fn waiter.auth.saml/saml-authenticator
                                ;; URI of the Identity Provider
                                :idp-uri "https://idp-host/idp-endpoint"
-                               ;; URI of the signing certificate used by the Identity Provider
+                               ;; resource path of the signing certificate used by the Identity Provider
+                               :idp-cert-resource-path "idp.crt"
+                               ;; URI of the signing certificate used by the Identity Provider. Used if resource path is not set
                                :idp-cert-uri "file:///path/idp.crt"}
 
                         ;; :kind :dynamic enables using the "x-waiter-authentication" header or "authentication" service parameter to

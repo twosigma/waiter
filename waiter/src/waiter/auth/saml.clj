@@ -42,13 +42,15 @@
 
 (defn saml-authenticator
   "Factory function for creating SAML authenticator middleware"
-  [{:keys [idp-cert-uri idp-uri hostname password]}]
-  {:pre [(not-empty idp-cert-uri)
+  [{:keys [idp-cert-resource-path idp-cert-uri idp-uri hostname password]}]
+  {:pre [(or (not-empty idp-cert-resource-path) (not-empty idp-cert-uri))
          (not-empty idp-uri)
          (not-empty hostname)
          (not-empty password)]}
   (let [acs-uri (str "https://" hostname "/waiter-auth/saml/acs")
-        idp-cert (slurp idp-cert-uri)
+        idp-cert (if idp-cert-resource-path
+                   (slurp (clojure.java.io/resource idp-cert-resource-path))
+                   (slurp idp-cert-uri))
         mutables (saml-sp/generate-mutables)
         saml-req-factory! (saml-sp/create-request-factory mutables
                                                           idp-uri
