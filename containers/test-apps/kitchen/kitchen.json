@@ -1,0 +1,10 @@
+{
+    "name": "kitchen",
+    "cmd": "/opt/kitchen/kitchen -p $PORT0",
+    "cmd-type": "shell",
+    "cpus": 0.1,
+    "health-check-url": "/status",
+    "mem": 128,
+    "token": "kitchen",
+    "version": "0"
+}

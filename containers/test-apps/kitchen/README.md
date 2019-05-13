@@ -69,3 +69,18 @@ $ ./bin/kitchen -p 8080 &
 $ KITCHEN_AUTOSTART=false KITCHEN_HOST=localhost KITCHEN_PORT=8080 pytest
 ...
 ```
+
+# Testing in Waiter
+
+For convenience, a Waiter token specification for the Kitchen app is included in `kitchen.json`.
+This makes it simple to start up an instance of Kitchen using the Waiter CLI:
+
+```bash
+$ waiter create --json ./kitchen.json
+Attempting to create token on dev0...
+Successfully created kitchen.
+$ waiter ping kitchen
+Pinging token kitchen at /status in dev0...
+Ping successful.
+Hello World
+```
