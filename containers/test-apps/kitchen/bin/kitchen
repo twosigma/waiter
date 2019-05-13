@@ -406,6 +406,8 @@ class Kitchen(HTTPWebSocketsHandler):
         else:
             self.logger().debug('Got data on websocket: {}'.format(in_data))
 
+        self.__request_buffer = in_data
+
         if opcode == self._opcode_binary:
             self.send_message(in_data, opcode)
             self.logger().debug('Sent echo bytes response')
@@ -496,6 +498,7 @@ class Kitchen(HTTPWebSocketsHandler):
             self.__excluded_headers = set()
             self.__exit_process = False
             self.__headers = make_default_response_headers(self.headers)
+            self.__request_buffer = bytearray()
             self.__response_bytes = None
             self.__response_length = max_response_size
             self.__status = 200
@@ -504,6 +507,7 @@ class Kitchen(HTTPWebSocketsHandler):
             self.__truncated_length = max_response_size + 1
 
             # Process Kitchen request options
+            self.__slurp_request()
             self.__process_path()
             self.__process_headers()
 
@@ -592,6 +596,30 @@ class Kitchen(HTTPWebSocketsHandler):
 
             self.logger().debug('Closed')
 
+    def __slurp_request(self):
+        # Slurp any posted data
+        content_length = self.headers.get('content-length')
+        if content_length is not None:
+            self.__slurp_bytes(int(content_length), self.__request_buffer)
+
+        elif self.headers.get('transfer-encoding') == 'chunked':
+            while True:
+                chunk_header = self.rfile.read(3)  # shortest possible header is b'0\r\n'
+
+                if not chunk_header:
+                    raise Exception('Connection closed early')
+
+                while not chunk_header.endswith(b'\r\n'):
+                    chunk_header += self.rfile.read(1)
+
+                # read the payload + '\r\n'
+                chunk_size = int(chunk_header[:-2], base=16)
+                self.__slurp_bytes(chunk_size, self.__request_buffer)
+                self.rfile.read(2)
+
+                if chunk_size == 0:
+                    break
+
     def __process_headers(self):
         """Handle logic for all supported Kitchen HTTP header values."""
         assert self.__path is not None, 'Processes headers AFTER processing the request path.'
@@ -662,34 +690,9 @@ class Kitchen(HTTPWebSocketsHandler):
 
         # Check if client requested echo server mode
         echo_server = self.headers.get('x-kitchen-echo') is not None
-        echo_buffer = bytearray() if echo_server else None
-
-        # Slurp any posted data
-        content_length = self.headers.get('content-length')
-        if content_length is not None:
-            self.__slurp_bytes(int(content_length), echo_buffer)
-
-        elif self.headers.get('transfer-encoding') == 'chunked':
-            while True:
-                chunk_header = self.rfile.read(3)  # shortest possible header is b'0\r\n'
-
-                if not chunk_header:
-                    raise Exception('Connection closed early')
-
-                while not chunk_header.endswith(b'\r\n'):
-                    chunk_header += self.rfile.read(1)
-
-                # read the payload + '\r\n'
-                chunk_size = int(chunk_header[:-2], base=16)
-                self.__slurp_bytes(chunk_size, echo_buffer)
-                self.rfile.read(2)
-
-                if chunk_size == 0:
-                    break
-
         # Echo request body back to client
         if echo_server:
-            self.__set_response(echo_buffer)
+            self.__set_response(self.__request_buffer)
 
         # Exclude some headers from response
         excluded_headers = self.headers.get('x-kitchen-exclude-headers')
@@ -891,6 +894,7 @@ class Kitchen(HTTPWebSocketsHandler):
         """Build request-info endpoint dict data JSON response."""
         info = { 'protocol-version': self.protocol_version,
                  'request-version': self.request_version,
+                 'request-length': len(self.__request_buffer),
                  'request-method': self.__method,
                  'uri': self.__path }
         if len(self.headers) > 0:
