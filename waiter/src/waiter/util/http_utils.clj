@@ -127,3 +127,8 @@
     "h2" "https"
     "h2c" "http"
     backend-proto))
+
+(defn http2?
+  "Returns true if the http versions represents a http2 request"
+  [version]
+  (= "HTTP/2.0" version))
