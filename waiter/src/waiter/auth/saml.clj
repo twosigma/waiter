@@ -110,8 +110,8 @@
             (throw (ex-info "Could not authenticate user. Expired SAML assertion."
                             {:status 400
                              :saml-assertion-not-on-or-after (:not-on-or-after confirmation)})))
-        saml-principal (get attrs "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"
-                            (get name-id :value))
+        saml-principal (first (get attrs "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"
+                                   [(get name-id :value)]))
         {:keys [authorization/principal authorization/user]} (auth/auth-params-map saml-principal)]
     (auth/handle-request-auth (constantly {:status 303
                                            :headers {"Location" relay-state}
