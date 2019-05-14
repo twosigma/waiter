@@ -29,7 +29,8 @@ def ping_on_cluster(cluster, health_check_endpoint, timeout, wait_for_request, t
         except Exception:
             message = f'Encountered error while pinging in {cluster_name}.'
             logging.exception(message)
-            # print_error(message)
+            if wait_for_request:
+                print_error(message)
 
         return False
 
