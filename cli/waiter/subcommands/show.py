@@ -8,12 +8,12 @@ from waiter.format import format_field_name, format_last_request_time, format_me
     format_status, format_timestamp_string
 
 from waiter.querying import print_no_data, query_token
-from waiter.util import guard_no_cluster
+from waiter.util import guard_no_cluster, is_service_current
 
 
 def format_using_current_token(service, token_etag):
     """Formats the "Current?" column for the given service"""
-    is_current = any(token['version'] == token_etag for source in service['source-tokens'] for token in source)
+    is_current = is_service_current(service, token_etag)
     if is_current:
         return terminal.success('Current')
     else:

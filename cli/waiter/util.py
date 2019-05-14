@@ -117,3 +117,9 @@ def load_json_file(path):
         logging.info(f'{path} is not a file')
 
     return content
+
+
+def is_service_current(service, current_token_etag):
+    """TODO(DPO)"""
+    is_current = any(token['version'] == current_token_etag for source in service['source-tokens'] for token in source)
+    return is_current
