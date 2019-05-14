@@ -14,10 +14,13 @@
 ;; limitations under the License.
 ;;
 (ns waiter.auth.saml-test
-  (:require [clojure.test :refer :all]
+  (:require [clj-time.core :as t]
+            [clojure.string :as string]
+            [clojure.test :refer :all]
             [saml20-clj.shared :as saml-shared]
             [waiter.auth.authentication :as auth]
-            [waiter.auth.saml :refer :all]))
+            [waiter.auth.saml :refer :all]
+            [waiter.util.utils :as utils]))
 
 ; TODO check only GET method
 
@@ -62,48 +65,59 @@
                                      :authorization/user "my-user"})
                (wrapped-handler dummy-request)))))
     (testing "does not have auth cookie"
-      (with-redefs [clj-time.core/now (fn [] time-now)]
+      (with-redefs [clj-time.core/now (fn [] time-now)
+                    utils/make-uuid (constantly "UUID")]
         (is (= {:body ""
                 :headers {"Location" (slurp "test-files/saml/idp-redirect-location.txt")}
                 :status 302}
                (wrapped-handler dummy-request)))))))
 
+(defn- normalize-x509-certificate-string
+  [cert-str]
+  (-> cert-str
+      (string/replace "Sat Dec 31 08:34:47 CST 2016" "")
+      (string/replace "Thu Jun 25 09:34:47 CDT 2048" "")))
+
 (deftest test-certificate-x509
-  (is (= (slurp "test-files/saml/x509-certificate-to-string.txt") (str (certificate-x509 (slurp (:idp-cert-uri valid-config)))))))
+  (is (= (normalize-x509-certificate-string (slurp "test-files/saml/x509-certificate-to-string.txt"))
+         (normalize-x509-certificate-string (str (certificate-x509 (slurp (:idp-cert-uri valid-config))))))))
 
 (defn- saml-response-from-xml
   [change-user?]
   (saml-shared/str->deflate->base64
-    (clojure.string/replace (slurp "test-files/saml/saml-response.xml")
-                            "user1@example.com"
-                            (str (if change-user? "root" "user1") "@example.com"))))
+    (string/replace (slurp "test-files/saml/saml-response.xml")
+                    "user1@example.com"
+                    (str (if change-user? "root" "user1") "@example.com"))))
 
 (deftest test-saml-acs-handler
-  (testing "has valid saml response"
+  (org.opensaml.DefaultBootstrap/bootstrap)
+  (let [test-time (clj-time.format/parse "2019-05-01")]
+    (with-redefs [t/now (fn [] test-time)
+                  auth/handle-request-auth (fn [handler request user principal password]
+                                             (merge (handler) {:user user :principal principal}))]
+      (testing "has valid saml response"
+        (let [request (merge {:form-params {"SAMLResponse" (slurp "test-files/saml/saml-response.txt") "RelayState" "my-relay-state"}} dummy-request)]
+          (is (= {:body ""
+                  :headers {"Location" "my-relay-state"}
+                  :principal "_0f38320ad9640e766986311a76ad688766a1603640"
+                  :status 303
+                  :user "_0f38320ad9640e766986311a76ad688766a1603640"}
+                 (saml-acs-handler request {:idp-cert (slurp (:idp-cert-uri valid-config)) :password "password"})))))
+      (testing "has valid saml response (from xml)"
+        (with-redefs [saml-shared/byte-deflate (fn [_] _)]
+          (let [request (merge {:form-params {"SAMLResponse" (saml-response-from-xml false) "RelayState" "my-relay-state"}} dummy-request)]
+            (is (= {:body ""
+                    :headers {"Location" "my-relay-state"}
+                    :principal "_0f38320ad9640e766986311a76ad688766a1603640"
+                    :status 303
+                    :user "_0f38320ad9640e766986311a76ad688766a1603640"}
+                   (saml-acs-handler request {:idp-cert (slurp (:idp-cert-uri valid-config)) :password "password"}))))))
+      (testing "has invalid saml signature"
+        (with-redefs [saml-shared/byte-deflate (fn [_] _)]
+          (let [request (merge {:form-params {"SAMLResponse" (saml-response-from-xml true) "RelayState" "my-relay-state"}} dummy-request)]
+            (is (thrown-with-msg? Exception #"Could not authenticate user. Invalid SAML assertion signature."
+                                  (saml-acs-handler request {:idp-cert (slurp (:idp-cert-uri valid-config)) :password "password"}))))))))
+  (testing "has expired saml response"
     (let [request (merge {:form-params {"SAMLResponse" (slurp "test-files/saml/saml-response.txt") "RelayState" "my-relay-state"}} dummy-request)]
-      (is (= {:authorization/principal "user1@example.com"
-              :authorization/user "user1"
-              :body ""
-              :headers {"Location" "my-relay-state"
-                        "set-cookie" "x-waiter-auth=TlBZAHFpEXVzZXIxQGV4YW1wbGUuY29tKwAAAWp<variable>;Max-Age=86400;Path=/;HttpOnly=true"}
-              :status 303}
-             (update
-               (saml-acs-handler request {:idp-cert (slurp (:idp-cert-uri valid-config))})
-               :headers (fn [headers] (update headers "set-cookie" #(clojure.string/replace % #"%[^;]+" "<variable>"))))))))
-  (testing "has valid saml response (from xml)"
-    (with-redefs [saml-shared/byte-deflate (fn [_] _)]
-      (let [request (merge {:form-params {"SAMLResponse" (saml-response-from-xml false) "RelayState" "my-relay-state"}} dummy-request)]
-        (is (= {:authorization/principal "user1@example.com"
-                :authorization/user "user1"
-                :body ""
-                :headers {"Location" "my-relay-state"
-                          "set-cookie" "x-waiter-auth=TlBZAHFpEXVzZXIxQGV4YW1wbGUuY29tKwAAAWp<variable>;Max-Age=86400;Path=/;HttpOnly=true"}
-                :status 303}
-               (update
-                 (saml-acs-handler request {:idp-cert (slurp (:idp-cert-uri valid-config))})
-                 :headers (fn [headers] (update headers "set-cookie" #(clojure.string/replace % #"%[^;]+" "<variable>")))))))))
-  (testing "has invalid saml signature"
-    (with-redefs [saml-shared/byte-deflate (fn [_] _)]
-      (let [request (merge {:form-params {"SAMLResponse" (saml-response-from-xml true) "RelayState" "my-relay-state"}} dummy-request)]
-        (is (thrown-with-msg? Exception #"Could not authenticate user. Invalid SAML response signature."
-                              (saml-acs-handler request {:idp-cert (slurp (:idp-cert-uri valid-config))})))))))
+      (is (thrown-with-msg? Exception #"Could not authenticate user. Expired SAML assertion."
+                            (saml-acs-handler request {:idp-cert (slurp (:idp-cert-uri valid-config)) :password "password"}))))))

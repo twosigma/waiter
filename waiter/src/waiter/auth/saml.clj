@@ -14,16 +14,18 @@
 ;; limitations under the License.
 ;;
 (ns waiter.auth.saml
-  (:require [clojure.java.io :as io]
+  (:require [clj-time.core :as t]
+            [clojure.java.io :as io]
             [clojure.tools.logging :as log]
             [ring.middleware.params :as ring-params]
             [saml20-clj.routes :as saml-routes]
             [saml20-clj.shared :as saml-shared]
             [saml20-clj.sp :as saml-sp]
             [waiter.auth.authentication :as auth]
-            [waiter.middleware :as middleware]))
+            [waiter.middleware :as middleware]
+            [waiter.util.utils :as utils]))
 
-(defrecord SamlAuthenticator [hostname idp-cert idp-uri mutables password saml-req-factory! prune-fn!]
+(defrecord SamlAuthenticator [hostname idp-cert idp-uri password saml-req-factory!]
   auth/Authenticator
   (wrap-auth-handler [_ request-handler]
     (fn saml-authenticator-handler [{:keys [headers query-string request-method uri] :as request}]
@@ -51,17 +53,14 @@
         idp-cert (if idp-cert-resource-path
                    (slurp (clojure.java.io/resource idp-cert-resource-path))
                    (slurp idp-cert-uri))
-        mutables (saml-sp/generate-mutables)
-        saml-req-factory! (saml-sp/create-request-factory mutables
+        saml-req-factory! (saml-sp/create-request-factory #(str "WAITER-" (utils/make-uuid))
+                                                          (constantly nil)
+                                                          nil
                                                           idp-uri
                                                           saml-routes/saml-format
                                                           "waiter"
-                                                          acs-uri)
-        prune-fn! (partial saml-sp/prune-timed-out-ids! (:saml-id-timeouts mutables))
-        state {:mutables mutables
-               :saml-req-factory! saml-req-factory!
-               :timeout-pruner-fn! prune-fn!}]
-    (->SamlAuthenticator hostname idp-cert idp-uri mutables password saml-req-factory! prune-fn!)))
+                                                          acs-uri)]
+    (->SamlAuthenticator hostname idp-cert idp-uri password saml-req-factory!)))
 
 (defn certificate-x509
   "Takes in a raw X.509 certificate string, parses it, and creates a Java certificate."
@@ -70,10 +69,10 @@
         bais (io/input-stream (.getBytes x509-string))]
     (.generateCertificate fty bais)))
 
-(defn validate-saml-response-signature
-  "Checks (if exists) the signature of SAML Response given the IdP certificate"
-  [saml-resp idp-cert]
-  (if-let [signature (.getSignature saml-resp)]
+(defn validate-saml-assertion-signature
+  "Checks that the SAML assertion has a valid signature."
+  [assertion idp-cert]
+  (if-let [signature (.getSignature assertion)]
     (let [idp-pubkey (-> idp-cert certificate-x509 saml-shared/jcert->public-key)
           public-creds (doto (new org.opensaml.xml.security.x509.BasicX509Credential)
                          (.setPublicKey idp-pubkey))
@@ -90,23 +89,31 @@
 (defn saml-acs-handler
   "Endpoint for POSTs to Waiter with IdP-signed credentials. If signature is valid, redirect to originally requested resource."
   [request {:keys [idp-cert password]}]
+  {:pre [(not-empty idp-cert)
+         (not-empty password)]}
   (let [{:keys [form-params]} (ring-params/params-request request)
         relay-state (-> form-params (get "RelayState"))
         saml-response (-> form-params (get "SAMLResponse")
                           (saml-shared/base64->inflate->str)
                           (saml-sp/xml-string->saml-resp))
-        valid-signature? (if idp-cert
-                           (validate-saml-response-signature saml-response idp-cert)
-                           false)]
-    (when-not valid-signature?
-      (throw (ex-info "Could not authenticate user. Invalid SAML response signature." {:status 400})))
-    (let [saml-info (when valid-signature? (saml-sp/saml-resp->assertions saml-response nil))
-          saml-attrs (-> saml-info (:assertions) (first) (:attrs))
-          ; https://docs.microsoft.com/en-us/windows-server/identity/ad-fs/technical-reference/the-role-of-claims
-          saml-principal (get saml-attrs "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"
-                              (get saml-attrs "email"))
-          {:keys [authorization/principal authorization/user]} (auth/auth-params-map (first saml-principal))]
-      (auth/handle-request-auth (constantly {:status 303
-                                             :headers {"Location" relay-state}
-                                             :body ""})
-                                request user principal password))))
+        assertions (.getAssertions saml-response)
+        _ (when-not (= 1 (count assertions))
+            (throw (ex-info (str "Could not authenticate user. Invalid SAML response. "
+                                 "Must have exactly one assertion but got " (count assertions))
+                            {:status 400})))
+        assertion (first assertions)
+        _ (when-not (validate-saml-assertion-signature assertion idp-cert)
+            (throw (ex-info "Could not authenticate user. Invalid SAML assertion signature."
+                            {:status 400})))
+        {:keys [attrs confirmation name-id]} (saml-sp/parse-saml-assertion assertion)
+        _ (when-not (t/before? (t/now) (clj-time.coerce/from-sql-time (:not-on-or-after confirmation)))
+            (throw (ex-info "Could not authenticate user. Expired SAML assertion."
+                            {:status 400
+                             :saml-assertion-not-on-or-after (:not-on-or-after confirmation)})))
+        saml-principal (get attrs "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"
+                            (get name-id :value))
+        {:keys [authorization/principal authorization/user]} (auth/auth-params-map saml-principal)]
+    (auth/handle-request-auth (constantly {:status 303
+                                           :headers {"Location" relay-state}
+                                           :body ""})
+                              request user principal password)))
