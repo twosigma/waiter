@@ -2028,6 +2028,7 @@
                      "mem" {:max (* 32 1024)}}
         builder (create-default-service-description-builder {:constraints constraints})
         basic-service-description {"cpus" 1, "mem" 1, "cmd" "foo", "version" "bar", "run-as-user" "*"}
+        some-user-service-description (assoc basic-service-description "run-as-user" "some-user")
         validation-settings {:allow-missing-required-fields? false}]
 
     (testing "validate-service-description-within-limits"
@@ -2070,21 +2071,26 @@
                     :type :service-description-error}
                    (select-keys (ex-data ex) [:friendly-error-message :status :type])))))))
 
-    (testing "validate-service-description-namespace-default"
-      (is (nil? (validate builder basic-service-description validation-settings))))
-
-    (testing "validate-service-description-namespace-custom"
+    (testing "validate-service-description-namespace-run-as-requester"
+      (is (nil? (validate builder basic-service-description validation-settings)))
       (is (nil? (validate builder
-                          (assoc basic-service-description
-                                 "namespace" "some-user"
-                                 "run-as-user" "some-user")
-                          validation-settings))))
+                          (assoc basic-service-description "namespace" "*")
+                          validation-settings)))
+      (is (thrown? Exception #"Cannot use run-as-requester with a specific namespace"
+                   (validate builder
+                             (assoc basic-service-description
+                                    "namespace" "some-user")
+                             validation-settings))))
 
-    (testing "validate-service-description-namespace-invalid"
+    (testing "validate-service-description-namespace-some-user"
+      (is (nil? (validate builder some-user-service-description validation-settings)))
+      (is (nil? (validate builder
+                          (assoc some-user-service-description "namespace" "some-user")
+                          validation-settings)))
       (is (thrown? Exception #"Service namespace must either be omitted or match the run-as-user"
                    (validate builder
                              (assoc basic-service-description
-                                    "namespace" "not-the-current-user")
+                                    "namespace" "some-other-user")
                              validation-settings))))))
 
 (deftest test-retrieve-most-recently-modified-token

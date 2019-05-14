@@ -891,17 +891,23 @@
                                                                         service-description-based-on-headers)
                                                                  ; param headers need to update the environment
                                                                  merge-params)
+          raw-run-as-user (get service-description-from-headers-and-token-sources "run-as-user")
+          raw-namespace (get service-description-from-headers-and-token-sources "namespace")
           sanitized-service-description-from-sources (cond-> service-description-from-headers-and-token-sources
                                                        ;; * run-as-user is the same as a missing run-as-user
-                                                       (= "*" (get service-description-from-headers-and-token-sources "run-as-user"))
-                                                       (dissoc service-description-from-headers-and-token-sources "run-as-user"))
+                                                       (= "*" raw-run-as-user)
+                                                       (dissoc "run-as-user")
+                                                       ;; * namespace means match the current user (for use with run-as-requester)
+                                                       (= "*" raw-namespace)
+                                                       (assoc "namespace" username))
+          sanitized-run-as-user (get sanitized-service-description-from-sources "run-as-user")
           sanitized-metadata-description (sanitize-metadata sanitized-service-description-from-sources)
           ; run-as-user will not be set if description-from-headers or the token description contains it.
           ; else rely on presence of x-waiter headers to set the run-as-user
-          contains-waiter-header? (headers/contains-waiter-header waiter-headers on-the-fly-service-description-keys)
+          on-the-fly? (headers/contains-waiter-header waiter-headers on-the-fly-service-description-keys)
           contains-service-parameter-header? (headers/contains-waiter-header waiter-headers service-parameter-keys)
           user-service-description (cond-> sanitized-metadata-description
-                                     (and (not (contains? sanitized-metadata-description "run-as-user")) contains-waiter-header?)
+                                     (and (not (contains? sanitized-metadata-description "run-as-user")) on-the-fly?)
                                      ; can only set the run-as-user if some on-the-fly-service-description-keys waiter header was provided
                                      (assoc-run-as-requester-fields username)
                                      contains-service-parameter-header?
@@ -910,6 +916,9 @@
       (when-not (seq user-service-description)
         (throw (ex-info (utils/message :cannot-identify-service)
                         (error-message-map-fn passthrough-headers waiter-headers))))
+      (when (and (= "*" raw-run-as-user) raw-namespace (not= "*" raw-namespace))
+        (throw (ex-info "Cannot use run-as-requester with a specific namespace"
+                        {:namespace raw-namespace :run-as-user raw-run-as-user :status 400})))
       (sling/try+
         (let [{:keys [core-service-description service-description service-id]}
               (build service-description-builder user-service-description
@@ -922,7 +931,7 @@
               service-preauthorized (and token-preauthorized (empty? service-description-based-on-headers))
               service-authentication-disabled (and token-authentication-disabled (empty? service-description-based-on-headers))]
           {:core-service-description core-service-description
-           :on-the-fly? contains-waiter-header?
+           :on-the-fly? on-the-fly?
            :service-authentication-disabled service-authentication-disabled
            :service-description service-description
            :service-id service-id

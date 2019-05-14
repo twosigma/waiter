@@ -837,32 +837,33 @@
     (let [service-id-prefix (rand-name)
           target-user (retrieve-username)
           token (create-token-name waiter-url service-id-prefix)]
-      (try
-        (log/info "creating configuration using token" token)
-        (let [token-definition (assoc
-                                 (kitchen-request-headers :prefix "")
-                                 :name service-id-prefix
-                                 :namespace target-user
-                                 :run-as-user target-user
-                                 :token token)
-              {:keys [body status]} (post-token waiter-url token-definition)]
-          (when (not= 200 status)
-            (log/info "error:" body)
-            (is (not body))))
-        (log/info "created configuration using token" token)
-        (log/info "retrieving configuration for token" token)
-        (let [token-response (get-token waiter-url token)
-              response-body (str (:body token-response))]
-          (when (not (str/includes? response-body service-id-prefix))
-            (log/info response-body))
-          (assert-response-status token-response 200)
-          (is (str/includes? response-body service-id-prefix))
-          (let [{:strs [namespace run-as-user] :as token-json} (try-parse-json response-body)]
-            (is (= target-user run-as-user))
-            (is (= target-user namespace))))
-        (log/info "asserted retrieval of configuration for token" token)
-        (finally
-          (delete-token-and-assert waiter-url token))))
+      (for [token-user [target-user "*"]]
+        (try
+          (log/info "creating configuration using token" token)
+          (let [token-definition (assoc
+                                   (kitchen-request-headers :prefix "")
+                                   :name service-id-prefix
+                                   :namespace token-user
+                                   :run-as-user token-user
+                                   :token token)
+                {:keys [body status]} (post-token waiter-url token-definition)]
+            (when (not= 200 status)
+              (log/info "error:" body)
+              (is (not body))))
+          (log/info "created configuration using token" token)
+          (log/info "retrieving configuration for token" token)
+          (let [token-response (get-token waiter-url token)
+                response-body (str (:body token-response))]
+            (when (not (str/includes? response-body service-id-prefix))
+              (log/info response-body))
+            (assert-response-status token-response 200)
+            (is (str/includes? response-body service-id-prefix))
+            (let [{:strs [namespace run-as-user] :as token-json} (try-parse-json response-body)]
+              (is (= target-user run-as-user))
+              (is (= target-user namespace))))
+          (log/info "asserted retrieval of configuration for token" token)
+          (finally
+            (delete-token-and-assert waiter-url token)))))
 
     (testing "can't create token with bad namespace"
       (let [service-desc {:name (rand-name "notused")
