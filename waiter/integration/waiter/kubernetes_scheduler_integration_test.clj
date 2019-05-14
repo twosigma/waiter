@@ -187,25 +187,46 @@
         (is (= expected-namespace pod-namespace))))))
 
 (deftest ^:parallel ^:integration-fast test-pod-namespace
+  "Expected behavior for services with namespaces:
+   Run-As-User    Namespace   Validation
+   Missing        Missing     OK
+   Missing        *           OK
+   Missing        foo         OK
+   Missing        bar         FAIL
+   foo            Missing     OK
+   foo            *           OK
+   foo            foo         OK
+   foo            bar         FAIL
+   *              Missing     OK
+   *              *           OK
+   *              foo         FAIL
+   *              bar         FAIL"
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
       (let [current-user (retrieve-username)
-            default-namespace (-> waiter-url default-scheduler-settings :replicaset-spec-builder :default-namespace)]
-        (testing "Default namespace"
-          (check-pod-namespace waiter-url {} default-namespace))
-        (testing "Custom namespace"
-          (check-pod-namespace waiter-url {:x-waiter-namespace current-user} current-user))
-        (testing "Run-as-requestor and namespace *"
-          (check-pod-namespace waiter-url {:x-waiter-namespace "*" :x-waiter-run-as-user "*"} current-user))
-        (testing "Invalid namespace for implicit current user"
+            default-namespace (-> waiter-url default-scheduler-settings :replicaset-spec-builder :default-namespace)
+            star-user-header {:x-waiter-run-as-user "*"}
+            current-user-header {:x-waiter-run-as-user current-user}
+            not-current-user "not-current-user"]
+        (testing "namespaces for current user (implicit)"
+          (check-pod-namespace waiter-url {} default-namespace)
+          (check-pod-namespace waiter-url {:x-waiter-namespace "*"} current-user)
+          (check-pod-namespace waiter-url {:x-waiter-namespace current-user} current-user)
           (is (thrown? Exception #"Service namespace must either be omitted or match the run-as-user"
-                       (check-pod-namespace waiter-url {:x-waiter-namespace "not-current-user"} current-user))))
-        (testing "Invalid namespace for run-as-requestor"
-          (is (thrown? Exception #"Cannot use run-as-requestor with a specific namespace"
-                       (check-pod-namespace waiter-url {:x-waiter-namespace "not-current-user" :x-waiter-run-as-user "*"} current-user))))
-        (testing "Invalid namespace for run-as-requestor"
-          (is (thrown? Exception #"Cannot use namespace \* with specific run-as-user"
-                       (check-pod-namespace waiter-url {:x-waiter-namespace "*" :x-waiter-run-as-user "not-current-user"} current-user))))))))
+                       (check-pod-namespace waiter-url {:x-waiter-namespace not-current-user} current-user))))
+        (testing "namespaces for current user (explicit)"
+          (check-pod-namespace waiter-url current-user-header default-namespace)
+          (check-pod-namespace waiter-url (assoc current-user-header :x-waiter-namespace "*") current-user)
+          (check-pod-namespace waiter-url (assoc current-user-header :x-waiter-namespace current-user) current-user)
+          (is (thrown? Exception #"Service namespace must either be omitted or match the run-as-user"
+                       (check-pod-namespace waiter-url (assoc current-user-header :x-waiter-namespace not-current-user) current-user))))
+        (testing "namespaces for run-as-requester"
+          (check-pod-namespace waiter-url star-user-header default-namespace)
+          (check-pod-namespace waiter-url (assoc star-user-header :x-waiter-namespace "*") current-user)
+          (is (thrown? Exception #"Cannot use run-as-requester with a specific namespace"
+                       (check-pod-namespace waiter-url (assoc star-user-header :x-waiter-namespace current-user) current-user)))
+          (is (thrown? Exception #"Cannot use run-as-requester with a specific namespace"
+                       (check-pod-namespace waiter-url (assoc star-user-header :x-waiter-namespace not-current-user) current-user))))))))
 
 (defn- get-pod-service-account
   [waiter-url namespace-arg user]
