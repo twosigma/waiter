@@ -34,7 +34,6 @@
             [slingshot.slingshot :refer [try+]]
             [waiter.async-request :as async-req]
             [waiter.auth.authentication :as auth]
-            [waiter.auth.saml :as saml]
             [waiter.authorization :as authz]
             [waiter.cookie-support :as cookie-support]
             [waiter.correlation-id :as cid]
@@ -1493,8 +1492,13 @@
                                (fn waiter-auth-handler-fn [request]
                                  {:body (str (:authorization/user request)), :status 200})))
    :waiter-auth-saml-acs-handler-fn (pc/fnk [[:state authenticator]]
-                                      (fn waiter-auth-saml-acs-handler-fn [request]
-                                        (saml/saml-acs-handler request authenticator)))
+                                      (let [{:keys [saml-acs-handler-fn]} authenticator]
+                                        (fn waiter-auth-saml-acs-handler-fn [request]
+                                          (if-not saml-acs-handler-fn
+                                            (do
+                                              (log/warn "Current authenticator can not respond to incoming SAML assertion message" authenticator)
+                                              {:status 500})
+                                            (saml-acs-handler-fn request authenticator)))))
    :waiter-auth-saml-metadata-handler-fn (pc/fnk [wrap-secure-request-fn]
                                            (wrap-secure-request-fn
                                              (fn waiter-auth-saml-metadata-handler-fn [request]

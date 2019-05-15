@@ -16,9 +16,10 @@
 (ns waiter.auth.dynamic
   (:require [plumbing.core :as pc]
             [waiter.auth.authentication :as auth]
+            [waiter.auth.saml :as saml]
             [waiter.util.utils :as utils]))
 
-(defrecord DynamicAuthenticator [authenticators]
+(defrecord DynamicAuthenticator [authenticators saml-acs-handler-fn]
   auth/Authenticator
   (wrap-auth-handler [_ request-handler]
     (let [handlers (pc/map-vals #(auth/wrap-auth-handler % request-handler) authenticators)]
@@ -50,5 +51,7 @@
         authenticators (pc/map-from-keys
                          make-authenticator
                          (filter #(not (contains? #{:kind :dynamic} %))
-                                 (keys authenticator-config)))]
-    (->DynamicAuthenticator (assoc authenticators :default (default-kind authenticators)))))
+                                 (keys authenticator-config)))
+        saml-authenticator (:saml authenticators)]
+    (->DynamicAuthenticator (assoc authenticators :default (default-kind authenticators))
+                            #(saml/saml-acs-handler %1 saml-authenticator))))

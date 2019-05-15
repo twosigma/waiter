@@ -25,7 +25,7 @@
             [waiter.middleware :as middleware]
             [waiter.util.utils :as utils]))
 
-(defrecord SamlAuthenticator [hostname idp-cert idp-uri password saml-req-factory!]
+(defrecord SamlAuthenticator [hostname idp-cert idp-uri password saml-acs-handler-fn saml-req-factory!]
   auth/Authenticator
   (wrap-auth-handler [_ request-handler]
     (fn saml-authenticator-handler [{:keys [headers query-string request-method uri] :as request}]
@@ -41,26 +41,6 @@
           (let [saml-request (saml-req-factory!)
                 relay-state (str hostname uri "?" query-string)]
             (saml-sp/get-idp-redirect idp-uri saml-request relay-state)))))))
-
-(defn saml-authenticator
-  "Factory function for creating SAML authenticator middleware"
-  [{:keys [idp-cert-resource-path idp-cert-uri idp-uri hostname password]}]
-  {:pre [(or (not-empty idp-cert-resource-path) (not-empty idp-cert-uri))
-         (not-empty idp-uri)
-         (not-empty hostname)
-         (not-empty password)]}
-  (let [acs-uri (str "https://" hostname "/waiter-auth/saml/acs")
-        idp-cert (if idp-cert-resource-path
-                   (slurp (clojure.java.io/resource idp-cert-resource-path))
-                   (slurp idp-cert-uri))
-        saml-req-factory! (saml-sp/create-request-factory #(str "WAITER-" (utils/make-uuid))
-                                                          (constantly nil)
-                                                          nil
-                                                          idp-uri
-                                                          saml-routes/saml-format
-                                                          "waiter"
-                                                          acs-uri)]
-    (->SamlAuthenticator hostname idp-cert idp-uri password saml-req-factory!)))
 
 (defn certificate-x509
   "Takes in a raw X.509 certificate string, parses it, and creates a Java certificate."
@@ -117,3 +97,23 @@
                                            :headers {"Location" relay-state}
                                            :body ""})
                               request user principal password)))
+
+(defn saml-authenticator
+  "Factory function for creating SAML authenticator middleware"
+  [{:keys [idp-cert-resource-path idp-cert-uri idp-uri hostname password]}]
+  {:pre [(or (not-empty idp-cert-resource-path) (not-empty idp-cert-uri))
+         (not-empty idp-uri)
+         (not-empty hostname)
+         (not-empty password)]}
+  (let [acs-uri (str "https://" hostname "/waiter-auth/saml/acs")
+        idp-cert (if idp-cert-resource-path
+                   (slurp (clojure.java.io/resource idp-cert-resource-path))
+                   (slurp idp-cert-uri))
+        saml-req-factory! (saml-sp/create-request-factory #(str "WAITER-" (utils/make-uuid))
+                                                          (constantly nil)
+                                                          nil
+                                                          idp-uri
+                                                          saml-routes/saml-format
+                                                          "waiter"
+                                                          acs-uri)]
+    (->SamlAuthenticator hostname idp-cert idp-uri password saml-acs-handler saml-req-factory!)))
