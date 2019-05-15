@@ -1491,14 +1491,20 @@
                              (wrap-secure-request-fn
                                (fn waiter-auth-handler-fn [request]
                                  {:body (str (:authorization/user request)), :status 200})))
-   :waiter-auth-saml-acs-handler-fn (pc/fnk [[:state authenticator]]
-                                      (let [{:keys [saml-acs-handler-fn]} authenticator]
+   :waiter-auth-saml-acs-handler-fn (pc/fnk [[:state authenticator]
+                                             process-request-fn]
+                                      (let [{:keys [saml-acs-handler-fn password]} authenticator]
                                         (fn waiter-auth-saml-acs-handler-fn [request]
-                                          (if-not saml-acs-handler-fn
-                                            (do
-                                              (log/warn "Current authenticator can not respond to incoming SAML assertion message" authenticator)
-                                              {:status 500})
-                                            (saml-acs-handler-fn request authenticator)))))
+                                          (when-not saml-acs-handler-fn
+                                            (throw (ex-info "Current authenticator can not respond to incoming SAML assertion message"
+                                                            {:authenticator authenticator
+                                                             :status 400})))
+                                          (let [{:keys [not-on-or-after original-request saml-principal]} (saml-acs-handler-fn request authenticator)]
+                                            ; TODO: handle not-on-or-after
+                                            (auth/handle-request-auth
+                                              process-request-fn
+                                              (merge request (assoc original-request :skip-authentication true))
+                                              saml-principal password)))))
    :waiter-auth-saml-metadata-handler-fn (pc/fnk [wrap-secure-request-fn]
                                            (wrap-secure-request-fn
                                              (fn waiter-auth-saml-metadata-handler-fn [request]

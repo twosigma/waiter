@@ -39,7 +39,10 @@
             (request-handler' request))
           :else
           (let [saml-request (saml-req-factory!)
-                relay-state (str hostname uri "?" query-string)]
+                relay-state (pr-str {:headers headers
+                                     :query-string query-string
+                                     :request-method request-method
+                                     :uri uri})]
             (saml-sp/get-idp-redirect idp-uri saml-request relay-state)))))))
 
 (defn certificate-x509
@@ -67,7 +70,7 @@
     ))
 
 (defn saml-acs-handler
-  "Endpoint for POSTs to Waiter with IdP-signed credentials. If signature is valid, redirect to originally requested resource."
+  "Endpoint for POSTs to Waiter with IdP-signed credentials. If signature is valid, return principal and original request."
   [request {:keys [idp-cert password]}]
   {:pre [(not-empty idp-cert)
          (not-empty password)]}
@@ -86,17 +89,16 @@
             (throw (ex-info "Could not authenticate user. Invalid SAML assertion signature."
                             {:status 400})))
         {:keys [attrs confirmation name-id]} (saml-sp/parse-saml-assertion assertion)
-        _ (when-not (t/before? (t/now) (clj-time.coerce/from-sql-time (:not-on-or-after confirmation)))
+        not-on-or-after (clj-time.coerce/from-sql-time (:not-on-or-after confirmation))
+        _ (when-not (t/before? (t/now) not-on-or-after)
             (throw (ex-info "Could not authenticate user. Expired SAML assertion."
                             {:status 400
-                             :saml-assertion-not-on-or-after (:not-on-or-after confirmation)})))
+                             :saml-assertion-not-on-or-after not-on-or-after})))
         saml-principal (first (get attrs "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"
-                                   [(get name-id :value)]))
-        {:keys [authorization/principal authorization/user]} (auth/auth-params-map saml-principal)]
-    (auth/handle-request-auth (constantly {:status 303
-                                           :headers {"Location" relay-state}
-                                           :body ""})
-                              request user principal password)))
+                                   [(get name-id :value)]))]
+    {:not-on-or-after not-on-or-after
+     :original-request (read-string relay-state)
+     :saml-principal saml-principal}))
 
 (defn saml-authenticator
   "Factory function for creating SAML authenticator middleware"

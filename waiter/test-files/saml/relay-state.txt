@@ -1,0 +1,1 @@
+{:headers {"user-agent" "curl/7.58.0", "host" "localhost:9091", "x-waiter-token" "python-local", "accept" "*/*", "x-cid" "17ea73916fc6-46d0b85773af2452"}, :query-string nil, :request-method :get, :uri "/"}

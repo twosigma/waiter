@@ -91,33 +91,33 @@
 
 (deftest test-saml-acs-handler
   (org.opensaml.DefaultBootstrap/bootstrap)
-  (let [test-time (clj-time.format/parse "2019-05-01")]
+  (let [test-time (clj-time.format/parse "2019-05-14")
+        processed-saml-response {:not-on-or-after (clj-time.format/parse "2019-05-15T21:52:46.000Z")
+                                 :original-request {:headers {"accept" "*/*"
+                                                              "host" "localhost:9091"
+                                                              "user-agent" "curl/7.58.0"
+                                                              "x-cid" "17ea73916fc6-46d0b85773af2452"
+                                                              "x-waiter-token" "python-local"}
+                                                    :query-string nil
+                                                    :request-method :get
+                                                    :uri "/"}
+                                 :saml-principal "_c2c02940517f53c3ea1673f6406fb34fd39aa7bcf6"}]
     (with-redefs [t/now (fn [] test-time)
                   auth/handle-request-auth (fn [handler request user principal password]
                                              (merge (handler) {:user user :principal principal}))]
       (testing "has valid saml response"
-        (let [request (merge {:form-params {"SAMLResponse" (slurp "test-files/saml/saml-response.txt") "RelayState" "my-relay-state"}} dummy-request)]
-          (is (= {:body ""
-                  :headers {"Location" "my-relay-state"}
-                  :principal "_0f38320ad9640e766986311a76ad688766a1603640"
-                  :status 303
-                  :user "_0f38320ad9640e766986311a76ad688766a1603640"}
-                 (saml-acs-handler request {:idp-cert (slurp (:idp-cert-uri valid-config)) :password "password"})))))
+        (let [request (merge {:form-params {"SAMLResponse" (slurp "test-files/saml/saml-response.txt") "RelayState" (slurp "test-files/saml/relay-state.txt")}} dummy-request)]
+          (is (= processed-saml-response (saml-acs-handler request {:idp-cert (slurp (:idp-cert-uri valid-config)) :password "password"})))))
       (testing "has valid saml response (from xml)"
         (with-redefs [saml-shared/byte-deflate (fn [_] _)]
-          (let [request (merge {:form-params {"SAMLResponse" (saml-response-from-xml false) "RelayState" "my-relay-state"}} dummy-request)]
-            (is (= {:body ""
-                    :headers {"Location" "my-relay-state"}
-                    :principal "_0f38320ad9640e766986311a76ad688766a1603640"
-                    :status 303
-                    :user "_0f38320ad9640e766986311a76ad688766a1603640"}
-                   (saml-acs-handler request {:idp-cert (slurp (:idp-cert-uri valid-config)) :password "password"}))))))
+          (let [request (merge {:form-params {"SAMLResponse" (saml-response-from-xml false) "RelayState" (slurp "test-files/saml/relay-state.txt")}} dummy-request)]
+            (is (= processed-saml-response (saml-acs-handler request {:idp-cert (slurp (:idp-cert-uri valid-config)) :password "password"}))))))
       (testing "has invalid saml signature"
         (with-redefs [saml-shared/byte-deflate (fn [_] _)]
-          (let [request (merge {:form-params {"SAMLResponse" (saml-response-from-xml true) "RelayState" "my-relay-state"}} dummy-request)]
+          (let [request (merge {:form-params {"SAMLResponse" (saml-response-from-xml true) "RelayState" (slurp "test-files/saml/relay-state.txt")}} dummy-request)]
             (is (thrown-with-msg? Exception #"Could not authenticate user. Invalid SAML assertion signature."
                                   (saml-acs-handler request {:idp-cert (slurp (:idp-cert-uri valid-config)) :password "password"}))))))))
   (testing "has expired saml response"
-    (let [request (merge {:form-params {"SAMLResponse" (slurp "test-files/saml/saml-response.txt") "RelayState" "my-relay-state"}} dummy-request)]
+    (let [request (merge {:form-params {"SAMLResponse" (slurp "test-files/saml/saml-response.txt") "RelayState" (slurp "test-files/saml/relay-state.txt")}} dummy-request)]
       (is (thrown-with-msg? Exception #"Could not authenticate user. Expired SAML assertion."
                             (saml-acs-handler request {:idp-cert (slurp (:idp-cert-uri valid-config)) :password "password"}))))))

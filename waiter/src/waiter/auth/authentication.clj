@@ -44,12 +44,15 @@
 (defn handle-request-auth
   "Invokes the given request-handler on the given request, adding the necessary
   auth headers on the way in, and the x-waiter-auth cookie on the way out."
-  [handler request user principal password]
-  (let [auth-params-map (auth-params-map principal user)
-        handler' (middleware/wrap-merge handler auth-params-map)]
-    (-> request
-        handler'
-        (add-cached-auth password principal))))
+  ([handler request user principal password]
+   (handle-request-auth handler request principal (auth-params-map principal user) password nil))
+  ([handler request principal password]
+   (handle-request-auth handler request principal (auth-params-map principal) password nil))
+  ([handler request principal auth-params-map password _]
+   (let [handler' (middleware/wrap-merge handler auth-params-map)]
+     (-> request
+         handler'
+         (add-cached-auth password principal)))))
 
 (defn decode-auth-cookie
   "Decodes the provided cookie using the provided password.
