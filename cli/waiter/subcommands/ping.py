@@ -34,34 +34,38 @@ def ping_on_cluster(cluster, health_check_endpoint, timeout, wait_for_request, t
 
         return False
 
+    def check_service_status():
+        service = wait_until(service_exists_fn, timeout=timeout, interval=5)
+        if service:
+            print(f'Service is currently {format_status(service["status"])}.')
+            return True
+        else:
+            print_error('Timeout waiting for service to exist.')
+            return False
+
     if wait_for_request:
-        return perform_ping()
+        ping_result = perform_ping()
+        check_service_status()
+        return ping_result
     else:
         thread = threading.Thread(target=perform_ping)
         try:
             thread.start()
-            service = wait_until(service_exists_fn, timeout=timeout, interval=5)
-            if service:
-                print(f'Service is currently {format_status(service["status"])}.')
-                return True
-            else:
-                print_error('Timeout waiting for service to exist.')
-                return False
+            return check_service_status()
         finally:
             thread.join()
 
 
 def token_has_current_service(cluster, token_name, current_token_etag):
-    """TODO(DPO)"""
+    """If the given token has a "current" service, returns that service else None"""
     services = get_services_using_token(cluster, token_name)
     if services is not None:
         services = [s for s in services if is_service_current(s, current_token_etag)]
-        # print(json.dumps(services, indent=2))
         return services[0] if len(services) > 0 else False
     else:
         cluster_name = cluster['name']
         print_error(f'Unable to retrieve services using token {token_name} in {cluster_name}.')
-        return False
+        return None
 
 
 def ping_token_on_cluster(cluster, token_name, health_check_endpoint, timeout, wait_for_request,
@@ -76,9 +80,9 @@ def ping_token_on_cluster(cluster, token_name, health_check_endpoint, timeout, w
 
 
 def service_is_active(cluster, service_id):
-    """TODO(DPO)"""
+    """If the given service id is active, returns the service, else None"""
     service = get_service(cluster, service_id)
-    return service if service['status'] != 'Inactive' else False
+    return service if service['status'] != 'Inactive' else None
 
 
 def ping_service_on_cluster(cluster, service_id, health_check_endpoint, timeout, wait_for_request):

@@ -471,6 +471,7 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertIn('Pinging token', cli.stdout(cp))
             self.assertIn('successful', cli.stdout(cp))
+            self.assertIn('Service is currently Running', cli.stdout(cp))
             util.wait_until_services_for_token(self.waiter_url, token_name, 1)
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
@@ -662,6 +663,26 @@ class WaiterCliTest(util.WaiterTest):
             self.assertIn('/sleep', cli.stdout(cp))
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
+
+    def test_ping_no_wait(self):
+        token_name = self.token_name()
+        command = f'{util.default_cmd()} --start-up-sleep-ms {util.DEFAULT_TEST_TIMEOUT_SECS*2*1000}'
+        util.post_token(self.waiter_url, token_name, util.minimal_service_description(cmd=command))
+        try:
+            cp = cli.ping(self.waiter_url, token_name, ping_flags='--no-wait')
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('Service is currently Starting', cli.stdout(cp))
+            services_for_token = util.wait_until_services_for_token(self.waiter_url, token_name, 1)
+
+            service_id = services_for_token[0]['service-id']
+            util.kill_services_using_token(self.waiter_url, token_name)
+            cp = cli.ping(self.waiter_url, service_id, ping_flags='--service-id --no-wait')
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('Service is currently Starting', cli.stdout(cp))
+            util.wait_until_services_for_token(self.waiter_url, token_name, 1)
+        finally:
+            util.kill_services_using_token(self.waiter_url, token_name)
+            util.delete_token(self.waiter_url, token_name)
 
     def test_create_does_not_patch(self):
         token_name = self.token_name()
