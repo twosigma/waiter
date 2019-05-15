@@ -28,7 +28,7 @@
 (defrecord SamlAuthenticator [hostname idp-cert idp-uri password saml-acs-handler-fn saml-req-factory!]
   auth/Authenticator
   (wrap-auth-handler [_ request-handler]
-    (fn saml-authenticator-handler [{:keys [headers query-string request-method uri] :as request}]
+    (fn saml-authenticator-handler [{:keys [headers query-string request-method scheme uri] :as request}]
       (let [waiter-cookie (auth/get-auth-cookie-value (get headers "cookie"))
             [auth-principal _ :as decoded-auth-cookie] (auth/decode-auth-cookie waiter-cookie password)]
         (cond
@@ -39,7 +39,7 @@
             (request-handler' request))
           :else
           (let [saml-request (saml-req-factory!)
-                relay-state (str (get headers "host") uri "?" query-string)]
+                relay-state (str (name scheme) "://" (get headers "host") uri "?" query-string)]
             (saml-sp/get-idp-redirect idp-uri saml-request relay-state)))))))
 
 (defn certificate-x509

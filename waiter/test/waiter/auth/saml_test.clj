@@ -40,7 +40,8 @@
   {:uri "/my-endpoint"
    :request-method :get
    :query-string "a=1&b=c"
-   :headers {"cookie" (str auth/AUTH-COOKIE-NAME "=my-auth-cookie")}})
+   :headers {"cookie" (str auth/AUTH-COOKIE-NAME "=my-auth-cookie") "host" "my.app.domain"}
+   :scheme :http})
 
 (def time-now
   (clj-time.format/parse "2019-05-03T16:43:39.151Z"))
