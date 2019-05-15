@@ -39,10 +39,7 @@
             (request-handler' request))
           :else
           (let [saml-request (saml-req-factory!)
-                relay-state (pr-str {:headers headers
-                                     :query-string query-string
-                                     :request-method request-method
-                                     :uri uri})]
+                relay-state (str (get headers "host") uri "?" query-string)]
             (saml-sp/get-idp-redirect idp-uri saml-request relay-state)))))))
 
 (defn certificate-x509
@@ -95,10 +92,13 @@
                             {:status 400
                              :saml-assertion-not-on-or-after not-on-or-after})))
         saml-principal (first (get attrs "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"
-                                   [(get name-id :value)]))]
-    {:not-on-or-after not-on-or-after
-     :original-request (read-string relay-state)
-     :saml-principal saml-principal}))
+                                   [(get name-id :value)]))
+        {:keys [authorization/principal authorization/user]} (auth/auth-params-map saml-principal)]
+    ;TODO: use not-on-or-after
+    (auth/handle-request-auth (constantly {:status 303
+                                           :headers {"Location" relay-state}
+                                           :body ""})
+                              request user principal password)))
 
 (defn saml-authenticator
   "Factory function for creating SAML authenticator middleware"

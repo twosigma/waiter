@@ -1499,12 +1499,7 @@
                                             (throw (ex-info "Current authenticator can not respond to incoming SAML assertion message"
                                                             {:authenticator authenticator
                                                              :status 400})))
-                                          (let [{:keys [not-on-or-after original-request saml-principal]} (saml-acs-handler-fn request authenticator)]
-                                            ; TODO: handle not-on-or-after
-                                            (auth/handle-request-auth
-                                              process-request-fn
-                                              (merge request (assoc original-request :skip-authentication true))
-                                              saml-principal password)))))
+                                          (saml-acs-handler-fn request authenticator))))
    :waiter-auth-saml-metadata-handler-fn (pc/fnk [wrap-secure-request-fn]
                                            (wrap-secure-request-fn
                                              (fn waiter-auth-saml-metadata-handler-fn [request]
