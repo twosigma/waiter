@@ -54,4 +54,4 @@
                                  (keys authenticator-config)))
         saml-authenticator (:saml authenticators)]
     (->DynamicAuthenticator (assoc authenticators :default (default-kind authenticators))
-                            #(saml/saml-acs-handler %1 saml-authenticator))))
+                            (fn [request _] (saml/saml-acs-handler request saml-authenticator)))))
