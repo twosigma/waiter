@@ -19,6 +19,7 @@
             [clojure.string :as str]
             [clojure.test :refer :all]
             [metrics.counters :as counters]
+            [metrics.histograms :as histograms]
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [waiter.core :refer :all]
@@ -27,7 +28,9 @@
             [waiter.descriptor :as descriptor]
             [waiter.process-request :refer :all]
             [waiter.statsd :as statsd])
-  (:import (java.io ByteArrayOutputStream)
+  (:import (java.io ByteArrayOutputStream InputStream IOException)
+           (java.util Arrays)
+           (java.util.concurrent LinkedBlockingQueue ThreadLocalRandom ThreadPoolExecutor TimeUnit)
            (org.eclipse.jetty.client HttpClient)))
 
 (deftest test-prepare-request-properties
@@ -263,6 +266,211 @@
             {:status 202 :headers {"location" "http://www.example.com:5678/retrieve/result/location"}}
             "http://www.example.com:1234/query/for/status")))))
 
+(deftest test-stream-http-request
+  (let [make-input-stream (fn [read-index-atom input-bytes delayed-read]
+                            (let [delay-latch (atom true)]
+                              (proxy [InputStream] []
+                                (available []
+                                  (if (and delayed-read @delay-latch)
+                                    (do
+                                      (reset! delay-latch false)
+                                      0)
+                                    (->> input-bytes
+                                         (drop @read-index-atom)
+                                         (map count)
+                                         (reduce +))))
+                                (read [target-bytes]
+                                  (reset! delay-latch true)
+                                  (cond
+                                    (= @read-index-atom (count input-bytes))
+                                    (do
+                                      (swap! read-index-atom inc)
+                                      -1)
+                                    (< @read-index-atom (count input-bytes))
+                                    (let [source-bytes (nth input-bytes @read-index-atom)
+                                          num-source-bytes (count source-bytes)]
+                                      (when (> num-source-bytes (count target-bytes))
+                                        (throw (IOException.
+                                                 (str "Insufficient space in target bytes "
+                                                      {:available (count target-bytes)
+                                                       :required num-source-bytes}))))
+                                      (swap! read-index-atom inc)
+                                      (System/arraycopy source-bytes 0 target-bytes 0 num-source-bytes)
+                                      num-source-bytes)
+                                    :else
+                                    (throw (IOException. "Input stream has no more data")))))))]
+
+    (testing "successful read - single task"
+      (let [executor (ThreadPoolExecutor. 1 1 1 TimeUnit/MINUTES (LinkedBlockingQueue.))
+            service-id (str "test-service-id-" (System/nanoTime))
+            metric-group service-id
+            exception-atom (atom nil)
+            error-handler-fn (fn [ex] (reset! exception-atom ex))
+            input-bytes (for [n (range 5)]
+                          (let [bytes (byte-array (-> n inc (* 100)))]
+                            (.nextBytes (ThreadLocalRandom/current) bytes)
+                            bytes))
+            read-index-atom (atom 0)
+            input-stream (make-input-stream read-index-atom input-bytes false)
+            body-ch (async/chan 2000)
+            bytes-streamed 0]
+
+        (stream-http-request executor service-id metric-group error-handler-fn input-stream body-ch bytes-streamed)
+
+        (let [num-fragments-read-atom (atom 0)]
+          (doseq [^bytes source-bytes input-bytes]
+            (when-let [read-buffer (async/<!! body-ch)]
+              (swap! num-fragments-read-atom inc)
+              (let [read-bytes (byte-array (.remaining read-buffer))]
+                (.get read-buffer read-bytes 0 (count read-bytes))
+                (is (Arrays/equals source-bytes read-bytes)))))
+          (is (= (count input-bytes) @num-fragments-read-atom)))
+        (is (nil? (async/<!! body-ch)))
+        (is (nil? @exception-atom))
+        (let [histogram (metrics/service-histogram service-id "request-size")]
+          (is (= 1 (histograms/number-recorded histogram)))
+          (is (= (reduce + (map count input-bytes)) (histograms/largest histogram))))
+        (is (= 1 (.getTaskCount executor)))
+        (.shutdown executor)))
+
+    (testing "successful read - multiple tasks"
+      (let [executor (ThreadPoolExecutor. 1 1 1 TimeUnit/MINUTES (LinkedBlockingQueue.))
+            service-id (str "test-service-id-" (System/nanoTime))
+            metric-group service-id
+            exception-atom (atom nil)
+            error-handler-fn (fn [ex] (reset! exception-atom ex))
+            input-bytes (for [n (range 5)]
+                          (let [bytes (byte-array (-> n inc (* 100)))]
+                            (.nextBytes (ThreadLocalRandom/current) bytes)
+                            bytes))
+            read-index-atom (atom 0)
+            input-stream (make-input-stream read-index-atom input-bytes true)
+            body-ch (async/chan 2000)
+            bytes-streamed 0]
+
+        (stream-http-request executor service-id metric-group error-handler-fn input-stream body-ch bytes-streamed)
+
+        (let [num-fragments-read-atom (atom 0)]
+          (doseq [^bytes source-bytes input-bytes]
+            (when-let [read-buffer (async/<!! body-ch)]
+              (swap! num-fragments-read-atom inc)
+              (let [read-bytes (byte-array (.remaining read-buffer))]
+                (.get read-buffer read-bytes 0 (count read-bytes))
+                (is (Arrays/equals source-bytes read-bytes)))))
+          (is (= (count input-bytes) @num-fragments-read-atom)))
+        (is (nil? (async/<!! body-ch)))
+        (is (nil? @exception-atom))
+        (let [histogram (metrics/service-histogram service-id "request-size")]
+          (is (= 1 (histograms/number-recorded histogram)))
+          (is (= (reduce + (map count input-bytes)) (histograms/largest histogram))))
+        (is (= (count input-bytes) (.getTaskCount executor)))
+        (.shutdown executor)))
+
+    (testing "unsuccessful read - single task"
+      (let [executor (ThreadPoolExecutor. 1 1 1 TimeUnit/MINUTES (LinkedBlockingQueue.))
+            service-id (str "test-service-id-" (System/nanoTime))
+            metric-group service-id
+            exception-atom (atom nil)
+            error-handler-fn (fn [ex] (reset! exception-atom ex))
+            input-bytes (for [n (range 5)]
+                          (let [bytes (byte-array (-> n inc (* 2000)))]
+                            (.nextBytes (ThreadLocalRandom/current) bytes)
+                            bytes))
+            read-index-atom (atom 0)
+            input-stream (make-input-stream read-index-atom input-bytes false)
+            body-ch (async/chan 2000)
+            bytes-streamed 0]
+
+        (stream-http-request executor service-id metric-group error-handler-fn input-stream body-ch bytes-streamed)
+
+        (let [num-fragments-read-atom (atom 0)]
+          (doseq [^bytes source-bytes input-bytes]
+            (when-let [read-buffer (async/<!! body-ch)]
+              (swap! num-fragments-read-atom inc)
+              (let [read-bytes (byte-array (.remaining read-buffer))]
+                (.get read-buffer read-bytes 0 (count read-bytes))
+                (is (Arrays/equals source-bytes read-bytes)))))
+          (is (= 2 @num-fragments-read-atom)))
+        (is (nil? (async/<!! body-ch)))
+        (is (not (nil? @exception-atom)))
+        (is (= "Insufficient space in target bytes {:available 4096, :required 6000}"
+               (some-> @exception-atom .getMessage)))
+        (let [histogram (metrics/service-histogram service-id "request-size")]
+          (is (= 1 (histograms/number-recorded histogram)))
+          (is (= (reduce + (map count (take 2 input-bytes))) (histograms/largest histogram))))
+        (is (zero? (.getTaskCount executor)))
+        (.shutdown executor)))
+
+    (testing "unsuccessful read - multiple tasks"
+      (let [executor (ThreadPoolExecutor. 1 1 1 TimeUnit/MINUTES (LinkedBlockingQueue.))
+            service-id (str "test-service-id-" (System/nanoTime))
+            metric-group service-id
+            exception-atom (atom nil)
+            error-handler-fn (fn [ex] (reset! exception-atom ex))
+            input-bytes (for [n (range 5)]
+                          (let [bytes (byte-array (-> n inc (* 2000)))]
+                            (.nextBytes (ThreadLocalRandom/current) bytes)
+                            bytes))
+            read-index-atom (atom 0)
+            input-stream (make-input-stream read-index-atom input-bytes true)
+            body-ch (async/chan 2000)
+            bytes-streamed 0]
+
+        (stream-http-request executor service-id metric-group error-handler-fn input-stream body-ch bytes-streamed)
+
+        (let [num-fragments-read-atom (atom 0)]
+          (doseq [^bytes source-bytes input-bytes]
+            (when-let [read-buffer (async/<!! body-ch)]
+              (swap! num-fragments-read-atom inc)
+              (let [read-bytes (byte-array (.remaining read-buffer))]
+                (.get read-buffer read-bytes 0 (count read-bytes))
+                (is (Arrays/equals source-bytes read-bytes)))))
+          (is (= 2 @num-fragments-read-atom)))
+        (is (nil? (async/<!! body-ch)))
+        (is (not (nil? @exception-atom)))
+        (is (= "Insufficient space in target bytes {:available 4096, :required 6000}"
+               (some-> @exception-atom .getMessage)))
+        (let [histogram (metrics/service-histogram service-id "request-size")]
+          (is (= 1 (histograms/number-recorded histogram)))
+          (is (= (reduce + (map count (take 2 input-bytes))) (histograms/largest histogram))))
+        (is (= 2 (.getTaskCount executor)))
+        (.shutdown executor)))
+
+    (testing "successful read - single task - no buffer space"
+      (let [executor (ThreadPoolExecutor. 1 1 1 TimeUnit/MINUTES (LinkedBlockingQueue.))
+            service-id (str "test-service-id-" (System/nanoTime))
+            metric-group service-id
+            exception-atom (atom nil)
+            error-handler-fn (fn [ex] (reset! exception-atom ex))
+            input-bytes (for [n (range 4000)]
+                          (let [bytes (byte-array (-> n inc))]
+                            (.nextBytes (ThreadLocalRandom/current) bytes)
+                            bytes))
+            read-index-atom (atom 0)
+            input-stream (make-input-stream read-index-atom input-bytes false)
+            body-ch (async/chan 3)
+            bytes-streamed 0]
+
+        (stream-http-request executor service-id metric-group error-handler-fn input-stream body-ch bytes-streamed)
+
+        (let [num-fragments-read-atom (atom 0)]
+          (doseq [^bytes source-bytes input-bytes]
+            (when-let [read-buffer (async/<!! body-ch)]
+              (swap! num-fragments-read-atom inc)
+              (let [read-bytes (byte-array (.remaining read-buffer))]
+                (.get read-buffer read-bytes 0 (count read-bytes))
+                (is (Arrays/equals source-bytes read-bytes)))))
+          (is (not= (count input-bytes) @num-fragments-read-atom)))
+        (is (nil? (async/<!! body-ch)))
+        (is (not (nil? @exception-atom)))
+        (is (str/includes? (str (some-> @exception-atom .getMessage))
+                           "No more than 1024 pending puts are allowed on a single channel"))
+        (let [histogram (metrics/service-histogram service-id "request-size")]
+          (is (= 1 (histograms/number-recorded histogram)))
+          (is (> (reduce + (map count input-bytes)) (histograms/largest histogram))))
+        (is (zero? (.getTaskCount executor)))
+        (.shutdown executor)))))
+
 (deftest test-make-request
   (let [instance {:service-id "test-service-id", :host "example.com", :port 8080}
         backend-proto "http"
@@ -305,7 +513,8 @@
                              "x-forwarded-for" "client1, proxy1, proxy2"
                              "x-http-method-override" "DELETE"}
         end-route "/end-route"
-        app-password "test-password"]
+        app-password "test-password"
+        executor (ThreadPoolExecutor. 1 1 1 TimeUnit/MINUTES (LinkedBlockingQueue.))]
     (let [expected-endpoint "http://example.com:8080/end-route"
           make-basic-auth-fn (fn make-basic-auth-fn [endpoint username password]
                                (is (= expected-endpoint endpoint))
@@ -336,7 +545,7 @@
         (let [proto-version "HTTP/1.0"
               request-method-fn-call-counter (atom 0)]
           (with-redefs [http/request (http-request-mock-factory passthrough-headers request-method-fn-call-counter proto-version)]
-            (make-request http-clients make-basic-auth-fn service-id->password-fn instance request request-properties
+            (make-request executor http-clients make-basic-auth-fn service-id->password-fn instance request request-properties
                           passthrough-headers end-route nil backend-proto proto-version)
             (is (= 1 @request-method-fn-call-counter)))))
 
@@ -344,7 +553,7 @@
         (let [proto-version "HTTP/2.0"
               request-method-fn-call-counter (atom 0)]
           (with-redefs [http/request (http-request-mock-factory passthrough-headers request-method-fn-call-counter proto-version)]
-            (make-request http-clients make-basic-auth-fn service-id->password-fn instance request request-properties
+            (make-request executor http-clients make-basic-auth-fn service-id->password-fn instance request request-properties
                           passthrough-headers end-route nil backend-proto proto-version)
             (is (= 1 @request-method-fn-call-counter)))))
 
@@ -357,12 +566,14 @@
                         statsd/inc!
                         (fn [metric-group metric value]
                           (is (nil? metric-group))
-                          (is (= "request_bytes" metric))
+                          (is (= "request_content_length" metric))
                           (deliver statsd-inc-call-value value))]
-            (make-request http-clients make-basic-auth-fn service-id->password-fn instance request request-properties
+            (make-request executor http-clients make-basic-auth-fn service-id->password-fn instance request request-properties
                           passthrough-headers end-route nil backend-proto proto-version)
             (is (= 1 @request-method-fn-call-counter))
-            (is (= 1234123412341234 (deref statsd-inc-call-value 0 :statsd-inc-not-called)))))))))
+            (is (= 1234123412341234 (deref statsd-inc-call-value 0 :statsd-inc-not-called)))))))
+
+    (.shutdown executor)))
 
 (deftest test-wrap-suspended-service
   (testing "returns error for suspended app"

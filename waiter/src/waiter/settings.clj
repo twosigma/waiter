@@ -159,6 +159,8 @@
                                        (s/required-key :publish-interval-ms) schema/positive-int
                                        (s/required-key :server) schema/non-empty-string
                                        (s/required-key :sync-instances-interval-ms) schema/positive-int})
+   (s/required-key :stream-reader) {(s/required-key :concurrency-level) schema/positive-int
+                                    (s/required-key :keep-alive-mins) schema/positive-int}
    (s/required-key :support-info) [{(s/required-key :label) schema/non-empty-string
                                     (s/required-key :link) {(s/required-key :type) s/Keyword
                                                             (s/required-key :value) schema/non-empty-string}}]
@@ -389,7 +391,7 @@
    :scheduler-syncer-interval-secs 5
    :server-options {:http2? false
                     :http2c? true
-                    :max-threads 250
+                    :max-threads 200
                     :request-header-size 32768
                     :response-header-size 8192
                     :send-date-header? false}
@@ -427,6 +429,8 @@
                                   "scale-factor" 1
                                   "scale-up-factor" 0.1}
    :statsd :disabled
+   :stream-reader {:concurrency-level 150
+                   :keep-alive-mins 5}
    :support-info [{:label "Waiter on GitHub"
                    :link {:type :url
                           :value "http://github.com/twosigma/waiter"}}]
