@@ -1,5 +1,7 @@
 import logging
 import threading
+import time
+from enum import Enum
 
 from waiter import http_util, terminal
 from waiter.format import format_status
@@ -9,9 +11,24 @@ from waiter.util import guard_no_cluster, response_message, print_error, check_p
 
 def ping_on_cluster(cluster, health_check_endpoint, timeout, wait_for_request, token_name, service_exists_fn):
     """Pings using the given token name (or ^SERVICE-ID#) in the given cluster."""
+
+    class PingResult(Enum):
+        UNKNOWN = 1
+        SUCCESS = 2
+        FAILURE = 3
+        ERRORED = 4
+
+        def succeeded(self):
+            return self is PingResult.SUCCESS
+
+        def failed(self):
+            return self is PingResult.FAILURE
+
     cluster_name = cluster['name']
+    ping_result = PingResult.UNKNOWN
 
     def perform_ping():
+        nonlocal ping_result
         try:
             headers = {
                 'X-Waiter-Token': token_name,
@@ -23,34 +40,45 @@ def ping_on_cluster(cluster, health_check_endpoint, timeout, wait_for_request, t
             if resp.status_code == 200:
                 print(terminal.success(f'Ping successful.'))
                 print(resp.text)
-                return True
+                ping_result = PingResult.SUCCESS
             else:
                 print_error(response_message(resp.json()))
+                ping_result = PingResult.FAILURE
         except Exception:
+            ping_result = PingResult.ERRORED
             message = f'Encountered error while pinging in {cluster_name}.'
             logging.exception(message)
             if wait_for_request:
                 print_error(message)
 
-        return False
+    def service_exists():
+        logging.debug(f'Ping result: {ping_result}')
+        if ping_result.failed():
+            return {'result': ping_result}
+        else:
+            return service_exists_fn()
 
     def check_service_status():
-        service = wait_until(service_exists_fn, timeout=timeout, interval=5)
-        if service:
-            print(f'Service is currently {format_status(service["status"])}.')
-            return True
+        result = wait_until(service_exists, timeout=timeout, interval=5)
+        if result:
+            if ping_result.failed():
+                return False
+            else:
+                print(f'Service is currently {format_status(result["status"])}.')
+                return True
         else:
             print_error('Timeout waiting for service to exist.')
             return False
 
     if wait_for_request:
-        ping_result = perform_ping()
+        perform_ping()
         check_service_status()
-        return ping_result
+        return ping_result.succeeded()
     else:
         thread = threading.Thread(target=perform_ping)
         try:
             thread.start()
+            time.sleep(0.1)
             return check_service_status()
         finally:
             thread.join()
