@@ -11,6 +11,8 @@ from waiter.util import FALSE_STRINGS, print_info, response_message, TRUE_STRING
     load_json_file
 
 BOOL_STRINGS = TRUE_STRINGS + FALSE_STRINGS
+INT_PARAM_SUFFIXES = ['-failures', '-index', '-instances', '-length', '-level', '-mins', '-secs']
+FLOAT_PARAM_SUFFIXES = ['-factor', '-rate', '-threshold']
 
 
 class Action(Enum):
@@ -201,11 +203,9 @@ def add_implicit_arguments(unknown_args, parser):
     for i in range(num_unknown_args):
         arg = unknown_args[i]
         if arg.startswith(("-", "--")):
-            if arg.endswith('-secs') or arg.endswith('-mins') or arg.endswith('-instances') or \
-                    arg.endswith('-index') or arg.endswith('-level') or \
-                    arg.endswith('-failures') or arg.endswith('-length'):
+            if any(arg.endswith(suffix) for suffix in INT_PARAM_SUFFIXES):
                 arg_type = possible_int
-            elif arg.endswith('-factor') or arg.endswith('-rate') or arg.endswith('-threshold'):
+            elif any(arg.endswith(suffix) for suffix in FLOAT_PARAM_SUFFIXES):
                 arg_type = possible_float
             elif (i + 1) < num_unknown_args and unknown_args[i + 1].lower() in BOOL_STRINGS:
                 arg_type = str2bool
