@@ -989,11 +989,14 @@ def main():
     kitchen_logger = logging.getLogger('kitchen')
     kitchen_logger.setLevel(logging.DEBUG)
 
+    auth_disabled = os.environ.get('KITCHEN_AUTH_DISABLED')
     username = os.environ.get('WAITER_USERNAME')
     password = os.environ.get('WAITER_PASSWORD')
 
-    if username and password:
-        kitchen_logger.info('Basic Authentication Enabled')
+    if '1' == auth_disabled:
+        kitchen_logger.info('Authentication has been explicitly disabled')
+    elif username and password:
+        kitchen_logger.info('Basic Authentication enabled')
         _auth_handler = BasicAuthHandler(username, password)
 
     if args.ssl:
