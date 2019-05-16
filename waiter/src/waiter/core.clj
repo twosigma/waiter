@@ -582,8 +582,8 @@
    :start-service-cache (pc/fnk []
                           (cu/cache-factory {:threshold 100
                                              :ttl (-> 1 t/minutes t/in-millis)}))
-   :stream-reader-executor (pc/fnk [[:settings [:stream-reader concurrency-level keep-alive-mins]]]
-                             (pr/make-stream-reader-executor concurrency-level keep-alive-mins))
+   :stream-reader-executor (pc/fnk [[:settings [:stream-reader concurrency-level keep-alive-mins queue-limit]]]
+                             (pr/make-stream-reader-executor concurrency-level keep-alive-mins queue-limit))
    :token-cluster-calculator (pc/fnk [[:settings [:cluster-config name] [:token-config cluster-calculator]]]
                                (utils/create-component
                                  cluster-calculator :context {:default-cluster name}))

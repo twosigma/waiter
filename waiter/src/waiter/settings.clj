@@ -160,7 +160,8 @@
                                        (s/required-key :server) schema/non-empty-string
                                        (s/required-key :sync-instances-interval-ms) schema/positive-int})
    (s/required-key :stream-reader) {(s/required-key :concurrency-level) schema/positive-int
-                                    (s/required-key :keep-alive-mins) schema/positive-int}
+                                    (s/required-key :keep-alive-mins) schema/positive-int
+                                    (s/required-key :queue-limit) schema/positive-int}
    (s/required-key :support-info) [{(s/required-key :label) schema/non-empty-string
                                     (s/required-key :link) {(s/required-key :type) s/Keyword
                                                             (s/required-key :value) schema/non-empty-string}}]
@@ -430,7 +431,8 @@
                                   "scale-up-factor" 0.1}
    :statsd :disabled
    :stream-reader {:concurrency-level 150
-                   :keep-alive-mins 5}
+                   :keep-alive-mins 5
+                   :queue-limit 50000}
    :support-info [{:label "Waiter on GitHub"
                    :link {:type :url
                           :value "http://github.com/twosigma/waiter"}}]
