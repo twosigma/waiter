@@ -121,7 +121,7 @@ def load_json_file(path):
 
 def is_service_current(service, current_token_etag, token_name):
     """Returns True if any of the given service's source tokens is the current token"""
-    is_current = any(token['version'] == current_token_etag and token['token'] == token_name
-                     for source in service['source-tokens']
-                     for token in source)
+    is_current = any(source['version'] == current_token_etag and source['token'] == token_name
+                     for sources in service['source-tokens']
+                     for source in sources)
     return is_current
