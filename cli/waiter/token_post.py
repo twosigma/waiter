@@ -174,6 +174,24 @@ def register_argument_parser(add_parser, action):
                       'you can pass --grace-period-secs 10.')
 
 
+def possible_int(arg):
+    """Attempts to parse arg as an int, returning the string otherwise"""
+    try:
+        return int(arg)
+    except ValueError:
+        logging.info(f'failed to parse {arg} as an int, treating it as a string')
+        return arg
+
+
+def possible_float(arg):
+    """Attempts to parse arg as a float, returning the string otherwise"""
+    try:
+        return float(arg)
+    except ValueError:
+        logging.info(f'failed to parse {arg} as a float, treating it as a string')
+        return arg
+
+
 def add_implicit_arguments(unknown_args, parser):
     """
     Given the list of "unknown" args, dynamically adds proper arguments to
@@ -183,10 +201,12 @@ def add_implicit_arguments(unknown_args, parser):
     for i in range(num_unknown_args):
         arg = unknown_args[i]
         if arg.startswith(("-", "--")):
-            if arg.endswith('-secs') or arg.endswith('-mins') or arg.endswith('-instances'):
-                arg_type = int
-            elif arg.endswith('-factor'):
-                arg_type = float
+            if arg.endswith('-secs') or arg.endswith('-mins') or arg.endswith('-instances') or \
+                    arg.endswith('-index') or arg.endswith('-level') or \
+                    arg.endswith('-failures') or arg.endswith('-length'):
+                arg_type = possible_int
+            elif arg.endswith('-factor') or arg.endswith('-rate') or arg.endswith('-threshold'):
+                arg_type = possible_float
             elif (i + 1) < num_unknown_args and unknown_args[i + 1].lower() in BOOL_STRINGS:
                 arg_type = str2bool
             else:

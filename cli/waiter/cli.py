@@ -78,6 +78,14 @@ def run(args):
     sub-commands (actions) if necessary.
     """
     args, unknown_args = parser.parse_known_args(args)
+    verbose = args.verbose
+    if verbose:
+        log_format = '%(asctime)s [%(levelname)s] [%(name)s] %(message)s'
+        logging.getLogger('').handlers = []
+        logging.basicConfig(format=log_format, level=logging.DEBUG)
+    else:
+        logging.disable(logging.FATAL)
+
     if args.action:
         add_implicit_arguments = actions[args.action].get('implicit-args-function', None)
         if add_implicit_arguments:
@@ -85,17 +93,8 @@ def run(args):
 
     args = parser.parse_args()
     args = vars(args)
-
-    verbose = args.pop('verbose')
-
-    log_format = '%(asctime)s [%(levelname)s] [%(name)s] %(message)s'
-    if verbose:
-        logging.getLogger('').handlers = []
-        logging.basicConfig(format=log_format, level=logging.DEBUG)
-    else:
-        logging.disable(logging.FATAL)
-
     logging.debug('args: %s' % args)
+    args.pop('verbose')
 
     action = args.pop('action')
     config_path = args.pop('config')
