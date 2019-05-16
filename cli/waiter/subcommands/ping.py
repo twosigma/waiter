@@ -88,7 +88,7 @@ def token_has_current_service(cluster, token_name, current_token_etag):
     """If the given token has a "current" service, returns that service else None"""
     services = get_services_using_token(cluster, token_name)
     if services is not None:
-        services = [s for s in services if is_service_current(s, current_token_etag)]
+        services = [s for s in services if is_service_current(s, current_token_etag, token_name)]
         return services[0] if len(services) > 0 else False
     else:
         cluster_name = cluster['name']

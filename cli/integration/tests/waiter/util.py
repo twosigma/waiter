@@ -83,7 +83,7 @@ def delete_token(waiter_url, token_name, assert_response=True, expected_status_c
     return response
 
 
-def load_token(waiter_url, token_name, assert_response=True, expected_status_code=200, params=None):
+def __load_token(waiter_url, token_name, assert_response, expected_status_code, params):
     if params is None:
         params = {'include': 'metadata'}
 
@@ -97,15 +97,30 @@ def load_token(waiter_url, token_name, assert_response=True, expected_status_cod
         assert \
             expected_status_code == response.status_code, \
             f'Expected {expected_status_code}, got {response.status_code} with body {response.text}'
+    return response
+
+
+def load_token(waiter_url, token_name, assert_response=True, expected_status_code=200, params=None):
+    response = __load_token(waiter_url, token_name, assert_response, expected_status_code, params)
     return response.json()
 
 
-def post_token(waiter_url, token_name, token_definition, assert_response=True, expected_status_code=200):
+def load_token_with_headers(waiter_url, token_name, assert_response=True, expected_status_code=200, params=None):
+    response = __load_token(waiter_url, token_name, assert_response, expected_status_code, params)
+    return response.json(), response.headers
+
+
+def post_token(waiter_url, token_name, token_definition, assert_response=True,
+               expected_status_code=200, update_mode_admin=False, etag=None):
     headers = {
         'Content-Type': 'application/json',
         'x-cid': cid()
     }
-    response = session.post(f'{waiter_url}/token', headers=headers, json=token_definition, params={'token': token_name})
+    params = {'token': token_name}
+    if update_mode_admin:
+        params['update-mode'] = 'admin'
+        headers['If-Match'] = etag
+    response = session.post(f'{waiter_url}/token', headers=headers, json=token_definition, params=params)
     logging.debug(f'Response headers: {response.headers}')
     response_json = response.json()
     if assert_response:

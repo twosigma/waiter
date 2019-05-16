@@ -1,3 +1,4 @@
+import datetime
 import getpass
 import json
 import logging
@@ -1035,3 +1036,71 @@ class WaiterCliTest(util.WaiterTest):
             cp = cli.create(self.waiter_url, create_flags=f'--json {path}')
             self.assertEqual(1, cp.returncode, cp.stderr)
             self.assertIn('must specify the token name', cli.stderr(cp))
+
+    def test_show_service_current(self):
+        token_name_1 = self.token_name()
+        token_name_2 = self.token_name()
+        custom_fields = {
+            'owner': getpass.getuser(),
+            'cluster': 'test_show_service_current',
+            'root': 'test_show_service_current',
+            'last-update-user': getpass.getuser(),
+            'last-update-time': datetime.datetime.utcnow().isoformat()
+        }
+        token_definition = util.minimal_service_description(**custom_fields)
+
+        # Post two identical tokens with different names
+        util.post_token(self.waiter_url, token_name_1, token_definition, update_mode_admin=True, assert_response=False)
+        util.post_token(self.waiter_url, token_name_2, token_definition, update_mode_admin=True, assert_response=False)
+        try:
+            # Assert that their etags match
+            etag_1 = util.load_token_with_headers(self.waiter_url, token_name_1)[1]['ETag']
+            etag_2 = util.load_token_with_headers(self.waiter_url, token_name_2)[1]['ETag']
+            self.assertEqual(etag_1, etag_2)
+
+            # Create service A from the two tokens
+            service_id_a = util.ping_token(self.waiter_url, f'{token_name_1},{token_name_2}')
+
+            # Update token #2 only and assert that their etags don't match
+            token_definition['cpus'] += 0.1
+            util.post_token(self.waiter_url, token_name_2, token_definition, update_mode_admin=True,
+                            assert_response=False, etag=etag_1)
+            etag_1 = util.load_token_with_headers(self.waiter_url, token_name_1)[1]['ETag']
+            etag_2 = util.load_token_with_headers(self.waiter_url, token_name_2)[1]['ETag']
+            self.assertNotEqual(etag_1, etag_2)
+
+            # Create service B from the two tokens
+            service_id_b = util.ping_token(self.waiter_url, f'{token_name_1},{token_name_2}')
+
+            # Update token #1 to match token #2 and assert that their etags match
+            util.post_token(self.waiter_url, token_name_1, token_definition, update_mode_admin=True,
+                            assert_response=False, etag=etag_1)
+            etag_1 = util.load_token_with_headers(self.waiter_url, token_name_1)[1]['ETag']
+            etag_2 = util.load_token_with_headers(self.waiter_url, token_name_2)[1]['ETag']
+            self.assertEqual(etag_1, etag_2)
+
+            # Update token #2 only and assert that their etags don't match
+            token_definition['cpus'] += 0.1
+            util.post_token(self.waiter_url, token_name_2, token_definition, update_mode_admin=True,
+                            assert_response=False, etag=etag_1)
+            etag_1 = util.load_token_with_headers(self.waiter_url, token_name_1)[1]['ETag']
+            etag_2 = util.load_token_with_headers(self.waiter_url, token_name_2)[1]['ETag']
+            self.assertNotEqual(etag_1, etag_2)
+
+            # Create service C from the two tokens
+            service_id_c = util.ping_token(self.waiter_url, f'{token_name_1},{token_name_2}')
+
+            # For both tokens, only service C should be "current"
+            cp = cli.show(self.waiter_url, token_name_1)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIsNotNone(re.search(f'^{service_id_a}.+Running.+Not Current$', cli.stdout(cp), re.MULTILINE))
+            self.assertIsNotNone(re.search(f'^{service_id_b}.+Running.+Not Current$', cli.stdout(cp), re.MULTILINE))
+            self.assertIsNotNone(re.search(f'^{service_id_c}.+Running.+Current$', cli.stdout(cp), re.MULTILINE))
+            cp = cli.show(self.waiter_url, token_name_2)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIsNotNone(re.search(f'^{service_id_a}.+Running.+Not Current$', cli.stdout(cp), re.MULTILINE))
+            self.assertIsNotNone(re.search(f'^{service_id_b}.+Running.+Not Current$', cli.stdout(cp), re.MULTILINE))
+            self.assertIsNotNone(re.search(f'^{service_id_c}.+Running.+Current$', cli.stdout(cp), re.MULTILINE))
+        finally:
+            util.delete_token(self.waiter_url, token_name_1, kill_services=True)
+            util.delete_token(self.waiter_url, token_name_2, kill_services=True)
