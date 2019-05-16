@@ -25,7 +25,7 @@
             [waiter.middleware :as middleware]
             [waiter.util.utils :as utils]))
 
-(defrecord SamlAuthenticator [hostname idp-cert idp-uri password saml-acs-handler-fn saml-req-factory!]
+(defrecord SamlAuthenticator [idp-cert idp-uri password saml-acs-handler-fn saml-req-factory!]
   auth/Authenticator
   (wrap-auth-handler [_ request-handler]
     (fn saml-authenticator-handler [{:keys [headers query-string request-method scheme uri] :as request}]
@@ -118,4 +118,4 @@
                                                           saml-routes/saml-format
                                                           "waiter"
                                                           acs-uri)]
-    (->SamlAuthenticator hostname idp-cert idp-uri password saml-acs-handler saml-req-factory!)))
+    (->SamlAuthenticator idp-cert idp-uri password saml-acs-handler saml-req-factory!)))

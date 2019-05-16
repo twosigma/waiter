@@ -529,12 +529,12 @@
 ;; PRIVATE API
 (def state
   {:async-request-store-atom (pc/fnk [] (atom {}))
-   :authenticator (pc/fnk [[:settings authenticator-config]
-                           waiter-hostnames
+   :authenticator (pc/fnk [[:settings authenticator-config hostname]
                            passwords]
-                    (utils/create-component authenticator-config :context {:authenticator-config authenticator-config
-                                                                           :hostname (first waiter-hostnames)
-                                                                           :password (first passwords)}))
+                    (let [hostname (if (sequential? hostname) (first hostname) hostname)]
+                      (utils/create-component authenticator-config :context {:authenticator-config authenticator-config
+                                                                             :hostname hostname
+                                                                             :password (first passwords)})))
    :clock (pc/fnk [] t/now)
    :cors-validator (pc/fnk [[:settings cors-config]]
                      (utils/create-component cors-config))
