@@ -11,6 +11,8 @@ from waiter.util import FALSE_STRINGS, print_info, response_message, TRUE_STRING
     load_json_file
 
 BOOL_STRINGS = TRUE_STRINGS + FALSE_STRINGS
+INT_PARAM_SUFFIXES = ['-failures', '-index', '-instances', '-length', '-level', '-mins', '-secs']
+FLOAT_PARAM_SUFFIXES = ['-factor', '-rate', '-threshold']
 
 
 class Action(Enum):
@@ -174,6 +176,24 @@ def register_argument_parser(add_parser, action):
                       'you can pass --grace-period-secs 10.')
 
 
+def possible_int(arg):
+    """Attempts to parse arg as an int, returning the string otherwise"""
+    try:
+        return int(arg)
+    except ValueError:
+        logging.info(f'failed to parse {arg} as an int, treating it as a string')
+        return arg
+
+
+def possible_float(arg):
+    """Attempts to parse arg as a float, returning the string otherwise"""
+    try:
+        return float(arg)
+    except ValueError:
+        logging.info(f'failed to parse {arg} as a float, treating it as a string')
+        return arg
+
+
 def add_implicit_arguments(unknown_args, parser):
     """
     Given the list of "unknown" args, dynamically adds proper arguments to
@@ -183,10 +203,10 @@ def add_implicit_arguments(unknown_args, parser):
     for i in range(num_unknown_args):
         arg = unknown_args[i]
         if arg.startswith(("-", "--")):
-            if arg.endswith('-secs') or arg.endswith('-mins') or arg.endswith('-instances'):
-                arg_type = int
-            elif arg.endswith('-factor'):
-                arg_type = float
+            if any(arg.endswith(suffix) for suffix in INT_PARAM_SUFFIXES):
+                arg_type = possible_int
+            elif any(arg.endswith(suffix) for suffix in FLOAT_PARAM_SUFFIXES):
+                arg_type = possible_float
             elif (i + 1) < num_unknown_args and unknown_args[i + 1].lower() in BOOL_STRINGS:
                 arg_type = str2bool
             else:
