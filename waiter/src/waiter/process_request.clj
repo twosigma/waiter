@@ -259,6 +259,7 @@
                 (log/error "unable to stream request bytes" description-map)
                 (throw (ex-info "unable to stream request bytes" description-map)))))))
       (catch Throwable th
+        (log/info "request failed after streaming" @bytes-streamed-atom "bytes")
         (histograms/update! (metrics/service-histogram service-id "request-size") @bytes-streamed-atom)
         (error-handler-fn th)))))
 
