@@ -502,7 +502,8 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertIn('Pinging token', cli.stdout(cp))
             self.assertIn('successful', cli.stdout(cp))
-            self.assertIn('Service is currently Running', cli.stdout(cp))
+            self.assertIn('Service is currently', cli.stdout(cp))
+            self.assertTrue('Running' in cli.stdout(cp) or 'Starting' in cli.stdout(cp))
             util.wait_until_services_for_token(self.waiter_url, token_name, 1)
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
