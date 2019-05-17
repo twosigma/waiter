@@ -582,6 +582,8 @@
    :start-service-cache (pc/fnk []
                           (cu/cache-factory {:threshold 100
                                              :ttl (-> 1 t/minutes t/in-millis)}))
+   :stream-reader-executor (pc/fnk [[:settings [:stream-reader concurrency-level keep-alive-mins queue-limit]]]
+                             (pr/make-stream-reader-executor concurrency-level keep-alive-mins queue-limit))
    :token-cluster-calculator (pc/fnk [[:settings [:cluster-config name] [:token-config cluster-calculator]]]
                                (utils/create-component
                                  cluster-calculator :context {:default-cluster name}))
@@ -780,11 +782,12 @@
                          (fn make-basic-auth-fn [uri username password]
                            (BasicAuthentication$BasicResult. (URI. uri) username password)))
    :make-http-request-fn (pc/fnk [[:settings instance-request-properties]
-                                  [:state http-clients]
+                                  [:state http-clients stream-reader-executor]
                                   make-basic-auth-fn service-id->password-fn]
-                           (handler/async-make-request-helper
-                             http-clients instance-request-properties make-basic-auth-fn service-id->password-fn
-                             pr/prepare-request-properties pr/make-request))
+                           (let [make-request-fn (partial pr/make-request stream-reader-executor)]
+                             (handler/async-make-request-helper
+                               http-clients instance-request-properties make-basic-auth-fn service-id->password-fn
+                               pr/prepare-request-properties make-request-fn)))
    :make-inter-router-requests-async-fn (pc/fnk [[:curator discovery]
                                                  [:settings [:instance-request-properties initial-socket-timeout-ms]]
                                                  [:state http-clients passwords router-id]
@@ -1192,14 +1195,16 @@
    :process-request-fn (pc/fnk [[:routines determine-priority-fn make-basic-auth-fn post-process-async-request-response-fn
                                  service-id->password-fn start-new-service-fn]
                                 [:settings instance-request-properties]
-                                [:state http-clients instance-rpc-chan local-usage-agent interstitial-state-atom]
+                                [:state http-clients instance-rpc-chan local-usage-agent interstitial-state-atom
+                                 stream-reader-executor]
                                 wrap-auth-bypass-fn wrap-descriptor-fn wrap-https-redirect-fn wrap-secure-request-fn
                                 wrap-service-discovery-fn]
                          (let [make-request-fn (fn [instance request request-properties passthrough-headers end-route metric-group
                                                     backend-proto proto-version]
-                                                 (pr/make-request http-clients make-basic-auth-fn service-id->password-fn
-                                                                  instance request request-properties passthrough-headers
-                                                                  end-route metric-group backend-proto proto-version))
+                                                 (pr/make-request
+                                                   stream-reader-executor http-clients make-basic-auth-fn service-id->password-fn
+                                                   instance request request-properties passthrough-headers end-route metric-group
+                                                   backend-proto proto-version))
                                process-response-fn (partial pr/process-http-response post-process-async-request-response-fn)
                                inner-process-request-fn (fn inner-process-request [request]
                                                           (pr/process make-request-fn instance-rpc-chan start-new-service-fn

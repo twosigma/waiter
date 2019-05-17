@@ -136,8 +136,8 @@
                   ;; When SSL is enabled, the password to the keystore
                   :key-password "keystore-password"
 
-                  ;; The maximum number of threads to use (default 250)
-                  :max-threads 250
+                  ;; The maximum number of threads to use (default 200)
+                  :max-threads 200
 
                   ;; The maximum size in bytes of the request header.
                   ;; Larger headers will allow for more and/or larger cookies plus larger form content encoded in a URL.
@@ -829,6 +829,14 @@
             :not-enough-memory "Not enough memory allocated"
             :not-found "Not found"
             :prestashed-tickets-not-available "Prestashed jobsystem tickets not available"}
+
+ ;; Waiter launches a separate thread pool executor to perform blocking reads on incoming request bodies
+ :stream-reader {;; the maximum number of concurrent input stream reads allowed in the executor (default 150)
+                 :concurrency-level 150
+                 ;; the idle time before cached threads from the executor are terminated (default 5)
+                 :keep-alive-mins 5
+                 ;; the number of concurrent requests that are supported by the executor (default 50000)
+                 :queue-limit 50000}
 
  ;; Support information used to provide user guidance in error messages
  :support-info [{:label "Email Support Team" :link {:type :email :value "support@example.com"}}
