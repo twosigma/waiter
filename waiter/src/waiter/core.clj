@@ -537,7 +537,8 @@
                                           :healthy-service-ids #{}}))
    :http-clients (pc/fnk [[:settings [:instance-request-properties connection-timeout-ms]]]
                    (http-utils/prepare-http-clients
-                     {:conn-timeout connection-timeout-ms
+                     {:client-name "waiter-client"
+                      :conn-timeout connection-timeout-ms
                       :follow-redirects? false}))
    :instance-rpc-chan (pc/fnk [] (async/chan 1024)) ; TODO move to service-chan-maintainer
    :interstitial-state-atom (pc/fnk [] (atom {:initialized? false
@@ -697,7 +698,8 @@
                                        [:state clock]
                                        service-id->service-description-fn*]
                                 (let [http-client (http-utils/http-client-factory
-                                                    {:conn-timeout health-check-timeout-ms
+                                                    {:client-name (str "waiter-syncer-" (str/join (take 7 git-version)))
+                                                     :conn-timeout health-check-timeout-ms
                                                      :socket-timeout health-check-timeout-ms
                                                      :user-agent (str "waiter-syncer/" (str/join (take 7 git-version)))})
                                       available? (fn scheduler-available?

@@ -86,7 +86,8 @@
 
 ;; Instance health checks
 
-(let [http-client (http-utils/http-client-factory {:conn-timeout 10000
+(let [http-client (http-utils/http-client-factory {:client-name "waiter-cook-health-check"
+                                                   :conn-timeout 10000
                                                    :socket-timeout 10000
                                                    :spnego-auth false
                                                    :user-agent "waiter-cook-health-check"})
@@ -532,8 +533,9 @@
          (pos-int? scheduler-syncer-interval-secs)
          (fn? start-scheduler-syncer-fn)]}
   (let [http-client (-> http-options
-                        (utils/assoc-if-absent :user-agent "waiter-cook")
-                        http-utils/http-client-factory)
+                      (utils/assoc-if-absent :client-name "waiter-cook")
+                      (utils/assoc-if-absent :user-agent "waiter-cook")
+                      http-utils/http-client-factory)
         cook-api {:http-client http-client
                   :impersonate impersonate
                   :slave-port mesos-slave-port

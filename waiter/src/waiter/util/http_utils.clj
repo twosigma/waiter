@@ -63,14 +63,13 @@
 
 (defn ^HttpClient http-client-factory
   "Creates a HttpClient."
-  [{:keys [clear-content-decoders conn-timeout follow-redirects? socket-timeout transport user-agent]
-    :or {clear-content-decoders true}}]
+  [{:keys [clear-content-decoders conn-timeout socket-timeout user-agent]
+    :or {clear-content-decoders true}
+    :as config}]
   (let [^HttpClient client
-        (http/client (cond-> {}
+        (http/client (cond-> (select-keys config [:client-name :follow-redirects? :transport])
                        (some? conn-timeout) (assoc :connect-timeout conn-timeout)
-                       (some? follow-redirects?) (assoc :follow-redirects? follow-redirects?)
-                       (some? socket-timeout) (assoc :idle-timeout socket-timeout)
-                       (some? transport) (assoc :transport transport)))]
+                       (some? socket-timeout) (assoc :idle-timeout socket-timeout)))]
     (when clear-content-decoders
       (.clear (.getContentDecoderFactories client)))
     (.setCookieStore client (HttpCookieStore$Empty.))
@@ -91,11 +90,13 @@
 
 (defn prepare-http-clients
   "Prepares and returns a map of HTTP clients for http/1 and http/2 requests."
-  [{:keys [conn-timeout user-agent] :as config}]
+  [{:keys [client-name conn-timeout user-agent] :as config}]
   (let [http2-transport (prepare-http2-transport conn-timeout)]
     {:http1-client (http-client-factory (cond-> config
+                                          client-name (update :client-name str "-http1")
                                           user-agent (update :user-agent str ".http1")))
      :http2-client (-> (cond-> config
+                         client-name (update :client-name str "-http2")
                          user-agent (update :user-agent str ".http2"))
                        (assoc :transport http2-transport)
                        http-client-factory)}))
