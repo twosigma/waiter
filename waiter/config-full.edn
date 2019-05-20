@@ -200,8 +200,17 @@
  ;; Waiter supports authenticating requests to identify the principal of the requesting user.
  ;; The principal is then used to validate access to services and also to launch services.
  :authenticator-config {
-                        ;; :kind :one-user allows anonymous access to services (for testing purposes only):
+                        ;; set :kind to one of the configured authenticators
                         :kind :one-user
+
+                        ;; :kind :composite enables using the "authentication" service parameter to
+                        ;; specify the authenticator. Otherwise, the :default-kind authenticator is used .
+                        ;:kind :composite
+                        :composite {:factory-fn waiter.auth.composite/composite-authenticator
+                                    ;; The authenticator to use if one is not specified
+                                    :default-kind :one-user}
+
+                        ;; :kind :one-user allows anonymous access to services (for testing purposes only):
                         :one-user {;; Custom implementations should specify a :factory-fn
                                    ;; that returns an instance of waiter.auth.authentication.Authenticator:
                                    :factory-fn waiter.auth.authentication/one-user-authenticator
@@ -228,14 +237,7 @@
                                ;; resource path of the signing certificate used by the Identity Provider
                                :idp-cert-resource-path "idp.crt"
                                ;; URI of the signing certificate used by the Identity Provider. Used if resource path is not set
-                               :idp-cert-uri "file:///path/idp.crt"}
-
-                        ;; :kind :dynamic enables using the "x-waiter-authentication" header or "authentication" service parameter to
-                        ;; dynamically specify the authenticator. Otherwise, the :default-kind authenticator is used .
-                        ;:kind :dynamic
-                        :dynamic {:factory-fn waiter.auth.dynamic/dynamic-authenticator
-                                  ;; The authenticator to use if one is not specified dynamically
-                                  :default-kind :one-user}}
+                               :idp-cert-uri "file:///path/idp.crt"}}
 
  ;; Waiter supports the run-as-requester feature to launch a service as the requesting user.
  ;; Triggering this feature without passing explicit headers requires providing an explicit consent and storing this in a cookie.
