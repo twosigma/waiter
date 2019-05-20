@@ -30,8 +30,8 @@
      - or upon successful authentication populate the request with :authorization/user and :authorization/principal"))
 
 (defn- add-cached-auth
-  [response password principal]
-  (cookie-support/add-encoded-cookie response password AUTH-COOKIE-NAME [principal (System/currentTimeMillis)] 1))
+  [response password principal & age-in-seconds]
+  (cookie-support/add-encoded-cookie response password AUTH-COOKIE-NAME [principal (clj-time.coerce/to-long (t/now))] 1 age-in-seconds))
 
 (defn auth-params-map
   "Creates a map intended to be merged into requests/responses."
@@ -44,15 +44,15 @@
 (defn handle-request-auth
   "Invokes the given request-handler on the given request, adding the necessary
   auth headers on the way in, and the x-waiter-auth cookie on the way out."
-  ([handler request user principal password]
-   (handle-request-auth handler request principal (auth-params-map principal user) password nil))
   ([handler request principal password]
    (handle-request-auth handler request principal (auth-params-map principal) password nil))
-  ([handler request principal auth-params-map password _]
+  ([handler request user principal password]
+   (handle-request-auth handler request principal (auth-params-map principal user) password nil))
+  ([handler request principal auth-params-map password age-in-seconds]
    (let [handler' (middleware/wrap-merge handler auth-params-map)]
      (-> request
          handler'
-         (add-cached-auth password principal)))))
+         (add-cached-auth password principal age-in-seconds)))))
 
 (defn decode-auth-cookie
   "Decodes the provided cookie using the provided password.

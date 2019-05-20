@@ -15,12 +15,15 @@
 ;;
 (ns waiter.auth.saml
   (:require [clj-time.core :as t]
+            [clojure.data.codec.base64 :as b64]
             [clojure.java.io :as io]
             [clojure.tools.logging :as log]
+            [comb.template :as template]
             [ring.middleware.params :as ring-params]
             [saml20-clj.routes :as saml-routes]
             [saml20-clj.shared :as saml-shared]
             [saml20-clj.sp :as saml-sp]
+            [taoensso.nippy :as nippy]
             [waiter.auth.authentication :as auth]
             [waiter.middleware :as middleware]
             [waiter.util.utils :as utils]))
@@ -38,9 +41,34 @@
                 request-handler' (middleware/wrap-merge request-handler auth-params-map)]
             (request-handler' request))
           :else
-          (let [saml-request (saml-req-factory!)
-                relay-state (str (name scheme) "://" (get headers "host") uri "?" query-string)]
-            (saml-sp/get-idp-redirect idp-uri saml-request relay-state)))))))
+          (case request-method
+            :get (let [saml-request (saml-req-factory!)
+                       relay-state (str (name scheme) "://" (get headers "host") uri (if query-string "?" "") query-string)]
+                   (saml-sp/get-idp-redirect idp-uri saml-request relay-state))
+            :post (if-let [saml-auth-data (get-in (ring-params/params-request request) [:form-params "saml-auth-data"])]
+                    (let [{:keys [not-on-or-after saml-principal]}
+                          (try
+                            (nippy/thaw (b64/decode (.getBytes saml-auth-data))
+                                        {:password password :v1-compatibility? false :compressor nil})
+                            (catch Exception e
+                              (throw (ex-info "Could not parse saml-auth-data." {:status 400
+                                                                                 :saml-auth-data saml-auth-data
+                                                                                 :inner-exception e}))))
+                          t-now (t/now)
+                          _ (when-not (t/before? t-now not-on-or-after)
+                              (throw (ex-info "Could not authenticate user. Expired SAML assertion."
+                                              {:status 400
+                                               :saml-assertion-not-on-or-after not-on-or-after
+                                               :t-now t-now})))
+                          age-in-seconds (t/in-seconds (t/interval t-now not-on-or-after))
+                          {:keys [authorization/principal authorization/user] :as auth-params-map}
+                          (auth/auth-params-map saml-principal)
+                          request-handler' (middleware/wrap-merge request-handler auth-params-map)]
+                      (auth/handle-request-auth request-handler' request principal auth-params-map password age-in-seconds))
+                    (throw (ex-info "Invalid request method for use with SAML authentication"
+                                    {:log-level :info :request-method request-method :status 405})))
+            (throw (ex-info "Invalid request method for use with SAML authentication"
+                            {:log-level :info :request-method request-method :status 405}))))))))
 
 (defn certificate-x509
   "Takes in a raw X.509 certificate string, parses it, and creates a Java certificate."
@@ -66,6 +94,15 @@
     false ;; if not signature is present
     ))
 
+(let [authenticated-redirect-template-fn
+      (template/fn
+        [{:keys [redirect-url saml-auth-data]}]
+        (slurp (io/resource "web/authenticated-redirect.html")))]
+  (defn render-authenticated-redirect-template
+    "Render the authenticated redirect html page."
+    [context]
+    (authenticated-redirect-template-fn context)))
+
 (defn saml-acs-handler
   "Endpoint for POSTs to Waiter with IdP-signed credentials. If signature is valid, return principal and original request."
   [request {:keys [idp-cert password]}]
@@ -87,18 +124,18 @@
                             {:status 400})))
         {:keys [attrs confirmation name-id]} (saml-sp/parse-saml-assertion assertion)
         not-on-or-after (clj-time.coerce/from-sql-time (:not-on-or-after confirmation))
-        _ (when-not (t/before? (t/now) not-on-or-after)
+        t-now (t/now)
+        _ (when-not (t/before? t-now not-on-or-after)
             (throw (ex-info "Could not authenticate user. Expired SAML assertion."
                             {:status 400
-                             :saml-assertion-not-on-or-after not-on-or-after})))
+                             :saml-assertion-not-on-or-after not-on-or-after
+                             :t-now t-now})))
         saml-principal (first (get attrs "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"
                                    [(get name-id :value)]))
-        {:keys [authorization/principal authorization/user]} (auth/auth-params-map saml-principal)]
-    ;TODO: use not-on-or-after
-    (auth/handle-request-auth (constantly {:status 303
-                                           :headers {"Location" relay-state}
-                                           :body ""})
-                              request user principal password)))
+        saml-auth-data (String. (b64/encode (nippy/freeze {:not-on-or-after not-on-or-after :saml-principal saml-principal}
+                                                          {:password password :compressor nil})))]
+    {:body (render-authenticated-redirect-template {:redirect-url relay-state :saml-auth-data saml-auth-data})
+     :status 200}))
 
 (defn saml-authenticator
   "Factory function for creating SAML authenticator middleware"
