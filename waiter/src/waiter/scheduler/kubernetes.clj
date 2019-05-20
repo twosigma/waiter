@@ -1025,8 +1025,9 @@
          (or (nil? watch-retries) (integer? watch-retries))]}
   (let [authorizer (utils/create-component authorizer)
         http-client (-> http-options
-                        (utils/assoc-if-absent :user-agent "waiter-k8s")
-                        http-utils/http-client-factory)
+                      (utils/assoc-if-absent :client-name "waiter-k8s")
+                      (utils/assoc-if-absent :user-agent "waiter-k8s")
+                      http-utils/http-client-factory)
         service-id->failed-instances-transient-store (atom {})
         replicaset-spec-builder-ctx (assoc replicaset-spec-builder
                                       :log-bucket-sync-secs log-bucket-sync-secs

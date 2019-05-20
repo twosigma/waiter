@@ -207,7 +207,8 @@
 (defn make-http-clients
   "Instantiates and returns http1 and http2 clients without a cookie store"
   []
-  (http-utils/prepare-http-clients {:clear-content-decoders false
+  (http-utils/prepare-http-clients {:client-name (str "waiter-test-" (retrieve-git-branch))
+                                    :clear-content-decoders false
                                     :conn-timeout 10000
                                     :user-agent (str "waiter-test/" (retrieve-git-branch))}))
 

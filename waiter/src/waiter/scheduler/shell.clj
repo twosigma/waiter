@@ -855,7 +855,8 @@
                                   :id->service-agent id->service-agent
                                   :retrieve-syncer-state-fn retrieve-syncer-state-fn))
         http-client (http-utils/http-client-factory
-                      {:conn-timeout health-check-timeout-ms
+                      {:client-name "waiter-shell"
+                       :conn-timeout health-check-timeout-ms
                        :socket-timeout health-check-timeout-ms
                        :user-agent "waiter-shell"})]
     (when backup-file-name
