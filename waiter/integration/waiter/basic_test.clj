@@ -380,7 +380,7 @@
   (testing-using-waiter-url
     (run-backend-proto-service-test waiter-url "h2c" 1 "http" "HTTP/2.0")))
 
-(deftest ^:parallel ^:integration-fast test-h2-backend-proto-service
+(deftest ^:parallel ^:integration-fast ^:explicit test-h2-backend-proto-service
   (testing-using-waiter-url
     (run-backend-proto-service-test waiter-url "h2" 1 "https" "HTTP/2.0")))
 
