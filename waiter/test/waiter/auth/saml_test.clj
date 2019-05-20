@@ -83,13 +83,29 @@
                     nippy/freeze (fn [data _] (.getBytes (str data)))
                     nippy/thaw (fn [data _]
                                  (if (= "my-saml-auth-data" (String. data))
-                                              {:not-on-or-after (t/plus (t/now) (t/years 1)) :saml-principal "my-user@domain"}
+                                              {:not-on-or-after (t/plus test-time (t/years 1)) :saml-principal "my-user@domain"}
                                               nil))
                     t/now (fn [] test-time)]
         (let [dummy-request' (-> (merge-with merge dummy-request {:headers {"content-type" "application/x-www-form-urlencoded"}})
                                  (merge {:request-method :post
                                          :body (StringBufferInputStream. "saml-auth-data=my-saml-auth-data")}))]
-          (is (= (-> (merge-with merge dummy-request' {:headers {"set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000%5D;Max-Age=((31622400));Path=/;HttpOnly=true"}})
+          (is (= (-> (merge-with merge dummy-request' {:headers {"set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000%5D;Max-Age=86400;Path=/;HttpOnly=true"}})
+                     (merge {:authorization/principal "my-user@domain"
+                             :authorization/user "my-user"}))
+                 (wrapped-handler dummy-request'))))))
+    (testing "has saml-auth-data short expiry"
+      (with-redefs [b64/decode identity
+                    b64/encode identity
+                    nippy/freeze (fn [data _] (.getBytes (str data)))
+                    nippy/thaw (fn [data _]
+                                 (if (= "my-saml-auth-data" (String. data))
+                                   {:not-on-or-after (t/plus test-time (t/hours 1)) :saml-principal "my-user@domain"}
+                                   nil))
+                    t/now (fn [] test-time)]
+        (let [dummy-request' (-> (merge-with merge dummy-request {:headers {"content-type" "application/x-www-form-urlencoded"}})
+                                 (merge {:request-method :post
+                                         :body (StringBufferInputStream. "saml-auth-data=my-saml-auth-data")}))]
+          (is (= (-> (merge-with merge dummy-request' {:headers {"set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000%5D;Max-Age=3600;Path=/;HttpOnly=true"}})
                      (merge {:authorization/principal "my-user@domain"
                              :authorization/user "my-user"}))
                  (wrapped-handler dummy-request'))))))

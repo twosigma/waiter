@@ -60,7 +60,7 @@
                                               {:status 400
                                                :saml-assertion-not-on-or-after not-on-or-after
                                                :t-now t-now})))
-                          age-in-seconds (t/in-seconds (t/interval t-now not-on-or-after))
+                          age-in-seconds (t/in-seconds (t/interval t-now (t/min-date (t/plus t-now (t/days 1)) not-on-or-after)))
                           {:keys [authorization/principal authorization/user] :as auth-params-map}
                           (auth/auth-params-map saml-principal)
                           request-handler' (middleware/wrap-merge request-handler auth-params-map)]

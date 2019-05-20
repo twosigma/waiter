@@ -30,7 +30,7 @@
      - or upon successful authentication populate the request with :authorization/user and :authorization/principal"))
 
 (defn- add-cached-auth
-  [response password principal & age-in-seconds]
+  [response password principal & [age-in-seconds]]
   (cookie-support/add-encoded-cookie response password AUTH-COOKIE-NAME [principal (clj-time.coerce/to-long (t/now))] 1 age-in-seconds))
 
 (defn auth-params-map
