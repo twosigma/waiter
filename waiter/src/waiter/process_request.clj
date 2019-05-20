@@ -212,56 +212,68 @@
                                  :queue-size (.size (.getQueue executor))}
                        :status 503}
                       throwable)))))
+(let [initial-buffer-size 1024
+      max-buffer-size 32768
+      max-buffer-increment-size 4096]
+  (defn stream-http-request
+    "Reads data from the input stream and queues it into the provided body channel as a ByteBuffer.
+     When no more data is available on the input stream, an asynchronous task is scheduled
+     on the provided executor to read data from the input stream later.
+     Reports an error to the error handler whenever:
+     - there is an error trying to read from the input channel,
+     - the body channel fails to accept the byte buffer that was read from the input stream."
+    [executor service-id metric-group error-handler-fn ^InputStream input-stream body-ch bytes-streamed]
+    (let [bytes-streamed-atom (atom bytes-streamed)
+          correlation-id (cid/get-correlation-id)
+          stream-http-request-task (fn invoke-stream-http-request []
+                                     (cid/with-correlation-id
+                                       correlation-id
+                                       (stream-http-request executor service-id metric-group error-handler-fn
+                                                            input-stream body-ch @bytes-streamed-atom)))]
+      (try
+        (loop [unreported-bytes-to-statsd 0]
+          ;; TODO potential optimization to size the buffer based on available bytes
+          (let [available-bytes (.available input-stream)
+                buffer-size (loop [iter-size initial-buffer-size
+                                   increment initial-buffer-size]
+                              (if (and (< iter-size available-bytes) (< iter-size max-buffer-size))
+                                (recur (+ iter-size increment)
+                                       (cond-> increment (< max-buffer-increment-size) (+ increment)))
+                                iter-size))
+                buffer-bytes (byte-array buffer-size)
+                bytes-read (.read input-stream buffer-bytes)]
+            (cond
+              (neg? bytes-read)
+              (let [bytes-streamed @bytes-streamed-atom]
+                (log/info bytes-streamed "bytes streamed from request")
+                (histograms/update! (metrics/service-histogram service-id "request-size") @bytes-streamed-atom)
+                (async/close! body-ch))
 
-(defn stream-http-request
-  "Reads data from the input stream and queues it into the provided body channel as a ByteBuffer.
-   When no more data is available on the input stream, an asynchronous task is scheduled
-   on the provided executor to read data from the input stream later.
-   Reports an error to the error handler whenever:
-   - there is an error trying to read from the input channel,
-   - the body channel fails to accept the byte buffer that was read from the input stream."
-  [executor service-id metric-group error-handler-fn ^InputStream input-stream body-ch bytes-streamed]
-  (let [bytes-streamed-atom (atom bytes-streamed)
-        correlation-id (cid/get-correlation-id)]
-    (try
-      (loop [unreported-bytes-to-statsd 0]
-        ;; TODO potential optimization to size the buffer based on available bytes
-        (let [buffer-bytes (byte-array 4096)
-              bytes-read (.read input-stream buffer-bytes)]
-          (if (neg? bytes-read)
-            (let [bytes-streamed @bytes-streamed-atom]
-              (log/info bytes-streamed "bytes streamed from request")
-              (histograms/update! (metrics/service-histogram service-id "request-size") @bytes-streamed-atom)
-              (async/close! body-ch))
-            (if (async/put! body-ch (if (pos? bytes-read)
-                                      (ByteBuffer/wrap buffer-bytes 0 bytes-read)
-                                      BufferUtil/EMPTY_BUFFER))
-              (let [unreported-bytes-to-statsd' (+ unreported-bytes-to-statsd bytes-read)]
-                (swap! bytes-streamed-atom + bytes-read)
-                (if (pos? (.available input-stream))
-                  (do
-                    (if (>= unreported-bytes-to-statsd' 1000000)
-                      (do
-                        (statsd/inc! metric-group "request_bytes" unreported-bytes-to-statsd')
-                        (recur 0))
-                      (recur unreported-bytes-to-statsd')))
-                  (do
-                    (when (pos? unreported-bytes-to-statsd')
-                      (statsd/inc! metric-group "request_bytes" unreported-bytes-to-statsd'))
-                    (submit-request-streaming-task
-                      executor
-                      (fn stream-http-request-task []
-                        (cid/with-correlation-id
-                          correlation-id
-                          (stream-http-request executor service-id metric-group error-handler-fn
-                                               input-stream body-ch @bytes-streamed-atom)))))))
-              (let [description-map {:bytes-pending bytes-read :bytes-streamed bytes-streamed}]
-                (log/error "unable to stream request bytes" description-map)
-                (throw (ex-info "unable to stream request bytes" description-map)))))))
-      (catch Throwable th
-        (log/info "request failed after streaming" @bytes-streamed-atom "bytes")
-        (histograms/update! (metrics/service-histogram service-id "request-size") @bytes-streamed-atom)
-        (error-handler-fn th)))))
+              (pos? bytes-read)
+              (if (async/put! body-ch (ByteBuffer/wrap buffer-bytes 0 bytes-read))
+                (let [unreported-bytes-to-statsd' (+ unreported-bytes-to-statsd bytes-read)]
+                  (swap! bytes-streamed-atom + bytes-read)
+                  (if (pos? (.available input-stream))
+                    (do
+                      (if (>= unreported-bytes-to-statsd' 1000000)
+                        (do
+                          (statsd/inc! metric-group "request_bytes" unreported-bytes-to-statsd')
+                          (recur 0))
+                        (recur unreported-bytes-to-statsd')))
+                    (do
+                      (when (pos? unreported-bytes-to-statsd')
+                        (statsd/inc! metric-group "request_bytes" unreported-bytes-to-statsd'))
+                      (submit-request-streaming-task executor stream-http-request-task))))
+                (let [description-map {:bytes-pending bytes-read :bytes-streamed bytes-streamed}]
+                  (log/error "unable to stream request bytes" description-map)
+                  (throw (ex-info "unable to stream request bytes" description-map))))
+
+              :else
+              (submit-request-streaming-task executor stream-http-request-task))))
+        (catch Throwable th
+          (log/info "request failed after streaming" @bytes-streamed-atom "bytes")
+          (histograms/update! (metrics/service-histogram service-id "request-size") @bytes-streamed-atom)
+          (error-handler-fn th))))))
 
 (defn input-stream->channel
   "Returns a channel that will contain the ByteBuffers read from the input stream.
