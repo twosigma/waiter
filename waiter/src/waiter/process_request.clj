@@ -319,7 +319,7 @@
        :auth auth
        :body body'
        :headers headers
-       :fold-chunked-response? true
+       :fold-chunked-response? (not (hu/http2? proto-version))
        :fold-chunked-response-buffer-size output-buffer-size
        :follow-redirects? false
        :idle-timeout idle-timeout
