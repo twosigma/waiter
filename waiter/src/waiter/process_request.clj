@@ -212,9 +212,9 @@
                                  :queue-size (.size (.getQueue executor))}
                        :status 503}
                       throwable)))))
-(let [initial-buffer-size 1024
-      max-buffer-size 32768
-      max-buffer-increment-size 4096]
+
+(let [buffer-increment-size 1024
+      max-buffer-size 32768]
   (defn stream-http-request
     "Reads data from the input stream and queues it into the provided body channel as a ByteBuffer.
      When no more data is available on the input stream, an asynchronous task is scheduled
@@ -232,14 +232,16 @@
                                                             input-stream body-ch @bytes-streamed-atom)))]
       (try
         (loop [unreported-bytes-to-statsd 0]
-          ;; TODO potential optimization to size the buffer based on available bytes
           (let [available-bytes (.available input-stream)
-                buffer-size (loop [iter-size initial-buffer-size
-                                   increment initial-buffer-size]
-                              (if (and (< iter-size available-bytes) (< iter-size max-buffer-size))
-                                (recur (+ iter-size increment)
-                                       (cond-> increment (< max-buffer-increment-size) (+ increment)))
-                                iter-size))
+                ;; get a buffer size between buffer-increment-size and max-buffer-size
+                buffer-size (-> available-bytes
+                              (max 0)
+                              double
+                              (/ buffer-increment-size)
+                              int
+                              inc
+                              (* buffer-increment-size)
+                              (min max-buffer-size))
                 buffer-bytes (byte-array buffer-size)
                 bytes-read (.read input-stream buffer-bytes)]
             (cond
