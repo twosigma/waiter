@@ -142,23 +142,28 @@
 
       (testing "content headers"
         (let [request-length 100000
-              long-request (apply str (repeat request-length "a"))
-              plain-resp (make-kitchen-request
-                           waiter-url request-headers
-                           :path "/request-info"
-                           :body long-request)
-              chunked-resp (make-kitchen-request
-                             waiter-url
-                             request-headers
-                             :path "/request-info"
-                             ; force a chunked request
-                             :body (ByteArrayInputStream. (.getBytes long-request)))
-              plain-body-json (json/read-str (str (:body plain-resp)))
-              chunked-body-json (json/read-str (str (:body chunked-resp)))]
-          (is (= (str request-length) (get-in plain-body-json ["headers" "content-length"])))
-          (is (nil? (get-in plain-body-json ["headers" "transfer-encoding"])))
-          (is (= "chunked" (get-in chunked-body-json ["headers" "transfer-encoding"])))
-          (is (nil? (get-in chunked-body-json ["headers" "content-length"])))))
+              long-request (apply str (repeat request-length "a"))]
+
+          (testing "unchunked request"
+            (let [plain-resp (make-kitchen-request
+                               waiter-url request-headers
+                               :path "/request-info"
+                               :body long-request)
+                  plain-body-json (json/read-str (str (:body plain-resp)))]
+              (is (= (str request-length) (get-in plain-body-json ["headers" "content-length"])))
+              (is (= request-length (get-in plain-body-json ["request-length"])))
+              (is (nil? (get-in plain-body-json ["headers" "transfer-encoding"])))))
+
+          (testing "chunked request"
+            (let [chunked-resp (make-kitchen-request
+                                 waiter-url
+                                 request-headers
+                                 :path "/request-info"
+                                 :body (ByteArrayInputStream. (.getBytes long-request)))
+                  chunked-body-json (json/read-str (str (:body chunked-resp)))]
+              (is (= request-length (get-in chunked-body-json ["request-length"])))
+              (is (= "chunked" (get-in chunked-body-json ["headers" "transfer-encoding"])))
+              (is (nil? (get-in chunked-body-json ["headers" "content-length"])))))))
 
       (testing "large header"
         (let [all-chars (map char (range 33 127))

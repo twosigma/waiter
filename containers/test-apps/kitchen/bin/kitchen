@@ -406,6 +406,8 @@ class Kitchen(HTTPWebSocketsHandler):
         else:
             self.logger().debug('Got data on websocket: {}'.format(in_data))
 
+        self.__request_body_length = len(in_data)
+
         if opcode == self._opcode_binary:
             self.send_message(in_data, opcode)
             self.logger().debug('Sent echo bytes response')
@@ -496,6 +498,8 @@ class Kitchen(HTTPWebSocketsHandler):
             self.__excluded_headers = set()
             self.__exit_process = False
             self.__headers = make_default_response_headers(self.headers)
+            self.__request_body_length = 0
+            self.__response_body_callback = None
             self.__response_bytes = None
             self.__response_length = max_response_size
             self.__status = 200
@@ -667,7 +671,9 @@ class Kitchen(HTTPWebSocketsHandler):
         # Slurp any posted data
         content_length = self.headers.get('content-length')
         if content_length is not None:
-            self.__slurp_bytes(int(content_length), echo_buffer)
+            content_length_int = int(content_length)
+            self.__slurp_bytes(content_length_int, echo_buffer)
+            self.__request_body_length = content_length_int
 
         elif self.headers.get('transfer-encoding') == 'chunked':
             while True:
@@ -682,6 +688,7 @@ class Kitchen(HTTPWebSocketsHandler):
                 # read the payload + '\r\n'
                 chunk_size = int(chunk_header[:-2], base=16)
                 self.__slurp_bytes(chunk_size, echo_buffer)
+                self.__request_body_length += chunk_size
                 self.rfile.read(2)
 
                 if chunk_size == 0:
@@ -690,6 +697,10 @@ class Kitchen(HTTPWebSocketsHandler):
         # Echo request body back to client
         if echo_server:
             self.__set_response(echo_buffer)
+
+        # If response callback is set use it
+        if self.__response_body_callback:
+            self.__response_body_callback()
 
         # Exclude some headers from response
         excluded_headers = self.headers.get('x-kitchen-exclude-headers')
@@ -785,8 +796,7 @@ class Kitchen(HTTPWebSocketsHandler):
 
         elif path == '/request-info':
             self.__headers['Content-Type'] = 'application/json'
-            info = self.__request_info()
-            self.__set_response(info.encode('utf-8'))
+            self.__response_body_callback = self.__set_request_info_in_response
 
         elif path == '/sleep':
             self.__status = int(query_params.get('status', 200))
@@ -891,6 +901,7 @@ class Kitchen(HTTPWebSocketsHandler):
         """Build request-info endpoint dict data JSON response."""
         info = { 'protocol-version': self.protocol_version,
                  'request-version': self.request_version,
+                 'request-length': self.__request_body_length,
                  'request-method': self.__method,
                  'uri': self.__path }
         if len(self.headers) > 0:
@@ -908,6 +919,10 @@ class Kitchen(HTTPWebSocketsHandler):
             self.__response_length = response_length
         # Limit response length to the maximum supported size
         self.__response_length = min(max_response_size, self.__response_length)
+
+    def __set_request_info_in_response(self):
+        info = self.__request_info()
+        self.__set_response(info.encode('utf-8'))
 
     def __slurp_bytes(self, bytes_to_read, output_buffer=None):
         """Consume (and throw away) data from the request body."""
