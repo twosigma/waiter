@@ -770,7 +770,7 @@
   (async/go
     (try
       (let [{:keys [service-id]} descriptor
-            idle-timeout-ms (Integer/parseInt (get headers "x-waiter-timeout" "60000"))
+            idle-timeout-ms (Integer/parseInt (get headers "x-waiter-timeout" "300000"))
             ping-response (make-health-check-request process-request-handler-fn idle-timeout-ms request)]
         (utils/clj->json-response
           {:ping-response (async/<! ping-response)
