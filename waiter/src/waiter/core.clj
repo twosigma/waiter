@@ -134,7 +134,7 @@
                                        ["/" [#".*" :path]] :waiter-request-consent-handler-fn}
                      "waiter-interstitial" {["/" [#".*" :path]] :waiter-request-interstitial-handler-fn}
                      "waiter-kill-instance" {["/" :service-id] :kill-instance-handler-fn}
-                     "waiter-ping-service" :ping-service-handler
+                     "waiter-ping" :ping-service-handler
                      "work-stealing" :work-stealing-handler-fn}]]
     (or (bidi/match-route routes uri)
         {:handler :not-found-handler-fn})))
@@ -502,7 +502,7 @@
     (fn waiter-request? [{:keys [uri headers]}]
       (let [{:strs [host]} headers]
         ; special urls that are always for Waiter (FIXME)
-        (or (#{"/app-name" "/service-id" "/token" "/waiter-ping-service"} uri)
+        (or (#{"/app-name" "/service-id" "/token" "/waiter-ping"} uri)
             (some #(str/starts-with? (str uri) %)
                   ["/waiter-async/complete/" "/waiter-async/result/" "/waiter-async/status/" "/waiter-consent"
                    "/waiter-interstitial"])

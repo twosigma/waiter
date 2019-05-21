@@ -989,7 +989,7 @@
     (is (= {:handler :kill-instance-handler-fn, :route-params {:service-id "test-service"}}
            (exec-routes-mapper "/waiter-kill-instance/test-service")))
     (is (= {:handler :ping-service-handler}
-           (exec-routes-mapper "/waiter-ping-service")))
+           (exec-routes-mapper "/waiter-ping")))
     (is (= {:handler :work-stealing-handler-fn}
            (exec-routes-mapper "/work-stealing")))))
 

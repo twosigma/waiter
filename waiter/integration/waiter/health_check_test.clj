@@ -33,7 +33,7 @@
                   health-check-proto (assoc :x-waiter-health-check-proto health-check-proto)
                   idle-timeout (assoc :x-waiter-timeout idle-timeout)
                   num-ports (assoc :x-waiter-ports num-ports))
-        {:keys [headers] :as response} (make-kitchen-request waiter-url headers :method :post :path "/waiter-ping-service")
+        {:keys [headers] :as response} (make-kitchen-request waiter-url headers :method :post :path "/waiter-ping")
         service-id (get headers "x-waiter-service-id")]
     (with-service-cleanup
       service-id
