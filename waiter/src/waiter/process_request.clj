@@ -579,8 +579,8 @@
           process-timer
           (let [{:keys [service-id service-description]} descriptor
                 {:strs [metric-group]} service-description
-                backend-proto (get-in request [:instance-request-overrides :backend-proto]
-                                      (get service-description "backend-proto"))]
+                backend-proto (or (get-in request [:instance-request-overrides :backend-proto])
+                                  (get service-description "backend-proto"))]
             (send local-usage-agent metrics/update-last-request-time-usage-metric service-id request-time)
             (try
               (let [{:keys [waiter-headers passthrough-headers]} descriptor]
@@ -708,8 +708,9 @@
   (async/go
     (try
       (let [{:keys [service-description]} descriptor
-            {:strs [health-check-url health-check-port-index health-check-proto]} service-description
-            new-ctrl-chan (async/chan)
+            {:strs [health-check-url health-check-port-index]} service-description
+            health-check-protocol (scheduler/service-description->health-check-protocol service-description)
+            ctrl-ch (async/chan)
             attach-empty-content (fn attach-empty-content [request]
                                    (-> request
                                      (assoc :body nil)
@@ -725,7 +726,7 @@
                                           (.write output-stream ^int data)
                                           (.write output-stream ^bytes data))
                                         (catch Exception ex
-                                          (async/put! new-ctrl-chan [::error ex])))))
+                                          (async/put! ctrl-ch [::error ex])))))
             servlet-response (proxy [Response] [nil nil]
                                (getOutputStream [] servlet-output-stream)
                                (flushBuffer [] (.flush servlet-output-stream)))
@@ -734,9 +735,9 @@
                                         :internal-protocol :remote-addr :request-id :request-time :router-id
                                         :scheme :server-name :server-port :support-info])
                           (attach-empty-content)
-                          (assoc :ctrl new-ctrl-chan
+                          (assoc :ctrl ctrl-ch
                                  ;; override the protocol and port used while talking to the backend
-                                 :instance-request-overrides {:backend-proto health-check-proto
+                                 :instance-request-overrides {:backend-proto health-check-protocol
                                                               :port-index health-check-port-index}
                                  :request-method :get
                                  :uri health-check-url))
@@ -744,8 +745,7 @@
             timeout-ch (async/timeout idle-timeout-ms)
             [response source-ch] (async/alts! [response-ch timeout-ch] :priority true)
             {:keys [body] :as health-check-response} (cond-> response
-                                                       (au/chan? response)
-                                                       (async/<!))
+                                                       (au/chan? response) (async/<!))
             body-str (cond
                        (= source-ch timeout-ch)
                        (utils/clj->json {:message "Health check request timed out!"})
@@ -755,7 +755,7 @@
                          (String. (.toByteArray output-stream)))
                        :else
                        (str body))]
-        (async/close! new-ctrl-chan)
+        (async/close! ctrl-ch)
         (-> health-check-response
           (select-keys [:headers :status])
           (assoc :body body-str)))

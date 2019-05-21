@@ -43,9 +43,9 @@
               (update-in ["ping-response" "body"] #(some-> % json/read-str))
               walk/keywordize-keys)]
         (if (nil? idle-timeout)
-          (do
+          (let [health-check-protocol (or health-check-proto backend-proto "http")]
             (assert-response-status ping-response 200)
-            (is (= (hu/backend-protocol->http-version health-check-proto)
+            (is (= (hu/backend-protocol->http-version health-check-protocol)
                    (get-in ping-response [:body :protocol-version]))
                 (str ping-response))
             (is (= "get" (get-in ping-response [:body :request-method])) (str ping-response))
@@ -56,7 +56,17 @@
                 (str ping-response))
             (is (= {:exists? true :healthy? false} service-state))))))))
 
-(deftest ^:parallel ^:integration-fast test-basic-ping-service-http-http-port0-timeout
+(deftest ^:parallel ^:integration-fast test-basic-ping-service
+  (testing-using-waiter-url
+    (let [idle-timeout nil
+          command (kitchen-cmd "-p $PORT0")
+          backend-proto nil
+          health-check-proto nil
+          num-ports nil
+          health-check-port-index nil]
+      (run-ping-service-test waiter-url idle-timeout command backend-proto health-check-proto num-ports health-check-port-index))))
+
+(deftest ^:parallel ^:integration-fast test-ping-http-http-port0-timeout
   (testing-using-waiter-url
     (let [idle-timeout 10000
           command (kitchen-cmd "-p $PORT0 --start-up-sleep-ms 600000")
@@ -66,7 +76,7 @@
           health-check-port-index nil]
       (run-ping-service-test waiter-url idle-timeout command backend-proto health-check-proto num-ports health-check-port-index))))
 
-(deftest ^:parallel ^:integration-fast test-basic-ping-service-http-http-port0
+(deftest ^:parallel ^:integration-fast test-ping-http-http-port0
   (testing-using-waiter-url
     (let [command (kitchen-cmd "-p $PORT0")
           backend-proto "http"
@@ -76,7 +86,7 @@
           idle-timeout nil]
       (run-ping-service-test waiter-url idle-timeout command backend-proto health-check-proto num-ports health-check-port-index))))
 
-(deftest ^:parallel ^:integration-fast test-basic-ping-service-http-http-port2
+(deftest ^:parallel ^:integration-fast test-ping-http-http-port2
   (testing-using-waiter-url
     (let [command (kitchen-cmd "-p $PORT2")
           backend-proto "http"
@@ -86,7 +96,7 @@
           idle-timeout nil]
       (run-ping-service-test waiter-url idle-timeout command backend-proto health-check-proto num-ports health-check-port-index))))
 
-(deftest ^:parallel ^:integration-fast test-basic-ping-service-h2c-http-port0
+(deftest ^:parallel ^:integration-fast test-ping-h2c-http-port0
   (testing-using-waiter-url
     (let [command (kitchen-cmd "-p $PORT0")
           backend-proto "h2c"
@@ -96,7 +106,7 @@
           idle-timeout nil]
       (run-ping-service-test waiter-url idle-timeout command backend-proto health-check-proto num-ports health-check-port-index))))
 
-(deftest ^:parallel ^:integration-fast test-basic-ping-service-h2c-http-port2
+(deftest ^:parallel ^:integration-fast test-ping-h2c-http-port2
   (testing-using-waiter-url
     (let [command (kitchen-cmd "-p $PORT2")
           backend-proto "h2c"
