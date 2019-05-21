@@ -374,7 +374,7 @@
             service-id (str "test-service-id-" (System/nanoTime))
             metric-group service-id
             input-bytes (for [n (range 5)]
-                          (let [bytes (byte-array (-> n inc (* 2000)))]
+                          (let [bytes (byte-array (-> n inc (* 10000)))]
                             (.nextBytes (ThreadLocalRandom/current) bytes)
                             bytes))
             read-index-atom (atom 0)
@@ -390,14 +390,14 @@
             (when-let [read-buffer (async/<!! body-ch)]
               (swap! num-fragments-read-atom inc)
               (is (Arrays/equals source-bytes ^bytes (byte-buffer->byte-array read-buffer)))))
-          (is (= 2 @num-fragments-read-atom)))
+          (is (= 3 @num-fragments-read-atom)))
         (is (nil? (async/<!! body-ch)))
         (is (not (nil? @exception-atom)))
-        (is (= "Insufficient space in target bytes {:available 4096, :required 6000}"
+        (is (= "Insufficient space in target bytes {:available 32768, :required 40000}"
                (some-> @exception-atom .getMessage)))
         (let [histogram (metrics/service-histogram service-id "request-size")]
           (is (= 1 (histograms/number-recorded histogram)))
-          (is (= (reduce + (map count (take 2 input-bytes))) (histograms/largest histogram))))
+          (is (= (reduce + (map count (take 3 input-bytes))) (histograms/largest histogram))))
         (is (zero? (.getTaskCount executor)))
         (.shutdown executor)))
 
@@ -405,8 +405,8 @@
       (let [executor (ThreadPoolExecutor. 1 1 1 TimeUnit/MINUTES (LinkedBlockingQueue.))
             service-id (str "test-service-id-" (System/nanoTime))
             metric-group service-id
-            input-bytes (for [n (range 5)]
-                          (let [bytes (byte-array (-> n inc (* 2000)))]
+            input-bytes (for [n (range 40)]
+                          (let [bytes (byte-array (-> n inc (* 1000)))]
                             (.nextBytes (ThreadLocalRandom/current) bytes)
                             bytes))
             read-index-atom (atom 0)
@@ -422,15 +422,15 @@
             (when-let [read-buffer (async/<!! body-ch)]
               (swap! num-fragments-read-atom inc)
               (is (Arrays/equals source-bytes ^bytes (byte-buffer->byte-array read-buffer)))))
-          (is (= 2 @num-fragments-read-atom)))
+          (is (= 32 @num-fragments-read-atom)))
         (is (nil? (async/<!! body-ch)))
         (is (not (nil? @exception-atom)))
-        (is (= "Insufficient space in target bytes {:available 4096, :required 6000}"
+        (is (= "Insufficient space in target bytes {:available 32768, :required 33000}"
                (some-> @exception-atom .getMessage)))
         (let [histogram (metrics/service-histogram service-id "request-size")]
           (is (= 1 (histograms/number-recorded histogram)))
-          (is (= (reduce + (map count (take 2 input-bytes))) (histograms/largest histogram))))
-        (is (= 2 (.getTaskCount executor)))
+          (is (= (reduce + (map count (take 32 input-bytes))) (histograms/largest histogram))))
+        (is (= 32 (.getTaskCount executor)))
         (.shutdown executor)))
 
     (testing "successful read - single task - no buffer space"
