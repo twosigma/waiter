@@ -875,9 +875,11 @@
                                            (partial sd/service-id->source-tokens-entries kv-store))
    :start-new-service-fn (pc/fnk [[:scheduler scheduler]
                                   [:state start-service-cache scheduler-interactions-thread-pool]
-                                  store-service-description-fn]
+                                  service-id->service-description-fn store-service-description-fn]
                            (fn start-new-service [{:keys [service-id] :as descriptor}]
-                             (store-service-description-fn descriptor)
+                             (if-not (seq (service-id->service-description-fn service-id :effective? false))
+                               (store-service-description-fn descriptor)
+                               (log/info "not storing service description for" service-id "as it already exists"))
                              (scheduler/validate-service scheduler service-id)
                              (service/start-new-service
                                scheduler descriptor start-service-cache scheduler-interactions-thread-pool)))
