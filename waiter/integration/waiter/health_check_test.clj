@@ -49,12 +49,12 @@
                    (get-in ping-response [:body :protocol-version]))
                 (str ping-response))
             (is (= "get" (get-in ping-response [:body :request-method])) (str ping-response))
-            (is (= {:exists? true :healthy? true} service-state)))
+            (is (= {:exists? true :healthy? true :status "Running"} service-state)))
           (do
             (is (= "Health check request timed out!"
                    (get-in ping-response [:body :message]))
                 (str ping-response))
-            (is (= {:exists? true :healthy? false} service-state))))))))
+            (is (= {:exists? true :healthy? false :status "Starting"} service-state))))))))
 
 (deftest ^:parallel ^:integration-fast test-basic-ping-service
   (testing-using-waiter-url
@@ -68,7 +68,7 @@
 
 (deftest ^:parallel ^:integration-fast test-ping-http-http-port0-timeout
   (testing-using-waiter-url
-    (let [idle-timeout 10000
+    (let [idle-timeout 20000
           command (kitchen-cmd "-p $PORT0 --start-up-sleep-ms 600000")
           backend-proto "http"
           health-check-proto "http"

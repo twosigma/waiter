@@ -243,13 +243,6 @@
                     re-pattern)]
     #(re-matches pattern %)))
 
-(defn- retrieve-service-status
-  "Returns the status of the specified service."
-  [service-id {:keys [service-id->deployment-error service-id->instance-counts]}]
-  (let [deployment-error (get service-id->deployment-error service-id)
-        instance-counts (get service-id->instance-counts service-id)]
-    (utils/message (service/resolve-service-status deployment-error instance-counts))))
-
 (defn list-services-handler
   "Retrieves the list of services viewable by the currently logged in user.
    A service is viewable by the run-as-user or a waiter super-user."
@@ -292,7 +285,7 @@
                                  :last-request-time (get-in service-id->metrics [service-id "last-request-time"])
                                  :service-id service-id
                                  :service-description service-description
-                                 :status (retrieve-service-status service-id global-state)
+                                 :status (service/retrieve-service-status-label service-id global-state)
                                  :url (prepend-waiter-url (str "/apps/" service-id))}
                                 include-effective-parameters?
                                 (assoc :effective-parameters
@@ -407,7 +400,7 @@
         last-request-time (get-in (service-id->metrics-fn) [service-id "last-request-time"])
         result-map (cond-> {:num-routers (count router->metrics)
                             :router-id router-id
-                            :status (retrieve-service-status service-id global-state)}
+                            :status (service/retrieve-service-status-label service-id global-state)}
                      (and (not-empty core-service-description) include-effective-parameters?)
                      (assoc :effective-parameters (service-id->service-description-fn service-id :effective? true))
                      (not-empty service-instance-maps)

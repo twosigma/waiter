@@ -307,3 +307,10 @@
     (and (zero? requested) (zero? scheduled)) :service-state-inactive
     (zero? healthy) :service-state-starting
     :else :service-state-running))
+
+(defn retrieve-service-status-label
+  "Returns the status of the specified service."
+  [service-id {:keys [service-id->deployment-error service-id->instance-counts]}]
+  (let [deployment-error (get service-id->deployment-error service-id)
+        instance-counts (get service-id->instance-counts service-id)]
+    (utils/message (resolve-service-status deployment-error instance-counts))))

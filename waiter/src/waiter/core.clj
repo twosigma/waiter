@@ -1171,8 +1171,8 @@
                                                                             instance-request-properties determine-priority-fn ws/process-response!
                                                                             ws/abort-request-callback-factory local-usage-agent request))
                                            handler (-> process-request-fn
-                                                       (ws/wrap-ws-close-on-error)
-                                                       wrap-descriptor-fn)]
+                                                     (ws/wrap-ws-close-on-error)
+                                                     wrap-descriptor-fn)]
                                        (ws/request-handler password handler request))))
    :display-settings-handler-fn (pc/fnk [wrap-secure-request-fn settings]
                                   (wrap-secure-request-fn
@@ -1198,15 +1198,19 @@
                                  (fn metrics-request-handler-fn [request]
                                    (handler/metrics-request-handler request)))
    :not-found-handler-fn (pc/fnk [] handler/not-found-handler)
-   :ping-service-handler (pc/fnk [[:state fallback-state-atom]
+   :ping-service-handler (pc/fnk [[:daemons router-state-maintainer]
+                                  [:state fallback-state-atom]
                                   process-request-handler-fn process-request-wrapper-fn]
-                           (process-request-wrapper-fn
-                             (fn ping-service-handler [request]
-                               (let [service-state-fn (fn [service-id]
-                                                        (let [fallback-state @fallback-state-atom]
-                                                          {:exists? (descriptor/service-exists? fallback-state service-id)
-                                                           :healthy? (descriptor/service-healthy? fallback-state service-id)}))]
-                                 (pr/ping-service process-request-handler-fn service-state-fn request)))))
+                           (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer]
+                             (process-request-wrapper-fn
+                               (fn ping-service-handler [request]
+                                 (let [service-state-fn (fn [service-id]
+                                                          (let [fallback-state @fallback-state-atom
+                                                                global-state (query-state-fn)]
+                                                            {:exists? (descriptor/service-exists? fallback-state service-id)
+                                                             :healthy? (descriptor/service-healthy? fallback-state service-id)
+                                                             :status (service/retrieve-service-status-label service-id global-state)}))]
+                                   (pr/ping-service process-request-handler-fn service-state-fn request))))))
    :process-request-fn (pc/fnk [process-request-handler-fn process-request-wrapper-fn]
                          (process-request-wrapper-fn process-request-handler-fn))
    :process-request-handler-fn (pc/fnk [[:routines determine-priority-fn make-basic-auth-fn post-process-async-request-response-fn
@@ -1266,8 +1270,8 @@
                                    wrap-descriptor-fn wrap-secure-request-fn]
                             (-> (fn service-id-handler-fn [request]
                                   (handler/service-id-handler request kv-store store-service-description-fn))
-                                wrap-descriptor-fn
-                                wrap-secure-request-fn))
+                              wrap-descriptor-fn
+                              wrap-secure-request-fn))
    :service-list-handler-fn (pc/fnk [[:daemons router-state-maintainer]
                                      [:routines prepend-waiter-url router-metrics-helpers
                                       service-id->service-description-fn service-id->source-tokens-entries-fn]
@@ -1555,7 +1559,7 @@
                                    (do
                                      (log/info "triggering ssl redirect")
                                      (-> (ssl/ssl-redirect-response request {})
-                                         (rr/header "server" (utils/get-current-server-name))))
+                                       (rr/header "server" (utils/get-current-server-name))))
 
                                    :else
                                    (handler request)))))
@@ -1580,9 +1584,9 @@
                                (fn wrap-secure-request-fn
                                  [handler]
                                  (let [handler (-> handler
-                                                   (cors/wrap-cors-request
-                                                     cors-validator waiter-request?-fn exposed-headers)
-                                                   authentication-method-wrapper-fn)]
+                                                 (cors/wrap-cors-request
+                                                   cors-validator waiter-request?-fn exposed-headers)
+                                                 authentication-method-wrapper-fn)]
                                    (fn inner-wrap-secure-request-fn [{:keys [uri] :as request}]
                                      (log/debug "secure request received at" uri)
                                      (handler request))))))
