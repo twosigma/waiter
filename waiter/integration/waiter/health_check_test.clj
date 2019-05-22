@@ -21,23 +21,22 @@
             [waiter.util.http-utils :as hu]))
 
 (defn assert-ping-response
-  [health-check-protocol idle-timeout service-id ping-response]
+  [health-check-protocol idle-timeout service-id response]
   (let [{:keys [ping-response service-state]}
-        (-> (some-> ping-response :body json/read-str)
+        (-> (some-> response :body json/read-str)
           (update-in ["ping-response" "body"] #(some-> % json/read-str))
           walk/keywordize-keys)]
-    (assert-response-status ping-response 200)
+    (assert-response-status response 200)
     (if (nil? idle-timeout)
       (do
+        (is (= "received-response" (get ping-response :result)) (str ping-response))
         (is (= (hu/backend-protocol->http-version health-check-protocol)
                (get-in ping-response [:body :protocol-version]))
             (str ping-response))
         (is (= "get" (get-in ping-response [:body :request-method])) (str ping-response))
         (is (= {:exists? true :healthy? true :service-id service-id :status "Running"} service-state)))
       (do
-        (is (= "Health check request timed out!"
-               (get-in ping-response [:body :message]))
-            (str ping-response))
+        (is (= "timed-out" (get ping-response :result)) (str ping-response))
         (is (= {:exists? true :healthy? false :service-id service-id :status "Starting"} service-state))))))
 
 (defn run-ping-service-test
@@ -58,7 +57,6 @@
         health-check-protocol (or health-check-proto backend-proto "http")]
     (with-service-cleanup
       service-id
-      (assert-response-status response 200)
       (assert-ping-response health-check-protocol idle-timeout service-id response))))
 
 (deftest ^:parallel ^:integration-fast test-basic-ping-service

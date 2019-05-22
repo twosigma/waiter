@@ -747,18 +747,15 @@
             {:keys [body] :as health-check-response} (cond-> response
                                                        (au/chan? response) (async/<!))
             body-str (cond
-                       (= source-ch timeout-ch)
-                       (utils/clj->json {:message "Health check request timed out!"})
-                       (au/chan? body)
-                       (do
-                         (async/<! (servlet/write-body! body servlet-response new-request))
-                         (String. (.toByteArray output-stream)))
-                       :else
-                       (str body))]
+                       (au/chan? body) (do
+                                         (async/<! (servlet/write-body! body servlet-response new-request))
+                                         (String. (.toByteArray output-stream)))
+                       body (str body))]
         (async/close! ctrl-ch)
         (-> health-check-response
           (select-keys [:headers :status])
-          (assoc :body body-str)))
+          (assoc :body body-str)
+          (assoc :result (if (= source-ch timeout-ch) :timed-out :received-response))))
       (catch Exception ex
         (utils/exception->response ex request)))))
 
