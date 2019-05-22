@@ -49,12 +49,12 @@
                    (get-in ping-response [:body :protocol-version]))
                 (str ping-response))
             (is (= "get" (get-in ping-response [:body :request-method])) (str ping-response))
-            (is (= {:exists? true :healthy? true :status "Running"} service-state)))
+            (is (= {:exists? true :healthy? true :service-id service-id :status "Running"} service-state)))
           (do
             (is (= "Health check request timed out!"
                    (get-in ping-response [:body :message]))
                 (str ping-response))
-            (is (= {:exists? true :healthy? false :status "Starting"} service-state))))))))
+            (is (= {:exists? true :healthy? false :service-id service-id :status "Starting"} service-state))))))))
 
 (deftest ^:parallel ^:integration-fast test-basic-ping-service
   (testing-using-waiter-url

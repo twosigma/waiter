@@ -1209,6 +1209,7 @@
                                                                 global-state (query-state-fn)]
                                                             {:exists? (descriptor/service-exists? fallback-state service-id)
                                                              :healthy? (descriptor/service-healthy? fallback-state service-id)
+                                                             :service-id service-id
                                                              :status (service/retrieve-service-status-label service-id global-state)}))]
                                    (pr/ping-service process-request-handler-fn service-state-fn request))))))
    :process-request-fn (pc/fnk [process-request-handler-fn process-request-wrapper-fn]
