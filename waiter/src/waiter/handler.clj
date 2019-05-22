@@ -216,7 +216,7 @@
                     exclude-services (metrics/get-waiter-metrics)
                     (and (not exclude-services) service-id) (metrics/get-service-metrics service-id)
                     include-jvm-metrics (metrics/get-jvm-metrics)
-                    :else (metrics/get-metrics))]
+                    :else (metrics/get-metrics (metrics/contains-metrics-filter (str (get request-params "name")))))]
       (utils/clj->streaming-json-response metrics))
     (catch Exception ex
       (utils/exception->response ex request))))

@@ -791,7 +791,7 @@
         waiter-request?-fn (fn [_] true)
         ring-handler (wrap-handler-json-response (ring-handler-factory waiter-request?-fn handlers))]
     (testing "metrics-request-handler:all-metrics"
-      (with-redefs [metrics/get-metrics (fn get-metrics [] {:data "metrics-from-get-metrics"})]
+      (with-redefs [metrics/get-metrics (fn get-metrics [_] {:data "metrics-from-get-metrics"})]
         (let [request {:headers {"accept" "application/json"}
                        :request-method :get
                        :uri "/metrics"}
@@ -801,7 +801,7 @@
           (is (str/includes? (str body) "metrics-from-get-metrics")))))
 
     (testing "metrics-request-handler:all-metrics:error"
-      (with-redefs [metrics/get-metrics (fn get-metrics [] (throw (Exception. "get-metrics")))]
+      (with-redefs [metrics/get-metrics (fn get-metrics [_] (throw (Exception. "get-metrics")))]
         (let [request {:headers {"accept" "application/json"}
                        :request-method :get
                        :uri "/metrics"}

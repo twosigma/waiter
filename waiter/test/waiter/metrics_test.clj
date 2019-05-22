@@ -160,6 +160,20 @@
           (let [actual-value (counters/value the-counter)]
             (is (= expected actual-value))))))))
 
+(deftest test-prefix-and-contains-metrics-filter
+  (with-isolated-registry
+    (doseq [service-id ["service-id-1" "service-id-2"]]
+      (service-counter service-id "foo")
+      (service-counter service-id "foo" "bar")
+      (service-counter service-id "fee" "fie"))
+    (is (every? #(str/starts-with? % "services.service-id-") (.getNames mc/default-registry)))
+    (is (= 3 (count (.getCounters mc/default-registry (prefix-metrics-filter "services.service-id-1")))))
+    (is (= 3 (count (.getCounters mc/default-registry (prefix-metrics-filter "services.service-id-2")))))
+    (is (= 3 (count (.getCounters mc/default-registry (contains-metrics-filter "service-id-1")))))
+    (is (= 3 (count (.getCounters mc/default-registry (contains-metrics-filter "service-id-2")))))
+    (is (= 2 (count (.getCounters mc/default-registry (contains-metrics-filter "fee")))))
+    (is (= 4 (count (.getCounters mc/default-registry (contains-metrics-filter "foo")))))))
+
 (deftest test-get-service-metrics
   (let [metrics-registry mc/default-registry
         create-metrics (fn [service-id]

@@ -161,7 +161,8 @@
 
 (defn get-metrics
   "Return a nested map of metrics data."
-  ([] (get-metrics mc/default-registry MetricFilter/ALL))
+  ([] (get-metrics MetricFilter/ALL))
+  ([^MetricFilter metric-filter] (get-metrics mc/default-registry metric-filter))
   ([^MetricRegistry registry ^MetricFilter metric-filter]
    (utils/keys->nested-map
      (metric-registry->metric-filter->metric-map registry metric-filter)
@@ -199,12 +200,19 @@
                          (persistent!))))
                  service-id->codahale-metrics)))
 
-(defn- prefix-metrics-filter
-  "Creates a MetricFilter that filters by the provided prefix"
+(defn prefix-metrics-filter
+  "Creates a MetricFilter that filters by the provided prefix on metric names."
   [prefix-string]
   (reify MetricFilter
     (matches [_ name _]
       (str/starts-with? name prefix-string))))
+
+(defn contains-metrics-filter
+  "Creates a MetricFilter that filters by the provided substring on metric names."
+  [candidate-substring]
+  (reify MetricFilter
+    (matches [_ name _]
+      (str/includes? name candidate-substring))))
 
 (defn get-service-metrics
   "Retrieves the metrics for a sepcific service-id available at this router."
