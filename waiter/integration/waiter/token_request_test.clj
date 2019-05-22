@@ -335,99 +335,103 @@
           router-id->router-url (routers waiter-url)
           {:keys [cookies]} (make-request waiter-url "/waiter-auth")]
 
-      (doseq [version-suffix all-version-suffixes]
-        (doseq [token all-tokens]
-          (let [token-description (merge
-                                    (kitchen-request-headers :prefix "")
-                                    {:fallback-period-secs 0
-                                     :name (str service-name "." (hash token))
-                                     :token token
-                                     :version (str service-name "." version-suffix)})
-                {:keys [headers] :as response} (post-token waiter-url token-description)]
-            (assert-response-status response 200)
-            (let [token-etag (get headers "etag")]
-              (log/info token "->" token-etag)
-              (is (-> token-etag str/blank? not))
-              (let [{:keys [service-id] :as response} (make-request-with-debug-info
-                                                        {:x-waiter-token token}
-                                                        #(make-request waiter-url "/environment" :headers %))]
-                (assert-response-status response 200)
-                (is (-> service-id str/blank? not))
-                (swap! service-ids-atom conj service-id)
-                ;; ensure all routers know about the service
-                (doseq [[_ router-url] router-id->router-url]
-                  (let [response (make-request-with-debug-info
-                                   {:x-waiter-token token}
-                                   #(make-request router-url "/environment" :headers % :cookies cookies))]
-                    (assert-response-status response 200)
-                    (is (= service-id (:service-id response))))))
-              (swap! token->version->etag-atom assoc-in [token version-suffix] token-etag)))))
-      (is (= (* (count all-tokens) (count all-version-suffixes)) (count @service-ids-atom))
-          (str {:service-ids @service-ids-atom}))
-
-      (testing "star in token filter"
-        (doseq [[_ router-url] (routers waiter-url)]
-          (let [query-params {"token" (str "www." service-name ".t*")}
-                _ (log/info query-params)
-                {:keys [body] :as response} (make-request router-url "/apps" :cookies cookies :query-params query-params)
-                services (json/read-str body)
-                service-tokens (mapcat (fn [entry]
-                                         (some->> entry
-                                           walk/keywordize-keys
-                                           :source-tokens
-                                           flatten
-                                           (map :token)))
-                                       services)]
-            (assert-response-status response 200)
-            (is (= (count @service-ids-atom) (count service-tokens))
-                (str {:query-params query-params
-                      :router-url router-url
-                      :service-count (count services)
-                      :service-tokens service-tokens})))))
-
-      (doseq [loop-token all-tokens]
-        (doseq [[_ router-url] (routers waiter-url)]
-          (let [query-params {"token" loop-token}
-                _ (log/info query-params)
-                {:keys [body] :as response} (make-request router-url "/apps" :cookies cookies :query-params query-params)
-                services (json/read-str body)
-                service-tokens (mapcat (fn [entry]
-                                         (some->> entry
-                                           walk/keywordize-keys
-                                           :source-tokens
-                                           flatten
-                                           (map :token)))
-                                       services)]
-            (assert-response-status response 200)
-            (is (= 3 (count service-tokens))
-                (str {:query-params query-params
-                      :router-url router-url
-                      :service-count (count services)
-                      :service-tokens service-tokens}))))
-
+      (try
         (doseq [version-suffix all-version-suffixes]
+          (doseq [token all-tokens]
+            (let [token-description (merge
+                                      (kitchen-request-headers :prefix "")
+                                      {:fallback-period-secs 0
+                                       :name (str service-name "." (hash token))
+                                       :token token
+                                       :version (str service-name "." version-suffix)})
+                  {:keys [headers] :as response} (post-token waiter-url token-description)]
+              (assert-response-status response 200)
+              (let [token-etag (get headers "etag")]
+                (log/info token "->" token-etag)
+                (is (-> token-etag str/blank? not))
+                (let [{:keys [service-id] :as response} (make-request-with-debug-info
+                                                          {:x-waiter-token token}
+                                                          #(make-request waiter-url "/environment" :headers %))]
+                  (assert-response-status response 200)
+                  (is (-> service-id str/blank? not))
+                  (swap! service-ids-atom conj service-id)
+                  ;; ensure all routers know about the service
+                  (doseq [[_ router-url] router-id->router-url]
+                    (let [response (make-request-with-debug-info
+                                     {:x-waiter-token token}
+                                     #(make-request router-url "/environment" :headers % :cookies cookies))]
+                      (assert-response-status response 200)
+                      (is (= service-id (:service-id response))))))
+                (swap! token->version->etag-atom assoc-in [token version-suffix] token-etag)))))
+        (is (= (* (count all-tokens) (count all-version-suffixes)) (count @service-ids-atom))
+            (str {:service-ids @service-ids-atom}))
+
+        (testing "star in token filter"
           (doseq [[_ router-url] (routers waiter-url)]
-            (let [loop-etag (get-in @token->version->etag-atom [loop-token version-suffix])
-                  query-params {"token-version" loop-etag}
+            (let [query-params {"token" (str "www." service-name ".t*")}
                   _ (log/info query-params)
                   {:keys [body] :as response} (make-request router-url "/apps" :cookies cookies :query-params query-params)
                   services (json/read-str body)
-                  service-token-versions (mapcat (fn [entry]
-                                                   (some->> entry
-                                                     walk/keywordize-keys
-                                                     :source-tokens
-                                                     flatten
-                                                     (map :version)))
-                                                 services)]
+                  service-tokens (mapcat (fn [entry]
+                                           (some->> entry
+                                             walk/keywordize-keys
+                                             :source-tokens
+                                             flatten
+                                             (map :token)))
+                                         services)]
               (assert-response-status response 200)
-              (is (= 1 (count service-token-versions))
+              (is (= (count @service-ids-atom) (count service-tokens))
                   (str {:query-params query-params
                         :router-url router-url
                         :service-count (count services)
-                        :service-token-versions service-token-versions}))))))
+                        :service-tokens service-tokens})))))
 
-      (doseq [service-id @service-ids-atom]
-        (delete-service waiter-url service-id)))))
+        (doseq [loop-token all-tokens]
+          (doseq [[_ router-url] (routers waiter-url)]
+            (let [query-params {"token" loop-token}
+                  _ (log/info query-params)
+                  {:keys [body] :as response} (make-request router-url "/apps" :cookies cookies :query-params query-params)
+                  services (json/read-str body)
+                  service-tokens (mapcat (fn [entry]
+                                           (some->> entry
+                                             walk/keywordize-keys
+                                             :source-tokens
+                                             flatten
+                                             (map :token)))
+                                         services)]
+              (assert-response-status response 200)
+              (is (= 3 (count service-tokens))
+                  (str {:query-params query-params
+                        :router-url router-url
+                        :service-count (count services)
+                        :service-tokens service-tokens}))))
+
+          (doseq [version-suffix all-version-suffixes]
+            (doseq [[_ router-url] (routers waiter-url)]
+              (let [loop-etag (get-in @token->version->etag-atom [loop-token version-suffix])
+                    query-params {"token-version" loop-etag}
+                    _ (log/info query-params)
+                    {:keys [body] :as response} (make-request router-url "/apps" :cookies cookies :query-params query-params)
+                    services (json/read-str body)
+                    service-token-versions (mapcat (fn [entry]
+                                                     (some->> entry
+                                                       walk/keywordize-keys
+                                                       :source-tokens
+                                                       flatten
+                                                       (map :version)))
+                                                   services)]
+                (assert-response-status response 200)
+                (is (= 1 (count service-token-versions))
+                    (str {:query-params query-params
+                          :router-url router-url
+                          :service-count (count services)
+                          :service-token-versions service-token-versions}))))))
+
+        (finally
+          (doseq [token all-tokens]
+            (delete-token-and-assert waiter-url token))
+          (doseq [service-id @service-ids-atom]
+            (delete-service waiter-url service-id)))))))
 
 (defn- service-id->metadata-id [waiter-url service-id]
   (get-in (service-settings waiter-url service-id) [:service-description :metadata :id]))
