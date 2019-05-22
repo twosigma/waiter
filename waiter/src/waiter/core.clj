@@ -1234,7 +1234,7 @@
                                                          (pr/make-request
                                                            stream-reader-executor http-clients make-basic-auth-fn service-id->password-fn
                                                            instance request request-properties passthrough-headers end-route metric-group
-                                                           backend-proto proto-version))
+                                                           backend-proto  proto-version))
                                        process-response-fn (partial pr/process-http-response post-process-async-request-response-fn)]
                                    (fn inner-process-request [request]
                                      (pr/process make-request-fn instance-rpc-chan start-new-service-fn
