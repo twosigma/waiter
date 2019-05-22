@@ -1,87 +1,78 @@
 import logging
-import threading
-import time
-from enum import Enum
 
 from waiter import http_util, terminal
 from waiter.format import format_status
 from waiter.querying import query_token, print_no_data, query_service, get_services_using_token, get_service
-from waiter.util import guard_no_cluster, response_message, print_error, check_positive, wait_until, is_service_current
+from waiter.util import guard_no_cluster, print_error, check_positive, wait_until, is_service_current, response_message
 
 
-def ping_on_cluster(cluster, health_check_endpoint, timeout, wait_for_request, token_name, service_exists_fn):
+def ping_on_cluster(cluster, timeout, wait_for_request, token_name, service_exists_fn):
     """Pings using the given token name (or ^SERVICE-ID#) in the given cluster."""
-
-    class PingResult(Enum):
-        UNKNOWN = 1
-        SUCCESS = 2
-        FAILURE = 3
-        ERRORED = 4
-
-        def succeeded(self):
-            return self is PingResult.SUCCESS
-
-        def failed(self):
-            return self is PingResult.FAILURE
-
     cluster_name = cluster['name']
-    ping_result = PingResult.UNKNOWN
 
     def perform_ping():
-        nonlocal ping_result
+        status = None
         try:
+            timeout_seconds = timeout if wait_for_request else 5
             headers = {
                 'X-Waiter-Token': token_name,
-                'X-Waiter-Fallback-Period-Secs': '0'
+                'X-Waiter-Fallback-Period-Secs': '0',
+                'X-Waiter-Timeout': str(timeout_seconds * 1000)
             }
-            read_timeout = timeout if wait_for_request else 5
-            resp = http_util.get(cluster, health_check_endpoint, headers=headers, read_timeout=read_timeout)
+            read_timeout = timeout_seconds * 2
+            resp = http_util.get(cluster, '/waiter-ping', headers=headers, read_timeout=read_timeout)
             logging.debug(f'Response status code: {resp.status_code}')
+            resp_json = resp.json()
             if resp.status_code == 200:
-                print(terminal.success(f'Ping successful.'))
-                print(resp.text)
-                ping_result = PingResult.SUCCESS
+                status = resp_json['service-state']['status']
+                ping_response = resp_json['ping-response']
+                ping_response_result = ping_response['result']
+                if ping_response_result == 'received-response':
+                    ping_response_status = ping_response['status']
+                    if ping_response_status == 200:
+                        print(terminal.success('Ping successful.'))
+                        result = True
+                    else:
+                        print_error('Ping responded with non-200 status.')
+                        result = False
+                elif ping_response_result == 'timed-out':
+                    if wait_for_request:
+                        print_error('Ping request timed out.')
+                        result = False
+                    else:
+                        logging.debug('ignoring ping request timeout due to --no-wait')
+                        result = True
+                else:
+                    print_error(f'Encountered unknown ping result: {ping_response_result}.')
+                    result = False
             else:
-                print_error(response_message(resp.json()))
-                ping_result = PingResult.FAILURE
+                print_error(response_message(resp_json))
+                result = False
         except Exception:
-            ping_result = PingResult.ERRORED
+            result = False
             message = f'Encountered error while pinging in {cluster_name}.'
             logging.exception(message)
             if wait_for_request:
                 print_error(message)
 
-    def service_exists():
-        logging.debug(f'Ping result: {ping_result}')
-        if ping_result.failed():
-            return {'result': ping_result}
-        else:
-            return service_exists_fn()
+        return result, status
 
     def check_service_status():
-        result = wait_until(service_exists, timeout=timeout, interval=5)
+        result = wait_until(service_exists_fn, timeout=timeout, interval=5)
         if result:
-            if ping_result.failed():
-                return False
-            else:
-                print(f'Service is currently {format_status(result["status"])}.')
-                return True
+            print(f'Service is currently {format_status(result["status"])}.')
+            return True
         else:
             print_error('Timeout waiting for service to exist.')
             return False
 
-    if wait_for_request:
-        perform_ping()
-        check_service_status()
-        return ping_result.succeeded()
-    else:
-        thread = threading.Thread(target=perform_ping)
-        try:
-            thread.start()
-            time.sleep(0.1)
-            return check_service_status()
-        finally:
-            thread.join()
+    succeeded, service_status = perform_ping()
+    if succeeded:
+        if service_status is None or service_status == 'Inactive':
+            check_service_status()
+        else:
+            print(f'Service is currently {format_status(service_status)}.')
+    return succeeded
 
 
 def token_has_current_service(cluster, token_name, current_token_etag):
@@ -96,14 +87,13 @@ def token_has_current_service(cluster, token_name, current_token_etag):
         return None
 
 
-def ping_token_on_cluster(cluster, token_name, health_check_endpoint, timeout, wait_for_request,
+def ping_token_on_cluster(cluster, token_name, timeout, wait_for_request,
                           current_token_etag):
     """Pings the token with the given token name in the given cluster."""
     cluster_name = cluster['name']
     print(f'Pinging token {terminal.bold(token_name)} '
-          f'at {terminal.bold(health_check_endpoint)} '
           f'in {terminal.bold(cluster_name)}...')
-    return ping_on_cluster(cluster, health_check_endpoint, timeout, wait_for_request,
+    return ping_on_cluster(cluster, timeout, wait_for_request,
                            token_name, lambda: token_has_current_service(cluster, token_name, current_token_etag))
 
 
@@ -113,13 +103,12 @@ def service_is_active(cluster, service_id):
     return service if service['status'] != 'Inactive' else None
 
 
-def ping_service_on_cluster(cluster, service_id, health_check_endpoint, timeout, wait_for_request):
+def ping_service_on_cluster(cluster, service_id, timeout, wait_for_request):
     """Pings the service with the given service id in the given cluster."""
     cluster_name = cluster['name']
     print(f'Pinging service {terminal.bold(service_id)} '
-          f'at {terminal.bold(health_check_endpoint)} '
           f'in {terminal.bold(cluster_name)}...')
-    return ping_on_cluster(cluster, health_check_endpoint, timeout, wait_for_request,
+    return ping_on_cluster(cluster, timeout, wait_for_request,
                            f'^SERVICE-ID#{service_id}', lambda: service_is_active(cluster, service_id))
 
 
@@ -146,19 +135,14 @@ def ping(clusters, args, _):
     for cluster_name, data in cluster_data_pairs:
         cluster = clusters_by_name[cluster_name]
         if is_service_id:
-            health_check_endpoint = data['service']['effective-parameters']['health-check-url']
-            success = ping_service_on_cluster(cluster, token_name_or_service_id, health_check_endpoint,
-                                              timeout, wait_for_request)
+            success = ping_service_on_cluster(cluster, token_name_or_service_id, timeout, wait_for_request)
         else:
             token_data = data['token']
             token_etag = data['etag']
             token_cluster_name = token_data['cluster'].upper()
             if len(clusters) == 1 or token_explicitly_created_on_cluster(cluster, token_cluster_name):
-                # We are hard-coding the default health-check-url here to /status; this could
-                # alternatively be retrieved from /settings, but we want to skip the extra request
-                health_check_endpoint = token_data.get('health-check-url', '/status')
-                success = ping_token_on_cluster(cluster, token_name_or_service_id, health_check_endpoint,
-                                                timeout, wait_for_request, token_etag)
+                success = ping_token_on_cluster(cluster, token_name_or_service_id, timeout,
+                                                wait_for_request, token_etag)
             else:
                 print(f'Not pinging token {terminal.bold(token_name_or_service_id)} '
                       f'in {terminal.bold(cluster_name)} '

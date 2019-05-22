@@ -534,7 +534,6 @@ class WaiterCliTest(util.WaiterTest):
             cp = cli.ping(self.waiter_url, token_name)
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertIn('Pinging token', cli.stdout(cp))
-            self.assertIn('/sleep', cli.stdout(cp))
             self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
@@ -648,7 +647,7 @@ class WaiterCliTest(util.WaiterTest):
             util.kill_services_using_token(self.waiter_url, token_name)
             cp = cli.ping(self.waiter_url, token_name, ping_flags='--timeout 10')
             self.assertEqual(1, cp.returncode, cp.stderr)
-            self.assertIn('Encountered error', cli.stderr(cp))
+            self.assertIn('Ping request timed out', cli.stderr(cp))
         finally:
             util.kill_services_using_token(self.waiter_url, token_name)
             util.delete_token(self.waiter_url, token_name)
@@ -687,12 +686,10 @@ class WaiterCliTest(util.WaiterTest):
             # Pinging the token should use /status
             cp = cli.ping(self.waiter_url, token_name)
             self.assertEqual(0, cp.returncode, cp.stderr)
-            self.assertIn('/status', cli.stdout(cp))
 
             # Pinging the service id should use /sleep
             cp = cli.ping(self.waiter_url, service_id, ping_flags='--service-id')
             self.assertEqual(0, cp.returncode, cp.stderr)
-            self.assertIn('/sleep', cli.stdout(cp))
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
 
@@ -718,6 +715,11 @@ class WaiterCliTest(util.WaiterTest):
             cp = cli.ping(self.waiter_url, token_name, ping_flags='--no-wait')
             self.assertEqual(1, cp.returncode, cp.stderr)
             self.assertNotIn('Service is currently', cli.stdout(cp))
+            self.assertIn('Service description', cli.decode(cp.stderr))
+            self.assertIn('improper', cli.decode(cp.stderr))
+            self.assertIn('cmd must be a non-empty string', cli.decode(cp.stderr))
+            self.assertIn('version must be a non-empty string', cli.decode(cp.stderr))
+            self.assertIn('mem must be a positive number', cli.decode(cp.stderr))
             util.wait_until_no_services_for_token(self.waiter_url, token_name)
         finally:
             util.kill_services_using_token(self.waiter_url, token_name)
