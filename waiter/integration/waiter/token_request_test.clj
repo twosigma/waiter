@@ -1477,29 +1477,32 @@
                                          :grace-period-secs 300
                                          :name (str service-name "-v3")
                                          :version "version-3"))]
-      (assert-response-status (post-token waiter-url token-description-1) 200)
-      (let [service-id-1 (retrieve-service-id waiter-url request-headers)]
-        (with-service-cleanup
-          service-id-1
-          (let [response-1 (make-request-with-debug-info request-headers #(make-request waiter-url "/hello" :headers %))]
-            (assert-response-status response-1 200)
-            (is (= service-id-1 (:service-id response-1))))
-          ;; allow every router to learn about the new instance
-          (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")]
-            (doseq [[_ router-url] (routers waiter-url)]
-              (is (wait-for
-                    (fn []
-                      (let [active-instances (-> (service-settings router-url service-id-1 :cookies cookies)
+      (try
+        (assert-response-status (post-token waiter-url token-description-1) 200)
+        (let [service-id-1 (retrieve-service-id waiter-url request-headers)]
+          (with-service-cleanup
+            service-id-1
+            (let [response-1 (make-request-with-debug-info request-headers #(make-request waiter-url "/hello" :headers %))]
+              (assert-response-status response-1 200)
+              (is (= service-id-1 (:service-id response-1))))
+            ;; allow every router to learn about the new instance
+            (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")]
+              (doseq [[_ router-url] (routers waiter-url)]
+                (is (wait-for
+                      (fn []
+                        (let [active-instances (-> (service-settings router-url service-id-1 :cookies cookies)
                                                  (get-in [:instances :active-instances]))]
-                        (and (seq active-instances)
-                             (some :healthy? active-instances))))))))
-          (assert-response-status (post-token waiter-url token-description-2) 200)
-          (assert-response-status (make-request waiter-url "/hello" :headers request-headers) 400)
-          (assert-response-status (post-token waiter-url token-description-3) 200)
-          (let [service-id-2 (retrieve-service-id waiter-url (assoc request-headers :x-waiter-fallback-period-secs 0))]
-            (is (not= service-id-1 service-id-2))
-            (with-service-cleanup
-              service-id-2
-              (let [response-2 (make-request-with-debug-info request-headers #(make-request waiter-url "/hello" :headers %))]
-                (assert-response-status response-2 200)
-                (is (= service-id-1 (:service-id response-2)))))))))))
+                          (and (seq active-instances)
+                               (some :healthy? active-instances))))))))
+            (assert-response-status (post-token waiter-url token-description-2) 200)
+            (assert-response-status (make-request waiter-url "/hello" :headers request-headers) 400)
+            (assert-response-status (post-token waiter-url token-description-3) 200)
+            (let [service-id-2 (retrieve-service-id waiter-url (assoc request-headers :x-waiter-fallback-period-secs 0))]
+              (is (not= service-id-1 service-id-2))
+              (with-service-cleanup
+                service-id-2
+                (let [response-2 (make-request-with-debug-info request-headers #(make-request waiter-url "/hello" :headers %))]
+                  (assert-response-status response-2 200)
+                  (is (= service-id-1 (:service-id response-2))))))))
+        (finally
+          (delete-token-and-assert waiter-url token))))))
