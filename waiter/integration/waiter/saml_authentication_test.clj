@@ -3,10 +3,10 @@
             [clojure.string :as string]
             [clojure.test :refer :all]
             [waiter.util.client-tools :refer :all]
-            [waiter.util.http-utils :as http]
-            [clojure.core.async :as async]))
+            [clojure.java.shell :as shell])
+  (:import (java.net URLEncoder)))
 
-(deftest ^:parallel ^:integration-fast test-default-dynamic-authenticator
+(deftest ^:parallel ^:integration-fast test-default-composite-authenticator
   (testing-using-waiter-url
     (when (using-shell? waiter-url)
       (let [run-as-user (System/getenv "WAITER_AUTH_RUN_AS_USER")
@@ -18,74 +18,65 @@
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-saml-authentication
   (testing-using-waiter-url
     (when (using-shell? waiter-url)
-      (let [run-as-user (or (System/getenv "SAML_AUTH_USER") "user2")
-            token (str (rand-name) ".localtest.me")
-            {:keys [service-id request-headers body headers status]} (post-token waiter-url (-> (kitchen-params)
-                                         (assoc
-                                           :authentication "saml"
-                                           :name token
-                                           :permitted-user (retrieve-username)
-                                           :run-as-user (retrieve-username)
-                                           :token token)
-                                         ))
-            {:keys [service-id request-headers body headers status]} (make-request-with-debug-info {:x-waiter-token token} #(make-request waiter-url "/request-info" :headers %))
+      (let [auth-principal (or (System/getenv "SAML_AUTH_USER") "user2")
+            token (rand-name)
+            {:keys [status]} (post-token waiter-url (-> (kitchen-params)
+                                                        (assoc
+                                                          :authentication "saml"
+                                                          :name token
+                                                          :permitted-user "*"
+                                                          :run-as-user (retrieve-username)
+                                                          :token token)))
+            _ (is (= 200 status))
+            {:keys [headers status]} (make-request-with-debug-info {:x-waiter-token token} #(make-request waiter-url "/request-info" :headers %))
             _ (is (= 302 status))
-            _ (println (.getCookies (.getCookieStore http1-client)))
-            response (async/<!! (qbits.jet.client.http/request http1-client {:follow-redirects? false :url (get headers "location")}))
-            _ (println (.getCookies (.getCookieStore http1-client)))
-            _ (println (get (:headers response) "location"))
-            body (async/<!! (:body response))
-            _ (println body)
-            response (async/<!! (qbits.jet.client.http/request http1-client {:follow-redirects? false :url (get (:headers response) "location")}))
-            _ (println (.getCookies (.getCookieStore http1-client)))
-            _ (println (get (:headers response) "location"))
-            body (async/<!! (:body response))
-            _ (println body)
-            response (async/<!! (qbits.jet.client.http/request http1-client {:follow-redirects? false :url (get (:headers response) "location")}))
-            _ (println (.getCookies (.getCookieStore http1-client)))
-            _ (println (get (:headers response) "location"))
-            body (async/<!! (:body response))
-            _ (println body)
-            ;{:keys [body headers]} (make-kitchen-request waiter-url {:x-waiter-authentication "saml"} :path "/request-info")
+            cookie-jar-file (java.io.File/createTempFile "cookie-jar" ".txt")
+            cookie-jar-path (.getAbsolutePath cookie-jar-file)
+            curl-output-file (java.io.File/createTempFile "curl-output" ".txt")
+            curl-output-path (.getAbsolutePath curl-output-file)
+            xpath-data-fn #(string/trim-newline (:out (shell/sh "bash" "-c" (str "cat " curl-output-path " | python -c \"import sys, requests;\\\nfrom lxml import html;\\\ntree = html.fromstring(sys.stdin.read());\\\nprint tree.xpath('" % "')\""))))
+            curl-verbose-info (:err (shell/sh "bash" "-c" (str "curl '" (get headers "location") "' -k -c " cookie-jar-path " -L -v > " curl-output-path)))
+            login-form-location (second (re-matches #"(?ms).*Location: ([^?]+).*" curl-verbose-info))
+            login-form-action (xpath-data-fn "string(//*/form/@action)")
+            auth-state (xpath-data-fn "string(//*/form/input[@name=\\\"AuthState\\\"]/@value)")
+            _ (is (= 0 (:exit (shell/sh "bash" "-c" (str "curl '" (str login-form-location login-form-action) "' -k -b " cookie-jar-path " -F 'AuthState=" auth-state "' -F 'username=user2' -F 'password=user2pass' > " curl-output-path)))))
+            app-redirect-form-action (xpath-data-fn "string(//*/form/@action)")
+            saml-response (xpath-data-fn "string(//*/form/input[@name=\\\"SAMLResponse\\\"]/@value)")
+            relay-state (xpath-data-fn "string(//*/form/input[@name=\\\"RelayState\\\"]/@value)")
+            _ (is (= (str "http://" waiter-url "/request-info") relay-state))
+            _ (is (= 0 (:exit (shell/sh "bash" "-c" (str "curl '" app-redirect-form-action "' -k -d 'SAMLResponse=" (URLEncoder/encode saml-response) "&RelayState=" (URLEncoder/encode relay-state) "' -H 'Content-Type: application/x-www-form-urlencoded' -H 'Expect:' > " curl-output-path)))))
+            waiter-auth-form-action (xpath-data-fn "string(//*/form/@action)")
+            saml-auth-data (xpath-data-fn "string(//*/form/input[@name=\\\"saml-auth-data\\\"]/@value)")
+            _ (is (= relay-state waiter-auth-form-action))
+            {:keys [body status service-id]} (make-request-with-debug-info
+                                               {:x-waiter-token token}
+                                               #(make-request waiter-url "/request-info"
+                                                              :method :post
+                                                              :headers (assoc % "Content-Type" "application/x-www-form-urlencoded")
+                                                              :body (str "saml-auth-data=" (URLEncoder/encode saml-auth-data))))
+            _ (is (= 200 status))
+            _ (.delete curl-output-file)
+            _ (.delete cookie-jar-file)
+            ;response (async/<!! (qbits.jet.client.http/request http1-client {:follow-redirects? false :url (get headers "location")}))
+            ;_ (println (qbits.jet.client.cookies/get-cookies (.getCookieStore http1-client)))
+            ;_ (println (get (:headers response) "location"))
+            ;body (async/<!! (:body response))
             ;_ (println body)
-            ;_ (println headers)
+            ;response (async/<!! (qbits.jet.client.http/request http1-client {:follow-redirects? false :url (get (:headers response) "location")}))
+            ;_ (println (qbits.jet.client.cookies/get-cookies (.getCookieStore http1-client)))
+            ;_ (println (get (:headers response) "location"))
+            ;body (async/<!! (:body response))
+            ;_ (println body)
+            ;response (async/<!! (qbits.jet.client.http/request http1-client {:follow-redirects? false :url (get (:headers response) "location")}))
+            ;_ (println (qbits.jet.client.cookies/get-cookies (.getCookieStore http1-client)))
+            ;_ (println (get (:headers response) "location"))
+            ;body (async/<!! (:body response))
+            ;_ (println body)
+            ;;{:keys [body headers]} (make-kitchen-request waiter-url {:x-waiter-authentication "saml"} :path "/request-info")
+            ;;_ (println body)
+            ;;_ (println headers)
             body-json (json/read-str (str body))]
         (with-service-cleanup
           service-id
-          (is (= run-as-user (get-in body-json ["headers" "x-waiter-auth-principal"]))))))))
+          (is (= auth-principal (get-in body-json ["headers" "x-waiter-auth-principal"]))))))))
 
-
-;(deftest ^:parallel ^:integration-fast test-kubernetes-watch-state-update
-;  (testing-using-waiter-url
-;    (when (using-k8s? waiter-url)
-;      (let [cookies (all-cookies waiter-url)
-;            router-url (-> waiter-url routers first val)
-;            {:keys [body] :as response} (make-request router-url "/state/scheduler" :method :get :cookies cookies)
-;            _ (assert-response-status response 200)
-;            body-json (-> body str try-parse-json)
-;            watch-state-json (get-watch-state body-json)
-;            initial-pods-snapshot-version (get-in watch-state-json ["pods-metadata" "version" "snapshot"])
-;            initial-pods-watch-version (get-in watch-state-json ["pods-metadata" "version" "watch"])
-;            initial-rs-snapshot-version (get-in watch-state-json ["rs-metadata" "version" "snapshot"])
-;            initial-rs-watch-version (get-in watch-state-json ["rs-metadata" "version" "watch"])
-;            {:keys [service-id request-headers]} (make-request-with-debug-info
-;                                                   {:x-waiter-name (rand-name)}
-;                                                   #(make-kitchen-request waiter-url % :path "/hello"))]
-;        (with-service-cleanup
-;          service-id
-;          (let [{:keys [body] :as response} (make-request router-url "/state/scheduler" :method :get :cookies cookies)
-;                _ (assert-response-status response 200)
-;                body-json (-> body str try-parse-json)
-;                watch-state-json (get-watch-state body-json)
-;                pods-snapshot-version' (get-in watch-state-json ["pods-metadata" "version" "snapshot"])
-;                pods-watch-version' (get-in watch-state-json ["pods-metadata" "version" "watch"])
-;                rs-snapshot-version' (get-in watch-state-json ["rs-metadata" "version" "snapshot"])
-;                rs-watch-version' (get-in watch-state-json ["rs-metadata" "version" "watch"])]
-;            (is (or (nil? initial-pods-watch-version)
-;                    (< initial-pods-snapshot-version initial-pods-watch-version)))
-;            (is (<= initial-pods-snapshot-version pods-snapshot-version'))
-;            (is (< pods-snapshot-version' pods-watch-version'))
-;            (is (or (nil? initial-rs-watch-version)
-;                    (< initial-rs-snapshot-version initial-rs-watch-version)))
-;            (is (<= initial-rs-snapshot-version rs-snapshot-version'))
-;            (is (< rs-snapshot-version' rs-watch-version'))))))))

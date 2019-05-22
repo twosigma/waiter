@@ -90,8 +90,13 @@
                                  (merge {:request-method :post
                                          :body (StringBufferInputStream. "saml-auth-data=my-saml-auth-data")}))]
           (is (= (-> (merge-with merge dummy-request' {:headers {"set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000%5D;Max-Age=86400;Path=/;HttpOnly=true"}})
+                     (update :headers dissoc "content-length" "content-type")
                      (merge {:authorization/principal "my-user@domain"
-                             :authorization/user "my-user"}))
+                             :authorization/user "my-user"
+                             :body nil
+                             :content-length nil
+                             :content-type nil
+                             :request-method :get}))
                  (wrapped-handler dummy-request'))))))
     (testing "has saml-auth-data short expiry"
       (with-redefs [b64/decode identity
@@ -106,8 +111,13 @@
                                  (merge {:request-method :post
                                          :body (StringBufferInputStream. "saml-auth-data=my-saml-auth-data")}))]
           (is (= (-> (merge-with merge dummy-request' {:headers {"set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000%5D;Max-Age=3600;Path=/;HttpOnly=true"}})
+                     (update :headers dissoc "content-length" "content-type")
                      (merge {:authorization/principal "my-user@domain"
-                             :authorization/user "my-user"}))
+                             :authorization/user "my-user"
+                             :body nil
+                             :content-length nil
+                             :content-type nil
+                             :request-method :get}))
                  (wrapped-handler dummy-request'))))))
     (testing "does not have auth cookie"
       (with-redefs [clj-time.core/now (fn [] time-now)
@@ -143,8 +153,8 @@
     <title>Working...</title>
 </head>
 <body>
-<form action=\"original-url\">
-    <input type=\"hidden\" name=\"saml-auth-data\" value=\"ezpub3Qtb24tb3ItYWZ0ZXIgI2Nsai10aW1lL2RhdGUtdGltZSAiMjAxOS0wNS0xNVQyMTo1Mjo0Ni4wMDBaIiwgOnNhbWwtcHJpbmNpcGFsICJfYzJjMDI5NDA1MTdmNTNjM2VhMTY3M2Y2NDA2ZmIzNGZkMzlhYTdiY2Y2In0=\">
+<form action=\"original-url\" method=\"post\">
+    <input type=\"hidden\" name=\"saml-auth-data\" value=\"ezpub3Qtb24tb3ItYWZ0ZXIgI2Nsai10aW1lL2RhdGUtdGltZSAiMjAxOS0wNS0xNVQyMTo1Mjo0Ni4wMDBaIiwgOnNhbWwtcHJpbmNpcGFsICJ1c2VyMUBleGFtcGxlLmNvbSJ9\">
     <noscript>
         <p>JavaScript is disabled. Click Continue to continue to your application.</p>
         <input type=\"submit\" value=\"Continue\">

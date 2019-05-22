@@ -63,8 +63,10 @@
                           age-in-seconds (t/in-seconds (t/interval t-now (t/min-date (t/plus t-now (t/days 1)) not-on-or-after)))
                           {:keys [authorization/principal authorization/user] :as auth-params-map}
                           (auth/auth-params-map saml-principal)
-                          request-handler' (middleware/wrap-merge request-handler auth-params-map)]
-                      (auth/handle-request-auth request-handler' request principal auth-params-map password age-in-seconds))
+                          request' (-> request
+                                       (assoc :request-method :get :body nil :content-type nil :content-length nil)
+                                       (update :headers dissoc "content-length" "content-type"))]
+                      (auth/handle-request-auth request-handler request' principal auth-params-map password age-in-seconds))
                     (throw (ex-info "Invalid request method for use with SAML authentication"
                                     {:log-level :info :request-method request-method :status 405})))
             (throw (ex-info "Invalid request method for use with SAML authentication"
@@ -130,9 +132,14 @@
                             {:status 400
                              :saml-assertion-not-on-or-after not-on-or-after
                              :t-now t-now})))
-        saml-principal (first (get attrs "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"
-                                   [(get name-id :value)]))
-        saml-auth-data (String. (b64/encode (nippy/freeze {:not-on-or-after not-on-or-after :saml-principal saml-principal}
+        email (first (get attrs "email"))
+        ; https://docs.microsoft.com/en-us/windows-server/identity/ad-fs/technical-reference/the-role-of-claims
+        upn (first (get attrs "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"))
+        name-id-value (get name-id :value)
+        saml-principal (or upn name-id-value)
+        {:keys [authorization/principal authorization/user]} (auth/auth-params-map saml-principal)
+        saml-principal' (if (and email (= principal user)) email saml-principal)
+        saml-auth-data (String. (b64/encode (nippy/freeze {:not-on-or-after not-on-or-after :saml-principal saml-principal'}
                                                           {:password password :compressor nil})))]
     {:body (render-authenticated-redirect-template {:redirect-url relay-state :saml-auth-data saml-auth-data})
      :status 200}))
