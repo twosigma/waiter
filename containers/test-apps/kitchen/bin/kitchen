@@ -752,6 +752,12 @@ class Kitchen(HTTPWebSocketsHandler):
         else:
             query_params = {}
 
+        if 'request-info' == query_params.get('include'):
+            self.__headers['x-kitchen-protocol-version'] = self.protocol_version
+            self.__headers['x-kitchen-request-length'] = self.__request_body_length
+            self.__headers['x-kitchen-request-method'] = self.__method
+            self.__headers['x-kitchen-request-version'] = self.request_version
+
         if path == '/async/request':
             self.__async_req = {
                     'delay-ms': 20000,
@@ -989,14 +995,11 @@ def main():
     kitchen_logger = logging.getLogger('kitchen')
     kitchen_logger.setLevel(logging.DEBUG)
 
-    auth_disabled = os.environ.get('KITCHEN_AUTH_DISABLED')
     username = os.environ.get('WAITER_USERNAME')
     password = os.environ.get('WAITER_PASSWORD')
 
-    if '1' == auth_disabled:
-        kitchen_logger.info('Authentication has been explicitly disabled')
-    elif username and password:
-        kitchen_logger.info('Basic Authentication enabled')
+    if username and password:
+        kitchen_logger.info('Basic Authentication Enabled')
         _auth_handler = BasicAuthHandler(username, password)
 
     if args.ssl:

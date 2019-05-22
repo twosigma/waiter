@@ -22,18 +22,15 @@
 
 (defn assert-ping-response
   [health-check-protocol idle-timeout service-id response]
-  (let [{:keys [ping-response service-state]}
-        (-> (some-> response :body json/read-str)
-          (update-in ["ping-response" "body"] #(some-> % json/read-str))
-          walk/keywordize-keys)]
+  (let [{:keys [ping-response service-state]} (some-> response :body json/read-str walk/keywordize-keys)]
     (assert-response-status response 200)
     (if (nil? idle-timeout)
       (do
         (is (= "received-response" (get ping-response :result)) (str ping-response))
         (is (= (hu/backend-protocol->http-version health-check-protocol)
-               (get-in ping-response [:body :protocol-version]))
+               (get-in ping-response [:headers :x-kitchen-protocol-version]))
             (str ping-response))
-        (is (= "get" (get-in ping-response [:body :request-method])) (str ping-response))
+        (is (= "get" (get-in ping-response [:headers :x-kitchen-request-method])) (str ping-response))
         (is (= {:exists? true :healthy? true :service-id service-id :status "Running"} service-state)))
       (do
         (is (= "timed-out" (get ping-response :result)) (str ping-response))
@@ -44,8 +41,7 @@
   (let [headers (cond-> {:accept "application/json"
                          :x-waiter-cmd command
                          :x-waiter-debug true
-                         :x-waiter-env-kitchen_auth_disabled "1"
-                         :x-waiter-health-check-url "/request-info"
+                         :x-waiter-health-check-url "/status?include=request-info"
                          :x-waiter-name (rand-name)}
                   backend-proto (assoc :x-waiter-backend-proto backend-proto)
                   health-check-port-index (assoc :x-waiter-health-check-port-index health-check-port-index)
@@ -128,9 +124,8 @@
           backend-proto "http"
           token-description-1 (-> (kitchen-request-headers :prefix "")
                                 (assoc :backend-proto backend-proto
-                                       :env {"KITCHEN_AUTH_DISABLED" "1"}
                                        :fallback-period-secs fallback-period-secs
-                                       :health-check-url "/request-info"
+                                       :health-check-url "/status?include=request-info"
                                        :idle-timeout-mins 1
                                        :name (str token "-v1")
                                        :permitted-user "*"
