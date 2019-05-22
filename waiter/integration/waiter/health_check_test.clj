@@ -20,6 +20,26 @@
             [waiter.util.client-tools :refer :all]
             [waiter.util.http-utils :as hu]))
 
+(defn assert-ping-response
+  [health-check-protocol idle-timeout service-id ping-response]
+  (let [{:keys [ping-response service-state]}
+        (-> (some-> ping-response :body json/read-str)
+          (update-in ["ping-response" "body"] #(some-> % json/read-str))
+          walk/keywordize-keys)]
+    (assert-response-status ping-response 200)
+    (if (nil? idle-timeout)
+      (do
+        (is (= (hu/backend-protocol->http-version health-check-protocol)
+               (get-in ping-response [:body :protocol-version]))
+            (str ping-response))
+        (is (= "get" (get-in ping-response [:body :request-method])) (str ping-response))
+        (is (= {:exists? true :healthy? true :service-id service-id :status "Running"} service-state)))
+      (do
+        (is (= "Health check request timed out!"
+               (get-in ping-response [:body :message]))
+            (str ping-response))
+        (is (= {:exists? true :healthy? false :service-id service-id :status "Starting"} service-state))))))
+
 (defn run-ping-service-test
   [waiter-url idle-timeout command backend-proto health-check-proto num-ports health-check-port-index]
   (let [headers (cond-> {:accept "application/json"
@@ -34,27 +54,12 @@
                   idle-timeout (assoc :x-waiter-timeout idle-timeout)
                   num-ports (assoc :x-waiter-ports num-ports))
         {:keys [headers] :as response} (make-kitchen-request waiter-url headers :method :post :path "/waiter-ping")
-        service-id (get headers "x-waiter-service-id")]
+        service-id (get headers "x-waiter-service-id")
+        health-check-protocol (or health-check-proto backend-proto "http")]
     (with-service-cleanup
       service-id
       (assert-response-status response 200)
-      (let [{:keys [ping-response service-state]}
-            (-> (some-> response :body json/read-str)
-              (update-in ["ping-response" "body"] #(some-> % json/read-str))
-              walk/keywordize-keys)]
-        (if (nil? idle-timeout)
-          (let [health-check-protocol (or health-check-proto backend-proto "http")]
-            (assert-response-status ping-response 200)
-            (is (= (hu/backend-protocol->http-version health-check-protocol)
-                   (get-in ping-response [:body :protocol-version]))
-                (str ping-response))
-            (is (= "get" (get-in ping-response [:body :request-method])) (str ping-response))
-            (is (= {:exists? true :healthy? true :service-id service-id :status "Running"} service-state)))
-          (do
-            (is (= "Health check request timed out!"
-                   (get-in ping-response [:body :message]))
-                (str ping-response))
-            (is (= {:exists? true :healthy? false :service-id service-id :status "Starting"} service-state))))))))
+      (assert-ping-response health-check-protocol idle-timeout service-id response))))
 
 (deftest ^:parallel ^:integration-fast test-basic-ping-service
   (testing-using-waiter-url
@@ -115,3 +120,41 @@
           health-check-port-index 2
           idle-timeout nil]
       (run-ping-service-test waiter-url idle-timeout command backend-proto health-check-proto num-ports health-check-port-index))))
+
+(deftest ^:parallel ^:integration-fast test-ping-with-fallback-enabled
+  (testing-using-waiter-url
+    (let [token (rand-name)
+          request-headers {:x-waiter-debug true
+                           :x-waiter-token token}
+          fallback-period-secs 300
+          backend-proto "http"
+          token-description-1 (-> (kitchen-request-headers :prefix "")
+                                (assoc :backend-proto backend-proto
+                                       :env {"KITCHEN_AUTH_DISABLED" "1"}
+                                       :fallback-period-secs fallback-period-secs
+                                       :health-check-url "/request-info"
+                                       :idle-timeout-mins 1
+                                       :name (str token "-v1")
+                                       :permitted-user "*"
+                                       :run-as-user (retrieve-username)
+                                       :token token
+                                       :version "version-1"))]
+      (try
+        (assert-response-status (post-token waiter-url token-description-1) 200)
+        (let [ping-response-1 (make-request waiter-url "/waiter-ping" :headers request-headers)
+              service-id-1 (get-in ping-response-1 [:headers "x-waiter-service-id"])]
+          (is service-id-1)
+          (with-service-cleanup
+            service-id-1
+            (assert-ping-response backend-proto nil service-id-1 ping-response-1)
+            (let [token-description-2 (assoc token-description-1 :name (str token "-v2") :version "version-2")
+                  _ (assert-response-status (post-token waiter-url token-description-2) 200)
+                  ping-response-2 (make-request waiter-url "/waiter-ping" :headers request-headers)
+                  service-id-2 (get-in ping-response-2 [:headers "x-waiter-service-id"])]
+              (is service-id-2)
+              (is (not= service-id-1 service-id-2))
+              (with-service-cleanup
+                service-id-2
+                (assert-ping-response backend-proto nil service-id-2 ping-response-2)))))
+        (finally
+          (delete-token-and-assert waiter-url token))))))
