@@ -16,7 +16,6 @@ def ping_on_cluster(cluster, timeout, wait_for_request, token_name, service_exis
             timeout_seconds = timeout if wait_for_request else 5
             headers = {
                 'X-Waiter-Token': token_name,
-                'X-Waiter-Fallback-Period-Secs': '0',
                 'X-Waiter-Timeout': str(timeout_seconds * 1000)
             }
             read_timeout = timeout_seconds * 2
