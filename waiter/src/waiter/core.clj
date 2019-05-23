@@ -134,6 +134,7 @@
                                        ["/" [#".*" :path]] :waiter-request-consent-handler-fn}
                      "waiter-interstitial" {["/" [#".*" :path]] :waiter-request-interstitial-handler-fn}
                      "waiter-kill-instance" {["/" :service-id] :kill-instance-handler-fn}
+                     "waiter-ping" :ping-service-handler
                      "work-stealing" :work-stealing-handler-fn}]]
     (or (bidi/match-route routes uri)
         {:handler :not-found-handler-fn})))
@@ -500,7 +501,8 @@
   (let [valid-waiter-hostnames (set/union valid-waiter-hostnames #{"localhost" "127.0.0.1"})]
     (fn waiter-request? [{:keys [uri headers]}]
       (let [{:strs [host]} headers]
-        (or (#{"/app-name" "/service-id" "/token"} uri) ; special urls that are always for Waiter (FIXME)
+        ; special urls that are always for Waiter (FIXME)
+        (or (#{"/app-name" "/service-id" "/token" "/waiter-ping"} uri)
             (some #(str/starts-with? (str uri) %)
                   ["/waiter-async/complete/" "/waiter-async/result/" "/waiter-async/status/" "/waiter-consent"
                    "/waiter-interstitial"])
@@ -1196,34 +1198,56 @@
                                  (fn metrics-request-handler-fn [request]
                                    (handler/metrics-request-handler request)))
    :not-found-handler-fn (pc/fnk [] handler/not-found-handler)
-   :process-request-fn (pc/fnk [[:routines determine-priority-fn make-basic-auth-fn post-process-async-request-response-fn
-                                 service-id->password-fn start-new-service-fn]
-                                [:settings instance-request-properties]
-                                [:state http-clients instance-rpc-chan local-usage-agent interstitial-state-atom
-                                 stream-reader-executor]
-                                wrap-auth-bypass-fn wrap-descriptor-fn wrap-https-redirect-fn wrap-secure-request-fn
-                                wrap-service-discovery-fn]
-                         (let [make-request-fn (fn [instance request request-properties passthrough-headers end-route metric-group
-                                                    backend-proto proto-version]
-                                                 (pr/make-request
-                                                   stream-reader-executor http-clients make-basic-auth-fn service-id->password-fn
-                                                   instance request request-properties passthrough-headers end-route metric-group
-                                                   backend-proto proto-version))
-                               process-response-fn (partial pr/process-http-response post-process-async-request-response-fn)
-                               inner-process-request-fn (fn inner-process-request [request]
-                                                          (pr/process make-request-fn instance-rpc-chan start-new-service-fn
-                                                                      instance-request-properties determine-priority-fn process-response-fn
-                                                                      pr/abort-http-request-callback-factory local-usage-agent request))]
-                           (-> inner-process-request-fn
-                               pr/wrap-too-many-requests
-                               pr/wrap-suspended-service
-                               pr/wrap-response-status-metrics
-                               (interstitial/wrap-interstitial interstitial-state-atom)
-                               wrap-descriptor-fn
-                               wrap-secure-request-fn
-                               wrap-auth-bypass-fn
-                               wrap-https-redirect-fn
-                               wrap-service-discovery-fn)))
+   :ping-service-handler (pc/fnk [[:daemons router-state-maintainer]
+                                  [:state fallback-state-atom]
+                                  process-request-handler-fn process-request-wrapper-fn]
+                           (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
+                                 handler (process-request-wrapper-fn
+                                           (fn inner-ping-service-handler [request]
+                                             (let [service-state-fn
+                                                   (fn [service-id]
+                                                     (let [fallback-state @fallback-state-atom
+                                                           global-state (query-state-fn)]
+                                                       {:exists? (descriptor/service-exists? fallback-state service-id)
+                                                        :healthy? (descriptor/service-healthy? fallback-state service-id)
+                                                        :service-id service-id
+                                                        :status (service/retrieve-service-status-label service-id global-state)}))]
+                                               (pr/ping-service process-request-handler-fn service-state-fn request))))]
+                             (fn ping-service-handler [request]
+                               (-> request
+                                 (update :headers assoc "x-waiter-fallback-period-secs" "0")
+                                 (handler)))))
+   :process-request-fn (pc/fnk [process-request-handler-fn process-request-wrapper-fn]
+                         (process-request-wrapper-fn process-request-handler-fn))
+   :process-request-handler-fn (pc/fnk [[:routines determine-priority-fn make-basic-auth-fn post-process-async-request-response-fn
+                                         service-id->password-fn start-new-service-fn]
+                                        [:settings instance-request-properties]
+                                        [:state http-clients instance-rpc-chan local-usage-agent stream-reader-executor]]
+                                 (let [make-request-fn (fn [instance request request-properties passthrough-headers end-route metric-group
+                                                            backend-proto proto-version]
+                                                         (pr/make-request
+                                                           stream-reader-executor http-clients make-basic-auth-fn service-id->password-fn
+                                                           instance request request-properties passthrough-headers end-route metric-group
+                                                           backend-proto proto-version))
+                                       process-response-fn (partial pr/process-http-response post-process-async-request-response-fn)]
+                                   (fn inner-process-request [request]
+                                     (pr/process make-request-fn instance-rpc-chan start-new-service-fn
+                                                 instance-request-properties determine-priority-fn process-response-fn
+                                                 pr/abort-http-request-callback-factory local-usage-agent request))))
+   :process-request-wrapper-fn (pc/fnk [[:state interstitial-state-atom]
+                                        wrap-auth-bypass-fn wrap-descriptor-fn wrap-https-redirect-fn
+                                        wrap-secure-request-fn wrap-service-discovery-fn]
+                                 (fn process-handler-wrapper-fn [handler]
+                                   (-> handler
+                                     pr/wrap-too-many-requests
+                                     pr/wrap-suspended-service
+                                     pr/wrap-response-status-metrics
+                                     (interstitial/wrap-interstitial interstitial-state-atom)
+                                     wrap-descriptor-fn
+                                     wrap-secure-request-fn
+                                     wrap-auth-bypass-fn
+                                     wrap-https-redirect-fn
+                                     wrap-service-discovery-fn)))
    :router-metrics-handler-fn (pc/fnk [[:routines crypt-helpers]
                                        [:settings [:metrics-config metrics-sync-interval-ms]]
                                        [:state router-metrics-agent]]

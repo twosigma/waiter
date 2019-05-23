@@ -752,6 +752,12 @@ class Kitchen(HTTPWebSocketsHandler):
         else:
             query_params = {}
 
+        if 'request-info' == query_params.get('include'):
+            self.__headers['x-kitchen-protocol-version'] = self.protocol_version
+            self.__headers['x-kitchen-request-length'] = self.__request_body_length
+            self.__headers['x-kitchen-request-method'] = self.__method
+            self.__headers['x-kitchen-request-version'] = self.request_version
+
         if path == '/async/request':
             self.__async_req = {
                     'delay-ms': 20000,

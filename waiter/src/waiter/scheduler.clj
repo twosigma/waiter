@@ -189,6 +189,13 @@
   [service-instance]
   (:service-id service-instance))
 
+(defn instance->port
+  "Retrieves the port to use from the instance based on the port index."
+  [{:keys [extra-ports port]} port-index]
+  (if (pos? port-index)
+    (->> port-index dec (nth extra-ports))
+    port))
+
 (defn base-url
   "Returns the url at which the service definition resides."
   [^String protocol ^String host port]
@@ -203,10 +210,8 @@
 
 (defn health-check-url
   "Returns the health check url which can be queried on the service instance."
-  [{:keys [extra-ports host port]} health-check-proto health-check-port-index health-check-path]
-  (let [url-port (if (pos? health-check-port-index)
-                   (->> health-check-port-index dec (nth extra-ports))
-                   port)]
+  [{:keys [host] :as instance} health-check-proto health-check-port-index health-check-path]
+  (let [url-port (instance->port instance health-check-port-index)]
     (end-point-url health-check-proto host url-port health-check-path)))
 
 (defn log-health-check-issues
@@ -413,6 +418,11 @@
       {:healthy-instances (vec healthy-instances)
        :unhealthy-instances (vec unhealthy-instances)})))
 
+(defn service-description->health-check-protocol
+  "Determines the protocol to use for health checks."
+  [{:strs [backend-proto health-check-proto]}]
+  (or health-check-proto backend-proto))
+
 (defn start-health-checks
   "Takes a map from service -> service instances and replaces each active instance with a ref which performs a
    health check if necessary, or returns the instance immediately."
@@ -433,7 +443,7 @@
          service->service-instances' {}]
     (if-not service
       service->service-instances'
-      (let [{:strs [backend-proto health-check-proto health-check-port-index health-check-url]} (service-id->service-description-fn (:id service))
+      (let [{:strs [health-check-port-index health-check-url] :as service-description} (service-id->service-description-fn (:id service))
             connection-errors #{:connect-exception :hangup-exception :timeout-exception}
             update-unhealthy-instance (fn [instance status error]
                                         (-> instance
@@ -447,7 +457,7 @@
 
                                                         (not (contains? connection-errors error))
                                                         (conj :has-responded))))))
-            protocol (or health-check-proto backend-proto)
+            protocol (service-description->health-check-protocol service-description)
             health-check-refs (map (fn [instance]
                                      (let [chan (async/promise-chan)]
                                        (if (:healthy? instance)

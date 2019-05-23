@@ -40,13 +40,13 @@
             [waiter.util.http-utils :as hu]
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils])
-  (:import (java.io InputStream IOException)
+  (:import (java.io ByteArrayOutputStream InputStream IOException)
            (java.nio ByteBuffer)
            (java.util.concurrent LinkedBlockingQueue ThreadPoolExecutor TimeoutException TimeUnit)
-           (javax.servlet ServletInputStream ReadListener)
+           (javax.servlet ReadListener ServletInputStream ServletOutputStream)
            (org.eclipse.jetty.client HttpClient)
            (org.eclipse.jetty.io EofException)
-           (org.eclipse.jetty.server HttpChannel HttpOutput)
+           (org.eclipse.jetty.server HttpChannel HttpOutput Response)
            (org.eclipse.jetty.util BufferUtil)))
 
 (defn check-control [control-chan]
@@ -73,13 +73,15 @@
 
 (defn set-idle-timeout!
   "Configures the idle timeout in the response output stream (HttpOutput) to `idle-timeout-ms` ms."
-  [^HttpOutput output-stream idle-timeout-ms]
-  (try
-    (log/debug "executing pill to adjust idle timeout to" idle-timeout-ms "ms.")
-    (let [^HttpChannel http-channel (.getHttpChannel output-stream)]
-      (.setIdleTimeout http-channel idle-timeout-ms))
-    (catch Exception e
-      (log/error e "gobbling unexpected error while setting idle timeout"))))
+  [output-stream idle-timeout-ms]
+  (if (instance? HttpOutput output-stream)
+    (try
+      (log/debug "executing pill to adjust idle timeout to" idle-timeout-ms "ms.")
+      (let [^HttpChannel http-channel (.getHttpChannel ^HttpOutput output-stream)]
+        (.setIdleTimeout http-channel idle-timeout-ms))
+      (catch Exception e
+        (log/error e "gobbling unexpected error while setting idle timeout")))
+    (log/info "cannot set idle timeout since output stream is not an instance of HttpOutput")))
 
 (defn- configure-idle-timeout-pill-fn
   "Creates a function that configures the idle timeout in the response output stream (HttpOutput) to `streaming-timeout-ms` ms."
@@ -345,10 +347,12 @@
 
 (defn make-request
   "Makes an asynchronous http request to the instance endpoint and returns a channel."
-  [executor http-clients make-basic-auth-fn service-id->password-fn {:keys [host port] :as instance}
-   {:keys [body query-string request-method trailers-fn] :as request}
+  [executor http-clients make-basic-auth-fn service-id->password-fn {:keys [host] :as instance}
+   {:keys [body instance-request-overrides query-string request-method trailers-fn] :as request}
    {:keys [initial-socket-timeout-ms output-buffer-size]} passthrough-headers end-route metric-group backend-proto proto-version]
-  (let [instance-endpoint (scheduler/end-point-url backend-proto host port end-route)
+  (let [port-index (get instance-request-overrides :port-index 0)
+        port (scheduler/instance->port instance port-index)
+        instance-endpoint (scheduler/end-point-url backend-proto host port end-route)
         service-id (scheduler/instance->service-id instance)
         service-password (service-id->password-fn service-id)
         ; Removing expect may be dangerous http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html, but makes requests 3x faster =}
@@ -503,7 +507,7 @@
 
 (defn process-http-response
   "Processes a response resulting from a http request.
-   It includes book-keeping for async requests and asycnhronously streaming the content."
+   It includes book-keeping for async requests and asynchronously streaming the content."
   [post-process-async-request-response-fn _ instance-request-properties descriptor instance
    {:keys [uri] :as request} reason-map reservation-status-promise confirm-live-connection-with-abort
    request-state-chan {:keys [status] :as response}]
@@ -574,7 +578,9 @@
         (timers/start-stop-time!
           process-timer
           (let [{:keys [service-id service-description]} descriptor
-                {:strs [backend-proto metric-group]} service-description]
+                {:strs [metric-group]} service-description
+                backend-proto (or (get-in request [:instance-request-overrides :backend-proto])
+                                  (get service-description "backend-proto"))]
             (send local-usage-agent metrics/update-last-request-time-usage-metric service-id request-time)
             (try
               (let [{:keys [waiter-headers passthrough-headers]} descriptor]
@@ -694,3 +700,75 @@
     (let [position (swap! position-generator-atom inc)]
       (log/info "associating priority" priority "at position" position "with request")
       [priority (unchecked-negate position)])))
+
+(defn make-health-check-request
+  "Makes a health check request to the backend using the specified proto and port from the descriptor.
+   Returns the health check response from an arbitrary backend or the failure response."
+  [process-request-handler-fn idle-timeout-ms {:keys [descriptor] :as request}]
+  (async/go
+    (try
+      (let [{:keys [service-description]} descriptor
+            {:strs [health-check-url health-check-port-index]} service-description
+            health-check-protocol (scheduler/service-description->health-check-protocol service-description)
+            ctrl-ch (async/chan)
+            attach-empty-content (fn attach-empty-content [request]
+                                   (-> request
+                                     (assoc :body nil)
+                                     (assoc :content-length 0)
+                                     (update :headers assoc "content-length" 0)))
+            output-stream (ByteArrayOutputStream.)
+            servlet-output-stream (proxy [ServletOutputStream] []
+                                    (close [] (.close output-stream))
+                                    (flush [] (.flush output-stream))
+                                    (write [data]
+                                      (try
+                                        (if (integer? data)
+                                          (.write output-stream ^int data)
+                                          (.write output-stream ^bytes data))
+                                        (catch Exception ex
+                                          (async/put! ctrl-ch [::error ex])))))
+            servlet-response (proxy [Response] [nil nil]
+                               (getOutputStream [] servlet-output-stream)
+                               (flushBuffer [] (.flush servlet-output-stream)))
+            new-request (-> request
+                          (select-keys [:character-encoding :client-protocol :content-type :descriptor :headers
+                                        :internal-protocol :remote-addr :request-id :request-time :router-id
+                                        :scheme :server-name :server-port :support-info])
+                          (attach-empty-content)
+                          (assoc :ctrl ctrl-ch
+                                 ;; override the protocol and port used while talking to the backend
+                                 :instance-request-overrides {:backend-proto health-check-protocol
+                                                              :port-index health-check-port-index}
+                                 :request-method :get
+                                 :uri health-check-url))
+            response-ch (process-request-handler-fn new-request)
+            timeout-ch (async/timeout idle-timeout-ms)
+            [response source-ch] (async/alts! [response-ch timeout-ch] :priority true)
+            {:keys [body] :as health-check-response} (cond-> response
+                                                       (au/chan? response) (async/<!))
+            body-str (cond
+                       (au/chan? body) (do
+                                         (async/<! (servlet/write-body! body servlet-response new-request))
+                                         (String. (.toByteArray output-stream)))
+                       body (str body))]
+        (async/close! ctrl-ch)
+        (-> health-check-response
+          (select-keys [:headers :status])
+          (assoc :body body-str)
+          (assoc :result (if (= source-ch timeout-ch) :timed-out :received-response))))
+      (catch Exception ex
+        (utils/exception->response ex request)))))
+
+(defn ping-service
+  "Performs a health check on an arbitrary instance of the service specified in the descriptor.
+   If the service is not running, an instance will be started.
+   The response body contains the following map: {:ping-response ..., :service-state ...}"
+  [process-request-handler-fn service-state-fn {:keys [descriptor headers] :as request}]
+  (async/go
+    (try
+      (let [{:keys [service-id]} descriptor
+            idle-timeout-ms (Integer/parseInt (get headers "x-waiter-timeout" "300000"))
+            ping-response (make-health-check-request process-request-handler-fn idle-timeout-ms request)]
+        (utils/clj->json-response
+          {:ping-response (async/<! ping-response)
+           :service-state (service-state-fn service-id)})))))
