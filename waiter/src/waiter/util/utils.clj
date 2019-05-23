@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.util.utils
-  (:require [clojure.data.json :as json]
+  (:require [clojure.data.codec.base64 :as b64]
+            [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.pprint :as pprint]
             [clojure.string :as str]
@@ -397,6 +398,16 @@
   [byte-buffer decryption-key]
   (let [data-bytes (data->byte-array byte-buffer)]
     (nippy/thaw data-bytes {:password decryption-key, :compressor compression/lzma2-compressor})))
+
+(defn map->base-64-string
+  "Serializes data to a base 64 string along with encryption."
+  [data-map encryption-key]
+  (String. (b64/encode (nippy/freeze data-map {:password encryption-key :compressor nil}))))
+
+(defn base-64-string->map
+  "Deserializes and decrypts a base 64 string."
+  [b64-string decryption-key]
+  (nippy/thaw (b64/decode (.getBytes b64-string)) {:password decryption-key :v1-compatibility? false :compressor nil}))
 
 (let [messages (atom {})]
   (defn message

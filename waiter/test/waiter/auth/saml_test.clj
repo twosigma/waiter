@@ -29,7 +29,8 @@
   {:idp-uri "https://idp-host/idp-endpoint"
    :idp-cert-uri "test-files/saml/idp.crt"
    :hostname "hostname"
-   :password [:salted "password"]})
+   :password [:salted "password"]
+   :auth-redirect-endpoint "auth-redirect-endpoint"})
 
 (defn dummy-saml-authenticator
   ([config]
@@ -59,7 +60,6 @@
 (deftest test-wrap-handler
   (let [saml-authenticator (dummy-saml-authenticator)
         handler (fn [request] request)
-        test-time (clj-time.format/parse "2019-05-14")
         wrapped-handler (auth/wrap-auth-handler saml-authenticator handler)]
     (testing "has auth cookie"
       (with-redefs [auth/decode-auth-cookie (fn [waiter-cookie password] (if (= "my-auth-cookie" waiter-cookie) ["my-user@domain"] nil))
@@ -70,62 +70,64 @@
     (testing "can't use POST"
       (is (thrown-with-msg? Exception #"Invalid request method for use with SAML authentication"
                             (wrapped-handler (assoc dummy-request :request-method :post)))))
-    (testing "can't use POST - bad saml-auth-data"
-      (with-redefs [clj-time.core/now (fn [] time-now)
+    (testing "does not have auth cookie"
+      (with-redefs [nippy/freeze (fn [data _] (.getBytes (str data)))
+                    t/now (fn [] time-now)
+                    utils/make-uuid (constantly "UUID")]
+        (is (= {:body ""
+                :headers {"Location" (slurp "test-files/saml/idp-redirect-location.txt")}
+                :status 302}
+               (wrapped-handler dummy-request)))))))
+
+(deftest test-auth-redirect-endpoint
+  (let [saml-authenticator (dummy-saml-authenticator)
+        test-time (clj-time.format/parse "2019-05-14")]
+    (testing "bad saml-auth-data"
+      (with-redefs [t/now (fn [] time-now)
                     utils/make-uuid (constantly "UUID")]
         (is (thrown-with-msg? Exception #"Could not parse saml-auth-data"
-                              (wrapped-handler (-> (merge-with merge dummy-request {:headers {"content-type" "application/x-www-form-urlencoded"}})
-                                                   (merge {:request-method :post
-                                                           :body (StringBufferInputStream. "saml-auth-data=my-saml-auth-data")})))))))
+                              (saml-auth-redirect-handler (-> (merge-with merge dummy-request {:headers {"content-type" "application/x-www-form-urlencoded"}})
+                                                              (merge {:request-method :post
+                                                                      :body (StringBufferInputStream. "saml-auth-data=my-saml-auth-data")}))
+                                                          saml-authenticator)))))
     (testing "has saml-auth-data"
       (with-redefs [b64/decode identity
                     b64/encode identity
                     nippy/freeze (fn [data _] (.getBytes (str data)))
                     nippy/thaw (fn [data _]
                                  (if (= "my-saml-auth-data" (String. data))
-                                              {:not-on-or-after (t/plus test-time (t/years 1)) :saml-principal "my-user@domain"}
-                                              nil))
+                                   {:not-on-or-after (t/plus test-time (t/years 1)) :saml-principal "my-user@domain" :redirect-url "redirect-url"}
+                                   nil))
                     t/now (fn [] test-time)]
         (let [dummy-request' (-> (merge-with merge dummy-request {:headers {"content-type" "application/x-www-form-urlencoded"}})
                                  (merge {:request-method :post
                                          :body (StringBufferInputStream. "saml-auth-data=my-saml-auth-data")}))]
-          (is (= (-> (merge-with merge dummy-request' {:headers {"set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000%5D;Max-Age=86400;Path=/;HttpOnly=true"}})
-                     (update :headers dissoc "content-length" "content-type")
-                     (merge {:authorization/principal "my-user@domain"
-                             :authorization/user "my-user"
-                             :body nil
-                             :content-length nil
-                             :content-type nil
-                             :request-method :get}))
-                 (wrapped-handler dummy-request'))))))
+          (is (= {:authorization/principal "my-user@domain"
+                  :authorization/user "my-user"
+                  :body ""
+                  :headers {"Location" "redirect-url"
+                            "set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000%5D;Max-Age=86400;Path=/;HttpOnly=true"}
+                  :status 303}
+                 (saml-auth-redirect-handler dummy-request' saml-authenticator))))))
     (testing "has saml-auth-data short expiry"
       (with-redefs [b64/decode identity
                     b64/encode identity
                     nippy/freeze (fn [data _] (.getBytes (str data)))
                     nippy/thaw (fn [data _]
                                  (if (= "my-saml-auth-data" (String. data))
-                                   {:not-on-or-after (t/plus test-time (t/hours 1)) :saml-principal "my-user@domain"}
+                                   {:not-on-or-after (t/plus test-time (t/hours 1)) :saml-principal "my-user@domain" :redirect-url "redirect-url"}
                                    nil))
                     t/now (fn [] test-time)]
         (let [dummy-request' (-> (merge-with merge dummy-request {:headers {"content-type" "application/x-www-form-urlencoded"}})
                                  (merge {:request-method :post
                                          :body (StringBufferInputStream. "saml-auth-data=my-saml-auth-data")}))]
-          (is (= (-> (merge-with merge dummy-request' {:headers {"set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000%5D;Max-Age=3600;Path=/;HttpOnly=true"}})
-                     (update :headers dissoc "content-length" "content-type")
-                     (merge {:authorization/principal "my-user@domain"
-                             :authorization/user "my-user"
-                             :body nil
-                             :content-length nil
-                             :content-type nil
-                             :request-method :get}))
-                 (wrapped-handler dummy-request'))))))
-    (testing "does not have auth cookie"
-      (with-redefs [clj-time.core/now (fn [] time-now)
-                    utils/make-uuid (constantly "UUID")]
-        (is (= {:body ""
-                :headers {"Location" (slurp "test-files/saml/idp-redirect-location.txt")}
-                :status 302}
-               (wrapped-handler dummy-request)))))))
+          (is (= {:authorization/principal "my-user@domain"
+                  :authorization/user "my-user"
+                  :body ""
+                  :headers {"Location" "redirect-url"
+                            "set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000%5D;Max-Age=3600;Path=/;HttpOnly=true"}
+                  :status 303}
+                 (saml-auth-redirect-handler dummy-request' saml-authenticator))))))))
 
 (defn- normalize-x509-certificate-string
   [cert-str]
@@ -143,18 +145,21 @@
     (string/replace (slurp "test-files/saml/saml-response.xml")
                     "user1@example.com"
                     (str (if change-user? "root" "user1") "@example.com"))))
+(def relay-state-string
+  (utils/map->base-64-string {:host "host" :request-url "request-url" :scheme "scheme"} [:salted "password"]))
 
 (deftest test-saml-acs-handler
   (org.opensaml.DefaultBootstrap/bootstrap)
-  (let [test-time (clj-time.format/parse "2019-05-14")
+  (let [saml-authenticator (dummy-saml-authenticator)
+        test-time (clj-time.format/parse "2019-05-14")
         processed-saml-response {:body "<!doctype html>
 <html>
 <head>
     <title>Working...</title>
 </head>
 <body>
-<form action=\"auth-redirect-uri\" method=\"post\">
-    <input type=\"hidden\" name=\"saml-auth-data\" value=\"ezpub3Qtb24tb3ItYWZ0ZXIgI2Nsai10aW1lL2RhdGUtdGltZSAiMjAxOS0wNS0xNVQyMTo1Mjo0Ni4wMDBaIiwgOnJlZGlyZWN0LXVybCAib3JpZ2luYWwtdXJsIiwgOnNhbWwtcHJpbmNpcGFsICJ1c2VyMUBleGFtcGxlLmNvbSJ9\">
+<form action=\"scheme://host/waiter-auth/saml/auth-redirect\" method=\"post\">
+    <input type=\"hidden\" name=\"saml-auth-data\" value=\"ezpub3Qtb24tb3ItYWZ0ZXIgI2Nsai10aW1lL2RhdGUtdGltZSAiMjAxOS0wNS0xNVQyMTo1Mjo0Ni4wMDBaIiwgOnJlZGlyZWN0LXVybCAicmVxdWVzdC11cmwiLCA6c2FtbC1wcmluY2lwYWwgInVzZXIxQGV4YW1wbGUuY29tIn0=\">
     <noscript>
         <p>JavaScript is disabled. Click Continue to continue to your application.</p>
         <input type=\"submit\" value=\"Continue\">
@@ -170,18 +175,18 @@
                   auth/handle-request-auth (fn [handler request user principal password]
                                              (merge (handler) {:user user :principal principal}))]
       (testing "has valid saml response"
-        (let [request (merge {:form-params {"SAMLResponse" (slurp "test-files/saml/saml-response.txt") "RelayState" "original-url"}} dummy-request)]
-          (is (= processed-saml-response (saml-acs-handler request {:auth-redirect-uri "auth-redirect-uri" :idp-cert (slurp (:idp-cert-uri valid-config)) :password [:salted "password"]})))))
+        (let [request (merge {:form-params {"SAMLResponse" (slurp "test-files/saml/saml-response.txt") "RelayState" relay-state-string}} dummy-request)]
+          (is (= processed-saml-response (saml-acs-handler request saml-authenticator)))))
       (testing "has valid saml response (from xml)"
         (with-redefs [saml-shared/byte-deflate (fn [_] _)]
-          (let [request (merge {:form-params {"SAMLResponse" (saml-response-from-xml false) "RelayState" "original-url"}} dummy-request)]
-            (is (= processed-saml-response (saml-acs-handler request {:auth-redirect-uri "auth-redirect-uri" :idp-cert (slurp (:idp-cert-uri valid-config)) :password [:salted "password"]}))))))
+          (let [request (merge {:form-params {"SAMLResponse" (saml-response-from-xml false) "RelayState" relay-state-string}} dummy-request)]
+            (is (= processed-saml-response (saml-acs-handler request saml-authenticator))))))
       (testing "has invalid saml signature"
         (with-redefs [saml-shared/byte-deflate (fn [_] _)]
-          (let [request (merge {:form-params {"SAMLResponse" (saml-response-from-xml true) "RelayState" "original-url"}} dummy-request)]
+          (let [request (merge {:form-params {"SAMLResponse" (saml-response-from-xml true) "RelayState" relay-state-string}} dummy-request)]
             (is (thrown-with-msg? Exception #"Could not authenticate user. Invalid SAML assertion signature."
                                   (saml-acs-handler request {:idp-cert (slurp (:idp-cert-uri valid-config)) :password [:salted "password"]}))))))))
   (testing "has expired saml response"
-    (let [request (merge {:form-params {"SAMLResponse" (slurp "test-files/saml/saml-response.txt") "RelayState" "original-url"}} dummy-request)]
+    (let [request (merge {:form-params {"SAMLResponse" (slurp "test-files/saml/saml-response.txt") "RelayState" relay-state-string}} dummy-request)]
       (is (thrown-with-msg? Exception #"Could not authenticate user. Expired SAML assertion."
                             (saml-acs-handler request {:idp-cert (slurp (:idp-cert-uri valid-config)) :password [:salted "password"]}))))))

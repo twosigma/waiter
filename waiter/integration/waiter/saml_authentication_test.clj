@@ -11,9 +11,11 @@
     (when (using-shell? waiter-url)
       (let [run-as-user (System/getenv "WAITER_AUTH_RUN_AS_USER")
             _ (is (not (string/blank? run-as-user)) "You must provide the :one-user authenticator login in the WAITER_AUTH_RUN_AS_USER environment variable")
-            {:keys [body headers]} (make-kitchen-request waiter-url {} :path "/request-info")
+            {:keys [service-id body headers]} (make-request-with-debug-info {} #(make-kitchen-request waiter-url % :path "/request-info"))
             body-json (json/read-str (str body))]
-        (is (= run-as-user (get-in body-json ["headers" "x-waiter-auth-principal"])))))))
+        (with-service-cleanup
+          service-id
+          (is (= run-as-user (get-in body-json ["headers" "x-waiter-auth-principal"]))))))))
 
 (defn- xpath-query
   "run xpath query on an html file"
@@ -68,14 +70,13 @@
             waiter-saml-auth-redirect-endpoint (xpath-query curl-output-path "string(//*/form/@action)")
             saml-auth-data (xpath-query curl-output-path "string(//*/form/input[@name=\\\"saml-auth-data\\\"]/@value)")
             _ (.delete curl-output-file)
-            port (:port (waiter-settings waiter-url))
-            _ (is (= (str "https://" (string/replace waiter-url (str ":" port) "") "/waiter-auth/saml/auth-redirect") waiter-saml-auth-redirect-endpoint))
+            _ (is (= (str "http://" waiter-url "/waiter-auth/saml/auth-redirect") waiter-saml-auth-redirect-endpoint))
             {:keys [cookies headers status]} (make-request-with-debug-info
-                                       {}
-                                       #(make-request waiter-url "/waiter-auth/saml/auth-redirect"
-                                                      :method :post
-                                                      :headers (assoc % "Content-Type" "application/x-www-form-urlencoded")
-                                                      :body (str "saml-auth-data=" (URLEncoder/encode saml-auth-data))))
+                                               {}
+                                               #(make-request waiter-url "/waiter-auth/saml/auth-redirect"
+                                                              :method :post
+                                                              :headers (assoc % "Content-Type" "application/x-www-form-urlencoded")
+                                                              :body (str "saml-auth-data=" (URLEncoder/encode saml-auth-data))))
             _ (is (= 303 status))
             _ (is (= relay-state (get headers "location")))
             {:keys [body status service-id]} (make-request-with-debug-info
@@ -84,6 +85,8 @@
             _ (is (= 200 status))
 
             ;; don't know how to do the curl commands with qbits.jet.client:
+            ;
+            ; try make-request and pass in url as "waiter-url". set follow redirect to true
             ;
             ;response (async/<!! (qbits.jet.client.http/request http1-client {:follow-redirects? false :url (get headers "location")}))
             ;_ (println (qbits.jet.client.cookies/get-cookies (.getCookieStore http1-client)))
