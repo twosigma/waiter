@@ -130,8 +130,8 @@
 (defn- normalize-x509-certificate-string
   [cert-str]
   (-> cert-str
-      (string/replace "Sat Dec 31 08:34:47 CST 2016" "")
-      (string/replace "Thu Jun 25 09:34:47 CDT 2048" "")))
+      (string/replace #"From: [^,]+" "")
+      (string/replace #"To: [^\]]+" "")))
 
 (deftest test-certificate-x509
   (is (= (normalize-x509-certificate-string (slurp "test-files/saml/x509-certificate-to-string.txt"))
@@ -153,8 +153,8 @@
     <title>Working...</title>
 </head>
 <body>
-<form action=\"original-url\" method=\"post\">
-    <input type=\"hidden\" name=\"saml-auth-data\" value=\"ezpub3Qtb24tb3ItYWZ0ZXIgI2Nsai10aW1lL2RhdGUtdGltZSAiMjAxOS0wNS0xNVQyMTo1Mjo0Ni4wMDBaIiwgOnNhbWwtcHJpbmNpcGFsICJ1c2VyMUBleGFtcGxlLmNvbSJ9\">
+<form action=\"auth-redirect-uri\" method=\"post\">
+    <input type=\"hidden\" name=\"saml-auth-data\" value=\"ezpub3Qtb24tb3ItYWZ0ZXIgI2Nsai10aW1lL2RhdGUtdGltZSAiMjAxOS0wNS0xNVQyMTo1Mjo0Ni4wMDBaIiwgOnJlZGlyZWN0LXVybCAib3JpZ2luYWwtdXJsIiwgOnNhbWwtcHJpbmNpcGFsICJ1c2VyMUBleGFtcGxlLmNvbSJ9\">
     <noscript>
         <p>JavaScript is disabled. Click Continue to continue to your application.</p>
         <input type=\"submit\" value=\"Continue\">
@@ -171,11 +171,11 @@
                                              (merge (handler) {:user user :principal principal}))]
       (testing "has valid saml response"
         (let [request (merge {:form-params {"SAMLResponse" (slurp "test-files/saml/saml-response.txt") "RelayState" "original-url"}} dummy-request)]
-          (is (= processed-saml-response (saml-acs-handler request {:idp-cert (slurp (:idp-cert-uri valid-config)) :password [:salted "password"]})))))
+          (is (= processed-saml-response (saml-acs-handler request {:auth-redirect-uri "auth-redirect-uri" :idp-cert (slurp (:idp-cert-uri valid-config)) :password [:salted "password"]})))))
       (testing "has valid saml response (from xml)"
         (with-redefs [saml-shared/byte-deflate (fn [_] _)]
           (let [request (merge {:form-params {"SAMLResponse" (saml-response-from-xml false) "RelayState" "original-url"}} dummy-request)]
-            (is (= processed-saml-response (saml-acs-handler request {:idp-cert (slurp (:idp-cert-uri valid-config)) :password [:salted "password"]}))))))
+            (is (= processed-saml-response (saml-acs-handler request {:auth-redirect-uri "auth-redirect-uri" :idp-cert (slurp (:idp-cert-uri valid-config)) :password [:salted "password"]}))))))
       (testing "has invalid saml signature"
         (with-redefs [saml-shared/byte-deflate (fn [_] _)]
           (let [request (merge {:form-params {"SAMLResponse" (saml-response-from-xml true) "RelayState" "original-url"}} dummy-request)]

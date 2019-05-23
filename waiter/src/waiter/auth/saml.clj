@@ -28,10 +28,10 @@
             [waiter.middleware :as middleware]
             [waiter.util.utils :as utils]))
 
-(defrecord SamlAuthenticator [idp-cert idp-uri password saml-acs-handler-fn saml-req-factory!]
+(defrecord SamlAuthenticator [auth-redirect-uri idp-cert idp-uri password saml-acs-handler-fn saml-auth-redirect-handler-fn saml-req-factory!]
   auth/Authenticator
   (wrap-auth-handler [_ request-handler]
-    (fn saml-authenticator-handler [{:keys [headers query-string request-method scheme uri] :as request}]
+    (fn saml-authenticator-handler [{:keys [headers query-string request-method uri] :as request}]
       (let [waiter-cookie (auth/get-auth-cookie-value (get headers "cookie"))
             [auth-principal _ :as decoded-auth-cookie] (auth/decode-auth-cookie waiter-cookie password)]
         (cond
@@ -43,7 +43,7 @@
           :else
           (case request-method
             :get (let [saml-request (saml-req-factory!)
-                       relay-state (str (name scheme) "://" (get headers "host") uri (if query-string "?" "") query-string)]
+                       relay-state (str (name (utils/request->scheme request)) "://" (get headers "host") uri (if query-string "?" "") query-string)]
                    (saml-sp/get-idp-redirect idp-uri saml-request relay-state))
             :post (if-let [saml-auth-data (get-in (ring-params/params-request request) [:form-params "saml-auth-data"])]
                     (let [{:keys [not-on-or-after saml-principal]}
@@ -98,7 +98,7 @@
 
 (let [authenticated-redirect-template-fn
       (template/fn
-        [{:keys [redirect-url saml-auth-data]}]
+        [{:keys [auth-redirect-uri saml-auth-data]}]
         (slurp (io/resource "web/authenticated-redirect.html")))]
   (defn render-authenticated-redirect-template
     "Render the authenticated redirect html page."
@@ -107,7 +107,7 @@
 
 (defn saml-acs-handler
   "Endpoint for POSTs to Waiter with IdP-signed credentials. If signature is valid, return principal and original request."
-  [request {:keys [idp-cert password]}]
+  [request {:keys [auth-redirect-uri idp-cert password]}]
   {:pre [(not-empty idp-cert)
          (not-empty password)]}
   (let [{:keys [form-params]} (ring-params/params-request request)
@@ -139,10 +139,39 @@
         saml-principal (or upn name-id-value)
         {:keys [authorization/principal authorization/user]} (auth/auth-params-map saml-principal)
         saml-principal' (if (and email (= principal user)) email saml-principal)
-        saml-auth-data (String. (b64/encode (nippy/freeze {:not-on-or-after not-on-or-after :saml-principal saml-principal'}
+        saml-auth-data (String. (b64/encode (nippy/freeze {:not-on-or-after not-on-or-after :redirect-url relay-state :saml-principal saml-principal'}
                                                           {:password password :compressor nil})))]
-    {:body (render-authenticated-redirect-template {:redirect-url relay-state :saml-auth-data saml-auth-data})
+    {:body (render-authenticated-redirect-template {:auth-redirect-uri auth-redirect-uri :saml-auth-data saml-auth-data})
      :status 200}))
+
+(defn saml-auth-redirect-handler
+  "Endpoint for POSTs to Waiter with IdP-signed credentials. If signature is valid, return principal and original request."
+  [request {:keys [password]}]
+  {:pre [(not-empty password)]}
+  (if-let [saml-auth-data (get-in (ring-params/params-request request) [:form-params "saml-auth-data"])]
+    (let [{:keys [not-on-or-after redirect-url saml-principal]}
+          (try
+            (nippy/thaw (b64/decode (.getBytes saml-auth-data))
+                        {:password password :v1-compatibility? false :compressor nil})
+            (catch Exception e
+              (throw (ex-info "Could not parse saml-auth-data." {:status 400
+                                                                 :saml-auth-data saml-auth-data
+                                                                 :inner-exception e}))))
+          t-now (t/now)
+          _ (when-not (t/before? t-now not-on-or-after)
+              (throw (ex-info "Could not authenticate user. Expired SAML assertion."
+                              {:status 400
+                               :saml-assertion-not-on-or-after not-on-or-after
+                               :t-now t-now})))
+          age-in-seconds (t/in-seconds (t/interval t-now (t/min-date (t/plus t-now (t/days 1)) not-on-or-after)))
+          {:keys [authorization/principal authorization/user] :as auth-params-map}
+          (auth/auth-params-map saml-principal)]
+      (auth/handle-request-auth (constantly {:status 303
+                                             :headers {"Location" redirect-url}
+                                             :body ""})
+                                request principal auth-params-map password age-in-seconds))
+    (throw (ex-info "Missing saml-auth-data from SAML authenticated redirect message"
+                    {:status 400}))))
 
 (defn saml-authenticator
   "Factory function for creating SAML authenticator middleware"
@@ -152,6 +181,7 @@
          (not-empty hostname)
          (not-empty password)]}
   (let [acs-uri (str "https://" hostname "/waiter-auth/saml/acs")
+        auth-redirect-uri (str "https://" hostname "/waiter-auth/saml/auth-redirect")
         idp-cert (if idp-cert-resource-path
                    (slurp (clojure.java.io/resource idp-cert-resource-path))
                    (slurp idp-cert-uri))
@@ -162,4 +192,4 @@
                                                           saml-routes/saml-format
                                                           "waiter"
                                                           acs-uri)]
-    (->SamlAuthenticator idp-cert idp-uri password saml-acs-handler saml-req-factory!)))
+    (->SamlAuthenticator auth-redirect-uri idp-cert idp-uri password saml-acs-handler saml-auth-redirect-handler saml-req-factory!)))

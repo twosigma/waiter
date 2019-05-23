@@ -19,7 +19,7 @@
             [waiter.auth.saml :as saml]
             [waiter.util.utils :as utils]))
 
-(defrecord CompositeAuthenticator [authenticators saml-acs-handler-fn]
+(defrecord CompositeAuthenticator [authenticators saml-acs-handler-fn saml-auth-redirect-handler-fn]
   auth/Authenticator
   (wrap-auth-handler [_ request-handler]
     (let [handlers (pc/map-vals #(auth/wrap-auth-handler % request-handler) authenticators)]
@@ -47,4 +47,5 @@
                                  (keys authenticator-config)))
         saml-authenticator (:saml authenticators)]
     (->CompositeAuthenticator (assoc authenticators :default (default-kind authenticators))
-                            (fn [request _] (saml/saml-acs-handler request saml-authenticator)))))
+                              (fn [request _] (saml/saml-acs-handler request saml-authenticator))
+                              (fn [request _] (saml/saml-auth-redirect-handler request saml-authenticator)))))
