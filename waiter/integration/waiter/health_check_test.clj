@@ -31,7 +31,9 @@
                (get-in ping-response [:headers :x-kitchen-protocol-version]))
             (str ping-response))
         (is (= "get" (get-in ping-response [:headers :x-kitchen-request-method])) (str ping-response))
-        (is (= {:exists? true :healthy? true :service-id service-id :status "Running"} service-state)))
+        (is (or (= {:exists? true :healthy? true :service-id service-id :status "Running"} service-state)
+                (= {:exists? true :healthy? false :service-id service-id :status "Starting"} service-state))
+            (str service-state)))
       (do
         (is (= "timed-out" (get ping-response :result)) (str ping-response))
         (is (= {:exists? true :healthy? false :service-id service-id :status "Starting"} service-state))))))
