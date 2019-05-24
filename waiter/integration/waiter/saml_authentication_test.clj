@@ -3,8 +3,8 @@
             [clojure.java.shell :as shell]
             [clojure.string :as string]
             [clojure.test :refer :all]
-            [waiter.util.client-tools :refer :all]
-            [waiter.util.utils :as utils])
+            [reaver :refer [parse extract select text attr]]
+            [waiter.util.client-tools :refer :all])
   (:import (java.net URLEncoder)))
 
 (deftest ^:parallel ^:integration-fast test-default-composite-authenticator
@@ -18,15 +18,6 @@
           service-id
           (is (= run-as-user (get-in body-json ["headers" "x-waiter-auth-principal"]))))))))
 
-(defn- xpath-query
-  "run xpath query on an html file"
-  [html-file xpath-query]
-  (string/trim-newline (:out (shell/sh "bash" "-c" (str "cat " html-file
-                                                        " | python -c \"import sys, requests;\\\n"
-                                                        "from lxml import html;\\\n"
-                                                        "tree = html.fromstring(sys.stdin.read());\\\n"
-                                                        "print tree.xpath('" xpath-query "')\"")))))
-
 (defn- perform-saml-authentication
   "Default implementation of performing authentication wtih an identity provider service. Return map of saml-response and relay-state"
   [saml-redirect-location waiter-url]
@@ -36,32 +27,34 @@
         curl-output-path (.getAbsolutePath curl-output-file)
         curl-verbose-info (:err (shell/sh "bash" "-c" (str "curl '" saml-redirect-location "' -k -c " cookie-jar-path " -L -v > " curl-output-path)))
         login-form-location (second (re-matches #"(?ms).*Location: ([^?]+).*" curl-verbose-info))
-        login-form-action (xpath-query curl-output-path "string(//*/form/@action)")
-        auth-state (xpath-query curl-output-path "string(//*/form/input[@name=\\\"AuthState\\\"]/@value)")
+        ;_ (println (.attr (.first (select (parse (slurp curl-output-path)) "form")) "action"))
+        {:keys [login-form-action auth-state]}
+        (extract (parse (slurp curl-output-path)) [:login-form-action :auth-state]
+                 "form" (attr :action)
+                 "form input[name=AuthState]" (attr :value))
         _ (is (= 0 (:exit (shell/sh "bash" "-c" (str "curl '" (str login-form-location login-form-action) "' -k -b " cookie-jar-path " -F 'AuthState=" auth-state "' -F 'username=user2' -F 'password=user2pass' > " curl-output-path)))))
-        waiter-saml-acs-endpoint (xpath-query curl-output-path "string(//*/form/@action)")
-        saml-response (xpath-query curl-output-path "string(//*/form/input[@name=\\\"SAMLResponse\\\"]/@value)")
-        relay-state (xpath-query curl-output-path "string(//*/form/input[@name=\\\"RelayState\\\"]/@value)")
-        ;_ (is (= (str "http://" waiter-url "/request-info") relay-state))
+        {:keys [waiter-saml-acs-endpoint saml-response relay-state]}
+        (extract (parse (slurp curl-output-path)) [:waiter-saml-acs-endpoint :saml-response :relay-state]
+                 "form" (attr :action)
+                 "form input[name=SAMLResponse]" (attr :value)
+                 "form input[name=RelayState]" (attr :value))
         _ (.delete curl-output-file)
         _ (.delete cookie-jar-file)]
     {:relay-state relay-state :saml-response saml-response :waiter-saml-acs-endpoint waiter-saml-acs-endpoint}))
 
 (defn- perform-saml-authentication-kerberos
-  "Default implementation of performing authentication wtih an identity provider service. Return map of saml-response and relay-state"
+  "Implementation of performing authentication wtih an identity provider service using kerberos. Return map of saml-response and relay-state"
   [saml-redirect-location waiter-url]
   (let [cookie-jar-file (java.io.File/createTempFile "cookie-jar" ".txt")
         cookie-jar-path (.getAbsolutePath cookie-jar-file)
         curl-output-file (java.io.File/createTempFile "curl-output" ".txt")
         curl-output-path (.getAbsolutePath curl-output-file)
-        curl-verbose-info (:err (shell/sh "bash" "-c" (str "curl '" saml-redirect-location "' -k -c " cookie-jar-path " -L -v > " curl-output-path)))
-        login-form-location (second (re-matches #"(?ms).*Location: ([^?]+).*" curl-verbose-info))
-        login-form-action (xpath-query curl-output-path "string(//*/form/@action)")
-        auth-state (xpath-query curl-output-path "string(//*/form/input[@name=\\\"AuthState\\\"]/@value)")
-        _ (is (= 0 (:exit (shell/sh "bash" "-c" (str "curl '" (str login-form-location login-form-action) "' -k -b " cookie-jar-path " -F 'AuthState=" auth-state "' -F 'username=user2' -F 'password=user2pass' > " curl-output-path)))))
-        waiter-saml-acs-endpoint (xpath-query curl-output-path "string(//*/form/@action)")
-        saml-response (xpath-query curl-output-path "string(//*/form/input[@name=\\\"SAMLResponse\\\"]/@value)")
-        relay-state (xpath-query curl-output-path "string(//*/form/input[@name=\\\"RelayState\\\"]/@value)")
+        _ (is (= 0 (:exit (shell/sh "bash" "-c" (str "curl -u: --negotiate '" saml-redirect-location "' -k -c " cookie-jar-path " -L -v > " curl-output-path)))))
+        {:keys [waiter-saml-acs-endpoint saml-response relay-state]}
+        (extract (parse (slurp curl-output-path)) [:waiter-saml-acs-endpoint :saml-response :relay-state]
+                 "form" (attr :action)
+                 "form input[name=SAMLResponse]" (attr :value)
+                 "form input[name=RelayState]" (attr :value))
         ;_ (is (= (str "http://" waiter-url "/request-info") relay-state))
         _ (.delete curl-output-file)
         _ (.delete cookie-jar-file)]
@@ -90,8 +83,10 @@
               curl-output-file (java.io.File/createTempFile "curl-output" ".txt")
               curl-output-path (.getAbsolutePath curl-output-file)
               _ (is (= 0 (:exit (shell/sh "bash" "-c" (str "curl '" waiter-saml-acs-endpoint "' -k -d 'SAMLResponse=" (URLEncoder/encode saml-response) "&RelayState=" (URLEncoder/encode relay-state) "' -H 'Content-Type: application/x-www-form-urlencoded' -H 'Expect:' > " curl-output-path)))))
-              waiter-saml-auth-redirect-endpoint (xpath-query curl-output-path "string(//*/form/@action)")
-              saml-auth-data (xpath-query curl-output-path "string(//*/form/input[@name=\\\"saml-auth-data\\\"]/@value)")
+              {:keys [waiter-saml-auth-redirect-endpoint saml-auth-data]}
+              (extract (parse (slurp curl-output-path)) [:waiter-saml-auth-redirect-endpoint :saml-auth-data]
+                       "form" (attr :action)
+                       "form input[name=saml-auth-data]" (attr :value))
               _ (.delete curl-output-file)
               _ (is (= (str "http://" waiter-url "/waiter-auth/saml/auth-redirect") waiter-saml-auth-redirect-endpoint))
               {:keys [cookies headers status]} (make-request-with-debug-info

@@ -30,7 +30,8 @@
                    :dev :dev
                    :perf (every-pred :perf (complement :explicit))}
 
-  :dependencies [[bidi "2.1.5"
+  :dependencies [[reaver "0.1.2"]
+                 [bidi "2.1.5"
                   :exclusions [prismatic/schema ring/ring-core]]
                  [twosigma/courier "1.2.1"
                   :exclusions [com.google.guava/guava io.grpc/grpc-core]
