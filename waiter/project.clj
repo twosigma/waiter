@@ -57,6 +57,7 @@
                   :exclusions [org.clojure/clojure]]
                  [fullcontact/full.async "1.0.0"
                   :exclusions [org.clojure/clojure org.clojure/core.async]]
+                 [hiccup/hiccup "1.0.5"]
                  [io.dropwizard.metrics/metrics-graphite "3.1.1"
                   :exclusions [org.slf4j/slf4j-api]]
                  [jarohen/chime "0.2.2"
@@ -65,7 +66,6 @@
                    clj-time/clj-time
                    org.clojure/core.async]]
                  [joda-time "2.10.1"]
-                 [stas_ghost/saml20-clj "0.1.13"]
                  [twosigma/metrics-clojure "2.6.0-20180124_201441-g72cee16"
                   :exclusions [org.clojure/clojure io.netty/netty org.slf4j/slf4j-api]]
                  [metrics-clojure-jvm "2.10.0"
@@ -99,6 +99,7 @@
                  ;; use maven to download this jar so we can set up the boot classpath
                  [org.mortbay.jetty.alpn/alpn-boot "8.1.13.v20181017"
                   :scope "provided"]
+                 [org.opensaml/opensaml "2.6.4"]
                  [org.slf4j/slf4j-log4j12 "1.7.25"
                   :exclusions [log4j]]
                  [potemkin "0.4.5"]

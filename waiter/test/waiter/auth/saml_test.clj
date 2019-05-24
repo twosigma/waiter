@@ -18,7 +18,6 @@
             [clojure.data.codec.base64 :as b64]
             [clojure.string :as string]
             [clojure.test :refer :all]
-            [saml20-clj.shared :as saml-shared]
             [taoensso.nippy :as nippy]
             [waiter.auth.authentication :as auth]
             [waiter.auth.saml :refer :all]
@@ -141,7 +140,7 @@
 
 (defn- saml-response-from-xml
   [change-user?]
-  (saml-shared/str->deflate->base64
+  (str->deflate->base64
     (string/replace (slurp "test-files/saml/saml-response.xml")
                     "user1@example.com"
                     (str (if change-user? "root" "user1") "@example.com"))))
@@ -149,7 +148,6 @@
   (utils/map->base-64-string {:host "host" :request-url "request-url" :scheme "scheme"} [:salted "password"]))
 
 (deftest test-saml-acs-handler
-  (org.opensaml.DefaultBootstrap/bootstrap)
   (let [saml-authenticator (dummy-saml-authenticator)
         test-time (clj-time.format/parse "2019-05-14")
         processed-saml-response {:body "<!doctype html>
@@ -159,10 +157,10 @@
 </head>
 <body>
 <form action=\"scheme://host/waiter-auth/saml/auth-redirect\" method=\"post\">
-    <input type=\"hidden\" name=\"saml-auth-data\" value=\"ezpub3Qtb24tb3ItYWZ0ZXIgI2Nsai10aW1lL2RhdGUtdGltZSAiMjAxOS0wNS0xNVQyMTo1Mjo0Ni4wMDBaIiwgOnJlZGlyZWN0LXVybCAicmVxdWVzdC11cmwiLCA6c2FtbC1wcmluY2lwYWwgInVzZXIxQGV4YW1wbGUuY29tIn0=\">
+    <input type=\"hidden\" name=\"saml-auth-data\" value=\"ezpub3Qtb24tb3ItYWZ0ZXIgI2Nsai10aW1lL2RhdGUtdGltZSAiMjAxOS0wNS0xNVQyMTo1Mjo0Ni4wMDBaIiwgOnJlZGlyZWN0LXVybCAicmVxdWVzdC11cmwiLCA6c2FtbC1wcmluY2lwYWwgInVzZXIxQGV4YW1wbGUuY29tIn0=\"/>
     <noscript>
         <p>JavaScript is disabled. Click Continue to continue to your application.</p>
-        <input type=\"submit\" value=\"Continue\">
+        <input type=\"submit\" value=\"Continue\"/>
     </noscript>
 </form>
 <script language=\"JavaScript\">window.setTimeout('document.forms[0].submit()', 0);</script>
@@ -178,15 +176,15 @@
         (let [request (merge {:form-params {"SAMLResponse" (slurp "test-files/saml/saml-response.txt") "RelayState" relay-state-string}} dummy-request)]
           (is (= processed-saml-response (saml-acs-handler request saml-authenticator)))))
       (testing "has valid saml response (from xml)"
-        (with-redefs [saml-shared/byte-deflate (fn [_] _)]
+        (with-redefs [byte-deflate (fn [_] _)]
           (let [request (merge {:form-params {"SAMLResponse" (saml-response-from-xml false) "RelayState" relay-state-string}} dummy-request)]
             (is (= processed-saml-response (saml-acs-handler request saml-authenticator))))))
       (testing "has invalid saml signature"
-        (with-redefs [saml-shared/byte-deflate (fn [_] _)]
+        (with-redefs [byte-deflate (fn [_] _)]
           (let [request (merge {:form-params {"SAMLResponse" (saml-response-from-xml true) "RelayState" relay-state-string}} dummy-request)]
             (is (thrown-with-msg? Exception #"Could not authenticate user. Invalid SAML assertion signature."
-                                  (saml-acs-handler request {:idp-cert (slurp (:idp-cert-uri valid-config)) :password [:salted "password"]}))))))))
-  (testing "has expired saml response"
-    (let [request (merge {:form-params {"SAMLResponse" (slurp "test-files/saml/saml-response.txt") "RelayState" relay-state-string}} dummy-request)]
-      (is (thrown-with-msg? Exception #"Could not authenticate user. Expired SAML assertion."
-                            (saml-acs-handler request {:idp-cert (slurp (:idp-cert-uri valid-config)) :password [:salted "password"]}))))))
+                                  (saml-acs-handler request {:idp-cert (slurp (:idp-cert-uri valid-config)) :password [:salted "password"]})))))))
+    (testing "has expired saml response"
+      (let [request (merge {:form-params {"SAMLResponse" (slurp "test-files/saml/saml-response.txt") "RelayState" relay-state-string}} dummy-request)]
+        (is (thrown-with-msg? Exception #"Could not authenticate user. Expired SAML assertion."
+                              (saml-acs-handler request saml-authenticator)))))))

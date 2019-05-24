@@ -14,19 +14,81 @@
 ;; limitations under the License.
 ;;
 (ns waiter.auth.saml
-  (:require [clj-time.core :as t]
+  (:require [clj-time.coerce :as tc]
+            [clj-time.core :as t]
+            [clj-time.format :as f]
+            [clojure.data.codec.base64 :as b64]
             [clojure.java.io :as io]
             [clojure.tools.logging :as log]
             [comb.template :as template]
+            [hiccup.core :as hiccup]
+            [hiccup.page]
             [ring.middleware.params :as ring-params]
-            [saml20-clj.routes :as saml-routes]
-            [saml20-clj.shared :as saml-shared]
-            [saml20-clj.sp :as saml-sp]
+            [ring.util.codec :refer [form-encode url-encode base64-encode]]
+            [ring.util.response :refer [redirect]]
             [waiter.auth.authentication :as auth]
             [waiter.middleware :as middleware]
-            [waiter.util.utils :as utils]))
+            [waiter.util.utils :as utils])
+  (:import [javax.xml.parsers DocumentBuilderFactory]))
 
-(defrecord SamlAuthenticator [auth-redirect-endpoint idp-cert idp-uri password saml-acs-handler-fn saml-auth-redirect-handler-fn saml-req-factory!]
+(def charset-format (java.nio.charset.Charset/forName "UTF-8"))
+
+(defn read-to-end
+  [stream]
+  (let [sb (StringBuilder.)]
+    (with-open [reader (-> stream
+                           java.io.InputStreamReader.
+                           java.io.BufferedReader.)]
+      (loop [c (.read reader)]
+        (if (neg? c)
+          (str sb)
+          (do
+            (.append sb (char c))
+            (recur (.read reader))))))))
+
+(defn str->bytes
+  [some-string]
+  (.getBytes some-string charset-format))
+
+(defn bytes->str
+  [some-bytes]
+  (String. some-bytes charset-format))
+
+(defn byte-deflate
+  [str-bytes]
+  (let [out (java.io.ByteArrayOutputStream.)
+        deflater (java.util.zip.DeflaterOutputStream.
+                   out
+                   (java.util.zip.Deflater. -1 true) 1024)]
+    (.write deflater str-bytes)
+    (.close deflater)
+    (.toByteArray out)))
+
+(defn str->deflate->base64
+  [deflatable-str]
+  (let [byte-str (str->bytes deflatable-str)]
+    (bytes->str (b64/encode (byte-deflate byte-str)))))
+
+(defn base64->str
+  [string]
+  (let [byte-str (str->bytes string)]
+    (bytes->str (b64/decode byte-str))))
+
+(defn uri-query-str
+  [clean-hash]
+  (form-encode clean-hash))
+
+(defn get-idp-redirect
+  "Return Ring response for HTTP 302 redirect."
+  [idp-url saml-request relay-state]
+  (redirect
+    (str idp-url
+         "?"
+         (let [saml-request (str->deflate->base64 saml-request)]
+           (uri-query-str
+             {:SAMLRequest saml-request :RelayState relay-state})))))
+
+(defrecord SamlAuthenticator [auth-redirect-endpoint idp-cert idp-uri password saml-acs-handler-fn saml-auth-redirect-handler-fn saml-request-factory]
   auth/Authenticator
   (wrap-auth-handler [_ request-handler]
     (fn saml-authenticator-handler [{:keys [headers query-string request-method uri] :as request}]
@@ -40,12 +102,12 @@
             (request-handler' request))
           :else
           (case request-method
-            :get (let [saml-request (saml-req-factory!)
+            :get (let [saml-request (saml-request-factory)
                        scheme (name (utils/request->scheme request))
                        host (get headers "host")
                        request-url (str scheme "://" host uri (if query-string "?" "") query-string)
                        relay-state (utils/map->base-64-string {:host host :request-url request-url :scheme scheme} password)]
-                   (saml-sp/get-idp-redirect idp-uri saml-request relay-state))
+                   (get-idp-redirect idp-uri saml-request relay-state))
             (throw (ex-info "Invalid request method for use with SAML authentication. Only GET supported."
                             {:log-level :info :request-method request-method :status 405}))))))))
 
@@ -56,11 +118,16 @@
         bais (io/input-stream (.getBytes x509-string))]
     (.generateCertificate fty bais)))
 
+(defn jcert->public-key
+  "Extracts a public key object from a java cert object."
+  [java-cert-obj]
+  (.getPublicKey java-cert-obj))
+
 (defn validate-saml-assertion-signature
   "Checks that the SAML assertion has a valid signature."
   [assertion idp-cert]
   (if-let [signature (.getSignature assertion)]
-    (let [idp-pubkey (-> idp-cert certificate-x509 saml-shared/jcert->public-key)
+    (let [idp-pubkey (-> idp-cert certificate-x509 jcert->public-key)
           public-creds (doto (new org.opensaml.xml.security.x509.BasicX509Credential)
                          (.setPublicKey idp-pubkey))
           validator (new org.opensaml.xml.signature.SignatureValidator public-creds)]
@@ -72,6 +139,93 @@
           false)))
     false ;; if not signature is present
     ))
+
+(defn new-doc-builder
+  []
+  (let [doc (DocumentBuilderFactory/newInstance)]
+    (.setNamespaceAware doc true)
+    (.setFeature doc "http://xml.org/sax/features/external-general-entities" false)
+    (.setFeature doc "http://xml.org/sax/features/external-parameter-entities" false)
+    (.setFeature doc "http://apache.org/xml/features/nonvalidating/load-external-dtd" false)
+    (.setAttribute doc "http://www.oracle.com/xml/jaxp/properties/entityExpansionLimit" "2000")
+    (.setAttribute doc "http://www.oracle.com/xml/jaxp/properties/totalEntitySizeLimit" "100000")
+    (.setAttribute doc "http://www.oracle.com/xml/jaxp/properties/maxParameterEntitySizeLimit" "10000")
+    (.setAttribute doc "http://www.oracle.com/xml/jaxp/properties/maxElementDepth" "100")
+    (.setExpandEntityReferences doc false)
+    (.newDocumentBuilder doc)))
+
+(defn str->inputstream
+  "Unravels a string into an input stream so we can work with Java constructs."
+  [unravel]
+  (java.io.ByteArrayInputStream. (.getBytes unravel charset-format)))
+
+(defn str->xmldoc
+  [parsable-str]
+  (let [document (new-doc-builder)]
+    (.parse document (str->inputstream parsable-str))))
+
+(defn xml-string->saml-resp
+  "Parses a SAML response (XML string) from IdP and returns the corresponding (Open)SAML Response object"
+  [xml-string]
+  (let [xmldoc (.getDocumentElement (str->xmldoc xml-string))
+        unmarshallerFactory (org.opensaml.Configuration/getUnmarshallerFactory)
+        unmarshaller (.getUnmarshaller unmarshallerFactory xmldoc)
+        saml-resp (.unmarshall unmarshaller xmldoc)]
+    saml-resp))
+
+;; https://www.purdue.edu/apps/account/docs/Shibboleth/Shibboleth_information.jsp
+;;  Or
+;; https://wiki.library.ucsf.edu/display/IAM/EDS+Attributes
+(def saml2-attr->name
+  (let [names {"urn:oid:0.9.2342.19200300.100.1.1" "uid"
+               "urn:oid:0.9.2342.19200300.100.1.3" "mail"
+               "urn:oid:2.16.840.1.113730.3.1.241" "displayName"
+               "urn:oid:2.5.4.3" "cn"
+               "urn:oid:2.5.4.4" "sn"
+               "urn:oid:2.5.4.12" "title"
+               "urn:oid:2.5.4.20" "phone"
+               "urn:oid:2.5.4.42" "givenName"
+               "urn:oid:2.5.6.8" "organizationalRole"
+               "urn:oid:2.16.840.1.113730.3.1.3" "employeeNumber"
+               "urn:oid:2.16.840.1.113730.3.1.4" "employeeType"
+               "urn:oid:1.3.6.1.4.1.5923.1.1.1.1" "eduPersonAffiliation"
+               "urn:oid:1.3.6.1.4.1.5923.1.1.1.2" "eduPersonNickname"
+               "urn:oid:1.3.6.1.4.1.5923.1.1.1.6" "eduPersonPrincipalName"
+               "urn:oid:1.3.6.1.4.1.5923.1.1.1.9" "eduPersonScopedAffiliation"
+               "urn:oid:1.3.6.1.4.1.5923.1.1.1.10" "eduPersonTargetedID"
+               "urn:oid:1.3.6.1.4.1.5923.1.6.1.1" "eduCourseOffering"}]
+    (fn [attr-oid]
+      (get names attr-oid attr-oid))))
+
+;; http://kevnls.blogspot.gr/2009/07/processing-saml-in-java-using-opensaml.html
+;; http://stackoverflow.com/questions/9422545/decrypting-encrypted-assertion-using-saml-2-0-in-java-using-opensaml
+(defn parse-saml-assertion
+  "Returns the attributes and the 'audiences' for the given SAML assertion"
+  [assertion]
+  (let [statements (.getAttributeStatements assertion)
+        subject (.getSubject assertion)
+        subject-confirmation-data (.getSubjectConfirmationData
+                                    (first (.getSubjectConfirmations subject)))
+        name-id (.getNameID subject)
+        attributes (mapcat #(.getAttributes %) statements)
+        attrs (apply merge
+                     (map (fn [a] {(saml2-attr->name (.getName a)) ;; Or (.getFriendlyName a) ??
+                                   (map #(-> % (.getDOM) (.getTextContent))
+                                        (.getAttributeValues a))})
+                          attributes))
+        conditions (.getConditions assertion)
+        audiences (mapcat #(let [audiences (.getAudiences %)]
+                             (map (fn [a] (.getAudienceURI a)) audiences))
+                          (.getAudienceRestrictions conditions))]
+    {:attrs attrs :audiences audiences
+     :name-id
+     {:value (when name-id (.getValue name-id))
+      :format (when name-id (.getFormat name-id))}
+     :confirmation
+     {:in-response-to (.getInResponseTo subject-confirmation-data)
+      :not-before (tc/to-timestamp (.getNotBefore subject-confirmation-data))
+      :not-on-or-after (tc/to-timestamp (.getNotOnOrAfter subject-confirmation-data))
+      :recipient (.getRecipient subject-confirmation-data)}}))
 
 (let [authenticated-redirect-template-fn
       (template/fn
@@ -95,8 +249,8 @@
                                                                   :saml-relay-state (get form-params "RelayState")
                                                                   :inner-exception e}))))
         saml-response (-> form-params (get "SAMLResponse")
-                          (saml-shared/base64->inflate->str)
-                          (saml-sp/xml-string->saml-resp))
+                          (base64->str)
+                          (xml-string->saml-resp))
         assertions (.getAssertions saml-response)
         _ (when-not (= 1 (count assertions))
             (throw (ex-info (str "Could not authenticate user. Invalid SAML response. "
@@ -106,7 +260,7 @@
         _ (when-not (validate-saml-assertion-signature assertion idp-cert)
             (throw (ex-info "Could not authenticate user. Invalid SAML assertion signature."
                             {:status 400})))
-        {:keys [attrs confirmation name-id]} (saml-sp/parse-saml-assertion assertion)
+        {:keys [attrs confirmation name-id]} (parse-saml-assertion assertion)
         not-on-or-after (clj-time.coerce/from-sql-time (:not-on-or-after confirmation))
         t-now (t/now)
         _ (when-not (t/before? t-now not-on-or-after)
@@ -156,6 +310,46 @@
     (throw (ex-info "Missing saml-auth-data from SAML authenticated redirect message"
                     {:status 400}))))
 
+(defn create-request
+  "Return XML elements that represent a SAML 2.0 auth request."
+  [time-issued saml-service-name saml-id acs-url idp-uri]
+  (str
+    (hiccup.page/xml-declaration "UTF-8")
+    (hiccup/html
+      [:samlp:AuthnRequest
+       {:xmlns:samlp "urn:oasis:names:tc:SAML:2.0:protocol"
+        :ID saml-id
+        :Version "2.0"
+        :IssueInstant time-issued
+        :ProtocolBinding "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
+        :ProviderName saml-service-name
+        :IsPassive false
+        :Destination idp-uri
+        :AssertionConsumerServiceURL acs-url}
+       [:saml:Issuer
+        {:xmlns:saml "urn:oasis:names:tc:SAML:2.0:assertion"}
+        saml-service-name]])))
+
+(def instant-format (f/formatters :date-time-no-ms))
+
+(defn make-issue-instant
+  "Converts a date-time to a SAML 2.0 time string."
+  []
+  (f/unparse instant-format (t/now)))
+
+(let [opensaml-bootstrapped-atom (atom false)]
+  (defn create-request-factory!
+    "Creates new requests for a particular service, format, and acs-url."
+    [idp-uri saml-service-name acs-url]
+    ;;; Bootstrap opensaml when we create a request factory.
+    (when (compare-and-set! opensaml-bootstrapped-atom false true)
+      (org.opensaml.DefaultBootstrap/bootstrap))
+    #(create-request (make-issue-instant)
+                     saml-service-name
+                     (str "WAITER-" (utils/make-uuid))
+                     acs-url
+                     idp-uri)))
+
 (defn saml-authenticator
   "Factory function for creating SAML authenticator middleware"
   [{:keys [idp-cert-resource-path idp-cert-uri idp-uri hostname password]}]
@@ -168,11 +362,7 @@
         idp-cert (if idp-cert-resource-path
                    (slurp (clojure.java.io/resource idp-cert-resource-path))
                    (slurp idp-cert-uri))
-        saml-req-factory! (saml-sp/create-request-factory #(str "WAITER-" (utils/make-uuid))
-                                                          (constantly nil)
-                                                          nil
-                                                          idp-uri
-                                                          saml-routes/saml-format
-                                                          "waiter"
-                                                          acs-uri)]
-    (->SamlAuthenticator auth-redirect-endpoint idp-cert idp-uri password saml-acs-handler saml-auth-redirect-handler saml-req-factory!)))
+        saml-request-factory (create-request-factory! idp-uri
+                                                  "waiter"
+                                                  acs-uri)]
+    (->SamlAuthenticator auth-redirect-endpoint idp-cert idp-uri password saml-acs-handler saml-auth-redirect-handler saml-request-factory)))
