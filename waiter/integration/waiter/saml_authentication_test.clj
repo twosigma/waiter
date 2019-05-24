@@ -64,7 +64,7 @@
   (testing-using-waiter-url
     (let [authenticator-kind (get-in (waiter-settings waiter-url) [:authenticator-config :kind])]
       (when (= "composite" authenticator-kind)
-        (let [auth-principal (or (System/getenv "SAML_AUTH_USER") "user2")
+        (let [auth-principal (or (System/getenv "SAML_AUTH_USER") (retrieve-username))
               token (rand-name)
               {:keys [status]} (post-token waiter-url (-> (kitchen-params)
                                                           (assoc
