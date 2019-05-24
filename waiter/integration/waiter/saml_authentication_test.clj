@@ -41,7 +41,7 @@
         waiter-saml-acs-endpoint (xpath-query curl-output-path "string(//*/form/@action)")
         saml-response (xpath-query curl-output-path "string(//*/form/input[@name=\\\"SAMLResponse\\\"]/@value)")
         relay-state (xpath-query curl-output-path "string(//*/form/input[@name=\\\"RelayState\\\"]/@value)")
-        _ (is (= (str "http://" waiter-url "/request-info") relay-state))
+        ;_ (is (= (str "http://" waiter-url "/request-info") relay-state))
         _ (.delete curl-output-file)
         _ (.delete cookie-jar-file)]
     {:relay-state relay-state :saml-response saml-response :waiter-saml-acs-endpoint waiter-saml-acs-endpoint}))
@@ -63,7 +63,7 @@
             _ (is (= 302 status))
             saml-redirect-location (get headers "location")
             {:keys [relay-state saml-response waiter-saml-acs-endpoint]} (perform-saml-authentication saml-redirect-location waiter-url)
-            _ (is (= (str "http://" waiter-url "/request-info") relay-state))
+            ;_ (is (= (str "http://" waiter-url "/request-info") relay-state))
             curl-output-file (java.io.File/createTempFile "curl-output" ".txt")
             curl-output-path (.getAbsolutePath curl-output-file)
             _ (is (= 0 (:exit (shell/sh "bash" "-c" (str "curl '" waiter-saml-acs-endpoint "' -k -d 'SAMLResponse=" (URLEncoder/encode saml-response) "&RelayState=" (URLEncoder/encode relay-state) "' -H 'Content-Type: application/x-www-form-urlencoded' -H 'Expect:' > " curl-output-path)))))
@@ -78,7 +78,7 @@
                                                               :headers (assoc % "Content-Type" "application/x-www-form-urlencoded")
                                                               :body (str "saml-auth-data=" (URLEncoder/encode saml-auth-data))))
             _ (is (= 303 status))
-            _ (is (= relay-state (get headers "location")))
+            _ (is (= (str "http://" waiter-url "/request-info") (get headers "location")))
             {:keys [body status service-id]} (make-request-with-debug-info
                                                {:x-waiter-token token}
                                                #(make-request waiter-url "/request-info" :headers % :cookies cookies))
