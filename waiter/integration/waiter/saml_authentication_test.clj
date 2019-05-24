@@ -1,9 +1,10 @@
 (ns waiter.saml-authentication-test
   (:require [clojure.data.json :as json]
+            [clojure.java.shell :as shell]
             [clojure.string :as string]
             [clojure.test :refer :all]
             [waiter.util.client-tools :refer :all]
-            [clojure.java.shell :as shell])
+            [waiter.util.utils :as utils])
   (:import (java.net URLEncoder)))
 
 (deftest ^:parallel ^:integration-fast test-default-composite-authenticator
@@ -62,7 +63,8 @@
             {:keys [headers status]} (make-request-with-debug-info {:x-waiter-token token} #(make-request waiter-url "/request-info" :headers %))
             _ (is (= 302 status))
             saml-redirect-location (get headers "location")
-            {:keys [relay-state saml-response waiter-saml-acs-endpoint]} (perform-saml-authentication saml-redirect-location waiter-url)
+            saml-authentication-fn (or (some-> (System/getenv "SAML_PERFORM_AUTHENTICATION_FN") (symbol) (utils/resolve-symbol)) perform-saml-authentication)
+            {:keys [relay-state saml-response waiter-saml-acs-endpoint]} (saml-authentication-fn saml-redirect-location waiter-url)
             ;_ (is (= (str "http://" waiter-url "/request-info") relay-state))
             curl-output-file (java.io.File/createTempFile "curl-output" ".txt")
             curl-output-path (.getAbsolutePath curl-output-file)
