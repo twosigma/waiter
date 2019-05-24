@@ -9,14 +9,15 @@
 
 (deftest ^:parallel ^:integration-fast test-default-composite-authenticator
   (testing-using-waiter-url
-    (when (using-shell? waiter-url)
-      (let [run-as-user (System/getenv "WAITER_AUTH_RUN_AS_USER")
-            _ (is (not (string/blank? run-as-user)) "You must provide the :one-user authenticator login in the WAITER_AUTH_RUN_AS_USER environment variable")
-            {:keys [service-id body headers]} (make-request-with-debug-info {} #(make-kitchen-request waiter-url % :path "/request-info"))
-            body-json (json/read-str (str body))]
-        (with-service-cleanup
-          service-id
-          (is (= run-as-user (get-in body-json ["headers" "x-waiter-auth-principal"]))))))))
+    (let [authenticator-kind (get-in (waiter-settings waiter-url) [:authenticator-config :kind])]
+      (when (= "composite" authenticator-kind)
+        (let [run-as-user (System/getenv "WAITER_AUTH_RUN_AS_USER")
+              _ (is (not (string/blank? run-as-user)) "You must provide the :one-user authenticator login in the WAITER_AUTH_RUN_AS_USER environment variable")
+              {:keys [service-id body headers]} (make-request-with-debug-info {} #(make-kitchen-request waiter-url % :path "/request-info"))
+              body-json (json/read-str (str body))]
+          (with-service-cleanup
+            service-id
+            (is (= run-as-user (get-in body-json ["headers" "x-waiter-auth-principal"])))))))))
 
 (defn- perform-saml-authentication
   "Default implementation of performing authentication wtih an identity provider service. Return map of saml-response and relay-state"
