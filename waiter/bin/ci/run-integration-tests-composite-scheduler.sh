@@ -22,11 +22,12 @@ KITCHEN_DIR=${TEST_APPS_DIR}/kitchen
 NGINX_DIR=${TEST_APPS_DIR}/nginx
 SEDIMENT_DIR=${TEST_APPS_DIR}/sediment
 
+# set SAML authenticator variables
+export SAML_IDP_URI="https://localhost:8443/simplesaml/saml2/idp/SSOService.php"
+export SAML_IDP_CERT_URI="${WAITER_DIR}/test-files/saml/idp.crt"
 # Start SAML IdP test server
 if [[ $TEST_SELECTOR =~ heavy$ ]]; then
     ${DIR}/saml-idp-server-setup.sh
-    export SAML_IDP_URI="https://localhost:8443/simplesaml/saml2/idp/SSOService.php"
-    export SAML_IDP_CERT_URI="${WAITER_DIR}/test-files/saml/idp.crt"
 fi
 
 # prepare courier server build
