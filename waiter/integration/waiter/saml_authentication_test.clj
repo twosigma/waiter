@@ -31,7 +31,13 @@
         (extract (parse (slurp curl-output-path)) [:login-form-action :auth-state]
                  "form" (attr :action)
                  "form input[name=AuthState]" (attr :value))
-        _ (is (= 0 (:exit (shell/sh "bash" "-c" (str "curl '" (str login-form-location login-form-action) "' -k -b " cookie-jar-path " -F 'AuthState=" auth-state "' -F 'username=user2' -F 'password=user2pass' > " curl-output-path)))))
+        xxx (shell/sh "bash" "-c" (str "curl '" (str login-form-location login-form-action) "' -k -b " cookie-jar-path " -F 'AuthState=" auth-state "' -F 'username=user2' -F 'password=user2pass' > " curl-output-path))
+        _ (println "xxxzzz")
+        _ (println xxx)
+        _ (println (slurp curl-output-path))
+        _ (println "xxxzzzxxx")
+        _ (is (= 0 (:exit xxx)))
+        ;_ (is (= 0 (:exit (shell/sh "bash" "-c" (str "curl '" (str login-form-location login-form-action) "' -k -b " cookie-jar-path " -F 'AuthState=" auth-state "' -F 'username=user2' -F 'password=user2pass' > " curl-output-path)))))
         {:keys [waiter-saml-acs-endpoint saml-response relay-state]}
         (extract (parse (slurp curl-output-path)) [:waiter-saml-acs-endpoint :saml-response :relay-state]
                  "form" (attr :action)
