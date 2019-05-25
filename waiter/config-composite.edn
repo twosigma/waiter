@@ -40,8 +40,8 @@
                         :one-user {;; The user account used to launch services:
                                    :run-as-user #config/env "WAITER_AUTH_RUN_AS_USER"}
                         :saml {:factory-fn waiter.auth.saml/saml-authenticator
-                               :idp-uri #config/env "SAML_IDP_URI"
-                               :idp-cert-uri #config/env "SAML_IDP_CERT_URI"}}
+                               :idp-cert-uri #config/env "SAML_IDP_CERT_URI"
+                               :idp-uri #config/env "SAML_IDP_URI"}}
 
  ; ---------- Scheduling ----------
 

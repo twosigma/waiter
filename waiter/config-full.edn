@@ -232,12 +232,12 @@
                         ;; https://docs.pingidentity.com/bundle/pf_sm_supportedStandards_pf83/page/task/spInitiatedSsoRedirectPost.html
                         ;:kind :saml
                         :saml {:factory-fn waiter.auth.saml/saml-authenticator
-                               ;; URI of the Identity Provider
-                               :idp-uri "https://idp-host/idp-endpoint"
                                ;; resource path of the signing certificate used by the Identity Provider
                                :idp-cert-resource-path "idp.crt"
                                ;; URI of the signing certificate used by the Identity Provider. Used if resource path is not set
-                               :idp-cert-uri "file:///path/idp.crt"}}
+                               :idp-cert-uri "file:///path/idp.crt"
+                               ;; URI of the Identity Provider
+                               :idp-uri "https://idp-host/idp-endpoint"}}
 
  ;; Waiter supports the run-as-requester feature to launch a service as the requesting user.
  ;; Triggering this feature without passing explicit headers requires providing an explicit consent and storing this in a cookie.

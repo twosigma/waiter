@@ -26,11 +26,11 @@
       (fn composite-authenticator-handler [request]
         (let [authentication (get-in request [:waiter-discovery :service-parameter-template "authentication"])]
           (if authentication
-            (if-let [handler ((keyword authentication) handlers)]
+            (if-let [handler (get handlers (keyword authentication))]
               (handler request)
               (throw (ex-info (str "No authenticator found for " authentication " authentication.")
-                              {:request-authentication authentication
-                               :composite-authenticators (keys authenticators)
+                              {:composite-authenticators (keys authenticators)
+                               :request-authentication authentication
                                :status 400})))
             ((:default handlers) request)))))))
 

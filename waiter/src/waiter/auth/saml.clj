@@ -105,7 +105,7 @@
             :get (let [saml-request (saml-request-factory)
                        scheme (name (utils/request->scheme request))
                        host (get headers "host")
-                       request-url (str scheme "://" host uri (if query-string "?" "") query-string)
+                       request-url (str scheme "://" host uri (when query-string "?") query-string)
                        relay-state (utils/map->base-64-string {:host host :request-url request-url :scheme scheme} password)]
                    (get-idp-redirect idp-uri saml-request relay-state))
             (throw (ex-info "Invalid request method for use with SAML authentication. Only GET supported."
@@ -114,9 +114,9 @@
 (defn certificate-x509
   "Takes in a raw X.509 certificate string, parses it, and creates a Java certificate."
   [x509-string]
-  (let [fty (java.security.cert.CertificateFactory/getInstance "X.509")
-        bais (io/input-stream (.getBytes x509-string))]
-    (.generateCertificate fty bais)))
+  (let [certificate-factory (java.security.cert.CertificateFactory/getInstance "X.509")
+        certificate-input-stream (io/input-stream (.getBytes x509-string))]
+    (.generateCertificate certificate-factory certificate-input-stream)))
 
 (defn jcert->public-key
   "Extracts a public key object from a java cert object."
@@ -247,7 +247,7 @@
                                                  (throw (ex-info "Could not parse SAML RelayState"
                                                                  {:status 400
                                                                   :saml-relay-state (get form-params "RelayState")
-                                                                  :inner-exception e}))))
+                                                                  :inner-exception e} e))))
         saml-response (-> form-params (get "SAMLResponse")
                           (base64->str)
                           (xml-string->saml-resp))
@@ -293,7 +293,7 @@
             (catch Exception e
               (throw (ex-info "Could not parse saml-auth-data." {:status 400
                                                                  :saml-auth-data saml-auth-data
-                                                                 :inner-exception e}))))
+                                                                 :inner-exception e} e))))
           t-now (t/now)
           _ (when-not (t/before? t-now not-on-or-after)
               (throw (ex-info "Could not authenticate user. Expired SAML assertion."
@@ -304,7 +304,7 @@
           {:keys [authorization/principal authorization/user] :as auth-params-map}
           (auth/auth-params-map saml-principal)]
       (auth/handle-request-auth (constantly {:status 303
-                                             :headers {"Location" redirect-url}
+                                             :headers {"location" redirect-url}
                                              :body ""})
                                 request principal auth-params-map password age-in-seconds))
     (throw (ex-info "Missing saml-auth-data from SAML authenticated redirect message"
@@ -363,6 +363,6 @@
                    (slurp (clojure.java.io/resource idp-cert-resource-path))
                    (slurp idp-cert-uri))
         saml-request-factory (create-request-factory! idp-uri
-                                                  "waiter"
-                                                  acs-uri)]
+                                                      "waiter"
+                                                      acs-uri)]
     (->SamlAuthenticator auth-redirect-endpoint idp-cert idp-uri password saml-acs-handler saml-auth-redirect-handler saml-request-factory)))

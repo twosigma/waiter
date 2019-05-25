@@ -402,12 +402,12 @@
 (defn map->base-64-string
   "Serializes data to a base 64 string along with encryption."
   [data-map encryption-key]
-  (String. (b64/encode (nippy/freeze data-map {:password encryption-key :compressor nil}))))
+  (String. (b64/encode (nippy/freeze data-map {:compressor nil :password encryption-key}))))
 
 (defn base-64-string->map
   "Deserializes and decrypts a base 64 string."
   [b64-string decryption-key]
-  (nippy/thaw (b64/decode (.getBytes b64-string)) {:password decryption-key :v1-compatibility? false :compressor nil}))
+  (nippy/thaw (b64/decode (.getBytes b64-string)) {:compressor nil :password decryption-key :v1-compatibility? false}))
 
 (let [messages (atom {})]
   (defn message
