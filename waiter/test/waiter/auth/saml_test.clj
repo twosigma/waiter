@@ -104,7 +104,7 @@
           (is (= {:authorization/principal "my-user@domain"
                   :authorization/user "my-user"
                   :body ""
-                  :headers {"Location" "redirect-url"
+                  :headers {"location" "redirect-url"
                             "set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000%5D;Max-Age=86400;Path=/;HttpOnly=true"}
                   :status 303}
                  (saml-auth-redirect-handler dummy-request' saml-authenticator))))))
@@ -123,7 +123,7 @@
           (is (= {:authorization/principal "my-user@domain"
                   :authorization/user "my-user"
                   :body ""
-                  :headers {"Location" "redirect-url"
+                  :headers {"location" "redirect-url"
                             "set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000%5D;Max-Age=3600;Path=/;HttpOnly=true"}
                   :status 303}
                  (saml-auth-redirect-handler dummy-request' saml-authenticator))))))))
