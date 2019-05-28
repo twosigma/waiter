@@ -51,7 +51,7 @@
   [{:keys [authorization/principal backend-response-latency-ns descriptor latest-service-id get-instance-latency-ns
            handle-request-latency-ns headers instance protocol status] :as response}]
   (let [{:keys [service-id service-description]} descriptor
-        {:strs [content-type server]} headers]
+        {:strs [content-type grpc-status server]} headers]
     (cond-> {:status (or status 200)}
       backend-response-latency-ns (assoc :backend-response-latency-ns backend-response-latency-ns)
       content-type (assoc :response-content-type content-type)
@@ -59,6 +59,7 @@
                         :service-id service-id
                         :service-name (get service-description "name")
                         :service-version (get service-description "version"))
+      grpc-status (assoc :grpc-status grpc-status)
       instance (assoc :instance-host (:host instance)
                       :instance-id (:id instance)
                       :instance-port (:port instance)

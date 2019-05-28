@@ -57,6 +57,7 @@
                   :get-instance-latency-ns 500
                   :handle-request-latency-ns 2000
                   :headers {"content-type" "application/xml"
+                            "grpc-status" "13"
                             "server" "foo-bar"}
                   :instance {:host "instance-host"
                              :id "instance-id"
@@ -67,6 +68,7 @@
     (is (= {:backend-response-latency-ns 1000
             :backend-protocol "HTTP/2.0"
             :get-instance-latency-ns 500
+            :grpc-status "13"
             :handle-request-latency-ns 2000
             :instance-host "instance-host"
             :instance-id "instance-id"
