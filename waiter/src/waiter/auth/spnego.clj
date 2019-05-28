@@ -146,7 +146,7 @@
         (too-many-pending-auth-requests? thread-pool-executor max-queue-length)
         (response-503-temporarily-unavailable)
         ;; Try and authenticate using kerberos and add cookie in response when valid
-        (get-in request [:headers "authorization"])         ;TODO FIXME
+        (get-in request [:headers "authorization"])
         (let [current-correlation-id (cid/get-correlation-id)
               gss-response-chan (async/promise-chan)]
           ;; launch task that will populate the response in response-chan
