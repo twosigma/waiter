@@ -277,13 +277,16 @@
                               {:status 400
                                :saml-assertion-not-on-or-after not-on-or-after
                                :t-now t-now})))
-          age-in-seconds (t/in-seconds (t/interval t-now (t/min-date (t/plus t-now (t/days 1)) not-on-or-after)))
+          auth-cookie-expiry-date (t/min-date not-on-or-after (t/plus t-now (t/days 1)))
+          auth-cookie-age-in-seconds (-> t-now
+                           (t/interval auth-cookie-expiry-date)
+                           (t/in-seconds))
           {:keys [authorization/principal authorization/user] :as auth-params-map}
           (auth/auth-params-map saml-principal)]
       (auth/handle-request-auth (constantly {:status 303
                                              :headers {"location" redirect-url}
                                              :body ""})
-                                request principal auth-params-map password age-in-seconds))
+                                request principal auth-params-map password auth-cookie-age-in-seconds))
     (throw (ex-info "Missing saml-auth-data from SAML authenticated redirect message"
                     {:status 400}))))
 
