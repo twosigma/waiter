@@ -218,7 +218,8 @@
       max-back-pressure-delay-ms 4000
       min-buffer-size 1024
       max-buffer-size 32768
-      buffer-increment-power-of-2 (int (/ (Math/log min-buffer-size) (Math/log 2)))]
+      min-buffer-increment-size 1024
+      buffer-increment-mask (bit-not (dec min-buffer-increment-size))]
 
   (defn stream-http-request
     "Reads data from the input stream and queues it into the provided body channel as a ByteBuffer.
@@ -244,9 +245,8 @@
           (let [available-bytes (.available input-stream)
                 ;; get a buffer size between min-buffer-size and max-buffer-size
                 buffer-size (-> available-bytes
+                              (bit-and buffer-increment-mask)
                               (max min-buffer-size)
-                              (bit-shift-right buffer-increment-power-of-2)
-                              (bit-shift-left buffer-increment-power-of-2)
                               (min max-buffer-size))
                 buffer-bytes (byte-array buffer-size)
                 bytes-read (.read input-stream buffer-bytes)]
