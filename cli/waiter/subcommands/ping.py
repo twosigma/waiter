@@ -110,7 +110,7 @@ def ping_token_on_cluster(cluster, token_name, health_check_endpoint, timeout, w
 def service_is_active(cluster, service_id):
     """If the given service id is active, returns the service, else None"""
     service = get_service(cluster, service_id)
-    return service if service['status'] != 'Inactive' else None
+    return service if (service and service['status'] != 'Inactive') else None
 
 
 def ping_service_on_cluster(cluster, service_id, health_check_endpoint, timeout, wait_for_request):
