@@ -46,8 +46,7 @@
            (javax.servlet ReadListener ServletInputStream ServletOutputStream)
            (org.eclipse.jetty.client HttpClient)
            (org.eclipse.jetty.io EofException)
-           (org.eclipse.jetty.server HttpChannel HttpOutput Response)
-           (org.eclipse.jetty.util BufferUtil)))
+           (org.eclipse.jetty.server HttpChannel HttpOutput Response)))
 
 (defn check-control [control-chan]
   (let [state (au/poll! control-chan :still-running)]
@@ -217,8 +216,10 @@
 
 (let [back-pressure-delay-ms 1000
       max-back-pressure-delay-ms 4000
-      buffer-increment-size 1024
-      max-buffer-size 32768]
+      min-buffer-size 1024
+      max-buffer-size 32768
+      min-buffer-increment-size 1024
+      buffer-increment-mask (bit-not (dec min-buffer-increment-size))]
 
   (defn stream-http-request
     "Reads data from the input stream and queues it into the provided body channel as a ByteBuffer.
@@ -242,14 +243,10 @@
       (try
         (loop [unreported-bytes-to-statsd 0]
           (let [available-bytes (.available input-stream)
-                ;; get a buffer size between buffer-increment-size and max-buffer-size
+                ;; get a buffer size between min-buffer-size and max-buffer-size
                 buffer-size (-> available-bytes
-                              (max 0)
-                              double
-                              (/ buffer-increment-size)
-                              int
-                              inc
-                              (* buffer-increment-size)
+                              (bit-and buffer-increment-mask)
+                              (max min-buffer-size)
                               (min max-buffer-size))
                 buffer-bytes (byte-array buffer-size)
                 bytes-read (.read input-stream buffer-bytes)]
