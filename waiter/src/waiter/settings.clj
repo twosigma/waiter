@@ -458,22 +458,21 @@
                :mutex-timeout-ms 1000}})
 
 (defn deep-merge-settings
-  "Recursively merges the two settings maps"
+  "Merges the two settings maps, with special handling for maps with :kind"
   [map-1 map-2]
   (merge-with
     (fn [x y]
       (if (and (map? x) (map? y))
-        (deep-merge-settings x y)
-        ;(let [x-kind (:kind x)
-        ;      y-kind (:kind y)]
-        ;  (if (and x-kind y-kind)
-        ;    (let [kind y-kind
-        ;          x-sub-map (get x kind)
-        ;          y-sub-map (get y kind)]
-        ;      (-> x
-        ;          (merge y)
-        ;          (assoc kind (deep-merge-settings x-sub-map y-sub-map))))
-        ;    (deep-merge-settings x y)))
+        (let [x-kind (:kind x)
+              y-kind (:kind y)]
+          (if (and x-kind y-kind)
+            (let [kind y-kind
+                  x-sub-map (get x kind)
+                  y-sub-map (get y kind)]
+              (-> x
+                  (merge y)
+                  (assoc kind (deep-merge-settings x-sub-map y-sub-map))))
+            (deep-merge-settings x y)))
         y))
     map-1 map-2))
 

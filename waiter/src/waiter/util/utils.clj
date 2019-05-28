@@ -540,7 +540,7 @@
   "Updates an exception, regardless of whether it's an ExceptionInfo or just Exception."
   [^Exception e update-fn]
   (if (instance? ExceptionInfo e)
-    (ex-info (.getMessage e) (update-fn (ex-data e)) (or (.getCause e) e))
+    (ex-info (.getMessage e) (update-fn (ex-data e)) (.getCause e))
     (ex-info (.getMessage e) (update-fn {}) e)))
 
 (defn make-uuid
