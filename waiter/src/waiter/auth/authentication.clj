@@ -23,15 +23,19 @@
 (def ^:const AUTH-COOKIE-NAME "x-waiter-auth")
 
 (defprotocol Authenticator
+  (process-callback [this request scheme operation]
+    "Process any requests that might come in after initiating authentication. e.g. receive a request
+    with an authentication assertion after redirecting a user to authenticate with an identity provider.")
   (wrap-auth-handler [this request-handler]
     "Attaches middleware that enables the application to perform authentication.
      The middleware should
-     - either issue a 401 challenge asking the client to authenticate itself,
+     - issue a 401 challenge, or redirect, to get the client to authenticate itself,
      - or upon successful authentication populate the request with :authorization/user and :authorization/principal"))
 
 (defn- add-cached-auth
   [response password principal & [age-in-seconds]]
-  (cookie-support/add-encoded-cookie response password AUTH-COOKIE-NAME [principal (clj-time.coerce/to-long (t/now))] 1 age-in-seconds))
+  (cookie-support/add-encoded-cookie response password AUTH-COOKIE-NAME [principal (clj-time.coerce/to-long (t/now))]
+                                     (or age-in-seconds (-> 1 t/days t/in-seconds))))
 
 (defn auth-params-map
   "Creates a map intended to be merged into requests/responses."
@@ -45,14 +49,12 @@
   "Invokes the given request-handler on the given request, adding the necessary
   auth headers on the way in, and the x-waiter-auth cookie on the way out."
   ([handler request principal password]
-   (handle-request-auth handler request principal (auth-params-map principal) password nil))
-  ([handler request user principal password]
-   (handle-request-auth handler request principal (auth-params-map principal user) password nil))
-  ([handler request principal auth-params-map password age-in-seconds]
+   (handle-request-auth handler request principal (auth-params-map principal) password))
+  ([handler request principal auth-params-map password & [age-in-seconds]]
    (let [handler' (middleware/wrap-merge handler auth-params-map)]
      (-> request
-         handler'
-         (add-cached-auth password principal age-in-seconds)))))
+       handler'
+       (add-cached-auth password principal age-in-seconds)))))
 
 (defn decode-auth-cookie
   "Decodes the provided cookie using the provided password.
@@ -101,9 +103,14 @@
 ;;   - or upon successful authentication populate the request with :authorization/user and :authorization/principal"
 (defrecord SingleUserAuthenticator [run-as-user password]
   Authenticator
+  (process-callback [_ request scheme operation]
+    (throw (ex-info "Single user authenticator does not support callbacks."
+                    {:scheme scheme
+                     :operation operation
+                     :status 400})))
   (wrap-auth-handler [_ request-handler]
     (fn anonymous-handler [request]
-      (handle-request-auth request-handler request run-as-user run-as-user password))))
+      (handle-request-auth request-handler request run-as-user (auth-params-map run-as-user run-as-user) password))))
 
 (defn one-user-authenticator
   "Factory function for creating single-user authenticator"

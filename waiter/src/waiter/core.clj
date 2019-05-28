@@ -130,8 +130,7 @@
                                      ["/status/" :request-id "/" :router-id "/" :service-id "/" :host "/" :port "/" [#".+" :location]]
                                      :async-status-handler-fn}
                      "waiter-auth" {"" :waiter-auth-handler-fn
-                                    "/saml" {"/acs" :waiter-auth-saml-acs-handler-fn
-                                             "/auth-redirect" :waiter-auth-saml-auth-redirect-handler-fn}}
+                                    ["/" :scheme "/" :operation] :waither-auth-scheme-handler-fn}
                      "waiter-consent" {"" :waiter-acknowledge-consent-handler-fn
                                        ["/" [#".*" :path]] :waiter-request-consent-handler-fn}
                      "waiter-interstitial" {["/" [#".*" :path]] :waiter-request-interstitial-handler-fn}
@@ -507,7 +506,7 @@
         (or (#{"/app-name" "/service-id" "/token" "/waiter-ping"} uri)
             (some #(str/starts-with? (str uri) %)
                   ["/waiter-async/complete/" "/waiter-async/result/" "/waiter-async/status/" "/waiter-consent"
-                   "/waiter-interstitial" "/waiter-auth/saml/"])
+                   "/waiter-interstitial" "/waiter-auth/"])
             (and (or (str/blank? host)
                      (valid-waiter-hostnames (-> host
                                                  (str/split #":")
@@ -532,8 +531,7 @@
    :authenticator (pc/fnk [[:settings authenticator-config hostname]
                            passwords]
                     (let [hostname (if (sequential? hostname) (first hostname) hostname)]
-                      (utils/create-component authenticator-config :context {:authenticator-config authenticator-config
-                                                                             :hostname hostname
+                      (utils/create-component authenticator-config :context {:hostname hostname
                                                                              :password (first passwords)})))
    :clock (pc/fnk [] t/now)
    :cors-validator (pc/fnk [[:settings cors-config]]
@@ -1176,8 +1174,8 @@
                                                                             instance-request-properties determine-priority-fn ws/process-response!
                                                                             ws/abort-request-callback-factory local-usage-agent request))
                                            handler (-> process-request-fn
-                                                       (ws/wrap-ws-close-on-error)
-                                                       wrap-descriptor-fn)]
+                                                     (ws/wrap-ws-close-on-error)
+                                                     wrap-descriptor-fn)]
                                        (ws/request-handler password handler request))))
    :display-settings-handler-fn (pc/fnk [wrap-secure-request-fn settings]
                                   (wrap-secure-request-fn
@@ -1282,8 +1280,8 @@
                                    wrap-descriptor-fn wrap-secure-request-fn]
                             (-> (fn service-id-handler-fn [request]
                                   (handler/service-id-handler request kv-store store-service-description-fn))
-                                wrap-descriptor-fn
-                                wrap-secure-request-fn))
+                              wrap-descriptor-fn
+                              wrap-secure-request-fn))
    :service-list-handler-fn (pc/fnk [[:daemons router-state-maintainer]
                                      [:routines prepend-waiter-url router-metrics-helpers
                                       service-id->service-description-fn service-id->source-tokens-entries-fn]
@@ -1491,22 +1489,9 @@
                              (wrap-secure-request-fn
                                (fn waiter-auth-handler-fn [request]
                                  {:body (str (:authorization/user request)), :status 200})))
-   :waiter-auth-saml-acs-handler-fn (pc/fnk [[:state authenticator]]
-                                      (let [{:keys [saml-acs-handler-fn]} authenticator]
-                                        (fn waiter-auth-saml-acs-handler-fn [request]
-                                          (when-not saml-acs-handler-fn
-                                            (throw (ex-info "Current authenticator can not respond to SAML assertion message"
-                                                            {:authenticator authenticator
-                                                             :status 400})))
-                                          (saml-acs-handler-fn request authenticator))))
-   :waiter-auth-saml-auth-redirect-handler-fn (pc/fnk [[:state authenticator]]
-                                      (let [{:keys [saml-auth-redirect-handler-fn]} authenticator]
-                                        (fn waiter-auth-saml-auth-redirect-handler-fn [request]
-                                          (when-not saml-auth-redirect-handler-fn
-                                            (throw (ex-info "Current authenticator can not respond to SAML authenticated redirect message"
-                                                            {:authenticator authenticator
-                                                             :status 400})))
-                                          (saml-auth-redirect-handler-fn request authenticator))))
+   :waither-auth-scheme-handler-fn (pc/fnk [[:state authenticator]]
+                                     (fn waither-auth-scheme-handler-fn [{{:keys [scheme operation]} :route-params :as request}]
+                                       (auth/process-callback authenticator request scheme operation)))
    :waiter-acknowledge-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template
                                                     token->token-metadata]
                                                    [:settings consent-expiry-days]
@@ -1514,7 +1499,7 @@
                                                    wrap-secure-request-fn]
                                             (let [password (first passwords)]
                                               (letfn [(add-encoded-cookie [response cookie-name value expiry-days]
-                                                        (cookie-support/add-encoded-cookie response password cookie-name value expiry-days))
+                                                        (cookie-support/add-encoded-cookie response password cookie-name value (-> expiry-days t/days t/in-seconds)))
                                                       (consent-cookie-value [mode service-id token token-metadata]
                                                         (sd/consent-cookie-value clock mode service-id token token-metadata))]
                                                 (wrap-secure-request-fn
@@ -1587,7 +1572,7 @@
                                    (do
                                      (log/info "triggering ssl redirect")
                                      (-> (ssl/ssl-redirect-response request {})
-                                         (rr/header "server" (utils/get-current-server-name))))
+                                       (rr/header "server" (utils/get-current-server-name))))
 
                                    :else
                                    (handler request)))))
@@ -1612,9 +1597,9 @@
                                (fn wrap-secure-request-fn
                                  [handler]
                                  (let [handler (-> handler
-                                                   (cors/wrap-cors-request
-                                                     cors-validator waiter-request?-fn exposed-headers)
-                                                   authentication-method-wrapper-fn)]
+                                                 (cors/wrap-cors-request
+                                                   cors-validator waiter-request?-fn exposed-headers)
+                                                 authentication-method-wrapper-fn)]
                                    (fn inner-wrap-secure-request-fn [{:keys [uri] :as request}]
                                      (log/debug "secure request received at" uri)
                                      (handler request))))))

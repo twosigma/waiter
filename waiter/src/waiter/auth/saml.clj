@@ -29,7 +29,8 @@
             [waiter.auth.authentication :as auth]
             [waiter.middleware :as middleware]
             [waiter.util.utils :as utils])
-  (:import [javax.xml.parsers DocumentBuilderFactory]))
+  (:import [javax.xml.parsers DocumentBuilderFactory]
+           [org.opensaml.xml.validation ValidationException]))
 
 (def charset-format (java.nio.charset.Charset/forName "UTF-8"))
 
@@ -37,8 +38,8 @@
   [stream]
   (let [sb (StringBuilder.)]
     (with-open [reader (-> stream
-                           java.io.InputStreamReader.
-                           java.io.BufferedReader.)]
+                         java.io.InputStreamReader.
+                         java.io.BufferedReader.)]
       (loop [c (.read reader)]
         (if (neg? c)
           (str sb)
@@ -88,29 +89,6 @@
            (uri-query-str
              {:SAMLRequest saml-request :RelayState relay-state})))))
 
-(defrecord SamlAuthenticator [auth-redirect-endpoint idp-cert idp-uri password saml-acs-handler-fn saml-auth-redirect-handler-fn saml-request-factory]
-  auth/Authenticator
-  (wrap-auth-handler [_ request-handler]
-    (fn saml-authenticator-handler [{:keys [headers query-string request-method uri] :as request}]
-      (let [waiter-cookie (auth/get-auth-cookie-value (get headers "cookie"))
-            [auth-principal _ :as decoded-auth-cookie] (auth/decode-auth-cookie waiter-cookie password)]
-        (cond
-          ;; Use the cookie, if not expired
-          (auth/decoded-auth-valid? decoded-auth-cookie)
-          (let [auth-params-map (auth/auth-params-map auth-principal)
-                request-handler' (middleware/wrap-merge request-handler auth-params-map)]
-            (request-handler' request))
-          :else
-          (case request-method
-            :get (let [saml-request (saml-request-factory)
-                       scheme (name (utils/request->scheme request))
-                       host (get headers "host")
-                       request-url (str scheme "://" host uri (when query-string "?") query-string)
-                       relay-state (utils/map->base-64-string {:host host :request-url request-url :scheme scheme} password)]
-                   (get-idp-redirect idp-uri saml-request relay-state))
-            (throw (ex-info "Invalid request method for use with SAML authentication. Only GET supported."
-                            {:log-level :info :request-method request-method :status 405}))))))))
-
 (defn certificate-x509
   "Takes in a raw X.509 certificate string, parses it, and creates a Java certificate."
   [x509-string]
@@ -123,10 +101,10 @@
   [java-cert-obj]
   (.getPublicKey java-cert-obj))
 
-(defn validate-saml-assertion-signature
+(defn saml-assertion-signature-valid?
   "Checks that the SAML assertion has a valid signature."
   [assertion idp-cert]
-  (if-let [signature (.getSignature assertion)]
+  (when-let [signature (.getSignature assertion)]
     (let [idp-pubkey (-> idp-cert certificate-x509 jcert->public-key)
           public-creds (doto (new org.opensaml.xml.security.x509.BasicX509Credential)
                          (.setPublicKey idp-pubkey))
@@ -134,11 +112,9 @@
       (try
         (.validate validator signature)
         true
-        (catch org.opensaml.xml.validation.ValidationException ex
+        (catch ValidationException ex
           (log/warn "Signature NOT valid" (.getMessage ex))
-          false)))
-    false ;; if not signature is present
-    ))
+          false)))))
 
 (defn new-doc-builder
   []
@@ -248,16 +224,17 @@
                                                                  {:status 400
                                                                   :saml-relay-state (get form-params "RelayState")
                                                                   :inner-exception e} e))))
-        saml-response (-> form-params (get "SAMLResponse")
-                          (base64->str)
-                          (xml-string->saml-resp))
+        saml-response (-> form-params
+                        (get "SAMLResponse")
+                        (base64->str)
+                        (xml-string->saml-resp))
         assertions (.getAssertions saml-response)
         _ (when-not (= 1 (count assertions))
             (throw (ex-info (str "Could not authenticate user. Invalid SAML response. "
                                  "Must have exactly one assertion but got " (count assertions))
                             {:status 400})))
         assertion (first assertions)
-        _ (when-not (validate-saml-assertion-signature assertion idp-cert)
+        _ (when-not (saml-assertion-signature-valid? assertion idp-cert)
             (throw (ex-info "Could not authenticate user. Invalid SAML assertion signature."
                             {:status 400})))
         {:keys [attrs confirmation name-id]} (parse-saml-assertion assertion)
@@ -266,8 +243,8 @@
         _ (when-not (t/before? t-now not-on-or-after)
             (throw (ex-info "Could not authenticate user. Expired SAML assertion."
                             {:status 400
-                             :saml-assertion-not-on-or-after not-on-or-after
-                             :t-now t-now})))
+                             :expiry-time not-on-or-after
+                             :current-time t-now})))
         email (first (get attrs "email"))
         ; https://docs.microsoft.com/en-us/windows-server/identity/ad-fs/technical-reference/the-role-of-claims
         upn (first (get attrs "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"))
@@ -350,6 +327,37 @@
                      acs-url
                      idp-uri)))
 
+(defrecord SamlAuthenticator [auth-redirect-endpoint idp-cert idp-uri password saml-request-factory]
+  auth/Authenticator
+  (process-callback [this request scheme operation]
+    (if-let [handler (get {"acs" saml-acs-handler
+                           "auth-redirect" saml-auth-redirect-handler} operation)]
+      (handler request this)
+      (throw (ex-info (str "Unknown SAML authenticator operation: " operation)
+                      {:status 400
+                       :scheme scheme
+                       :operation operation}))))
+  (wrap-auth-handler [_ request-handler]
+    (fn saml-authenticator-handler [{:keys [headers query-string request-method uri] :as request}]
+      (let [waiter-cookie (auth/get-auth-cookie-value (get headers "cookie"))
+            [auth-principal _ :as decoded-auth-cookie] (auth/decode-auth-cookie waiter-cookie password)]
+        (cond
+          ;; Use the cookie, if not expired
+          (auth/decoded-auth-valid? decoded-auth-cookie)
+          (let [auth-params-map (auth/auth-params-map auth-principal)
+                request-handler' (middleware/wrap-merge request-handler auth-params-map)]
+            (request-handler' request))
+          :else
+          (case request-method
+            :get (let [saml-request (saml-request-factory)
+                       scheme (name (utils/request->scheme request))
+                       host (get headers "host")
+                       request-url (str scheme "://" host uri (when query-string "?") query-string)
+                       relay-state (utils/map->base-64-string {:host host :request-url request-url :scheme scheme} password)]
+                   (get-idp-redirect idp-uri saml-request relay-state))
+            (throw (ex-info "Invalid request method for use with SAML authentication. Only GET supported."
+                            {:log-level :info :request-method request-method :status 405}))))))))
+
 (defn saml-authenticator
   "Factory function for creating SAML authenticator middleware"
   [{:keys [idp-cert-resource-path idp-cert-uri idp-uri hostname password]}]
@@ -365,4 +373,4 @@
         saml-request-factory (create-request-factory! idp-uri
                                                       "waiter"
                                                       acs-uri)]
-    (->SamlAuthenticator auth-redirect-endpoint idp-cert idp-uri password saml-acs-handler saml-auth-redirect-handler saml-request-factory)))
+    (->SamlAuthenticator auth-redirect-endpoint idp-cert idp-uri password saml-request-factory)))

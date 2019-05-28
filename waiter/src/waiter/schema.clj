@@ -34,7 +34,7 @@
 
 (def valid-authentication
   "Validator for the authentication parameter.
-   Valid values are 'disabled' and 'standard'."
+   Valid values are 'disabled', 'standard' or the specific authentication scheme if supported by the configured authenticator, e.g. 'saml'."
   (s/constrained non-empty-string #{"disabled" "saml" "standard"} 'invalid-authentication))
 
 (let [valid-backend-protos #{"h2" "h2c" "http" "https"}

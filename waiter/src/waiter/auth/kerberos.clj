@@ -105,6 +105,11 @@
 
 (defrecord KerberosAuthenticator [^ThreadPoolExecutor executor max-queue-length password]
   auth/Authenticator
+  (process-callback [_ request scheme operation]
+    (throw (ex-info "Kerberos authenticator does not support callbacks."
+                    {:scheme scheme
+                     :operation operation
+                     :status 400})))
   (wrap-auth-handler [_ request-handler]
     (spnego/require-gss request-handler executor max-queue-length password)))
 

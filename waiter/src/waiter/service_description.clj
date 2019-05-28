@@ -399,7 +399,9 @@
                                            (attach-error-message-for-parameter
                                              parameter->issues :cmd "cmd must be a non-empty string.")
                                            (attach-error-message-for-parameter
-                                             parameter->issues :authentication "authentication must be one of disabled or standard.")
+                                             parameter->issues :authentication
+                                             (str "authentication must be 'disabled', 'standard', "
+                                                  "or the specific authentication scheme if supported by the configured authenticator, e.g. 'saml'."))
                                            (attach-error-message-for-parameter
                                              parameter->issues :backend-proto "backend-proto must be one of h2, h2c, http, or https.")
                                            (attach-error-message-for-parameter
