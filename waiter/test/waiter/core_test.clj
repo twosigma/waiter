@@ -969,6 +969,10 @@
            (exec-routes-mapper "/waiter-async/status/test-request-id/test-router-id/test-service-id/test-host/test-port/some/test/location?a=b")))
     (is (= {:handler :waiter-auth-handler-fn}
            (exec-routes-mapper "/waiter-auth")))
+    (is (= {:handler :waiter-auth-scheme-handler-fn
+            :route-params {:authentication-scheme "saml"
+                           :operation "acs"}}
+           (exec-routes-mapper "/waiter-auth/saml/acs")))
     (is (= {:handler :waiter-acknowledge-consent-handler-fn}
            (exec-routes-mapper "/waiter-consent")))
     (is (= {:handler :waiter-request-consent-handler-fn

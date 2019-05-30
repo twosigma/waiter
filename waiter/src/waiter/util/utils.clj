@@ -545,11 +545,6 @@
     (ex-info (.getMessage e) (update-fn (ex-data e)) (.getCause e))
     (ex-info (.getMessage e) (update-fn {}) e)))
 
-(defn make-uuid
-  "Returns a UUID"
-  []
-  (str (UUID/randomUUID)))
-
 (defmacro keys-map
   "Convenience macro to do the opposite of destructuring on keys - take values and create a map of keywords to values.
    e.g. this re-creates the original map:

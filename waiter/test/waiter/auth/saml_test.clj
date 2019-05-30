@@ -74,7 +74,7 @@
     (testing "does not have auth cookie"
       (with-redefs [nippy/freeze (fn [data _] (.getBytes (str data)))
                     t/now (fn [] time-now)
-                    utils/make-uuid (constantly "UUID")]
+                    utils/unique-identifier (constantly "UUID")]
         (is (= {:body ""
                 :headers {"Location" (slurp "test-files/saml/idp-redirect-location.txt")}
                 :status 302}
@@ -85,7 +85,7 @@
         test-time (clj-time.format/parse "2019-05-14")]
     (testing "bad saml-auth-data"
       (with-redefs [t/now (fn [] time-now)
-                    utils/make-uuid (constantly "UUID")]
+                    utils/unique-identifier (constantly "UUID")]
         (is (thrown-with-msg? Exception #"Could not parse saml-auth-data"
                               (saml-auth-redirect-handler (-> (merge-with merge dummy-request {:headers {"content-type" "application/x-www-form-urlencoded"}})
                                                               (merge {:request-method :post

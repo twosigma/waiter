@@ -23,13 +23,14 @@
             [clojure.tools.logging :as log]
             [comb.template :as template]
             [ring.middleware.params :as ring-params]
-            [ring.util.codec :refer [form-encode url-encode base64-encode]]
-            [ring.util.response :refer [redirect]]
+            [ring.util.codec :as codec]
+            [ring.util.response :as response]
             [waiter.auth.authentication :as auth]
             [waiter.middleware :as middleware]
             [waiter.util.utils :as utils]
             [plumbing.core :as pc])
-  (:import (java.io BufferedReader InputStreamReader)
+  (:import (java.io ByteArrayInputStream ByteArrayOutputStream)
+           (java.nio.charset Charset)
            (java.security.cert CertificateFactory)
            (java.util.zip Deflater DeflaterOutputStream)
            (javax.xml.parsers DocumentBuilderFactory)
@@ -38,32 +39,22 @@
            (org.opensaml.xml.signature SignatureValidator)
            (org.opensaml.xml.validation ValidationException)))
 
-(def charset-format (java.nio.charset.Charset/forName "UTF-8"))
-
-(defn read-to-end
-  [stream]
-  (let [sb (StringBuilder.)]
-    (with-open [reader (-> stream
-                         InputStreamReader.
-                         BufferedReader.)]
-      (loop [c (.read reader)]
-        (if (neg? c)
-          (str sb)
-          (do
-            (.append sb (char c))
-            (recur (.read reader))))))))
+(def charset-format (Charset/forName "UTF-8"))
 
 (defn str->bytes
+  "Get bytes of a string"
   [some-string]
   (.getBytes some-string charset-format))
 
 (defn bytes->str
+  "Get string from bytes"
   [some-bytes]
   (String. some-bytes charset-format))
 
 (defn byte-deflate
+  "Gzip compress bytes"
   [str-bytes]
-  (let [out (java.io.ByteArrayOutputStream.)
+  (let [out (ByteArrayOutputStream.)
         deflater (DeflaterOutputStream.
                    out
                    (Deflater. -1 true) 1024)]
@@ -72,27 +63,25 @@
     (.toByteArray out)))
 
 (defn str->deflate->base64
+  "Gzip compress bytes and base 64 encode"
   [deflatable-str]
   (let [byte-str (str->bytes deflatable-str)]
     (bytes->str (b64/encode (byte-deflate byte-str)))))
 
 (defn base64->str
+  "Decode base 64 string"
   [string]
   (let [byte-str (str->bytes string)]
     (bytes->str (b64/decode byte-str))))
 
-(defn uri-query-str
-  [clean-hash]
-  (form-encode clean-hash))
-
 (defn get-idp-redirect
   "Return Ring response for HTTP 302 redirect."
   [idp-url saml-request relay-state]
-  (redirect
+  (response/redirect
     (str idp-url
          "?"
          (let [saml-request (str->deflate->base64 saml-request)]
-           (uri-query-str
+           (codec/form-encode
              {:SAMLRequest saml-request :RelayState relay-state})))))
 
 (defn certificate-x509
@@ -102,16 +91,11 @@
         certificate-input-stream (io/input-stream (.getBytes x509-string))]
     (.generateCertificate certificate-factory certificate-input-stream)))
 
-(defn jcert->public-key
-  "Extracts a public key object from a java cert object."
-  [java-cert-obj]
-  (.getPublicKey java-cert-obj))
-
 (defn saml-assertion-signature-valid?
   "Checks that the SAML assertion has a valid signature."
   [assertion idp-cert]
   (when-let [signature (.getSignature assertion)]
-    (let [idp-pubkey (-> idp-cert certificate-x509 jcert->public-key)
+    (let [idp-pubkey (-> idp-cert certificate-x509 .getPublicKey)
           public-creds (doto (new BasicX509Credential)
                          (.setPublicKey idp-pubkey))
           validator (new SignatureValidator public-creds)]
@@ -123,23 +107,24 @@
           false)))))
 
 (defn new-doc-builder
+  "Create new xml document builder"
   []
-  (let [doc (DocumentBuilderFactory/newInstance)]
-    (.setNamespaceAware doc true)
-    (.setFeature doc "http://xml.org/sax/features/external-general-entities" false)
-    (.setFeature doc "http://xml.org/sax/features/external-parameter-entities" false)
-    (.setFeature doc "http://apache.org/xml/features/nonvalidating/load-external-dtd" false)
-    (.setAttribute doc "http://www.oracle.com/xml/jaxp/properties/entityExpansionLimit" "2000")
-    (.setAttribute doc "http://www.oracle.com/xml/jaxp/properties/totalEntitySizeLimit" "100000")
-    (.setAttribute doc "http://www.oracle.com/xml/jaxp/properties/maxParameterEntitySizeLimit" "10000")
-    (.setAttribute doc "http://www.oracle.com/xml/jaxp/properties/maxElementDepth" "100")
-    (.setExpandEntityReferences doc false)
-    (.newDocumentBuilder doc)))
+  (.newDocumentBuilder
+    (doto (DocumentBuilderFactory/newInstance)
+      (.setNamespaceAware true)
+      (.setFeature "http://xml.org/sax/features/external-general-entities" false)
+      (.setFeature "http://xml.org/sax/features/external-parameter-entities" false)
+      (.setFeature "http://apache.org/xml/features/nonvalidating/load-external-dtd" false)
+      (.setAttribute "http://www.oracle.com/xml/jaxp/properties/entityExpansionLimit" "2000")
+      (.setAttribute "http://www.oracle.com/xml/jaxp/properties/totalEntitySizeLimit" "100000")
+      (.setAttribute "http://www.oracle.com/xml/jaxp/properties/maxParameterEntitySizeLimit" "10000")
+      (.setAttribute "http://www.oracle.com/xml/jaxp/properties/maxElementDepth" "100")
+      (.setExpandEntityReferences false))))
 
 (defn str->inputstream
   "Unravels a string into an input stream so we can work with Java constructs."
   [unravel]
-  (java.io.ByteArrayInputStream. (.getBytes unravel charset-format)))
+  (ByteArrayInputStream. (.getBytes unravel charset-format)))
 
 (defn str->xmldoc
   [parsable-str]
@@ -155,10 +140,11 @@
         saml-resp (.unmarshall unmarshaller xmldoc)]
     saml-resp))
 
-;; https://www.purdue.edu/apps/account/docs/Shibboleth/Shibboleth_information.jsp
-;;  Or
-;; https://wiki.library.ucsf.edu/display/IAM/EDS+Attributes
 (def saml2-attr->name
+  "Get friendly name for a SAML2 attribute
+   https://www.purdue.edu/apps/account/docs/Shibboleth/Shibboleth_information.jsp
+    Or
+   https://wiki.library.ucsf.edu/display/IAM/EDS+Attributes"
   (let [names {"urn:oid:0.9.2342.19200300.100.1.1" "uid"
                "urn:oid:0.9.2342.19200300.100.1.3" "mail"
                "urn:oid:2.16.840.1.113730.3.1.241" "displayName"
@@ -179,10 +165,10 @@
     (fn [attr-oid]
       (get names attr-oid attr-oid))))
 
-;; http://kevnls.blogspot.gr/2009/07/processing-saml-in-java-using-opensaml.html
-;; http://stackoverflow.com/questions/9422545/decrypting-encrypted-assertion-using-saml-2-0-in-java-using-opensaml
 (defn parse-saml-assertion
-  "Returns the attributes and the 'audiences' for the given SAML assertion"
+  "Returns the attributes and the 'audiences' for the given SAML assertion
+   http://kevnls.blogspot.gr/2009/07/processing-saml-in-java-using-opensaml.html
+   http://stackoverflow.com/questions/9422545/decrypting-encrypted-assertion-using-saml-2-0-in-java-using-opensaml"
   [assertion]
   (let [statements (.getAttributeStatements assertion)
         subject (.getSubject assertion)
@@ -218,7 +204,8 @@
     (authenticated-redirect-template-fn context)))
 
 (defn saml-acs-handler
-  "Endpoint for POSTs to Waiter with IdP-signed credentials. If signature is valid, return principal and original request."
+  "Endpoint for POSTs to Waiter with IdP-signed credentials. If signature is valid, return self-posting form
+   that posts authentication data to the original hostname of the application."
   [request {:keys [auth-redirect-endpoint idp-cert password]}]
   {:pre [(not (string/blank? idp-cert))
          (not-empty password)]}
@@ -226,13 +213,13 @@
         {:keys [host request-url scheme]} (try (-> form-params (get "RelayState") (utils/base-64-string->map password))
                                                (catch Exception e
                                                  (throw (ex-info "Could not parse SAML RelayState"
-                                                                 {:status 400
+                                                                 {:inner-exception e
                                                                   :saml-relay-state (get form-params "RelayState")
-                                                                  :inner-exception e} e))))
+                                                                  :status 400} e))))
         saml-response (-> form-params
                         (get "SAMLResponse")
-                        (base64->str)
-                        (xml-string->saml-resp))
+                        base64->str
+                        xml-string->saml-resp)
         assertions (.getAssertions saml-response)
         _ (when-not (= 1 (count assertions))
             (throw (ex-info (str "Could not authenticate user. Invalid SAML response. "
@@ -244,12 +231,12 @@
                             {:status 400})))
         {:keys [attrs confirmation name-id]} (parse-saml-assertion assertion)
         not-on-or-after (clj-time.coerce/from-sql-time (:not-on-or-after confirmation))
-        t-now (t/now)
-        _ (when-not (t/before? t-now not-on-or-after)
+        current-time (t/now)
+        _ (when-not (t/before? current-time not-on-or-after)
             (throw (ex-info "Could not authenticate user. Expired SAML assertion."
-                            {:status 400
+                            {:current-time current-time
                              :expiry-time not-on-or-after
-                             :current-time t-now})))
+                             :status 400})))
         email (first (get attrs "email"))
         ; https://docs.microsoft.com/en-us/windows-server/identity/ad-fs/technical-reference/the-role-of-claims
         upn (first (get attrs "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"))
@@ -265,7 +252,8 @@
      :status 200}))
 
 (defn saml-auth-redirect-handler
-  "Endpoint for POSTs to Waiter with IdP-signed credentials. If signature is valid, return principal and original request."
+  "Endpoint for POST back to Waiter with SAML authentication data. If data is still valid,
+   add waiter authentication cookie and redirect back to the original user app."
   [request {:keys [password]}]
   {:pre [(not-empty password)]}
   (if-let [saml-auth-data (get-in (ring-params/params-request request) [:form-params "saml-auth-data"])]
@@ -273,24 +261,24 @@
           (try
             (utils/base-64-string->map saml-auth-data password)
             (catch Exception e
-              (throw (ex-info "Could not parse saml-auth-data." {:status 400
+              (throw (ex-info "Could not parse saml-auth-data." {:inner-exception e
                                                                  :saml-auth-data saml-auth-data
-                                                                 :inner-exception e} e))))
-          t-now (t/now)
-          _ (when-not (t/before? t-now not-on-or-after)
+                                                                 :status 400} e))))
+          current-time (t/now)
+          _ (when-not (t/before? current-time not-on-or-after)
               (throw (ex-info "Could not authenticate user. Expired SAML assertion."
-                              {:status 400
-                               :saml-assertion-not-on-or-after not-on-or-after
-                               :t-now t-now})))
-          auth-cookie-expiry-date (t/min-date not-on-or-after (t/plus t-now (t/days 1)))
-          auth-cookie-age-in-seconds (-> t-now
+                              {:current-time current-time
+                               :expiry-time not-on-or-after
+                               :status 400})))
+          auth-cookie-expiry-date (t/min-date not-on-or-after (t/plus current-time (t/days 1)))
+          auth-cookie-age-in-seconds (-> current-time
                                        (t/interval auth-cookie-expiry-date)
                                        t/in-seconds)
           {:keys [authorization/principal authorization/user] :as auth-params-map}
           (auth/auth-params-map saml-principal)]
-      (auth/handle-request-auth (constantly {:status 303
+      (auth/handle-request-auth (constantly {:body ""
                                              :headers {"location" redirect-url}
-                                             :body ""})
+                                             :status 303})
                                 request principal auth-params-map password auth-cookie-age-in-seconds))
     (throw (ex-info "Missing saml-auth-data from SAML authenticated redirect message"
                     {:status 400}))))
@@ -325,25 +313,23 @@
   []
   (f/unparse instant-format (t/now)))
 
-(let [opensaml-bootstrapped-atom (atom false)]
-  (defn create-request-factory!
-    "Creates new requests for a particular service, format, and acs-url."
-    [idp-uri saml-service-name acs-url]
-    ;;; Bootstrap opensaml when we create a request factory.
-    (when (compare-and-set! opensaml-bootstrapped-atom false true)
-      (DefaultBootstrap/bootstrap))
-    #(create-request (make-issue-instant)
-                     saml-service-name
-                     (str "WAITER-" (utils/make-uuid))
-                     acs-url
-                     idp-uri)))
+(defn create-request-factory!
+  "Creates new requests for a particular service, format, and acs-url."
+  [idp-uri saml-service-name acs-url]
+  ;;; Bootstrap opensaml when we create a request factory.
+  (DefaultBootstrap/bootstrap)
+  #(create-request (make-issue-instant)
+                   saml-service-name
+                   (str "WAITER-" (utils/unique-identifier))
+                   acs-url
+                   idp-uri))
 
 (defrecord SamlAuthenticator [auth-redirect-endpoint idp-cert idp-uri password saml-request-factory]
   auth/Authenticator
   (process-callback [this {{:keys [operation]} :route-params :as request}]
-    (if-let [handler (get {"acs" saml-acs-handler
-                           "auth-redirect" saml-auth-redirect-handler} operation)]
-      (handler request this)
+    (case operation
+      "acs" (saml-acs-handler request this)
+      "auth-redirect" (saml-auth-redirect-handler request this)
       (throw (ex-info (str "Unknown SAML authenticator operation: " operation)
                       {:operation operation
                        :status 400}))))
