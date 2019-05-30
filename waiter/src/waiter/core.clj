@@ -1200,7 +1200,7 @@
    :not-found-handler-fn (pc/fnk [] handler/not-found-handler)
    :ping-service-handler (pc/fnk [[:daemons router-state-maintainer]
                                   [:state fallback-state-atom]
-                                  process-request-handler-fn process-request-wrapper-fn]
+                                  process-request-handler-fn process-request-wrapper-fn wrap-secure-request-fn]
                            (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                  handler (process-request-wrapper-fn
                                            (fn inner-ping-service-handler [request]
@@ -1213,10 +1213,11 @@
                                                         :service-id service-id
                                                         :status (service/retrieve-service-status-label service-id global-state)}))]
                                                (pr/ping-service process-request-handler-fn service-state-fn request))))]
-                             (fn ping-service-handler [request]
-                               (-> request
-                                 (update :headers assoc "x-waiter-fallback-period-secs" "0")
-                                 (handler)))))
+                             (wrap-secure-request-fn
+                               (fn ping-service-handler [request]
+                                 (-> request
+                                   (update :headers assoc "x-waiter-fallback-period-secs" "0")
+                                   (handler))))))
    :process-request-fn (pc/fnk [process-request-handler-fn process-request-wrapper-fn]
                          (process-request-wrapper-fn process-request-handler-fn))
    :process-request-handler-fn (pc/fnk [[:routines determine-priority-fn make-basic-auth-fn post-process-async-request-response-fn
