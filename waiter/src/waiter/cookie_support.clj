@@ -62,9 +62,8 @@
   [response password name value age-in-seconds]
   (letfn [(add-cookie-into-response [response]
             (let [encoded-cookie (UrlEncoded/encodeString (encode-cookie value password))
-                  max-age age-in-seconds
                   path "/"
-                  set-cookie-header (str name "=" encoded-cookie ";Max-Age=" max-age ";Path=" path ";HttpOnly=true")
+                  set-cookie-header (str name "=" encoded-cookie ";Max-Age=" age-in-seconds ";Path=" path ";HttpOnly=true")
                   existing-header (get-in response [:headers "set-cookie"])
                   new-header (cond
                                (nil? existing-header) set-cookie-header

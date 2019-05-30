@@ -19,18 +19,24 @@
             [clj-time.format :as f]
             [clojure.data.codec.base64 :as b64]
             [clojure.java.io :as io]
+            [clojure.string :as string]
             [clojure.tools.logging :as log]
             [comb.template :as template]
-            [hiccup.core :as hiccup]
-            [hiccup.page]
             [ring.middleware.params :as ring-params]
             [ring.util.codec :refer [form-encode url-encode base64-encode]]
             [ring.util.response :refer [redirect]]
             [waiter.auth.authentication :as auth]
             [waiter.middleware :as middleware]
-            [waiter.util.utils :as utils])
-  (:import [javax.xml.parsers DocumentBuilderFactory]
-           [org.opensaml.xml.validation ValidationException]))
+            [waiter.util.utils :as utils]
+            [plumbing.core :as pc])
+  (:import (java.io BufferedReader InputStreamReader)
+           (java.security.cert CertificateFactory)
+           (java.util.zip Deflater DeflaterOutputStream)
+           (javax.xml.parsers DocumentBuilderFactory)
+           (org.opensaml Configuration DefaultBootstrap)
+           (org.opensaml.xml.security.x509 BasicX509Credential)
+           (org.opensaml.xml.signature SignatureValidator)
+           (org.opensaml.xml.validation ValidationException)))
 
 (def charset-format (java.nio.charset.Charset/forName "UTF-8"))
 
@@ -38,8 +44,8 @@
   [stream]
   (let [sb (StringBuilder.)]
     (with-open [reader (-> stream
-                         java.io.InputStreamReader.
-                         java.io.BufferedReader.)]
+                         InputStreamReader.
+                         BufferedReader.)]
       (loop [c (.read reader)]
         (if (neg? c)
           (str sb)
@@ -58,9 +64,9 @@
 (defn byte-deflate
   [str-bytes]
   (let [out (java.io.ByteArrayOutputStream.)
-        deflater (java.util.zip.DeflaterOutputStream.
+        deflater (DeflaterOutputStream.
                    out
-                   (java.util.zip.Deflater. -1 true) 1024)]
+                   (Deflater. -1 true) 1024)]
     (.write deflater str-bytes)
     (.close deflater)
     (.toByteArray out)))
@@ -92,7 +98,7 @@
 (defn certificate-x509
   "Takes in a raw X.509 certificate string, parses it, and creates a Java certificate."
   [x509-string]
-  (let [certificate-factory (java.security.cert.CertificateFactory/getInstance "X.509")
+  (let [certificate-factory (CertificateFactory/getInstance "X.509")
         certificate-input-stream (io/input-stream (.getBytes x509-string))]
     (.generateCertificate certificate-factory certificate-input-stream)))
 
@@ -106,9 +112,9 @@
   [assertion idp-cert]
   (when-let [signature (.getSignature assertion)]
     (let [idp-pubkey (-> idp-cert certificate-x509 jcert->public-key)
-          public-creds (doto (new org.opensaml.xml.security.x509.BasicX509Credential)
+          public-creds (doto (new BasicX509Credential)
                          (.setPublicKey idp-pubkey))
-          validator (new org.opensaml.xml.signature.SignatureValidator public-creds)]
+          validator (new SignatureValidator public-creds)]
       (try
         (.validate validator signature)
         true
@@ -144,7 +150,7 @@
   "Parses a SAML response (XML string) from IdP and returns the corresponding (Open)SAML Response object"
   [xml-string]
   (let [xmldoc (.getDocumentElement (str->xmldoc xml-string))
-        unmarshallerFactory (org.opensaml.Configuration/getUnmarshallerFactory)
+        unmarshallerFactory (Configuration/getUnmarshallerFactory)
         unmarshaller (.getUnmarshaller unmarshallerFactory xmldoc)
         saml-resp (.unmarshall unmarshaller xmldoc)]
     saml-resp))
@@ -193,20 +199,19 @@
         audiences (mapcat #(let [audiences (.getAudiences %)]
                              (map (fn [a] (.getAudienceURI a)) audiences))
                           (.getAudienceRestrictions conditions))]
-    {:attrs attrs :audiences audiences
-     :name-id
-     {:value (when name-id (.getValue name-id))
-      :format (when name-id (.getFormat name-id))}
-     :confirmation
-     {:in-response-to (.getInResponseTo subject-confirmation-data)
-      :not-before (tc/to-timestamp (.getNotBefore subject-confirmation-data))
-      :not-on-or-after (tc/to-timestamp (.getNotOnOrAfter subject-confirmation-data))
-      :recipient (.getRecipient subject-confirmation-data)}}))
+    {:attrs attrs
+     :audiences audiences
+     :name-id {:value (when name-id (.getValue name-id))
+               :format (when name-id (.getFormat name-id))}
+     :confirmation {:in-response-to (.getInResponseTo subject-confirmation-data)
+                    :not-before (tc/to-timestamp (.getNotBefore subject-confirmation-data))
+                    :not-on-or-after (tc/to-timestamp (.getNotOnOrAfter subject-confirmation-data))
+                    :recipient (.getRecipient subject-confirmation-data)}}))
 
 (let [authenticated-redirect-template-fn
       (template/fn
         [{:keys [auth-redirect-uri saml-auth-data]}]
-        (slurp (io/resource "web/authenticated-redirect.html")))]
+        (slurp (io/resource "auth/authenticated-redirect.html")))]
   (defn render-authenticated-redirect-template
     "Render the authenticated redirect html page."
     [context]
@@ -215,7 +220,7 @@
 (defn saml-acs-handler
   "Endpoint for POSTs to Waiter with IdP-signed credentials. If signature is valid, return principal and original request."
   [request {:keys [auth-redirect-endpoint idp-cert password]}]
-  {:pre [(not-empty idp-cert)
+  {:pre [(not (string/blank? idp-cert))
          (not-empty password)]}
   (let [{:keys [form-params]} (ring-params/params-request request)
         {:keys [host request-url scheme]} (try (-> form-params (get "RelayState") (utils/base-64-string->map password))
@@ -279,8 +284,8 @@
                                :t-now t-now})))
           auth-cookie-expiry-date (t/min-date not-on-or-after (t/plus t-now (t/days 1)))
           auth-cookie-age-in-seconds (-> t-now
-                           (t/interval auth-cookie-expiry-date)
-                           (t/in-seconds))
+                                       (t/interval auth-cookie-expiry-date)
+                                       t/in-seconds)
           {:keys [authorization/principal authorization/user] :as auth-params-map}
           (auth/auth-params-map saml-principal)]
       (auth/handle-request-auth (constantly {:status 303
@@ -290,25 +295,28 @@
     (throw (ex-info "Missing saml-auth-data from SAML authenticated redirect message"
                     {:status 400}))))
 
+(defn- escape-xml-string
+  "Escape a string for use in an XML document."
+  [str]
+  (string/escape str {\' "&apos;"
+                      \" "&quot;"
+                      \& "&amp;"
+                      \< "&lt;"
+                      \> "&gt;"}))
+
+(let [saml-authentication-request-template-fn
+      (template/fn
+        [{:keys [time-issued saml-service-name saml-id acs-url idp-uri]}]
+        (slurp (io/resource "auth/saml-authentication-request.xml")))]
+  (defn render-saml-authentication-request-template
+    "Render the SAML authentication request XML."
+    [context]
+    (saml-authentication-request-template-fn (pc/map-vals escape-xml-string context))))
+
 (defn create-request
   "Return XML elements that represent a SAML 2.0 auth request."
   [time-issued saml-service-name saml-id acs-url idp-uri]
-  (str
-    (hiccup.page/xml-declaration "UTF-8")
-    (hiccup/html
-      [:samlp:AuthnRequest
-       {:xmlns:samlp "urn:oasis:names:tc:SAML:2.0:protocol"
-        :ID saml-id
-        :Version "2.0"
-        :IssueInstant time-issued
-        :ProtocolBinding "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
-        :ProviderName saml-service-name
-        :IsPassive false
-        :Destination idp-uri
-        :AssertionConsumerServiceURL acs-url}
-       [:saml:Issuer
-        {:xmlns:saml "urn:oasis:names:tc:SAML:2.0:assertion"}
-        saml-service-name]])))
+  (render-saml-authentication-request-template (utils/keys-map time-issued saml-service-name saml-id acs-url idp-uri)))
 
 (def instant-format (f/formatters :date-time-no-ms))
 
@@ -323,7 +331,7 @@
     [idp-uri saml-service-name acs-url]
     ;;; Bootstrap opensaml when we create a request factory.
     (when (compare-and-set! opensaml-bootstrapped-atom false true)
-      (org.opensaml.DefaultBootstrap/bootstrap))
+      (DefaultBootstrap/bootstrap))
     #(create-request (make-issue-instant)
                      saml-service-name
                      (str "WAITER-" (utils/make-uuid))
@@ -332,14 +340,13 @@
 
 (defrecord SamlAuthenticator [auth-redirect-endpoint idp-cert idp-uri password saml-request-factory]
   auth/Authenticator
-  (process-callback [this request scheme operation]
+  (process-callback [this {{:keys [operation]} :route-params :as request}]
     (if-let [handler (get {"acs" saml-acs-handler
                            "auth-redirect" saml-auth-redirect-handler} operation)]
       (handler request this)
       (throw (ex-info (str "Unknown SAML authenticator operation: " operation)
-                      {:status 400
-                       :scheme scheme
-                       :operation operation}))))
+                      {:operation operation
+                       :status 400}))))
   (wrap-auth-handler [_ request-handler]
     (fn saml-authenticator-handler [{:keys [headers query-string request-method uri] :as request}]
       (let [waiter-cookie (auth/get-auth-cookie-value (get headers "cookie"))
@@ -356,7 +363,7 @@
                        scheme (name (utils/request->scheme request))
                        host (get headers "host")
                        request-url (str scheme "://" host uri (when query-string "?") query-string)
-                       relay-state (utils/map->base-64-string {:host host :request-url request-url :scheme scheme} password)]
+                       relay-state (utils/map->base-64-string (utils/keys-map host request-url scheme) password)]
                    (get-idp-redirect idp-uri saml-request relay-state))
             (throw (ex-info "Invalid request method for use with SAML authentication. Only GET supported."
                             {:log-level :info :request-method request-method :status 405}))))))))
@@ -364,9 +371,9 @@
 (defn saml-authenticator
   "Factory function for creating SAML authenticator middleware"
   [{:keys [idp-cert-resource-path idp-cert-uri idp-uri hostname password]}]
-  {:pre [(or (not-empty idp-cert-resource-path) (not-empty idp-cert-uri))
-         (not-empty idp-uri)
-         (not-empty hostname)
+  {:pre [(or (not (string/blank? idp-cert-resource-path)) (not (string/blank? idp-cert-uri)))
+         (not (string/blank? idp-uri))
+         (not (string/blank? hostname))
          (not-empty password)]}
   (let [acs-uri (str "https://" hostname "/waiter-auth/saml/acs")
         auth-redirect-endpoint "/waiter-auth/saml/auth-redirect"

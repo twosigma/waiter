@@ -14,35 +14,31 @@
 ;; limitations under the License.
 ;;
 (ns waiter.auth.composite
-  (:require [plumbing.core :as pc]
+  (:require [clojure.string :as string]
+            [plumbing.core :as pc]
             [waiter.auth.authentication :as auth]
             [waiter.util.utils :as utils]))
-
-(defn- request->authentication
-  "Gets authentication service parameter for a request."
-  [request]
-  (get-in request [:waiter-discovery :service-parameter-template "authentication"]))
 
 (defrecord CompositeAuthenticator [authenticators default-authenticator]
   auth/Authenticator
 
-  (process-callback [_ request scheme operation]
-    (if-let [authenticator (get authenticators (keyword scheme))]
-      (auth/process-callback authenticator request scheme operation)
-      (throw (ex-info (str "Unknown authentication scheme " scheme)
+  (process-callback [_ {{:keys [authentication-scheme]} :route-params :as request}]
+    (if-let [authenticator (get authenticators authentication-scheme)]
+      (auth/process-callback authenticator request)
+      (throw (ex-info (str "Unknown authentication scheme " authentication-scheme)
                       {:composite-authenticators (keys authenticators)
-                       :scheme scheme
+                       :authentication-scheme authentication-scheme
                        :status 400}))))
   (wrap-auth-handler [_ request-handler]
     (let [default-handler (auth/wrap-auth-handler default-authenticator request-handler)
-          handlers (pc/map-vals #(auth/wrap-auth-handler % request-handler) authenticators)]
+          handlers (merge {"standard" default-handler} (pc/map-vals #(auth/wrap-auth-handler % request-handler) authenticators))]
       (fn composite-authenticator-handler [request]
         (let [authentication (get-in request [:waiter-discovery :service-parameter-template "authentication"])]
           (if authentication
-            (if-let [handler (get handlers (keyword authentication))]
+            (if-let [handler (get handlers authentication)]
               (handler request)
               (throw (ex-info (str "No authenticator found for " authentication " authentication.")
-                              {:composite-authenticators (keys authenticators)
+                              {:composite-authenticators (keys handlers)
                                :request-authentication authentication
                                :status 400})))
             (default-handler request)))))))
@@ -62,11 +58,11 @@
 
 (defn composite-authenticator
   "Factory function for creating composite authenticator middleware"
-  [{:keys [default-scheme authentication-schemes] :as context}]
+  [{:keys [authentication-schemes default-scheme] :as context}]
   {:pre [(not-empty authentication-schemes)
-         (keyword? default-scheme)
+         (not (string/blank? default-scheme))
          (contains? authentication-schemes default-scheme)]}
   (let [authenticators (pc/map-vals
                          #(make-authenticator % context)
                          authentication-schemes)]
-    (->CompositeAuthenticator authenticators (default-scheme authenticators))))
+    (->CompositeAuthenticator authenticators (get authenticators default-scheme))))

@@ -23,6 +23,7 @@
             [clojure.walk :as walk]
             [comb.template :as template]
             [digest]
+            [plumbing.core :as pc]
             [taoensso.nippy :as nippy]
             [taoensso.nippy.compression :as compression]
             [waiter.util.date-utils :as du])
@@ -358,7 +359,8 @@
                   (recur (inc num-tries) (* delay-ms delay-multiplier))))))))
 
 (defn unique-identifier
-  "Generates a new unique id using the time and a random value."
+  "Generates a new unique id using the time and a random value.
+   Faster than UUID/randomUUID, but not necessarily globally unique."
   []
   (let [thread-local-random (ThreadLocalRandom/current)]
     (str (Long/toString (System/nanoTime) 16) "-" (Long/toString (.nextLong thread-local-random Long/MAX_VALUE) 16))))
@@ -547,3 +549,21 @@
   "Returns a UUID"
   []
   (str (UUID/randomUUID)))
+
+(defmacro keys-map
+  "Convenience macro to do the opposite of destructuring on keys - take values and create a map of keywords to values.
+   e.g. this re-creates the original map:
+   (let [map {:a 1 :b 2 :c 3}
+         {:keys [a b c]} map]
+     (keys-map a b c))"
+  [& args]
+  (pc/map-from-vals keyword args))
+
+(defmacro strs-map
+  "Convenience macro to do the opposite of destructuring on strs - take values and create a map of strings to values.
+   e.g. this re-creates the original map:
+   (let [map {\"a\" 1 \"b\" 2 \"c\" 3}
+         {:strs [a b c]} map]
+     (strs-map a b c))"
+  [& args]
+  (pc/map-from-vals name args))

@@ -123,7 +123,7 @@
    (s/required-key :service-description-constraints) {s/Str {(s/required-key :max) schema/positive-num}}
    ; service-description-defaults should never contain default values for required fields, e.g. version, cmd, run-as-user, etc.
    (s/required-key :service-description-defaults) {(s/required-key "allowed-params") #{schema/non-empty-string}
-                                                   (s/required-key "authentication") schema/valid-authentication
+                                                   (s/required-key "authentication") schema/non-empty-string
                                                    (s/required-key "backend-proto") schema/valid-backend-proto
                                                    (s/required-key "blacklist-on-503") s/Bool
                                                    (s/required-key "concurrency-level") schema/positive-int

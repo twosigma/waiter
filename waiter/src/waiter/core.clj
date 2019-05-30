@@ -130,7 +130,7 @@
                                      ["/status/" :request-id "/" :router-id "/" :service-id "/" :host "/" :port "/" [#".+" :location]]
                                      :async-status-handler-fn}
                      "waiter-auth" {"" :waiter-auth-handler-fn
-                                    ["/" :scheme "/" :operation] :waither-auth-scheme-handler-fn}
+                                    ["/" :authentication-scheme "/" :operation] :waiter-auth-scheme-handler-fn}
                      "waiter-consent" {"" :waiter-acknowledge-consent-handler-fn
                                        ["/" [#".*" :path]] :waiter-request-consent-handler-fn}
                      "waiter-interstitial" {["/" [#".*" :path]] :waiter-request-interstitial-handler-fn}
@@ -505,8 +505,8 @@
         ; special urls that are always for Waiter (FIXME)
         (or (#{"/app-name" "/service-id" "/token" "/waiter-ping"} uri)
             (some #(str/starts-with? (str uri) %)
-                  ["/waiter-async/complete/" "/waiter-async/result/" "/waiter-async/status/" "/waiter-consent"
-                   "/waiter-interstitial" "/waiter-auth/"])
+                  ["/waiter-async/complete/" "/waiter-async/result/" "/waiter-async/status/" "/waiter-auth/"
+                   "/waiter-consent" "/waiter-interstitial"])
             (and (or (str/blank? host)
                      (valid-waiter-hostnames (-> host
                                                  (str/split #":")
@@ -583,7 +583,8 @@
                                                     {:service-description-constraints service-description-constraints
                                                      :unsupported-keys (-> unknown-keys vec sort)})))
                                   (utils/create-component
-                                    service-description-builder-config :context {:constraints service-description-constraints}))
+                                    service-description-builder-config :context {:constraints service-description-constraints
+                                                                                 xxx}))
    :service-id-prefix (pc/fnk [[:settings [:cluster-config service-prefix]]] service-prefix)
    :start-service-cache (pc/fnk []
                           (cu/cache-factory {:threshold 100
@@ -1489,9 +1490,9 @@
                              (wrap-secure-request-fn
                                (fn waiter-auth-handler-fn [request]
                                  {:body (str (:authorization/user request)), :status 200})))
-   :waither-auth-scheme-handler-fn (pc/fnk [[:state authenticator]]
-                                     (fn waither-auth-scheme-handler-fn [{{:keys [scheme operation]} :route-params :as request}]
-                                       (auth/process-callback authenticator request scheme operation)))
+   :waiter-auth-scheme-handler-fn (pc/fnk [[:state authenticator]]
+                                    (fn waiter-auth-scheme-handler-fn [request]
+                                      (auth/process-callback authenticator request)))
    :waiter-acknowledge-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template
                                                     token->token-metadata]
                                                    [:settings consent-expiry-days]

@@ -208,23 +208,23 @@
                         ;; then the :default-scheme is used
                         ;:kind :composite
                         :composite {:factory-fn waiter.auth.composite/composite-authenticator
-                                    :authentication-schemes {:kerberos {:authenticator-factory-fn waiter.auth.kerberos/kerberos-authenticator
-                                                                        ;; the maximum number of concurrent Kerberos library (GSSLibStub) invocations allowed
-                                                                        :concurrency-level 20
-                                                                        ;; the idle time before cached threads from the invocation throttler are terminated
-                                                                        :keep-alive-mins 5
-                                                                        ;; the maximum number of request waiting for Kerberos auth before server responds
-                                                                        ;; with a 503 temporarily unavailable
-                                                                        :max-queue-length 1000}
-                                                             :saml {:authenticator-factory-fn waiter.auth.saml/saml-authenticator
-                                                                    ;; resource path of the signing certificate used by the Identity Provider
-                                                                    :idp-cert-resource-path "idp.crt"
-                                                                    ;; URI of the signing certificate used by the Identity Provider. Used if resource path is not set
-                                                                    :idp-cert-uri "file:///path/idp.crt"
-                                                                    ;; URI of the Identity Provider
-                                                                    :idp-uri "https://idp-host/idp-endpoint"}}
+                                    :authentication-schemes {"kerberos" {:authenticator-factory-fn waiter.auth.kerberos/kerberos-authenticator
+                                                                         ;; the maximum number of concurrent Kerberos library (GSSLibStub) invocations allowed
+                                                                         :concurrency-level 20
+                                                                         ;; the idle time before cached threads from the invocation throttler are terminated
+                                                                         :keep-alive-mins 5
+                                                                         ;; the maximum number of request waiting for Kerberos auth before server responds
+                                                                         ;; with a 503 temporarily unavailable
+                                                                         :max-queue-length 1000}
+                                                             "saml" {:authenticator-factory-fn waiter.auth.saml/saml-authenticator
+                                                                     ;; resource path of the signing certificate used by the Identity Provider
+                                                                     :idp-cert-resource-path "idp.crt"
+                                                                     ;; URI of the signing certificate used by the Identity Provider. Used if resource path is not set
+                                                                     :idp-cert-uri "file:///path/idp.crt"
+                                                                     ;; URI of the Identity Provider
+                                                                     :idp-uri "https://idp-host/idp-endpoint"}}
                                     ;; The authentication scheme to use if one is not specified
-                                    :default-scheme :kerberos}
+                                    :default-scheme "kerberos"}
 
                         ;; :kind :one-user allows anonymous access to services (for testing purposes only):
                         :one-user {;; Custom implementations should specify a :factory-fn

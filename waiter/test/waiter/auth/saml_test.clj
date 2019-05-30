@@ -52,14 +52,16 @@
     (is (thrown? Throwable (dummy-saml-authenticator (assoc valid-config :idp-uri nil))))
     (is (thrown? Throwable (dummy-saml-authenticator (assoc valid-config :idp-cert-uri nil))))
     (is (thrown? Throwable (dummy-saml-authenticator (assoc valid-config :hostname nil))))
-    (is (thrown? Throwable (dummy-saml-authenticator (assoc valid-config :password nil)))))
+    (is (thrown? Throwable (dummy-saml-authenticator (assoc valid-config :password nil))))
+    (is (thrown? Throwable (dummy-saml-authenticator (assoc valid-config :idp-uri " "))))
+    (is (thrown? Throwable (dummy-saml-authenticator (assoc valid-config :idp-cert-uri " "))))
+    (is (thrown? Throwable (dummy-saml-authenticator (assoc valid-config :hostname " ")))))
   (testing "should not throw on valid configuration"
     (dummy-saml-authenticator valid-config)))
 
 (deftest test-wrap-handler
   (let [saml-authenticator (dummy-saml-authenticator)
-        handler (fn [request] request)
-        wrapped-handler (auth/wrap-auth-handler saml-authenticator handler)]
+        wrapped-handler (auth/wrap-auth-handler saml-authenticator identity)]
     (testing "has auth cookie"
       (with-redefs [auth/decode-auth-cookie (fn [waiter-cookie password] (if (= "my-auth-cookie" waiter-cookie) ["my-user@domain"] nil))
                     auth/decoded-auth-valid? (fn [decoded-auth-cookie] true)]
@@ -153,13 +155,13 @@
         processed-saml-response {:body "<!doctype html>
 <html>
 <head>
-    <title>Working...</title>
+    <title>Redirecting to application...</title>
 </head>
 <body>
 <form action=\"scheme://host/waiter-auth/saml/auth-redirect\" method=\"post\">
     <input type=\"hidden\" name=\"saml-auth-data\" value=\"ezpub3Qtb24tb3ItYWZ0ZXIgI2Nsai10aW1lL2RhdGUtdGltZSAiMjAxOS0wNS0xNVQyMTo1Mjo0Ni4wMDBaIiwgOnJlZGlyZWN0LXVybCAicmVxdWVzdC11cmwiLCA6c2FtbC1wcmluY2lwYWwgInVzZXIxQGV4YW1wbGUuY29tIn0=\"/>
     <noscript>
-        <p>JavaScript is disabled. Click Continue to continue to your application.</p>
+        <p>JavaScript is disabled. Click \"Continue\" to continue to your application.</p>
         <input type=\"submit\" value=\"Continue\"/>
     </noscript>
 </form>
@@ -169,9 +171,7 @@
 "
                                  :status 200}]
     (with-redefs [nippy/freeze (fn [data _] (.getBytes (str data)))
-                  t/now (fn [] test-time)
-                  auth/handle-request-auth (fn [handler request user principal password]
-                                             (merge (handler) {:user user :principal principal}))]
+                  t/now (fn [] test-time)]
       (testing "has valid saml response"
         (let [request (merge {:form-params {"SAMLResponse" (slurp "test-files/saml/saml-response.txt") "RelayState" relay-state-string}} dummy-request)]
           (is (= processed-saml-response (saml-acs-handler request saml-authenticator)))))

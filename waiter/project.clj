@@ -30,8 +30,7 @@
                    :dev :dev
                    :perf (every-pred :perf (complement :explicit))}
 
-  :dependencies [[reaver "0.1.2"]
-                 [bidi "2.1.5"
+  :dependencies [[bidi "2.1.5"
                   :exclusions [prismatic/schema ring/ring-core]]
                  [twosigma/courier "1.2.1"
                   :exclusions [com.google.guava/guava io.grpc/grpc-core]
@@ -57,7 +56,6 @@
                   :exclusions [org.clojure/clojure]]
                  [fullcontact/full.async "1.0.0"
                   :exclusions [org.clojure/clojure org.clojure/core.async]]
-                 [hiccup/hiccup "1.0.5"]
                  [io.dropwizard.metrics/metrics-graphite "3.1.1"
                   :exclusions [org.slf4j/slf4j-api]]
                  [jarohen/chime "0.2.2"
@@ -105,6 +103,7 @@
                  [potemkin "0.4.5"]
                  [prismatic/plumbing "0.5.5"]
                  [prismatic/schema "1.1.10"]
+                 [reaver "0.1.2" :scope "test"]
                  [ring/ring-core "1.7.1"
                   :exclusions [org.clojure/tools.reader]]
                  [ring/ring-ssl "0.3.0"
