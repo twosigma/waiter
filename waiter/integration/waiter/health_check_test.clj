@@ -21,9 +21,12 @@
             [waiter.util.http-utils :as hu]))
 
 (defn assert-ping-response
-  [health-check-protocol idle-timeout service-id response]
-  (let [{:keys [ping-response service-state]} (some-> response :body json/read-str walk/keywordize-keys)]
+  [waiter-url health-check-protocol idle-timeout service-id response]
+  (let [{:keys [ping-response service-description service-state]}
+        (some-> response :body json/read-str walk/keywordize-keys)]
     (assert-response-status response 200)
+    (is (seq service-description) (str service-description))
+    (is (= (service-id->service-description waiter-url service-id) service-description))
     (if (nil? idle-timeout)
       (do
         (is (= "received-response" (get ping-response :result)) (str ping-response))
@@ -55,7 +58,7 @@
         health-check-protocol (or health-check-proto backend-proto "http")]
     (with-service-cleanup
       service-id
-      (assert-ping-response health-check-protocol idle-timeout service-id response))))
+      (assert-ping-response waiter-url health-check-protocol idle-timeout service-id response))))
 
 (deftest ^:parallel ^:integration-fast test-basic-ping-service
   (testing-using-waiter-url
@@ -141,7 +144,7 @@
           (is service-id-1)
           (with-service-cleanup
             service-id-1
-            (assert-ping-response backend-proto nil service-id-1 ping-response-1)
+            (assert-ping-response waiter-url backend-proto nil service-id-1 ping-response-1)
             (let [token-description-2 (assoc token-description-1 :name (str token "-v2") :version "version-2")
                   _ (assert-response-status (post-token waiter-url token-description-2) 200)
                   ping-response-2 (make-request waiter-url "/waiter-ping" :headers request-headers)
@@ -150,6 +153,6 @@
               (is (not= service-id-1 service-id-2))
               (with-service-cleanup
                 service-id-2
-                (assert-ping-response backend-proto nil service-id-2 ping-response-2)))))
+                (assert-ping-response waiter-url backend-proto nil service-id-2 ping-response-2)))))
         (finally
           (delete-token-and-assert waiter-url token))))))
