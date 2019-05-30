@@ -772,7 +772,6 @@
                        body (str body))]
         (async/close! ctrl-ch)
         (-> health-check-response
-          (select-keys [:headers :status])
           (assoc :body body-str)
           (assoc :result (if (= source-ch timeout-ch) :timed-out :received-response))))
       (catch Exception ex
@@ -787,8 +786,10 @@
     (try
       (let [{:keys [core-service-description service-id]} descriptor
             idle-timeout-ms (Integer/parseInt (get headers "x-waiter-timeout" "300000"))
-            ping-response (make-health-check-request process-request-handler-fn idle-timeout-ms request)]
-        (utils/clj->json-response
-          {:ping-response (async/<! ping-response)
-           :service-description core-service-description
-           :service-state (service-state-fn service-id)})))))
+            ping-response (async/<! (make-health-check-request process-request-handler-fn idle-timeout-ms request))]
+        (merge
+          (dissoc ping-response [:body :error-chan :headers :request :result :status :trailers])
+          (utils/clj->json-response
+            {:ping-response (select-keys ping-response [:body :headers :result :status])
+             :service-description core-service-description
+             :service-state (service-state-fn service-id)}))))))

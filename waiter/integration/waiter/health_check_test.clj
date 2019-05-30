@@ -156,3 +156,33 @@
                 (assert-ping-response waiter-url backend-proto nil service-id-2 ping-response-2)))))
         (finally
           (delete-token-and-assert waiter-url token))))))
+
+(deftest ^:parallel ^:integration-fast test-ping-for-run-as-requester
+  (testing-using-waiter-url
+    (let [token (rand-name)
+          request-headers {:x-waiter-debug true
+                           :x-waiter-token token}
+          backend-proto "http"
+          token-description (-> (kitchen-request-headers :prefix "")
+                              (assoc :backend-proto backend-proto
+                                     :health-check-url "/status?include=request-info"
+                                     :idle-timeout-mins 1
+                                     :name token
+                                     :permitted-user "*"
+                                     :run-as-user "*"
+                                     :token token
+                                     :version "version-foo"))]
+      (try
+        (assert-response-status (post-token waiter-url token-description) 200)
+        (let [ping-response (make-request waiter-url "/waiter-ping" :headers request-headers)
+              service-id (get-in ping-response [:headers "x-waiter-service-id"])]
+          (is service-id)
+          (with-service-cleanup
+            service-id
+            (assert-ping-response waiter-url backend-proto nil service-id ping-response)
+            (let [{:keys [permitted-user run-as-user]} (service-id->service-description waiter-url service-id)
+                  current-user (retrieve-username)]
+              (is (= current-user permitted-user))
+              (is (= current-user run-as-user)))))
+        (finally
+          (delete-token-and-assert waiter-url token))))))
