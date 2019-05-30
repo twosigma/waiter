@@ -206,7 +206,7 @@
 (defn saml-acs-handler
   "Endpoint for POSTs to Waiter with IdP-signed credentials. If signature is valid, return self-posting form
    that posts authentication data to the original hostname of the application."
-  [request {:keys [auth-redirect-endpoint idp-cert password]}]
+  [{:keys [auth-redirect-endpoint idp-cert password]} request]
   {:pre [(not (string/blank? idp-cert))
          (not-empty password)]}
   (let [{:keys [form-params]} (ring-params/params-request request)
@@ -254,7 +254,7 @@
 (defn saml-auth-redirect-handler
   "Endpoint for POST back to Waiter with SAML authentication data. If data is still valid,
    add waiter authentication cookie and redirect back to the original user app."
-  [request {:keys [password]}]
+  [{:keys [password]} request]
   {:pre [(not-empty password)]}
   (if-let [saml-auth-data (get-in (ring-params/params-request request) [:form-params "saml-auth-data"])]
     (let [{:keys [not-on-or-after redirect-url saml-principal]}
@@ -328,8 +328,8 @@
   auth/Authenticator
   (process-callback [this {{:keys [operation]} :route-params :as request}]
     (case operation
-      "acs" (saml-acs-handler request this)
-      "auth-redirect" (saml-auth-redirect-handler request this)
+      "acs" (saml-acs-handler this request)
+      "auth-redirect" (saml-auth-redirect-handler this request)
       (throw (ex-info (str "Unknown SAML authenticator operation: " operation)
                       {:operation operation
                        :status 400}))))
