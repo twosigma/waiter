@@ -348,10 +348,12 @@
   "Asserts the response status and includes CID in failed message log"
   [response expected-status]
   `(let [response-cid# (get-in ~response [:headers "x-cid"] "unknown")
+         response-server# (get-in ~response [:headers "server"] "unknown")
          actual-status# (:status ~response)
          response-body# (:body ~response)
          response-error# (:error ~response)
-         assertion-message# (str "[CID=" response-cid# "] Expected status: " ~expected-status
+         assertion-message# (str "[CID=" response-cid# ", server=" response-server# "] "
+                                 "Expected status: " ~expected-status
                                  ", actual: " actual-status# "\r\n Body:" response-body#
                                  (when response-error# (str "\r\n Error: " response-error#)))]
      (when (not= ~expected-status actual-status#)
