@@ -583,8 +583,7 @@
                                                     {:service-description-constraints service-description-constraints
                                                      :unsupported-keys (-> unknown-keys vec sort)})))
                                   (utils/create-component
-                                    service-description-builder-config :context {:constraints service-description-constraints
-                                                                                 }))
+                                    service-description-builder-config :context {:constraints service-description-constraints}))
    :service-id-prefix (pc/fnk [[:settings [:cluster-config service-prefix]]] service-prefix)
    :start-service-cache (pc/fnk []
                           (cu/cache-factory {:threshold 100

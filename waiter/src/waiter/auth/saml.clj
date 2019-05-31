@@ -21,6 +21,8 @@
             [clojure.java.io :as io]
             [clojure.string :as string]
             [comb.template :as template]
+            [metrics.counters :as counters]
+            [plumbing.core :as pc]
             [ring.middleware.params :as ring-params]
             [ring.util.codec :as codec]
             [ring.util.response :as response]
@@ -28,7 +30,7 @@
             [waiter.middleware :as middleware]
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils]
-            [plumbing.core :as pc])
+            [waiter.metrics :as metrics])
   (:import (java.io ByteArrayInputStream ByteArrayOutputStream)
            (java.nio.charset Charset)
            (java.security.cert CertificateFactory)
@@ -312,37 +314,49 @@
                    acs-url
                    idp-uri))
 
+(defmacro endpoint-with-waiter-metrics
+  "Calls body, wrapping with timer, count, concurrent count, and rate metrics"
+  [classifier nested-path & body]
+  `(:out (metrics/with-timer
+           (metrics/waiter-timer ~classifier ~@nested-path) ; timer has both timer and rate
+           (do
+             (counters/inc! (metrics/waiter-counter ~classifier ~@nested-path))
+             (counters/inc! (metrics/waiter-counter ~classifier ~@(conj nested-path "concurrent")))
+             (let [~'rval ~@body]
+               (counters/dec! (metrics/waiter-counter ~classifier ~@(conj nested-path "concurrent")))
+               ~'rval)))))
+
 (defrecord SamlAuthenticator [auth-redirect-endpoint idp-uri password saml-request-factory saml-signature-validator]
   auth/Authenticator
   (process-callback [this {{:keys [operation]} :route-params :as request}]
     (case operation
-      "acs" (saml-acs-handler this request)
-      "auth-redirect" (saml-auth-redirect-handler this request)
+      "acs" (endpoint-with-waiter-metrics "auth" ["saml" "acs"] (saml-acs-handler this request))
+      "auth-redirect" (endpoint-with-waiter-metrics "auth" ["saml" "auth-redirect"] (saml-auth-redirect-handler this request))
       (throw (ex-info (str "Unknown SAML authenticator operation: " operation)
                       {:operation operation
                        :status 400}))))
   (wrap-auth-handler [_ request-handler]
     (fn saml-authenticator-handler [{:keys [headers query-string request-method uri] :as request}]
-      (let [waiter-cookie (auth/get-auth-cookie-value (get headers "cookie"))
-            [auth-principal _ :as decoded-auth-cookie] (auth/decode-auth-cookie waiter-cookie password)]
-        (cond
-          ;; Use the cookie, if not expired
-          (auth/decoded-auth-valid? decoded-auth-cookie)
-          (let [auth-params-map (auth/auth-params-map auth-principal)
-                request-handler' (middleware/wrap-merge request-handler auth-params-map)]
-            (request-handler' request))
-          :else
-          (case request-method
-            :get (let [saml-request (saml-request-factory)
-                       scheme (name (utils/request->scheme request))
-                       host (get headers "host")
-                       request-url (str scheme "://" host uri (when query-string "?") query-string)
-                       relay-state (utils/map->base-64-string (utils/keys-map host request-url scheme) password)]
-                   (get-idp-redirect idp-uri saml-request relay-state))
-            (throw (ex-info "Invalid request method for use with SAML authentication. Only GET supported."
-                            {:log-level :info :request-method request-method :status 405}))))))))
-
-
+      (endpoint-with-waiter-metrics
+        "auth" ["saml" "auth-handler"]
+        (let [waiter-cookie (auth/get-auth-cookie-value (get headers "cookie"))
+              [auth-principal _ :as decoded-auth-cookie] (auth/decode-auth-cookie waiter-cookie password)]
+          (cond
+            ;; Use the cookie, if not expired
+            (auth/decoded-auth-valid? decoded-auth-cookie)
+            (let [auth-params-map (auth/auth-params-map auth-principal)
+                  request-handler' (middleware/wrap-merge request-handler auth-params-map)]
+              (request-handler' request))
+            :else
+            (case request-method
+              :get (let [saml-request (saml-request-factory)
+                         scheme (name (utils/request->scheme request))
+                         host (get headers "host")
+                         request-url (str scheme "://" host uri (when query-string "?") query-string)
+                         relay-state (utils/map->base-64-string (utils/keys-map host request-url scheme) password)]
+                     (get-idp-redirect idp-uri saml-request relay-state))
+              (throw (ex-info "Invalid request method for use with SAML authentication. Only GET supported."
+                              {:log-level :info :request-method request-method :status 405})))))))))
 
 (defn saml-authenticator
   "Factory function for creating SAML authenticator middleware"
@@ -357,10 +371,10 @@
                    (slurp (clojure.java.io/resource idp-cert-resource-path))
                    (slurp idp-cert-uri))
         idp-public-key (-> (CertificateFactory/getInstance "X.509")
-                           (.generateCertificate (io/input-stream (.getBytes idp-cert)))
-                           .getPublicKey)
+                         (.generateCertificate (io/input-stream (.getBytes idp-cert)))
+                         .getPublicKey)
         public-credential (doto (new BasicX509Credential)
-                       (.setPublicKey idp-public-key))
+                            (.setPublicKey idp-public-key))
         saml-signature-validator (new SignatureValidator public-credential)
         saml-request-factory (create-request-factory! idp-uri "waiter" acs-uri)]
     (->SamlAuthenticator auth-redirect-endpoint idp-uri password saml-request-factory saml-signature-validator)))

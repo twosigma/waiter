@@ -59,7 +59,7 @@
    (s/required-key "version") schema/non-empty-string
    ;; Optional
    (s/optional-key "allowed-params") #{environment-variable-schema}
-   (s/optional-key "authentication") schema/valid-authentication
+   (s/optional-key "authentication") schema/non-empty-string
    (s/optional-key "backend-proto") schema/valid-backend-proto
    (s/optional-key "cmd-type") schema/non-empty-string
    (s/optional-key "distribution-scheme") (s/enum "balanced" "simple")
