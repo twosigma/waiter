@@ -22,9 +22,9 @@
 
 (defn assert-ping-response
   [waiter-url health-check-protocol idle-timeout service-id response]
+  (assert-response-status response 200)
   (let [{:keys [ping-response service-description service-state]}
         (some-> response :body json/read-str walk/keywordize-keys)]
-    (assert-response-status response 200)
     (is (seq service-description) (str service-description))
     (is (= (service-id->service-description waiter-url service-id) service-description))
     (if (nil? idle-timeout)
