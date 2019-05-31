@@ -20,13 +20,13 @@
             [clojure.data.codec.base64 :as b64]
             [clojure.java.io :as io]
             [clojure.string :as string]
-            [clojure.tools.logging :as log]
             [comb.template :as template]
             [ring.middleware.params :as ring-params]
             [ring.util.codec :as codec]
             [ring.util.response :as response]
             [waiter.auth.authentication :as auth]
             [waiter.middleware :as middleware]
+            [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils]
             [plumbing.core :as pc])
   (:import (java.io ByteArrayInputStream ByteArrayOutputStream)
@@ -51,7 +51,7 @@
   [some-bytes]
   (String. some-bytes charset-format))
 
-(defn byte-deflate
+(defn deflate-bytes
   "Gzip compress bytes"
   [str-bytes]
   (let [out (ByteArrayOutputStream.)
@@ -66,7 +66,7 @@
   "Gzip compress bytes and base 64 encode"
   [deflatable-str]
   (let [byte-str (str->bytes deflatable-str)]
-    (bytes->str (b64/encode (byte-deflate byte-str)))))
+    (bytes->str (b64/encode (deflate-bytes byte-str)))))
 
 (defn base64->str
   "Decode base 64 string"
@@ -84,29 +84,19 @@
            (codec/form-encode
              {:SAMLRequest saml-request :RelayState relay-state})))))
 
-(defn certificate-x509
-  "Takes in a raw X.509 certificate string, parses it, and creates a Java certificate."
-  [x509-string]
-  (let [certificate-factory (CertificateFactory/getInstance "X.509")
-        certificate-input-stream (io/input-stream (.getBytes x509-string))]
-    (.generateCertificate certificate-factory certificate-input-stream)))
-
-(defn saml-assertion-signature-valid?
+(defn validate-saml-assertion-signature
   "Checks that the SAML assertion has a valid signature."
-  [assertion idp-cert]
-  (when-let [signature (.getSignature assertion)]
-    (let [idp-pubkey (-> idp-cert certificate-x509 .getPublicKey)
-          public-creds (doto (new BasicX509Credential)
-                         (.setPublicKey idp-pubkey))
-          validator (new SignatureValidator public-creds)]
-      (try
-        (.validate validator signature)
-        true
-        (catch ValidationException ex
-          (log/warn "Signature NOT valid" (.getMessage ex))
-          false)))))
+  [assertion saml-signature-validator]
+  (if-let [signature (.getSignature assertion)]
+    (try
+      (.validate saml-signature-validator signature)
+      (catch ValidationException ex
+        (throw (ex-info "Could not authenticate user. Invalid SAML assertion signature."
+                        {:status 400} ex))))
+    (throw (ex-info "Could not authenticate user. SAML assertion is not signed."
+                    {:status 400}))))
 
-(defn new-doc-builder
+(defn create-document-builder
   "Create new xml document builder"
   []
   (.newDocumentBuilder
@@ -128,7 +118,7 @@
 
 (defn str->xmldoc
   [parsable-str]
-  (let [document (new-doc-builder)]
+  (let [document (create-document-builder)]
     (.parse document (str->inputstream parsable-str))))
 
 (defn xml-string->saml-resp
@@ -206,8 +196,8 @@
 (defn saml-acs-handler
   "Endpoint for POSTs to Waiter with IdP-signed credentials. If signature is valid, return self-posting form
    that posts authentication data to the original hostname of the application."
-  [{:keys [auth-redirect-endpoint idp-cert password]} request]
-  {:pre [(not (string/blank? idp-cert))
+  [{:keys [auth-redirect-endpoint password saml-signature-validator]} request]
+  {:pre [saml-signature-validator
          (not-empty password)]}
   (let [{:keys [form-params]} (ring-params/params-request request)
         {:keys [host request-url scheme]} (try (-> form-params (get "RelayState") (utils/base-64-string->map password))
@@ -226,9 +216,7 @@
                                  "Must have exactly one assertion but got " (count assertions))
                             {:status 400})))
         assertion (first assertions)
-        _ (when-not (saml-assertion-signature-valid? assertion idp-cert)
-            (throw (ex-info "Could not authenticate user. Invalid SAML assertion signature."
-                            {:status 400})))
+        _ (validate-saml-assertion-signature assertion saml-signature-validator)
         {:keys [attrs confirmation name-id]} (parse-saml-assertion assertion)
         not-on-or-after (clj-time.coerce/from-sql-time (:not-on-or-after confirmation))
         current-time (t/now)
@@ -311,7 +299,7 @@
 (defn make-issue-instant
   "Converts a date-time to a SAML 2.0 time string."
   []
-  (f/unparse instant-format (t/now)))
+  (du/date-to-str (t/now) instant-format))
 
 (defn create-request-factory!
   "Creates new requests for a particular service, format, and acs-url."
@@ -324,7 +312,7 @@
                    acs-url
                    idp-uri))
 
-(defrecord SamlAuthenticator [auth-redirect-endpoint idp-cert idp-uri password saml-request-factory]
+(defrecord SamlAuthenticator [auth-redirect-endpoint idp-uri password saml-request-factory saml-signature-validator]
   auth/Authenticator
   (process-callback [this {{:keys [operation]} :route-params :as request}]
     (case operation
@@ -354,6 +342,8 @@
             (throw (ex-info "Invalid request method for use with SAML authentication. Only GET supported."
                             {:log-level :info :request-method request-method :status 405}))))))))
 
+
+
 (defn saml-authenticator
   "Factory function for creating SAML authenticator middleware"
   [{:keys [idp-cert-resource-path idp-cert-uri idp-uri hostname password]}]
@@ -366,7 +356,11 @@
         idp-cert (if idp-cert-resource-path
                    (slurp (clojure.java.io/resource idp-cert-resource-path))
                    (slurp idp-cert-uri))
-        saml-request-factory (create-request-factory! idp-uri
-                                                      "waiter"
-                                                      acs-uri)]
-    (->SamlAuthenticator auth-redirect-endpoint idp-cert idp-uri password saml-request-factory)))
+        idp-public-key (-> (CertificateFactory/getInstance "X.509")
+                           (.generateCertificate (io/input-stream (.getBytes idp-cert)))
+                           .getPublicKey)
+        public-credential (doto (new BasicX509Credential)
+                       (.setPublicKey idp-public-key))
+        saml-signature-validator (new SignatureValidator public-credential)
+        saml-request-factory (create-request-factory! idp-uri "waiter" acs-uri)]
+    (->SamlAuthenticator auth-redirect-endpoint idp-uri password saml-request-factory saml-signature-validator)))

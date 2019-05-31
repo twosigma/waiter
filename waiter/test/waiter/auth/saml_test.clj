@@ -146,16 +146,6 @@
                   :status 303}
                  (saml-auth-redirect-handler saml-authenticator dummy-request'))))))))
 
-(defn- normalize-x509-certificate-string
-  [cert-str]
-  (-> cert-str
-    (string/replace #"From: [^,]+" "")
-    (string/replace #"To: [^\]]+" "")))
-
-(deftest test-certificate-x509
-  (is (= (normalize-x509-certificate-string (slurp "test-files/saml/x509-certificate-to-string.txt"))
-         (normalize-x509-certificate-string (str (certificate-x509 (slurp (:idp-cert-uri valid-config))))))))
-
 (defn- saml-response-from-xml
   [change-user?]
   (str->deflate->base64
@@ -182,14 +172,14 @@
         (let [request (merge {:form-params {"SAMLResponse" (slurp "test-files/saml/saml-response.txt") "RelayState" relay-state-string}} dummy-request)]
           (is (= processed-saml-response (saml-acs-handler saml-authenticator request)))))
       (testing "has valid saml response (from xml)"
-        (with-redefs [byte-deflate (fn [_] _)]
+        (with-redefs [deflate-bytes (fn [_] _)]
           (let [request (merge {:form-params {"SAMLResponse" (saml-response-from-xml false) "RelayState" relay-state-string}} dummy-request)]
             (is (= processed-saml-response (saml-acs-handler saml-authenticator request))))))
       (testing "has invalid saml signature"
-        (with-redefs [byte-deflate (fn [_] _)]
+        (with-redefs [deflate-bytes (fn [_] _)]
           (let [request (merge {:form-params {"SAMLResponse" (saml-response-from-xml true) "RelayState" relay-state-string}} dummy-request)]
             (is (thrown-with-msg? Exception #"Could not authenticate user. Invalid SAML assertion signature."
-                                  (saml-acs-handler {:idp-cert (slurp (:idp-cert-uri valid-config)) :password [:salted "password"]} request)))))))
+                                  (saml-acs-handler saml-authenticator request)))))))
     (testing "has expired saml response"
       (let [request (merge {:form-params {"SAMLResponse" (slurp "test-files/saml/saml-response.txt") "RelayState" relay-state-string}} dummy-request)]
         (is (thrown-with-msg? Exception #"Could not authenticate user. Expired SAML assertion."
