@@ -1347,7 +1347,7 @@
       (testing "post:new-service-description:invalid-authentication"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1" :authentication "unsupported"
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1" :authentication ""
                                      :token "abcdefgh"})
               {:keys [body status]}
               (run-handle-token-request
