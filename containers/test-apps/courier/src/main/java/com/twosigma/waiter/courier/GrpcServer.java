@@ -91,13 +91,20 @@ public class GrpcServer {
         public StreamObserver<CourierRequest> collectPackages(final StreamObserver<CourierSummary> responseObserver) {
             return new StreamObserver<CourierRequest>() {
 
+                private long numMessages = 0;
+                private long totalLength = 0;
+
                 @Override
                 public void onNext(final CourierRequest courierRequest) {
                     LOGGER.info("Received CourierRequest id=" + courierRequest.getId());
+
+                    numMessages += 1;
+                    totalLength += courierRequest.getMessage().length();
+
                     final CourierSummary courierSummary = CourierSummary
                         .newBuilder()
-                        .setNumMessages(1)
-                        .setTotalLength(courierRequest.getMessage().length())
+                        .setNumMessages(numMessages)
+                        .setTotalLength(totalLength)
                         .build();
                     LOGGER.info("Sending CourierSummary for id=" + courierRequest.getId());
                     responseObserver.onNext(courierSummary);

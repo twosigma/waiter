@@ -58,7 +58,7 @@ public class HealthCheckServer {
             }
 
             final String response = "OK";
-            httpExchange.sendResponseHeaders(200, response.length());
+            httpExchange.sendResponseHeaders(200, response.getBytes("UTF-8").length);
 
             final OutputStream os = httpExchange.getResponseBody();
             os.write(response.getBytes());

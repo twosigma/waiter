@@ -32,13 +32,14 @@
 
   :dependencies [[bidi "2.1.5"
                   :exclusions [prismatic/schema ring/ring-core]]
-                 [twosigma/courier "1.1.1"
+                 [twosigma/courier "1.2.1"
                   :exclusions [com.google.guava/guava io.grpc/grpc-core]
                   :scope "test"]
                  ;; avoids the following:
                  ;; WARNING!!! version ranges found for:
                  ;; [com.twosigma.waiter/courier ...] -> [io.grpc/grpc-netty-shaded "1.20.0"] -> [io.grpc/grpc-core "[1.20.0,1.20.0]"]
                  [io.grpc/grpc-core "1.20.0"
+                  :exclusions [com.google.guava/guava]
                   :scope "test"]
                  [twosigma/jet "0.7.10-20190518_074946-g399eb7b"
                   :exclusions [org.mortbay.jetty.alpn/alpn-boot]]

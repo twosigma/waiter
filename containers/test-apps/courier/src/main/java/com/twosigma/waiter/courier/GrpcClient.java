@@ -31,6 +31,7 @@ import io.grpc.StatusRuntimeException;
 import io.grpc.stub.MetadataUtils;
 import io.grpc.stub.StreamObserver;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,16 +39,20 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 public class GrpcClient {
 
+    private final static Logger LOGGER = Logger.getLogger(GrpcServer.class.getName());
+
     private static Function<String, Void> logFunction = new Function<String, Void>() {
         @Override
         public Void apply(final String message) {
-            System.out.println(message);
+            LOGGER.info(message);
             return null;
         }
     };
@@ -67,10 +72,14 @@ public class GrpcClient {
     private static void shutdownChannel(final ManagedChannel channel) throws InterruptedException {
         logFunction.apply("shutting down channel");
         channel.shutdown().awaitTermination(1, TimeUnit.SECONDS);
-        logFunction.apply("channel shutdown successfully");
+        if (channel.isShutdown()) {
+            logFunction.apply("channel shutdown successfully");
+        } else {
+            logFunction.apply("channel shutdown timed out!");
+        }
     }
 
-    private static Metadata attachRequestHeaders(final Map<String, Object> headers) {
+    private static Metadata createRequestHeadersMetadata(final Map<String, Object> headers) {
         final Metadata headerMetadata = new Metadata();
         for (Map.Entry<String, Object> entry : headers.entrySet()) {
             final String key = entry.getKey();
@@ -121,7 +130,7 @@ public class GrpcClient {
 
         try {
             final Channel wrappedChannel = wrapResponseLogger(channel);
-            final Metadata headerMetadata = attachRequestHeaders(headers);
+            final Metadata headerMetadata = createRequestHeadersMetadata(headers);
 
             final CourierGrpc.CourierFutureStub rawStub = CourierGrpc.newFutureStub(wrappedChannel);
             final CourierGrpc.CourierFutureStub futureStub = MetadataUtils.attachHeaders(rawStub, headerMetadata);
@@ -155,42 +164,41 @@ public class GrpcClient {
         }
     }
 
-    public static CourierSummary collectPackages(final String host,
-                                                 final int port,
-                                                 final Map<String, Object> headers,
-                                                 final String idPrefix,
-                                                 final String from,
-                                                 final List<String> messages,
-                                                 final int interMessageSleepMs,
-                                                 final boolean lockStepMode) throws InterruptedException {
+    public static List<CourierSummary> collectPackages(final String host,
+                                                       final int port,
+                                                       final Map<String, Object> headers,
+                                                       final String idPrefix,
+                                                       final String from,
+                                                       final List<String> messages,
+                                                       final int interMessageSleepMs,
+                                                       final boolean lockStepMode) throws InterruptedException {
         final ManagedChannel channel = initializeChannel(host, port);
 
         try {
             final Semaphore lockStep = new Semaphore(1);
+            final AtomicBoolean errorSignal = new AtomicBoolean(false);
 
             final Channel wrappedChannel = wrapResponseLogger(channel);
-            final Metadata headerMetadata = attachRequestHeaders(headers);
+            final Metadata headerMetadata = createRequestHeadersMetadata(headers);
 
             final CourierGrpc.CourierStub rawStub = CourierGrpc.newStub(wrappedChannel);
             final CourierGrpc.CourierStub futureStub = MetadataUtils.attachHeaders(rawStub, headerMetadata);
 
             logFunction.apply("will try to send package from " + from + " ...");
 
-            final CompletableFuture<CourierSummary> responsePromise = new CompletableFuture<>();
+            final CompletableFuture<List<CourierSummary>> responsePromise = new CompletableFuture<>();
             try {
                 final StreamObserver<CourierRequest> collector =
                     futureStub.collectPackages(new StreamObserver<CourierSummary>() {
 
-                        private long numMessages = 0;
-                        private long totalLength = 0;
+                        final List<CourierSummary> resultList = new ArrayList<>();
 
                         @Override
                         public void onNext(final CourierSummary response) {
                             logFunction.apply("received response CourierSummary{" +
                                 "count=" + response.getNumMessages() + ", " +
                                 "length=" + response.getTotalLength() + "}");
-                            numMessages += response.getNumMessages();
-                            totalLength += response.getTotalLength();
+                            resultList.add(response);
                             if (lockStepMode) {
                                 logFunction.apply("releasing semaphore after receiving response");
                                 lockStep.release();
@@ -200,21 +208,31 @@ public class GrpcClient {
                         @Override
                         public void onError(final Throwable throwable) {
                             logFunction.apply("error in collecting summaries " + throwable);
-                            responsePromise.complete(null);
+                            errorSignal.compareAndSet(false, true);
+                            resolveResponsePromise();
+                            if (lockStepMode) {
+                                logFunction.apply("releasing semaphore after receiving error");
+                                lockStep.release();
+                            }
                         }
 
                         @Override
                         public void onCompleted() {
                             logFunction.apply("completed collecting summaries");
-                            responsePromise.complete(CourierSummary
-                                .newBuilder()
-                                .setNumMessages(numMessages)
-                                .setTotalLength(totalLength)
-                                .build());
+                            resolveResponsePromise();
+                        }
+
+                        private void resolveResponsePromise() {
+                            logFunction.apply("client result has " + resultList.size() + " entries");
+                            responsePromise.complete(resultList);
                         }
                     });
 
                 for (int i = 0; i < messages.size(); i++) {
+                    if (errorSignal.get()) {
+                        logFunction.apply("aborting sending messages as error was discovered");
+                        break;
+                    }
                     final String requestId = idPrefix + i;
                     if (lockStepMode) {
                         logFunction.apply("acquiring semaphore before sending request " + requestId);
@@ -256,8 +274,8 @@ public class GrpcClient {
      */
     public static void main(final String... args) throws Exception {
         /* Access a service running on the local machine on port 8080 */
-        final String host = "localhost"; // "courier.localtest.me";
-        final int port = 8080; // 9091;
+        final String host = "localhost";
+        final int port = 8080;
         final HashMap<String, Object> headers = new HashMap<>();
 
         final String id = UUID.randomUUID().toString();
@@ -273,8 +291,12 @@ public class GrpcClient {
         logFunction.apply("sendPackage response = " + courierReply);
 
         final List<String> messages = IntStream.range(0, 100).mapToObj(i -> "message-" + i).collect(Collectors.toList());
-        final CourierSummary courierSummary =
-            collectPackages(host, port, headers, "id-", "Jim", messages, 10, true);
-        logFunction.apply("collectPackages response = " + courierSummary);
+        final List<CourierSummary> courierSummaries =
+            collectPackages(host, port, headers, "id-", "User", messages, 10, true);
+        logFunction.apply("collectPackages response size = " + courierSummaries.size());
+        if (!courierSummaries.isEmpty()) {
+            final CourierSummary courierSummary = courierSummaries.get(courierSummaries.size() - 1);
+            logFunction.apply("collectPackages summary = " + courierSummary.toString());
+        }
     }
 }

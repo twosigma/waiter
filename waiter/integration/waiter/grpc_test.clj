@@ -92,18 +92,18 @@
                 (log/info "starting streaming to and from server - independent mode test")
                 (let [from (rand-name "f")
                       request-headers (assoc request-headers "cookie" cookie-header "x-cid" (rand-name))
-                      summary (GrpcClient/collectPackages host h2c-port request-headers "m-" from messages 1 false)]
-                  (is summary)
-                  (when summary
-                    (is (= (count messages) (.getNumMessages summary)))
-                    (is (= (reduce + (map count messages)) (.getTotalLength summary))))))
+                      summaries (GrpcClient/collectPackages host h2c-port request-headers "m-" from messages 1 false)]
+                  (is (= (count messages) (count summaries)))
+                  (when (seq summaries)
+                    (is (= (range 1 (inc (count messages))) (map #(.getNumMessages %) summaries)))
+                    (is (= (reductions + (map count messages)) (map #(.getTotalLength %) summaries))))))
 
               (testing (str "lock-step mode " max-message-length " messages")
                 (log/info "starting streaming to and from server - lock-step mode test")
                 (let [from (rand-name "f")
                       request-headers (assoc request-headers "cookie" cookie-header "x-cid" (rand-name))
-                      summary (GrpcClient/collectPackages host h2c-port request-headers "m-" from messages 1 true)]
-                  (is summary)
-                  (when summary
-                    (is (= (count messages) (.getNumMessages summary)))
-                    (is (= (reduce + (map count messages)) (.getTotalLength summary)))))))))))))
+                      summaries (GrpcClient/collectPackages host h2c-port request-headers "m-" from messages 1 true)]
+                  (is (= (count messages) (count summaries)))
+                  (when (seq summaries)
+                    (is (= (range 1 (inc (count messages))) (map #(.getNumMessages %) summaries)))
+                    (is (= (reductions + (map count messages)) (map #(.getTotalLength %) summaries)))))))))))))
