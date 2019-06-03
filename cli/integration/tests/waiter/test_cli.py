@@ -711,7 +711,7 @@ class WaiterCliTest(util.WaiterTest):
             util.wait_until_services_for_token(self.waiter_url, token_name, 1)
 
             util.kill_services_using_token(self.waiter_url, token_name)
-            util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
+            util.post_token(self.waiter_url, token_name, {'cpus': 0.1, 'cmd-type': 'shell'})
             cp = cli.ping(self.waiter_url, token_name, ping_flags='--no-wait')
             self.assertEqual(1, cp.returncode, cp.stderr)
             self.assertNotIn('Service is currently', cli.stdout(cp))
