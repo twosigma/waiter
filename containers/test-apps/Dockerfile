@@ -5,6 +5,8 @@ FROM twosigma/mesos-agent:1.0.0-1.0.1604
 # python is needed to launch kitchen
 RUN apt-get update && apt-get install -y gettext-base nginx python3
 
+COPY courier/bin/run-courier-server.sh /opt/courier/bin/run-courier-server.sh
+COPY courier/data/courier-uberjar.jar /opt/courier/data/courier-uberjar.jar
 COPY kitchen/bin/kitchen /opt/kitchen/kitchen
 COPY nginx/bin/run-nginx-server.sh /opt/nginx/bin/run-nginx-server.sh
 COPY nginx/data/nginx-template.conf /opt/nginx/data/nginx-template.conf
