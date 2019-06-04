@@ -690,7 +690,7 @@
 
   (validate-service [_ service-id]
     (let [{:strs [image]} (service-id->service-description-fn service-id)]
-      (when image (throw (ex-info "Image field is set. Images are not supported with Marathon scheduler" {:image image}))))))
+      (when image (throw (ex-info "Image field is set. Images are not supported with shell scheduler" {:image image}))))))
 
 (s/defn ^:always-validate create-shell-scheduler
   "Returns a new ShellScheduler with the provided configuration. Validates the
