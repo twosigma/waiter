@@ -130,7 +130,7 @@
                                      ["/status/" :request-id "/" :router-id "/" :service-id "/" :host "/" :port "/" [#".+" :location]]
                                      :async-status-handler-fn}
                      "waiter-auth" {"" :waiter-auth-handler-fn
-                                    ["/" :authentication-scheme "/" :operation] :waiter-auth-scheme-handler-fn}
+                                    ["/" :authentication-provider "/" :operation] :waiter-auth-scheme-handler-fn}
                      "waiter-consent" {"" :waiter-acknowledge-consent-handler-fn
                                        ["/" [#".*" :path]] :waiter-request-consent-handler-fn}
                      "waiter-interstitial" {["/" [#".*" :path]] :waiter-request-interstitial-handler-fn}

@@ -42,26 +42,32 @@
   [saml-redirect-location]
   (let [
 
-        ;cookie-jar-file (java.io.File/createTempFile "cookie-jar" ".txt")
-        ;cookie-jar-path (.getAbsolutePath cookie-jar-file)
-        ;curl-output-file (java.io.File/createTempFile "curl-output" ".txt")
-        ;curl-output-path (.getAbsolutePath curl-output-file)
-        ;_ (is (= 0 (:exit (shell/sh "bash" "-c" (str "curl -u: --negotiate '" saml-redirect-location "' -k -c " cookie-jar-path " -L -v > " curl-output-path)))))
-        ;{:keys [waiter-saml-acs-endpoint saml-response relay-state]}
-        ;(extract (parse (slurp curl-output-path)) [:waiter-saml-acs-endpoint :saml-response :relay-state]
-        ;         "form" (attr :action)
-        ;         "form input[name=SAMLResponse]" (attr :value)
-        ;         "form input[name=RelayState]" (attr :value))
-        ;;_ (is (= (str "http://" waiter-url "/request-info") relay-state))
-        ;_ (.delete curl-output-file)
-        ;_ (.delete cookie-jar-file)
+        cookie-jar-file (java.io.File/createTempFile "cookie-jar" ".txt")
+        cookie-jar-path (.getAbsolutePath cookie-jar-file)
+        curl-output-file (java.io.File/createTempFile "curl-output" ".txt")
+        curl-output-path (.getAbsolutePath curl-output-file)
+        _ (is (= 0 (:exit (shell/sh "bash" "-c" (str "curl -u: --negotiate '" saml-redirect-location "' -c " cookie-jar-path " -L -v > " curl-output-path)))))
+        rval
+        (extract (parse (slurp curl-output-path)) [:waiter-saml-acs-endpoint :saml-response :relay-state]
+                 "form" (attr :action)
+                 "form input[name=SAMLResponse]" (attr :value)
+                 "form input[name=RelayState]" (attr :value))
+        _ (.delete curl-output-file)
+        _ (.delete cookie-jar-file)
 
 
-        {:keys [body]} (make-request saml-redirect-location "")]
-    (extract (parse body) [:waiter-saml-acs-endpoint :saml-response :relay-state]
-             "form" (attr :action)
-             "form input[name=SAMLResponse]" (attr :value)
-             "form input[name=RelayState]" (attr :value))))
+        ; make-request currently fails with EofException when using org.eclipse.jetty.io.ssl.SslConnection
+
+        ;{:keys [body]} (make-request saml-redirect-location "")
+
+        ]
+    ;(extract (parse body) [:waiter-saml-acs-endpoint :saml-response :relay-state]
+    ;         "form" (attr :action)
+    ;         "form input[name=SAMLResponse]" (attr :value)
+    ;         "form input[name=RelayState]" (attr :value))
+
+    rval
+    ))
 
 (deftest ^:parallel ^:integration-fast test-saml-authentication
   (testing-using-waiter-url

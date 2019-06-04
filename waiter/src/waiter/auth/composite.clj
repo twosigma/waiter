@@ -19,50 +19,49 @@
             [waiter.auth.authentication :as auth]
             [waiter.util.utils :as utils]))
 
-(defrecord CompositeAuthenticator [authenticators default-authenticator]
+(defrecord CompositeAuthenticator [provider-name->authenticator default-authentication-provider]
   auth/Authenticator
 
-  (process-callback [_ {{:keys [authentication-scheme]} :route-params :as request}]
-    (if-let [authenticator (get authenticators authentication-scheme)]
+  (process-callback [_ {{:keys [authentication-provider]} :route-params :as request}]
+    (if-let [authenticator (get provider-name->authenticator authentication-provider)]
       (auth/process-callback authenticator request)
-      (throw (ex-info (str "Unknown authentication scheme " authentication-scheme)
-                      {:composite-authenticators (keys authenticators)
-                       :authentication-scheme authentication-scheme
+      (throw (ex-info (str "Unknown authentication provider " authentication-provider)
+                      {:available-authenticators (keys provider-name->authenticator)
+                       :authentication-provider authentication-provider
                        :status 400}))))
   (wrap-auth-handler [_ request-handler]
-    (let [default-handler (auth/wrap-auth-handler default-authenticator request-handler)
-          handlers (merge {"standard" default-handler} (pc/map-vals #(auth/wrap-auth-handler % request-handler) authenticators))]
+    (let [provider-name->handler (as-> (pc/map-vals #(auth/wrap-auth-handler % request-handler) provider-name->authenticator) map
+                                   (merge {"standard" (get map default-authentication-provider)} map))]
       (fn composite-authenticator-handler [request]
-        (let [authentication (get-in request [:waiter-discovery :service-parameter-template "authentication"])]
-          (if authentication
-            (if-let [handler (get handlers authentication)]
-              (handler request)
-              (throw (ex-info (str "No authenticator found for " authentication " authentication.")
-                              {:composite-authenticators (keys handlers)
-                               :request-authentication authentication
-                               :status 400})))
-            (default-handler request)))))))
+        (let [authentication (or (get-in request [:waiter-discovery :service-parameter-template "authentication"])
+                                 default-authentication-provider)]
+          (if-let [handler (get provider-name->handler authentication)]
+            (handler request)
+            (throw (ex-info (str "No authenticator found for " authentication " authentication.")
+                            {:available-authenticators (keys provider-name->handler)
+                             :request-authentication authentication
+                             :status 400}))))))))
 
 (defn- make-authenticator
-  "Create an authenticator from an authentication-scheme"
-  [{:keys [authenticator-factory-fn] :as authentication-scheme} context]
-  {:pre [(symbol? authenticator-factory-fn)]}
-  (let [resolved-factory-fn (utils/resolve-symbol! authenticator-factory-fn)
-        authenticator (resolved-factory-fn (merge context authentication-scheme))]
+  "Create an authenticator from an authentication-provider"
+  [{:keys [factory-fn] :as authentication-provider} context]
+  {:pre [(symbol? factory-fn)]}
+  (let [resolved-factory-fn (utils/resolve-symbol! factory-fn)
+        authenticator (resolved-factory-fn (merge context authentication-provider))]
     (when-not (satisfies? auth/Authenticator authenticator)
       (throw (ex-info "Authenticator factory did not create an instance of Authenticator"
-                      {:authentication-scheme authentication-scheme
+                      {:authentication-provider authentication-provider
                        :authenticator authenticator
                        :resolved-factory-fn resolved-factory-fn})))
     authenticator))
 
 (defn composite-authenticator
   "Factory function for creating composite authenticator middleware"
-  [{:keys [authentication-schemes default-scheme] :as context}]
-  {:pre [(not-empty authentication-schemes)
-         (not (string/blank? default-scheme))
-         (contains? authentication-schemes default-scheme)]}
-  (let [authenticators (pc/map-vals
-                         #(make-authenticator % context)
-                         authentication-schemes)]
-    (->CompositeAuthenticator authenticators (get authenticators default-scheme))))
+  [{:keys [authentication-providers default-authentication-provider] :as context}]
+  {:pre [(not-empty authentication-providers)
+         (not (string/blank? default-authentication-provider))
+         (contains? authentication-providers default-authentication-provider)]}
+  (let [provider-name->authenticator (pc/map-vals
+                                       #(make-authenticator % context)
+                                       authentication-providers)]
+    (->CompositeAuthenticator provider-name->authenticator default-authentication-provider)))
