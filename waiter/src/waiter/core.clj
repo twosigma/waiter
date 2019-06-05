@@ -130,7 +130,7 @@
                                      ["/status/" :request-id "/" :router-id "/" :service-id "/" :host "/" :port "/" [#".+" :location]]
                                      :async-status-handler-fn}
                      "waiter-auth" {"" :waiter-auth-handler-fn
-                                    ["/" :authentication-provider "/" :operation] :waiter-auth-scheme-handler-fn}
+                                    ["/" :authentication-provider "/" :operation] :waiter-auth-callback-handler-fn}
                      "waiter-consent" {"" :waiter-acknowledge-consent-handler-fn
                                        ["/" [#".*" :path]] :waiter-request-consent-handler-fn}
                      "waiter-interstitial" {["/" [#".*" :path]] :waiter-request-interstitial-handler-fn}
@@ -924,8 +924,14 @@
    :token->token-metadata (pc/fnk [[:curator kv-store]]
                             (fn token->token-metadata [token]
                               (sd/token->token-metadata kv-store token :error-on-missing false)))
-   :validate-service-description-fn (pc/fnk [[:state service-description-builder]]
+   :validate-service-description-fn (pc/fnk [[:state authenticator service-description-builder]]
                                       (fn validate-service-description [service-description]
+                                        (let [authentication (or (get service-description "authentication") "standard")
+                                              authentication-providers (into #{"disabled" "standard"} (auth/get-authentication-providers authenticator))]
+                                          (when-not (contains? authentication-providers authentication)
+                                            (throw (ex-info (str "authentication must be one of: '"
+                                                                 (str/join "', '" authentication-providers) "'")
+                                                            {:status 400}))))
                                         (sd/validate service-description-builder service-description {})))
    :waiter-request?-fn (pc/fnk [[:state waiter-hostnames]]
                          (let [local-router (InetAddress/getLocalHost)
@@ -1489,8 +1495,8 @@
                              (wrap-secure-request-fn
                                (fn waiter-auth-handler-fn [request]
                                  {:body (str (:authorization/user request)), :status 200})))
-   :waiter-auth-scheme-handler-fn (pc/fnk [[:state authenticator]]
-                                    (fn waiter-auth-scheme-handler-fn [request]
+   :waiter-auth-callback-handler-fn (pc/fnk [[:state authenticator]]
+                                    (fn waiter-auth-callback-handler-fn [request]
                                       (auth/process-callback authenticator request)))
    :waiter-acknowledge-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template
                                                     token->token-metadata]

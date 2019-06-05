@@ -126,6 +126,7 @@
 (defn xml-string->saml-resp
   "Parses a SAML response (XML string) from IdP and returns the corresponding (Open)SAML Response object"
   [xml-string]
+  ;; We use org.opensaml.xml here since we already depend on org.opensaml for SAML assertion signature validation
   (let [xmldoc (.getDocumentElement (str->xmldoc xml-string))
         unmarshallerFactory (Configuration/getUnmarshallerFactory)
         unmarshaller (.getUnmarshaller unmarshallerFactory xmldoc)

@@ -11,11 +11,36 @@
   (testing-using-waiter-url
     (let [authenticator-kind (get-in (waiter-settings waiter-url) [:authenticator-config :kind])]
       (when (= "composite" authenticator-kind)
-        (let [{:keys [service-id body headers]} (make-request-with-debug-info {} #(make-kitchen-request waiter-url % :path "/request-info"))
+        (let [{:keys [service-id body]} (make-request-with-debug-info {} #(make-kitchen-request waiter-url % :path "/request-info"))
               body-json (json/read-str (str body))]
           (with-service-cleanup
             service-id
             (is (= (retrieve-username) (get-in body-json ["headers" "x-waiter-auth-principal"])))))))))
+
+(deftest ^:parallel ^:integration-fast test-token-authentication-parameter-error
+  (testing-using-waiter-url
+    (let [authenticator-kind (get-in (waiter-settings waiter-url) [:authenticator-config :kind])]
+      (when (= "composite" authenticator-kind)
+        (let [token (rand-name)
+              {:keys [status body]} (post-token waiter-url (-> (kitchen-params)
+                                                             (assoc
+                                                               :authentication "invalid"
+                                                               :name token
+                                                               :permitted-user "*"
+                                                               :run-as-user (retrieve-username)
+                                                               :token token)))]
+          (is (= 400 status))
+          (is (string/includes? body "authentication must be one of: 'standard', 'saml', 'one-user', 'disabled'")))
+        (let [token (rand-name)
+              {:keys [status body]} (post-token waiter-url (-> (kitchen-params)
+                                                             (assoc
+                                                               :authentication ""
+                                                               :name token
+                                                               :permitted-user "*"
+                                                               :run-as-user (retrieve-username)
+                                                               :token token)))]
+          (is (= 400 status))
+          (is (string/includes? body "authentication must be one of: 'standard', 'saml', 'one-user', 'disabled'")))))))
 
 (defn- perform-saml-authentication
   "Default implementation of performing authentication wtih an identity provider service. Return map of saml-response and relay-state"
@@ -47,11 +72,10 @@
         curl-output-file (java.io.File/createTempFile "curl-output" ".txt")
         curl-output-path (.getAbsolutePath curl-output-file)
         _ (is (= 0 (:exit (shell/sh "bash" "-c" (str "curl -u: --negotiate '" saml-redirect-location "' -c " cookie-jar-path " -L -v > " curl-output-path)))))
-        rval
-        (extract (parse (slurp curl-output-path)) [:waiter-saml-acs-endpoint :saml-response :relay-state]
-                 "form" (attr :action)
-                 "form input[name=SAMLResponse]" (attr :value)
-                 "form input[name=RelayState]" (attr :value))
+        rval (extract (parse (slurp curl-output-path)) [:waiter-saml-acs-endpoint :saml-response :relay-state]
+                      "form" (attr :action)
+                      "form input[name=SAMLResponse]" (attr :value)
+                      "form input[name=RelayState]" (attr :value))
         _ (.delete curl-output-file)
         _ (.delete cookie-jar-file)
 

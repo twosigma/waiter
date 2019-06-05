@@ -303,9 +303,9 @@
           (is (nil? (s/check settings-schema settings)))
           (is (= graphite-server-port (get-in settings [:metrics-config :codahale-reporters :graphite :port])))
           (is (= port (:port settings)))
-          (is (= run-as-user (get-in settings [:authenticator-config :one-user :run-as-user])))
-          (is (= saml-idp-uri (get-in settings [:authenticator-config :saml :idp-uri])))
-          (is (= saml-idp-cert-uri (get-in settings [:authenticator-config :saml :idp-cert-uri]))))))))
+          (is (= run-as-user (get-in settings [:authenticator-config :composite :authentication-providers "one-user" :run-as-user])))
+          (is (= saml-idp-uri (get-in settings [:authenticator-config :composite :authentication-providers "saml" :idp-uri])))
+          (is (= saml-idp-cert-uri (get-in settings [:authenticator-config :composite :authentication-providers "saml" :idp-cert-uri]))))))))
 
 (deftest test-sanitize-settings
   (is (= {:example {:foo {:kind :test

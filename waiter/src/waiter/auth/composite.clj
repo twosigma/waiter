@@ -22,6 +22,8 @@
 (defrecord CompositeAuthenticator [provider-name->authenticator default-authentication-provider]
   auth/Authenticator
 
+  (get-authentication-providers [_]
+    (keys provider-name->authenticator))
   (process-callback [_ {{:keys [authentication-provider]} :route-params :as request}]
     (if-let [authenticator (get provider-name->authenticator authentication-provider)]
       (auth/process-callback authenticator request)
@@ -30,8 +32,7 @@
                        :authentication-provider authentication-provider
                        :status 400}))))
   (wrap-auth-handler [_ request-handler]
-    (let [provider-name->handler (as-> (pc/map-vals #(auth/wrap-auth-handler % request-handler) provider-name->authenticator) map
-                                   (merge {"standard" (get map default-authentication-provider)} map))]
+    (let [provider-name->handler (pc/map-vals #(auth/wrap-auth-handler % request-handler) provider-name->authenticator)]
       (fn composite-authenticator-handler [request]
         (let [authentication (or (get-in request [:waiter-discovery :service-parameter-template "authentication"])
                                  default-authentication-provider)]
@@ -61,7 +62,8 @@
   {:pre [(not-empty authentication-providers)
          (not (string/blank? default-authentication-provider))
          (contains? authentication-providers default-authentication-provider)]}
-  (let [provider-name->authenticator (pc/map-vals
-                                       #(make-authenticator % context)
-                                       authentication-providers)]
+  (let [provider-name->authenticator (as-> (pc/map-vals
+                                             #(make-authenticator % context)
+                                             authentication-providers) map
+                                       (merge {"standard" (get map default-authentication-provider)} map))]
     (->CompositeAuthenticator provider-name->authenticator default-authentication-provider)))

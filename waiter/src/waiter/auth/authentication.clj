@@ -24,14 +24,24 @@
 (def ^:const AUTH-COOKIE-NAME "x-waiter-auth")
 
 (defprotocol Authenticator
-  (process-callback [this request]
-    "Process any requests that might come in after initiating authentication. e.g. receive a request
-     with an authentication assertion after redirecting a user to authenticate with an identity provider.")
   (wrap-auth-handler [this request-handler]
     "Attaches middleware that enables the application to perform authentication.
      The middleware should
      - issue a 401 challenge, or redirect, to get the client to authenticate itself,
-     - or upon successful authentication populate the request with :authorization/user and :authorization/principal"))
+     - or upon successful authentication populate the request with :authorization/user and :authorization/principal")
+  (get-authentication-providers [this]
+    "Get a list of supported authenticaiton provider names.")
+  (process-callback [this request]
+    "Process any requests that might come in after initiating authentication. e.g. receive a request
+     with an authentication assertion after redirecting a user to authenticate with an identity provider."))
+
+(extend-protocol Authenticator
+  Object
+  (get-authentication-providers [_] [])
+  Object
+  (process-callback [this _]
+    (throw (ex-info (str this " authenticator does not support callbacks.")
+                    {:status 400}))))
 
 (defn- add-cached-auth
   [response password principal age-in-seconds]
@@ -104,9 +114,6 @@
 ;;   - or upon successful authentication populate the request with :authorization/user and :authorization/principal"
 (defrecord SingleUserAuthenticator [run-as-user password]
   Authenticator
-  (process-callback [_ request]
-    (throw (ex-info "Single user authenticator does not support callbacks."
-                    {:status 400})))
   (wrap-auth-handler [_ request-handler]
     (fn anonymous-handler [request]
       (let [auth-params-map (auth-params-map run-as-user run-as-user)]
