@@ -224,22 +224,28 @@
            :items [{:metadata {:name "test-app-1234"
                                :namespace "myself"
                                :labels {:app "test-app-1234"
-                                        :waiter-cluster "waiter"}
+                                        :waiter-cluster "waiter"
+                                        :waiter/cluster "waiter"
+                                        :waiter/service-hash "test-app-1234"}
                                :annotations {:waiter/service-id "test-app-1234"}}
                     :spec {:replicas 2
                            :selector {:matchLabels {:app "test-app-1234"
-                                                    :waiter-cluster "waiter"}}}
+                                                    :waiter-cluster "waiter"
+                                                    :waiter/cluster "waiter"}}}
                     :status {:replicas 2
                              :readyReplicas 2
                              :availableReplicas 2}}
                    {:metadata {:name "test-app-6789"
                                :namespace "myself"
                                :labels {:app "test-app-6789"
-                                        :waiter-cluster "waiter"}
+                                        :waiter-cluster "waiter"
+                                        :waiter/cluster "waiter"
+                                        :waiter/service-hash "test-app-6789"}
                                :annotations {:waiter/service-id "test-app-6789"}}
                     :spec {:replicas 3
                            :selector {:matchLabels {:app "test-app-6789"
-                                                    :waiter-cluster "waiter"}}}
+                                                    :waiter-cluster "waiter"
+                                                    :waiter/cluster "waiter"}}}
                     :status {:replicas 3
                              :readyReplicas 1
                              :availableReplicas 2
@@ -257,11 +263,14 @@
            :items [{:metadata {:name "test-app-abcd"
                                :namespace "myself"
                                :labels {:app "test-app-abcd"
-                                        :waiter-cluster "waiter"}
+                                        :waiter-cluster "waiter"
+                                        :waiter/cluster "waiter"
+                                        :waiter/service-hash "test-app-abcd"}
                                :annotations {:waiter/service-id "test-app-abcd"}}
                     :spec {:replicas 2
                            :selector {:matchLabels {:app "test-app-abcd"
-                                                    :waiter-cluster "waiter"}}}
+                                                    :waiter-cluster "waiter"
+                                                    :waiter/cluster "waiter"}}}
                     :status {:replicas 2
                              :readyReplicas 2
                              :availableReplicas 2}}
@@ -269,11 +278,14 @@
                    {:metadata {:name "test-app-wxyz"
                                :namespace "myself"
                                :labels {:app "test-app-wxyz"
-                                        :waiter-cluster "waiter"}
+                                        :waiter-cluster "waiter"
+                                        :waiter/cluster "waiter"
+                                        :waiter/service-hash "test-app-wxyz"}
                                :annotations {:waiter/service-id "test-app-wxyz"}}
                     :spec {:replicas 3
                            :selector {:matchLabels {:app "test-app-wxyz"
-                                                    :waiter-cluster "waiter"}}}
+                                                    :waiter-cluster "waiter"
+                                                    :waiter/cluster "waiter"}}}
                     :status {:replicas 3
                              :readyReplicas 1
                              :availableReplicas 2
@@ -292,11 +304,14 @@
            :items [{:metadata {:name "test-app-4321"
                                :namespace "myself"
                                :labels {:app "test-app-4321"
-                                        :waiter-cluster "waiter"}
+                                        :waiter-cluster "waiter"
+                                        :waiter/cluster "waiter"
+                                        :waiter/service-hash "test-app-4321"}
                                :annotations {:waiter/service-id "test-app-4321"}}
                     :spec {:replicas 3
                            :selector {:matchLabels {:app "test-app-4321"
-                                                    :waiter-cluster "waiter"}}}
+                                                    :waiter-cluster "waiter"
+                                                    :waiter/cluster "waiter"}}}
                     :status {:replicas 3
                              :readyReplicas 1
                              :availableReplicas 1
@@ -311,11 +326,14 @@
            :items [{:metadata {:name "test-app-9999"
                                :namespace "myself"
                                :labels {:app "test-app-9999"
-                                        :waiter-cluster "waiter"}
+                                        :waiter-cluster "waiter"
+                                        :waiter/cluster "waiter"
+                                        :waiter/service-hash "test-app-9999"}
                                :annotations {:waiter/service-id "test-app-9999"}}
                     :spec {:replicas 0
                            :selector {:matchLabels {:app "test-app-9999"
-                                                    :waiter-cluster "waiter"}}}
+                                                    :waiter-cluster "waiter"
+                                                    :waiter/cluster "waiter"}}}
                     :status {:replicas 0
                              :readyReplicas 0
                              :availableReplicas 0}}]}
@@ -341,7 +359,9 @@
                              :namespace "myself"
                              :labels {:app "test-app-1234"
                                       :waiter-cluster "waiter"
-                                      :waiter/user "myself"}
+                                      :waiter/cluster "waiter"
+                                      :waiter/user "myself"
+                                      :waiter/service-hash "test-app-1234"}
                              :annotations {:waiter/service-id "test-app-1234"}}
                   :spec {:replicas 2}
                   :status {:replicas 2
@@ -350,7 +370,9 @@
                  {:metadata {:name "test-app-6789"
                              :namespace "myself"
                              :labels {:app "test-app-6789"
-                                      :waiter-cluster "waiter"}
+                                      :waiter-cluster "waiter"
+                                      :waiter/cluster "waiter"
+                                      :waiter/service-hash "test-app-6789"}
                              :annotations {:waiter/service-id "test-app-6789"}}
                   :spec {:replicas 3}
                   :status {:replicas 3
@@ -365,6 +387,8 @@
                              :namespace "myself"
                              :labels {:app "test-app-1234"
                                       :waiter-cluster "waiter"
+                                      :waiter/cluster "waiter"
+                                      :waiter/service-hash "test-app-1234"
                                       :waiter/user "myself"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-1234"}}
@@ -378,7 +402,9 @@
                              :namespace "myself"
                              :labels {:app "test-app-1234"
                                       :waiter-cluster "waiter"
-                                      :waiter/user "myself"}
+                                      :waiter/cluster "waiter"
+                                      :waiter/user "myself"
+                                      :waiter/service-hash "test-app-1234"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
@@ -391,7 +417,9 @@
                              :namespace "myself"
                              :labels {:app "test-app-6789"
                                       :waiter-cluster "waiter"
-                                      :waiter/user "myself"}
+                                      :waiter/cluster "waiter"
+                                      :waiter/user "myself"
+                                      :waiter/service-hash "test-app-6789"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-6789"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
@@ -404,7 +432,9 @@
                              :namespace "myself"
                              :labels {:app "test-app-6789"
                                       :waiter-cluster "waiter"
-                                      :waiter/user "myself"}
+                                      :waiter/cluster "waiter"
+                                      :waiter/user "myself"
+                                      :waiter/service-hash "test-app-6789"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-6789"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
@@ -419,7 +449,9 @@
                              :namespace "myself"
                              :labels {:app "test-app-6789"
                                       :waiter-cluster "waiter"
-                                      :waiter/user "myself"}
+                                      :waiter/cluster "waiter"
+                                      :waiter/user "myself"
+                                      :waiter/service-hash "test-app-6789"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-6789"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
@@ -516,7 +548,9 @@
                              :items [{:metadata {:name service-id
                                                  :namespace "myself"
                                                  :labels {:app service-id
-                                                          :waiter-cluster "waiter"}
+                                                          :waiter-cluster "waiter"
+                                                          :waiter/cluster "waiter"
+                                                          :waiter/service-hash service-id}
                                                  :annotations {:waiter/service-id service-id}}
                                       :spec {:replicas 1}
                                       :status {:replicas 1
@@ -574,11 +608,14 @@
          :items [{:metadata {:name service-id
                              :namespace "myself"
                              :labels {:app service-id
-                                      :waiter-cluster "waiter"}
+                                      :waiter-cluster "waiter"
+                                      :waiter/cluster "waiter"
+                                      :waiter/service-hash service-id}
                              :annotations {:waiter/service-id service-id}}
                   :spec {:replicas 2
                          :selector {:matchLabels {:app service-id
-                                                  :waiter-cluster "waiter"}}}
+                                                  :waiter-cluster "waiter"
+                                                  :waiter/cluster "waiter"}}}
                   :status {:replicas 2
                            :readyReplicas 2
                            :availableReplicas 2}}]}
@@ -884,7 +921,6 @@
 
 (deftest test-start-k8s-watch!
   (let [service-id "test-app-1234"
-
         rs-response
         {:kind "ReplicaSetList"
          :apiVersion "extensions/v1beta1"
@@ -892,11 +928,14 @@
          :items [{:metadata {:name "test-app-1234"
                              :namespace "myself"
                              :labels {:app "test-app-1234"
-                                      :waiter-cluster "waiter"}
+                                      :waiter-cluster "waiter"
+                                      :waiter/cluster "waiter"
+                                      :waiter/service-hash "test-app-1234"}
                              :annotations {:waiter/service-id "test-app-1234"}}
                   :spec {:replicas 2
                          :selector {:matchLabels {:app "test-app-1234"
-                                                  :waiter-cluster "waiter"}}}
+                                                  :waiter-cluster "waiter"
+                                                  :waiter/cluster "waiter"}}}
                   :status {:replicas 2
                            :readyReplicas 1
                            :availableReplicas 2}}]}
@@ -906,12 +945,15 @@
           :object {:metadata {:name "test-app-1234"
                               :namespace "myself"
                               :labels {:app "test-app-1234"
-                                       :waiter-cluster "waiter"}
+                                       :waiter-cluster "waiter"
+                                       :waiter/cluster "waiter"
+                                       :waiter/service-hash "test-app-1234"}
                               :annotations {:waiter/service-id "test-app-1234"}
                               :resourceVersion "1001"}
                    :spec {:replicas 2
                           :selector {:matchLabels {:app "test-app-1234"
-                                                   :waiter-cluster "waiter"}}}
+                                                   :waiter-cluster "waiter"
+                                                   :waiter/cluster "waiter"}}}
                    :status {:replicas 2
                             :readyReplicas 2
                             :availableReplicas 2}}}
@@ -919,12 +961,15 @@
           :object {:metadata {:name "test-app-1234"
                               :namespace "myself"
                               :labels {:app "test-app-1234"
-                                       :waiter-cluster "waiter"}
+                                       :waiter-cluster "waiter"
+                                       :waiter/cluster "waiter"
+                                       :waiter/service-hash "test-app-1234"}
                               :annotations {:waiter/service-id "test-app-1234"}
                               :resourceVersion "1002"}
                    :spec {:replicas 3
                           :selector {:matchLabels {:app "test-app-1234"
-                                                   :waiter-cluster "waiter"}}}
+                                                   :waiter-cluster "waiter"
+                                                   :waiter/cluster "waiter"}}}
                    :status {:replicas 3
                             :readyReplicas 2
                             :availableReplicas 3}}}
@@ -932,12 +977,15 @@
           :object {:metadata {:name "test-app-1234"
                               :namespace "myself"
                               :labels {:app "test-app-1234"
-                                       :waiter-cluster "waiter"}
+                                       :waiter-cluster "waiter"
+                                       :waiter/cluster "waiter"
+                                       :waiter/service-hash "test-app-1234"}
                               :annotations {:waiter/service-id "test-app-1234"}
                               :resourceVersion "1003"}
                    :spec {:replicas 2
                           :selector {:matchLabels {:app "test-app-1234"
-                                                   :waiter-cluster "waiter"}}}
+                                                   :waiter-cluster "waiter"
+                                                   :waiter/cluster "waiter"}}}
                    :status {:replicas 2
                             :readyReplicas 1
                             :availableReplicas 2}}}]
@@ -949,7 +997,9 @@
          :items [{:metadata {:name "test-app-1234-abcd1"
                              :namespace "myself"
                              :labels {:app "test-app-1234"
-                                      :waiter-cluster "waiter"}
+                                      :waiter-cluster "waiter"
+                                      :waiter/cluster "waiter"
+                                      :waiter/service-hash "test-app-1234"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
@@ -961,7 +1011,9 @@
                  {:metadata {:name "test-app-1234-abcd2"
                              :namespace "myself"
                              :labels {:app "test-app-1234"
-                                      :waiter-cluster "waiter"}
+                                      :waiter-cluster "waiter"
+                                      :waiter/cluster "waiter"
+                                      :waiter/service-hash "test-app-1234"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
@@ -975,7 +1027,9 @@
           :object {:metadata {:name "test-app-1234-abcd2"
                               :namespace "myself"
                               :labels {:app "test-app-1234"
-                                       :waiter-cluster "waiter"}
+                                       :waiter-cluster "waiter"
+                                       :waiter/cluster "waiter"
+                                       :waiter/service-hash "test-app-1234"}
                               :annotations {:waiter/port-count "1"
                                             :waiter/service-id "test-app-1234"}
                               :resourceVersion "1001"}
@@ -989,7 +1043,9 @@
           :object {:metadata {:name "test-app-1234-abcd3"
                               :namespace "myself"
                               :labels {:app "test-app-1234"
-                                       :waiter-cluster "waiter"}
+                                       :waiter-cluster "waiter"
+                                       :waiter/cluster "waiter"
+                                       :waiter/service-hash "test-app-1234"}
                               :annotations {:waiter/port-count "1"
                                             :waiter/service-id "test-app-1234"}
                               :resourceVersion "1002"}
@@ -1123,11 +1179,14 @@
          :items [{:metadata {:name "test-app-1234"
                              :namespace "myself"
                              :labels {:app "test-app-1234"
-                                      :waiter-cluster "waiter"}
+                                      :waiter-cluster "waiter"
+                                      :waiter/cluster "waiter"
+                                      :waiter/service-hash "test-app-1234"}
                              :annotations {:waiter/service-id "test-app-1234"}}
                   :spec {:replicas 2
                          :selector {:matchLabels {:app "test-app-1234"
-                                                  :waiter-cluster "waiter"}}}
+                                                  :waiter-cluster "waiter"
+                                                  :waiter/cluster "waiter"}}}
                   :status {:replicas 2
                            :readyReplicas 1
                            :availableReplicas 2}}]}
@@ -1137,12 +1196,15 @@
           :object {:metadata {:name "test-app-1234"
                               :namespace "myself"
                               :labels {:app "test-app-1234"
-                                       :waiter-cluster "waiter"}
+                                       :waiter-cluster "waiter"
+                                       :waiter/cluster "waiter"
+                                       :waiter/service-hash "test-app-1234"}
                               :annotations {:waiter/service-id "test-app-1234"}
                               :resourceVersion "1001"}
                    :spec {:replicas 2
                           :selector {:matchLabels {:app "test-app-1234"
-                                                   :waiter-cluster "waiter"}}}
+                                                   :waiter-cluster "waiter"
+                                                   :waiter/cluster "waiter"}}}
                    :status {:replicas 2
                             :readyReplicas 2
                             :availableReplicas 2}}}
@@ -1150,12 +1212,15 @@
           :object {:metadata {:name "test-app-1234"
                               :namespace "myself"
                               :labels {:app "test-app-1234"
-                                       :waiter-cluster "waiter"}
+                                       :waiter-cluster "waiter"
+                                       :waiter/cluster "waiter"
+                                       :waiter/service-hash "test-app-1234"}
                               :annotations {:waiter/service-id "test-app-1234"}
                               :resourceVersion "1002"}
                    :spec {:replicas 3
                           :selector {:matchLabels {:app "test-app-1234"
-                                                   :waiter-cluster "waiter"}}}
+                                                   :waiter-cluster "waiter"
+                                                   :waiter/cluster "waiter"}}}
                    :status {:replicas 3
                             :readyReplicas 2
                             :availableReplicas 3}}}
@@ -1163,12 +1228,15 @@
           :object {:metadata {:name "test-app-1234"
                               :namespace "myself"
                               :labels {:app "test-app-1234"
-                                       :waiter-cluster "waiter"}
+                                       :waiter-cluster "waiter"
+                                       :waiter/cluster "waiter"
+                                       :waiter/service-hash "test-app-1234"}
                               :annotations {:waiter/service-id "test-app-1234"}
                               :resourceVersion "1004"}
                    :spec {:replicas 2
                           :selector {:matchLabels {:app "test-app-1234"
-                                                   :waiter-cluster "waiter"}}}
+                                                   :waiter-cluster "waiter"
+                                                   :waiter/cluster "waiter"}}}
                    :status {:replicas 2
                             :readyReplicas 1
                             :availableReplicas 2}}}]
@@ -1180,7 +1248,9 @@
          :items [{:metadata {:name "test-app-1234-abcd1"
                              :namespace "myself"
                              :labels {:app "test-app-1234"
-                                      :waiter-cluster "waiter"}
+                                      :waiter-cluster "waiter"
+                                      :waiter/cluster "waiter"
+                                      :waiter/service-hash "test-app-1234"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
@@ -1192,7 +1262,9 @@
                  {:metadata {:name "test-app-1234-abcd2"
                              :namespace "myself"
                              :labels {:app "test-app-1234"
-                                      :waiter-cluster "waiter"}
+                                      :waiter-cluster "waiter"
+                                      :waiter/cluster "waiter"
+                                      :waiter/service-hash "test-app-1234"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
@@ -1208,7 +1280,9 @@
          :items [{:metadata {:name "test-app-1234-abcd1"
                              :namespace "myself"
                              :labels {:app "test-app-1234"
-                                      :waiter-cluster "waiter"}
+                                      :waiter-cluster "waiter"
+                                      :waiter/cluster "waiter"
+                                      :waiter/service-hash "test-app-1234"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
@@ -1220,7 +1294,9 @@
                  {:metadata {:name "test-app-1234-abcd2"
                              :namespace "myself"
                              :labels {:app "test-app-1234"
-                                      :waiter-cluster "waiter"}
+                                      :waiter-cluster "waiter"
+                                      :waiter/cluster "waiter"
+                                      :waiter/service-hash "test-app-1234"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
@@ -1232,7 +1308,9 @@
                  {:metadata {:name "test-app-1234-abcd3"
                              :namespace "myself"
                              :labels {:app "test-app-1234"
-                                      :waiter-cluster "waiter"}
+                                      :waiter-cluster "waiter"
+                                      :waiter/cluster "waiter"
+                                      :waiter/service-hash "test-app-1234"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-1234"}
                              :resourceVersion "1002"}
@@ -1247,7 +1325,9 @@
           :object {:metadata {:name "test-app-1234-abcd2"
                               :namespace "myself"
                               :labels {:app "test-app-1234"
-                                       :waiter-cluster "waiter"}
+                                       :waiter-cluster "waiter"
+                                       :waiter/cluster "waiter"
+                                       :waiter/service-hash "test-app-1234"}
                               :annotations {:waiter/port-count "1"
                                             :waiter/service-id "test-app-1234"}
                               :resourceVersion "1001"}
@@ -1261,7 +1341,9 @@
           :object {:metadata {:name "test-app-1234-abcd3"
                               :namespace "myself"
                               :labels {:app "test-app-1234"
-                                       :waiter-cluster "waiter"}
+                                       :waiter-cluster "waiter"
+                                       :waiter/cluster "waiter"
+                                       :waiter/service-hash "test-app-1234"}
                               :annotations {:waiter/port-count "1"
                                             :waiter/service-id "test-app-1234"}
                               :resourceVersion "1002"}

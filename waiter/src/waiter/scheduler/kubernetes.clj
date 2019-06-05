@@ -67,7 +67,7 @@
   ;; If we have fewer than 48 characters, then we'll probably want to shorten the hash.
   (< k8s-max-name-length 48))
 
-(defn service-id->k8s-app-name [{:keys [max-name-length pod-suffix-length] :as scheduler} service-id]
+(defn service-id->k8s-app-name
   "Shorten a full Waiter service-id to a Kubernetes-compatible application name.
    May return the service-id unmodified if it doesn't violate the
    configured name-length restrictions for this Kubernetes cluster.
@@ -78,6 +78,7 @@
      {:max-name-length 32}
      \"waiter-myapp-e8b625cc83c411e8974c38d5474b213d\")
    ==> \"myapp-e8b625cc474b213d\""
+  [{:keys [max-name-length pod-suffix-length] :as scheduler} service-id]
   (let [[_ app-prefix x y z] (re-find #"([^-]+)-(\w{8})(\w+)(\w{8})$" service-id)
         k8s-max-name-length (- max-name-length pod-suffix-length 1)
         suffix (if (use-short-service-hash? k8s-max-name-length)
@@ -88,6 +89,15 @@
                       (< prefix-max-length (count app-prefix))
                       (subs 0 prefix-max-length))]
     (str app-prefix' suffix)))
+
+(defn service-id->service-hash
+  "Extract the 32-char (256-bit) hash string from a Waiter service-id.
+   Returns the whole service-id if it's 32 characters or shorter."
+  [service-id]
+  (let [hash-offset (- (count service-id) 32)]
+    (cond-> service-id
+      (pos? hash-offset)
+      (subs hash-offset))))
 
 (defn replicaset->Service
   "Convert a Kubernetes ReplicaSet JSON response into a Waiter Service record."
@@ -728,13 +738,24 @@
         k8s-name (service-id->k8s-app-name scheduler service-id)
         health-check-scheme (-> (or health-check-proto backend-proto) http-utils/backend-proto->scheme string/upper-case)
         health-check-url (sd/service-description->health-check-url service-description)
-        memory (str mem "Mi")]
+        memory (str mem "Mi")
+        service-hash (service-id->service-hash service-id)]
     (cond->
       {:kind "ReplicaSet"
        :apiVersion replicaset-api-version
-       :metadata {:annotations {:waiter/service-id service-id}
+       :metadata {;; Since there are length restrictions on Kubernetes label values,
+                  ;; we store just the 32-char hash portion of the service-id as a searchable label,
+                  ;; but store the full service-id as an annotation.
+                  ;; https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set
+                  ;; https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/#syntax-and-character-set
+                  :annotations {:waiter/service-id service-id}
                   :labels {:app k8s-name
+                           ;; TODO - remove waiter-cluster
+                           ;; after waiter/cluster is exclusively in use
+                           ;; (see GitHub issue #721)
                            :waiter-cluster cluster-name
+                           :waiter/cluster cluster-name
+                           :waiter/service-hash service-hash
                            :waiter/user run-as-user}
                   :name k8s-name
                   :namespace (or namespace default-namespace)}
@@ -746,6 +767,8 @@
                                                   :waiter/service-id service-id}
                                     :labels {:app k8s-name
                                              :waiter-cluster cluster-name
+                                             :waiter/cluster cluster-name
+                                             :waiter/service-hash service-hash
                                              :waiter/user run-as-user}}
                          :spec {;; Service account tokens allow easy access to the k8s api server,
                                 ;; but this is only enabled when the x-waiter-namespace is set explicitly
