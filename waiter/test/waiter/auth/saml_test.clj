@@ -76,7 +76,7 @@
         (with-redefs [nippy/freeze (fn [data _] (.getBytes (str data)))
                       t/now (fn [] time-now)
                       utils/unique-identifier (constantly "UUID")
-                      str->deflate->base64 identity
+                      deflate-and-base64-encode identity
                       render-saml-authentication-request-template identity
                       utils/map->base-64-string (fn [data _] data)
                       get-idp-redirect (fn [idp-url saml-request relay-state]
@@ -148,7 +148,7 @@
 
 (defn- saml-response-from-xml
   [change-user?]
-  (str->deflate->base64
+  (deflate-and-base64-encode
     (string/replace (slurp "test-files/saml/saml-response.xml")
                     "user1@example.com"
                     (str (if change-user? "root" "user1") "@example.com"))))

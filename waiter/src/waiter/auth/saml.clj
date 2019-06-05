@@ -64,7 +64,7 @@
     (.close deflater)
     (.toByteArray out)))
 
-(defn str->deflate->base64
+(defn deflate-and-base64-encode
   "Gzip compress bytes and base 64 encode"
   [deflatable-str]
   (let [byte-str (str->bytes deflatable-str)]
@@ -82,7 +82,7 @@
   (response/redirect
     (str idp-url
          "?"
-         (let [saml-request (str->deflate->base64 saml-request)]
+         (let [saml-request (deflate-and-base64-encode saml-request)]
            (codec/form-encode
              {:SAMLRequest saml-request :RelayState relay-state})))))
 
@@ -113,7 +113,7 @@
       (.setAttribute "http://www.oracle.com/xml/jaxp/properties/maxElementDepth" "100")
       (.setExpandEntityReferences false))))
 
-(defn str->inputstream
+(defn str->input-stream
   "Unravels a string into an input stream so we can work with Java constructs."
   [unravel]
   (ByteArrayInputStream. (.getBytes unravel charset-format)))
@@ -121,15 +121,15 @@
 (defn str->xmldoc
   [parsable-str]
   (let [document (create-document-builder)]
-    (.parse document (str->inputstream parsable-str))))
+    (.parse document (str->input-stream parsable-str))))
 
 (defn xml-string->saml-resp
   "Parses a SAML response (XML string) from IdP and returns the corresponding (Open)SAML Response object"
   [xml-string]
   ;; We use org.opensaml.xml here since we already depend on org.opensaml for SAML assertion signature validation
   (let [xmldoc (.getDocumentElement (str->xmldoc xml-string))
-        unmarshallerFactory (Configuration/getUnmarshallerFactory)
-        unmarshaller (.getUnmarshaller unmarshallerFactory xmldoc)
+        unmarshaller-factory (Configuration/getUnmarshallerFactory)
+        unmarshaller (.getUnmarshaller unmarshaller-factory xmldoc)
         saml-resp (.unmarshall unmarshaller xmldoc)]
     saml-resp))
 
@@ -180,8 +180,9 @@
                           (.getAudienceRestrictions conditions))]
     {:attrs attrs
      :audiences audiences
-     :name-id {:value (when name-id (.getValue name-id))
-               :format (when name-id (.getFormat name-id))}
+     :name-id (if name-id {:value (.getValue name-id)
+                           :format (.getFormat name-id)}
+                          {})
      :confirmation {:in-response-to (.getInResponseTo subject-confirmation-data)
                     :not-before (tc/to-timestamp (.getNotBefore subject-confirmation-data))
                     :not-on-or-after (tc/to-timestamp (.getNotOnOrAfter subject-confirmation-data))
@@ -323,9 +324,10 @@
            (do
              (counters/inc! (metrics/waiter-counter ~classifier ~@nested-path))
              (counters/inc! (metrics/waiter-counter ~classifier ~@(conj nested-path "concurrent")))
-             (let [~'rval ~@body]
-               (counters/dec! (metrics/waiter-counter ~classifier ~@(conj nested-path "concurrent")))
-               ~'rval)))))
+             (try
+               (do ~@body)
+               (finally
+                 (counters/dec! (metrics/waiter-counter ~classifier ~@(conj nested-path "concurrent")))))))))
 
 (defrecord SamlAuthenticator [auth-redirect-endpoint idp-uri password saml-request-factory saml-signature-validator]
   auth/Authenticator
@@ -338,17 +340,17 @@
                        :status 400}))))
   (wrap-auth-handler [_ request-handler]
     (fn saml-authenticator-handler [{:keys [headers query-string request-method uri] :as request}]
-      (endpoint-with-waiter-metrics
-        "auth" ["saml" "auth-handler"]
-        (let [waiter-cookie (auth/get-auth-cookie-value (get headers "cookie"))
-              [auth-principal _ :as decoded-auth-cookie] (auth/decode-auth-cookie waiter-cookie password)]
-          (cond
-            ;; Use the cookie, if not expired
-            (auth/decoded-auth-valid? decoded-auth-cookie)
-            (let [auth-params-map (auth/auth-params-map auth-principal)
-                  request-handler' (middleware/wrap-merge request-handler auth-params-map)]
-              (request-handler' request))
-            :else
+      (let [waiter-cookie (auth/get-auth-cookie-value (get headers "cookie"))
+            [auth-principal _ :as decoded-auth-cookie] (auth/decode-auth-cookie waiter-cookie password)]
+        (cond
+          ;; Use the cookie, if not expired
+          (auth/decoded-auth-valid? decoded-auth-cookie)
+          (let [auth-params-map (auth/auth-params-map auth-principal)
+                request-handler' (middleware/wrap-merge request-handler auth-params-map)]
+            (request-handler' request))
+          :else
+          (endpoint-with-waiter-metrics
+            "auth" ["saml" "auth-handler"]
             (case request-method
               :get (let [saml-request (saml-request-factory)
                          scheme (name (utils/request->scheme request))
