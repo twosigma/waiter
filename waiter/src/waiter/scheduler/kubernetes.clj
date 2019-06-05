@@ -90,6 +90,11 @@
                       (subs 0 prefix-max-length))]
     (str app-prefix' suffix)))
 
+(defn service-id->service-hash
+  "Extract the 32-char (256-bit) hash string from a Waiter service-id"
+  [service-id]
+  (subs service-id (- (count service-id) 32)))
+
 (defn replicaset->Service
   "Convert a Kubernetes ReplicaSet JSON response into a Waiter Service record."
   [replicaset-json]
@@ -729,17 +734,24 @@
         k8s-name (service-id->k8s-app-name scheduler service-id)
         health-check-scheme (-> (or health-check-proto backend-proto) http-utils/backend-proto->scheme string/upper-case)
         health-check-url (sd/service-description->health-check-url service-description)
-        memory (str mem "Mi")]
+        memory (str mem "Mi")
+        service-hash (service-id->service-hash service-id)]
     (cond->
       {:kind "ReplicaSet"
        :apiVersion replicaset-api-version
-       :metadata {:annotations {:waiter/service-id service-id}
+       :metadata {;; Since there are length restrictions on Kubernetes label values,
+                  ;; we store just the 32-char hash portion of the service-id as a searchable label,
+                  ;; but store the full service-id as an annotation.
+                  ;; https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set
+                  ;; https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/#syntax-and-character-set
+                  :annotations {:waiter/service-id service-id}
                   :labels {:app k8s-name
                            ;; TODO - remove waiter-cluster
                            ;; after waiter/cluster is exclusively in use
                            ;; (see GitHub issue #721)
                            :waiter-cluster cluster-name
                            :waiter/cluster cluster-name
+                           :waiter/service-hash service-hash
                            :waiter/user run-as-user}
                   :name k8s-name
                   :namespace (or namespace default-namespace)}
@@ -752,6 +764,7 @@
                                     :labels {:app k8s-name
                                              :waiter-cluster cluster-name
                                              :waiter/cluster cluster-name
+                                             :waiter/service-hash service-hash
                                              :waiter/user run-as-user}}
                          :spec {;; Service account tokens allow easy access to the k8s api server,
                                 ;; but this is only enabled when the x-waiter-namespace is set explicitly
