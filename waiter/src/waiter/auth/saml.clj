@@ -43,17 +43,17 @@
 
 (def charset-format (Charset/forName "UTF-8"))
 
-(defn str->bytes
+(defn- str->bytes
   "Get bytes of a string"
   [some-string]
   (.getBytes some-string charset-format))
 
-(defn bytes->str
+(defn- bytes->str
   "Get string from bytes"
   [some-bytes]
   (String. some-bytes charset-format))
 
-(defn deflate-bytes
+(defn- deflate-bytes
   "Gzip compress bytes"
   [str-bytes]
   (let [out (ByteArrayOutputStream.)
@@ -64,19 +64,19 @@
     (.close deflater)
     (.toByteArray out)))
 
-(defn deflate-and-base64-encode
+(defn- deflate-and-base64-encode
   "Gzip compress bytes and base 64 encode"
   [deflatable-str]
   (let [byte-str (str->bytes deflatable-str)]
     (bytes->str (b64/encode (deflate-bytes byte-str)))))
 
-(defn base64->str
+(defn- base64->str
   "Decode base 64 string"
   [string]
   (let [byte-str (str->bytes string)]
     (bytes->str (b64/decode byte-str))))
 
-(defn get-idp-redirect
+(defn- get-idp-redirect
   "Return Ring response for HTTP 302 redirect."
   [idp-url saml-request relay-state]
   (response/redirect
@@ -86,7 +86,7 @@
            (codec/form-encode
              {:SAMLRequest saml-request :RelayState relay-state})))))
 
-(defn validate-saml-assertion-signature
+(defn- validate-saml-assertion-signature
   "Checks that the SAML assertion has a valid signature."
   [assertion saml-signature-validator]
   (if-let [signature (.getSignature assertion)]
@@ -98,8 +98,8 @@
     (throw (ex-info "Could not authenticate user. SAML assertion is not signed."
                     {:status 400}))))
 
-(defn create-document-builder
-  "Create new xml document builder"
+(defn- create-document-builder
+  "Create new xml document builder with SAML-compatible settings"
   []
   (.newDocumentBuilder
     (doto (DocumentBuilderFactory/newInstance)
@@ -113,17 +113,18 @@
       (.setAttribute "http://www.oracle.com/xml/jaxp/properties/maxElementDepth" "100")
       (.setExpandEntityReferences false))))
 
-(defn str->input-stream
+(defn- str->input-stream
   "Unravels a string into an input stream so we can work with Java constructs."
   [unravel]
   (ByteArrayInputStream. (.getBytes unravel charset-format)))
 
-(defn str->xmldoc
+(defn- str->xmldoc
+  "Build XML document object from raw string."
   [parsable-str]
   (let [document (create-document-builder)]
     (.parse document (str->input-stream parsable-str))))
 
-(defn xml-string->saml-resp
+(defn- xml-string->saml-resp
   "Parses a SAML response (XML string) from IdP and returns the corresponding (Open)SAML Response object"
   [xml-string]
   ;; We use org.opensaml.xml here since we already depend on org.opensaml for SAML assertion signature validation
@@ -158,7 +159,7 @@
     (fn [attr-oid]
       (get names attr-oid attr-oid))))
 
-(defn parse-saml-assertion
+(defn- parse-saml-assertion
   "Returns the attributes and the 'audiences' for the given SAML assertion
    http://kevnls.blogspot.gr/2009/07/processing-saml-in-java-using-opensaml.html
    http://stackoverflow.com/questions/9422545/decrypting-encrypted-assertion-using-saml-2-0-in-java-using-opensaml"
@@ -288,24 +289,24 @@
       (template/fn
         [{:keys [time-issued saml-service-name saml-id acs-url idp-uri]}]
         (slurp (io/resource "auth/saml-authentication-request.xml")))]
-  (defn render-saml-authentication-request-template
+  (defn- render-saml-authentication-request-template
     "Render the SAML authentication request XML."
     [context]
     (saml-authentication-request-template-fn (pc/map-vals escape-xml-string context))))
 
-(defn create-request
+(defn- create-request
   "Return XML elements that represent a SAML 2.0 auth request."
   [time-issued saml-service-name saml-id acs-url idp-uri]
   (render-saml-authentication-request-template (utils/keys-map time-issued saml-service-name saml-id acs-url idp-uri)))
 
 (def instant-format (f/formatters :date-time-no-ms))
 
-(defn make-issue-instant
+(defn- make-issue-instant
   "Converts a date-time to a SAML 2.0 time string."
   []
   (du/date-to-str (t/now) instant-format))
 
-(defn create-request-factory!
+(defn- create-request-factory!
   "Creates new requests for a particular service, format, and acs-url."
   [idp-uri saml-service-name acs-url]
   ;;; Bootstrap opensaml when we create a request factory.
@@ -316,25 +317,12 @@
                    acs-url
                    idp-uri))
 
-(defmacro endpoint-with-waiter-metrics
-  "Calls body, wrapping with timer, count, concurrent count, and rate metrics"
-  [classifier nested-path & body]
-  `(:out (metrics/with-timer
-           (metrics/waiter-timer ~classifier ~@nested-path) ; timer has both timer and rate
-           (do
-             (counters/inc! (metrics/waiter-counter ~classifier ~@nested-path))
-             (counters/inc! (metrics/waiter-counter ~classifier ~@(conj nested-path "concurrent")))
-             (try
-               (do ~@body)
-               (finally
-                 (counters/dec! (metrics/waiter-counter ~classifier ~@(conj nested-path "concurrent")))))))))
-
 (defrecord SamlAuthenticator [auth-redirect-endpoint idp-uri password saml-request-factory saml-signature-validator]
   auth/Authenticator
   (process-callback [this {{:keys [operation]} :route-params :as request}]
     (case operation
-      "acs" (endpoint-with-waiter-metrics "auth" ["saml" "acs"] (saml-acs-handler this request))
-      "auth-redirect" (endpoint-with-waiter-metrics "auth" ["saml" "auth-redirect"] (saml-auth-redirect-handler this request))
+      "acs" (metrics/endpoint-with-waiter-metrics "auth" ["saml" "acs"] (saml-acs-handler this request))
+      "auth-redirect" (metrics/endpoint-with-waiter-metrics "auth" ["saml" "auth-redirect"] (saml-auth-redirect-handler this request))
       (throw (ex-info (str "Unknown SAML authenticator operation: " operation)
                       {:operation operation
                        :status 400}))))
@@ -349,7 +337,7 @@
                 request-handler' (middleware/wrap-merge request-handler auth-params-map)]
             (request-handler' request))
           :else
-          (endpoint-with-waiter-metrics
+          (metrics/endpoint-with-waiter-metrics
             "auth" ["saml" "auth-handler"]
             (case request-method
               :get (let [saml-request (saml-request-factory)

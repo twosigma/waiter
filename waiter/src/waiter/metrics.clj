@@ -517,3 +517,16 @@
    (.update timer
             (t/in-millis duration)
             TimeUnit/MILLISECONDS)))
+
+(defmacro endpoint-with-waiter-metrics
+  "Calls body, wrapping with timer, count, concurrent count, and rate metrics"
+  [classifier nested-path & body]
+  `(:out (with-timer
+           (waiter-timer ~classifier ~@nested-path) ; timer has both timer and rate
+           (do
+             (counters/inc! (waiter-counter ~classifier ~@nested-path))
+             (counters/inc! (waiter-counter ~classifier ~@(conj nested-path "concurrent")))
+             (try
+               (do ~@body)
+               (finally
+                 (counters/dec! (waiter-counter ~classifier ~@(conj nested-path "concurrent")))))))))
