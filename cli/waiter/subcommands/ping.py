@@ -2,8 +2,8 @@ import logging
 
 from waiter import http_util, terminal
 from waiter.format import format_status
-from waiter.querying import query_token, print_no_data, query_service, get_services_using_token, get_service
-from waiter.util import guard_no_cluster, print_error, check_positive, wait_until, is_service_current, response_message
+from waiter.querying import get_service, get_services_using_token, print_no_data, query_service, query_token
+from waiter.util import check_positive, guard_no_cluster, is_service_current, print_error, response_message, wait_until
 
 
 def ping_on_cluster(cluster, timeout, wait_for_request, token_name, service_exists_fn):
@@ -18,7 +18,7 @@ def ping_on_cluster(cluster, timeout, wait_for_request, token_name, service_exis
                 'X-Waiter-Token': token_name,
                 'X-Waiter-Timeout': str(timeout_seconds * 1000)
             }
-            read_timeout = timeout_seconds * 2
+            read_timeout = timeout_seconds + 10
             resp = http_util.get(cluster, '/waiter-ping', headers=headers, read_timeout=read_timeout)
             logging.debug(f'Response status code: {resp.status_code}')
             resp_json = resp.json()
@@ -32,7 +32,7 @@ def ping_on_cluster(cluster, timeout, wait_for_request, token_name, service_exis
                         print(terminal.success('Ping successful.'))
                         result = True
                     else:
-                        print_error('Ping responded with non-200 status.')
+                        print_error(f'Ping responded with non-200 status {ping_response_status}.')
                         result = False
                 elif ping_response_result == 'timed-out':
                     if wait_for_request:
@@ -62,7 +62,7 @@ def ping_on_cluster(cluster, timeout, wait_for_request, token_name, service_exis
             print(f'Service is currently {format_status(result["status"])}.')
             return True
         else:
-            print_error('Timeout waiting for service to exist.')
+            print_error('Timeout while waiting for service to start.')
             return False
 
     succeeded, service_status = perform_ping()
