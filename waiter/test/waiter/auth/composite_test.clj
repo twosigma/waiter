@@ -39,12 +39,12 @@
   (->TestAuthenticator saml-process-callback-response saml-wrap-auth-handler-response))
 
 (def valid-config
-  {:authentication-schemes {"one-user" {:authenticator-factory-fn 'waiter.auth.composite-test/one-user-authenticator
-                                        :run-as-user "WAITER_AUTH_RUN_AS_USER"}
-                            "saml" {:authenticator-factory-fn 'waiter.auth.composite-test/saml-authenticator
-                                    :idp-cert-uri "SAML_IDP_CERT_URI"
-                                    :idp-uri "SAML_IDP_URI"}}
-   :default-scheme "one-user"})
+  {:authentication-providers {"one-user" {:factory-fn 'waiter.auth.composite-test/one-user-authenticator
+                                          :run-as-user "WAITER_AUTH_RUN_AS_USER"}
+                              "saml" {:factory-fn 'waiter.auth.composite-test/saml-authenticator
+                                      :idp-cert-uri "SAML_IDP_CERT_URI"
+                                      :idp-uri "SAML_IDP_URI"}}
+   :default-authentication-provider "one-user"})
 
 (defn dummy-composite-authenticator
   ([config]
@@ -58,11 +58,11 @@
 
 (deftest test-make-composite-authenticator
   (testing "should throw on invalid configuration"
-    (is (thrown? Throwable (dummy-composite-authenticator (assoc valid-config :authentication-schemes nil))))
-    (is (thrown? Throwable (dummy-composite-authenticator (assoc valid-config :authentication-schemes {}))))
-    (is (thrown? Throwable (dummy-composite-authenticator (assoc valid-config :default-scheme nil))))
-    (is (thrown? Throwable (dummy-composite-authenticator (assoc valid-config :default-scheme " "))))
-    (is (thrown? Throwable (dummy-composite-authenticator (assoc valid-config :default-scheme "foo")))))
+    (is (thrown? Throwable (dummy-composite-authenticator (assoc valid-config :authentication-providers nil))))
+    (is (thrown? Throwable (dummy-composite-authenticator (assoc valid-config :authentication-providers {}))))
+    (is (thrown? Throwable (dummy-composite-authenticator (assoc valid-config :default-authentication-provider nil))))
+    (is (thrown? Throwable (dummy-composite-authenticator (assoc valid-config :default-authentication-provider " "))))
+    (is (thrown? Throwable (dummy-composite-authenticator (assoc valid-config :default-authentication-provider "foo")))))
   (testing "should not throw on valid configuration"
     (dummy-composite-authenticator valid-config)))
 

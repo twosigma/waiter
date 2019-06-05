@@ -37,11 +37,11 @@
  :authenticator-config {:kind :composite
                         :composite {:factory-fn waiter.auth.composite/composite-authenticator
                                     :authentication-providers {"one-user" {:factory-fn waiter.auth.authentication/one-user-authenticator
-                                                                         ;; The user account used to launch services:
-                                                                         :run-as-user #config/env "WAITER_AUTH_RUN_AS_USER"}
-                                                             "saml" {:factory-fn waiter.auth.saml/saml-authenticator
-                                                                     :idp-cert-uri #config/env "SAML_IDP_CERT_URI"
-                                                                     :idp-uri #config/env "SAML_IDP_URI"}}
+                                                                           ;; The user account used to launch services:
+                                                                           :run-as-user #config/env "WAITER_AUTH_RUN_AS_USER"}
+                                                               "saml" {:factory-fn waiter.auth.saml/saml-authenticator
+                                                                       :idp-cert-uri #config/env "SAML_IDP_CERT_URI"
+                                                                       :idp-uri #config/env "SAML_IDP_URI"}}
                                     :default-authentication-provider "one-user"}}
 
  ; ---------- Scheduling ----------

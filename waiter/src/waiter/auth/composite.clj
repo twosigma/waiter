@@ -24,6 +24,7 @@
 
   (get-authentication-providers [_]
     (keys provider-name->authenticator))
+
   (process-callback [_ {{:keys [authentication-provider]} :route-params :as request}]
     (if-let [authenticator (get provider-name->authenticator authentication-provider)]
       (auth/process-callback authenticator request)
@@ -31,6 +32,7 @@
                       {:available-authenticators (keys provider-name->authenticator)
                        :authentication-provider authentication-provider
                        :status 400}))))
+
   (wrap-auth-handler [_ request-handler]
     (let [provider-name->handler (pc/map-vals #(auth/wrap-auth-handler % request-handler) provider-name->authenticator)]
       (fn composite-authenticator-handler [request]

@@ -30,7 +30,7 @@
      - issue a 401 challenge, or redirect, to get the client to authenticate itself,
      - or upon successful authentication populate the request with :authorization/user and :authorization/principal")
   (get-authentication-providers [this]
-    "Get a list of supported authenticaiton provider names.")
+    "Get a list of supported authentication provider names.")
   (process-callback [this request]
     "Process any requests that might come in after initiating authentication. e.g. receive a request
      with an authentication assertion after redirecting a user to authenticate with an identity provider."))
@@ -38,7 +38,6 @@
 (extend-protocol Authenticator
   Object
   (get-authentication-providers [_] [])
-  Object
   (process-callback [this _]
     (throw (ex-info (str this " authenticator does not support callbacks.")
                     {:status 400}))))

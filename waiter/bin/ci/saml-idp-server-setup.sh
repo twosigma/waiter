@@ -1,11 +1,15 @@
 #!/bin/bash
-
-set -e
-
+# Usage: run-unit-tests.sh
+#
+# Examples:
+#   run-unit-tests.sh
+#
 # Run a test SAML identity provider (IdP) server via docker
 # Server UI will be accessible at: https://localhost:8443/simplesaml/module.php/core/frontpage_welcome.php
 # SAML authentication request can be routed to: https://localhost:8443/simplesaml/saml2/idp/SSOService.php
 # Further documentation can be found at: https://hub.docker.com/r/kristophjunge/test-saml-idp/
+
+set -e
 
 echo Starting SAML IdP server docker container
 docker run --name=testsamlidp_idp --detach --rm -p 8090:8090 -p 8443:8443 \
