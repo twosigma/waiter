@@ -735,7 +735,11 @@
        :apiVersion replicaset-api-version
        :metadata {:annotations {:waiter/service-id service-id}
                   :labels {:app k8s-name
+                           ;; TODO - remove waiter-cluster
+                           ;; after waiter/cluster is exclusively in use
+                           ;; (see GitHub issue #721)
                            :waiter-cluster cluster-name
+                           :waiter/cluster cluster-name
                            :waiter/user run-as-user}
                   :name k8s-name
                   :namespace (or namespace default-namespace)}
@@ -747,6 +751,7 @@
                                                   :waiter/service-id service-id}
                                     :labels {:app k8s-name
                                              :waiter-cluster cluster-name
+                                             :waiter/cluster cluster-name
                                              :waiter/user run-as-user}}
                          :spec {;; Service account tokens allow easy access to the k8s api server,
                                 ;; but this is only enabled when the x-waiter-namespace is set explicitly
