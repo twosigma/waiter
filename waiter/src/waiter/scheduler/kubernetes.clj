@@ -67,7 +67,7 @@
   ;; If we have fewer than 48 characters, then we'll probably want to shorten the hash.
   (< k8s-max-name-length 48))
 
-(defn service-id->k8s-app-name [{:keys [max-name-length pod-suffix-length] :as scheduler} service-id]
+(defn service-id->k8s-app-name
   "Shorten a full Waiter service-id to a Kubernetes-compatible application name.
    May return the service-id unmodified if it doesn't violate the
    configured name-length restrictions for this Kubernetes cluster.
@@ -78,6 +78,7 @@
      {:max-name-length 32}
      \"waiter-myapp-e8b625cc83c411e8974c38d5474b213d\")
    ==> \"myapp-e8b625cc474b213d\""
+  [{:keys [max-name-length pod-suffix-length] :as scheduler} service-id]
   (let [[_ app-prefix x y z] (re-find #"([^-]+)-(\w{8})(\w+)(\w{8})$" service-id)
         k8s-max-name-length (- max-name-length pod-suffix-length 1)
         suffix (if (use-short-service-hash? k8s-max-name-length)
