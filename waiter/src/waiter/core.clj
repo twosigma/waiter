@@ -925,13 +925,13 @@
                             (fn token->token-metadata [token]
                               (sd/token->token-metadata kv-store token :error-on-missing false)))
    :validate-service-description-fn (pc/fnk [[:state authenticator service-description-builder]]
-                                      (let [authentication (or (get service-description "authentication") "standard")
-                                            authentication-providers (into #{"disabled" "standard"} (auth/get-authentication-providers authenticator))]
+                                      (let [authentication-providers (into #{"disabled" "standard"} (auth/get-authentication-providers authenticator))]
                                         (fn validate-service-description [service-description]
-                                          (when-not (contains? authentication-providers authentication)
-                                            (throw (ex-info (str "authentication must be one of: '"
-                                                                 (str/join "', '" (sort authentication-providers)) "'")
-                                                            {:status 400})))
+                                          (let [authentication (or (get service-description "authentication") "standard")]
+                                            (when-not (contains? authentication-providers authentication)
+                                              (throw (ex-info (str "authentication must be one of: '"
+                                                                   (str/join "', '" (sort authentication-providers)) "'")
+                                                              {:status 400}))))
                                           (sd/validate service-description-builder service-description {}))))
    :waiter-request?-fn (pc/fnk [[:state waiter-hostnames]]
                          (let [local-router (InetAddress/getLocalHost)
