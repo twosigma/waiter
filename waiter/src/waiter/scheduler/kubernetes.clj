@@ -91,9 +91,13 @@
     (str app-prefix' suffix)))
 
 (defn service-id->service-hash
-  "Extract the 32-char (256-bit) hash string from a Waiter service-id"
+  "Extract the 32-char (256-bit) hash string from a Waiter service-id.
+   Returns the whole service-id if it's 32 characters or shorter."
   [service-id]
-  (subs service-id (- (count service-id) 32)))
+  (let [hash-offset (- (count service-id) 32)]
+    (cond-> service-id
+      (pos? hash-offset)
+      (subs hash-offset))))
 
 (defn replicaset->Service
   "Convert a Kubernetes ReplicaSet JSON response into a Waiter Service record."
