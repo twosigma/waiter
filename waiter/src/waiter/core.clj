@@ -1184,8 +1184,8 @@
                                                                             instance-request-properties determine-priority-fn ws/process-response!
                                                                             ws/abort-request-callback-factory local-usage-agent request))
                                            handler (-> process-request-fn
-                                                     (ws/wrap-ws-close-on-error)
-                                                     wrap-descriptor-fn)]
+                                                       (ws/wrap-ws-close-on-error)
+                                                       wrap-descriptor-fn)]
                                        (ws/request-handler password handler request))))
    :display-settings-handler-fn (pc/fnk [wrap-secure-request-fn settings]
                                   (wrap-secure-request-fn
@@ -1290,8 +1290,8 @@
                                    wrap-descriptor-fn wrap-secure-request-fn]
                             (-> (fn service-id-handler-fn [request]
                                   (handler/service-id-handler request kv-store store-service-description-fn))
-                              wrap-descriptor-fn
-                              wrap-secure-request-fn))
+                                wrap-descriptor-fn
+                                wrap-secure-request-fn))
    :service-list-handler-fn (pc/fnk [[:daemons router-state-maintainer]
                                      [:routines prepend-waiter-url router-metrics-helpers
                                       service-id->service-description-fn service-id->source-tokens-entries-fn]
@@ -1495,13 +1495,6 @@
                                  (fn token-handler-fn [request]
                                    (token/handle-reindex-tokens-request synchronize-fn make-inter-router-requests-sync-fn
                                                                         kv-store list-tokens-fn request))))
-   :waiter-auth-handler-fn (pc/fnk [wrap-secure-request-fn]
-                             (wrap-secure-request-fn
-                               (fn waiter-auth-handler-fn [request]
-                                 {:body (str (:authorization/user request)), :status 200})))
-   :waiter-auth-callback-handler-fn (pc/fnk [[:state authenticator]]
-                                    (fn waiter-auth-callback-handler-fn [request]
-                                      (auth/process-callback authenticator request)))
    :waiter-acknowledge-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template
                                                     token->token-metadata]
                                                    [:settings consent-expiry-days]
@@ -1518,6 +1511,13 @@
                                                       token->service-description-template token->token-metadata
                                                       service-description->service-id consent-cookie-value add-encoded-cookie
                                                       consent-expiry-days request))))))
+   :waiter-auth-callback-handler-fn (pc/fnk [[:state authenticator]]
+                                      (fn waiter-auth-callback-handler-fn [request]
+                                        (auth/process-callback authenticator request)))
+   :waiter-auth-handler-fn (pc/fnk [wrap-secure-request-fn]
+                             (wrap-secure-request-fn
+                               (fn waiter-auth-handler-fn [request]
+                                 {:body (str (:authorization/user request)), :status 200})))
    :waiter-request-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template]
                                                [:settings consent-expiry-days]
                                                wrap-secure-request-fn]

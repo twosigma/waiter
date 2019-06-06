@@ -21,7 +21,6 @@
             [clojure.java.io :as io]
             [clojure.string :as string]
             [comb.template :as template]
-            [metrics.counters :as counters]
             [plumbing.core :as pc]
             [ring.middleware.params :as ring-params]
             [ring.util.codec :as codec]
@@ -297,11 +296,6 @@
     [context]
     (saml-authentication-request-template-fn (pc/map-vals escape-xml-string context))))
 
-(defn- create-request
-  "Return XML elements that represent a SAML 2.0 auth request."
-  [time-issued saml-service-name saml-id acs-url idp-uri]
-  (render-saml-authentication-request-template (utils/keys-map time-issued saml-service-name saml-id acs-url idp-uri)))
-
 (def instant-format (f/formatters :date-time-no-ms))
 
 (defn- make-issue-instant
@@ -314,11 +308,12 @@
   [idp-uri saml-service-name acs-url]
   ;;; Bootstrap opensaml when we create a request factory.
   (DefaultBootstrap/bootstrap)
-  #(create-request (make-issue-instant)
-                   saml-service-name
-                   (str "WAITER-" (utils/unique-identifier))
-                   acs-url
-                   idp-uri))
+  #(render-saml-authentication-request-template
+     {:acs-url acs-url
+      :idp-uri idp-uri
+      :saml-id (str "WAITER-" (utils/unique-identifier))
+      :saml-service-name saml-service-name
+      :time-issued (make-issue-instant)}))
 
 (defrecord SamlAuthenticator [auth-redirect-endpoint idp-uri password saml-request-factory saml-signature-validator]
   auth/Authenticator

@@ -294,10 +294,10 @@
       (with-redefs [env (fn [name _]
                           (case name
                             "GRAPHITE_SERVER_PORT" (str graphite-server-port)
-                            "SAML_IDP_URI" saml-idp-uri
                             "SAML_IDP_CERT_URI" saml-idp-cert-uri
-                            "WAITER_PORT" (str port)
+                            "SAML_IDP_URI" saml-idp-uri
                             "WAITER_AUTH_RUN_AS_USER" run-as-user
+                            "WAITER_PORT" (str port)
                             (throw (ex-info "Unexpected environment variable" {:name name}))))]
         (let [settings (load-composite-settings)]
           (is (nil? (s/check settings-schema settings)))

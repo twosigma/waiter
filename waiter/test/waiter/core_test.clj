@@ -1239,6 +1239,14 @@
         (is (= (utils/clj->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
                                          :status 400)
                response))))
+    (testing "request-without-existing-auth-default-named-token-with-authentication-header-2"
+      (let [test-request {:headers {"host" "www.service.com"
+                                    "x-waiter-authentication" "standard"}}
+            {:keys [handled-request response]} (execute-request test-request)]
+        (is (nil? handled-request))
+        (is (= (utils/clj->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
+                                         :status 400)
+               response))))
 
     (testing "request-without-existing-auth-default-named-token-with-on-the-fly-headers"
       (let [test-request {:headers {"host" "www.service.com"

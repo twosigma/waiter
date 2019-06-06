@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.cookie-support-test
-  (:require [clojure.core.async :as async]
+  (:require [clj-time.core :as t]
+            [clojure.core.async :as async]
             [clojure.data.codec.base64 :as b64]
             [clojure.test :refer :all]
             [taoensso.nippy :as nippy]
@@ -47,7 +48,7 @@
 
 (deftest test-add-encoded-cookie
   (let [cookie-attrs ";Max-Age=864000;Path=/;HttpOnly=true"
-        max-age-sec 864000
+        max-age-sec (-> 10 t/days t/in-seconds)
         user-cookie (str "user=" (UrlEncoded/encodeString "data:john") cookie-attrs)]
     (with-redefs [b64/encode (fn [^String data-string] (.getBytes data-string))
                   nippy/freeze (fn [input _] (str "data:" input))]
