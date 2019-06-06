@@ -81,7 +81,7 @@
                             (.setRequestMethod http-connection "GET")
                             (.connect http-connection)
                             http-connection))
-        conn (make-connection saml-redirect-location {})]
+        conn (make-connection saml-redirect-location)]
     (is (= 200 (.getResponseCode conn)))
     (reaver/extract (reaver/parse (slurp (.getInputStream conn))) [:waiter-saml-acs-endpoint :saml-response :relay-state]
                     "form" (reaver/attr :action)
