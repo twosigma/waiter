@@ -1363,6 +1363,20 @@
       (testing "post:new-service-description:valid-authentication"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1" :authentication "unsupported"
+                                     :token "abcdefgh"})
+              {:keys [status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
+                {:authorization/user auth-user
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :headers {"accept" "application/json"}
+                 :request-method :post})]
+          (is (= 200 status))))
+
+      (testing "post:new-service-description:valid-authentication-2"
+        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+              service-description (walk/stringify-keys
                                     {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1" :authentication "saml"
                                      :token "abcdefgh"})
               {:keys [status]}

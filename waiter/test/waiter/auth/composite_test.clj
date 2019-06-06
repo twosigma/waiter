@@ -21,8 +21,9 @@
 
 (defrecord TestAuthenticator [process-callback-response wrap-auth-handler-response]
   auth/Authenticator
-  (process-callback [_ _] process-callback-response)
-  (wrap-auth-handler [_ _] (constantly wrap-auth-handler-response)))
+  (wrap-auth-handler [_ _] (constantly wrap-auth-handler-response))
+  auth/CallbackAuthenticator
+  (process-callback [_ _] process-callback-response))
 
 (def one-user-process-callback-response "one-user-process-callback-response")
 (def one-user-wrap-auth-handler-response "one-user-wrap-auth-handler-response")
@@ -48,7 +49,7 @@
 
 (defn dummy-composite-authenticator
   ([config]
-   (composite-authenticator config))
+   (composite-authenticator (assoc config :default-authentication "standard")))
   ([]
    (dummy-composite-authenticator valid-config)))
 

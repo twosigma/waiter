@@ -528,11 +528,13 @@
 ;; PRIVATE API
 (def state
   {:async-request-store-atom (pc/fnk [] (atom {}))
-   :authenticator (pc/fnk [[:settings authenticator-config hostname]
+   :authenticator (pc/fnk [[:settings authenticator-config hostname service-description-defaults]
                            passwords]
                     (let [hostname (if (sequential? hostname) (first hostname) hostname)]
-                      (utils/create-component authenticator-config :context {:hostname hostname
-                                                                             :password (first passwords)})))
+                      (utils/create-component authenticator-config
+                                              :context {:default-authentication (get service-description-defaults "authentication")
+                                                        :hostname hostname
+                                                        :password (first passwords)})))
    :clock (pc/fnk [] t/now)
    :cors-validator (pc/fnk [[:settings cors-config]]
                      (utils/create-component cors-config))
@@ -924,14 +926,16 @@
    :token->token-metadata (pc/fnk [[:curator kv-store]]
                             (fn token->token-metadata [token]
                               (sd/token->token-metadata kv-store token :error-on-missing false)))
-   :validate-service-description-fn (pc/fnk [[:state authenticator service-description-builder]]
-                                      (let [authentication-providers (into #{"disabled" "standard"} (auth/get-authentication-providers authenticator))]
+   :validate-service-description-fn (pc/fnk [[:settings service-description-defaults]
+                                             [:state authenticator service-description-builder]]
+                                      (let [authentication-providers (into #{"disabled" "standard"} (auth/get-authentication-providers authenticator))
+                                            default-authentication (get service-description-defaults "authentication")]
                                         (fn validate-service-description [service-description]
-                                          (let [authentication (or (get service-description "authentication") "standard")]
+                                          (let [authentication (or (get service-description "authentication") default-authentication)]
                                             (when-not (contains? authentication-providers authentication)
                                               (throw (ex-info (str "authentication must be one of: '"
                                                                    (str/join "', '" (sort authentication-providers)) "'")
-                                                              {:status 400}))))
+                                                              {:authentication authentication :status 400}))))
                                           (sd/validate service-description-builder service-description {}))))
    :waiter-request?-fn (pc/fnk [[:state waiter-hostnames]]
                          (let [local-router (InetAddress/getLocalHost)

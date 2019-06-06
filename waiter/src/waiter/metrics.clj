@@ -66,8 +66,8 @@
           -> (.concat (.concat (.concat \"services\" \".\") service-id) \"requests.counter\")"
   [elements]
   (-> elements
-      (compress-strings ".")
-      (join-by-concat)))
+    (compress-strings ".")
+    (join-by-concat)))
 
 (defmacro service-counter
   "Creates a counter with service-specific naming scheme"
@@ -184,7 +184,7 @@
                                  (str/includes? name "counters")
                                  (some #(str/includes? name %) included-counter-names)))))
         service-id->codahale-metrics (-> (get-metrics mc/default-registry metric-filter)
-                                         (get services-string))]
+                                       (get services-string))]
     (pc/map-vals (fn [metrics]
                    (let [assoc-if (fn [transient-map metrics-keys map-key]
                                     (let [value (get-in metrics metrics-keys)]
@@ -192,12 +192,12 @@
                                         value (assoc! map-key value))))
                          transient-map (transient {})]
                      (-> transient-map
-                         (assoc-if ["counters" "instance-counts" "slots-available"] "slots-available")
-                         (assoc-if ["counters" "instance-counts" "slots-in-use"] "slots-in-use")
-                         (assoc-if ["counters" "request-counts" "outstanding"] "outstanding")
-                         (assoc-if ["counters" "request-counts" "total"] "total")
-                         (assoc-if ["counters" "work-stealing" "received-from" "in-flight"] "slots-received")
-                         (persistent!))))
+                       (assoc-if ["counters" "instance-counts" "slots-available"] "slots-available")
+                       (assoc-if ["counters" "instance-counts" "slots-in-use"] "slots-in-use")
+                       (assoc-if ["counters" "request-counts" "outstanding"] "outstanding")
+                       (assoc-if ["counters" "request-counts" "total"] "total")
+                       (assoc-if ["counters" "work-stealing" "received-from" "in-flight"] "slots-received")
+                       (persistent!))))
                  service-id->codahale-metrics)))
 
 (defn prefix-metrics-filter
@@ -340,9 +340,9 @@
            (map (fn codahale-metrics-sanitizer [codahale-metrics]
                   (let [instance-counts (get-in codahale-metrics ["counters" "instance-counts"])]
                     (-> (dissoc codahale-metrics "metrics-version")
-                        (assoc-in ["counters" "instance-counts"]
-                                  (select-keys instance-counts
-                                               ["slots-assigned" "slots-available" "slots-in-use"])))))
+                      (assoc-in ["counters" "instance-counts"]
+                                (select-keys instance-counts
+                                             ["slots-assigned" "slots-available" "slots-in-use"])))))
                 (vals router->codahale-metrics)))
     :routers-sent-requests-to (count router->codahale-metrics)))
 
@@ -405,8 +405,8 @@
           {:keys [all-available-service-ids]} (query-state-fn)
           service-id->state (pc/map-from-keys (fn service-id->state-fn [service-id]
                                                 (-> (get service-id->metrics service-id)
-                                                    (select-keys ["outstanding" "total"])
-                                                    (assoc "alive?" (contains? all-available-service-ids service-id))))
+                                                  (select-keys ["outstanding" "total"])
+                                                  (assoc "alive?" (contains? all-available-service-ids service-id))))
                                               (keys service-id->metrics))]
       (if service-id->metrics
         (do
@@ -521,12 +521,13 @@
 (defmacro endpoint-with-waiter-metrics
   "Calls body, wrapping with timer, count, concurrent count, and rate metrics"
   [classifier nested-path & body]
-  `(:out (with-timer
-           (waiter-timer ~classifier ~@nested-path) ; timer has both timer and rate
-           (do
-             (counters/inc! (waiter-counter ~classifier ~@nested-path))
-             (counters/inc! (waiter-counter ~classifier ~@(conj nested-path "concurrent")))
-             (try
-               (do ~@body)
-               (finally
-                 (counters/dec! (waiter-counter ~classifier ~@(conj nested-path "concurrent")))))))))
+  `(let [classifier# ~classifier]
+     (:out (with-timer
+             (waiter-timer classifier# ~@nested-path) ; timer has both timer and rate
+             (do
+               (counters/inc! (waiter-counter classifier# ~@nested-path))
+               (counters/inc! (waiter-counter classifier# ~@(conj nested-path "concurrent")))
+               (try
+                 (do ~@body)
+                 (finally
+                   (counters/dec! (waiter-counter classifier# ~@(conj nested-path "concurrent"))))))))))

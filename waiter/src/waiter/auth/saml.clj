@@ -53,7 +53,7 @@
   [some-bytes]
   (String. some-bytes charset-format))
 
-(defn- deflate-bytes
+(defn deflate-bytes
   "Gzip compress bytes"
   [str-bytes]
   (let [out (ByteArrayOutputStream.)
@@ -64,7 +64,7 @@
     (.close deflater)
     (.toByteArray out)))
 
-(defn- deflate-and-base64-encode
+(defn deflate-and-base64-encode
   "Gzip compress bytes and base 64 encode"
   [deflatable-str]
   (let [byte-str (str->bytes deflatable-str)]
@@ -76,7 +76,7 @@
   (let [byte-str (str->bytes string)]
     (bytes->str (b64/decode byte-str))))
 
-(defn- get-idp-redirect
+(defn get-idp-redirect
   "Return Ring response for HTTP 302 redirect."
   [idp-url saml-request relay-state]
   (response/redirect
@@ -181,9 +181,8 @@
                           (.getAudienceRestrictions conditions))]
     {:attrs attrs
      :audiences audiences
-     :name-id (if name-id {:value (.getValue name-id)
-                           :format (.getFormat name-id)}
-                          {})
+     :name-id {:value (when name-id (.getValue name-id))
+               :format (when name-id (.getFormat name-id))}
      :confirmation {:in-response-to (.getInResponseTo subject-confirmation-data)
                     :not-before (tc/to-timestamp (.getNotBefore subject-confirmation-data))
                     :not-on-or-after (tc/to-timestamp (.getNotOnOrAfter subject-confirmation-data))
@@ -250,13 +249,19 @@
   [{:keys [password]} request]
   {:pre [(not-empty password)]}
   (if-let [saml-auth-data (get-in (ring-params/params-request request) [:form-params "saml-auth-data"])]
-    (let [{:keys [not-on-or-after redirect-url saml-principal]}
+    (let [{:keys [not-on-or-after redirect-url saml-principal] :as saml-auth-data}
           (try
             (utils/base-64-string->map saml-auth-data password)
             (catch Exception e
               (throw (ex-info "Could not parse saml-auth-data." {:inner-exception e
                                                                  :saml-auth-data saml-auth-data
                                                                  :status 400} e))))
+          _ (when-not (and not-on-or-after redirect-url saml-principal)
+              (throw (ex-info "Could not authenticate user. Invalid SAML auth data."
+                              {:current-time current-time
+                               :expiry-time not-on-or-after
+                               :saml-auth-data saml-auth-data
+                               :status 500})))
           current-time (t/now)
           _ (when-not (t/before? current-time not-on-or-after)
               (throw (ex-info "Could not authenticate user. Expired SAML assertion."
@@ -289,7 +294,7 @@
       (template/fn
         [{:keys [time-issued saml-service-name saml-id acs-url idp-uri]}]
         (slurp (io/resource "auth/saml-authentication-request.xml")))]
-  (defn- render-saml-authentication-request-template
+  (defn render-saml-authentication-request-template
     "Render the SAML authentication request XML."
     [context]
     (saml-authentication-request-template-fn (pc/map-vals escape-xml-string context))))
@@ -319,13 +324,6 @@
 
 (defrecord SamlAuthenticator [auth-redirect-endpoint idp-uri password saml-request-factory saml-signature-validator]
   auth/Authenticator
-  (process-callback [this {{:keys [operation]} :route-params :as request}]
-    (case operation
-      "acs" (metrics/endpoint-with-waiter-metrics "auth" ["saml" "acs"] (saml-acs-handler this request))
-      "auth-redirect" (metrics/endpoint-with-waiter-metrics "auth" ["saml" "auth-redirect"] (saml-auth-redirect-handler this request))
-      (throw (ex-info (str "Unknown SAML authenticator operation: " operation)
-                      {:operation operation
-                       :status 400}))))
   (wrap-auth-handler [_ request-handler]
     (fn saml-authenticator-handler [{:keys [headers query-string request-method uri] :as request}]
       (let [waiter-cookie (auth/get-auth-cookie-value (get headers "cookie"))
@@ -347,7 +345,16 @@
                          relay-state (utils/map->base-64-string (utils/keys-map host request-url scheme) password)]
                      (get-idp-redirect idp-uri saml-request relay-state))
               (throw (ex-info "Invalid request method for use with SAML authentication. Only GET supported."
-                              {:log-level :info :request-method request-method :status 405})))))))))
+                              {:log-level :info :request-method request-method :status 405}))))))))
+
+  auth/CallbackAuthenticator
+  (process-callback [this {{:keys [operation]} :route-params :as request}]
+    (case operation
+      "acs" (metrics/endpoint-with-waiter-metrics "auth" ["saml" "acs"] (saml-acs-handler this request))
+      "auth-redirect" (metrics/endpoint-with-waiter-metrics "auth" ["saml" "auth-redirect"] (saml-auth-redirect-handler this request))
+      (throw (ex-info (str "Unknown SAML authenticator operation: " operation)
+                      {:operation operation
+                       :status 400})))))
 
 (defn saml-authenticator
   "Factory function for creating SAML authenticator middleware"

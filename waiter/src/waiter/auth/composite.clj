@@ -19,31 +19,32 @@
             [waiter.auth.authentication :as auth]
             [waiter.util.utils :as utils]))
 
-(defrecord CompositeAuthenticator [provider-name->authenticator default-authentication-provider]
+(defrecord CompositeAuthenticator [default-authentication provider-name->authenticator]
   auth/Authenticator
+  (wrap-auth-handler [_ request-handler]
+    (let [provider-name->handler (pc/map-vals #(auth/wrap-auth-handler % request-handler) provider-name->authenticator)]
+      (fn composite-authenticator-handler [request]
+        (let [authentication (or (get-in request [:waiter-discovery :service-parameter-template "authentication"])
+                                 default-authentication)]
+          (if-let [handler (get provider-name->handler authentication)]
+            (handler request)
+            (throw (ex-info (str "No authenticator found for " authentication " authentication.")
+                            {:available-authenticators (keys provider-name->handler)
+                             :request-authentication authentication
+                             :status 400})))))))
 
+  auth/CompositeAuthenticator
   (get-authentication-providers [_]
     (keys provider-name->authenticator))
 
+  auth/CallbackAuthenticator
   (process-callback [_ {{:keys [authentication-provider]} :route-params :as request}]
     (if-let [authenticator (get provider-name->authenticator authentication-provider)]
       (auth/process-callback authenticator request)
       (throw (ex-info (str "Unknown authentication provider " authentication-provider)
                       {:available-authenticators (keys provider-name->authenticator)
                        :authentication-provider authentication-provider
-                       :status 400}))))
-
-  (wrap-auth-handler [_ request-handler]
-    (let [provider-name->handler (pc/map-vals #(auth/wrap-auth-handler % request-handler) provider-name->authenticator)]
-      (fn composite-authenticator-handler [request]
-        (let [authentication (or (get-in request [:waiter-discovery :service-parameter-template "authentication"])
-                                 default-authentication-provider)]
-          (if-let [handler (get provider-name->handler authentication)]
-            (handler request)
-            (throw (ex-info (str "No authenticator found for " authentication " authentication.")
-                            {:available-authenticators (keys provider-name->handler)
-                             :request-authentication authentication
-                             :status 400}))))))))
+                       :status 400})))))
 
 (defn- make-authenticator
   "Create an authenticator from an authentication-provider"
@@ -60,12 +61,13 @@
 
 (defn composite-authenticator
   "Factory function for creating composite authenticator middleware"
-  [{:keys [authentication-providers default-authentication-provider] :as context}]
+  [{:keys [authentication-providers default-authentication default-authentication-provider] :as context}]
   {:pre [(not-empty authentication-providers)
+         (not (string/blank? default-authentication))
          (not (string/blank? default-authentication-provider))
          (contains? authentication-providers default-authentication-provider)]}
   (let [provider-name->authenticator (as-> (pc/map-vals
                                              #(make-authenticator % context)
                                              authentication-providers) map
                                        (merge {"standard" (get map default-authentication-provider)} map))]
-    (->CompositeAuthenticator provider-name->authenticator default-authentication-provider)))
+    (->CompositeAuthenticator default-authentication provider-name->authenticator)))

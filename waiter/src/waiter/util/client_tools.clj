@@ -288,12 +288,11 @@
 
 (defn make-request
   ([waiter-url path &
-    {:keys [body client cookies content-type disable-auth follow-redirects? form-params headers
+    {:keys [body client cookies content-type disable-auth form-params headers
             method multipart protocol query-params scheme trailers-fn verbose]
      :or {body nil
           cookies []
           disable-auth false
-          follow-redirects? false
           headers {}
           method :get
           query-params {}
@@ -320,7 +319,7 @@
              (async/<!! (http/request
                           client
                           (cond-> {:body body
-                                   :follow-redirects? follow-redirects?
+                                   :follow-redirects? false
                                    :headers request-headers
                                    :method method
                                    :query-string query-params
