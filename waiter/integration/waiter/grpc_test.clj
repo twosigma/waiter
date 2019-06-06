@@ -45,7 +45,8 @@
   [length]
   (apply str (take length (repeatedly #(char (+ (rand 26) 65))))))
 
-(deftest ^:parallel ^:integration-fast test-basic-grpc-server
+;; setting to explicit because of temporary haproxy misconfiguration
+(deftest ^:parallel ^:integration-fast ^:explicit test-basic-grpc-server
   (testing-using-waiter-url
     (GrpcClient/setLogFunction (reify Function
                                  (apply [_ message]
