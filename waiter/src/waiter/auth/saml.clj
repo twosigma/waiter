@@ -258,9 +258,7 @@
                                                                  :status 400} e))))
           _ (when-not (and not-on-or-after redirect-url saml-principal)
               (throw (ex-info "Could not authenticate user. Invalid SAML auth data."
-                              {:current-time current-time
-                               :expiry-time not-on-or-after
-                               :saml-auth-data saml-auth-data
+                              {:saml-auth-data saml-auth-data
                                :status 500})))
           current-time (t/now)
           _ (when-not (t/before? current-time not-on-or-after)
