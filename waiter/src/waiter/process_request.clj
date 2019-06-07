@@ -48,21 +48,22 @@
            (org.eclipse.jetty.io EofException)
            (org.eclipse.jetty.server HttpChannel HttpOutput Response)))
 
-(defn check-control [control-chan]
+(defn check-control
+  [control-chan correlation-id]
   (let [state (au/poll! control-chan :still-running)]
     (cond
       (= :still-running state) :still-running
-      (= (first state) ::servlet/error) (throw (ex-info "Error in server" {:event (second state)}))
-      (= (first state) ::servlet/timeout) (throw (ex-info "Connection timed out" {:event (second state)}))
-      :else (throw (ex-info "Connection closed while still processing" {})))))
+      (= (first state) ::servlet/error) (throw (ex-info "Error in server" {:cid correlation-id} (second state)))
+      (= (first state) ::servlet/timeout) (throw (ex-info "Operation timed out" {:cid correlation-id} (second state)))
+      :else (throw (ex-info "Connection closed while still processing" {:cid correlation-id})))))
 
 (defn confirm-live-connection-factory
   "Confirms that the connection to the client is live by checking the ctrl channel, else it throws an exception."
-  [control-mult reservation-status-promise error-callback]
+  [control-mult reservation-status-promise correlation-id error-callback]
   (let [confirm-live-chan (async/tap control-mult (au/sliding-buffer-chan 5))]
     (fn confirm-live-connection []
       (try
-        (check-control confirm-live-chan)
+        (check-control confirm-live-chan correlation-id)
         (catch Exception e
           ; flag the error as an I/O error as the connection is no longer live
           (deliver reservation-status-promise :client-error)
@@ -583,7 +584,9 @@
     (let [reservation-status-promise (promise)
           control-mult (async/mult ctrl)
           {:keys [uri] :as request} (-> request (dissoc :ctrl) (assoc :ctrl-mult control-mult))
-          confirm-live-connection-factory #(confirm-live-connection-factory control-mult reservation-status-promise %1)
+          correlation-id (cid/get-correlation-id)
+          confirm-live-connection-factory #(confirm-live-connection-factory
+                                             control-mult reservation-status-promise correlation-id %1)
           confirm-live-connection-without-abort (confirm-live-connection-factory nil)
           waiter-debug-enabled? (utils/request->debug-enabled? request)
           assoc-debug-header (fn [response header value]
@@ -619,7 +622,7 @@
                         reason-map (cond-> {:reason :serve-request
                                             :state {:initial (metrics/retrieve-local-stats-for-service service-id)}
                                             :time request-time
-                                            :cid (cid/get-correlation-id)
+                                            :cid correlation-id
                                             :request-id request-id}
                                      priority (assoc :priority priority))
                         ; pass false to keep request-state-chan open after control-mult is closed
