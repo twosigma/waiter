@@ -46,3 +46,13 @@ All global options (`--cluster`, `--config`, etc.) can be provided when using su
 
 - `create`: You can create a token with `create`. 
 - `show`: You can view a token's details with `show`.
+
+### Publishing to PyPi
+
+Use the following commands to publish the CLI to PyPi (https://pypi.org/project/waiter-client/):
+
+```bash
+# Run from the cli directory
+$ rm -rf dist/ && python3 setup.py sdist bdist_wheel
+$ python3 -m twine upload dist/*
+```
