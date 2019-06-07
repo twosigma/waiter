@@ -186,3 +186,34 @@
               (is (= current-user run-as-user)))))
         (finally
           (delete-token-and-assert waiter-url token))))))
+
+(deftest test-temporarily-unhealthy-instance
+  (testing-using-waiter-url
+    (let [{:keys [cookies service-id request-headers] :as canary-response}
+          (make-request-with-debug-info
+            {:x-waiter-concurrency-level 128
+             :x-waiter-health-check-interval-secs 5
+             :x-waiter-health-check-max-consecutive-failures 10
+             :x-waiter-name (rand-name)}
+            #(make-kitchen-request waiter-url % :path "/hello"))
+          count-instances (fn [target-url healthy-filter-fn]
+                            (->> (active-instances target-url service-id :cookies cookies)
+                              (healthy-filter-fn :healthy?)
+                              count))]
+      (assert-response-status canary-response 200)
+      (is service-id)
+      (with-service-cleanup
+        service-id
+        (doseq [[_ router-url] (routers waiter-url)]
+          (is (wait-for #(= 1 (count-instances router-url filter)))))
+        (let [request-headers (assoc request-headers
+                                :x-kitchen-default-status-timeout 20000
+                                :x-kitchen-default-status-value 400)
+              response (make-kitchen-request waiter-url request-headers :path "/hello")]
+          (assert-response-status response 400))
+        (doseq [[_ router-url] (routers waiter-url)]
+          (is (wait-for #(= 1 (count-instances router-url remove)))))
+        (let [response (make-kitchen-request waiter-url request-headers :path "/hello")]
+          (assert-response-status response 200))
+        (doseq [[_ router-url] (routers waiter-url)]
+          (is (wait-for #(= 1 (count-instances router-url filter)))))))))

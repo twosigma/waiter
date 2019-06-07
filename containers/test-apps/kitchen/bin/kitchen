@@ -57,6 +57,7 @@ _async_state_lock = threading.Lock()
 _async_state = {}
 
 _counter_lock = threading.Lock()
+_default_response_status = 200
 _pending_http_requests = 0
 _total_http_requests = 0
 _pending_ws_requests = 0
@@ -95,6 +96,13 @@ def terminate(source):
     """Forcefully terminate this server process."""
     kitchen_logger.info('Killed by {}'.format(source))
     os._exit(1)
+
+
+def reset_default_response_status(handler):
+    """Clears the status default value to 200 for all kitchen responses."""
+    global _default_response_status
+    handler.logger().info('Resetting default response status from {} to 200'.format(_default_response_status))
+    _default_response_status = 200
 
 
 _gzip_window_bits = 16 + zlib.MAX_WBITS
@@ -478,7 +486,7 @@ class Kitchen(HTTPWebSocketsHandler):
 
     def __handle_http_request(self):
         """Core logic for a Kitchen HTTP request (all verbs delegate to this handler)."""
-        global _pending_http_requests, _total_http_requests
+        global _default_response_status, _pending_http_requests, _total_http_requests
         with _counter_lock:
             _pending_http_requests += 1
             _total_http_requests += 1
@@ -502,7 +510,7 @@ class Kitchen(HTTPWebSocketsHandler):
             self.__response_body_callback = None
             self.__response_bytes = None
             self.__response_length = max_response_size
-            self.__status = 200
+            self.__status = _default_response_status
             self.__response_trailers = {}
             self.__trailer_delay_secs = 0
             self.__truncated_length = max_response_size + 1
@@ -599,6 +607,17 @@ class Kitchen(HTTPWebSocketsHandler):
     def __process_headers(self):
         """Handle logic for all supported Kitchen HTTP header values."""
         assert self.__path is not None, 'Processes headers AFTER processing the request path.'
+        global _default_response_status
+
+        # Temporarily set status on responses
+        default_status = self.headers.get('x-kitchen-default-status-value')
+        default_timeout = self.headers.get('x-kitchen-default-status-timeout')
+        if default_status is not None and default_timeout is not None:
+            self.logger().info('Changing default response status from {} to {} for {} ms'.
+                               format(_default_response_status, default_status, default_timeout))
+            _default_response_status = int(default_status)
+            self.__status = _default_response_status
+            run_after_ms(int(default_timeout), reset_default_response_status, self)
 
         # Respond with chunked encoding when request is chunked
         if self.headers.get('transfer-encoding') == 'chunked':
