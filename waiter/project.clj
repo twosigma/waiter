@@ -97,11 +97,15 @@
                  ;; use maven to download this jar so we can set up the boot classpath
                  [org.mortbay.jetty.alpn/alpn-boot "8.1.13.v20181017"
                   :scope "provided"]
+                 [org.opensaml/opensaml "2.6.4"
+                  :exclusions [commons-codec]]
                  [org.slf4j/slf4j-log4j12 "1.7.25"
                   :exclusions [log4j]]
                  [potemkin "0.4.5"]
                  [prismatic/plumbing "0.5.5"]
                  [prismatic/schema "1.1.10"]
+                 [reaver "0.1.2"
+                  :scope "test"]
                  [ring/ring-core "1.7.1"
                   :exclusions [org.clojure/tools.reader]]
                  [ring/ring-ssl "0.3.0"

@@ -971,6 +971,16 @@
   [waiter-url]
   (= "shell" (retrieve-default-scheduler-name waiter-url)))
 
+(defn get-authenticator-kind
+  "Get the authenticator that Waiter is configured to use"
+  [waiter-url]
+  (get-in (waiter-settings waiter-url) [:authenticator-config :kind]))
+
+(defn using-composite-authenticator?
+  "Returns true if Waiter is configured to use the composite authenticator"
+  [waiter-url]
+  (= "composite" (get-authenticator-kind waiter-url)))
+
 (defn can-query-for-grace-period?
   "Returns true if Waiter supports querying for grace period"
   [waiter-url]

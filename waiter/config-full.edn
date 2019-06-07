@@ -200,8 +200,33 @@
  ;; Waiter supports authenticating requests to identify the principal of the requesting user.
  ;; The principal is then used to validate access to services and also to launch services.
  :authenticator-config {
-                        ;; :kind :one-user allows anonymous access to services (for testing purposes only):
+                        ;; set :kind to one of the configured authenticators
                         :kind :one-user
+
+                        ;; :kind :composite enables using the "authentication" service parameter to
+                        ;; specify an authentication scheme. If the authentication scheme is not known or not specified
+                        ;; then the :default-scheme is used
+                        ;:kind :composite
+                        :composite {:factory-fn waiter.auth.composite/composite-authenticator
+                                    :authentication-providers {"kerberos" {:factory-fn waiter.auth.kerberos/kerberos-authenticator
+                                                                           ;; the maximum number of concurrent Kerberos library (GSSLibStub) invocations allowed
+                                                                           :concurrency-level 20
+                                                                           ;; the idle time before cached threads from the invocation throttler are terminated
+                                                                           :keep-alive-mins 5
+                                                                           ;; the maximum number of request waiting for Kerberos auth before server responds
+                                                                           ;; with a 503 temporarily unavailable
+                                                                           :max-queue-length 1000}
+                                                               "saml" {:factory-fn waiter.auth.saml/saml-authenticator
+                                                                       ;; resource path of the signing certificate used by the Identity Provider
+                                                                       :idp-cert-resource-path "idp.crt"
+                                                                       ;; URI of the signing certificate used by the Identity Provider. Used if resource path is not set
+                                                                       :idp-cert-uri "file:///path/idp.crt"
+                                                                       ;; URI of the Identity Provider
+                                                                       :idp-uri "https://idp-host/idp-endpoint"}}
+                                    ;; The authentication scheme to use if one is not specified
+                                    :default-authentication-provider "kerberos"}
+
+                        ;; :kind :one-user allows anonymous access to services (for testing purposes only):
                         :one-user {;; Custom implementations should specify a :factory-fn
                                    ;; that returns an instance of waiter.auth.authentication.Authenticator:
                                    :factory-fn waiter.auth.authentication/one-user-authenticator
@@ -217,7 +242,18 @@
                                    :keep-alive-mins 5
                                    ;; the maximum number of request waiting for Kerberos auth before server responds
                                    ;; with a 503 temporarily unavailable
-                                   :max-queue-length 1000}}
+                                   :max-queue-length 1000}
+
+                        ;; :kind :saml enables authentication using SAML SP-initiated SSO flow
+                        ;; https://docs.pingidentity.com/bundle/pf_sm_supportedStandards_pf83/page/task/spInitiatedSsoRedirectPost.html
+                        ;:kind :saml
+                        :saml {:factory-fn waiter.auth.saml/saml-authenticator
+                               ;; resource path of the signing certificate used by the Identity Provider
+                               :idp-cert-resource-path "idp.crt"
+                               ;; URI of the signing certificate used by the Identity Provider. Used if resource path is not set
+                               :idp-cert-uri "file:///path/idp.crt"
+                               ;; URI of the Identity Provider
+                               :idp-uri "https://idp-host/idp-endpoint"}}
 
  ;; Waiter supports the run-as-requester feature to launch a service as the requesting user.
  ;; Triggering this feature without passing explicit headers requires providing an explicit consent and storing this in a cookie.

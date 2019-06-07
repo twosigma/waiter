@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.util.utils
-  (:require [clojure.data.json :as json]
+  (:require [clojure.data.codec.base64 :as b64]
+            [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.pprint :as pprint]
             [clojure.string :as str]
@@ -22,6 +23,7 @@
             [clojure.walk :as walk]
             [comb.template :as template]
             [digest]
+            [plumbing.core :as pc]
             [taoensso.nippy :as nippy]
             [taoensso.nippy.compression :as compression]
             [waiter.util.date-utils :as du])
@@ -357,7 +359,8 @@
                   (recur (inc num-tries) (* delay-ms delay-multiplier))))))))
 
 (defn unique-identifier
-  "Generates a new unique id using the time and a random value."
+  "Generates a new unique id using the time and a random value.
+   Faster than UUID/randomUUID, but not necessarily globally unique."
   []
   (let [thread-local-random (ThreadLocalRandom/current)]
     (str (Long/toString (System/nanoTime) 16) "-" (Long/toString (.nextLong thread-local-random Long/MAX_VALUE) 16))))
@@ -397,6 +400,16 @@
   [byte-buffer decryption-key]
   (let [data-bytes (data->byte-array byte-buffer)]
     (nippy/thaw data-bytes {:password decryption-key, :compressor compression/lzma2-compressor})))
+
+(defn map->base-64-string
+  "Serializes data to a base 64 string along with encryption."
+  [data-map encryption-key]
+  (String. (b64/encode (nippy/freeze data-map {:compressor nil :password encryption-key}))))
+
+(defn base-64-string->map
+  "Deserializes and decrypts a base 64 string."
+  [b64-string decryption-key]
+  (nippy/thaw (b64/decode (.getBytes b64-string)) {:compressor nil :password decryption-key :v1-compatibility? false}))
 
 (let [messages (atom {})]
   (defn message

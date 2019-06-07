@@ -129,7 +129,8 @@
                                      :async-result-handler-fn
                                      ["/status/" :request-id "/" :router-id "/" :service-id "/" :host "/" :port "/" [#".+" :location]]
                                      :async-status-handler-fn}
-                     "waiter-auth" :waiter-auth-handler-fn
+                     "waiter-auth" {"" :waiter-auth-handler-fn
+                                    ["/" :authentication-provider "/" :operation] :waiter-auth-callback-handler-fn}
                      "waiter-consent" {"" :waiter-acknowledge-consent-handler-fn
                                        ["/" [#".*" :path]] :waiter-request-consent-handler-fn}
                      "waiter-interstitial" {["/" [#".*" :path]] :waiter-request-interstitial-handler-fn}
@@ -504,8 +505,8 @@
         ; special urls that are always for Waiter (FIXME)
         (or (#{"/app-name" "/service-id" "/token" "/waiter-ping"} uri)
             (some #(str/starts-with? (str uri) %)
-                  ["/waiter-async/complete/" "/waiter-async/result/" "/waiter-async/status/" "/waiter-consent"
-                   "/waiter-interstitial"])
+                  ["/waiter-async/complete/" "/waiter-async/result/" "/waiter-async/status/" "/waiter-auth/"
+                   "/waiter-consent" "/waiter-interstitial"])
             (and (or (str/blank? host)
                      (valid-waiter-hostnames (-> host
                                                  (str/split #":")
@@ -527,9 +528,13 @@
 ;; PRIVATE API
 (def state
   {:async-request-store-atom (pc/fnk [] (atom {}))
-   :authenticator (pc/fnk [[:settings authenticator-config]
+   :authenticator (pc/fnk [[:settings authenticator-config hostname service-description-defaults]
                            passwords]
-                    (utils/create-component authenticator-config :context {:password (first passwords)}))
+                    (let [hostname (if (sequential? hostname) (first hostname) hostname)]
+                      (utils/create-component authenticator-config
+                                              :context {:default-authentication (get service-description-defaults "authentication")
+                                                        :hostname hostname
+                                                        :password (first passwords)})))
    :clock (pc/fnk [] t/now)
    :cors-validator (pc/fnk [[:settings cors-config]]
                      (utils/create-component cors-config))
@@ -921,9 +926,17 @@
    :token->token-metadata (pc/fnk [[:curator kv-store]]
                             (fn token->token-metadata [token]
                               (sd/token->token-metadata kv-store token :error-on-missing false)))
-   :validate-service-description-fn (pc/fnk [[:state service-description-builder]]
-                                      (fn validate-service-description [service-description]
-                                        (sd/validate service-description-builder service-description {})))
+   :validate-service-description-fn (pc/fnk [[:settings service-description-defaults]
+                                             [:state authenticator service-description-builder]]
+                                      (let [authentication-providers (into #{"disabled" "standard"} (auth/get-authentication-providers authenticator))
+                                            default-authentication (get service-description-defaults "authentication")]
+                                        (fn validate-service-description [service-description]
+                                          (let [authentication (or (get service-description "authentication") default-authentication)]
+                                            (when-not (contains? authentication-providers authentication)
+                                              (throw (ex-info (str "authentication must be one of: '"
+                                                                   (str/join "', '" (sort authentication-providers)) "'")
+                                                              {:authentication authentication :status 400}))))
+                                          (sd/validate service-description-builder service-description {}))))
    :waiter-request?-fn (pc/fnk [[:state waiter-hostnames]]
                          (let [local-router (InetAddress/getLocalHost)
                                waiter-router-hostname (.getCanonicalHostName local-router)
@@ -1482,10 +1495,6 @@
                                  (fn token-handler-fn [request]
                                    (token/handle-reindex-tokens-request synchronize-fn make-inter-router-requests-sync-fn
                                                                         kv-store list-tokens-fn request))))
-   :waiter-auth-handler-fn (pc/fnk [wrap-secure-request-fn]
-                             (wrap-secure-request-fn
-                               (fn waiter-auth-handler-fn [request]
-                                 {:body (str (:authorization/user request)), :status 200})))
    :waiter-acknowledge-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template
                                                     token->token-metadata]
                                                    [:settings consent-expiry-days]
@@ -1493,7 +1502,7 @@
                                                    wrap-secure-request-fn]
                                             (let [password (first passwords)]
                                               (letfn [(add-encoded-cookie [response cookie-name value expiry-days]
-                                                        (cookie-support/add-encoded-cookie response password cookie-name value expiry-days))
+                                                        (cookie-support/add-encoded-cookie response password cookie-name value (-> expiry-days t/days t/in-seconds)))
                                                       (consent-cookie-value [mode service-id token token-metadata]
                                                         (sd/consent-cookie-value clock mode service-id token token-metadata))]
                                                 (wrap-secure-request-fn
@@ -1502,6 +1511,13 @@
                                                       token->service-description-template token->token-metadata
                                                       service-description->service-id consent-cookie-value add-encoded-cookie
                                                       consent-expiry-days request))))))
+   :waiter-auth-callback-handler-fn (pc/fnk [[:state authenticator]]
+                                      (fn waiter-auth-callback-handler-fn [request]
+                                        (auth/process-callback authenticator request)))
+   :waiter-auth-handler-fn (pc/fnk [wrap-secure-request-fn]
+                             (wrap-secure-request-fn
+                               (fn waiter-auth-handler-fn [request]
+                                 {:body (str (:authorization/user request)), :status 200})))
    :waiter-request-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template]
                                                [:settings consent-expiry-days]
                                                wrap-secure-request-fn]
@@ -1566,7 +1582,7 @@
                                    (do
                                      (log/info "triggering ssl redirect")
                                      (-> (ssl/ssl-redirect-response request {})
-                                         (rr/header "server" (utils/get-current-server-name))))
+                                       (rr/header "server" (utils/get-current-server-name))))
 
                                    :else
                                    (handler request)))))
@@ -1591,9 +1607,9 @@
                                (fn wrap-secure-request-fn
                                  [handler]
                                  (let [handler (-> handler
-                                                   (cors/wrap-cors-request
-                                                     cors-validator waiter-request?-fn exposed-headers)
-                                                   authentication-method-wrapper-fn)]
+                                                 (cors/wrap-cors-request
+                                                   cors-validator waiter-request?-fn exposed-headers)
+                                                 authentication-method-wrapper-fn)]
                                    (fn inner-wrap-secure-request-fn [{:keys [uri] :as request}]
                                      (log/debug "secure request received at" uri)
                                      (handler request))))))

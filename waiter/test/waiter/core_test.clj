@@ -969,6 +969,10 @@
            (exec-routes-mapper "/waiter-async/status/test-request-id/test-router-id/test-service-id/test-host/test-port/some/test/location?a=b")))
     (is (= {:handler :waiter-auth-handler-fn}
            (exec-routes-mapper "/waiter-auth")))
+    (is (= {:handler :waiter-auth-callback-handler-fn
+            :route-params {:authentication-provider "saml"
+                           :operation "acs"}}
+           (exec-routes-mapper "/waiter-auth/saml/acs")))
     (is (= {:handler :waiter-acknowledge-consent-handler-fn}
            (exec-routes-mapper "/waiter-consent")))
     (is (= {:handler :waiter-request-consent-handler-fn
@@ -1230,6 +1234,14 @@
       (let [test-request {:headers {"host" "www.service.com"
                                     "x-waiter-authentication" "disabled"
                                     "x-waiter-token" "a-named-token-C"}}
+            {:keys [handled-request response]} (execute-request test-request)]
+        (is (nil? handled-request))
+        (is (= (utils/clj->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
+                                         :status 400)
+               response))))
+    (testing "request-without-existing-auth-default-named-token-with-authentication-header-2"
+      (let [test-request {:headers {"host" "www.service.com"
+                                    "x-waiter-authentication" "standard"}}
             {:keys [handled-request response]} (execute-request test-request)]
         (is (nil? handled-request))
         (is (= (utils/clj->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}

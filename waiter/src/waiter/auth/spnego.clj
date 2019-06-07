@@ -158,8 +158,7 @@
                 (if-not error
                   (try
                     (if principal
-                      (let [user (first (str/split principal #"@" 2))
-                            response (auth/handle-request-auth request-handler request user principal password)]
+                      (let [response (auth/handle-request-auth request-handler request principal password)]
                         (log/debug "added cookies to response")
                         (if token
                           (if (map? response)

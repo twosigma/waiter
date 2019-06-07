@@ -32,11 +32,6 @@
 (def greater-than-or-equal-to-0-less-than-1 (s/pred #(and (<= 0 %) (< % 1))
                                                     'greater-than-or-equal-to-0-less-than-1))
 
-(def valid-authentication
-  "Validator for the authentication parameter.
-   Valid values are 'disabled' and 'standard'."
-  (s/constrained non-empty-string #{"disabled" "standard"} 'invalid-authentication))
-
 (let [valid-backend-protos #{"h2" "h2c" "http" "https"}
       valid-health-check-protos (conj valid-backend-protos nil)]
 

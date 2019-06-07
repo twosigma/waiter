@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.auth.authentication
-  (:require [clj-time.core :as t]
+  (:require [clj-time.coerce :as tc]
+            [clj-time.core :as t]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [waiter.cookie-support :as cookie-support]
@@ -26,12 +27,32 @@
   (wrap-auth-handler [this request-handler]
     "Attaches middleware that enables the application to perform authentication.
      The middleware should
-     - either issue a 401 challenge asking the client to authenticate itself,
+     - issue a 401 challenge, or redirect, to get the client to authenticate itself,
      - or upon successful authentication populate the request with :authorization/user and :authorization/principal"))
 
+(defprotocol CompositeAuthenticator
+  (get-authentication-providers [this]
+    "Get a list of supported authentication provider names."))
+
+(extend-protocol CompositeAuthenticator
+  Object
+  (get-authentication-providers [_] []))
+
+(defprotocol CallbackAuthenticator
+  (process-callback [this request]
+    "Process any requests that might come in after initiating authentication. e.g. receive a request
+     with an authentication assertion after redirecting a user to authenticate with an identity provider."))
+
+(extend-protocol CallbackAuthenticator
+  Object
+  (process-callback [this _]
+    (throw (ex-info (str this " does not support authentication callbacks.")
+                    {:status 400}))))
+
 (defn- add-cached-auth
-  [response password principal]
-  (cookie-support/add-encoded-cookie response password AUTH-COOKIE-NAME [principal (System/currentTimeMillis)] 1))
+  [response password principal age-in-seconds]
+  (cookie-support/add-encoded-cookie response password AUTH-COOKIE-NAME [principal (tc/to-long (t/now))]
+                                     (or age-in-seconds (-> 1 t/days t/in-seconds))))
 
 (defn auth-params-map
   "Creates a map intended to be merged into requests/responses."
@@ -44,12 +65,13 @@
 (defn handle-request-auth
   "Invokes the given request-handler on the given request, adding the necessary
   auth headers on the way in, and the x-waiter-auth cookie on the way out."
-  [handler request user principal password]
-  (let [auth-params-map (auth-params-map principal user)
-        handler' (middleware/wrap-merge handler auth-params-map)]
-    (-> request
-        handler'
-        (add-cached-auth password principal))))
+  ([handler request principal password]
+   (handle-request-auth handler request principal (auth-params-map principal) password nil))
+  ([handler request principal auth-params-map password age-in-seconds]
+   (let [handler' (middleware/wrap-merge handler auth-params-map)]
+     (-> request
+       handler'
+       (add-cached-auth password principal age-in-seconds)))))
 
 (defn decode-auth-cookie
   "Decodes the provided cookie using the provided password.
@@ -100,7 +122,8 @@
   Authenticator
   (wrap-auth-handler [_ request-handler]
     (fn anonymous-handler [request]
-      (handle-request-auth request-handler request run-as-user run-as-user password))))
+      (let [auth-params-map (auth-params-map run-as-user run-as-user)]
+        (handle-request-auth request-handler request run-as-user auth-params-map password nil)))))
 
 (defn one-user-authenticator
   "Factory function for creating single-user authenticator"

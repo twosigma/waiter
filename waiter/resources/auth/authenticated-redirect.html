@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+<head>
+    <title>Redirecting to application...</title>
+</head>
+<body>
+<form action="<%= auth-redirect-uri %>" method="post">
+    <input type="hidden" name="saml-auth-data" value="<%= saml-auth-data %>"/>
+    <noscript>
+        <p>JavaScript is disabled. Click "Continue" to continue to your application.</p>
+        <input type="submit" value="Continue"/>
+    </noscript>
+</form>
+<script language="JavaScript">window.setTimeout('document.forms[0].submit()', 0);</script>
+</body>
+</html>
