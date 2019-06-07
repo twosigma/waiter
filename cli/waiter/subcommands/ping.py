@@ -18,7 +18,7 @@ def ping_on_cluster(cluster, timeout, wait_for_request, token_name, service_exis
                 'X-Waiter-Token': token_name,
                 'X-Waiter-Timeout': str(timeout_seconds * 1000)
             }
-            read_timeout = timeout_seconds + 10
+            read_timeout = timeout_seconds if wait_for_request else (timeout_seconds + 5)
             resp = http_util.get(cluster, '/waiter-ping', headers=headers, read_timeout=read_timeout)
             logging.debug(f'Response status code: {resp.status_code}')
             resp_json = resp.json()
