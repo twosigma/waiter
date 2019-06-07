@@ -21,6 +21,7 @@
             [clojure.java.io :as io]
             [clojure.string :as string]
             [comb.template :as template]
+            [metrics.counters :as counters]
             [plumbing.core :as pc]
             [ring.middleware.params :as ring-params]
             [ring.util.codec :as codec]
@@ -31,7 +32,6 @@
             [waiter.util.utils :as utils]
             [waiter.metrics :as metrics])
   (:import (java.io ByteArrayInputStream ByteArrayOutputStream)
-           (java.nio.charset Charset)
            (java.security.cert CertificateFactory)
            (java.util.zip Deflater DeflaterOutputStream)
            (javax.xml.parsers DocumentBuilderFactory)
@@ -40,99 +40,52 @@
            (org.opensaml.xml.signature SignatureValidator)
            (org.opensaml.xml.validation ValidationException)))
 
-(def charset-format (Charset/forName "UTF-8"))
-
-(defn- str->bytes
-  "Get bytes of a string"
-  [some-string]
-  (.getBytes some-string charset-format))
-
-(defn- bytes->str
-  "Get string from bytes"
-  [some-bytes]
-  (String. some-bytes charset-format))
-
-(defn deflate-bytes
-  "Gzip compress bytes"
-  [str-bytes]
+;; source: https://github.com/vlacs/saml20-clj/blob/ed4f5a99ea34116316d4f1faa8aba2cdc63f708c/src/saml20_clj/shared.clj#L88
+;; vlacs/saml20-clj
+(defn encode-xml
+  "Gzip compress xml string and base 64 encode"
+  [xml-str]
   (let [out (ByteArrayOutputStream.)
         deflater (DeflaterOutputStream.
                    out
                    (Deflater. -1 true) 1024)]
-    (.write deflater str-bytes)
+    (.write deflater (.getBytes xml-str))
     (.close deflater)
-    (.toByteArray out)))
+    (-> out
+      .toByteArray
+      b64/encode
+      String.)))
 
-(defn deflate-and-base64-encode
-  "Gzip compress bytes and base 64 encode"
-  [deflatable-str]
-  (let [byte-str (str->bytes deflatable-str)]
-    (bytes->str (b64/encode (deflate-bytes byte-str)))))
-
-(defn- base64->str
-  "Decode base 64 string"
-  [string]
-  (let [byte-str (str->bytes string)]
-    (bytes->str (b64/decode byte-str))))
-
+;; source: https://github.com/vlacs/saml20-clj/blob/ed4f5a99ea34116316d4f1faa8aba2cdc63f708c/src/saml20_clj/sp.clj#L127
+;; vlacs/saml20-clj
 (defn get-idp-redirect
   "Return Ring response for HTTP 302 redirect."
   [idp-url saml-request relay-state]
   (response/redirect
     (str idp-url
          "?"
-         (let [saml-request (deflate-and-base64-encode saml-request)]
+         (let [saml-request (encode-xml saml-request)]
            (codec/form-encode
              {:SAMLRequest saml-request :RelayState relay-state})))))
 
-(defn- validate-saml-assertion-signature
-  "Checks that the SAML assertion has a valid signature."
-  [assertion saml-signature-validator]
-  (if-let [signature (.getSignature assertion)]
-    (try
-      (.validate saml-signature-validator signature)
-      (catch ValidationException ex
-        (throw (ex-info "Could not authenticate user. Invalid SAML assertion signature."
-                        {:status 400} ex))))
-    (throw (ex-info "Could not authenticate user. SAML assertion is not signed."
-                    {:status 400}))))
-
-(defn- create-document-builder
-  "Create new xml document builder with SAML-compatible settings"
-  []
-  (.newDocumentBuilder
-    (doto (DocumentBuilderFactory/newInstance)
-      (.setNamespaceAware true)
-      (.setFeature "http://xml.org/sax/features/external-general-entities" false)
-      (.setFeature "http://xml.org/sax/features/external-parameter-entities" false)
-      (.setFeature "http://apache.org/xml/features/nonvalidating/load-external-dtd" false)
-      (.setAttribute "http://www.oracle.com/xml/jaxp/properties/entityExpansionLimit" "2000")
-      (.setAttribute "http://www.oracle.com/xml/jaxp/properties/totalEntitySizeLimit" "100000")
-      (.setAttribute "http://www.oracle.com/xml/jaxp/properties/maxParameterEntitySizeLimit" "10000")
-      (.setAttribute "http://www.oracle.com/xml/jaxp/properties/maxElementDepth" "100")
-      (.setExpandEntityReferences false))))
-
-(defn- str->input-stream
-  "Unravels a string into an input stream so we can work with Java constructs."
-  [unravel]
-  (ByteArrayInputStream. (.getBytes unravel charset-format)))
-
-(defn- str->xmldoc
-  "Build XML document object from raw string."
-  [parsable-str]
-  (let [document (create-document-builder)]
-    (.parse document (str->input-stream parsable-str))))
-
+;; source: https://github.com/vlacs/saml20-clj/blob/ed4f5a99ea34116316d4f1faa8aba2cdc63f708c/src/saml20_clj/sp.clj#L290
+;; vlacs/saml20-clj
 (defn- xml-string->saml-resp
   "Parses a SAML response (XML string) from IdP and returns the corresponding (Open)SAML Response object"
   [xml-string]
   ;; We use org.opensaml.xml here since we already depend on org.opensaml for SAML assertion signature validation
-  (let [xmldoc (.getDocumentElement (str->xmldoc xml-string))
+  (let [xmldoc (-> (doto (DocumentBuilderFactory/newInstance)
+                     (.setNamespaceAware true))
+                 .newDocumentBuilder
+                 (.parse (-> xml-string .getBytes ByteArrayInputStream.))
+                 .getDocumentElement)
         unmarshaller-factory (Configuration/getUnmarshallerFactory)
         unmarshaller (.getUnmarshaller unmarshaller-factory xmldoc)
         saml-resp (.unmarshall unmarshaller xmldoc)]
     saml-resp))
 
+;; source: https://github.com/vlacs/saml20-clj/blob/ed4f5a99ea34116316d4f1faa8aba2cdc63f708c/src/saml20_clj/shared.clj#L200
+;; vlacs/saml20-clj
 (def saml2-attr->name
   "Get friendly name for a SAML2 attribute
    https://www.purdue.edu/apps/account/docs/Shibboleth/Shibboleth_information.jsp
@@ -158,6 +111,8 @@
     (fn [attr-oid]
       (get names attr-oid attr-oid))))
 
+;; source: https://github.com/vlacs/saml20-clj/blob/ed4f5a99ea34116316d4f1faa8aba2cdc63f708c/src/saml20_clj/sp.clj#L231
+;; vlacs/saml20-clj
 (defn- parse-saml-assertion
   "Returns the attributes and the 'audiences' for the given SAML assertion
    http://kevnls.blogspot.gr/2009/07/processing-saml-in-java-using-opensaml.html
@@ -187,6 +142,18 @@
                     :not-on-or-after (tc/to-timestamp (.getNotOnOrAfter subject-confirmation-data))
                     :recipient (.getRecipient subject-confirmation-data)}}))
 
+(defn- validate-saml-assertion-signature
+  "Checks that the SAML assertion has a valid signature."
+  [assertion saml-signature-validator]
+  (if-let [signature (.getSignature assertion)]
+    (try
+      (.validate saml-signature-validator signature)
+      (catch ValidationException ex
+        (throw (ex-info "Could not authenticate user. Invalid SAML assertion signature."
+                        {:status 400} ex))))
+    (throw (ex-info "Could not authenticate user. SAML assertion is not signed."
+                    {:status 400}))))
+
 (let [authenticated-redirect-template-fn
       (template/fn
         [{:keys [auth-redirect-uri saml-auth-data]}]
@@ -211,7 +178,9 @@
                                                                   :status 400} e))))
         saml-response (-> form-params
                         (get "SAMLResponse")
-                        base64->str
+                        .getBytes
+                        b64/decode
+                        String.
                         xml-string->saml-resp)
         assertions (.getAssertions saml-response)
         _ (when-not (= 1 (count assertions))
@@ -296,24 +265,17 @@
     [context]
     (saml-authentication-request-template-fn (pc/map-vals escape-xml-string context))))
 
-(def instant-format (f/formatters :date-time-no-ms))
+(def saml-time-format (f/formatters :date-time-no-ms))
 
-(defn- make-issue-instant
-  "Converts a date-time to a SAML 2.0 time string."
-  []
-  (du/date-to-str (t/now) instant-format))
-
-(defn- create-request-factory!
-  "Creates new requests for a particular service, format, and acs-url."
+(defn- create-request-factory
+  "Creates new requests for a particular acs-url, idp-url, and service."
   [idp-uri saml-service-name acs-url]
-  ;;; Bootstrap opensaml when we create a request factory.
-  (DefaultBootstrap/bootstrap)
   #(render-saml-authentication-request-template
      {:acs-url acs-url
       :idp-uri idp-uri
       :saml-id (str "WAITER-" (utils/unique-identifier))
       :saml-service-name saml-service-name
-      :time-issued (make-issue-instant)}))
+      :time-issued (du/date-to-str (t/now) saml-time-format)}))
 
 (defrecord SamlAuthenticator [auth-redirect-endpoint idp-uri password saml-request-factory saml-signature-validator]
   auth/Authenticator
@@ -328,23 +290,22 @@
                 request-handler' (middleware/wrap-merge request-handler auth-params-map)]
             (request-handler' request))
           :else
-          (metrics/endpoint-with-waiter-metrics
-            "auth" ["saml" "auth-handler"]
-            (case request-method
-              :get (let [saml-request (saml-request-factory)
-                         scheme (name (utils/request->scheme request))
-                         host (get headers "host")
-                         request-url (str scheme "://" host uri (when query-string "?") query-string)
-                         relay-state (utils/map->base-64-string (utils/keys-map host request-url scheme) password)]
-                     (get-idp-redirect idp-uri saml-request relay-state))
-              (throw (ex-info "Invalid request method for use with SAML authentication. Only GET supported."
-                              {:log-level :info :request-method request-method :status 405}))))))))
+          (do (counters/inc! (metrics/waiter-counter "auth" "saml" "auth-handler"))
+              (case request-method
+                :get (let [saml-request (saml-request-factory)
+                           scheme (name (utils/request->scheme request))
+                           host (get headers "host")
+                           request-url (str scheme "://" host uri (when query-string "?") query-string)
+                           relay-state (utils/map->base-64-string {:host host :request-url request-url :scheme scheme} password)]
+                       (get-idp-redirect idp-uri saml-request relay-state))
+                (throw (ex-info "Invalid request method for use with SAML authentication. Only GET supported."
+                                {:log-level :info :request-method request-method :status 405}))))))))
 
   auth/CallbackAuthenticator
   (process-callback [this {{:keys [operation]} :route-params :as request}]
     (case operation
-      "acs" (metrics/endpoint-with-waiter-metrics "auth" ["saml" "acs"] (saml-acs-handler this request))
-      "auth-redirect" (metrics/endpoint-with-waiter-metrics "auth" ["saml" "auth-redirect"] (saml-auth-redirect-handler this request))
+      "acs" (do (counters/inc! (metrics/waiter-counter "auth" "saml" "acs")) (saml-acs-handler this request))
+      "auth-redirect" (do (counters/inc! (metrics/waiter-counter "auth" "saml" "auth-redirect")) (saml-auth-redirect-handler this request))
       (throw (ex-info (str "Unknown SAML authenticator operation: " operation)
                       {:operation operation
                        :status 400})))))
@@ -367,5 +328,7 @@
         public-credential (doto (new BasicX509Credential)
                             (.setPublicKey idp-public-key))
         saml-signature-validator (new SignatureValidator public-credential)
-        saml-request-factory (create-request-factory! idp-uri "waiter" acs-uri)]
+        saml-request-factory (create-request-factory idp-uri "waiter" acs-uri)]
+    ;; Bootstrap opensaml.
+    (DefaultBootstrap/bootstrap)
     (->SamlAuthenticator auth-redirect-endpoint idp-uri password saml-request-factory saml-signature-validator)))

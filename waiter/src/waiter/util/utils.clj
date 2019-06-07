@@ -544,21 +544,3 @@
   (if (instance? ExceptionInfo e)
     (ex-info (.getMessage e) (update-fn (ex-data e)) (or (.getCause e) e))
     (ex-info (.getMessage e) (update-fn {}) e)))
-
-(defmacro keys-map
-  "Convenience macro to do the opposite of destructuring on keys - take values and create a map of keywords to values.
-   e.g. this re-creates the original map:
-   (let [map {:a 1 :b 2 :c 3}
-         {:keys [a b c]} map]
-     (keys-map a b c))"
-  [& args]
-  (pc/map-from-vals keyword args))
-
-(defmacro strs-map
-  "Convenience macro to do the opposite of destructuring on strs - take values and create a map of strings to values.
-   e.g. this re-creates the original map:
-   (let [map {\"a\" 1 \"b\" 2 \"c\" 3}
-         {:strs [a b c]} map]
-     (strs-map a b c))"
-  [& args]
-  (pc/map-from-vals name args))

@@ -76,7 +76,7 @@
         (with-redefs [nippy/freeze (fn [data _] (.getBytes (str data)))
                       t/now (fn [] time-now)
                       utils/unique-identifier (constantly "UUID")
-                      deflate-and-base64-encode identity
+                      encode-xml identity
                       render-saml-authentication-request-template identity
                       utils/map->base-64-string (fn [data _] data)
                       get-idp-redirect (fn [idp-url saml-request relay-state]
@@ -148,10 +148,12 @@
 
 (defn- saml-response-from-xml
   [change-user?]
-  (deflate-and-base64-encode
-    (string/replace (slurp "test-files/saml/saml-response.xml")
-                    "user1@example.com"
-                    (str (if change-user? "root" "user1") "@example.com"))))
+  (-> (slurp "test-files/saml/saml-response.xml")
+    (string/replace "user1@example.com" (str (if change-user? "root" "user1") "@example.com"))
+    .getBytes
+    b64/encode
+    String.))
+
 (def relay-state-string
   (utils/map->base-64-string {:host "host" :request-url "request-url" :scheme "scheme"} [:salted "password"]))
 
@@ -172,14 +174,12 @@
         (let [request (merge {:form-params {"SAMLResponse" (slurp "test-files/saml/saml-response.txt") "RelayState" relay-state-string}} dummy-request)]
           (is (= processed-saml-response (saml-acs-handler saml-authenticator request)))))
       (testing "has valid saml response (from xml)"
-        (with-redefs [deflate-bytes (fn [_] _)]
-          (let [request (merge {:form-params {"SAMLResponse" (saml-response-from-xml false) "RelayState" relay-state-string}} dummy-request)]
-            (is (= processed-saml-response (saml-acs-handler saml-authenticator request))))))
+        (let [request (merge {:form-params {"SAMLResponse" (saml-response-from-xml false) "RelayState" relay-state-string}} dummy-request)]
+          (is (= processed-saml-response (saml-acs-handler saml-authenticator request)))))
       (testing "has invalid saml signature"
-        (with-redefs [deflate-bytes (fn [_] _)]
-          (let [request (merge {:form-params {"SAMLResponse" (saml-response-from-xml true) "RelayState" relay-state-string}} dummy-request)]
-            (is (thrown-with-msg? Exception #"Could not authenticate user. Invalid SAML assertion signature."
-                                  (saml-acs-handler saml-authenticator request)))))))
+        (let [request (merge {:form-params {"SAMLResponse" (saml-response-from-xml true) "RelayState" relay-state-string}} dummy-request)]
+          (is (thrown-with-msg? Exception #"Could not authenticate user. Invalid SAML assertion signature."
+                                (saml-acs-handler saml-authenticator request))))))
     (testing "has expired saml response"
       (let [request (merge {:form-params {"SAMLResponse" (slurp "test-files/saml/saml-response.txt") "RelayState" relay-state-string}} dummy-request)]
         (is (thrown-with-msg? Exception #"Could not authenticate user. Expired SAML assertion."
