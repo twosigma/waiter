@@ -88,7 +88,8 @@
                     "form input[name=SAMLResponse]" (reaver/attr :value)
                     "form input[name=RelayState]" (reaver/attr :value))))
 
-(deftest ^:parallel ^:integration-fast test-saml-authentication
+;; need to temporarily turn off this test until ADFS setting is updated
+(deftest ^:parallel ^:integration-fast ^:explicit test-saml-authentication
   (testing-using-waiter-url
     (when (using-composite-authenticator? waiter-url)
       (let [auth-principal (or (System/getenv "SAML_AUTH_USER") (retrieve-username))
