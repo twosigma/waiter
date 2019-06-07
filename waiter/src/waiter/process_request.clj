@@ -236,10 +236,10 @@
                                        correlation-id
                                        (stream-http-request executor service-id metric-group error-handler-fn
                                                             input-stream body-ch @bytes-streamed-atom)))
-          error-handler (fn [throwable]
-                          (log/info "request failed after streaming" @bytes-streamed-atom "bytes")
-                          (histograms/update! (metrics/service-histogram service-id "request-size") @bytes-streamed-atom)
-                          (error-handler-fn throwable))]
+          stream-error-handler (fn [throwable]
+                                 (log/info "request failed after streaming" @bytes-streamed-atom "bytes")
+                                 (histograms/update! (metrics/service-histogram service-id "request-size") @bytes-streamed-atom)
+                                 (error-handler-fn throwable))]
       (try
         (loop [unreported-bytes-to-statsd 0]
           (let [available-bytes (.available input-stream)
@@ -290,13 +290,13 @@
                           (if (>= sleep-duration-ms max-back-pressure-delay-ms)
                             (let [description-map {:bytes-pending bytes-read :bytes-streamed bytes-streamed}]
                               (log/error "unable to stream request bytes" description-map)
-                              (error-handler (ex-info "unable to stream request bytes" description-map)))
+                              (stream-error-handler (ex-info "unable to stream request bytes" description-map)))
                             (recur (* 2 sleep-duration-ms)))))))))
 
               :else
               (submit-request-streaming-task executor stream-http-request-task))))
         (catch Throwable th
-          (error-handler th))))))
+          (stream-error-handler th))))))
 
 (defn input-stream->channel
   "Returns a channel that will contain the ByteBuffers read from the input stream.
@@ -325,14 +325,14 @@
                               (try
                                 (submit-request-streaming-task executor stream-http-request-fn)
                                 (catch Throwable throwable
-                                  (error-handler throwable))))
+                                  (error-handler-fn throwable))))
                             (onAllDataRead [_]
                               (async/close! body-ch))
                             (onError [_ throwable]
                               (error-handler-fn throwable))))
         (submit-request-streaming-task executor stream-http-request-fn))
       (catch Throwable throwable
-        (error-handler throwable)))
+        (error-handler-fn throwable)))
     body-ch))
 
 (defn- make-http-request
