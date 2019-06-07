@@ -80,7 +80,8 @@
     ;; PORT2 is running kitchen without SSL enabled
     (run-backend-proto-service-test waiter-url "h2" "https" 1 "https" "HTTP/2.0")))
 
-(deftest ^:parallel ^:integration-fast test-internal-protocol
+;; disabling http/2 tests temporarily
+(deftest ^:explicit ^:parallel ^:integration-fast test-internal-protocol
   (testing-using-waiter-url
     (let [{:keys [http2c? http2? ssl-port]} (:server-options (waiter-settings waiter-url))
           retrieve-client-protocol #(get-in % ["request-info" "client-protocol"])
