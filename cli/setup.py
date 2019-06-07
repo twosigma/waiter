@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
+import os
 
 from setuptools import setup
 
-from waiter import version
-
 requirements = [
-    'arrow',
-    'humanfriendly',
-    'requests',
-    'tabulate'
+    'arrow==0.13.1',
+    'humanfriendly==4.18',
+    'requests==2.20.0',
+    'tabulate==0.8.3'
 ]
 
 test_requirements = [
@@ -20,9 +19,19 @@ extras = {
     'test': test_requirements,
 }
 
+
+def get_version():
+    this_file = os.path.dirname(os.path.abspath(__file__))
+    version_file = os.path.join(this_file, 'waiter', 'version.py')
+    with open(version_file, 'r') as f:
+        version_string = f.read().strip().split('=')[1].strip().strip("'")
+        print(f'waiter version is {version_string}')
+        return version_string
+
+
 setup(
     name='waiter_client',
-    version=version.VERSION,
+    version=get_version(),
     description="Two Sigma's Waiter CLI",
     long_description="This package contains Two Sigma's Waiter command line interface, waiter. waiter allows you to "
                      "create/update/delete/view tokens and also view services across multiple Waiter clusters.",
