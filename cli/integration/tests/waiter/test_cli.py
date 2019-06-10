@@ -647,7 +647,11 @@ class WaiterCliTest(util.WaiterTest):
             util.kill_services_using_token(self.waiter_url, token_name)
             cp = cli.ping(self.waiter_url, token_name, ping_flags='--timeout 10')
             self.assertEqual(1, cp.returncode, cp.stderr)
-            self.assertIn('Ping request timed out', cli.stderr(cp))
+            self.assertTrue(
+                # Either Waiter will inform us that the ping timed out
+                'Ping request timed out' in cli.stderr(cp) or
+                # Or, the read from Waiter will time out
+                'Encountered error while pinging' in cli.stderr(cp))
         finally:
             util.kill_services_using_token(self.waiter_url, token_name)
             util.delete_token(self.waiter_url, token_name)
@@ -695,7 +699,7 @@ class WaiterCliTest(util.WaiterTest):
 
     def test_ping_no_wait(self):
         token_name = self.token_name()
-        command = f'{util.default_cmd()} --start-up-sleep-ms {util.DEFAULT_TEST_TIMEOUT_SECS*2*1000}'
+        command = f'{util.default_cmd()} --start-up-sleep-ms {util.DEFAULT_TEST_TIMEOUT_SECS * 2 * 1000}'
         util.post_token(self.waiter_url, token_name, util.minimal_service_description(cmd=command))
         try:
             cp = cli.ping(self.waiter_url, token_name, ping_flags='--no-wait')
@@ -1077,7 +1081,7 @@ class WaiterCliTest(util.WaiterTest):
         self.assertIn('Unsupported key(s)', cli.stderr(cp))
         self.assertIn('foo-level', cli.stderr(cp))
         self.assertIn('bar-rate', cli.stderr(cp))
-        
+
     def test_show_service_current(self):
         token_name_1 = self.token_name()
         token_name_2 = self.token_name()
