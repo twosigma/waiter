@@ -245,11 +245,15 @@ def ping_token(waiter_url, token_name, expected_status_code=200):
     return service_id
 
 
+def wait_until_routers_recognize_service_killed(waiter_url, service_id):
+    wait_until_routers(waiter_url, lambda services: not any(s['service-id'] == service_id for s in services))
+
+
 def kill_service(waiter_url, service_id):
     headers = {'x-cid': cid()}
     response = session.delete(f'{waiter_url}/apps/{service_id}', headers=headers)
     assert 200 == response.status_code, f'Expected 200, got {response.status_code} with body {response.text}'
-    wait_until_routers(waiter_url, lambda services: not any(s['service-id'] == service_id for s in services))
+    wait_until_routers_recognize_service_killed(waiter_url, service_id)
 
 
 def services_for_token(waiter_url, token_name, assert_response=True, expected_status_code=200, log_services=False):
