@@ -164,7 +164,7 @@ def register(add_parser):
     parser = add_parser('ping', help='ping token by name')
     parser.add_argument('token-or-service-id')
     parser.add_argument('--timeout', '-t', help='read timeout (in seconds) for ping request',
-                        type=check_positive, default=60)
+                        type=check_positive, default=300)
     parser.add_argument('--service-id', '-s', help='ping by service id instead of token',
                         dest='is-service-id', action='store_true')
     parser.add_argument('--no-wait', '-n', help='do not wait for ping request to return',
