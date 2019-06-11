@@ -110,6 +110,12 @@ def load_token_with_headers(waiter_url, token_name, assert_response=True, expect
     return response.json(), response.headers
 
 
+def log_curl(waiter_url, endpoint, headers, params, payload):
+    curl_header_flags = ' '.join(f"-H '{k}: {v}'" for k, v in headers.items())
+    curl_url = f'{waiter_url}{endpoint}?{"&".join((k + "=" + v) for k, v in params.items())}'
+    logging.debug(f'curl -XPOST {curl_header_flags} -d \'{json.dumps(payload)}\' \'{curl_url}\'')
+
+
 def post_token(waiter_url, token_name, token_definition, assert_response=True,
                expected_status_code=200, update_mode_admin=False, etag=None):
     headers = {
@@ -120,6 +126,8 @@ def post_token(waiter_url, token_name, token_definition, assert_response=True,
     if update_mode_admin:
         params['update-mode'] = 'admin'
         headers['If-Match'] = etag
+
+    log_curl(waiter_url, '/token', headers, params, token_definition)
     response = session.post(f'{waiter_url}/token', headers=headers, json=token_definition, params=params)
     logging.debug(f'Response headers: {response.headers}')
     response_json = response.json()

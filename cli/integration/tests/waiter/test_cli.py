@@ -534,7 +534,6 @@ class WaiterCliTest(util.WaiterTest):
             cp = cli.ping(self.waiter_url, token_name)
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertIn('Pinging token', cli.stdout(cp))
-            self.assertIn('/sleep', cli.stdout(cp))
             self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
@@ -648,7 +647,11 @@ class WaiterCliTest(util.WaiterTest):
             util.kill_services_using_token(self.waiter_url, token_name)
             cp = cli.ping(self.waiter_url, token_name, ping_flags='--timeout 10')
             self.assertEqual(1, cp.returncode, cp.stderr)
-            self.assertIn('Encountered error', cli.stderr(cp))
+            self.assertTrue(
+                # Either Waiter will inform us that the ping timed out
+                'Ping request timed out' in cli.stderr(cp) or
+                # Or, the read from Waiter will time out
+                'Encountered error while pinging' in cli.stderr(cp))
         finally:
             util.kill_services_using_token(self.waiter_url, token_name)
             util.delete_token(self.waiter_url, token_name)
@@ -687,18 +690,16 @@ class WaiterCliTest(util.WaiterTest):
             # Pinging the token should use /status
             cp = cli.ping(self.waiter_url, token_name)
             self.assertEqual(0, cp.returncode, cp.stderr)
-            self.assertIn('/status', cli.stdout(cp))
 
             # Pinging the service id should use /sleep
             cp = cli.ping(self.waiter_url, service_id, ping_flags='--service-id')
             self.assertEqual(0, cp.returncode, cp.stderr)
-            self.assertIn('/sleep', cli.stdout(cp))
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
 
     def test_ping_no_wait(self):
         token_name = self.token_name()
-        command = f'{util.default_cmd()} --start-up-sleep-ms {util.DEFAULT_TEST_TIMEOUT_SECS*2*1000}'
+        command = f'{util.default_cmd()} --start-up-sleep-ms {util.DEFAULT_TEST_TIMEOUT_SECS * 2 * 1000}'
         util.post_token(self.waiter_url, token_name, util.minimal_service_description(cmd=command))
         try:
             cp = cli.ping(self.waiter_url, token_name, ping_flags='--no-wait')
@@ -714,10 +715,15 @@ class WaiterCliTest(util.WaiterTest):
             util.wait_until_services_for_token(self.waiter_url, token_name, 1)
 
             util.kill_services_using_token(self.waiter_url, token_name)
-            util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
+            util.post_token(self.waiter_url, token_name, {'cpus': 0.1, 'cmd-type': 'shell'})
             cp = cli.ping(self.waiter_url, token_name, ping_flags='--no-wait')
             self.assertEqual(1, cp.returncode, cp.stderr)
             self.assertNotIn('Service is currently', cli.stdout(cp))
+            self.assertIn('Service description', cli.decode(cp.stderr))
+            self.assertIn('improper', cli.decode(cp.stderr))
+            self.assertIn('cmd must be a non-empty string', cli.decode(cp.stderr))
+            self.assertIn('version must be a non-empty string', cli.decode(cp.stderr))
+            self.assertIn('mem must be a positive number', cli.decode(cp.stderr))
             util.wait_until_no_services_for_token(self.waiter_url, token_name)
         finally:
             util.kill_services_using_token(self.waiter_url, token_name)
@@ -1075,7 +1081,7 @@ class WaiterCliTest(util.WaiterTest):
         self.assertIn('Unsupported key(s)', cli.stderr(cp))
         self.assertIn('foo-level', cli.stderr(cp))
         self.assertIn('bar-rate', cli.stderr(cp))
-        
+
     def test_show_service_current(self):
         token_name_1 = self.token_name()
         token_name_2 = self.token_name()
