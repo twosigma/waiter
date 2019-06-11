@@ -187,7 +187,7 @@
         (finally
           (delete-token-and-assert waiter-url token))))))
 
-(deftest test-temporarily-unhealthy-instance
+(deftest ^:parallel ^:integration-fast test-temporarily-unhealthy-instance
   (testing-using-waiter-url
     (let [{:keys [cookies instance-id request-headers service-id] :as canary-response}
           (make-request-with-debug-info
