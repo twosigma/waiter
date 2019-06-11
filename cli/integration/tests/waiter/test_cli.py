@@ -621,6 +621,8 @@ class WaiterCliTest(util.WaiterTest):
             self.assertIn(service_id_1, stdout)
             self.assertIn(service_id_2, stdout)
             self.assertLess(stdout.index(service_id_2), stdout.index(service_id_1))
+            util.wait_until_routers_recognize_service_killed(self.waiter_url, service_id_1)
+            util.wait_until_routers_recognize_service_killed(self.waiter_url, service_id_2)
 
             # Re-create the same two services, in the opposite order
             util.post_token(self.waiter_url, token_name, service_description_2)
