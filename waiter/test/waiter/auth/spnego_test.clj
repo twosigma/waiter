@@ -42,7 +42,7 @@
         standard-401-response {:body "Unauthorized"
                                :headers {"content-type" "text/plain"
                                          "server" "waiter"
-                                         "WWW-Authenticate" "Negotiate"}
+                                         "www-authenticate" "Negotiate"}
                                :status 401}]
 
     (testing "valid auth cookie"
@@ -110,7 +110,7 @@
                 (is (= (assoc ideal-response
                          :authorization/principal "user@test.com"
                          :authorization/user "user"
-                         :headers {"WWW-Authenticate" "test-token"})
+                         :headers {"www-authenticate" "test-token"})
                        (utils/dissoc-in response [:headers "set-cookie"]))))))
 
           (testing "successful authentication - principal only"
