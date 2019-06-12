@@ -76,6 +76,7 @@ public class GrpcServer {
                 "id=" + request.getId() + ", " +
                 "from=" + request.getFrom() + ", " +
                 "message.length=" + request.getMessage().length() + "}");
+            sleepOnRequest(request);
             final CourierReply reply = CourierReply
                 .newBuilder()
                 .setId(request.getId())
@@ -95,18 +96,20 @@ public class GrpcServer {
                 private long totalLength = 0;
 
                 @Override
-                public void onNext(final CourierRequest courierRequest) {
-                    LOGGER.info("Received CourierRequest id=" + courierRequest.getId());
+                public void onNext(final CourierRequest request) {
+                    LOGGER.info("Received CourierRequest id=" + request.getId());
+
+                    sleepOnRequest(request);
 
                     numMessages += 1;
-                    totalLength += courierRequest.getMessage().length();
+                    totalLength += request.getMessage().length();
 
                     final CourierSummary courierSummary = CourierSummary
                         .newBuilder()
                         .setNumMessages(numMessages)
                         .setTotalLength(totalLength)
                         .build();
-                    LOGGER.info("Sending CourierSummary for id=" + courierRequest.getId());
+                    LOGGER.info("Sending CourierSummary for id=" + request.getId());
                     responseObserver.onNext(courierSummary);
                 }
 
@@ -122,6 +125,18 @@ public class GrpcServer {
                     responseObserver.onCompleted();
                 }
             };
+        }
+    }
+
+    private static void sleepOnRequest(CourierRequest courierRequest) {
+        try {
+            final long sleepDuration = courierRequest.getSleepDuration();
+            if (sleepDuration > 0) {
+                LOGGER.info("Sleeping on request for " + sleepDuration + " ms");
+                Thread.sleep(sleepDuration);
+            }
+        } catch (InterruptedException e) {
+            LOGGER.severe("Error while sleeping on request: " + e.getMessage());
         }
     }
 

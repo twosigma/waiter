@@ -125,14 +125,17 @@ public class GrpcClient {
                                            final Map<String, Object> headers,
                                            final String id,
                                            final String from,
-                                           final String message) throws InterruptedException {
+                                           final String message,
+                                           final long sleepDurationMs,
+                                           final long deadlineDurationMs) throws InterruptedException {
         final ManagedChannel channel = initializeChannel(host, port);
 
         try {
             final Channel wrappedChannel = wrapResponseLogger(channel);
             final Metadata headerMetadata = createRequestHeadersMetadata(headers);
 
-            final CourierGrpc.CourierFutureStub rawStub = CourierGrpc.newFutureStub(wrappedChannel);
+            final CourierGrpc.CourierFutureStub rawStub = CourierGrpc.
+                newFutureStub(wrappedChannel).withDeadlineAfter(deadlineDurationMs, TimeUnit.MILLISECONDS);
             final CourierGrpc.CourierFutureStub futureStub = MetadataUtils.attachHeaders(rawStub, headerMetadata);
 
             logFunction.apply("will try to send package from " + from + " ...");
@@ -141,16 +144,19 @@ public class GrpcClient {
                 .setId(id)
                 .setFrom(from)
                 .setMessage(message)
+                .setSleepDuration(sleepDurationMs)
                 .build();
             final CourierReply response;
             try {
                 response = futureStub.sendPackage(request).get();
-            } catch (final StatusRuntimeException e) {
-                logFunction.apply("RPC failed, status: " + e.getStatus());
-                return null;
             } catch (final Exception e) {
                 logFunction.apply("RPC failed, message: " + e.getMessage());
-                return null;
+                return CourierReply
+                    .newBuilder()
+                    .setId(e.getClass().getCanonicalName())
+                    .setMessage(e.getMessage())
+                    .setResponse("ERROR")
+                    .build();
             }
             logFunction.apply("received response CourierReply{" +
                 "id=" + response.getId() + ", " +
@@ -170,6 +176,7 @@ public class GrpcClient {
                                                        final String idPrefix,
                                                        final String from,
                                                        final List<String> messages,
+                                                       final long intraMessageSleepMs,
                                                        final int interMessageSleepMs,
                                                        final boolean lockStepMode) throws InterruptedException {
         final ManagedChannel channel = initializeChannel(host, port);
@@ -243,6 +250,7 @@ public class GrpcClient {
                         .setId(requestId)
                         .setFrom(from)
                         .setMessage(messages.get(i))
+                        .setSleepDuration(intraMessageSleepMs)
                         .build();
                     logFunction.apply("sending message CourierRequest{" +
                         "id=" + request.getId() + ", " +
@@ -255,9 +263,6 @@ public class GrpcClient {
                 collector.onCompleted();
 
                 return responsePromise.get();
-            } catch (final StatusRuntimeException e) {
-                logFunction.apply("RPC failed, status: " + e.getStatus());
-                return null;
             } catch (final Exception e) {
                 logFunction.apply("RPC failed, message: " + e.getMessage());
                 return null;
@@ -287,12 +292,12 @@ public class GrpcClient {
                 sb.append(".");
             }
         }
-        final CourierReply courierReply = sendPackage(host, port, headers, id, user, sb.toString());
+        final CourierReply courierReply = sendPackage(host, port, headers, id, user, sb.toString(), 10, 10000);
         logFunction.apply("sendPackage response = " + courierReply);
 
         final List<String> messages = IntStream.range(0, 100).mapToObj(i -> "message-" + i).collect(Collectors.toList());
         final List<CourierSummary> courierSummaries =
-            collectPackages(host, port, headers, "id-", "User", messages, 10, true);
+            collectPackages(host, port, headers, "id-", "User", messages, 10, 10, true);
         logFunction.apply("collectPackages response size = " + courierSummaries.size());
         if (!courierSummaries.isEmpty()) {
             final CourierSummary courierSummary = courierSummaries.get(courierSummaries.size() - 1);

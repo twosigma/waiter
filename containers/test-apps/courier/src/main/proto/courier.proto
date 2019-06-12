@@ -35,6 +35,7 @@ message CourierRequest {
     string id = 1;
     string from = 2;
     string message = 3;
+    int64 sleep_duration = 4;
 }
 
 // The response message containing the package response.
