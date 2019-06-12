@@ -23,7 +23,7 @@ Hello World
 
 #### Explanation
 
-Upon receiving this request, Waiter will inspect the custom Waiter headers and, based upon those headers, Waiter will allocate 1 core and 1024MB of RAM for the service, and launch it. Once the service is up and running, Waiter will forward the `POST` request to the service's `/hello` endpoint. Waiter will automatically maintain enough instances of the service to meet demand from clients. By default, Waiter will launch the service as the authenticating user. This can be changed by setting the `X-Waiter-Run-As-User` header (see [Parameters](parameters.md) for more information).
+Upon receiving this request, Waiter will inspect the custom Waiter headers and, based upon those headers, Waiter will allocate 1 core and 1024MB of RAM for the service, and launch it. Once the service is up and running, Waiter will forward the `POST` request to the service's `/hello` endpoint. Waiter will automatically maintain enough instances of the service to meet demand from clients. By default, Waiter will launch the service as the authenticating user. This can be changed by setting the `x-waiter-run-as-user` header (see [Parameters](parameters.md) for more information).
 
 ### Getting Started
 
