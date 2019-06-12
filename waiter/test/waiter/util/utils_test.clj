@@ -601,7 +601,7 @@
     (is (= "text/html" (request->content-type {:headers {"accept" "text/html"}}))))
   (testing "text/plain if specified"
     (is (= "text/plain" (request->content-type {:headers {"accept" "text/plain"}}))))
-  (testing "application/json if Content-Type is application/json"
+  (testing "application/json if content-type is application/json"
     (is (= "application/json" (request->content-type {:headers {"content-type" "application/json"}}))))
   (testing "else text/plain"
     (is (= "text/plain" (request->content-type {:headers {"accept" "*/*"}})))
