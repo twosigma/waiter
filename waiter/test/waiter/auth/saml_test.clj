@@ -92,7 +92,7 @@
                                                 relay-state))
                                          (get-idp-redirect-original idp-url "saml-request" "relay-state"))]
           (is (= {:body ""
-                  :headers {"Location" "https://idp-host/idp-endpoint?SAMLRequest=saml-request&RelayState=relay-state"}
+                  :headers {"location" "https://idp-host/idp-endpoint?SAMLRequest=saml-request&RelayState=relay-state"}
                   :status 302}
                  (wrapped-handler dummy-request))))))))
 
