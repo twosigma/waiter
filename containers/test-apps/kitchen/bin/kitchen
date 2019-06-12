@@ -56,6 +56,9 @@ _auth_handler = None
 _async_state_lock = threading.Lock()
 _async_state = {}
 
+_allow_response_status_change = False
+_default_response_status = 200
+
 _counter_lock = threading.Lock()
 _pending_http_requests = 0
 _total_http_requests = 0
@@ -95,6 +98,16 @@ def terminate(source):
     """Forcefully terminate this server process."""
     kitchen_logger.info('Killed by {}'.format(source))
     os._exit(1)
+
+
+def reset_default_response_status(handler):
+    """Clears the status default value to 200 for all kitchen responses."""
+    global _default_response_status
+    if _allow_response_status_change:
+        handler.logger().info('Resetting default response status from {} to 200'.format(_default_response_status))
+        _default_response_status = 200
+    else:
+        handler.logger().info('Ignroing request to reset default response status')
 
 
 _gzip_window_bits = 16 + zlib.MAX_WBITS
@@ -502,7 +515,7 @@ class Kitchen(HTTPWebSocketsHandler):
             self.__response_body_callback = None
             self.__response_bytes = None
             self.__response_length = max_response_size
-            self.__status = 200
+            self.__status = None
             self.__response_trailers = {}
             self.__trailer_delay_secs = 0
             self.__truncated_length = max_response_size + 1
@@ -599,6 +612,7 @@ class Kitchen(HTTPWebSocketsHandler):
     def __process_headers(self):
         """Handle logic for all supported Kitchen HTTP header values."""
         assert self.__path is not None, 'Processes headers AFTER processing the request path.'
+        global _default_response_status
 
         # Respond with chunked encoding when request is chunked
         if self.headers.get('transfer-encoding') == 'chunked':
@@ -740,6 +754,25 @@ class Kitchen(HTTPWebSocketsHandler):
         for name, value in self.headers.items() :
             if str(name).startswith('x-kitchen-trailer-'):
                 self.__response_trailers[name[len('x-kitchen-trailer-'):]] = value
+
+        # Process default response status
+        default_status_value = self.headers.get('x-kitchen-default-status-value')
+        if default_status_value is not None:
+            if _allow_response_status_change:
+                self.logger().info('Changing default response status to {}'.format(default_status_value))
+                _default_response_status = int(default_status_value)
+                default_timeout = self.headers.get('x-kitchen-default-status-timeout')
+                if default_timeout is not None:
+                    default_timeout_ms = int(default_timeout)
+                    if default_timeout_ms > 0:
+                        self.logger().info('Will reset default response status after {} ms'.format(default_timeout_ms))
+                        run_after_ms(default_timeout_ms, reset_default_response_status, self)
+            else:
+                self.logger().info('Ignoring request to change the default response status')
+
+        # Set the response status if it is not set
+        if self.__status is None:
+            self.__status = _default_response_status
 
     def __process_path(self):
         """Handle logic for all supported Kitchen endpoint paths."""
@@ -972,8 +1005,10 @@ class BasicAuthHandler():
 
 
 def main():
-    global kitchen_logger, _auth_handler, binary_max_size, text_max_size
+    global kitchen_logger, _allow_response_status_change, _auth_handler, binary_max_size, text_max_size
     parser = argparse.ArgumentParser(description='A toy HTTP Service for testing the Waiter platform')
+    parser.add_argument('--enable-status-change', action='store_true', default=False,
+            help='Enables option to configure default response status using the x-kitchen-default-status-value header')
     parser.add_argument('--hostname', metavar='HOSTNAME', default='', help='Server host name')
     parser.add_argument('--log-output', metavar='LOG_OUTPUT', choices=['stdout', 'stderr', 'file'], default='stdout', help='Log output destination')
     parser.add_argument('-p', '--port', metavar='PORT_NUMBER', type=int, default=8080, help='Server port number')
@@ -1016,6 +1051,7 @@ def main():
         kitchen_logger.info('Sleeping for {}ms...'.format(args.start_up_sleep_ms))
         time.sleep(args.start_up_sleep_ms / 1000.0)
 
+    _allow_response_status_change = args.enable_status_change
     binary_max_size = args.ws_max_binary_message_size
     text_max_size = args.ws_max_text_message_size
 
