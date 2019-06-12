@@ -53,11 +53,11 @@
                                                                 :status 403})))
           (let [{:strs [access-control-request-headers]} headers]
             {:status 200
-             :headers {"Access-Control-Allow-Origin" origin
-                       "Access-Control-Allow-Headers" access-control-request-headers
-                       "Access-Control-Allow-Methods" "POST, GET, OPTIONS, DELETE"
-                       "Access-Control-Allow-Credentials" "true"
-                       "Access-Control-Max-Age" (str max-age)}})))
+             :headers {"access-control-allow-origin" origin
+                       "access-control-allow-headers" access-control-request-headers
+                       "access-control-allow-methods" "POST, GET, OPTIONS, DELETE"
+                       "access-control-allow-credentials" "true"
+                       "access-control-max-age" (str max-age)}})))
       (handler request))))
 
 (defn wrap-cors-request
@@ -72,12 +72,12 @@
             {:strs [origin]} headers
             bless #(if (and origin (request-allowed? cors-validator request))
                      (cond-> (update-in % [:headers] assoc
-                                        "Access-Control-Allow-Origin" origin
-                                        "Access-Control-Allow-Credentials" "true")
+                                        "access-control-allow-origin" origin
+                                        "access-control-allow-credentials" "true")
                        (and exposed-headers-str ;; exposed headers are configured
                             (not (utils/same-origin request)) ;; CORS request
                             (waiter-request? request)) ;; request made to a waiter router
-                       (update :headers assoc "Access-Control-Expose-Headers" exposed-headers-str))
+                       (update :headers assoc "access-control-expose-headers" exposed-headers-str))
                      %)]
         (-> request
             (#(if (or (not origin) (request-allowed? cors-validator %))

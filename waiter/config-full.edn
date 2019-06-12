@@ -285,7 +285,7 @@
                ;; read more at https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Access-Control-Expose-Headers
                :exposed-headers ["etag"]
 
-               ;; The value to use for the Access-Control-Max-Age header:
+               ;; The value to use for the access-control-max-age header:
                :max-age 3600}
 
  :entitlement-config {
