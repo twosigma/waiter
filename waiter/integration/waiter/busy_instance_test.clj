@@ -40,8 +40,8 @@
       ;; Make a request that returns a 503
       (let [start-millis (System/currentTimeMillis)
             {:keys [headers]} (make-request-fn {:x-kitchen-act-busy "true"})
-            router-id (get headers "X-Waiter-Router-Id")
-            backend-id (get headers "X-Waiter-Backend-Id")
+            router-id (get headers "x-waiter-router-id")
+            backend-id (get headers "x-waiter-backend-id")
             blacklist-time-millis (get-in (waiter-settings waiter-url) [:blacklist-config :blacklist-backoff-base-time-ms])]
 
         (is (integer? blacklist-time-millis))
