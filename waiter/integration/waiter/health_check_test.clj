@@ -199,8 +199,8 @@
             #(make-kitchen-request waiter-url % :path "/hello"))
           check-filtered-instances (fn [target-url healthy-filter-fn]
                                      (let [instance-ids (->> (active-instances target-url service-id :cookies cookies)
-                                                   (healthy-filter-fn :healthy?)
-                                                   (map :id))]
+                                                          (healthy-filter-fn :healthy?)
+                                                          (map :id))]
                                        (and (= 1 (count instance-ids))
                                             (= instance-id (first instance-ids)))))]
       (assert-response-status canary-response 200)
