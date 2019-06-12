@@ -29,7 +29,7 @@
           headers {:x-cid (str service-name "-canary")
                    :x-kitchen-echo "true"
                    :x-waiter-name service-name}
-          {:keys [request-headers] :as canary-response} (make-kitchen-request waiter-url headers)
+          {:keys [request-headers] :as canary-response} (make-kitchen-request waiter-url headers :path "/canary")
           service-id (retrieve-service-id waiter-url request-headers)
           epsilon 0.01
           num-streaming-requests 50]
@@ -40,7 +40,7 @@
                         :content-length body-size
                         :content-type "application/octet-stream"
                         :x-cid request-cid)
-              {:keys [body] :as response} (make-kitchen-request waiter-url headers :body post-body)]
+              {:keys [body] :as response} (make-kitchen-request waiter-url headers :body post-body :path "/streaming")]
           (is (= 200 (:status response)) (str "Request correlation-id: " request-cid))
           (is (.equals post-body body) (str response)))) ;; avoids printing the post-body when assertion fails
       ; wait to allow metrics to be aggregated
@@ -59,7 +59,9 @@
         (is (= (inc num-streaming-requests) (:successful request-counts)))
         (is (= (inc num-streaming-requests) (:total request-counts)))
         ;; there is no content length on the canary request
-        (is (= num-streaming-requests (get request-size-histogram :count 0))
+        (is (= (inc num-streaming-requests) (get request-size-histogram :count 0))
+            (str "request-size-histogram: " request-size-histogram))
+        (is (= 0.0 (get-in request-size-histogram [:value :0.0] 0.0))
             (str "request-size-histogram: " request-size-histogram))
         (is (->> (get-in request-size-histogram [:value :1.0] 0.0) (- body-size) Math/abs (>= epsilon))
             (str "request-size-histogram: " request-size-histogram))
