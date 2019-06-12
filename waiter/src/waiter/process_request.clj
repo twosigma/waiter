@@ -318,20 +318,7 @@
                                    (stream-http-request executor service-id metric-group error-handler-fn
                                                         input-stream body-ch 0)))]
     (try
-      (if (instance? ServletInputStream input-stream)
-        (.setReadListener ^ServletInputStream input-stream
-                          (reify ReadListener
-                            (onDataAvailable [_]
-                              ;; invoked by the container the *first* time when it is possible to read data
-                              (try
-                                (submit-request-streaming-task executor stream-http-request-fn)
-                                (catch Throwable throwable
-                                  (error-handler-fn throwable))))
-                            (onAllDataRead [_]
-                              (async/close! body-ch))
-                            (onError [_ throwable]
-                              (error-handler-fn throwable))))
-        (submit-request-streaming-task executor stream-http-request-fn))
+      (submit-request-streaming-task executor stream-http-request-fn)
       (catch Throwable throwable
         (error-handler-fn throwable)))
     body-ch))
