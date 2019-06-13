@@ -53,17 +53,17 @@
 (defn async-make-request-helper
   "Helper function that returns a function that can invoke make-request-fn."
   [http-clients instance-request-properties make-basic-auth-fn service-id->password-fn prepare-request-properties-fn make-request-fn]
-  (fn async-make-request-fn [instance {:keys [headers] :as request} end-route metric-group backend-proto]
+  (fn async-make-request-fn [instance {:keys [headers] :as request} end-route metric-group backend-proto reservation-status-promise]
     (let [{:keys [passthrough-headers waiter-headers]} (headers/split-headers headers)
           instance-request-properties (prepare-request-properties-fn instance-request-properties waiter-headers)
           proto-version (hu/backend-protocol->http-version backend-proto)]
       (make-request-fn http-clients make-basic-auth-fn service-id->password-fn instance request
                        instance-request-properties passthrough-headers end-route metric-group
-                       backend-proto proto-version))))
+                       backend-proto proto-version reservation-status-promise))))
 
 (defn- async-make-http-request
   "Helper function for async status/result handlers."
-  [counter-name make-http-request-fn service-id->service-description-fn
+  [counter-name make-http-request-fn service-id->service-description-fn reservation-status-promise
    {:keys [route-params uri] :as request}]
   (let [{:keys [host location port request-id router-id service-id]} route-params]
     (when-not (and host location port request-id router-id service-id)
@@ -73,7 +73,7 @@
     (let [{:strs [backend-proto metric-group]} (service-id->service-description-fn service-id)
           instance (scheduler/make-ServiceInstance {:host host :port port :service-id service-id})
           _ (log/info request-id counter-name "relative location is" location)]
-      (make-http-request-fn instance request location metric-group backend-proto))))
+      (make-http-request-fn instance request location metric-group backend-proto reservation-status-promise))))
 
 (defn complete-async-handler
   "Completes execution of an async request by propagating a termination message to the request monitor system."
@@ -97,11 +97,16 @@
   (async/go
     (try
       (let [{:keys [request-id router-id service-id]} route-params
+            reservation-status-promise (promise)
             {:keys [error status] :as backend-response}
-            (async/<! (async-make-http-request "async-result" make-http-request-fn service-id->service-description-fn request))]
+            (async/<! (async-make-http-request "async-result" make-http-request-fn service-id->service-description-fn
+                                               reservation-status-promise request))]
         (log/info "http" request-method "returned status" status)
         (async-trigger-terminate-fn router-id service-id request-id)
-        (when error (throw error))
+        (when (and (realized? reservation-status-promise) (= @reservation-status-promise :client-error))
+          (throw (ex-info "Connection closed while still processing" {:status 400})))
+        (when error
+          (throw error))
         backend-response)
       (catch Exception ex
         (log/error ex "error in retrieving result of async request")
@@ -117,9 +122,14 @@
   (async/go
     (try
       (let [{:keys [host location port request-id router-id service-id]} route-params
+            reservation-status-promise (promise)
             {:keys [error status] :as backend-response}
-            (async/<! (async-make-http-request "async-status" make-http-request-fn service-id->service-description-fn request))]
-        (when error (throw error))
+            (async/<! (async-make-http-request "async-status" make-http-request-fn service-id->service-description-fn
+                                               reservation-status-promise request))]
+        (when (and (realized? reservation-status-promise) (= @reservation-status-promise :client-error))
+          (throw (ex-info "Connection closed while still processing" {:status 400})))
+        (when error
+          (throw error))
         (let [{:strs [backend-proto]} (service-id->service-description-fn service-id)
               endpoint (scheduler/end-point-url backend-proto host port location)
               location-header (get-in backend-response [:headers "location"])

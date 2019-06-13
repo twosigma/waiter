@@ -1176,7 +1176,7 @@
                                      (let [password (first passwords)
                                            make-request-fn (fn make-ws-request
                                                              [instance request request-properties passthrough-headers end-route metric-group
-                                                              backend-proto proto-version]
+                                                              backend-proto proto-version _]
                                                              (ws/make-request websocket-client service-id->password-fn instance request request-properties
                                                                               passthrough-headers end-route metric-group backend-proto proto-version))
                                            process-request-fn (fn process-request-fn [request]
@@ -1237,12 +1237,13 @@
                                          service-id->password-fn start-new-service-fn]
                                         [:settings instance-request-properties]
                                         [:state http-clients instance-rpc-chan local-usage-agent stream-reader-executor]]
-                                 (let [make-request-fn (fn [instance request request-properties passthrough-headers end-route metric-group
-                                                            backend-proto proto-version]
+                                 (let [make-request-fn (fn make-process-request-handler-request-fn
+                                                         [instance request request-properties passthrough-headers end-route metric-group
+                                                          backend-proto proto-version reservation-status-promise]
                                                          (pr/make-request
                                                            stream-reader-executor http-clients make-basic-auth-fn service-id->password-fn
                                                            instance request request-properties passthrough-headers end-route metric-group
-                                                           backend-proto proto-version))
+                                                           backend-proto proto-version reservation-status-promise))
                                        process-response-fn (partial pr/process-http-response post-process-async-request-response-fn)]
                                    (fn inner-process-request [request]
                                      (pr/process make-request-fn instance-rpc-chan start-new-service-fn

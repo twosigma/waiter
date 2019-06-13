@@ -142,13 +142,14 @@
                      :headers {"accept" "application/json"}
                      :request-method :http-method
                      :route-params (make-route-params "local")}
-            make-http-request-fn (fn [instance in-request end-route metric-group backend-proto]
+            make-http-request-fn (fn [instance in-request end-route metric-group backend-proto reservation-status-promise]
                                    (is (= {:host "host" :port "port" :service-id service-id}
                                           (select-keys instance [:host :port :service-id])))
                                    (is (= request in-request))
                                    (is (= (-> request :route-params :location) end-route))
                                    (is (= "test-metric-group" metric-group))
                                    (is (= "http" backend-proto))
+                                   (is (not (realized? reservation-status-promise)))
                                    (async/go {:error (ex-info "backend-status-error" {:status 502})}))
             async-trigger-terminate-fn (fn [in-router-id in-service-id in-request-id]
                                          (is (= my-router-id in-router-id))
@@ -190,13 +191,14 @@
                              :headers {"accept" "application/json"}
                              :request-method request-method,
                              :route-params (make-route-params router-type)}
-                    make-http-request-fn (fn [instance in-request end-route metric-group backend-proto]
+                    make-http-request-fn (fn [instance in-request end-route metric-group backend-proto reservation-status-promise]
                                            (is (= {:host "host" :port "port" :service-id service-id}
                                                   (select-keys instance [:host :port :service-id])))
                                            (is (= request in-request))
                                            (is (= (-> request :route-params :location) end-route))
                                            (is (= "test-metric-group" metric-group))
                                            (is (= "http" backend-proto))
+                                           (is (not (realized? reservation-status-promise)))
                                            (async/go {:body "async-result-response", :headers {}, :status return-status}))
                     {:keys [status headers]}
                     (async/<!!
@@ -297,13 +299,14 @@
                      :headers {"accept" "application/json"}
                      :route-params (make-route-params "local")
                      :request-method :http-method}
-            make-http-request-fn (fn [instance in-request end-route metric-group backend-proto]
+            make-http-request-fn (fn [instance in-request end-route metric-group backend-proto reservation-status-promise]
                                    (is (= {:host "host" :port "port" :service-id service-id}
                                           (select-keys instance [:host :port :service-id])))
                                    (is (= request in-request))
                                    (is (= (-> request :route-params :location) end-route))
                                    (is (= "test-metric-group" metric-group))
                                    (is (= "http" backend-proto))
+                                   (is (not (realized? reservation-status-promise)))
                                    (async/go {:error (ex-info "backend-status-error" {:status 400})}))
             async-trigger-terminate-fn nil
             {:keys [body headers status]} (async/<!! (async-status-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))]
@@ -349,13 +352,14 @@
                              :authorization/user "test-user"
                              :request-method request-method
                              :route-params (make-route-params router-type)}
-                    make-http-request-fn (fn [instance in-request end-route metric-group backend-proto]
+                    make-http-request-fn (fn [instance in-request end-route metric-group backend-proto reservation-status-promise]
                                            (is (= {:host "host" :port "port" :service-id service-id}
                                                   (select-keys instance [:host :port :service-id])))
                                            (is (= request in-request))
                                            (is (= (-> request :route-params :location) end-route))
                                            (is (= "test-metric-group" metric-group))
                                            (is (= "http" backend-proto))
+                                           (is (not (realized? reservation-status-promise)))
                                            (async/go {:body "status-check-response"
                                                       :headers (if (= return-status 303) {"location" (or result-location (result-location-fn router-type))} {})
                                                       :status return-status}))

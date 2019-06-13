@@ -32,7 +32,7 @@
       (let [release-status-atom (atom [])
             complete-async-request (fn [status] (swap! release-status-atom conj status))
             exception-message "exception for testing purposes"
-            make-http-request (fn [] (async/go {:body (async/chan 1), :error (Exception. exception-message)}))
+            make-http-request (fn [_] (async/go {:body (async/chan 1), :error (Exception. exception-message)}))
             request-still-active? (constantly true)
             exit-chan (async/chan 1)
             response-chan (monitor-async-request make-http-request complete-async-request request-still-active? status-endpoint
@@ -41,11 +41,25 @@
         (is (= [:instance-error] @release-status-atom))
         (is (= :make-request-error monitor-result))))
 
+    (testing "error-in-reservation-status-from-make-request"
+      (let [release-status-atom (atom [])
+            complete-async-request (fn [status] (swap! release-status-atom conj status))
+            make-http-request (fn [reservation-status-promise]
+                                (deliver reservation-status-promise :client-error)
+                                (async/go {}))
+            request-still-active? (constantly true)
+            exit-chan (async/chan 1)
+            response-chan (monitor-async-request make-http-request complete-async-request request-still-active? status-endpoint
+                                                 check-interval-ms request-timeout-ms correlation-id exit-chan)
+            monitor-result (async/<!! response-chan)]
+        (is (= [:client-error] @release-status-atom))
+        (is (= :make-request-error monitor-result))))
+
     (testing "status-check-timed-out"
       (let [release-status-atom (atom [])
             complete-async-request (fn [status] (swap! release-status-atom conj status))
             make-request-counter (atom 0)
-            make-http-request (fn []
+            make-http-request (fn [_]
                                 (swap! make-request-counter inc)
                                 (async/go {:body (async/chan 1), :status 200}))
             request-still-active? (constantly true)
@@ -61,7 +75,7 @@
       (let [release-status-atom (atom [])
             complete-async-request (fn [status] (swap! release-status-atom conj status))
             make-request-counter (atom 0)
-            make-http-request (fn []
+            make-http-request (fn [_]
                                 (swap! make-request-counter inc)
                                 (async/go {:body (async/chan 1), :status 200}))
             request-still-active? (constantly true)
@@ -80,7 +94,7 @@
       (let [release-status-atom (atom [])
             complete-async-request (fn [status] (swap! release-status-atom conj status))
             make-request-counter (atom 0)
-            make-http-request (fn []
+            make-http-request (fn [_]
                                 (swap! make-request-counter inc)
                                 (async/go {:body (async/chan 1), :status 200}))
             calls-to-in-active 6
@@ -98,7 +112,7 @@
             complete-async-request (fn [status] (swap! release-status-atom conj status))
             calls-to-non-200 6
             make-request-counter (atom 0)
-            make-http-request (fn []
+            make-http-request (fn [_]
                                 (swap! make-request-counter inc)
                                 (async/go
                                   (if (= calls-to-non-200 @make-request-counter)
@@ -118,7 +132,7 @@
             complete-async-request (fn [status] (swap! release-status-atom conj status))
             calls-to-non-200 6
             make-request-counter (atom 0)
-            make-http-request (fn []
+            make-http-request (fn [_]
                                 (swap! make-request-counter inc)
                                 (async/go
                                   (if (> calls-to-non-200 @make-request-counter)
@@ -138,7 +152,7 @@
             complete-async-request (fn [status] (swap! release-status-atom conj status))
             calls-to-non-200 6
             make-request-counter (atom 0)
-            make-http-request (fn []
+            make-http-request (fn [_]
                                 (swap! make-request-counter inc)
                                 (async/go
                                   (if (= calls-to-non-200 @make-request-counter)
@@ -158,7 +172,7 @@
             complete-async-request (fn [status] (swap! release-status-atom conj status))
             calls-to-non-200 6
             make-request-counter (atom 0)
-            make-http-request (fn []
+            make-http-request (fn [_]
                                 (swap! make-request-counter inc)
                                 (async/go
                                   (if (= calls-to-non-200 @make-request-counter)
@@ -179,7 +193,7 @@
             calls-to-non-200 6
             calls-to-non-200-and-non-303 10
             make-request-counter (atom 0)
-            make-http-request (fn []
+            make-http-request (fn [_]
                                 (swap! make-request-counter inc)
                                 (async/go
                                   (if (> calls-to-non-200 @make-request-counter)
@@ -201,7 +215,7 @@
             complete-async-request (fn [status] (swap! release-status-atom conj status))
             calls-to-non-200 6
             make-request-counter (atom 0)
-            make-http-request (fn []
+            make-http-request (fn [_]
                                 (swap! make-request-counter inc)
                                 (async/go
                                   (if (= calls-to-non-200 @make-request-counter)
@@ -294,12 +308,13 @@
         request-properties {:async-check-interval-ms 100, :async-request-timeout-ms 200}
         location (str "/location/" request-id)
         query-string "a=b&c=d|e"
-        make-http-request-fn (fn [in-instance in-request end-route metric-group backend-proto]
+        make-http-request-fn (fn [in-instance in-request end-route metric-group backend-proto reservation-status-promise]
                                (is (= instance in-instance))
                                (is (= {:body nil :headers {} :query-string "a=b&c=d|e" :request-method :get} in-request))
                                (is (= "/location/request-2394613984619" end-route))
                                (is (= "test-metric-group" metric-group))
-                               (is (= "http" backend-proto)))
+                               (is (= "http" backend-proto))
+                               (is (not (realized? reservation-status-promise))))
         instance-rpc-chan (async/chan 1)
         complete-async-request-atom (atom nil)
         response {}]
@@ -312,7 +327,7 @@
                     (is (= 200 async-request-timeout-ms))
                     (is correlation-id)
                     (is exit-chan)
-                    (make-get-request-fn)
+                    (make-get-request-fn (promise))
                     (reset! complete-async-request-atom complete-async-request-fn))]
       (let [{:keys [headers]} (post-process-async-request-response
                                 router-id async-request-store-atom make-http-request-fn instance-rpc-chan response

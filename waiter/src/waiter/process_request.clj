@@ -176,7 +176,8 @@
   [error reservation-status-promise service-id request]
   (let [metrics-map (metrics/retrieve-local-stats-for-service service-id)
         [promise-value message status]
-        (cond (instance? EofException error)
+        (cond (or (instance? EofException error)
+                  (and (instance? IOException error) (= "cancel_stream_error" (.getMessage error))))
               [:client-error "Connection unexpectedly closed while sending request" 400]
               (instance? TimeoutException error)
               [:instance-error (utils/message :backend-request-timed-out) 504]
@@ -289,13 +290,14 @@
   "Returns a channel that will contain the ByteBuffers read from the input stream.
    The input stream is read asynchronously by creating tasks on the provided executor.
    It will report any errors while reading data on the provided abort channel."
-  [^ThreadPoolExecutor executor service-id metric-group streaming-timeout-ms abort-ch ^InputStream input-stream]
+  [^ThreadPoolExecutor executor service-id metric-group streaming-timeout-ms reservation-status-promise abort-ch ^InputStream input-stream]
   (let [correlation-id (cid/get-correlation-id)
         body-ch (async/chan 2048)
         error-handler-fn (fn handle-request-streaming-error [throwable]
                            (cid/with-correlation-id
                              correlation-id
                              (log/error throwable "unable to stream request bytes, aborting request")
+                             (deliver reservation-status-promise :client-error)
                              (async/>!! abort-ch throwable)
                              (async/close! body-ch)))
         stream-http-request-fn (fn stream-http-request-fn []
@@ -314,13 +316,13 @@
   [^ThreadPoolExecutor executor ^HttpClient http-client make-basic-auth-fn
    request-method endpoint query-string headers body trailers-fn
    service-id service-password metric-group {:keys [username principal]}
-   idle-timeout streaming-timeout-ms output-buffer-size proto-version]
+   idle-timeout streaming-timeout-ms output-buffer-size proto-version reservation-status-promise]
   (let [auth (make-basic-auth-fn endpoint "waiter" service-password)
         headers (headers/assoc-auth-headers headers username principal)
         abort-ch (async/promise-chan)
         body' (cond->> body
                 (instance? InputStream body)
-                (input-stream->channel executor service-id metric-group streaming-timeout-ms abort-ch))]
+                (input-stream->channel executor service-id metric-group streaming-timeout-ms reservation-status-promise abort-ch))]
     (http/request
       http-client
       {:abort-ch abort-ch
@@ -343,7 +345,7 @@
   [executor http-clients make-basic-auth-fn service-id->password-fn {:keys [host] :as instance}
    {:keys [body instance-request-overrides query-string request-method trailers-fn] :as request}
    {:keys [initial-socket-timeout-ms output-buffer-size streaming-timeout-ms]}
-   passthrough-headers end-route metric-group backend-proto proto-version]
+   passthrough-headers end-route metric-group backend-proto proto-version reservation-status-promise]
   (let [port-index (get instance-request-overrides :port-index 0)
         port (scheduler/instance->port instance port-index)
         instance-endpoint (scheduler/end-point-url backend-proto host port end-route)
@@ -371,7 +373,7 @@
       (make-http-request
         executor http-client make-basic-auth-fn request-method instance-endpoint query-string headers body trailers-fn
         service-id service-password metric-group auth-user-map initial-socket-timeout-ms streaming-timeout-ms
-        output-buffer-size proto-version))))
+        output-buffer-size proto-version reservation-status-promise))))
 
 (defn extract-async-request-response-data
   "Helper function that inspects the response and returns the location and query-string if the response
@@ -622,7 +624,8 @@
                                                  (metrics/service-timer service-id "backend-response")
                                                  (async/<!
                                                    (make-request-fn instance request instance-request-properties
-                                                                    passthrough-headers uri metric-group backend-proto proto-version)))
+                                                                    passthrough-headers uri metric-group backend-proto
+                                                                    proto-version reservation-status-promise)))
                                 response-elapsed (:elapsed timed-response)
                                 {:keys [error] :as response} (:out timed-response)]
                             (statsd/histo! metric-group "backend_response" response-elapsed)

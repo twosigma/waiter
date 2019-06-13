@@ -65,10 +65,17 @@
                 (log/info "request has been cleared from store, exiting monitoring loop")
                 (complete-async-request :success)
                 (if (= trigger-chan exit-chan) :request-terminated :request-no-longer-active))
-              (let [{:keys [body headers error status]} (async/<! (make-http-request))]
+              (let [reservation-status-promise (promise)
+                    {:keys [body headers error status]} (async/<! (make-http-request reservation-status-promise))]
                 (when body
                   (async/close! body))
-                (if error
+                (cond
+                  (realized? reservation-status-promise)
+                  (let [reservation-status @reservation-status-promise]
+                    (log/info "releasing allocated instance after" reservation-status)
+                    (complete-async-request reservation-status)
+                    :make-request-error)
+                  error
                   (do
                     (condp instance? error
                       ConnectException (log/debug error "error in performing status check")
@@ -78,6 +85,7 @@
                     (log/info (.getMessage error) "releasing allocated instance")
                     (complete-async-request :instance-error)
                     :make-request-error)
+                  :else
                   (case (int status)
                     200
                     (do
@@ -157,10 +165,10 @@
     (swap! async-request-store-atom assoc request-id (assoc reason-map :exit-chan exit-chan))
     (counters/inc! (metrics/service-counter service-id "request-counts" "async"))
     ;; trigger execution of monitoring system
-    (letfn [(make-get-request-fn []
+    (letfn [(make-get-request-fn [reservation-status-promise]
               (counters/inc! (metrics/service-counter service-id "request-counts" "async-monitor"))
               (let [request-stub {:body nil :headers {} :query-string query-string :request-method :get}]
-                (make-http-request-fn instance request-stub location metric-group backend-proto)))
+                (make-http-request-fn instance request-stub location metric-group backend-proto reservation-status-promise)))
             (release-instance-fn [status]
               (log/info "decrementing outstanding requests as an async request has completed:" status)
               (counters/dec! (metrics/service-counter service-id "request-counts" "async"))

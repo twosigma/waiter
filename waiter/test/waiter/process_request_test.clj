@@ -581,23 +581,26 @@
                                         (is (= proto-version (:version request-config)))))]
       (testing "make-request:headers:HTTP/1.0"
         (let [proto-version "HTTP/1.0"
-              request-method-fn-call-counter (atom 0)]
+              request-method-fn-call-counter (atom 0)
+              reservation-status-promise (promise)]
           (with-redefs [http/request (http-request-mock-factory passthrough-headers request-method-fn-call-counter proto-version)]
             (make-request executor http-clients make-basic-auth-fn service-id->password-fn instance request request-properties
-                          passthrough-headers end-route nil backend-proto proto-version)
+                          passthrough-headers end-route nil backend-proto proto-version reservation-status-promise)
             (is (= 1 @request-method-fn-call-counter)))))
 
       (testing "make-request:headers:HTTP/2.0"
         (let [proto-version "HTTP/2.0"
-              request-method-fn-call-counter (atom 0)]
+              request-method-fn-call-counter (atom 0)
+              reservation-status-promise (promise)]
           (with-redefs [http/request (http-request-mock-factory passthrough-headers request-method-fn-call-counter proto-version)]
             (make-request executor http-clients make-basic-auth-fn service-id->password-fn instance request request-properties
-                          passthrough-headers end-route nil backend-proto proto-version)
+                          passthrough-headers end-route nil backend-proto proto-version reservation-status-promise)
             (is (= 1 @request-method-fn-call-counter)))))
 
       (testing "make-request:headers-long-content-length"
         (let [proto-version "HTTP/1.0"
               request-method-fn-call-counter (atom 0)
+              reservation-status-promise (promise)
               passthrough-headers (assoc passthrough-headers "content-length" "1234123412341234")
               statsd-inc-call-value (promise)]
           (with-redefs [http/request (http-request-mock-factory passthrough-headers request-method-fn-call-counter proto-version)
@@ -607,7 +610,7 @@
                           (is (= "request_content_length" metric))
                           (deliver statsd-inc-call-value value))]
             (make-request executor http-clients make-basic-auth-fn service-id->password-fn instance request request-properties
-                          passthrough-headers end-route nil backend-proto proto-version)
+                          passthrough-headers end-route nil backend-proto proto-version reservation-status-promise)
             (is (= 1 @request-method-fn-call-counter))
             (is (= 1234123412341234 (deref statsd-inc-call-value 0 :statsd-inc-not-called)))))))
 
