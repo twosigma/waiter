@@ -1874,6 +1874,23 @@
         (assoc valid-description "cmd" (str/join "" (repeat 150 "c")))
         constraints-schema config "cmd must be at most 100 characters"))
 
+    (testing (str "testing instance counts")
+      (run-validate-schema-test
+        (assoc valid-description "max-instances" 0)
+        constraints-schema config "max-instances must be between 1 and 1000")
+      (run-validate-schema-test
+        (assoc valid-description "max-instances" 1001)
+        constraints-schema config "max-instances must be between 1 and 1000")
+      (run-validate-schema-test
+        (assoc valid-description "min-instances" 0)
+        constraints-schema config "min-instances must be between 1 and 4")
+      (run-validate-schema-test
+        (assoc valid-description "min-instances" 5)
+        constraints-schema config "min-instances must be between 1 and 4")
+      (run-validate-schema-test
+        (assoc valid-description "max-instances" 2 "min-instances" 3)
+        constraints-schema config "min-instances (3) must be less than or equal to max-instances (2)"))
+
     (testing (str "testing invalid health check port index")
       (run-validate-schema-test
         (assoc valid-description "health-check-port-index" 1 "ports" 1)

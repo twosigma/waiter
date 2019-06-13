@@ -1215,7 +1215,7 @@
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
           (is (= 400 status))
-          (is (str/includes? body "Minimum instances (2) must be <= Maximum instances (1)"))))
+          (is (str/includes? body "min-instances (2) must be less than or equal to max-instances (1)"))))
 
       (testing "post:new-service-description:invalid-token"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))

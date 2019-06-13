@@ -92,7 +92,7 @@
    (s/optional-key "instance-expiry-mins") (s/constrained s/Int #(<= 0 %))
    (s/optional-key "jitter-threshold") schema/greater-than-or-equal-to-0-less-than-1
    (s/optional-key "max-instances") (s/both s/Int (s/pred #(<= 1 % 1000) 'between-one-and-1000))
-   (s/optional-key "min-instances") (s/both s/Int (s/pred #(<= 1 % 2) 'either-one-or-two))
+   (s/optional-key "min-instances") (s/both s/Int (s/pred #(<= 1 % 4) 'between-one-and-four))
    (s/optional-key "scale-factor") schema/positive-fraction-less-than-or-equal-to-1
    (s/optional-key "scale-down-factor") schema/positive-fraction-less-than-1
    (s/optional-key "scale-up-factor") schema/positive-fraction-less-than-1
@@ -431,6 +431,8 @@
                                              parameter->issues :idle-timeout-mins
                                              "idle-timeout-mins must be an integer in the range [1, 43200].")
                                            (attach-error-message-for-parameter
+                                             parameter->issues :max-instances "max-instances must be between 1 and 1000.")
+                                           (attach-error-message-for-parameter
                                              parameter->issues :mem "mem must be a positive number.")
                                            (attach-error-message-for-parameter
                                              parameter->issues
@@ -443,6 +445,8 @@
                                                   "only contain lowercase letters, numbers, dashes, and underscores; "
                                                   "start with a lowercase letter; and "
                                                   "only use dash and/or underscore as separators between alphanumeric portions."))
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :min-instances "min-instances must be between 1 and 4.")
                                            (attach-error-message-for-parameter
                                              parameter->issues :name "name must be a non-empty string.")
                                            (attach-error-message-for-parameter
@@ -481,12 +485,11 @@
     (let [{:strs [min-instances max-instances]} service-description-to-use]
       (when (and (integer? min-instances) (integer? max-instances))
         (when (> min-instances max-instances)
-          (sling/throw+ {:type :service-description-error
-                         :message exception-message
-                         :friendly-error-message (str "Minimum instances (" min-instances
-                                                      ") must be <= Maximum instances ("
-                                                      max-instances ")")
-                         :status 400}))))
+          (let [error-message (str "min-instances (" min-instances ") must be less than or equal to max-instances (" max-instances ")")]
+            (sling/throw+ {:type :service-description-error
+                           :message exception-message
+                           :friendly-error-message error-message
+                           :status 400})))))
 
     ; Validate the cmd-type field
     (let [cmd-type (service-description-to-use "cmd-type")]
