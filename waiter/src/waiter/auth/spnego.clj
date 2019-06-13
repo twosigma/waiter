@@ -63,9 +63,9 @@
   (meters/mark! (metrics/waiter-meter "core" "response-status-rate" "401"))
   (-> (rr/response "Unauthorized")
       (rr/status 401)
-      (rr/header "Content-Type" "text/plain")
+      (rr/header "content-type" "text/plain")
       (rr/header "server" (utils/get-current-server-name))
-      (rr/header "WWW-Authenticate" "Negotiate")
+      (rr/header "www-authenticate" "Negotiate")
       (cookies/cookies-response)))
 
 (defn response-503-temporarily-unavailable
@@ -76,7 +76,7 @@
   (meters/mark! (metrics/waiter-meter "core" "response-status-rate" "503"))
   (-> (rr/response "Too many Kerberos authentication requests")
       (rr/status 503)
-      (rr/header "Content-Type" "text/plain")
+      (rr/header "content-type" "text/plain")
       (rr/header "server" (utils/get-current-server-name))
       (cookies/cookies-response)))
 
@@ -162,9 +162,9 @@
                         (log/debug "added cookies to response")
                         (if token
                           (if (map? response)
-                            (rr/header response "WWW-Authenticate" token)
+                            (rr/header response "www-authenticate" token)
                             (let [actual-response (async/<! response)]
-                              (rr/header actual-response "WWW-Authenticate" token)))
+                              (rr/header actual-response "www-authenticate" token)))
                           response))
                       (response-401-negotiate))
                     (catch Throwable th

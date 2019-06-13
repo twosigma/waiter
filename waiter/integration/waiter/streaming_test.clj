@@ -106,7 +106,7 @@
     (when-let [request-streaming-timeout (streaming-timeout-fn streaming-timeout-ms)]
       (.setRequestProperty url-connection "x-waiter-streaming-timeout" (str request-streaming-timeout)))
     (let [service-id (-> url-connection
-                         (.getHeaderField "X-Waiter-Backend-Id")
+                         (.getHeaderField "x-waiter-backend-id")
                          (instance-id->service-id))
           input-stream (.getInputStream url-connection)
           data-byte-array (byte-array 300000)

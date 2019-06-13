@@ -64,7 +64,7 @@
         {:keys [body]} (make-request (str login-form-location login-form-action) ""
                                      :body (str "AuthState=" (URLEncoder/encode auth-state) "&username=user2&password=user2pass")
                                      :cookies cookies
-                                     :headers {"Content-Type" "application/x-www-form-urlencoded"}
+                                     :headers {"content-type" "application/x-www-form-urlencoded"}
                                      :method :post)]
     (reaver/extract (reaver/parse body) [:waiter-saml-acs-endpoint :saml-response :relay-state]
                     "form" (reaver/attr :action)
@@ -109,7 +109,7 @@
             {:keys [relay-state saml-response waiter-saml-acs-endpoint]} (saml-authentication-fn saml-redirect-location)
             {:keys [body]} (make-request waiter-saml-acs-endpoint ""
                                          :body (str "SAMLResponse=" (URLEncoder/encode saml-response) "&RelayState=" (URLEncoder/encode relay-state))
-                                         :headers {"Content-Type" "application/x-www-form-urlencoded"}
+                                         :headers {"content-type" "application/x-www-form-urlencoded"}
                                          :method :post)
             {:keys [waiter-saml-auth-redirect-endpoint saml-auth-data]}
             (reaver/extract (reaver/parse body) [:waiter-saml-auth-redirect-endpoint :saml-auth-data]
@@ -118,7 +118,7 @@
             _ (is (= (str "http://" waiter-url "/waiter-auth/saml/auth-redirect") waiter-saml-auth-redirect-endpoint))
             {:keys [cookies headers] :as response} (make-request waiter-url "/waiter-auth/saml/auth-redirect"
                                                                  :body (str "saml-auth-data=" (URLEncoder/encode saml-auth-data))
-                                                                 :headers {"Content-Type" "application/x-www-form-urlencoded"}
+                                                                 :headers {"content-type" "application/x-www-form-urlencoded"}
                                                                  :method :post)
             _ (assert-response-status response 303)
             _ (is (= (str "http://" waiter-url "/request-info") (get headers "location")))

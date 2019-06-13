@@ -265,4 +265,4 @@
              :get {:body (slurp (clojure.java.io/resource "web/sim.html"))}
              :post {:body (let [{:strs [client-curve config]} (json/read-str (slurp body))]
                             (utils/clj->json (simulate (walk/stringify-keys config) {} (eval (read-string client-curve)))))
-                    :headers {"Content-Type" "application/json"}})))
+                    :headers {"content-type" "application/json"}})))

@@ -40,9 +40,9 @@
         standard-request {}
         handler (require-gss request-handler thread-pool max-queue-length password)
         standard-401-response {:body "Unauthorized"
-                               :headers {"Content-Type" "text/plain"
+                               :headers {"content-type" "text/plain"
                                          "server" "waiter"
-                                         "WWW-Authenticate" "Negotiate"}
+                                         "www-authenticate" "Negotiate"}
                                :status 401}]
 
     (testing "valid auth cookie"
@@ -59,7 +59,7 @@
                     too-many-pending-auth-requests? (constantly true)]
         (let [handler (require-gss request-handler thread-pool max-queue-length password)]
           (is (= {:body "Too many Kerberos authentication requests"
-                  :headers {"Content-Type" "text/plain"
+                  :headers {"content-type" "text/plain"
                             "server" "waiter"}
                   :status 503}
                  (handler standard-request))))))
@@ -110,7 +110,7 @@
                 (is (= (assoc ideal-response
                          :authorization/principal "user@test.com"
                          :authorization/user "user"
-                         :headers {"WWW-Authenticate" "test-token"})
+                         :headers {"www-authenticate" "test-token"})
                        (utils/dissoc-in response [:headers "set-cookie"]))))))
 
           (testing "successful authentication - principal only"

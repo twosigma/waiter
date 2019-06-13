@@ -193,9 +193,9 @@
     (str/replace message #"(https?://[^\s]+)" "<a href=\"$1\">$1</a>")))
 
 (defn request->content-type
-  "Determines best Content-Type for a response given a request.
+  "Determines best content-type for a response given a request.
   In the case of no Accept header, assume application/json if the
-  request Content-Type is application/json."
+  request content-type is application/json."
   [{{:strs [accept content-type]} :headers :as request}]
   (cond
     (and accept (str/includes? accept "application/json")) "application/json"

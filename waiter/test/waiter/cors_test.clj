@@ -66,9 +66,9 @@
             handler (wrap-cors-request (fn [_] {:status 200}) allow-all waiter-request? exposed-headers)
             {:keys [headers status]} (handler request)]
         (is (= 200 status))
-        (is (= "doesnt.matter" (get headers "Access-Control-Allow-Origin")))
-        (is (= "true" (get headers "Access-Control-Allow-Credentials")))
-        (is (nil? (get headers "Access-Control-Expose-Headers")))))
+        (is (= "doesnt.matter" (get headers "access-control-allow-origin")))
+        (is (= "true" (get headers "access-control-allow-credentials")))
+        (is (nil? (get headers "access-control-expose-headers")))))
 
     (testing "cors request allowed to waiter api with exposed headers configured"
       (let [waiter-request? (constantly true)
@@ -78,9 +78,9 @@
             handler (wrap-cors-request (fn [_] {:status 200}) allow-all waiter-request? exposed-headers)
             {:keys [headers status]} (handler request)]
         (is (= 200 status))
-        (is (= "doesnt.matter" (get headers "Access-Control-Allow-Origin")))
-        (is (= "true" (get headers "Access-Control-Allow-Credentials")))
-        (is (= "foo, bar" (get headers "Access-Control-Expose-Headers")))))
+        (is (= "doesnt.matter" (get headers "access-control-allow-origin")))
+        (is (= "true" (get headers "access-control-allow-credentials")))
+        (is (= "foo, bar" (get headers "access-control-expose-headers")))))
 
     (testing "non-cors request allowed to waiter api with exposed headers configured"
       (let [waiter-request? (constantly true)
@@ -92,9 +92,9 @@
             handler (wrap-cors-request (fn [_] {:status 200}) allow-all waiter-request? exposed-headers)
             {:keys [headers status]} (handler request)]
         (is (= 200 status))
-        (is (= "http://does.matter" (get headers "Access-Control-Allow-Origin")))
-        (is (= "true" (get headers "Access-Control-Allow-Credentials")))
-        (is (nil? (get headers "Access-Control-Expose-Headers")))))
+        (is (= "http://does.matter" (get headers "access-control-allow-origin")))
+        (is (= "true" (get headers "access-control-allow-credentials")))
+        (is (nil? (get headers "access-control-expose-headers")))))
 
     (testing "cors request allowed to waiter api without exposed headers configured"
       (let [waiter-request? (constantly true)
@@ -104,9 +104,9 @@
             handler (wrap-cors-request (fn [_] {:status 200}) allow-all waiter-request? exposed-headers)
             {:keys [headers status]} (handler request)]
         (is (= 200 status))
-        (is (= "doesnt.matter" (get headers "Access-Control-Allow-Origin")))
-        (is (= "true" (get headers "Access-Control-Allow-Credentials")))
-        (is (nil? (get headers "Access-Control-Expose-Headers")))))))
+        (is (= "doesnt.matter" (get headers "access-control-allow-origin")))
+        (is (= "true" (get headers "access-control-allow-credentials")))
+        (is (nil? (get headers "access-control-expose-headers")))))))
 
 (deftest test-wrap-cors-preflight
   (testing "cors preflight request denied"
@@ -127,8 +127,8 @@
           handler (wrap-cors-preflight (fn [_] {:status 200}) allow-all max-age)
           {:keys [headers status]} (handler request)]
       (is (= 200 status))
-      (is (= "doesnt.matter" (get headers "Access-Control-Allow-Origin")))
-      (is (= "x-test-header" (get headers "Access-Control-Allow-Headers")))
-      (is (= "POST, GET, OPTIONS, DELETE" (get headers "Access-Control-Allow-Methods")))
-      (is (= (str max-age) (get headers "Access-Control-Max-Age")))
-      (is (= "true" (get headers "Access-Control-Allow-Credentials"))))))
+      (is (= "doesnt.matter" (get headers "access-control-allow-origin")))
+      (is (= "x-test-header" (get headers "access-control-allow-headers")))
+      (is (= "POST, GET, OPTIONS, DELETE" (get headers "access-control-allow-methods")))
+      (is (= (str max-age) (get headers "access-control-max-age")))
+      (is (= "true" (get headers "access-control-allow-credentials"))))))

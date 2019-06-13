@@ -4,7 +4,7 @@ Check out [Waiter Checklist](service-checklist.md) before you try running your s
 
 # Overview
 
-There are two ways to launch services on Waiter: the On-the-Fly API and the Token API.  The On-the-Fly API automatically starts HTTP services using custom HTTP headers coming from the client.  Alternatively, the Token API allows service maintainers to predefine a service.  Token-based services are reachable by HTTP clients using a DNS name or using a custom HTTP header, `X-Waiter-Token`.
+There are two ways to launch services on Waiter: the On-the-Fly API and the Token API.  The On-the-Fly API automatically starts HTTP services using custom HTTP headers coming from the client.  Alternatively, the Token API allows service maintainers to predefine a service.  Token-based services are reachable by HTTP clients using a DNS name or using a custom HTTP header, `x-waiter-token`.
 
 ## On-the-Fly API
 
@@ -23,7 +23,7 @@ Hello World
 
 #### Explanation
 
-Upon receiving this request, Waiter will inspect the custom Waiter headers and, based upon those headers, Waiter will allocate 1 core and 1024MB of RAM for the service, and launch it. Once the service is up and running, Waiter will forward the `POST` request to the service's `/hello` endpoint. Waiter will automatically maintain enough instances of the service to meet demand from clients. By default, Waiter will launch the service as the authenticating user. This can be changed by setting the `X-Waiter-Run-As-User` header (see [Parameters](parameters.md) for more information).
+Upon receiving this request, Waiter will inspect the custom Waiter headers and, based upon those headers, Waiter will allocate 1 core and 1024MB of RAM for the service, and launch it. Once the service is up and running, Waiter will forward the `POST` request to the service's `/hello` endpoint. Waiter will automatically maintain enough instances of the service to meet demand from clients. By default, Waiter will launch the service as the authenticating user. This can be changed by setting the `x-waiter-run-as-user` header (see [Parameters](parameters.md) for more information).
 
 ### Getting Started
 
@@ -63,13 +63,13 @@ $ curl -s -H "Accept: application/json" -X POST https://<waiter-uri>/token -d@ki
 Now that the service is defined and registered, test it out using the "kitchen" token:
 
 ```
-$ curl -s -H "X-Waiter-Token: kitchen" -X POST https://<waiter-uri>/hello
+$ curl -s -H "x-waiter-token: kitchen" -X POST https://<waiter-uri>/hello
 Hello World
 ```
 
 ## Using DNS Instead of Tokens
 
-Instead of passing the token as a header via `X-Waiter-Token`, the host name can act as the token.  In the following example, the token is updated to a valid DNS name, `kitchen.app.example.com`.
+Instead of passing the token as a header via `x-waiter-token`, the host name can act as the token.  In the following example, the token is updated to a valid DNS name, `kitchen.app.example.com`.
 
 ### Create the DNS record
 
@@ -106,8 +106,8 @@ Currently HTTPS is not supported for DNS-based token requests.
 The Token and On-The-Fly APIs can be combined to enable more usage scenarios.  For example, you could define a token that contains all parameters except for the version, and provide the version via a header:
 
 ```
-$ curl -s -H "X-Waiter-Token: kitchen" \
-          -H "X-Waiter-Version: v2" \
+$ curl -s -H "x-waiter-token: kitchen" \
+          -H "x-waiter-version: v2" \
           -X POST https://<waiter-uri>/hello
 Hello World
 ```
