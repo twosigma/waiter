@@ -55,7 +55,7 @@
   "Kubernetes reports dates in ISO8061 format, sans the milliseconds component."
   (DateTimeFormat/forPattern "yyyy-MM-dd'T'HH:mm:ss'Z'"))
 
-(defn- timestamp-str->datetime
+(defn timestamp-str->datetime
   "Parse a Kubernetes API timestamp string."
   [k8s-timestamp-str]
   (du/str-to-date k8s-timestamp-str k8s-timestamp-format))
@@ -207,7 +207,7 @@
 
 (defn pod->ServiceInstance
   "Convert a Kubernetes Pod JSON response into a Waiter Service Instance record."
-  [pod]
+  [restart-expiry-threshold pod]
   (try
     (let [port0 (get-in pod [:spec :containers 0 :ports 0 :containerPort])
           restart-count (get-in pod [:status :containerStatuses 0 :restartCount])
@@ -217,6 +217,7 @@
       (scheduler/make-ServiceInstance
         {:extra-ports (->> (get-in pod [:metadata :annotations :waiter/port-count])
                            Integer/parseInt range next (mapv #(+ port0 %)))
+         :flags (cond-> #{} (>= restart-count restart-expiry-threshold) (conj :expired))
          :healthy? (get-in pod [:status :containerStatuses 0 :ready] false)
          :host (get-in pod [:status :podIP])
          :id (pod->instance-id pod)
@@ -317,10 +318,10 @@
 (defn- get-service-instances!
   "Get all active Waiter Service Instances associated with the given Waiter Service.
    Also updates the service-id->failed-instances-transient-store as a side-effect."
-  [scheduler basic-service-info]
+  [{:keys [restart-expiry-threshold] :as scheduler} basic-service-info]
   (vec (for [pod (get-replicaset-pods scheduler basic-service-info)
              :when (live-pod? pod)]
-         (let [service-instance (pod->ServiceInstance pod)]
+         (let [service-instance (pod->ServiceInstance restart-expiry-threshold pod)]
            (track-failed-instances! service-instance scheduler pod)
            service-instance))))
 
@@ -1014,7 +1015,7 @@
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
   [{:keys [authentication authorizer cluster-name custom-options http-options log-bucket-sync-secs
            log-bucket-url max-patch-retries max-name-length pod-base-port pod-sigkill-delay-secs
-           pod-suffix-length replicaset-api-version replicaset-spec-builder scheduler-name
+           pod-suffix-length replicaset-api-version replicaset-spec-builder restart-expiry-threshold scheduler-name
            scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
            service-id->password-fn start-scheduler-syncer-fn url watch-retries]
     {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver :as context}]
@@ -1038,6 +1039,7 @@
          (pos-int? pod-suffix-length)
          (not (string/blank? replicaset-api-version))
          (symbol? (:factory-fn replicaset-spec-builder))
+         (pos-int? restart-expiry-threshold)
          (some? (io/as-url url))
          (not (string/blank? scheduler-name))
          (au/chan? scheduler-state-chan)
@@ -1070,6 +1072,7 @@
                           :http-client http-client
                           :cluster-name cluster-name
                           :replicaset-api-version replicaset-api-version
+                          :restart-expiry-threshold restart-expiry-threshold
                           :service-id->failed-instances-transient-store service-id->failed-instances-transient-store
                           :watch-state watch-state}
         get-service->instances-fn #(get-service->instances scheduler-config)

@@ -68,6 +68,7 @@
                                      {:container-init-commands ["waiter-k8s-init"]
                                       :default-namespace dummy-scheduler-default-namespace
                                       :default-container-image "twosigma/waiter-test-apps:latest"})
+      :restart-expiry-threshold 100
       :service-id->failed-instances-transient-store (atom {})
       :service-id->password-fn #(str "password-" %)
       :service-id->service-description-fn (pc/map-from-keys (constantly {"health-check-port-index" 0
@@ -857,6 +858,7 @@
                     :replicaset-spec-builder {:factory-fn 'waiter.scheduler.kubernetes/default-replicaset-builder
                                               :container-init-commands ["waiter-k8s-init"]
                                               :default-container-image "twosigma/waiter-test-apps:latest"}
+                    :restart-expiry-threshold 2
                     :url "http://127.0.0.1:8001"}
         base-config (merge context k8s-config)]
     (with-redefs [start-pods-watch! (constantly nil)
@@ -1071,7 +1073,7 @@
         pods-watch-stream (make-watch-stream pods-watch-updates watch-update-signals)
         rs-watch-stream (make-watch-stream rs-watch-updates watch-update-signals)
 
-        {:keys [watch-state] :as dummy-scheduler} (make-dummy-scheduler ["test-app-1234"])
+        {:keys [restart-expiry-threshold watch-state] :as dummy-scheduler} (make-dummy-scheduler ["test-app-1234"])
 
         rs-watch-thread (start-replicasets-watch!
                           dummy-scheduler
@@ -1089,7 +1091,7 @@
                        (let [pod-id (str "test-app-1234-abcd" index)
                              pod (get-in @watch-state [:service-id->pod-id->pod service-id pod-id])]
                          (when pod
-                           (pod->ServiceInstance pod))))
+                           (pod->ServiceInstance restart-expiry-threshold pod))))
         wait-for-version (fn [version-tag value]
                            (ct/wait-for
                              #(= value
@@ -1366,7 +1368,7 @@
                                  (concat updates ["hang after last update"])
                                  (concat signals [(promise)])))
 
-        {:keys [watch-state] :as dummy-scheduler} (make-dummy-scheduler ["test-app-1234"])
+        {:keys [restart-expiry-threshold watch-state] :as dummy-scheduler} (make-dummy-scheduler ["test-app-1234"])
 
         ;; replicasets have a single uninterrupted stream of updates
         rs-watch-stream (make-watch-stream rs-watch-updates watch-update-signals)
@@ -1413,7 +1415,7 @@
                        (let [pod-id (str "test-app-1234-abcd" index)
                              pod (get-in @watch-state [:service-id->pod-id->pod service-id pod-id])]
                          (when pod
-                           (pod->ServiceInstance pod))))
+                           (pod->ServiceInstance restart-expiry-threshold pod))))
         wait-for-version (fn [resource version-tag value]
                            (ct/wait-for
                              #(= value
@@ -1515,7 +1517,6 @@
     (.stop rs-watch-thread)
     (.stop pods-watch-thread)))
 
-
 (deftest test-compute-image
   (let [image-aliases {"to-resolve" "resolved"}]
     (testing "no aliases"
@@ -1527,3 +1528,51 @@
     (testing "aliases, alias not found"
       (is (= "an/image" (compute-image "an/image" nil image-aliases)))
       (is (= "an/image" (compute-image nil "an/image" image-aliases))))))
+
+(deftest test-pod->ServiceInstance
+  (let [pod {:metadata {:name "test-app-1234-abcd1"
+                        :namespace "myself"
+                        :labels {:app "test-app-1234"
+                                 :waiter-cluster "waiter"
+                                 :waiter/cluster "waiter"
+                                 :waiter/service-hash "test-app-1234"}
+                        :annotations {:waiter/port-count "1"
+                                      :waiter/service-id "test-app-1234"}}
+             :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
+             :status {:podIP "10.141.141.11"
+                      :startTime "2014-09-13T00:24:46Z"
+                      :containerStatuses [{:name "test-app-1234"
+                                           :ready true
+                                           :restartCount 9}]}}
+        instance-map {:exit-code nil
+                      :extra-ports []
+                      :flags #{}
+                      :health-check-status nil
+                      :healthy? true
+                      :host "10.141.141.11"
+                      :id "test-app-1234.test-app-1234-abcd1-9"
+                      :log-directory "/home/myself/r9"
+                      :message nil
+                      :port 8080
+                      :service-id "test-app-1234"
+                      :started-at (timestamp-str->datetime "2014-09-13T00:24:46Z")
+                      :k8s/app-name "test-app-1234"
+                      :k8s/namespace "myself"
+                      :k8s/pod-name "test-app-1234-abcd1"
+                      :k8s/restart-count 9
+                      :k8s/user "myself"}]
+
+    (testing "pod to live instance"
+      (let [restart-expiry-threshold 10
+            instance (pod->ServiceInstance restart-expiry-threshold pod)]
+        (is (= (scheduler/make-ServiceInstance instance-map) instance))))
+
+    (testing "pod to expired instance threshold"
+      (let [restart-expiry-threshold 9
+            instance (pod->ServiceInstance restart-expiry-threshold pod)]
+        (is (= (scheduler/make-ServiceInstance (assoc instance-map :flags #{:expired})) instance))))
+
+    (testing "pod to expired instance exceeded threshold"
+      (let [restart-expiry-threshold 5
+            instance (pod->ServiceInstance restart-expiry-threshold pod)]
+        (is (= (scheduler/make-ServiceInstance (assoc instance-map :flags #{:expired})) instance))))))
