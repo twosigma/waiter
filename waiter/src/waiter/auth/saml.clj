@@ -14,8 +14,7 @@
 ;; limitations under the License.
 ;;
 (ns waiter.auth.saml
-  (:require [clj-time.coerce :as tc]
-            [clj-time.core :as t]
+  (:require [clj-time.core :as t]
             [clj-time.format :as f]
             [clojure.data.codec.base64 :as b64]
             [clojure.java.io :as io]
@@ -129,18 +128,16 @@
                                    (map #(-> % (.getDOM) (.getTextContent))
                                         (.getAttributeValues a))})
                           attributes))
-        conditions (.getConditions assertion)
-        audiences (mapcat #(let [audiences (.getAudiences %)]
-                             (map (fn [a] (.getAudienceURI a)) audiences))
-                          (.getAudienceRestrictions conditions))]
+        authn-statements (.getAuthnStatements assertion)
+        min-session-not-on-or-after (when (not-empty authn-statements)
+                                      (apply t/min-date (map #(.getSessionNotOnOrAfter %) authn-statements)))]
     {:attrs attrs
-     :audiences audiences
-     :name-id {:value (when name-id (.getValue name-id))
-               :format (when name-id (.getFormat name-id))}
      :confirmation {:in-response-to (.getInResponseTo subject-confirmation-data)
-                    :not-before (tc/to-timestamp (.getNotBefore subject-confirmation-data))
-                    :not-on-or-after (tc/to-timestamp (.getNotOnOrAfter subject-confirmation-data))
-                    :recipient (.getRecipient subject-confirmation-data)}}))
+                    :not-before (.getNotBefore subject-confirmation-data)
+                    :not-on-or-after (.getNotOnOrAfter subject-confirmation-data)
+                    :recipient (.getRecipient subject-confirmation-data)}
+     :name-id-value (when name-id (.getValue name-id))
+     :min-session-not-on-or-after min-session-not-on-or-after}))
 
 (defn- validate-saml-assertion-signature
   "Checks that the SAML assertion has a valid signature."
@@ -189,23 +186,29 @@
                             {:status 400})))
         assertion (first assertions)
         _ (validate-saml-assertion-signature assertion saml-signature-validator)
-        {:keys [attrs confirmation name-id]} (parse-saml-assertion assertion)
-        not-on-or-after (clj-time.coerce/from-sql-time (:not-on-or-after confirmation))
+        {:keys [attrs confirmation name-id-value min-session-not-on-or-after]} (parse-saml-assertion assertion)
+        not-on-or-after (:not-on-or-after confirmation)
         current-time (t/now)
         _ (when-not (t/before? current-time not-on-or-after)
             (throw (ex-info "Could not authenticate user. Expired SAML assertion."
                             {:current-time current-time
                              :expiry-time not-on-or-after
                              :status 400})))
+        _ (when (and min-session-not-on-or-after (not (t/before? current-time min-session-not-on-or-after)))
+            (throw (ex-info "Could not authenticate user. Expired SAML session."
+                            {:current-time current-time
+                             :expiry-time min-session-not-on-or-after
+                             :status 400})))
         email (first (get attrs "email"))
         ; https://docs.microsoft.com/en-us/windows-server/identity/ad-fs/technical-reference/the-role-of-claims
         upn (first (get attrs "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"))
-        name-id-value (get name-id :value)
         saml-principal (or upn name-id-value)
         {:keys [authorization/principal authorization/user]} (auth/auth-params-map saml-principal)
         saml-principal' (if (and email (= principal user)) email saml-principal)
         saml-auth-data (utils/map->base-64-string
-                         {:not-on-or-after not-on-or-after :redirect-url request-url :saml-principal saml-principal'}
+                         {:min-session-not-on-or-after min-session-not-on-or-after
+                          :redirect-url request-url
+                          :saml-principal saml-principal'}
                          password)]
     {:body (render-authenticated-redirect-template {:auth-redirect-uri (str scheme "://" host auth-redirect-endpoint)
                                                     :saml-auth-data saml-auth-data})
@@ -217,24 +220,25 @@
   [{:keys [password]} request]
   {:pre [(not-empty password)]}
   (if-let [saml-auth-data (get-in (ring-params/params-request request) [:form-params "saml-auth-data"])]
-    (let [{:keys [not-on-or-after redirect-url saml-principal] :as saml-auth-data}
+    (let [{:keys [min-session-not-on-or-after redirect-url saml-principal] :as saml-auth-data}
           (try
             (utils/base-64-string->map saml-auth-data password)
             (catch Exception e
               (throw (ex-info "Could not parse saml-auth-data." {:inner-exception e
                                                                  :saml-auth-data saml-auth-data
                                                                  :status 400} e))))
-          _ (when-not (and not-on-or-after redirect-url saml-principal)
+          _ (when-not (and redirect-url saml-principal)
               (throw (ex-info "Could not authenticate user. Invalid SAML auth data."
                               {:saml-auth-data saml-auth-data
                                :status 500})))
           current-time (t/now)
-          _ (when-not (t/before? current-time not-on-or-after)
-              (throw (ex-info "Could not authenticate user. Expired SAML assertion."
+          _ (when (and min-session-not-on-or-after (not (t/before? current-time min-session-not-on-or-after)))
+              (throw (ex-info "Could not authenticate user. Expired SAML session."
                               {:current-time current-time
-                               :expiry-time not-on-or-after
+                               :expiry-time min-session-not-on-or-after
                                :status 400})))
-          auth-cookie-expiry-date (t/min-date not-on-or-after (t/plus current-time (t/days 1)))
+          current-time-plus-1-day (t/plus current-time (t/days 1))
+          auth-cookie-expiry-date (t/min-date (or min-session-not-on-or-after current-time-plus-1-day) current-time-plus-1-day)
           auth-cookie-age-in-seconds (-> current-time
                                        (t/interval auth-cookie-expiry-date)
                                        t/in-seconds)

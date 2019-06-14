@@ -276,7 +276,8 @@
   (when value
     (let [cookie-list (HttpCookie/parse value)]
       (map (fn [^HttpCookie cookie]
-             {:name (.getName cookie)
+             {:max-age (.getMaxAge cookie)
+              :name (.getName cookie)
               :value (.getValue cookie)}) cookie-list))))
 
 (defn parse-cookies
