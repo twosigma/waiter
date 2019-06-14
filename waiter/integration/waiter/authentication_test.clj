@@ -1,5 +1,6 @@
 (ns waiter.authentication-test
-  (:require [clojure.data.json :as json]
+  (:require [clj-time.core :as t]
+            [clojure.data.json :as json]
             [clojure.string :as string]
             [clojure.test :refer :all]
             [reaver :as reaver]
@@ -124,8 +125,7 @@
             cookie-fn (fn [cookies name] (some #(when (= name (:name %)) %) cookies))
             auth-cookie (cookie-fn cookies "x-waiter-auth")
             _ (is (not (nil? auth-cookie)))
-            one-hour-in-secs (* 60 60)
-            _ (is (> (:max-age auth-cookie) one-hour-in-secs))
+            _ (is (> (:max-age auth-cookie) (-> 1 t/hour t/in-seconds)))
             _ (is (= (str "http://" waiter-url "/request-info") (get headers "location")))
             {:keys [body service-id] :as response} (make-request-with-debug-info
                                                      {:x-waiter-token token}
