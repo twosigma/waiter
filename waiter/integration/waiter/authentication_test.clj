@@ -1,6 +1,5 @@
 (ns waiter.authentication-test
-  (:require [clj-time.core :as t]
-            [clojure.data.json :as json]
+  (:require [clojure.data.json :as json]
             [clojure.string :as string]
             [clojure.test :refer :all]
             [reaver :as reaver]
@@ -17,14 +16,16 @@
                                                       :run-as-user (retrieve-username)
                                                       :token token)
                                                     :authentication))]
-        (assert-response-status response 200)
-        (let [{:keys [service-id body]} (make-request-with-debug-info
+        (try
+          (assert-response-status response 200)
+          (let [{:keys [service-id body]} (make-request-with-debug-info
                                           {:x-waiter-token token}
                                           #(make-kitchen-request waiter-url % :path "/request-info"))
-              body-json (json/read-str (str body))]
-          (with-service-cleanup
-            service-id
-            (is (= (retrieve-username) (get-in body-json ["headers" "x-waiter-auth-principal"])))))))))
+                body-json (json/read-str (str body))]
+            (with-service-cleanup
+              service-id
+              (is (= (retrieve-username) (get-in body-json ["headers" "x-waiter-auth-principal"])))))
+          (finally (delete-token-and-assert waiter-url token)))))))
 
 (deftest ^:parallel ^:integration-fast test-token-authentication-parameter-error
   (testing-using-waiter-url
@@ -44,8 +45,10 @@
                                                                    :permitted-user "*"
                                                                    :run-as-user (retrieve-username)
                                                                    :token token))]
-          (assert-response-status response 400)
-          (is (string/includes? body error-message)))
+          (try
+            (assert-response-status response 400)
+            (is (string/includes? body error-message))
+            (finally (delete-token-and-assert waiter-url token))))
         (let [token (rand-name)
               {:keys [body] :as response} (post-token waiter-url (assoc (kitchen-params)
                                                                    :authentication ""
@@ -53,8 +56,10 @@
                                                                    :permitted-user "*"
                                                                    :run-as-user (retrieve-username)
                                                                    :token token))]
-          (assert-response-status response 400)
-          (is (string/includes? body error-message)))))))
+          (try
+            (assert-response-status response 400)
+            (is (string/includes? body error-message))
+            (finally (delete-token-and-assert waiter-url token))))))))
 
 (defn- perform-saml-authentication
   "Default implementation of performing authentication with an identity provider service.
@@ -100,46 +105,49 @@
 (deftest ^:parallel ^:integration-fast ^:explicit test-saml-authentication
   (testing-using-waiter-url
     (when (supports-saml-authentication? waiter-url)
-      (let [auth-principal (or (System/getenv "SAML_AUTH_USER") (retrieve-username))
-            token (rand-name)
+      (let [token (rand-name)
             response (post-token waiter-url (-> (kitchen-params)
                                               (assoc
                                                 :authentication "saml"
                                                 :name token
                                                 :permitted-user "*"
                                                 :run-as-user (retrieve-username)
-                                                :token token)))
-            _ (assert-response-status response 200)
-            {:keys [headers] :as response} (make-request waiter-url "/request-info" :headers {:x-waiter-token token})
-            _ (assert-response-status response 302)
-            saml-redirect-location (get headers "location")
-            saml-authentication-fn (if use-spnego perform-saml-authentication-kerberos perform-saml-authentication)
-            {:keys [relay-state saml-response waiter-saml-acs-endpoint]} (saml-authentication-fn saml-redirect-location)
-            {:keys [body]} (make-request waiter-saml-acs-endpoint ""
-                                         :body (str "SAMLResponse=" (URLEncoder/encode saml-response) "&RelayState=" (URLEncoder/encode relay-state))
-                                         :headers {"content-type" "application/x-www-form-urlencoded"}
-                                         :method :post)
-            {:keys [waiter-saml-auth-redirect-endpoint saml-auth-data]}
-            (reaver/extract (reaver/parse body) [:waiter-saml-auth-redirect-endpoint :saml-auth-data]
-                            "form" (reaver/attr :action)
-                            "form input[name=saml-auth-data]" (reaver/attr :value))
-            _ (is (= (str "http://" waiter-url "/waiter-auth/saml/auth-redirect") waiter-saml-auth-redirect-endpoint))
-            {:keys [cookies headers] :as response} (make-request waiter-url "/waiter-auth/saml/auth-redirect"
-                                                                 :body (str "saml-auth-data=" (URLEncoder/encode saml-auth-data))
-                                                                 :headers {"content-type" "application/x-www-form-urlencoded"}
-                                                                 :method :post)
-            _ (assert-response-status response 303)
-            cookie-fn (fn [cookies name] (some #(when (= name (:name %)) %) cookies))
-            auth-cookie (cookie-fn cookies "x-waiter-auth")
-            _ (is (not (nil? auth-cookie)))
-            _ (is (> (:max-age auth-cookie) (-> 1 t/hour t/in-seconds)))
-            _ (is (= (str "http://" waiter-url "/request-info") (get headers "location")))
-            {:keys [body service-id] :as response} (make-request-with-debug-info
-                                                     {:x-waiter-token token}
-                                                     #(make-request waiter-url "/request-info" :headers % :cookies cookies))
-            _ (assert-response-status response 200)
-            body-json (json/read-str (str body))]
-        (with-service-cleanup
-          service-id
-          (is (= auth-principal (get-in body-json ["headers" "x-waiter-auth-principal"]))))))))
+                                                :token token)))]
+        (assert-response-status response 200)
+        (try
+          (let [auth-principal (or (System/getenv "SAML_AUTH_USER") (retrieve-username))
+                {:keys [headers] :as response} (make-request waiter-url "/request-info" :headers {:x-waiter-token token})
+                _ (assert-response-status response 302)
+                saml-redirect-location (get headers "location")
+                saml-authentication-fn (if use-spnego perform-saml-authentication-kerberos perform-saml-authentication)
+                {:keys [relay-state saml-response waiter-saml-acs-endpoint]} (saml-authentication-fn saml-redirect-location)
+                {:keys [body]} (make-request waiter-saml-acs-endpoint ""
+                                             :body (str "SAMLResponse=" (URLEncoder/encode saml-response) "&RelayState=" (URLEncoder/encode relay-state))
+                                             :headers {"content-type" "application/x-www-form-urlencoded"}
+                                             :method :post)
+                {:keys [waiter-saml-auth-redirect-endpoint saml-auth-data]}
+                (reaver/extract (reaver/parse body) [:waiter-saml-auth-redirect-endpoint :saml-auth-data]
+                                "form" (reaver/attr :action)
+                                "form input[name=saml-auth-data]" (reaver/attr :value))
+                _ (is (= (str "http://" waiter-url "/waiter-auth/saml/auth-redirect") waiter-saml-auth-redirect-endpoint))
+                {:keys [cookies headers] :as response} (make-request waiter-url "/waiter-auth/saml/auth-redirect"
+                                                                     :body (str "saml-auth-data=" (URLEncoder/encode saml-auth-data))
+                                                                     :headers {"content-type" "application/x-www-form-urlencoded"}
+                                                                     :method :post)
+                _ (assert-response-status response 303)
+                cookie-fn (fn [cookies name] (some #(when (= name (:name %)) %) cookies))
+                auth-cookie (cookie-fn cookies "x-waiter-auth")
+                _ (is (not (nil? auth-cookie)))
+                one-hour-in-seconds 3600
+                _ (is (> (:max-age auth-cookie) one-hour-in-seconds))
+                _ (is (= (str "http://" waiter-url "/request-info") (get headers "location")))
+                {:keys [body service-id] :as response} (make-request-with-debug-info
+                                                         {:x-waiter-token token}
+                                                         #(make-request waiter-url "/request-info" :headers % :cookies cookies))
+                _ (assert-response-status response 200)
+                body-json (json/read-str (str body))]
+            (with-service-cleanup
+              service-id
+              (is (= auth-principal (get-in body-json ["headers" "x-waiter-auth-principal"])))))
+          (finally (delete-token-and-assert waiter-url token)))))))
 
