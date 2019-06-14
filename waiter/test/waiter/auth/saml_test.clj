@@ -126,13 +126,32 @@
                             "set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000%5D;Max-Age=86400;Path=/;HttpOnly=true"}
                   :status 303}
                  (saml-auth-redirect-handler saml-authenticator dummy-request'))))))
+    (testing "has saml-auth-data no expiry"
+      (with-redefs [b64/decode identity
+                    b64/encode identity
+                    nippy/freeze (fn [data _] (.getBytes (str data)))
+                    nippy/thaw (fn [data _]
+                                 (if (= "my-saml-auth-data" (String. data))
+                                   {:saml-principal "my-user@domain" :redirect-url "redirect-url"}
+                                   nil))
+                    t/now (fn [] test-time)]
+        (let [dummy-request' (-> (merge-with merge dummy-request {:headers {"content-type" "application/x-www-form-urlencoded"}})
+                               (merge {:request-method :post
+                                       :body (StringBufferInputStream. "saml-auth-data=my-saml-auth-data")}))]
+          (is (= {:authorization/principal "my-user@domain"
+                  :authorization/user "my-user"
+                  :body ""
+                  :headers {"location" "redirect-url"
+                            "set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000%5D;Max-Age=86400;Path=/;HttpOnly=true"}
+                  :status 303}
+                 (saml-auth-redirect-handler saml-authenticator dummy-request'))))))
     (testing "has saml-auth-data short expiry"
       (with-redefs [b64/decode identity
                     b64/encode identity
                     nippy/freeze (fn [data _] (.getBytes (str data)))
                     nippy/thaw (fn [data _]
                                  (if (= "my-saml-auth-data" (String. data))
-                                   {:not-on-or-after (t/plus test-time (t/hours 1)) :saml-principal "my-user@domain" :redirect-url "redirect-url"}
+                                   {:min-session-not-on-or-after (t/plus test-time (t/hours 1)) :saml-principal "my-user@domain" :redirect-url "redirect-url"}
                                    nil))
                     t/now (fn [] test-time)]
         (let [dummy-request' (-> (merge-with merge dummy-request {:headers {"content-type" "application/x-www-form-urlencoded"}})
@@ -160,9 +179,9 @@
 (deftest test-saml-acs-handler
   (let [saml-authenticator (dummy-saml-authenticator)
         test-time (clj-time.format/parse "2019-05-14")
-        expiry-time (clj-time.format/parse "2019-05-15T21:52:46.000Z")
+        expiry-time (clj-time.format/parse "2019-05-16T05:31:19.000Z")
         processed-saml-response {:body {:auth-redirect-uri "scheme://host/waiter-auth/saml/auth-redirect"
-                                        :saml-auth-data {:not-on-or-after expiry-time
+                                        :saml-auth-data {:min-session-not-on-or-after expiry-time
                                                          :redirect-url "request-url"
                                                          :saml-principal "user1@example.com"}}
                                  :status 200}]

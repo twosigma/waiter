@@ -121,6 +121,11 @@
                                                                  :headers {"content-type" "application/x-www-form-urlencoded"}
                                                                  :method :post)
             _ (assert-response-status response 303)
+            cookie-fn (fn [cookies name] (some #(when (= name (:name %)) %) cookies))
+            auth-cookie (cookie-fn cookies "x-waiter-auth")
+            _ (is (not (nil? auth-cookie)))
+            one-hour (* 60 60)
+            _ (is (> (:max-age auth-cookie) one-hour))
             _ (is (= (str "http://" waiter-url "/request-info") (get headers "location")))
             {:keys [body service-id] :as response} (make-request-with-debug-info
                                                      {:x-waiter-token token}

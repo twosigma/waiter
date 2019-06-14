@@ -128,10 +128,9 @@
                                    (map #(-> % (.getDOM) (.getTextContent))
                                         (.getAttributeValues a))})
                           attributes))
-        conditions (.getConditions assertion)
         authn-statements (.getAuthnStatements assertion)
         min-session-not-on-or-after (when (not-empty authn-statements)
-                                      (apply t/min-date '(map (.getSessionNotOnOrAfter %) authn-statements)))]
+                                      (apply t/min-date (map #(.getSessionNotOnOrAfter %) authn-statements)))]
     {:attrs attrs
      :confirmation {:in-response-to (.getInResponseTo subject-confirmation-data)
                     :not-before (.getNotBefore subject-confirmation-data)
@@ -203,7 +202,6 @@
         email (first (get attrs "email"))
         ; https://docs.microsoft.com/en-us/windows-server/identity/ad-fs/technical-reference/the-role-of-claims
         upn (first (get attrs "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"))
-        name-id-value (get name-id :value)
         saml-principal (or upn name-id-value)
         {:keys [authorization/principal authorization/user]} (auth/auth-params-map saml-principal)
         saml-principal' (if (and email (= principal user)) email saml-principal)
