@@ -1,5 +1,6 @@
 (ns waiter.authentication-test
-  (:require [clojure.data.json :as json]
+  (:require [clj-time.core :as t]
+            [clojure.data.json :as json]
             [clojure.string :as string]
             [clojure.test :refer :all]
             [reaver :as reaver]
@@ -25,7 +26,8 @@
             (with-service-cleanup
               service-id
               (is (= (retrieve-username) (get-in body-json ["headers" "x-waiter-auth-principal"])))))
-          (finally (delete-token-and-assert waiter-url token)))))))
+          (finally
+            (delete-token-and-assert waiter-url token)))))))
 
 (deftest ^:parallel ^:integration-fast test-token-authentication-parameter-error
   (testing-using-waiter-url
@@ -45,10 +47,8 @@
                                                                    :permitted-user "*"
                                                                    :run-as-user (retrieve-username)
                                                                    :token token))]
-          (try
-            (assert-response-status response 400)
-            (is (string/includes? body error-message))
-            (finally (delete-token-and-assert waiter-url token))))
+          (assert-response-status response 400)
+          (is (string/includes? body error-message)))
         (let [token (rand-name)
               {:keys [body] :as response} (post-token waiter-url (assoc (kitchen-params)
                                                                    :authentication ""
@@ -56,10 +56,8 @@
                                                                    :permitted-user "*"
                                                                    :run-as-user (retrieve-username)
                                                                    :token token))]
-          (try
-            (assert-response-status response 400)
-            (is (string/includes? body error-message))
-            (finally (delete-token-and-assert waiter-url token))))))))
+          (assert-response-status response 400)
+          (is (string/includes? body error-message)))))))
 
 (defn- perform-saml-authentication
   "Default implementation of performing authentication with an identity provider service.
@@ -138,8 +136,7 @@
                 cookie-fn (fn [cookies name] (some #(when (= name (:name %)) %) cookies))
                 auth-cookie (cookie-fn cookies "x-waiter-auth")
                 _ (is (not (nil? auth-cookie)))
-                one-hour-in-seconds 3600
-                _ (is (> (:max-age auth-cookie) one-hour-in-seconds))
+                _ (is (> (:max-age auth-cookie) (-> 1 t/hours t/in-seconds)))
                 _ (is (= (str "http://" waiter-url "/request-info") (get headers "location")))
                 {:keys [body service-id] :as response} (make-request-with-debug-info
                                                          {:x-waiter-token token}
@@ -149,5 +146,6 @@
             (with-service-cleanup
               service-id
               (is (= auth-principal (get-in body-json ["headers" "x-waiter-auth-principal"])))))
-          (finally (delete-token-and-assert waiter-url token)))))))
+          (finally
+            (delete-token-and-assert waiter-url token)))))))
 
