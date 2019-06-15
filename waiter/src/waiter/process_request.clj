@@ -532,11 +532,13 @@
    {:keys [uri] :as request} reason-map reservation-status-promise confirm-live-connection-with-abort
    request-state-chan {:keys [status] :as response}]
   (let [{:keys [service-description service-id]} descriptor
-        {:strs [backend-proto metric-group]} service-description
+        {:strs [backend-proto blacklist-on-503 metric-group]} service-description
         waiter-debug-enabled? (utils/request->debug-enabled? request)
         resp-chan (async/chan 5)]
-    (when (and (= 503 status) (get service-description "blacklist-on-503"))
-      (log/info "Instance returned 503: " {:instance instance})
+    (when (and blacklist-on-503 (hu/service-unavailable? request response))
+      (log/info "service unavailable according to response status"
+                {:instance instance
+                 :response (select-keys response [:headers :status])})
       (deliver reservation-status-promise :instance-busy))
     (meters/mark! (metrics/service-meter service-id "response-status-rate" (str status)))
     (counters/inc! (metrics/service-counter service-id "request-counts" "waiting-to-stream"))

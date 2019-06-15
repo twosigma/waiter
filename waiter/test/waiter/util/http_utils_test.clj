@@ -86,3 +86,51 @@
   (is (= "ws" (backend-proto->scheme "ws")))
   (is (= "wss" (backend-proto->scheme "wss")))
   (is (= "zzz" (backend-proto->scheme "zzz"))))
+
+(deftest test-grpc?
+  (is (grpc? {"content-type" "application/grpc"} "HTTP/2.0"))
+  (is (not (grpc? {"content-type" "application/grpc"} "HTTP/1.1")))
+  (is (not (grpc? {"content-type" "application/grpc"} nil)))
+  (is (not (grpc? nil "HTTP/2.0")))
+  (is (not (grpc? {"content-type" "application/xml"} "HTTP/2.0")))
+  (is (not (grpc? {"content-type" "text/grpc"} "HTTP/2.0")))
+  (is (not (grpc? {"content-type" "text/grpc"} "HTTP/1.1")))
+  (is (not (grpc? {"accept" "application/grpc"} "HTTP/2.0"))))
+
+(deftest test-service-unavailable?
+  (is (service-unavailable? {:client-protocol "HTTP/0.9"} {:status 503}))
+  (is (service-unavailable? {:client-protocol "HTTP/1.0"} {:status 503}))
+  (is (service-unavailable? {:client-protocol "HTTP/1.1"} {:status 503}))
+  (is (service-unavailable? {:client-protocol "HTTP/2.0"} {:status 503}))
+
+  (is (not (service-unavailable? {:client-protocol "HTTP/0.9"} {:status 502})))
+  (is (not (service-unavailable? {:client-protocol "HTTP/1.0"} {:status 502})))
+  (is (not (service-unavailable? {:client-protocol "HTTP/1.1"} {:status 502})))
+  (is (not (service-unavailable? {:client-protocol "HTTP/2.0"} {:status 502})))
+
+  (is (not (service-unavailable? {:client-protocol "HTTP/0.9"} {:status 401})))
+  (is (not (service-unavailable? {:client-protocol "HTTP/1.0"} {:status 401})))
+  (is (not (service-unavailable? {:client-protocol "HTTP/1.1"} {:status 401})))
+  (is (not (service-unavailable? {:client-protocol "HTTP/2.0"} {:status 401})))
+
+  (is (service-unavailable?
+        {:client-protocol "HTTP/2.0" :headers {"content-type" "application/grpc"}}
+        {:headers {"grpc-status" "14"} :status 200}))
+  (is (service-unavailable?
+        {:client-protocol "HTTP/2.0" :headers {"content-type" "application/grpc"}}
+        {:headers {"grpc-status" "14"} :status 500}))
+  (is (not (service-unavailable?
+             {:client-protocol "HTTP/2.0" :headers {"content-type" "application/grpc"}}
+             {:headers {"grpc-status" "12"} :status 200})))
+  (is (not (service-unavailable?
+             {:client-protocol "HTTP/2.0" :headers {"content-type" "application/xml"}}
+             {:headers {"grpc-status" "14"} :status 200})))
+  (is (not (service-unavailable?
+             {:client-protocol "HTTP/1.1" :headers {"content-type" "application/grpc"}}
+             {:headers {"grpc-status" "14"} :status 200})))
+  (is (not (service-unavailable?
+             {:client-protocol "HTTP/2.0" :headers {"content-type" "application/grpc"}}
+             {:headers {"grpc-status" "13"} :status 200})))
+  (is (not (service-unavailable?
+             {:client-protocol "HTTP/2.0" :headers {"content-type" "application/grpc"}}
+             {:headers {"grpc-status" 14} :status 200}))))

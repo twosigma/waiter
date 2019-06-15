@@ -133,3 +133,16 @@
   "Returns true if the http versions represents a http2 request"
   [version]
   (= "HTTP/2.0" version))
+
+(defn grpc?
+  "Returns true if the request represents a grpc request"
+  [{:strs [content-type]} proto-version]
+  (and (= "HTTP/2.0" proto-version) (= content-type "application/grpc")))
+
+(defn service-unavailable?
+  "Returns true if the response represents the service is unavailable.
+   This means either the response status is 503 or the grpc response status is UNAVAILABLE, i.e. 14."
+  [request response]
+  (or (= 503 (:status response))
+      (and (grpc? (:headers request) (:client-protocol request))
+           (= "14" (get-in response [:headers "grpc-status"])))))
