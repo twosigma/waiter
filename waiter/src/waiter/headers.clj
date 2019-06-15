@@ -18,6 +18,7 @@
             [clojure.tools.logging :as log]
             [clojure.string :as str]
             [plumbing.core :as pc]
+            [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils]))
 
 (def ^:const waiter-header-prefix "x-waiter-")
@@ -89,8 +90,8 @@
 
 (defn- retrieve-proto-specific-hop-by-hop-headers
   "Determines the protocol version specific hop-by-hop headers."
-  [{:strs [content-type]} proto-version]
-  (when-not (and (= "HTTP/2.0" proto-version) (= content-type "application/grpc"))
+  [request-headers proto-version]
+  (when-not (hu/grpc? request-headers proto-version)
     ["te"]))
 
 (defn dissoc-hop-by-hop-headers
