@@ -16,6 +16,7 @@
 (ns waiter.process-request-test
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
+            [clojure.core.async.impl.protocols :as async-protocols]
             [clojure.string :as str]
             [clojure.test :refer :all]
             [metrics.counters :as counters]
@@ -27,7 +28,8 @@
             [waiter.metrics :as metrics]
             [waiter.descriptor :as descriptor]
             [waiter.process-request :refer :all]
-            [waiter.statsd :as statsd])
+            [waiter.statsd :as statsd]
+            [waiter.test-helpers :refer :all])
   (:import (java.io ByteArrayOutputStream InputStream IOException)
            (java.nio ByteBuffer)
            (java.util Arrays)
@@ -307,7 +309,8 @@
         byte-buffer->byte-array (fn [^ByteBuffer byte-buffer]
                                   (let [result-array (byte-array (.remaining byte-buffer))]
                                     (.get byte-buffer result-array 0 (count result-array))
-                                    result-array))]
+                                    result-array))
+        streaming-timeout-ms 3000]
 
     (testing "successful read - single task"
       (let [executor (ThreadPoolExecutor. 1 1 1 TimeUnit/MINUTES (LinkedBlockingQueue.))
@@ -323,7 +326,7 @@
             exception-atom (atom nil)
             error-handler-fn (make-error-handler-fn body-ch exception-atom)]
 
-        (stream-http-request executor service-id metric-group error-handler-fn input-stream body-ch 0)
+        (stream-http-request executor service-id metric-group error-handler-fn streaming-timeout-ms input-stream body-ch 0)
 
         (let [num-fragments-read-atom (atom 0)]
           (doseq [^bytes source-bytes input-bytes]
@@ -353,7 +356,7 @@
             exception-atom (atom nil)
             error-handler-fn (make-error-handler-fn body-ch exception-atom)]
 
-        (stream-http-request executor service-id metric-group error-handler-fn input-stream body-ch 0)
+        (stream-http-request executor service-id metric-group error-handler-fn streaming-timeout-ms input-stream body-ch 0)
 
         (let [num-fragments-read-atom (atom 0)]
           (doseq [^bytes source-bytes input-bytes]
@@ -383,7 +386,7 @@
             exception-atom (atom nil)
             error-handler-fn (make-error-handler-fn body-ch exception-atom)]
 
-        (stream-http-request executor service-id metric-group error-handler-fn input-stream body-ch 0)
+        (stream-http-request executor service-id metric-group error-handler-fn streaming-timeout-ms input-stream body-ch 0)
 
         (let [num-fragments-read-atom (atom 0)]
           (doseq [^bytes source-bytes input-bytes]
@@ -415,7 +418,7 @@
             exception-atom (atom nil)
             error-handler-fn (make-error-handler-fn body-ch exception-atom)]
 
-        (stream-http-request executor service-id metric-group error-handler-fn input-stream body-ch 0)
+        (stream-http-request executor service-id metric-group error-handler-fn streaming-timeout-ms input-stream body-ch 0)
 
         (let [num-fragments-read-atom (atom 0)]
           (doseq [^bytes source-bytes input-bytes]
@@ -447,8 +450,9 @@
             exception-atom (atom nil)
             error-handler-fn (make-error-handler-fn body-ch exception-atom)]
 
-        (stream-http-request executor service-id metric-group error-handler-fn input-stream body-ch 0)
+        (stream-http-request executor service-id metric-group error-handler-fn streaming-timeout-ms input-stream body-ch 0)
 
+        (is (wait-for #(async-protocols/closed? body-ch)))
         (let [num-fragments-read-atom (atom 0)]
           (doseq [^bytes source-bytes input-bytes]
             (when-let [read-buffer (async/<!! body-ch)]
@@ -457,8 +461,7 @@
           (is (not= (count input-bytes) @num-fragments-read-atom)))
         (is (nil? (async/<!! body-ch)))
         (is (not (nil? @exception-atom)))
-        (is (str/includes? (str (some-> @exception-atom .getMessage))
-                           "No more than 1024 pending puts are allowed on a single channel"))
+        (is (str/includes? (str (some-> @exception-atom .getMessage)) "unable to stream request bytes"))
         (let [histogram (metrics/service-histogram service-id "request-size")]
           (is (= 1 (histograms/number-recorded histogram)))
           (is (> (reduce + (map count input-bytes)) (histograms/largest histogram))))
@@ -490,7 +493,7 @@
           (dotimes [_ queue-capacity]
             (.execute executor (constantly true))))
 
-        (stream-http-request executor service-id metric-group error-handler-fn input-stream body-ch 0)
+        (stream-http-request executor service-id metric-group error-handler-fn streaming-timeout-ms input-stream body-ch 0)
 
         (let [num-fragments-read-atom (atom 0)]
           (doseq [^bytes source-bytes input-bytes]
