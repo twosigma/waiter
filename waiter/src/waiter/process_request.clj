@@ -276,6 +276,7 @@
                     (statsd/inc! metric-group "request_bytes" unreported-bytes-to-statsd))
                   (let [description-map {:bytes-pending bytes-read
                                          :bytes-streamed bytes-streamed
+                                         :status 503
                                          :streaming-timeout-ms streaming-timeout-ms}]
                     (log/error "unable to stream request bytes" description-map)
                     (stream-error-handler (ex-info "unable to stream request bytes" description-map)))))
