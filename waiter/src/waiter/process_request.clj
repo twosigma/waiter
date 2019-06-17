@@ -215,9 +215,7 @@
                        :status 503}
                       throwable)))))
 
-(let [back-pressure-delay-ms 1000
-      max-back-pressure-delay-ms 4000
-      min-buffer-size 1024
+(let [min-buffer-size 1024
       max-buffer-size 32768
       min-buffer-increment-size 1024
       buffer-increment-mask (bit-not (dec min-buffer-increment-size))]
@@ -229,14 +227,14 @@
      Reports an error to the error handler whenever:
      - there is an error trying to read from the input channel,
      - the body channel fails to accept the byte buffer that was read from the input stream."
-    [executor service-id metric-group error-handler-fn ^InputStream input-stream body-ch bytes-streamed]
+    [executor service-id metric-group error-handler-fn streaming-timeout-ms ^InputStream input-stream body-ch bytes-streamed]
     (let [bytes-streamed-atom (atom bytes-streamed)
           correlation-id (cid/get-correlation-id)
           stream-http-request-task (fn invoke-stream-http-request []
                                      (cid/with-correlation-id
                                        correlation-id
                                        (stream-http-request executor service-id metric-group error-handler-fn
-                                                            input-stream body-ch @bytes-streamed-atom)))
+                                                            streaming-timeout-ms input-stream body-ch @bytes-streamed-atom)))
           stream-error-handler (fn [throwable]
                                  (log/info "request failed after streaming" @bytes-streamed-atom "bytes")
                                  (histograms/update! (metrics/service-histogram service-id "request-size") @bytes-streamed-atom)
@@ -259,7 +257,7 @@
                 (async/close! body-ch))
 
               (pos? bytes-read)
-              (if (async/put! body-ch (ByteBuffer/wrap buffer-bytes 0 bytes-read))
+              (if (au/timed-offer!! body-ch (ByteBuffer/wrap buffer-bytes 0 bytes-read) streaming-timeout-ms)
                 (let [unreported-bytes-to-statsd' (+ unreported-bytes-to-statsd bytes-read)]
                   (swap! bytes-streamed-atom + bytes-read)
                   (if (pos? (.available input-stream))
@@ -276,23 +274,11 @@
                 (do
                   (when (pos? unreported-bytes-to-statsd)
                     (statsd/inc! metric-group "request_bytes" unreported-bytes-to-statsd))
-                  (async/go
-                    (cid/with-correlation-id
-                      correlation-id
-                      (loop [sleep-duration-ms back-pressure-delay-ms]
-                        (log/debug "sleeping" sleep-duration-ms "ms as request body channel is full")
-                        (async/<! (async/timeout sleep-duration-ms))
-                        (if (async/put! body-ch (ByteBuffer/wrap buffer-bytes 0 bytes-read))
-                          (do
-                            (log/debug "request body channel is accepting data again")
-                            (statsd/inc! metric-group "request_bytes" bytes-read)
-                            (swap! bytes-streamed-atom + bytes-read)
-                            (submit-request-streaming-task executor stream-http-request-task))
-                          (if (>= sleep-duration-ms max-back-pressure-delay-ms)
-                            (let [description-map {:bytes-pending bytes-read :bytes-streamed bytes-streamed}]
-                              (log/error "unable to stream request bytes" description-map)
-                              (stream-error-handler (ex-info "unable to stream request bytes" description-map)))
-                            (recur (* 2 sleep-duration-ms)))))))))
+                  (let [description-map {:bytes-pending bytes-read
+                                         :bytes-streamed bytes-streamed
+                                         :streaming-timeout-ms streaming-timeout-ms}]
+                    (log/error "unable to stream request bytes" description-map)
+                    (stream-error-handler (ex-info "unable to stream request bytes" description-map)))))
 
               :else
               (submit-request-streaming-task executor stream-http-request-task))))
@@ -303,7 +289,7 @@
   "Returns a channel that will contain the ByteBuffers read from the input stream.
    The input stream is read asynchronously by creating tasks on the provided executor.
    It will report any errors while reading data on the provided abort channel."
-  [^ThreadPoolExecutor executor service-id metric-group abort-ch ^InputStream input-stream]
+  [^ThreadPoolExecutor executor service-id metric-group streaming-timeout-ms abort-ch ^InputStream input-stream]
   (let [correlation-id (cid/get-correlation-id)
         body-ch (async/chan 2048)
         error-handler-fn (fn handle-request-streaming-error [throwable]
@@ -316,7 +302,7 @@
                                  (cid/with-correlation-id
                                    correlation-id
                                    (stream-http-request executor service-id metric-group error-handler-fn
-                                                        input-stream body-ch 0)))]
+                                                        streaming-timeout-ms input-stream body-ch 0)))]
     (try
       (submit-request-streaming-task executor stream-http-request-fn)
       (catch Throwable throwable
@@ -328,13 +314,13 @@
   [^ThreadPoolExecutor executor ^HttpClient http-client make-basic-auth-fn
    request-method endpoint query-string headers body trailers-fn
    service-id service-password metric-group {:keys [username principal]}
-   idle-timeout output-buffer-size proto-version]
+   idle-timeout streaming-timeout-ms output-buffer-size proto-version]
   (let [auth (make-basic-auth-fn endpoint "waiter" service-password)
         headers (headers/assoc-auth-headers headers username principal)
         abort-ch (async/promise-chan)
         body' (cond->> body
                 (instance? InputStream body)
-                (input-stream->channel executor service-id metric-group abort-ch))]
+                (input-stream->channel executor service-id metric-group streaming-timeout-ms abort-ch))]
     (http/request
       http-client
       {:abort-ch abort-ch
@@ -356,7 +342,8 @@
   "Makes an asynchronous http request to the instance endpoint and returns a channel."
   [executor http-clients make-basic-auth-fn service-id->password-fn {:keys [host] :as instance}
    {:keys [body instance-request-overrides query-string request-method trailers-fn] :as request}
-   {:keys [initial-socket-timeout-ms output-buffer-size]} passthrough-headers end-route metric-group backend-proto proto-version]
+   {:keys [initial-socket-timeout-ms output-buffer-size streaming-timeout-ms]}
+   passthrough-headers end-route metric-group backend-proto proto-version]
   (let [port-index (get instance-request-overrides :port-index 0)
         port (scheduler/instance->port instance port-index)
         instance-endpoint (scheduler/end-point-url backend-proto host port end-route)
@@ -383,7 +370,8 @@
           http-client (hu/select-http-client backend-proto http-clients)]
       (make-http-request
         executor http-client make-basic-auth-fn request-method instance-endpoint query-string headers body trailers-fn
-        service-id service-password metric-group auth-user-map initial-socket-timeout-ms output-buffer-size proto-version))))
+        service-id service-password metric-group auth-user-map initial-socket-timeout-ms streaming-timeout-ms
+        output-buffer-size proto-version))))
 
 (defn extract-async-request-response-data
   "Helper function that inspects the response and returns the location and query-string if the response
