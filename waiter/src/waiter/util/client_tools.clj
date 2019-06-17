@@ -352,15 +352,19 @@
   `(let [response-cid# (get-in ~response [:headers "x-cid"] "unknown")
          response-server# (get-in ~response [:headers "server"] "unknown")
          actual-status# (:status ~response)
+         expected-status# ~expected-status
+         expected-status-set# (if (set? expected-status#)
+                                expected-status#
+                                #{expected-status#})
          response-body# (:body ~response)
          response-error# (:error ~response)
          assertion-message# (str "[CID=" response-cid# ", server=" response-server# "] "
                                  "Expected status: " ~expected-status
                                  ", actual: " actual-status# "\r\n Body:" response-body#
                                  (when response-error# (str "\r\n Error: " response-error#)))]
-     (when (not= ~expected-status actual-status#)
+     (when-not (contains? expected-status-set# actual-status#)
        (log/error assertion-message#))
-     (is (= ~expected-status actual-status#) assertion-message#)))
+     (is (contains? expected-status-set# actual-status#) assertion-message#)))
 
 (defn kitchen-cmd
   ([] (kitchen-cmd ""))

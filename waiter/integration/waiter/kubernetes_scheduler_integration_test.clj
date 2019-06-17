@@ -267,7 +267,7 @@
             (make-request-with-debug-info
               {:x-waiter-distribution-scheme "simple"
                :x-waiter-name (rand-name)}
-              #(make-kitchen-request waiter-url % :method :get :path "/"))]
+              #(make-kitchen-request waiter-url % :method :get :path "/hello"))]
         (is service-id)
         (with-service-cleanup
           service-id
@@ -275,7 +275,7 @@
           (dotimes [_ 5]
             (let [request-headers (assoc request-headers :x-kitchen-delay-ms 1000)
                   response (make-kitchen-request waiter-url request-headers :path "/die")]
-              (assert-response-status response 502)))
+              (assert-response-status response #{502 503})))
           ;; assert that more than one pod was created
           (is (wait-for
                 (fn []
