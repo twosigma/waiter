@@ -275,7 +275,7 @@
           (dotimes [_ 5]
             (let [request-headers (assoc request-headers :x-kitchen-delay-ms 1000)
                   response (make-kitchen-request waiter-url request-headers :path "/die")]
-              (assert-response-status response 502)))
+              (assert-response-status response #{502 503})))
           ;; assert that more than one pod was created
           (is (wait-for
                 (fn []
