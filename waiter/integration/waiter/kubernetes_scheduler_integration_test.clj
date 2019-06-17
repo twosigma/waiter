@@ -267,7 +267,7 @@
             (make-request-with-debug-info
               {:x-waiter-distribution-scheme "simple"
                :x-waiter-name (rand-name)}
-              #(make-kitchen-request waiter-url % :method :get :path "/hello"))]
+              #(make-kitchen-request waiter-url % :method :get :path "/"))]
         (is service-id)
         (with-service-cleanup
           service-id
