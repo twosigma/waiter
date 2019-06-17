@@ -61,8 +61,7 @@
         ;; there is no content length on the canary request
         (is (= (inc num-streaming-requests) (get request-size-histogram :count 0))
             (str "request-size-histogram: " request-size-histogram))
-        (is (= 0.0 (get-in request-size-histogram [:value :0.0] 0.0))
-            (str "request-size-histogram: " request-size-histogram))
+        ;; we do not assert the 0th percentile as the value may be corrupted during a multi-router merge
         (is (->> (get-in request-size-histogram [:value :1.0] 0.0) (- body-size) Math/abs (>= epsilon))
             (str "request-size-histogram: " request-size-histogram))
         (is (= (inc num-streaming-requests) (get response-size-histogram :count))
