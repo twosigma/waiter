@@ -243,7 +243,8 @@
   (let [response (request-fn (assoc request-headers :x-waiter-debug "true"))
         response-headers (or (:headers response) {})
         instance-id (str (get response-headers "x-waiter-backend-id"))
-        service-id (instance-id->service-id instance-id)
+        service-id (or (get response-headers "x-waiter-service-id")
+                       (instance-id->service-id instance-id))
         router-id (str (get-in response [:headers "x-waiter-router-id"]))]
     (assoc response
       :router-id router-id

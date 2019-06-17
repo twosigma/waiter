@@ -43,6 +43,7 @@
                                  :replicaset-spec-builder {:default-container-image "twosigma/waiter-test-apps"
                                                            :default-namespace "waiter"
                                                            :image-aliases {"alias/integration" "twosigma/integration"}}
+                                 :restart-expiry-threshold 2
                                  :url "http://localhost:8001"}}
 
  ; ---------- Error Handling ----------

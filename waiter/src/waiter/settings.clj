@@ -362,7 +362,8 @@
                                    :replicaset-api-version "extensions/v1beta1"
                                    :replicaset-spec-builder {:factory-fn 'waiter.scheduler.kubernetes/default-replicaset-builder
                                                              :container-init-commands ["waiter-k8s-init"]
-                                                             :default-container-image "twosigma/waiter-test-apps:latest"}}
+                                                             :default-container-image "twosigma/waiter-test-apps:latest"}
+                                   :restart-expiry-threshold 2}
                       :marathon {:factory-fn 'waiter.scheduler.marathon/marathon-scheduler
                                  :authorizer {:kind :default
                                               :default {:factory-fn 'waiter.authorization/noop-authorizer}}

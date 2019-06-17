@@ -1106,7 +1106,8 @@
                                  :min-hosts 2}
         instance-0 (make-instance 0)
         instance-1 (make-instance 1)
-        instance-2 (make-instance 2)
+        instance-2a (-> (make-instance 2) (update :id str "a"))
+        instance-2b (-> (make-instance 2) (update :id str "b") (assoc :flags #{:expired}))
         instance-3 (make-instance 3)
         instance-4 (make-instance 4)
         instance-5 (make-instance 5)]
@@ -1119,7 +1120,7 @@
       (async/>!! scheduler-state-chan [[:update-available-services {:available-service-ids #{service-id}
                                                                     :scheduler-sync-time (t/now)}]])
       (async/<!! router-state-push-chan)
-      (let [healthy-instances [instance-2 instance-3 instance-4 instance-5]
+      (let [healthy-instances [instance-2a instance-2b instance-3 instance-4 instance-5]
             unhealthy-instances [instance-0 instance-1]
             sorted-instance-ids (->> (concat healthy-instances unhealthy-instances)
                                      (map :id)
@@ -1133,9 +1134,9 @@
                     service-id->healthy-instances service-id->killed-instances service-id->unhealthy-instances]}
             (async/<!! router-state-push-chan)]
         (is (= #{service-id} all-available-service-ids))
-        (is (= {service-id [instance-4 instance-5]} service-id->expired-instances))
+        (is (= {service-id [instance-2b instance-4 instance-5]} service-id->expired-instances))
         (is (empty? (get service-id->failed-instances service-id)))
-        (is (= {service-id [instance-2 instance-3 instance-4 instance-5]} service-id->healthy-instances))
+        (is (= {service-id [instance-2a instance-2b instance-3 instance-4 instance-5]} service-id->healthy-instances))
         (is (empty? (get service-id->killed-instances service-id)))
         (is (= {service-id [instance-0 instance-1]} service-id->unhealthy-instances)))
 
@@ -1146,9 +1147,9 @@
                     service-id->healthy-instances service-id->killed-instances service-id->unhealthy-instances]}
             (async/<!! response-chan)]
         (is (= #{service-id} all-available-service-ids))
-        (is (= {service-id [instance-4 instance-5]} service-id->expired-instances))
+        (is (= {service-id [instance-2b instance-4 instance-5]} service-id->expired-instances))
         (is (empty? (get service-id->failed-instances service-id)))
-        (is (= {service-id [instance-2 instance-3 instance-4 instance-5]} service-id->healthy-instances))
+        (is (= {service-id [instance-2a instance-2b instance-3 instance-4 instance-5]} service-id->healthy-instances))
         (is (= [instance-0] (get service-id->killed-instances service-id)))
         (is (= {service-id [instance-0 instance-1]} service-id->unhealthy-instances)))
 
@@ -1159,9 +1160,9 @@
                     service-id->healthy-instances service-id->killed-instances service-id->unhealthy-instances]}
             (async/<!! response-chan)]
         (is (= #{service-id} all-available-service-ids))
-        (is (= {service-id [instance-4 instance-5]} service-id->expired-instances))
+        (is (= {service-id [instance-2b instance-4 instance-5]} service-id->expired-instances))
         (is (empty? (get service-id->failed-instances service-id)))
-        (is (= {service-id [instance-2 instance-3 instance-4 instance-5]} service-id->healthy-instances))
+        (is (= {service-id [instance-2a instance-2b instance-3 instance-4 instance-5]} service-id->healthy-instances))
         (is (= [instance-0 instance-1] (get service-id->killed-instances service-id)))
         (is (= {service-id [instance-0 instance-1]} service-id->unhealthy-instances)))
 
@@ -1172,9 +1173,9 @@
                     service-id->healthy-instances service-id->killed-instances service-id->unhealthy-instances]}
             (async/<!! response-chan)]
         (is (= #{service-id} all-available-service-ids))
-        (is (= {service-id [instance-4 instance-5]} service-id->expired-instances))
+        (is (= {service-id [instance-2b instance-4 instance-5]} service-id->expired-instances))
         (is (empty? (get service-id->failed-instances service-id)))
-        (is (= {service-id [instance-2 instance-3 instance-4 instance-5]} service-id->healthy-instances))
+        (is (= {service-id [instance-2a instance-2b instance-3 instance-4 instance-5]} service-id->healthy-instances))
         (is (= [instance-1 instance-0] (get service-id->killed-instances service-id)))
         (is (= {service-id [instance-0 instance-1]} service-id->unhealthy-instances)))
 
