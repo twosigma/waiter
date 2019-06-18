@@ -60,7 +60,7 @@
 (defn add-encoded-cookie
   "Inserts the provided name-value pair as a Set-Cookie header in the response"
   [response password name value age-in-seconds]
-  (letfn [(add-cookie-into-response [response]
+  (letfn [(add-cookie-into-response [{:keys [headers] :as response}]
             (let [encoded-cookie (UrlEncoded/encodeString (encode-cookie value password))
                   path "/"
                   set-cookie-header (str name "=" encoded-cookie ";Max-Age=" age-in-seconds ";Path=" path ";HttpOnly=true")
@@ -69,7 +69,9 @@
                                (nil? existing-header) set-cookie-header
                                (string? existing-header) [existing-header set-cookie-header]
                                :else (conj existing-header set-cookie-header))]
-              (assoc-in response [:headers "set-cookie"] new-header)))]
+              (cond-> (assoc-in response [:headers "set-cookie"] new-header)
+                (not (contains? headers "cache-control"))
+                (assoc-in [:headers "cache-control"] "private"))))]
     (ru/update-response response add-cookie-into-response)))
 
 (defn decode-cookie
