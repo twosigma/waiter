@@ -73,7 +73,7 @@
         (validate-kubernetes-custom-image waiter-url custom-image)))))
 
 ;; Fails on (is (> (count instance-ids) 1) (str instance-ids)) as there is only one instance
-(deftest ^:parallel ^:integration-slow ^:resource-heavy ^:explicit test-s3-logs
+(deftest ^:parallel ^:integration-slow ^:resource-heavy test-s3-logs
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
       (let [headers {:x-waiter-name (rand-name)
