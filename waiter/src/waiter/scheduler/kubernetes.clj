@@ -372,8 +372,9 @@
 (defn- build-replicaset-url
   "Build the URL for the given Waiter Service's ReplicaSet."
   [{:keys [api-server-url replicaset-api-version]} {:keys [k8s/app-name k8s/namespace]}]
-  (str api-server-url "/apis/" replicaset-api-version
-       "/namespaces/" namespace "/replicasets/" app-name))
+  (when (not-any? string/blank? [namespace app-name])
+    (str api-server-url "/apis/" replicaset-api-version
+         "/namespaces/" namespace "/replicasets/" app-name)))
 
 (defn- scale-service-up-to
   "Scale the number of instances for a given service to a specific number.
@@ -483,6 +484,10 @@
         kill-json (utils/clj->json
                     {:kind "DeleteOptions" :apiVersion "v1"
                      :propagationPolicy "Background"})]
+    (when-not replicaset-url
+      (throw (ex-info "could not find service to delete"
+                      {:service service
+                       :status 404})))
     (api-request replicaset-url scheduler :request-method :delete :body kill-json)
     {:message (str "Kubernetes deleted ReplicaSet for " id)
      :result :deleted}))

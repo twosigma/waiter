@@ -551,6 +551,14 @@
                       (= 200)))
                 :interval 5 :timeout 60)))
 
+        (testing "deleted service is removed from all routers"
+          (assert-service-not-on-any-routers waiter-url service-id cookies))
+
+        (testing "delete service again (should get 404)"
+          (is (-> (make-request waiter-url (str "/apps/" service-id) :method :delete)
+                  :status
+                  (= 404))))
+
         (testing "service-deleted-from-all-routers"
           (let [router-id->service-id-deleted
                 (pc/map-from-keys
