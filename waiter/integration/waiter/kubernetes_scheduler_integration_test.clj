@@ -187,7 +187,7 @@
         (is (some? pod-spec))
         (is (= expected-namespace pod-namespace))))))
 
-(deftest ^:parallel ^:integration-fast test-pod-namespace
+(deftest ^:parallel ^:integration-slow test-pod-namespace
   "Expected behavior for services with namespaces:
    Run-As-User    Namespace   Validation
    Missing        Missing     OK
