@@ -19,7 +19,6 @@
             [clojure.tools.logging :as log]
             [metrics.core]
             [metrics.histograms :as histograms]
-            [slingshot.slingshot :refer [throw+ try+]]
             [waiter.correlation-id :as cid])
   (:import clojure.core.async.impl.channels.ManyToManyChannel
            java.util.concurrent.ExecutorService))

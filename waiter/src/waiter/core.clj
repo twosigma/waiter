@@ -31,7 +31,6 @@
             [ring.middleware.basic-authentication :as basic-authentication]
             [ring.middleware.ssl :as ssl]
             [ring.util.response :as rr]
-            [slingshot.slingshot :refer [try+]]
             [waiter.async-request :as async-req]
             [waiter.auth.authentication :as auth]
             [waiter.authorization :as authz]
