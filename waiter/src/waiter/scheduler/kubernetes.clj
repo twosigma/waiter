@@ -534,13 +534,14 @@
          :message "Successfully killed instance"
          :service-id service-id
          :status 200})
-      (catch [:status 404] e
+      (catch [:status 404] _
         {:instance-id id
          :killed? false
          :message "Instance not found"
          :service-id service-id
          :status 404})
-      (catch Throwable e
+      (catch Object ex
+        (log/error ex "error while killing instance")
         {:instance-id id
          :killed? false
          :message "Error while killing instance"
@@ -560,8 +561,8 @@
         (catch [:status 409] _
           (log/error "conflict status when trying to start app. Is app starting up?"
                      descriptor))
-        (catch Throwable e
-          (log/error e "Error starting new app." descriptor)))))
+        (catch Object ex
+          (log/error ex "error starting new app." descriptor)))))
 
   (delete-service [this service-id]
     (ss/try+
@@ -573,9 +574,8 @@
         (log/warn "service does not exist:" service-id)
         {:result :no-such-service-exists
          :message "Kubernetes reports service does not exist"})
-      (catch Throwable e
-        (log/warn "internal error while deleting service"
-                  {:service-id service-id})
+      (catch Object ex
+        (log/warn ex "internal error while deleting service" {:service-id service-id})
         {:result :error
          :message "Internal error while deleting service"})))
 
@@ -604,8 +604,8 @@
          :status 409
          :result :conflict
          :message "Scaling failed due to repeated patch conflicts"})
-      (catch Throwable e
-        (log/error e "Error while scaling waiter service" service-id)
+      (catch Object ex
+        (log/error ex "error while scaling waiter service" service-id)
         {:success false
          :status 500
          :result :failed
@@ -667,8 +667,8 @@
                         {:name dirname :path (str "/" prefix dirname) :type "directory"}))))))))
         (catch [:client http-client] response
           (log/error "request to fileserver failed: " response))
-        (catch Throwable t
-          (log/error t "request to fileserver failed")))))
+        (catch Object ex
+          (log/error ex "request to fileserver failed")))))
 
   (service-id->state [_ service-id]
     {:failed-instances (vals (get @service-id->failed-instances-transient-store service-id))
