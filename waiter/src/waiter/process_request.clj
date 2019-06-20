@@ -428,6 +428,7 @@
                         (confirm-live-connection)
                         (let [buffer (timers/start-stop-time! stream-read-body (async/<! body))
                               bytes-read (if buffer (count buffer) -1)]
+                          (log/info bytes-read "bytes read this iteration")
                           (if-not (= -1 bytes-read)
                             (do
                               (meters/mark! throughput-meter bytes-read)
