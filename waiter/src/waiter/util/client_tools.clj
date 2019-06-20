@@ -1056,6 +1056,13 @@
     (log/debug service-id "has" instances "instances.")
     instances))
 
+(defmacro assert-service-not-on-any-routers
+  [waiter-url service-id cookies]
+  `(let [service-id# ~service-id
+         cookies# ~cookies]
+     (doseq [[_# router-url#] (routers ~waiter-url)]
+       (is (wait-for #(not (contains? (retrieve-services-on-router router-url# :cookies cookies#) service-id#)))))))
+
 (defmacro assert-service-on-all-routers
   [waiter-url service-id cookies]
   `(let [service-id# ~service-id
