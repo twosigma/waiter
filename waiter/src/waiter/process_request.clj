@@ -15,6 +15,7 @@
 ;;
 (ns waiter.process-request
   (:require [clojure.core.async :as async]
+            [clojure.core.async.impl.protocols :as async-protocols]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [full.async :as fa]
@@ -43,7 +44,7 @@
   (:import (java.io ByteArrayOutputStream InputStream IOException)
            (java.nio ByteBuffer)
            (java.util.concurrent LinkedBlockingQueue ThreadPoolExecutor TimeoutException TimeUnit)
-           (javax.servlet ReadListener ServletInputStream ServletOutputStream)
+           (javax.servlet ServletOutputStream)
            (org.eclipse.jetty.client HttpClient)
            (org.eclipse.jetty.io EofException)
            (org.eclipse.jetty.server HttpChannel HttpOutput Response)))
@@ -120,10 +121,10 @@
         (fn [old-value header-value display-name]
           (let [parsed-value (when header-value
                                (try
-                                 (log/info "Request wants to configure" display-name "to" header-value)
+                                 (log/info "request wants to configure" display-name "to" header-value)
                                  (Integer/parseInt (str header-value))
                                  (catch Exception _
-                                   (log/warn "Cannot convert header for" display-name "to an int:" header-value)
+                                   (log/warn "cannot convert header for" display-name "to an int:" header-value)
                                    nil)))]
             (if (and parsed-value (pos? parsed-value)) parsed-value old-value)))]
     (-> instance-request-properties
@@ -154,21 +155,26 @@
                             instance-rpc-chan service-id reason-map start-new-service-fn queue-timeout-ms metric-group))]
       (au/on-chan-close request-state-chan
                         (fn on-request-state-chan-close []
-                          (cid/cdebug correlation-id "request-state-chan closed")
-                          ; assume request did not process successfully if no value in promise
-                          (deliver reservation-status-promise :generic-error)
-                          (let [status @reservation-status-promise]
-                            (cid/cinfo correlation-id "done processing request" status)
-                            (when (= :success status)
-                              (counters/inc! (metrics/service-counter service-id "request-counts" "successful")))
-                            (when (= :generic-error status)
-                              (cid/cerror correlation-id "there was a generic error in processing the request;"
-                                          "if this is a client or server related issue, the code needs to be updated."))
-                            (when (not= :success-async status)
-                              (counters/dec! (metrics/service-counter service-id "request-counts" "outstanding"))
-                              (statsd/gauge-delta! metric-group "request_outstanding" -1))
-                            (service/release-instance-go instance-rpc-chan instance {:status status, :cid correlation-id, :request-id request-id})))
-                        (fn [e] (log/error e "error releasing instance!")))
+                          (cid/with-correlation-id
+                            correlation-id
+                            (log/debug "request-state-chan closed")
+                            ; assume request did not process successfully if no value in promise
+                            (deliver reservation-status-promise :generic-error)
+                            (let [status @reservation-status-promise]
+                              (log/info "done processing request" status)
+                              (when (= :success status)
+                                (counters/inc! (metrics/service-counter service-id "request-counts" "successful")))
+                              (when (= :generic-error status)
+                                (log/error "there was a generic error in processing the request;"
+                                            "if this is a client or server related issue, the code needs to be updated."))
+                              (when (not= :success-async status)
+                                (counters/dec! (metrics/service-counter service-id "request-counts" "outstanding"))
+                                (statsd/gauge-delta! metric-group "request_outstanding" -1))
+                              (service/release-instance-go instance-rpc-chan instance {:status status, :cid correlation-id, :request-id request-id}))))
+                        (fn [e]
+                          (cid/with-correlation-id
+                            correlation-id
+                            (log/error e "error releasing instance!"))))
       instance)))
 
 (defn- handle-response-error
@@ -399,6 +405,7 @@
            stream-request-rate stream-complete-rate
            stream-exception-meter stream-back-pressure stream-read-body
            stream-onto-resp-chan stream service-id]}]
+  (log/info "streaming-timeout-ms:" streaming-timeout-ms)
   (async/go
     (let [output-stream-atom (atom nil)]
       (try
@@ -414,7 +421,8 @@
             (timers/start-stop-time!
               stream
               (loop [bytes-streamed 0
-                     bytes-reported-to-statsd 0]
+                     bytes-reported-to-statsd 0
+                     num-chunks 0]
                 (let [[bytes-streamed' more-bytes-possibly-available?]
                       (try
                         (confirm-live-connection)
@@ -430,7 +438,10 @@
                                         (au/timed-offer! resp-chan buffer streaming-timeout-ms)))
                                 [(+ bytes-streamed bytes-read) true]
                                 (let [ex (ex-info "Unable to stream, back pressure in resp-chan. Is connection live?"
-                                                  {:cid (cid/get-correlation-id), :bytes-streamed bytes-streamed})]
+                                                  {:cid (cid/get-correlation-id)
+                                                   :bytes-streamed bytes-streamed
+                                                   :num-chunks num-chunks
+                                                   :response-chan-closed? (async-protocols/closed? resp-chan)})]
                                   (meters/mark! stream-back-pressure)
                                   (deliver reservation-status-promise :client-error)
                                   (request-abort-callback (IOException. ^Exception ex))
@@ -444,12 +455,12 @@
                                 (when error
                                   (throw error)))
                               (histograms/update! (metrics/service-histogram service-id "response-size") bytes-streamed)
-                              (log/info bytes-streamed "bytes streamed in response")
+                              (log/info bytes-streamed "bytes (" num-chunks "chunks) streamed in response")
                               (deliver reservation-status-promise :success)
                               [bytes-streamed false])))
                         (catch Exception e
                           (histograms/update! (metrics/service-histogram service-id "response-size") bytes-streamed)
-                          (log/error "Error occurred after streaming" bytes-streamed "bytes in response.")
+                          (log/error "error occurred after streaming" bytes-streamed "bytes (" num-chunks "chunks) in response.")
                           ; Handle lower down
                           (throw e)))]
                   (let [bytes-reported-to-statsd'
@@ -461,7 +472,7 @@
                               bytes-streamed')
                             bytes-reported-to-statsd))]
                     (when more-bytes-possibly-available?
-                      (recur bytes-streamed' bytes-reported-to-statsd'))))))))
+                      (recur bytes-streamed' bytes-reported-to-statsd' (inc num-chunks)))))))))
         (catch Exception e
           (meters/mark! stream-exception-meter)
           (deliver reservation-status-promise :instance-error)
@@ -472,8 +483,12 @@
               (when-let [output-stream @output-stream-atom]
                 (log/info "invoking poison pill directly on output stream")
                 (poison-pill-function output-stream))))
-          (log/error e "Exception occurred while streaming response for" service-id))
+          (log/error e "exception occurred while streaming response for" service-id))
         (finally
+          (log/info "closing channels"
+                    {:body (async-protocols/closed? body)
+                     :request-state-chan (async-protocols/closed? request-state-chan)
+                     :resp-chan (async-protocols/closed? resp-chan)})
           (async/close! resp-chan)
           (async/close! body)
           (async/close! request-state-chan))))))
