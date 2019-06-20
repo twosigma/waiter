@@ -522,6 +522,7 @@
   [post-process-async-request-response-fn _ instance-request-properties descriptor instance
    {:keys [uri] :as request} reason-map reservation-status-promise confirm-live-connection-with-abort
    request-state-chan {:keys [status] :as response}]
+  (log/info "response summary" (select-keys response [:headers :status]))
   (let [{:keys [service-description service-id]} descriptor
         {:strs [backend-proto blacklist-on-503 metric-group]} service-description
         waiter-debug-enabled? (utils/request->debug-enabled? request)
