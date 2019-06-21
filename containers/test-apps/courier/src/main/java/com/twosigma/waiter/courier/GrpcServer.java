@@ -22,9 +22,15 @@ import io.grpc.ServerBuilder;
 import io.grpc.ServerCall;
 import io.grpc.ServerCallHandler;
 import io.grpc.ServerInterceptor;
+import io.grpc.Status;
+import io.grpc.stub.ServerCallStreamObserver;
 import io.grpc.stub.StreamObserver;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.logging.Logger;
 
@@ -33,6 +39,58 @@ import static io.grpc.Metadata.ASCII_STRING_MARSHALLER;
 public class GrpcServer {
 
     private final static Logger LOGGER = Logger.getLogger(GrpcServer.class.getName());
+    private final static int MAX_STATES_TRACKED = 100;
+    private final static Map<String, List<List<String>>> requestCidToStateList;
+
+    static {
+        requestCidToStateList = new LinkedHashMap<String, List<List<String>>>(MAX_STATES_TRACKED + 1, .75F, true) {
+            // This method is called just after a new entry has been added
+            public boolean removeEldestEntry(Map.Entry eldest) {
+                return size() > MAX_STATES_TRACKED;
+            }
+        };
+    }
+
+    private static List<String> trackState(final String correlationId, final String state) {
+        if (correlationId != null) {
+            synchronized (requestCidToStateList) {
+                final List<List<String>> statesList = requestCidToStateList.get(correlationId);
+                if (statesList != null) {
+                    final List<String> stateList = statesList.get(statesList.size() - 1);
+                    stateList.add(state);
+                    return stateList;
+                } else {
+                    LOGGER.info("Ignoring state " + state + " for " + correlationId);
+                }
+            }
+        }
+        return new ArrayList<>();
+    }
+
+    private static void trackState(final String correlationId, final List<String> stateList) {
+        if (correlationId != null) {
+            synchronized (requestCidToStateList) {
+                if (!requestCidToStateList.containsKey(correlationId)) {
+                    final ArrayList<List<String>> statesList = new ArrayList<>();
+                    requestCidToStateList.put(correlationId, statesList);
+                }
+                final List<List<String>> statesList = requestCidToStateList.get(correlationId);
+                statesList.add(stateList);
+            }
+        }
+    }
+
+    private static List<String> trackState(final String correlationId) {
+        synchronized (requestCidToStateList) {
+            final List<List<String>> statesList = requestCidToStateList.get(correlationId);
+            if (statesList != null && !statesList.isEmpty()) {
+                return statesList.get(0);
+            } else {
+                return new ArrayList<>();
+            }
+        }
+    }
+
 
     private Server server;
 
@@ -76,6 +134,11 @@ public class GrpcServer {
                 "id=" + request.getId() + ", " +
                 "from=" + request.getFrom() + ", " +
                 "message.length=" + request.getMessage().length() + "}");
+            if (responseObserver instanceof ServerCallStreamObserver) {
+                ((ServerCallStreamObserver) responseObserver).setOnCancelHandler(() -> {
+                    LOGGER.info("CancelHandler:sendPackage CourierRequest{" + "id=" + request.getId() + "} was cancelled");
+                });
+            }
             final CourierReply reply = CourierReply
                 .newBuilder()
                 .setId(request.getId())
@@ -88,7 +151,39 @@ public class GrpcServer {
         }
 
         @Override
+        public void retrieveState(final StateRequest request, final StreamObserver<StateResponse> responseObserver) {
+            final String correlationId = request.getCid();
+            LOGGER.info("received StateRequest{" + "cid=" + correlationId + "}");
+
+            if (responseObserver instanceof ServerCallStreamObserver) {
+                ((ServerCallStreamObserver) responseObserver).setOnCancelHandler(() -> {
+                    LOGGER.info("CancelHandler:retrieveState StateRequest{" + "cid=" + correlationId + "} was cancelled");
+                });
+            }
+            final StateResponse.Builder builder = StateResponse
+                .newBuilder()
+                .setCid(correlationId);
+            final List<String> stateList = trackState(correlationId);
+            LOGGER.info("cid " + correlationId + " has states: " + stateList);
+            if (stateList != null) {
+                for (final String state : stateList) {
+                    builder.addState(state);
+                }
+            }
+            final StateResponse reply = builder.build();
+            LOGGER.info("Sending StateResponse for cid=" + reply.getCid());
+            responseObserver.onNext(reply);
+            responseObserver.onCompleted();
+        }
+
+        @Override
         public StreamObserver<CourierRequest> collectPackages(final StreamObserver<CourierSummary> responseObserver) {
+
+            if (responseObserver instanceof ServerCallStreamObserver) {
+                ((ServerCallStreamObserver) responseObserver).setOnCancelHandler(() -> {
+                    LOGGER.info("CancelHandler:collectPackages() was cancelled");
+                });
+            }
             return new StreamObserver<CourierRequest>() {
 
                 private long numMessages = 0;
@@ -100,6 +195,14 @@ public class GrpcServer {
 
                     numMessages += 1;
                     totalLength += courierRequest.getMessage().length();
+                    LOGGER.severe("Summary of collected packages: numMessages=" + numMessages +
+                        " with totalLength=" + totalLength);
+
+                    if (courierRequest.getId().contains("EXIT_PRE_RESPONSE")) {
+                        sleep(1000);
+                        LOGGER.info("Exiting server abruptly");
+                        System.exit(1);
+                    }
 
                     final CourierSummary courierSummary = CourierSummary
                         .newBuilder()
@@ -108,11 +211,25 @@ public class GrpcServer {
                         .build();
                     LOGGER.info("Sending CourierSummary for id=" + courierRequest.getId());
                     responseObserver.onNext(courierSummary);
+
+                    if (courierRequest.getId().contains("EXIT_POST_RESPONSE")) {
+                        sleep(1000);
+                        LOGGER.info("Exiting server abruptly");
+                        System.exit(1);
+                    }
+                }
+
+                private void sleep(final int durationMillis) {
+                    try {
+                        Thread.sleep(durationMillis);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
                 }
 
                 @Override
                 public void onError(final Throwable throwable) {
-                    LOGGER.severe("Error in collecting packages" + throwable.getMessage());
+                    LOGGER.severe("Error in collecting packages: " + throwable.getMessage());
                     responseObserver.onError(throwable);
                 }
 
@@ -138,6 +255,11 @@ public class GrpcServer {
             final Metadata.Key<String> xCidKey = Metadata.Key.of("x-cid", ASCII_STRING_MARSHALLER);
             final String correlationId = requestMetadata.get(xCidKey);
 
+            // handle duplicates with the same CID
+            final List<String> stateList = new ArrayList<>();
+            stateList.add("INIT");
+            trackState(correlationId, stateList);
+
             final ForwardingServerCall.SimpleForwardingServerCall<ReqT, RespT> wrapperCall =
                 new ForwardingServerCall.SimpleForwardingServerCall<ReqT, RespT>(serverCall) {
                     @Override
@@ -146,16 +268,63 @@ public class GrpcServer {
                         if (correlationId != null) {
                             LOGGER.info("response linked to cid: " + correlationId);
                             responseHeaders.put(xCidKey, correlationId);
+                            trackState(correlationId, "SEND_HEADERS");
                         }
                         super.sendHeaders(responseHeaders);
                     }
+
+                    @Override
+                    public void sendMessage(final RespT response) {
+                        trackState(correlationId, "SEND_MESSAGE");
+                        super.sendMessage(response);
+                    }
+
+                    @Override
+                    public void close(final Status status, final Metadata trailers) {
+                        LOGGER.info("GrpcServerInterceptor.close: " + status + ", " + trailers);
+                        trackState(correlationId, "CLOSE");
+                        super.close(status, trailers);
+                    }
                 };
-            return serverCallHandler.startCall(wrapperCall, requestMetadata);
+            final ServerCall.Listener<ReqT> listener = serverCallHandler.startCall(wrapperCall, requestMetadata);
+            return new ServerCall.Listener<ReqT>() {
+                public void onMessage(final ReqT message) {
+                    LOGGER.info("GrpcServerInterceptor.onMessage[cid=" + correlationId + "]");
+                    trackState(correlationId, "RECEIVE_MESSAGE");
+                    listener.onMessage(message);
+                }
+
+                public void onHalfClose() {
+                    LOGGER.info("GrpcServerInterceptor.onHalfClose[cid=" + correlationId + "]");
+                    trackState(correlationId, "HALF_CLOSE");
+                    listener.onHalfClose();
+                }
+
+                public void onCancel() {
+                    LOGGER.info("GrpcServerInterceptor.onCancel[cid=" + correlationId + "]");
+                    final List<String> stateList = trackState(correlationId, "CANCEL");
+                    listener.onCancel();
+                    LOGGER.info(correlationId + " states: " + stateList);
+                }
+
+                public void onComplete() {
+                    LOGGER.info("GrpcServerInterceptor.onComplete[cid=" + correlationId + "]");
+                    final List<String> stateList = trackState(correlationId, "COMPLETE");
+                    listener.onComplete();
+                    LOGGER.info(correlationId + " states: " + stateList);
+                }
+
+                public void onReady() {
+                    LOGGER.info("GrpcServerInterceptor.onReady[cid=" + correlationId + "]");
+                    trackState(correlationId, "READY");
+                    listener.onReady();
+                }
+            };
         }
 
         private void logMetadata(final Metadata metadata, final String label) {
             final Set<String> metadataKeys = metadata.keys();
-            LOGGER.info(label + " metadata keys = " + metadataKeys);
+            LOGGER.info(label + "@" + metadata.hashCode() + " metadata keys = " + metadataKeys);
             for (final String key : metadataKeys) {
                 final String value = metadata.get(Metadata.Key.of(key, ASCII_STRING_MARSHALLER));
                 LOGGER.info(label + " metadata " + key + " = " + value);
