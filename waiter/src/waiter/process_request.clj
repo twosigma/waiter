@@ -549,11 +549,14 @@
             location (post-process-async-request-response-fn
                        service-id metric-group backend-proto instance (handler/make-auth-user-map request)
                        reason-map instance-request-properties location query-string))
-          (assoc :body resp-chan)
-          (update-in [:headers] (fn update-response-headers [headers]
-                                  (utils/filterm #(not (contains? #{"connection" "keep-alive" "te" "transfer-encoding"}
-                                                                  (str/lower-case (str (key %)))))
-                                                 headers)))))))
+        (assoc :body resp-chan)
+        (update-in [:headers] (fn update-response-headers [headers]
+                                (let [new-headers (utils/filterm
+                                                    #(not (contains? #{"connection" "keep-alive" "te" "transfer-encoding"}
+                                                                     (str/lower-case (str (key %)))))
+                                                    headers)]
+                                  (log/info "processed response headers:" new-headers)
+                                  new-headers)))))))
 
 (defn track-process-error-metrics
   "Updates metrics for process errors."
