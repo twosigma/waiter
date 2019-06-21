@@ -551,7 +551,9 @@
                        reason-map instance-request-properties location query-string))
           (assoc :body resp-chan)
           (update-in [:headers] (fn update-response-headers [headers]
-                                  (utils/filterm #(not= "connection" (str/lower-case (str (key %)))) headers)))))))
+                                  (utils/filterm #(not (contains? #{"connection" "keep-alive" "te" "transfer-encoding"}
+                                                                  (str/lower-case (str (key %)))))
+                                                 headers)))))))
 
 (defn track-process-error-metrics
   "Updates metrics for process errors."
