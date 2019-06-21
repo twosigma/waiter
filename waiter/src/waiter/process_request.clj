@@ -715,7 +715,9 @@
                                    (-> request
                                      (assoc :body nil)
                                      (assoc :content-length 0)
-                                     (update :headers assoc "content-length" 0)))
+                                     (update :headers assoc
+                                             "accept" "*/*"
+                                             "content-length" 0)))
             output-stream (ByteArrayOutputStream.)
             servlet-output-stream (proxy [ServletOutputStream] []
                                     (close [] (.close output-stream))
