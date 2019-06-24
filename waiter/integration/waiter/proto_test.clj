@@ -16,7 +16,24 @@
 (ns waiter.proto-test
   (:require [clojure.data.json :as json]
             [clojure.test :refer :all]
-            [waiter.util.client-tools :refer :all]))
+            [waiter.util.client-tools :refer :all]
+            [waiter.util.http-utils :as hu]))
+
+(defmacro assert-streaming-response
+  [correlation-id protocol kitchen-response-size response]
+  `(let [correlation-id# ~correlation-id
+         protocol# ~protocol
+         http-version# (hu/backend-protocol->http-version protocol#)
+         kitchen-response-size# ~kitchen-response-size
+         response# ~response]
+     (assert-response-status response# 200)
+     (is (= {:client-protocol http-version#
+             :internal-protocol http-version#
+             :response-size kitchen-response-size#}
+            {:client-protocol (-> response# :headers (get "x-waiter-client-protocol"))
+             :internal-protocol (-> response# :headers (get "x-waiter-internal-protocol"))
+             :response-size (-> response# :body str .getBytes count)})
+         (str {:cid correlation-id# :protocol protocol#}))))
 
 (defn- run-backend-proto-service-test
   "Helper method to run tests with various backend protocols"
@@ -45,40 +62,79 @@
        (let [service-settings (service-settings waiter-url service-id)]
          (is (= backend-proto (get-in service-settings [:service-description :backend-proto])))
          (is (= nginx-command (get-in service-settings [:service-description :cmd]))))
-       (testing "streaming"
-         (let [kitchen-response-size 200000
-               request-headers (assoc request-headers
-                                 :x-kitchen-chunk-delay 10
-                                 :x-kitchen-chunk-size 2000
-                                 :x-kitchen-response-size kitchen-response-size)
-               response (make-shell-request waiter-url request-headers :path "/chunked")]
-           (assert-response-status response 200)
-           (is (= kitchen-response-size (-> response :body str .getBytes count)))))))))
 
-(deftest ^:parallel ^:integration-fast test-http-backend-proto-service
+       (doseq [protocol ["http" "https" "h2" "h2c"]]
+         (let [waiter-url (cond-> waiter-url
+                            (= "h2c" protocol) (retrieve-h2c-url)
+                            (or (= "h2" protocol) (= "https" protocol)) (retrieve-ssl-port))]
+
+           (testing (str "using protocol " protocol)
+             (testing "streaming single request"
+               (dotimes [iteration 20]
+                 (testing (str "iteration-" iteration)
+                   (let [kitchen-response-size (+ 200000 (* 10000 (rand-int 20)))
+                         correlation-id (rand-name)
+                         request-headers (-> request-headers
+                                           (dissoc "x-cid")
+                                           (assoc :x-cid correlation-id
+                                                  :x-kitchen-chunk-delay (rand-int 10)
+                                                  :x-kitchen-chunk-size 2000
+                                                  :x-kitchen-response-size kitchen-response-size
+                                                  :x-waiter-debug true))
+                         response (make-shell-request waiter-url request-headers :path "/chunked" :protocol protocol)]
+                     (assert-streaming-response correlation-id protocol kitchen-response-size response)))))
+
+             (testing "streaming multiple requests"
+               (doseq [{:keys [correlation-id expected-response-size response]}
+                       (parallelize-requests
+                         10 ;; num threads
+                         5 ;; num iterations
+                         (fn []
+                           (let [correlation-id (rand-name)
+                                 kitchen-response-size (+ 200000 (* 10000 (rand-int 20)))
+                                 request-headers (-> request-headers
+                                                   (dissoc "x-cid")
+                                                   (assoc :x-cid correlation-id
+                                                          :x-kitchen-chunk-delay (rand-int 10)
+                                                          :x-kitchen-chunk-size (+ 2000 (* 100 (rand-int 20)))
+                                                          :x-kitchen-response-size kitchen-response-size
+                                                          :x-waiter-debug true))]
+                             {:correlation-id correlation-id
+                              :expected-response-size kitchen-response-size
+                              :response (make-shell-request waiter-url request-headers :path "/chunked" :protocol protocol)}))
+                         :verbose true)]
+                 (assert-streaming-response correlation-id protocol expected-response-size response))))))))))
+
+(deftest ^:parallel ^:integration-slow test-http-backend-proto-service
   (testing-using-waiter-url
-    (run-backend-proto-service-test waiter-url "http" 1 "http" "HTTP/1.1")))
+    (run-backend-proto-service-test waiter-url "http" 1 "http" "HTTP/1.1")
+    (is "test completed marker")))
 
-(deftest ^:parallel ^:integration-fast test-https-backend-proto-service
+(deftest ^:parallel ^:integration-slow test-https-backend-proto-service
   (testing-using-waiter-url
-    (run-backend-proto-service-test waiter-url "https" 1 "https" "HTTP/1.1")))
+    (run-backend-proto-service-test waiter-url "https" 1 "https" "HTTP/1.1")
+    (is "test completed marker")))
 
-(deftest ^:parallel ^:integration-fast test-h2c-backend-proto-service
+(deftest ^:parallel ^:integration-slow test-h2c-backend-proto-service
   (testing-using-waiter-url
-    (run-backend-proto-service-test waiter-url "h2c" 1 "http" "HTTP/2.0")))
+    (run-backend-proto-service-test waiter-url "h2c" 1 "http" "HTTP/2.0")
+    (is "test completed marker")))
 
-(deftest ^:parallel ^:integration-fast test-h2-backend-proto-service
+(deftest ^:parallel ^:integration-slow test-h2-backend-proto-service
   (testing-using-waiter-url
-    (run-backend-proto-service-test waiter-url "h2" 1 "https" "HTTP/2.0")))
+    (run-backend-proto-service-test waiter-url "h2" 1 "https" "HTTP/2.0")
+    (is "test completed marker")))
 
-(deftest ^:parallel ^:integration-fast test-h2-backend-proto-service-health-check-on-port0
+(deftest ^:parallel ^:integration-slow test-h2-backend-proto-service-health-check-on-port0
   (testing-using-waiter-url
-    (run-backend-proto-service-test waiter-url "h2" 0 "https" "HTTP/2.0")))
+    (run-backend-proto-service-test waiter-url "h2" 0 "https" "HTTP/2.0")
+    (is "test completed marker")))
 
-(deftest ^:parallel ^:integration-fast test-health-check-proto
+(deftest ^:parallel ^:integration-slow test-health-check-proto
   (testing-using-waiter-url
     ;; PORT2 is running kitchen without SSL enabled
-    (run-backend-proto-service-test waiter-url "h2" "https" 1 "https" "HTTP/2.0")))
+    (run-backend-proto-service-test waiter-url "h2" "https" 1 "https" "HTTP/2.0")
+    (is "test completed marker")))
 
 (deftest ^:parallel ^:integration-fast test-internal-protocol
   (testing-using-waiter-url
