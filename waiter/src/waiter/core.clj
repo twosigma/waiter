@@ -222,7 +222,7 @@
   "Attaches debugging headers to requests when enabled."
   [handler generate-log-url-fn]
   (fn wrap-debug-fn
-    [{:keys [request-id request-time router-id] :as request}]
+    [{:keys [client-protocol internal-protocol request-id request-time router-id] :as request}]
     (if (utils/request->debug-enabled? request)
       (let [response (handler request)
             add-headers (fn [{:keys [descriptor instance] :as response}]
@@ -235,6 +235,8 @@
                             (update response :headers
                                     (fn [headers]
                                       (cond-> headers
+                                        client-protocol (assoc "x-waiter-client-protocol" (name client-protocol))
+                                        internal-protocol (assoc "x-waiter-internal-protocol" (name internal-protocol))
                                         request-time (assoc "x-waiter-request-date" request-date)
                                         request-id (assoc "x-waiter-request-id" request-id)
                                         router-id (assoc "x-waiter-router-id" router-id)
