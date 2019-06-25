@@ -43,7 +43,7 @@
   (:import (java.io ByteArrayOutputStream InputStream IOException)
            (java.nio ByteBuffer)
            (java.util.concurrent LinkedBlockingQueue ThreadPoolExecutor TimeoutException TimeUnit)
-           (javax.servlet ReadListener ServletInputStream ServletOutputStream)
+           (javax.servlet ServletOutputStream)
            (org.eclipse.jetty.client HttpClient)
            (org.eclipse.jetty.io EofException)
            (org.eclipse.jetty.server HttpChannel HttpOutput Response)))
@@ -120,10 +120,10 @@
         (fn [old-value header-value display-name]
           (let [parsed-value (when header-value
                                (try
-                                 (log/info "Request wants to configure" display-name "to" header-value)
+                                 (log/info "request wants to configure" display-name "to" header-value)
                                  (Integer/parseInt (str header-value))
                                  (catch Exception _
-                                   (log/warn "Cannot convert header for" display-name "to an int:" header-value)
+                                   (log/warn "cannot convert header for" display-name "to an int:" header-value)
                                    nil)))]
             (if (and parsed-value (pos? parsed-value)) parsed-value old-value)))]
     (-> instance-request-properties
@@ -154,21 +154,26 @@
                             instance-rpc-chan service-id reason-map start-new-service-fn queue-timeout-ms metric-group))]
       (au/on-chan-close request-state-chan
                         (fn on-request-state-chan-close []
-                          (cid/cdebug correlation-id "request-state-chan closed")
-                          ; assume request did not process successfully if no value in promise
-                          (deliver reservation-status-promise :generic-error)
-                          (let [status @reservation-status-promise]
-                            (cid/cinfo correlation-id "done processing request" status)
-                            (when (= :success status)
-                              (counters/inc! (metrics/service-counter service-id "request-counts" "successful")))
-                            (when (= :generic-error status)
-                              (cid/cerror correlation-id "there was a generic error in processing the request;"
-                                          "if this is a client or server related issue, the code needs to be updated."))
-                            (when (not= :success-async status)
-                              (counters/dec! (metrics/service-counter service-id "request-counts" "outstanding"))
-                              (statsd/gauge-delta! metric-group "request_outstanding" -1))
-                            (service/release-instance-go instance-rpc-chan instance {:status status, :cid correlation-id, :request-id request-id})))
-                        (fn [e] (log/error e "error releasing instance!")))
+                          (cid/with-correlation-id
+                            correlation-id
+                            (log/debug "request-state-chan closed")
+                            ; assume request did not process successfully if no value in promise
+                            (deliver reservation-status-promise :generic-error)
+                            (let [status @reservation-status-promise]
+                              (log/info "done processing request" status)
+                              (when (= :success status)
+                                (counters/inc! (metrics/service-counter service-id "request-counts" "successful")))
+                              (when (= :generic-error status)
+                                (log/error "there was a generic error in processing the request;"
+                                            "if this is a client or server related issue, the code needs to be updated."))
+                              (when (not= :success-async status)
+                                (counters/dec! (metrics/service-counter service-id "request-counts" "outstanding"))
+                                (statsd/gauge-delta! metric-group "request_outstanding" -1))
+                              (service/release-instance-go instance-rpc-chan instance {:status status, :cid correlation-id, :request-id request-id}))))
+                        (fn [e]
+                          (cid/with-correlation-id
+                            correlation-id
+                            (log/error e "error releasing instance!"))))
       instance)))
 
 (defn- handle-response-error
@@ -364,7 +369,7 @@
           (histograms/update! (metrics/service-histogram service-id "request-content-length") content-length)
           (statsd/inc! metric-group "request_content_length" content-length)))
       (catch Exception e
-        (log/error e "Unable to track content-length on request")))
+        (log/error e "unable to track content-length on request")))
     (when waiter-debug-enabled?
       (log/info "connecting to" instance-endpoint "using" proto-version))
     (let [auth-user-map (handler/make-auth-user-map request)
@@ -449,7 +454,7 @@
                               [bytes-streamed false])))
                         (catch Exception e
                           (histograms/update! (metrics/service-histogram service-id "response-size") bytes-streamed)
-                          (log/error "Error occurred after streaming" bytes-streamed "bytes in response.")
+                          (log/error "error occurred after streaming" bytes-streamed "bytes in response.")
                           ; Handle lower down
                           (throw e)))]
                   (let [bytes-reported-to-statsd'
@@ -472,7 +477,7 @@
               (when-let [output-stream @output-stream-atom]
                 (log/info "invoking poison pill directly on output stream")
                 (poison-pill-function output-stream))))
-          (log/error e "Exception occurred while streaming response for" service-id))
+          (log/error e "exception occurred while streaming response for" service-id))
         (finally
           (async/close! resp-chan)
           (async/close! body)
@@ -507,6 +512,8 @@
   [post-process-async-request-response-fn _ instance-request-properties descriptor instance
    {:keys [uri] :as request} reason-map reservation-status-promise confirm-live-connection-with-abort
    request-state-chan {:keys [status] :as response}]
+  (when (utils/request->debug-enabled? request)
+    (log/info "backend response status:" (:status response)"and headers:" (:headers response)))
   (let [{:keys [service-description service-id]} descriptor
         {:strs [backend-proto blacklist-on-503 metric-group]} service-description
         waiter-debug-enabled? (utils/request->debug-enabled? request)
@@ -666,7 +673,7 @@
             response-map (cond-> {:service-id service-id}
                            time (assoc :suspended-at (du/date-to-str time))
                            (not (str/blank? last-updated-by)) (assoc :last-updated-by last-updated-by))]
-        (log/info "Service has been suspended" response-map)
+        (log/info "service has been suspended" response-map)
         (meters/mark! (metrics/service-meter service-id "response-rate" "error" "suspended"))
         (-> {:details response-map, :message "Service has been suspended", :status 503}
             (utils/data->error-response request)))
@@ -684,7 +691,7 @@
                             :max-queue-length max-queue-length
                             :outstanding-requests outstanding-requests
                             :service-id service-id}]
-          (log/info "Max queue length exceeded" response-map)
+          (log/info "max queue length exceeded" response-map)
           (meters/mark! (metrics/service-meter service-id "response-rate" "error" "queue-length"))
           (-> {:details response-map, :message "Max queue length exceeded", :status 503}
               (utils/data->error-response request)))
