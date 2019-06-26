@@ -513,7 +513,7 @@
    {:keys [uri] :as request} reason-map reservation-status-promise confirm-live-connection-with-abort
    request-state-chan {:keys [status] :as response}]
   (when (utils/request->debug-enabled? request)
-    (log/info "backend response status:" (:status response)"and headers:" (:headers response)))
+    (log/info "backend response status:" (:status response) "and headers:" (:headers response)))
   (let [{:keys [service-description service-id]} descriptor
         {:strs [backend-proto blacklist-on-503 metric-group]} service-description
         waiter-debug-enabled? (utils/request->debug-enabled? request)
