@@ -60,6 +60,7 @@
   "Default implementation of performing authentication with an identity provider service.
    Return map of waiter acs endpoint, saml-response and relay-state"
   [saml-redirect-location]
+  (println saml-redirect-location)
   (let [{:keys [headers cookies]} (make-request saml-redirect-location "")
         saml-redirect-location-2 (get headers "location")
         login-form-location (first (string/split saml-redirect-location-2 #"\?"))
@@ -115,6 +116,7 @@
             saml-redirect-location (get headers "location")
             saml-authentication-fn (if use-spnego perform-saml-authentication-kerberos perform-saml-authentication)
             {:keys [relay-state saml-response waiter-saml-acs-endpoint]} (saml-authentication-fn saml-redirect-location)
+            _ (println relay-state)
             {:keys [body]} (make-request waiter-saml-acs-endpoint ""
                                          :body (str "SAMLResponse=" (URLEncoder/encode saml-response) "&RelayState=" (URLEncoder/encode relay-state))
                                          :headers {"content-type" "application/x-www-form-urlencoded"}
@@ -132,7 +134,7 @@
             cookie-fn (fn [cookies name] (some #(when (= name (:name %)) %) cookies))
             auth-cookie (cookie-fn cookies "x-waiter-auth")
             _ (is (not (nil? auth-cookie)))
-            _ (is (> (:max-age auth-cookie) (-> 1 t/hour t/in-seconds)))
+            _ (is (> (:max-age auth-cookie) (-> 1 t/hours t/in-seconds)))
             _ (is (= (str "http://" waiter-url "/request-info") (get headers "location")))
             {:keys [body service-id] :as response} (make-request-with-debug-info
                                                      {:x-waiter-token token}

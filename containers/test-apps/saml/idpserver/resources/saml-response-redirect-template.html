@@ -1,0 +1,17 @@
+<!doctype html>
+<html>
+<head>
+    <title>Redirecting to application...</title>
+</head>
+<body>
+<form action="form-action-field" method="post">
+    <input type="hidden" name="SAMLResponse" value="saml-response-field"/>
+    <input type="hidden" name="RelayState" value="relay-state-field"/>
+    <noscript>
+        <p>JavaScript is disabled. Click "Continue" to continue to your application.</p>
+        <input type="submit" value="Continue"/>
+    </noscript>
+</form>
+<script language="JavaScript">window.setTimeout('document.forms[0].submit()', 0);</script>
+</body>
+</html>
