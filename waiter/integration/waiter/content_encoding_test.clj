@@ -166,18 +166,19 @@
     (let [service-headers (assoc (kitchen-request-headers) :x-waiter-name (rand-name))
           {:keys [service-id]} (make-request-with-debug-info service-headers #(make-kitchen-request waiter-url %))]
       (try
-        (let [req-headers (assoc service-headers
-                            :x-kitchen-fail-after 200000
-                            :x-kitchen-response-size 100000
-                            :x-waiter-debug true)
-              {:keys [body headers] :as response} (make-request waiter-url "/unchunked" :headers req-headers :verbose true)
-              body-length (count (bytes (byte-array (map (comp byte int) (str body)))))]
-          (assert-response-status response 200)
-          (is (== 100000 body-length))
-          (is (= (get headers "content-type") "text/plain") (str headers))
-          (is (nil? (get headers "content-encoding")) (str headers))
-          (is (not (nil? (get headers "content-length"))) (str headers))
-          (is (not (nil? (get headers "x-cid"))) (str headers)))
+        (dotimes [_ 100]
+          (let [req-headers (assoc service-headers
+                              :x-kitchen-fail-after 200000
+                              :x-kitchen-response-size 100000
+                              :x-waiter-debug true)
+                {:keys [body headers] :as response} (make-request waiter-url "/unchunked" :headers req-headers :verbose true)
+                body-length (count (bytes (byte-array (map (comp byte int) (str body)))))]
+            (assert-response-status response 200)
+            (is (== 100000 body-length))
+            (is (= (get headers "content-type") "text/plain") (str headers))
+            (is (nil? (get headers "content-encoding")) (str headers))
+            (is (not (nil? (get headers "content-length"))) (str headers))
+            (is (not (nil? (get headers "x-cid"))) (str headers))))
         (finally
           (delete-service waiter-url service-id))))))
 
