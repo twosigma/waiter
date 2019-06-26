@@ -20,8 +20,9 @@
             [waiter.util.http-utils :as hu]))
 
 (defmacro assert-streaming-response
-  [correlation-id protocol kitchen-response-size response]
-  `(let [correlation-id# ~correlation-id
+  [waiter-url correlation-id protocol kitchen-response-size response]
+  `(let [waiter-url# ~waiter-url
+         correlation-id# ~correlation-id
          protocol# ~protocol
          http-version# (hu/backend-protocol->http-version protocol#)
          kitchen-response-size# ~kitchen-response-size
@@ -33,7 +34,9 @@
             {:client-protocol (-> response# :headers (get "x-waiter-client-protocol"))
              :internal-protocol (-> response# :headers (get "x-waiter-internal-protocol"))
              :response-size (-> response# :body str .getBytes count)})
-         (str {:cid correlation-id# :protocol protocol#}))))
+         (str {:cid correlation-id# 
+               :protocol protocol#
+               :waiter-url waiter-url#}))))
 
 (defn- run-backend-proto-service-test
   "Helper method to run tests with various backend protocols"
@@ -66,7 +69,7 @@
        (doseq [protocol ["http" "https" "h2" "h2c"]]
          (let [waiter-url (cond-> waiter-url
                             (= "h2c" protocol) (retrieve-h2c-url)
-                            (or (= "h2" protocol) (= "https" protocol)) (retrieve-ssl-port))]
+                            (or (= "h2" protocol) (= "https" protocol)) (retrieve-ssl-url (retrieve-ssl-port nil)))]
 
            (testing (str "using protocol " protocol)
              (testing "streaming single request"
@@ -82,7 +85,7 @@
                                                   :x-kitchen-response-size kitchen-response-size
                                                   :x-waiter-debug true))
                          response (make-shell-request waiter-url request-headers :path "/chunked" :protocol protocol)]
-                     (assert-streaming-response correlation-id protocol kitchen-response-size response)))))
+                     (assert-streaming-response waiter-url correlation-id protocol kitchen-response-size response)))))
 
              (testing "streaming multiple requests"
                (doseq [{:keys [correlation-id expected-response-size response]}
@@ -103,7 +106,7 @@
                               :expected-response-size kitchen-response-size
                               :response (make-shell-request waiter-url request-headers :path "/chunked" :protocol protocol)}))
                          :verbose true)]
-                 (assert-streaming-response correlation-id protocol expected-response-size response))))))))))
+                 (assert-streaming-response waiter-url correlation-id protocol expected-response-size response))))))))))
 
 (deftest ^:parallel ^:integration-slow test-http-backend-proto-service
   (testing-using-waiter-url
