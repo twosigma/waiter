@@ -66,47 +66,52 @@
          (is (= backend-proto (get-in service-settings [:service-description :backend-proto])))
          (is (= nginx-command (get-in service-settings [:service-description :cmd]))))
 
-       (doseq [protocol ["http" "https" "h2" "h2c"]]
-         (let [waiter-url (cond-> waiter-url
-                            (= "h2c" protocol) (retrieve-h2c-url)
-                            (or (= "h2" protocol) (= "https" protocol)) (retrieve-ssl-url (retrieve-ssl-port nil)))]
+       (let [{:keys [http2c? http2? ssl-port]} (:server-options (waiter-settings waiter-url))
+             test-protocols (cond-> ["http"]
+                              http2c? (conj "h2c")
+                              ssl-port (conj "https")
+                              (and http2? ssl-port) (conj "h2"))]
+         (doseq [protocol test-protocols]
+           (let [waiter-url (cond-> waiter-url
+                              (= "h2c" protocol) (retrieve-h2c-url)
+                              (or (= "h2" protocol) (= "https" protocol)) (retrieve-ssl-url (retrieve-ssl-port ssl-port)))]
 
-           (testing (str "using protocol " protocol)
-             (testing "streaming single request"
-               (dotimes [iteration 20]
-                 (testing (str "iteration-" iteration)
-                   (let [kitchen-response-size (+ 200000 (* 10000 (rand-int 20)))
-                         correlation-id (rand-name)
-                         request-headers (-> request-headers
-                                           (dissoc "x-cid")
-                                           (assoc :x-cid correlation-id
-                                                  :x-kitchen-chunk-delay (rand-int 10)
-                                                  :x-kitchen-chunk-size 2000
-                                                  :x-kitchen-response-size kitchen-response-size
-                                                  :x-waiter-debug true))
-                         response (make-shell-request waiter-url request-headers :path "/chunked" :protocol protocol)]
-                     (assert-streaming-response waiter-url correlation-id protocol kitchen-response-size response)))))
+             (testing (str "using protocol " protocol)
+               (testing "streaming single request"
+                 (dotimes [iteration 20]
+                   (testing (str "iteration-" iteration)
+                     (let [kitchen-response-size (+ 200000 (* 10000 (rand-int 20)))
+                           correlation-id (rand-name)
+                           request-headers (-> request-headers
+                                             (dissoc "x-cid")
+                                             (assoc :x-cid correlation-id
+                                                    :x-kitchen-chunk-delay (rand-int 10)
+                                                    :x-kitchen-chunk-size 2000
+                                                    :x-kitchen-response-size kitchen-response-size
+                                                    :x-waiter-debug true))
+                           response (make-shell-request waiter-url request-headers :path "/chunked" :protocol protocol)]
+                       (assert-streaming-response waiter-url correlation-id protocol kitchen-response-size response)))))
 
-             (testing "streaming multiple requests"
-               (doseq [{:keys [correlation-id expected-response-size response]}
-                       (parallelize-requests
-                         10 ;; num threads
-                         5 ;; num iterations
-                         (fn []
-                           (let [correlation-id (rand-name)
-                                 kitchen-response-size (+ 200000 (* 10000 (rand-int 20)))
-                                 request-headers (-> request-headers
-                                                   (dissoc "x-cid")
-                                                   (assoc :x-cid correlation-id
-                                                          :x-kitchen-chunk-delay (rand-int 10)
-                                                          :x-kitchen-chunk-size (+ 2000 (* 100 (rand-int 20)))
-                                                          :x-kitchen-response-size kitchen-response-size
-                                                          :x-waiter-debug true))]
-                             {:correlation-id correlation-id
-                              :expected-response-size kitchen-response-size
-                              :response (make-shell-request waiter-url request-headers :path "/chunked" :protocol protocol)}))
-                         :verbose true)]
-                 (assert-streaming-response waiter-url correlation-id protocol expected-response-size response))))))))))
+               (testing "streaming multiple requests"
+                 (doseq [{:keys [correlation-id expected-response-size response]}
+                         (parallelize-requests
+                           10 ;; num threads
+                           5 ;; num iterations
+                           (fn []
+                             (let [correlation-id (rand-name)
+                                   kitchen-response-size (+ 200000 (* 10000 (rand-int 20)))
+                                   request-headers (-> request-headers
+                                                     (dissoc "x-cid")
+                                                     (assoc :x-cid correlation-id
+                                                            :x-kitchen-chunk-delay (rand-int 10)
+                                                            :x-kitchen-chunk-size (+ 2000 (* 100 (rand-int 20)))
+                                                            :x-kitchen-response-size kitchen-response-size
+                                                            :x-waiter-debug true))]
+                               {:correlation-id correlation-id
+                                :expected-response-size kitchen-response-size
+                                :response (make-shell-request waiter-url request-headers :path "/chunked" :protocol protocol)}))
+                           :verbose true)]
+                   (assert-streaming-response waiter-url correlation-id protocol expected-response-size response)))))))))))
 
 (deftest ^:parallel ^:integration-slow test-http-backend-proto-service
   (testing-using-waiter-url
