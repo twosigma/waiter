@@ -526,38 +526,18 @@
       (with-service-cleanup
         service-id
         (testing "service-known-on-all-routers"
-          (let [router-id->service-id
-                (pc/map-from-keys
-                  (fn [router-id]
-                    (wait-for
-                      (fn []
-                        (let [router-url (router-id->router-url router-id)
-                              {:keys [body]} (make-request router-url "/apps" :cookies cookies)]
-                          (->> (json/read-str (str body))
-                               (filter #(= service-id (get % "service-id")))
-                               first
-                               walk/keywordize-keys
-                               :service-id)))
-                      :interval 2 :timeout 30))
-                  (keys router-id->router-url))]
-            (is (every? #(= service-id (val %)) router-id->service-id)
-                (str "Cannot find service: " service-id " in at least one router: " router-id->service-id))))
+          (assert-service-on-all-routers waiter-url service-id cookies))
 
-        (testing "delete service"
-          (is (wait-for
-                (fn []
-                  (-> (make-request waiter-url (str "/apps/" service-id) :method :delete)
-                      :status
-                      (= 200)))
-                :interval 5 :timeout 60)))
+        (testing "delete service successfully"
+          (let [response (make-request waiter-url (str "/apps/" service-id) :method :delete)]
+            (assert-response-status response 200)))
 
         (testing "deleted service is removed from all routers"
           (assert-service-not-on-any-routers waiter-url service-id cookies))
 
         (testing "delete service again (should get 404)"
-          (is (-> (make-request waiter-url (str "/apps/" service-id) :method :delete)
-                  :status
-                  (= 404))))
+          (let [response (make-request waiter-url (str "/apps/" service-id) :method :delete)]
+            (assert-response-status response 404)))
 
         (testing "service-deleted-from-all-routers"
           (let [router-id->service-id-deleted
