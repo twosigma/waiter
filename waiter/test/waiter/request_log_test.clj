@@ -20,7 +20,9 @@
 
 (deftest test-request->context
   (let [request {:client-protocol "HTTP/2.0"
-                 :headers {"host" "host"
+                 :headers {"content-length" "20"
+                           "content-type" "application/json"
+                           "host" "host"
                            "origin" "www.origin.org"
                            "user-agent" "test-user-agent"
                            "x-cid" "123"}
@@ -41,6 +43,8 @@
             :path "/"
             :query-string "a=1"
             :remote-addr "127.0.0.1"
+            :request-content-length "20"
+            :request-content-type "application/json"
             :request-id "abc"
             :request-time "2018-04-11T00:00:00.000Z"
             :scheme "http"
@@ -56,7 +60,8 @@
                                                      "version" "service-version"}}
                   :get-instance-latency-ns 500
                   :handle-request-latency-ns 2000
-                  :headers {"content-type" "application/xml"
+                  :headers {"content-length" "40"
+                            "content-type" "application/xml"
                             "grpc-status" "13"
                             "server" "foo-bar"}
                   :instance {:host "instance-host"
@@ -76,6 +81,7 @@
             :latest-service-id "latest-service-id"
             :metric-group "service-metric-group"
             :principal "principal@DOMAIN.COM"
+            :response-content-length "40"
             :response-content-type "application/xml"
             :server "foo-bar"
             :service-id "service-id"
