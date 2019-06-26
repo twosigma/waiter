@@ -119,24 +119,25 @@
                 saml-redirect-location (get headers "location")
                 saml-authentication-fn (if use-spnego perform-saml-authentication-kerberos perform-saml-authentication)
                 {:keys [relay-state saml-response waiter-saml-acs-endpoint]} (saml-authentication-fn saml-redirect-location)
-                {:keys [body]} (make-request waiter-saml-acs-endpoint ""
-                                             :body (str "SAMLResponse=" (URLEncoder/encode saml-response) "&RelayState=" (URLEncoder/encode relay-state))
-                                             :headers {"content-type" "application/x-www-form-urlencoded"}
-                                             :method :post)
-                {:keys [waiter-saml-auth-redirect-endpoint saml-auth-data]}
-                (reaver/extract (reaver/parse body) [:waiter-saml-auth-redirect-endpoint :saml-auth-data]
-                                "form" (reaver/attr :action)
-                                "form input[name=saml-auth-data]" (reaver/attr :value))
-                _ (is (= (str "http://" waiter-url "/waiter-auth/saml/auth-redirect") waiter-saml-auth-redirect-endpoint))
-                {:keys [cookies headers] :as response} (make-request waiter-url "/waiter-auth/saml/auth-redirect"
-                                                                     :body (str "saml-auth-data=" (URLEncoder/encode saml-auth-data))
-                                                                     :headers {"content-type" "application/x-www-form-urlencoded"}
-                                                                     :method :post)
-                _ (assert-response-status response 303)
-                cookie-fn (fn [cookies name] (some #(when (= name (:name %)) %) cookies))
-                auth-cookie (cookie-fn cookies "x-waiter-auth")
-                _ (is (not (nil? auth-cookie)))
-                _ (is (> (:max-age auth-cookie) (-> 1 t/hours t/in-seconds)))
+                _ (println relay-state)
+            {:keys [body]} (make-request waiter-saml-acs-endpoint ""
+                                         :body (str "SAMLResponse=" (URLEncoder/encode saml-response) "&RelayState=" (URLEncoder/encode relay-state))
+                                         :headers {"content-type" "application/x-www-form-urlencoded"}
+                                         :method :post)
+            {:keys [waiter-saml-auth-redirect-endpoint saml-auth-data]}
+            (reaver/extract (reaver/parse body) [:waiter-saml-auth-redirect-endpoint :saml-auth-data]
+                            "form" (reaver/attr :action)
+                            "form input[name=saml-auth-data]" (reaver/attr :value))
+            _ (is (= (str "http://" waiter-url "/waiter-auth/saml/auth-redirect") waiter-saml-auth-redirect-endpoint))
+            {:keys [cookies headers] :as response} (make-request waiter-url "/waiter-auth/saml/auth-redirect"
+                                                                 :body (str "saml-auth-data=" (URLEncoder/encode saml-auth-data))
+                                                                 :headers {"content-type" "application/x-www-form-urlencoded"}
+                                                                 :method :post)
+            _ (assert-response-status response 303)
+            cookie-fn (fn [cookies name] (some #(when (= name (:name %)) %) cookies))
+            auth-cookie (cookie-fn cookies "x-waiter-auth")
+            _ (is (not (nil? auth-cookie)))
+            _ (is (> (:max-age auth-cookie) (-> 1 t/hours t/in-seconds)))
                 _ (is (= (str "http://" waiter-url "/request-info") (get headers "location")))
                 {:keys [body service-id] :as response} (make-request-with-debug-info
                                                          {:x-waiter-token token}
