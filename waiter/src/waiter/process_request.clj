@@ -425,6 +425,7 @@
                         (confirm-live-connection)
                         (let [buffer (timers/start-stop-time! stream-read-body (async/<! body))
                               bytes-read (if buffer (count buffer) -1)]
+                          (log/info "read" bytes-read "bytes from backend response body")
                           (if-not (= -1 bytes-read)
                             (do
                               (meters/mark! throughput-meter bytes-read)
@@ -433,7 +434,9 @@
                                         stream-onto-resp-chan
                                         ;; don't wait forever to write to server
                                         (au/timed-offer! resp-chan buffer streaming-timeout-ms)))
-                                [(+ bytes-streamed bytes-read) true]
+                                (do
+                                  (log/info "delivered" bytes-read "bytes to client response body")
+                                  [(+ bytes-streamed bytes-read) true])
                                 (let [ex (ex-info "Unable to stream, back pressure in resp-chan. Is connection live?"
                                                   {:cid (cid/get-correlation-id), :bytes-streamed bytes-streamed})]
                                   (meters/mark! stream-back-pressure)
