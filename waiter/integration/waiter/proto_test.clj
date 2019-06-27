@@ -80,7 +80,7 @@
                (testing "streaming single request"
                  (dotimes [iteration 20]
                    (testing (str "iteration-" iteration)
-                     (let [kitchen-response-size (+ 200000 (* 10000 (rand-int 20)))
+                     (let [kitchen-response-size (+ 2000000 (* 10000 (rand-int 20)))
                            correlation-id (rand-name)
                            request-headers (-> request-headers
                                              (dissoc "x-cid")
