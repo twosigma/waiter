@@ -18,7 +18,9 @@
                                                       :token token)
                                                     :authentication))]
         (assert-response-status response 200)
-        (let [{:keys [service-id body]} (make-request-with-debug-info {:x-waiter-token token} #(make-kitchen-request waiter-url % :path "/request-info"))
+        (let [{:keys [service-id body]} (make-request-with-debug-info
+                                          {:x-waiter-token token}
+                                          #(make-kitchen-request waiter-url % :path "/request-info"))
               body-json (json/read-str (str body))]
           (with-service-cleanup
             service-id
@@ -27,8 +29,9 @@
 (deftest ^:parallel ^:integration-fast test-token-authentication-parameter-error
   (testing-using-waiter-url
     (when (using-composite-authenticator? waiter-url)
-      (let [authentication-providers (map name (keys (get-in (waiter-settings waiter-url)
-                                                             [:authenticator-config :composite :authentication-providers])))
+      (let [authentication-providers (map name (keys (get-in
+                                                       (waiter-settings waiter-url)
+                                                       [:authenticator-config :composite :authentication-providers])))
             error-message (str "authentication must be one of: '"
                                (string/join "', '" (sort (into #{"disabled" "standard"} authentication-providers)))
                                "'")]
@@ -52,7 +55,8 @@
           (is (string/includes? body error-message)))))))
 
 (defn- perform-saml-authentication
-  "Default implementation of performing authentication wtih an identity provider service. Return map of waiter acs endpoint, saml-response and relay-state"
+  "Default implementation of performing authentication with an identity provider service.
+   Return map of waiter acs endpoint, saml-response and relay-state"
   [saml-redirect-location]
   (let [{:keys [headers cookies]} (make-request saml-redirect-location "")
         saml-redirect-location-2 (get headers "location")
@@ -73,7 +77,8 @@
                     "form input[name=RelayState]" (reaver/attr :value))))
 
 (defn- perform-saml-authentication-kerberos
-  "Implementation of performing authentication wtih an identity provider service using kerberos. Return map of waiter acs endpoint, saml-response and relay-state"
+  "Implementation of performing authentication with an identity provider service using kerberos.
+   Return map of waiter acs endpoint, saml-response and relay-state"
   [saml-redirect-location]
   (let [make-connection (fn [request-url]
                           (let [http-connection (.openConnection (URL. request-url))]
@@ -92,7 +97,7 @@
 ;; need to temporarily turn off this test until ADFS setting is updated
 (deftest ^:parallel ^:integration-fast ^:explicit test-saml-authentication
   (testing-using-waiter-url
-    (when (using-composite-authenticator? waiter-url)
+    (when (supports-saml-authentication? waiter-url)
       (let [auth-principal (or (System/getenv "SAML_AUTH_USER") (retrieve-username))
             token (rand-name)
             response (post-token waiter-url (-> (kitchen-params)
