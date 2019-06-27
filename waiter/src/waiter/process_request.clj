@@ -15,6 +15,7 @@
 ;;
 (ns waiter.process-request
   (:require [clojure.core.async :as async]
+            [clojure.core.async.impl.protocols :as async-proto]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [full.async :as fa]
@@ -439,6 +440,7 @@
                                   [(+ bytes-streamed bytes-read) true])
                                 (let [ex (ex-info "Unable to stream, back pressure in resp-chan. Is connection live?"
                                                   {:cid (cid/get-correlation-id), :bytes-streamed bytes-streamed})]
+                                  (log/info "client response body closed:" (async-proto/closed? resp-chan))
                                   (meters/mark! stream-back-pressure)
                                   (deliver reservation-status-promise :client-error)
                                   (request-abort-callback (IOException. ^Exception ex))
