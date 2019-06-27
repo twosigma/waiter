@@ -29,9 +29,11 @@
 (deftest ^:parallel ^:integration-fast test-token-authentication-parameter-error
   (testing-using-waiter-url
     (when (using-composite-authenticator? waiter-url)
-      (let [authentication-providers (map name (keys (get-in
-                                                       (waiter-settings waiter-url)
-                                                       [:authenticator-config :composite :authentication-providers])))
+      (let [authentication-providers (-> waiter-url
+                                       waiter-settings
+                                       (get-in [:authenticator-config :composite :authentication-providers])
+                                       keys
+                                       (->> (map name)))
             error-message (str "authentication must be one of: '"
                                (string/join "', '" (sort (into #{"disabled" "standard"} authentication-providers)))
                                "'")]
