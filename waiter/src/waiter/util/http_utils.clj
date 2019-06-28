@@ -81,17 +81,20 @@
 
 (defn- prepare-http2-transport
   "Returns the HTTP/2 client transport."
-  [connection-timeout-ms]
+  [connection-timeout-ms socket-timeout-ms]
   (let [http2-client (HTTP2Client.)
         http2-protocols (ArrayList. ["h2" "h2c"])]
-    (.setConnectTimeout http2-client connection-timeout-ms)
+    (when connection-timeout-ms
+      (.setConnectTimeout http2-client connection-timeout-ms))
+    (when socket-timeout-ms
+      (.setIdleTimeout http2-client socket-timeout-ms))
     (.setProtocols http2-client http2-protocols)
     (HttpClientTransportOverHTTP2. http2-client)))
 
 (defn prepare-http-clients
   "Prepares and returns a map of HTTP clients for http/1 and http/2 requests."
-  [{:keys [client-name conn-timeout user-agent] :as config}]
-  (let [http2-transport (prepare-http2-transport conn-timeout)]
+  [{:keys [client-name conn-timeout socket-timeout user-agent] :as config}]
+  (let [http2-transport (prepare-http2-transport conn-timeout socket-timeout)]
     {:http1-client (http-client-factory (cond-> config
                                           client-name (update :client-name str "-http1")
                                           user-agent (update :user-agent str ".http1")))
