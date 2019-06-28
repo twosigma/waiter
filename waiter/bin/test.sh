@@ -26,14 +26,14 @@ export -f wait_for_waiter
 TEST_COMMAND=${1:-parallel-test}
 TEST_SELECTOR=${2:-integration}
 
-if [ -z ${WAITER_URI+x} ]; then
+if [[ -z ${WAITER_URI+x} ]]; then
     export WAITER_URI=127.0.0.1:9091
     echo "WAITER_URI is unset, defaulting to ${WAITER_URI}"
 else
     echo "WAITER_URI is set to ${WAITER_URI}"
 fi
 
-if [ -z ${WAITER_TEST_KITCHEN_CMD+x} ]; then
+if [[ -z ${WAITER_TEST_KITCHEN_CMD+x} ]]; then
     export WAITER_TEST_KITCHEN_CMD=/opt/kitchen/kitchen
     echo "WAITER_TEST_KITCHEN_CMD is unset, defaulting to ${WAITER_TEST_KITCHEN_CMD}"
 else
@@ -52,6 +52,17 @@ if [ $? -ne 0 ]; then
 fi
 curl -s ${WAITER_URI}/state | jq .routers
 curl -s ${WAITER_URI}/settings | jq .port
+
+# TODO shams remove this thread-dump snippet
+mkdir -p ${WAITER_DIR}/log
+WAITER_PID=$(lsof -Pi :9091 -sTCP:LISTEN -t)
+echo "$(date +%H:%M:%S) waiter pid is ${WAITER_PID}"
+while true; do
+  sleep 15
+  file_name="thread-dump-$(date +%Y%m%d-%H%M%S).log"
+  echo "$(date +%H:%M:%S) writing thread dump to ${WAITER_DIR}/log/${file_name}"
+  jstack ${WAITER_PID} > "${WAITER_DIR}/log/${file_name}"
+done &
 
 # Run the integration tests
 cd ${WAITER_DIR}
