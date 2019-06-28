@@ -40,7 +40,8 @@
             [waiter.util.http-utils :as hu]
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils])
-  (:import (java.io ByteArrayOutputStream InputStream IOException)
+  (:import (clojure.lang ExceptionInfo)
+           (java.io ByteArrayOutputStream InputStream IOException)
            (java.nio ByteBuffer)
            (java.util.concurrent LinkedBlockingQueue ThreadPoolExecutor TimeoutException TimeUnit)
            (javax.servlet ServletOutputStream)
@@ -176,18 +177,29 @@
                             (log/error e "error releasing instance!"))))
       instance)))
 
+(defn- classify-error
+  "Classifies the error responses from the backend into the following vector:
+   - error cause (:client-error, :instance-error or :generic-error),
+   - associated error message, and
+   - the http status code."
+  [error]
+  (cond (instance? ExceptionInfo error)
+        (let [[error-cause message status] (classify-error (ex-cause error))
+              error-cause (or (-> error ex-data :error-cause) error-cause)]
+          [error-cause message status])
+        (instance? EofException error)
+        [:client-error "Connection unexpectedly closed while streaming request" 400]
+        (instance? TimeoutException error)
+        [:instance-error (utils/message :backend-request-timed-out) 504]
+        :else
+        [:instance-error (utils/message :backend-request-failed) 502]))
+
 (defn- handle-response-error
   "Handles error responses from the backend."
   [error reservation-status-promise service-id request]
-  (let [metrics-map (metrics/retrieve-local-stats-for-service service-id)
-        [promise-value message status]
-        (cond (instance? EofException error)
-              [:client-error "Connection unexpectedly closed while sending request" 400]
-              (instance? TimeoutException error)
-              [:instance-error (utils/message :backend-request-timed-out) 504]
-              :else
-              [:instance-error (utils/message :backend-request-failed) 502])]
-    (deliver reservation-status-promise promise-value)
+  (let [[error-cause message status] (classify-error error)
+        metrics-map (metrics/retrieve-local-stats-for-service service-id)]
+    (deliver reservation-status-promise error-cause)
     (utils/exception->response (ex-info message (assoc metrics-map :status status) error) request)))
 
 (defn make-stream-reader-executor
@@ -217,6 +229,7 @@
       (throw (ex-info "Too many concurrent requests on router"
                       {:details {:executor-max-parallelism (.getMaximumPoolSize executor)
                                  :queue-size (.size (.getQueue executor))}
+                       :error-cause :generic-error
                        :status 503}
                       throwable)))))
 
@@ -288,8 +301,35 @@
 
               :else
               (submit-request-streaming-task executor stream-http-request-task))))
+        (catch ExceptionInfo ex
+          (stream-error-handler ex))
         (catch Throwable th
-          (stream-error-handler th))))))
+          ;; error reading bytes from request input stream
+          (stream-error-handler (ex-info (.getMessage th) {:error-cause :client-error} th)))))))
+
+(defn- abort-backend-request
+  "Attempts to abort the backend request using the provided throwable as the cause.
+   Closes the abort-ch if the abort attempt is successful.
+   Returns a channel that contains the boolean result of the attempted abort operation."
+  [abort-ch throwable correlation-id]
+  (async/go
+    (cid/with-correlation-id
+      correlation-id
+      (try
+        (let [response-chan (async/promise-chan)
+              send-success? (async/>! abort-ch [throwable response-chan])
+              _ (log/info "abort backend request accepted:" send-success?)
+              [aborted? abort-cause] (when send-success?
+                                       (async/<! response-chan))]
+          (log/info "backend request aborted:" aborted?)
+          (when (and (not aborted?) abort-cause)
+            (log/info abort-cause "backend request aborted due to another cause"))
+          (when (or aborted? abort-cause)
+            (async/close! abort-ch))
+          aborted?)
+        (catch Throwable ex
+          (log/error ex "error in aborting backend request")
+          false)))))
 
 (defn input-stream->channel
   "Returns a channel that will contain the ByteBuffers read from the input stream.
@@ -299,11 +339,9 @@
   (let [correlation-id (cid/get-correlation-id)
         body-ch (async/chan 2048)
         error-handler-fn (fn handle-request-streaming-error [throwable]
-                           (cid/with-correlation-id
-                             correlation-id
-                             (log/error throwable "unable to stream request bytes, aborting request")
-                             (async/>!! abort-ch throwable)
-                             (async/close! body-ch)))
+                           (log/error throwable "unable to stream request bytes")
+                           (async/<!! (abort-backend-request abort-ch throwable correlation-id))
+                           (async/close! body-ch))
         stream-http-request-fn (fn stream-http-request-fn []
                                  (cid/with-correlation-id
                                    correlation-id
@@ -323,7 +361,7 @@
    idle-timeout streaming-timeout-ms output-buffer-size proto-version]
   (let [auth (make-basic-auth-fn endpoint "waiter" service-password)
         headers (headers/assoc-auth-headers headers username principal)
-        abort-ch (async/promise-chan)
+        abort-ch (async/chan 10)
         body' (cond->> body
                 (instance? InputStream body)
                 (input-stream->channel executor service-id metric-group streaming-timeout-ms abort-ch))]
@@ -438,7 +476,7 @@
                                                   {:cid (cid/get-correlation-id), :bytes-streamed bytes-streamed})]
                                   (meters/mark! stream-back-pressure)
                                   (deliver reservation-status-promise :client-error)
-                                  (request-abort-callback (IOException. ^Exception ex))
+                                  (request-abort-callback ex)
                                   (when waiter-debug-enabled?
                                     (log/info "unable to stream, back pressure in resp-chan"))
                                   (throw ex))))
@@ -469,7 +507,10 @@
                       (recur bytes-streamed' bytes-reported-to-statsd'))))))))
         (catch Exception e
           (meters/mark! stream-exception-meter)
-          (deliver reservation-status-promise :instance-error)
+          ;; assign instance-error or client-error correctly
+          (let [[error-cause message _] (classify-error e)]
+            (log/error (.getMessage e) "identified as" error-cause "with message" message)
+            (deliver reservation-status-promise error-cause))
           (log/info "sending poison pill to response channel")
           (let [poison-pill-function (poison-pill-fn (cid/get-correlation-id))]
             (when-not (au/timed-offer! resp-chan poison-pill-function 5000)
@@ -499,6 +540,7 @@
 (defn abort-http-request-callback-factory
   "Creates a callback to abort the http request."
   [response]
+  ;; TODO rewrite to use (abort-backend-request ...)
   (fn abort-http-request-callback [^Exception e]
     (let [ex (if (instance? IOException e) e (IOException. e))
           aborted (if-let [request (:request response)]
