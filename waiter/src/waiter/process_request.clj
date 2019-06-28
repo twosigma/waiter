@@ -306,20 +306,21 @@
                 (servlet-input-stream->channel service-id metric-group streaming-timeout-ms abort-ch ctrl-ch))]
     (http/request
       http-client
-      {:abort-ch abort-ch
-       :as :bytes
-       :auth auth
-       :body body'
-       :headers headers
-       :fold-chunked-response? (not (hu/http2? proto-version))
-       :fold-chunked-response-buffer-size output-buffer-size
-       :follow-redirects? false
-       :idle-timeout idle-timeout
-       :method request-method
-       :query-string query-string
-       :trailers-fn trailers-fn
-       :url endpoint
-       :version proto-version})))
+      (cond-> {:abort-ch abort-ch
+               :as :bytes
+               :auth auth
+               :body body'
+               :headers headers
+               :fold-chunked-response? (not (hu/http2? proto-version))
+               :fold-chunked-response-buffer-size output-buffer-size
+               :follow-redirects? false
+               :idle-timeout idle-timeout
+               :method request-method
+               :query-string query-string
+               :url endpoint
+               :version proto-version}
+        ;; some of our http/1 backends do not support trailers, so disable for all of them
+        (hu/http2? proto-version) (assoc :trailers-fn trailers-fn)))))
 
 (defn make-request
   "Makes an asynchronous http request to the instance endpoint and returns a channel."

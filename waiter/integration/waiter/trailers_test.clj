@@ -114,7 +114,9 @@
                       (str body-json))
                   (is (= "chunked" (get-in response [:headers "transfer-encoding"]))
                       (-> response :headers str)))
-                (is (= request-trailers (get body-json "trailers"))
+                ;; we do not sent trailers to http/1 backends
+                (is (= (if (hu/http2? http-version) request-trailers {})
+                       (get body-json "trailers"))
                     (-> response :headers str))
                 (is (= response-trailers (some-> response :trailers))
                     (-> response :headers str))))))))))
