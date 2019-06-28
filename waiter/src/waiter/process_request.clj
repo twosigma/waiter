@@ -187,6 +187,8 @@
         (let [[error-cause message status] (classify-error (ex-cause error))
               error-cause (or (-> error ex-data :error-cause) error-cause)]
           [error-cause message status])
+        (instance? IllegalStateException error)
+        [:generic-error (.getMessage error) 400]
         (instance? EofException error)
         [:client-error "Connection unexpectedly closed while streaming request" 400]
         (instance? TimeoutException error)
