@@ -39,11 +39,11 @@
                             :x-kitchen-fail-after fail-after-size)
               {:keys [headers] :as response} (make-request waiter-url "/gzip" :headers req-headers)]
           (assert-response-status response 200)
-          (is (= (get headers "content-type") "text/plain"))
-          (is (= (get headers "content-encoding") "gzip"))
-          ;; ideally (is (= (get headers "Transfer-Encoding") "chunked"))
-          (is (nil? (get headers "Content-Length")))
-          (is (not (nil? (get headers "x-cid"))))
+          (is (= (get headers "content-type") "text/plain") (str headers))
+          (is (= (get headers "content-encoding") "gzip") (str headers))
+          ;; ideally (is (= (get headers "transfer-encoding") "chunked") (str headers))
+          (is (nil? (get headers "content-length")) (str headers))
+          (is (not (nil? (get headers "x-cid"))) (str headers))
           (let [{:keys [body] :as response}
                 (make-request waiter-url "/gzip" :headers req-headers :decompress-body true :verbose true)
                 body-length (count (bytes (byte-array (map (comp byte int) (str body)))))]
@@ -87,11 +87,11 @@
                             :x-kitchen-fail-after fail-after-size)
               {:keys [headers] :as response} (make-request waiter-url "/gzip" :headers req-headers :verbose true)]
           (assert-response-status response 200)
-          (is (= (get headers "content-type") "text/plain"))
-          (is (= (get headers "content-encoding") "gzip"))
-          (is (nil? (get headers "Transfer-Encoding")))
-          (is (not (nil? (get headers "content-length"))))
-          (is (not (nil? (get headers "x-cid"))))
+          (is (= (get headers "content-type") "text/plain") (str headers))
+          (is (= (get headers "content-encoding") "gzip") (str headers))
+          (is (nil? (get headers "transfer-encoding")) (str headers))
+          (is (not (nil? (get headers "content-length"))) (str headers))
+          (is (not (nil? (get headers "x-cid"))) (str headers))
           (let [{:keys [body] :as response}
                 (make-request waiter-url "/gzip" :headers req-headers :decompress-body true :verbose true)
                 body-length (count (bytes (byte-array (map (comp byte int) (str body)))))]
@@ -132,10 +132,10 @@
               body-length (count (bytes (byte-array (map (comp byte int) (str body)))))]
           (assert-response-status response 200)
           (is (== 100000 body-length))
-          (is (= (get headers "content-type") "text/plain"))
-          (is (nil? (get headers "Content-Encoding")))
-          (is (nil? (get headers "Content-Length")))
-          (is (not (nil? (get headers "x-cid")))))
+          (is (= (get headers "content-type") "text/plain") (str headers))
+          (is (nil? (get headers "content-encoding")) (str headers))
+          (is (nil? (get headers "content-length")) (str headers))
+          (is (not (nil? (get headers "x-cid"))) (str headers)))
         (finally
           (delete-service waiter-url service-id))))))
 
@@ -152,10 +152,10 @@
               body-length (count (bytes (byte-array (map (comp byte int) (str body)))))]
           (assert-response-status response 200)
           (is (< body-length 100000))
-          (is (= (get headers "content-type") "text/plain"))
-          (is (nil? (get headers "Content-Encoding")))
-          (is (nil? (get headers "Content-Length")))
-          (is (not (nil? (get headers "x-cid")))))
+          (is (= (get headers "content-type") "text/plain") (str headers))
+          (is (nil? (get headers "content-encoding")) (str headers))
+          (is (nil? (get headers "content-length")) (str headers))
+          (is (not (nil? (get headers "x-cid"))) (str headers)))
         (finally
           (delete-service waiter-url service-id))))))
 
@@ -173,7 +173,7 @@
           (assert-response-status response 200)
           (is (== 100000 body-length))
           (is (= (get headers "content-type") "text/plain") (str headers))
-          (is (nil? (get headers "Content-Encoding")) (str headers))
+          (is (nil? (get headers "content-encoding")) (str headers))
           ;; TODO flaky: this is sometimes missing (is (not (nil? (get headers "content-length"))) (str headers))
           (is (not (nil? (get headers "x-cid"))) (str headers)))
         (finally
