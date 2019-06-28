@@ -19,7 +19,8 @@
             [clojure.test :refer :all]
             [plumbing.core :as pc]
             [waiter.async-request :refer :all]
-            [waiter.service :as service])
+            [waiter.service :as service]
+            [waiter.util.async-utils :as au])
   (:import java.net.URLDecoder))
 
 (deftest test-monitor-async-request
@@ -294,12 +295,13 @@
         request-properties {:async-check-interval-ms 100, :async-request-timeout-ms 200}
         location (str "/location/" request-id)
         query-string "a=b&c=d|e"
-        make-http-request-fn (fn [in-instance in-request end-route metric-group backend-proto]
+        make-http-request-fn (fn [in-instance in-request end-route metric-group backend-proto request-control-chan]
                                (is (= instance in-instance))
                                (is (= {:body nil :headers {} :query-string "a=b&c=d|e" :request-method :get} in-request))
                                (is (= "/location/request-2394613984619" end-route))
                                (is (= "test-metric-group" metric-group))
-                               (is (= "http" backend-proto)))
+                               (is (= "http" backend-proto))
+                               (is (au/chan? request-control-chan)))
         instance-rpc-chan (async/chan 1)
         complete-async-request-atom (atom nil)
         response {}]

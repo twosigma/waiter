@@ -159,8 +159,9 @@
     ;; trigger execution of monitoring system
     (letfn [(make-get-request-fn []
               (counters/inc! (metrics/service-counter service-id "request-counts" "async-monitor"))
-              (let [request-stub {:body nil :headers {} :query-string query-string :request-method :get}]
-                (make-http-request-fn instance request-stub location metric-group backend-proto)))
+              (let [request-stub {:body nil :headers {} :query-string query-string :request-method :get}
+                    request-control-chan (async/promise-chan)]
+                (make-http-request-fn instance request-stub location metric-group backend-proto request-control-chan)))
             (release-instance-fn [status]
               (log/info "decrementing outstanding requests as an async request has completed:" status)
               (counters/dec! (metrics/service-counter service-id "request-counts" "async"))

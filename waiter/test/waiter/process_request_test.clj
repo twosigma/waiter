@@ -310,6 +310,7 @@
                                   (let [result-array (byte-array (.remaining byte-buffer))]
                                     (.get byte-buffer result-array 0 (count result-array))
                                     result-array))
+        request-control-chan (async/promise-chan)
         streaming-timeout-ms 3000]
 
     (testing "successful read - single task"
@@ -326,7 +327,8 @@
             exception-atom (atom nil)
             error-handler-fn (make-error-handler-fn body-ch exception-atom)]
 
-        (stream-http-request executor service-id metric-group error-handler-fn streaming-timeout-ms input-stream body-ch 0)
+        (stream-http-request executor service-id metric-group error-handler-fn request-control-chan
+                             streaming-timeout-ms input-stream body-ch 0)
 
         (let [num-fragments-read-atom (atom 0)]
           (doseq [^bytes source-bytes input-bytes]
@@ -356,7 +358,8 @@
             exception-atom (atom nil)
             error-handler-fn (make-error-handler-fn body-ch exception-atom)]
 
-        (stream-http-request executor service-id metric-group error-handler-fn streaming-timeout-ms input-stream body-ch 0)
+        (stream-http-request executor service-id metric-group error-handler-fn request-control-chan
+                             streaming-timeout-ms input-stream body-ch 0)
 
         (let [num-fragments-read-atom (atom 0)]
           (doseq [^bytes source-bytes input-bytes]
@@ -386,7 +389,8 @@
             exception-atom (atom nil)
             error-handler-fn (make-error-handler-fn body-ch exception-atom)]
 
-        (stream-http-request executor service-id metric-group error-handler-fn streaming-timeout-ms input-stream body-ch 0)
+        (stream-http-request executor service-id metric-group error-handler-fn request-control-chan
+                             streaming-timeout-ms input-stream body-ch 0)
 
         (let [num-fragments-read-atom (atom 0)]
           (doseq [^bytes source-bytes input-bytes]
@@ -418,7 +422,8 @@
             exception-atom (atom nil)
             error-handler-fn (make-error-handler-fn body-ch exception-atom)]
 
-        (stream-http-request executor service-id metric-group error-handler-fn streaming-timeout-ms input-stream body-ch 0)
+        (stream-http-request executor service-id metric-group error-handler-fn request-control-chan
+                             streaming-timeout-ms input-stream body-ch 0)
 
         (let [num-fragments-read-atom (atom 0)]
           (doseq [^bytes source-bytes input-bytes]
@@ -450,7 +455,8 @@
             exception-atom (atom nil)
             error-handler-fn (make-error-handler-fn body-ch exception-atom)]
 
-        (stream-http-request executor service-id metric-group error-handler-fn streaming-timeout-ms input-stream body-ch 0)
+        (stream-http-request executor service-id metric-group error-handler-fn request-control-chan
+                             streaming-timeout-ms input-stream body-ch 0)
 
         (is (wait-for #(async-protocols/closed? body-ch)))
         (let [num-fragments-read-atom (atom 0)]
@@ -493,7 +499,8 @@
           (dotimes [_ queue-capacity]
             (.execute executor (constantly true))))
 
-        (stream-http-request executor service-id metric-group error-handler-fn streaming-timeout-ms input-stream body-ch 0)
+        (stream-http-request executor service-id metric-group error-handler-fn request-control-chan
+                             streaming-timeout-ms input-stream body-ch 0)
 
         (let [num-fragments-read-atom (atom 0)]
           (doseq [^bytes source-bytes input-bytes]
@@ -581,25 +588,28 @@
                                         (is (= proto-version (:version request-config)))))]
       (testing "make-request:headers:HTTP/1.0"
         (let [proto-version "HTTP/1.0"
-              request-method-fn-call-counter (atom 0)]
+              request-method-fn-call-counter (atom 0)
+              request-control-chan (async/promise-chan)]
           (with-redefs [http/request (http-request-mock-factory passthrough-headers request-method-fn-call-counter proto-version)]
             (make-request executor http-clients make-basic-auth-fn service-id->password-fn instance request request-properties
-                          passthrough-headers end-route nil backend-proto proto-version)
+                          passthrough-headers end-route nil backend-proto proto-version request-control-chan)
             (is (= 1 @request-method-fn-call-counter)))))
 
       (testing "make-request:headers:HTTP/2.0"
         (let [proto-version "HTTP/2.0"
-              request-method-fn-call-counter (atom 0)]
+              request-method-fn-call-counter (atom 0)
+              request-control-chan (async/promise-chan)]
           (with-redefs [http/request (http-request-mock-factory passthrough-headers request-method-fn-call-counter proto-version)]
             (make-request executor http-clients make-basic-auth-fn service-id->password-fn instance request request-properties
-                          passthrough-headers end-route nil backend-proto proto-version)
+                          passthrough-headers end-route nil backend-proto proto-version request-control-chan)
             (is (= 1 @request-method-fn-call-counter)))))
 
       (testing "make-request:headers-long-content-length"
         (let [proto-version "HTTP/1.0"
               request-method-fn-call-counter (atom 0)
               passthrough-headers (assoc passthrough-headers "content-length" "1234123412341234")
-              statsd-inc-call-value (promise)]
+              statsd-inc-call-value (promise)
+              request-control-chan (async/promise-chan)]
           (with-redefs [http/request (http-request-mock-factory passthrough-headers request-method-fn-call-counter proto-version)
                         statsd/inc!
                         (fn [metric-group metric value]
@@ -607,7 +617,7 @@
                           (is (= "request_content_length" metric))
                           (deliver statsd-inc-call-value value))]
             (make-request executor http-clients make-basic-auth-fn service-id->password-fn instance request request-properties
-                          passthrough-headers end-route nil backend-proto proto-version)
+                          passthrough-headers end-route nil backend-proto proto-version request-control-chan)
             (is (= 1 @request-method-fn-call-counter))
             (is (= 1234123412341234 (deref statsd-inc-call-value 0 :statsd-inc-not-called)))))))
 

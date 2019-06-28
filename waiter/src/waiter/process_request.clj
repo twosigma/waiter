@@ -15,6 +15,7 @@
 ;;
 (ns waiter.process-request
   (:require [clojure.core.async :as async]
+            [clojure.core.async.impl.protocols :as ap]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [full.async :as fa]
@@ -54,9 +55,15 @@
   (let [state (au/poll! control-chan :still-running)]
     (cond
       (= :still-running state) :still-running
-      (= (first state) ::servlet/error) (throw (ex-info "Error in server" {:cid correlation-id} (second state)))
-      (= (first state) ::servlet/timeout) (throw (ex-info "Operation timed out" {:cid correlation-id} (second state)))
-      :else (throw (ex-info "Connection closed while still processing" {:cid correlation-id})))))
+      (= (first state) ::servlet/error) (let [ex (ex-info "Error in server" {:cid correlation-id} (second state))]
+                                          (log/error ex "error discovered in check-control")
+                                          (throw ex))
+      (= (first state) ::servlet/timeout) (let [ex (ex-info "Operation timed out" {:cid correlation-id} (second state))]
+                                            (log/error ex "timeout discovered in check-control")
+                                            (throw ex))
+      :else (let [ex (ex-info "Connection closed while still processing" {:cid correlation-id})]
+              (log/error ex "connection closed in check-control")
+              (throw ex)))))
 
 (defn confirm-live-connection-factory
   "Confirms that the connection to the client is live by checking the ctrl channel, else it throws an exception."
@@ -247,19 +254,22 @@
      Reports an error to the error handler whenever:
      - there is an error trying to read from the input channel,
      - the body channel fails to accept the byte buffer that was read from the input stream."
-    [executor service-id metric-group error-handler-fn streaming-timeout-ms ^InputStream input-stream body-ch bytes-streamed]
+    [executor service-id metric-group error-handler-fn request-control-chan streaming-timeout-ms
+     ^InputStream input-stream body-ch bytes-streamed]
     (let [bytes-streamed-atom (atom bytes-streamed)
           correlation-id (cid/get-correlation-id)
           stream-http-request-task (fn invoke-stream-http-request []
                                      (cid/with-correlation-id
                                        correlation-id
-                                       (stream-http-request executor service-id metric-group error-handler-fn
-                                                            streaming-timeout-ms input-stream body-ch @bytes-streamed-atom)))
+                                       (stream-http-request
+                                         executor service-id metric-group error-handler-fn request-control-chan
+                                         streaming-timeout-ms input-stream body-ch @bytes-streamed-atom)))
           stream-error-handler (fn [throwable]
                                  (log/info "request failed after streaming" @bytes-streamed-atom "bytes")
                                  (histograms/update! (metrics/service-histogram service-id "request-size") @bytes-streamed-atom)
                                  (error-handler-fn throwable))]
       (try
+        (log/info "starting task to read from input stream, body chan closed:" (ap/closed? body-ch))
         (loop [unreported-bytes-to-statsd 0]
           (let [available-bytes (.available input-stream)
                 ;; get a buffer size between min-buffer-size and max-buffer-size
@@ -268,7 +278,10 @@
                               (max min-buffer-size)
                               (min max-buffer-size))
                 buffer-bytes (byte-array buffer-size)
+                _ (log/info "attempting to read bytes from input stream" {:bytes-streamed @bytes-streamed-atom})
+                _ (check-control request-control-chan correlation-id)
                 bytes-read (.read input-stream buffer-bytes)]
+            (log/info bytes-read "bytes read from request this iteration")
             (cond
               (neg? bytes-read)
               (let [bytes-streamed @bytes-streamed-atom]
@@ -290,6 +303,7 @@
                     (do
                       (when (pos? unreported-bytes-to-statsd')
                         (statsd/inc! metric-group "request_bytes" unreported-bytes-to-statsd'))
+                      (log/info "no more bytes available, submitting task to read input stream later")
                       (submit-request-streaming-task executor stream-http-request-task))))
                 (do
                   (when (pos? unreported-bytes-to-statsd)
@@ -302,7 +316,9 @@
                     (stream-error-handler (ex-info "unable to stream request bytes" description-map)))))
 
               :else
-              (submit-request-streaming-task executor stream-http-request-task))))
+              (do
+                (log/info "submitting task to read input stream later") ;; TODO shams remove log
+                (submit-request-streaming-task executor stream-http-request-task)))))
         (catch ExceptionInfo ex
           (stream-error-handler ex))
         (catch Throwable th
@@ -337,7 +353,8 @@
   "Returns a channel that will contain the ByteBuffers read from the input stream.
    The input stream is read asynchronously by creating tasks on the provided executor.
    It will report any errors while reading data on the provided abort channel."
-  [^ThreadPoolExecutor executor service-id metric-group streaming-timeout-ms abort-ch ^InputStream input-stream]
+  [^ThreadPoolExecutor executor service-id metric-group streaming-timeout-ms abort-ch request-control-chan
+   ^InputStream input-stream]
   (let [correlation-id (cid/get-correlation-id)
         body-ch (async/chan 2048)
         error-handler-fn (fn handle-request-streaming-error [throwable]
@@ -347,8 +364,9 @@
         stream-http-request-fn (fn stream-http-request-fn []
                                  (cid/with-correlation-id
                                    correlation-id
-                                   (stream-http-request executor service-id metric-group error-handler-fn
-                                                        streaming-timeout-ms input-stream body-ch 0)))]
+                                   (stream-http-request
+                                     executor service-id metric-group error-handler-fn request-control-chan
+                                     streaming-timeout-ms input-stream body-ch 0)))]
     (try
       (submit-request-streaming-task executor stream-http-request-fn)
       (catch Throwable throwable
@@ -360,13 +378,14 @@
   [^ThreadPoolExecutor executor ^HttpClient http-client make-basic-auth-fn
    request-method endpoint query-string headers body trailers-fn
    service-id service-password metric-group {:keys [username principal]}
-   idle-timeout streaming-timeout-ms output-buffer-size proto-version]
+   idle-timeout streaming-timeout-ms output-buffer-size proto-version request-control-chan]
   (let [auth (make-basic-auth-fn endpoint "waiter" service-password)
         headers (headers/assoc-auth-headers headers username principal)
         abort-ch (async/chan 10)
         body' (cond->> body
                 (instance? InputStream body)
-                (input-stream->channel executor service-id metric-group streaming-timeout-ms abort-ch))]
+                (input-stream->channel
+                  executor service-id metric-group streaming-timeout-ms abort-ch request-control-chan))]
     (http/request
       http-client
       {:abort-ch abort-ch
@@ -389,7 +408,7 @@
   [executor http-clients make-basic-auth-fn service-id->password-fn {:keys [host] :as instance}
    {:keys [body instance-request-overrides query-string request-method trailers-fn] :as request}
    {:keys [initial-socket-timeout-ms output-buffer-size streaming-timeout-ms]}
-   passthrough-headers end-route metric-group backend-proto proto-version]
+   passthrough-headers end-route metric-group backend-proto proto-version request-control-chan]
   (let [port-index (get instance-request-overrides :port-index 0)
         port (scheduler/instance->port instance port-index)
         instance-endpoint (scheduler/end-point-url backend-proto host port end-route)
@@ -417,7 +436,7 @@
       (make-http-request
         executor http-client make-basic-auth-fn request-method instance-endpoint query-string headers body trailers-fn
         service-id service-password metric-group auth-user-map initial-socket-timeout-ms streaming-timeout-ms
-        output-buffer-size proto-version))))
+        output-buffer-size proto-version request-control-chan))))
 
 (defn extract-async-request-response-data
   "Helper function that inspects the response and returns the location and query-string if the response
@@ -665,7 +684,8 @@
                                                                   reservation-status-promise metric-group)))
                         instance (:out timed-instance)
                         instance-elapsed (:elapsed timed-instance)
-                        proto-version (hu/backend-protocol->http-version backend-proto)]
+                        proto-version (hu/backend-protocol->http-version backend-proto)
+                        request-control-chan (async/tap control-mult (au/latest-chan))]
                     (statsd/histo! metric-group "get_instance" instance-elapsed)
                     (-> (try
                           (log/info "suggested instance:" (:id instance) (:host instance) (:port instance))
@@ -674,7 +694,8 @@
                                                  (metrics/service-timer service-id "backend-response")
                                                  (async/<!
                                                    (make-request-fn instance request instance-request-properties
-                                                                    passthrough-headers uri metric-group backend-proto proto-version)))
+                                                                    passthrough-headers uri metric-group backend-proto
+                                                                    proto-version request-control-chan)))
                                 response-elapsed (:elapsed timed-response)
                                 {:keys [error] :as response} (:out timed-response)]
                             (statsd/histo! metric-group "backend_response" response-elapsed)

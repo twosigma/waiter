@@ -269,7 +269,8 @@
         assert-request-headers (fn assert-request-headers [upgrade-request]
                                  (doseq [[header-name header-value] assertion-headers]
                                    (is (= header-value (.getHeader upgrade-request header-name)) header-name)))
-        proto-version "HTTP/1.1"]
+        proto-version "HTTP/1.1"
+        request-control-chan (async/promise-chan)]
 
     (testing "successful-connect-ws"
       (with-redefs [ws-client/connect! (fn [_ instance-endpoint request-callback {:keys [middleware] :as request-properties}]
@@ -285,7 +286,7 @@
           test-cid
           (let [websocket-client nil
                 response (make-request websocket-client service-id->password-fn instance request request-properties
-                                       passthrough-headers end-route nil "http" proto-version)
+                                       passthrough-headers end-route nil "http" proto-version request-control-chan)
                 response-map (async/<!! response)]
             (is (= #{:ctrl-mult :request} (-> response-map keys set)))
             (is (= connect-request (:request response-map)))))))
@@ -304,7 +305,7 @@
           test-cid
           (let [websocket-client nil
                 response (make-request websocket-client service-id->password-fn instance request request-properties
-                                       passthrough-headers end-route nil "https" proto-version)
+                                       passthrough-headers end-route nil "https" proto-version request-control-chan)
                 response-map (async/<!! response)]
             (is (= #{:ctrl-mult :request} (-> response-map keys set)))
             (is (= connect-request (:request response-map)))))))
@@ -320,7 +321,7 @@
                                            (throw test-exception))]
           (let [websocket-client nil
                 response (make-request websocket-client service-id->password-fn instance request request-properties
-                                       passthrough-headers end-route nil "http" proto-version)]
+                                       passthrough-headers end-route nil "http" proto-version request-control-chan)]
             (is (= {:error test-exception} (async/<!! response)))))))))
 
 (deftest test-watch-ctrl-chan

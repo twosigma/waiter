@@ -1176,9 +1176,10 @@
                                      (let [password (first passwords)
                                            make-request-fn (fn make-ws-request
                                                              [instance request request-properties passthrough-headers end-route metric-group
-                                                              backend-proto proto-version]
+                                                              backend-proto proto-version request-control-chan]
                                                              (ws/make-request websocket-client service-id->password-fn instance request request-properties
-                                                                              passthrough-headers end-route metric-group backend-proto proto-version))
+                                                                              passthrough-headers end-route metric-group backend-proto proto-version
+                                                                              request-control-chan))
                                            process-request-fn (fn process-request-fn [request]
                                                                 (pr/process make-request-fn instance-rpc-chan start-new-service-fn
                                                                             instance-request-properties determine-priority-fn ws/process-response!
@@ -1238,11 +1239,11 @@
                                         [:settings instance-request-properties]
                                         [:state http-clients instance-rpc-chan local-usage-agent stream-reader-executor]]
                                  (let [make-request-fn (fn [instance request request-properties passthrough-headers end-route metric-group
-                                                            backend-proto proto-version]
+                                                            backend-proto proto-version request-control-chan]
                                                          (pr/make-request
                                                            stream-reader-executor http-clients make-basic-auth-fn service-id->password-fn
                                                            instance request request-properties passthrough-headers end-route metric-group
-                                                           backend-proto proto-version))
+                                                           backend-proto proto-version request-control-chan))
                                        process-response-fn (partial pr/process-http-response post-process-async-request-response-fn)]
                                    (fn inner-process-request [request]
                                      (pr/process make-request-fn instance-rpc-chan start-new-service-fn
