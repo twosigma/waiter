@@ -221,7 +221,7 @@
           (let [num-messages 100
                 messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))]
 
-            (dotimes [_ 10]
+            (dotimes [_ 20]
               (testing (str "independent mode " max-message-length " messages cancellations")
                 (log/info "starting streaming to and from server - independent mode test")
                 (let [cancel-threshold (+ 5 (rand-int (- num-messages 5)))
@@ -253,7 +253,7 @@
 (deftest ^:parallel ^:integration-slow test-grpc-streaming-server-cancellation
   (testing-using-waiter-url
     (let [num-messages 100
-          num-iterations 5]
+          num-iterations 10]
       (dotimes [iteration num-iterations]
         (doseq [max-message-length [1000 10000 100000]]
           (doseq [mode ["EXIT_PRE_RESPONSE" "EXIT_POST_RESPONSE"]]
