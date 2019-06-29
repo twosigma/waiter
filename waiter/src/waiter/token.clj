@@ -286,8 +286,9 @@
         hard-delete (utils/request-flag request-params "hard-delete")]
     (if token
       (let [token-description (sd/token->token-description kv-store token :include-deleted hard-delete)
-            {:keys [service-parameter-template token-metadata]} token-description]
-        (if (and service-parameter-template (not-empty service-parameter-template))
+            {:keys [service-parameter-template token-metadata]} token-description
+            user-metadata-template (select-keys token-metadata sd/user-metadata-keys)]
+        (if (or (seq service-parameter-template) (seq user-metadata-template))
           (let [token-owner (get token-metadata "owner")
                 version-hash (get headers "if-match")]
             (if hard-delete
@@ -329,8 +330,9 @@
                   (:token (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostnames)))
         token-description (sd/token->token-description kv-store token :include-deleted include-deleted)
         {:keys [service-parameter-template token-metadata]} token-description
+        user-metadata-template (select-keys token-metadata sd/user-metadata-keys)
         token-hash (token-description->token-hash token-description)]
-    (if (seq service-parameter-template)
+    (if (or (seq service-parameter-template) (seq user-metadata-template))
       ;;NB do not ever return the password to the user
       (let [epoch-time->date-time (fn [epoch-time] (DateTime. epoch-time))]
         (log/info "successfully retrieved token" token)

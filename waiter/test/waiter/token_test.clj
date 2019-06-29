@@ -316,6 +316,28 @@
                  :request-method :get})]
           (is (= 404 status))))
 
+      (testing "get:token-with-only-metadata"
+        (try
+          (->> {"fallback-period-secs" 100
+                "https-redirect" true
+                "owner" "tu1"
+                "stale-timeout-mins" 15}
+            (kv/store kv-store token))
+          (let [{:keys [body headers status]}
+                (run-handle-token-request
+                  kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
+                  {:headers {"x-waiter-token" token}
+                   :request-method :get})]
+            (is (= 200 status))
+            (is (= (get headers "etag") (sd/token-data->token-hash (kv/fetch kv-store token))))
+            (is (= {"fallback-period-secs" 100
+                    "https-redirect" true
+                    "owner" "tu1"
+                    "stale-timeout-mins" 15}
+                   (json/read-str body))))
+          (finally
+            (kv/delete kv-store token))))
+
       (testing "post:new-service-description"
         (let [{:keys [body headers status]}
               (run-handle-token-request

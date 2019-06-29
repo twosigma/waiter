@@ -165,6 +165,25 @@
         (assert-response-status response 400)
         (is (str/includes? (str body) (str "No parameters provided for " token)) (str body)))
 
+      (testing "creating and deleting token with only metadata should succeed"
+        (let [token (str service-id-prefix ".fallback-period-secs")
+              {:keys [body] :as response} (post-token waiter-url {:fallback-period-secs 60 :token token})]
+          (assert-response-status response 200)
+          (is (str/includes? (str body) (str "Successfully created " token)) (str body))
+          (let [{:keys [body] :as response}  (get-token waiter-url token :cookies cookies :query-params {"token" token})]
+            (assert-response-status response 200)
+            (is (= {"fallback-period-secs" 60 "owner" (retrieve-username)} (json/read-str body)) (str body)))
+          (delete-token-and-assert waiter-url token))
+
+        (let [token (str service-id-prefix ".https-redirect")
+              {:keys [body] :as response} (post-token waiter-url {:https-redirect true :token token})]
+          (assert-response-status response 200)
+          (is (str/includes? (str body) (str "Successfully created " token)) (str body))
+          (let [{:keys [body] :as response}  (get-token waiter-url token :cookies cookies :query-params {"token" token})]
+            (assert-response-status response 200)
+            (is (= {"https-redirect" true "owner" (retrieve-username)} (json/read-str body)) (str body)))
+          (delete-token-and-assert waiter-url token)))
+
       (log/info "creating the tokens")
       (doseq [token tokens-to-create]
         (let [response (post-token waiter-url {:health-check-url "/check"
