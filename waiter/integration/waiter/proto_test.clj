@@ -120,7 +120,7 @@
 
 (deftest ^:parallel ^:integration-slow test-https-backend-proto-service
   (testing-using-waiter-url
-    (run-backend-proto-service-test waiter-url "https" 1 "https" "HTTP/1.1")
+    (run-backend-proto-service-test waiter-url "https" 1 "http" "HTTP/1.1")
     (is "test completed marker")))
 
 (deftest ^:parallel ^:integration-slow test-h2c-backend-proto-service
@@ -130,18 +130,18 @@
 
 (deftest ^:parallel ^:integration-slow test-h2-backend-proto-service
   (testing-using-waiter-url
-    (run-backend-proto-service-test waiter-url "h2" 1 "https" "HTTP/2.0")
+    (run-backend-proto-service-test waiter-url "h2" 1 "http" "HTTP/2.0")
     (is "test completed marker")))
 
 (deftest ^:parallel ^:integration-slow test-h2-backend-proto-service-health-check-on-port0
   (testing-using-waiter-url
-    (run-backend-proto-service-test waiter-url "h2" 0 "https" "HTTP/2.0")
+    (run-backend-proto-service-test waiter-url "h2" 0 "http" "HTTP/2.0")
     (is "test completed marker")))
 
 (deftest ^:parallel ^:integration-slow test-health-check-proto
   (testing-using-waiter-url
     ;; PORT2 is running kitchen without SSL enabled
-    (run-backend-proto-service-test waiter-url "h2" "https" 1 "https" "HTTP/2.0")
+    (run-backend-proto-service-test waiter-url "h2" "https" 1 "http" "HTTP/2.0")
     (is "test completed marker")))
 
 (deftest ^:parallel ^:integration-fast test-internal-protocol
