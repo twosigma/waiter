@@ -392,7 +392,12 @@
                          :scheduler-gc-broken-service-interval-ms 60000
                          :scheduler-gc-interval-ms 60000}
    :scheduler-syncer-interval-secs 5
-   :server-options {:blocking-timeout 900000 ;; 15 minutes
+   :server-options {;; HttpInput.read() uses getBlockingTimeout() and does not uses zero to mean:
+                    ;; 0 for a blocking timeout equal to the idle timeout 
+                    ;; as promised by the HttpConfiguration javadoc.
+                    ;; We set it to a reasonably high 15 mins by default.
+                    ;; The idle timeout is configured per request, so we do not explicitly configure it here.
+                    :blocking-timeout 900000 ;; 15 minutes
                     :http2? false
                     :http2c? true
                     :max-threads 200
