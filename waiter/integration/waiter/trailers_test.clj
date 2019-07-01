@@ -39,6 +39,34 @@
         (is service-id)
         (assert-response-status canary-response 200)
 
+        (testing "jet returns some trailers"
+          (let [response (make-shell-request
+                           waiter-url
+                           (assoc request-headers
+                             "x-cid" (rand-name))
+                           :body (ByteArrayInputStream. (.getBytes long-request))
+                           :path "/trailers"
+                           :protocol backend-proto)
+                body-json (try
+                            (some-> response :body str json/read-str)
+                            (catch Exception ex
+                              (log/error ex "unable to parse response as json")
+                              (is false (str "unable to parse response as json" (:body response)))))
+                http-version (hu/backend-protocol->http-version backend-proto)]
+            (is (= http-version (get body-json "protocol")))
+            (when (= "http" backend-proto)
+              (is (= "chunked" (get-in body-json ["headers" "Transfer-Encoding"]))
+                  (str body-json))
+              (is (= "chunked" (get-in response [:headers "transfer-encoding"]))
+                  (-> response :headers str)))
+            (is (= {} (get body-json "trailers"))
+                (-> response :headers str))
+            ;; TODO remove when https://github.com/eclipse/jetty.project/issues/3829 is fixed and empty trailer frames are not sent.
+            (is (= (when (hu/http2? http-version)
+                     {"x-waiter-trailer-reason" "ensures-non-empty-trailers"})
+                   (some-> response :trailers))
+                (-> response :headers str))))
+
         (let [request-trailer-delay-ms 100
               response-trailer-delay-ms 100]
           (doseq [response-status [200 400 500]]
