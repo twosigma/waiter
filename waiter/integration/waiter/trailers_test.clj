@@ -53,7 +53,8 @@
                               (log/error ex "unable to parse response as json")
                               (is false (str "unable to parse response as json" (:body response)))))
                 http-version (hu/backend-protocol->http-version backend-proto)]
-            (is (= http-version (get body-json "protocol")))
+            (assert-response-status response 200)
+            (is (= http-version (get body-json "protocol")) (str body-json))
             (when (= "http" backend-proto)
               (is (= "chunked" (get-in body-json ["headers" "Transfer-Encoding"]))
                   (str body-json))
