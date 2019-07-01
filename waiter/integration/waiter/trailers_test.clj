@@ -47,6 +47,7 @@
                            :body (ByteArrayInputStream. (.getBytes long-request))
                            :path "/trailers"
                            :protocol backend-proto)
+                _ (is false response)
                 body-json (try
                             (some-> response :body str json/read-str)
                             (catch Exception ex
@@ -98,6 +99,7 @@
                                :trailers-fn (fn []
                                               (Thread/sleep request-trailer-delay-ms)
                                               request-trailers))
+                    _ (is false response)
                     _ (log/info "response headers:" (:headers response))
                     _ (assert-response-status response response-status)
                     body-json (try

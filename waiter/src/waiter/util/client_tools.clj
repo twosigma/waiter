@@ -317,7 +317,7 @@
          (log/info "request headers:" (into (sorted-map) request-headers)))
        (let [waiter-auth-cookie (some #(= authentication/AUTH-COOKIE-NAME (:name %)) cookies)
              add-spnego-auth (and (not disable-auth) use-spnego (not waiter-auth-cookie))
-             {:keys [body headers status trailers]}
+             {:keys [body headers status trailers] :as real-response}
              (async/<!! (http/request
                           client
                           (cond-> {:body body
@@ -333,6 +333,7 @@
                             cookies (assoc :cookies (map (fn [c] [(:name c) (:value c)]) cookies))
                             trailers-fn (assoc :trailers-fn trailers-fn))))
              response-body (when body (async/<!! body))]
+         (log/error "xxxzzz" real-response)
          (when verbose
            (log/info (get request-headers "x-cid") "response size:" (count (str response-body))))
          {:body response-body
