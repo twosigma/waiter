@@ -254,7 +254,7 @@
      Reports an error to the error handler whenever:
      - there is an error trying to read from the input channel,
      - the body channel fails to accept the byte buffer that was read from the input stream."
-    [executor service-id metric-group error-handler-fn request-control-chan streaming-timeout-ms
+    [executor service-id metric-group error-handler-fn streaming-complete-fn streaming-timeout-ms
      ^InputStream input-stream body-ch bytes-streamed]
     (let [bytes-streamed-atom (atom bytes-streamed)
           correlation-id (cid/get-correlation-id)
@@ -262,7 +262,7 @@
                                      (cid/with-correlation-id
                                        correlation-id
                                        (stream-http-request
-                                         executor service-id metric-group error-handler-fn request-control-chan
+                                         executor service-id metric-group error-handler-fn streaming-complete-fn
                                          streaming-timeout-ms input-stream body-ch @bytes-streamed-atom)))
           stream-error-handler (fn [throwable]
                                  (log/info "request failed after streaming" @bytes-streamed-atom "bytes")
@@ -279,7 +279,6 @@
                               (min max-buffer-size))
                 buffer-bytes (byte-array buffer-size)
                 _ (log/info "attempting to read bytes from input stream" {:bytes-streamed @bytes-streamed-atom})
-                _ (check-control request-control-chan correlation-id)
                 bytes-read (.read input-stream buffer-bytes)]
             (log/info bytes-read "bytes read from request this iteration")
             (cond
@@ -361,12 +360,26 @@
                            (log/error throwable "unable to stream request bytes")
                            (async/<!! (abort-backend-request abort-ch throwable correlation-id))
                            (async/close! body-ch))
+        streaming-complete-fn (fn handle-request-streaming-complete []
+                                (log/info "done streaming client request")
+                                (async/close! request-control-chan))
         stream-http-request-fn (fn stream-http-request-fn []
                                  (cid/with-correlation-id
                                    correlation-id
                                    (stream-http-request
-                                     executor service-id metric-group error-handler-fn request-control-chan
+                                     executor service-id metric-group error-handler-fn streaming-complete-fn
                                      streaming-timeout-ms input-stream body-ch 0)))]
+    (async/go-loop []
+      (if-not (ap/closed? request-control-chan)
+        (when (try
+                (check-control request-control-chan correlation-id)
+                true
+                (catch Throwable throwable
+                  (error-handler-fn (ex-info "error in client request" {:error-cause :client-error} throwable))
+                  false))
+          (async/<! (async/timeout 5000))
+          (recur))
+        (log/info "done tracking client request")))
     (try
       (submit-request-streaming-task executor stream-http-request-fn)
       (catch Throwable throwable

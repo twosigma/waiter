@@ -310,7 +310,7 @@
                                   (let [result-array (byte-array (.remaining byte-buffer))]
                                     (.get byte-buffer result-array 0 (count result-array))
                                     result-array))
-        request-control-chan (async/promise-chan)
+        streaming-complete-fn (constantly true)
         streaming-timeout-ms 3000]
 
     (testing "successful read - single task"
@@ -327,7 +327,7 @@
             exception-atom (atom nil)
             error-handler-fn (make-error-handler-fn body-ch exception-atom)]
 
-        (stream-http-request executor service-id metric-group error-handler-fn request-control-chan
+        (stream-http-request executor service-id metric-group error-handler-fn streaming-complete-fn
                              streaming-timeout-ms input-stream body-ch 0)
 
         (let [num-fragments-read-atom (atom 0)]
@@ -358,7 +358,7 @@
             exception-atom (atom nil)
             error-handler-fn (make-error-handler-fn body-ch exception-atom)]
 
-        (stream-http-request executor service-id metric-group error-handler-fn request-control-chan
+        (stream-http-request executor service-id metric-group error-handler-fn streaming-complete-fn
                              streaming-timeout-ms input-stream body-ch 0)
 
         (let [num-fragments-read-atom (atom 0)]
@@ -389,7 +389,7 @@
             exception-atom (atom nil)
             error-handler-fn (make-error-handler-fn body-ch exception-atom)]
 
-        (stream-http-request executor service-id metric-group error-handler-fn request-control-chan
+        (stream-http-request executor service-id metric-group error-handler-fn streaming-complete-fn
                              streaming-timeout-ms input-stream body-ch 0)
 
         (let [num-fragments-read-atom (atom 0)]
@@ -422,7 +422,7 @@
             exception-atom (atom nil)
             error-handler-fn (make-error-handler-fn body-ch exception-atom)]
 
-        (stream-http-request executor service-id metric-group error-handler-fn request-control-chan
+        (stream-http-request executor service-id metric-group error-handler-fn streaming-complete-fn
                              streaming-timeout-ms input-stream body-ch 0)
 
         (let [num-fragments-read-atom (atom 0)]
@@ -455,7 +455,7 @@
             exception-atom (atom nil)
             error-handler-fn (make-error-handler-fn body-ch exception-atom)]
 
-        (stream-http-request executor service-id metric-group error-handler-fn request-control-chan
+        (stream-http-request executor service-id metric-group error-handler-fn streaming-complete-fn
                              streaming-timeout-ms input-stream body-ch 0)
 
         (is (wait-for #(async-protocols/closed? body-ch)))
@@ -499,7 +499,7 @@
           (dotimes [_ queue-capacity]
             (.execute executor (constantly true))))
 
-        (stream-http-request executor service-id metric-group error-handler-fn request-control-chan
+        (stream-http-request executor service-id metric-group error-handler-fn streaming-complete-fn
                              streaming-timeout-ms input-stream body-ch 0)
 
         (let [num-fragments-read-atom (atom 0)]
