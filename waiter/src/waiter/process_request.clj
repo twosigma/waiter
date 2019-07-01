@@ -569,6 +569,23 @@
                     (log/warn "unable to abort as request not found inside response!"))]
       (log/info "aborted backend request:" aborted))))
 
+(defn- track-trailers
+  "Adds logging for tracking response trailers for requests."
+  [{:keys [trailers] :as response}]
+  (if trailers
+    (let [correlation-id (cid/get-correlation-id)
+          trailers-copy-ch (async/chan 5)]
+      (async/go
+        (cid/with-correlation-id
+          correlation-id
+          (when-let [trailers-map (async/<! trailers)]
+            (log/info "response trailers:" trailers-map)
+            (async/>! trailers-copy-ch trailers-map))
+          (log/info "closing trailers channel")
+          (async/close! trailers-copy-ch)))
+      (assoc response :trailers trailers-copy-ch))
+    response))
+
 (defn process-http-response
   "Processes a response resulting from a http request.
    It includes book-keeping for async requests and asynchronously streaming the content."
@@ -603,6 +620,7 @@
                        service-id metric-group backend-proto instance (handler/make-auth-user-map request)
                        reason-map instance-request-properties location query-string))
           (assoc :body resp-chan)
+          (track-trailers)
           (update-in [:headers] (fn update-response-headers [headers]
                                   (utils/filterm #(not= "connection" (str/lower-case (str (key %)))) headers)))))))
 
