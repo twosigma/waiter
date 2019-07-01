@@ -123,7 +123,10 @@
 
  ;; The configuration for the Waiter server that will be launched.
  ;; Unless specified otherwise, all the entries below are optional:
- :server-options {;; Whether or not to  enable secure HTTP2 transport, default false
+ :server-options {;; The timeout in ms for blocking I/O operations, default 15 minutes (in millis)
+                  :blocking-timeout 900000
+
+                  ;; Whether or not to  enable secure HTTP2 transport, default false
                   :http2? false
 
                   ;; Whether or not to  enable HTTP2 cleartext transport, default true
