@@ -46,6 +46,8 @@ message CourierReply {
 message CourierSummary {
     int64 num_messages = 1;
     int64 total_length = 2;
+    string status_code = 3;
+    string status_description = 4;
 }
 
 message StateRequest {

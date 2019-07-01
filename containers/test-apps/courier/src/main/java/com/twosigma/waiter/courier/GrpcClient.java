@@ -38,6 +38,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -149,6 +150,15 @@ public class GrpcClient {
             } catch (final StatusRuntimeException e) {
                 logFunction.apply("RPC failed, status: " + e.getStatus());
                 return null;
+            } catch (ExecutionException e) {
+                final Status status = Status.fromThrowable(e.getCause());
+                logFunction.apply("RPC execution failed: " + status);
+                return CourierReply
+                    .newBuilder()
+                    .setId(status.getCode().toString())
+                    .setMessage(status.getDescription())
+                    .setResponse("error")
+                    .build();
             } catch (final Exception e) {
                 logFunction.apply("RPC failed, message: " + e.getMessage());
                 return null;
@@ -255,6 +265,16 @@ public class GrpcClient {
                                 logFunction.apply("releasing semaphore after receiving error");
                                 lockStep.release();
                             }
+                            if (throwable instanceof StatusRuntimeException) {
+                                final StatusRuntimeException exception = (StatusRuntimeException) throwable;
+                                final CourierSummary response = CourierSummary
+                                    .newBuilder()
+                                    .setNumMessages(0)
+                                    .setStatusCode(exception.getStatus().getCode().name())
+                                    .setStatusDescription(exception.getStatus().getDescription())
+                                    .build();
+                                resultList.add(response);
+                            }
                         }
 
                         @Override
@@ -347,7 +367,7 @@ public class GrpcClient {
         final HashMap<String, Object> headers = new HashMap<>();
 
         if (false) {
-            final String id = UUID.randomUUID().toString();
+            final String id = UUID.randomUUID().toString() + ".SEND_ERROR";
             final String user = "Jim";
             final StringBuilder sb = new StringBuilder();
             for (int i = 0; i < 100_000; i++) {
@@ -394,7 +414,7 @@ public class GrpcClient {
             logFunction.apply("retrieveState response = " + stateReply2b);
         }
 
-        {
+        if (false) {
             headers.put("x-cid", "cid-collect-packages-server-pre-cancel." + startTimeMillis);
             final List<String> ids = IntStream.range(0, 10).mapToObj(i -> "id-" + i).collect(Collectors.toList());
             ids.set(5, ids.get(5) + ".EXIT_PRE_RESPONSE");
@@ -408,6 +428,16 @@ public class GrpcClient {
             headers.put("x-cid", "cid-collect-packages-server-post-cancel." + startTimeMillis);
             final List<String> ids = IntStream.range(0, 10).mapToObj(i -> "id-" + i).collect(Collectors.toList());
             ids.set(5, ids.get(5) + ".EXIT_POST_RESPONSE");
+            final List<String> messages = IntStream.range(0, 10).mapToObj(i -> "message-" + i).collect(Collectors.toList());
+            final List<CourierSummary> courierSummaries =
+                collectPackages(host, port, headers, ids, "User", messages, 100, true, messages.size() + 1);
+            logFunction.apply("collectPackages[cancel] summary = " + courierSummaries);
+        }
+
+        if (true) {
+            headers.put("x-cid", "cid-collect-packages-server-error." + startTimeMillis);
+            final List<String> ids = IntStream.range(0, 10).mapToObj(i -> "id-" + i).collect(Collectors.toList());
+            ids.set(5, ids.get(5) + ".SEND_ERROR");
             final List<String> messages = IntStream.range(0, 10).mapToObj(i -> "message-" + i).collect(Collectors.toList());
             final List<CourierSummary> courierSummaries =
                 collectPackages(host, port, headers, ids, "User", messages, 100, true, messages.size() + 1);
