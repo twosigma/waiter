@@ -169,6 +169,26 @@
               (is (= content (.getMessage reply)))
               (is (= "received" (.getResponse reply))))))))))
 
+(deftest ^:parallel ^:integration-fast test-grpc-unary-call-server-error
+  (testing-using-waiter-url
+    (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)]
+      (with-service-cleanup
+        service-id
+        (testing "small request and reply"
+          (log/info "starting small request and reply test")
+          (let [id (str (rand-name "m") ".SEND_ERROR")
+                from (rand-name "f")
+                content (rand-str 1000)
+                request-cid (rand-name)
+                _ (println request-cid)
+                request-headers (assoc request-headers "x-cid" request-cid)
+                reply (GrpcClient/sendPackage host h2c-port request-headers id from content)]
+            (is reply)
+            (when reply
+              (is (= "CANCELLED" (.getId reply)))
+              (is (= "Cancelled by server" (.getMessage reply)))
+              (is (= "error" (.getResponse reply))))))))))
+
 (deftest ^:parallel ^:integration-fast test-grpc-streaming-successful
   (testing-using-waiter-url
     (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)]
@@ -288,3 +308,55 @@
                       (is (= (reductions + (map count (take expected-summary-count messages)))
                              (map #(.getTotalLength %) summaries))
                           assertion-message))))))))))))
+
+(deftest ^:parallel ^:integration-slow test-grpc-streaming-server-error
+  (testing-using-waiter-url
+    (let [num-messages 100
+          num-iterations 10]
+      (dotimes [iteration 1] ;; TODO shams num-iterations
+        (doseq [max-message-length [1000 10000 100000]] ;; TODO shams 10000 100000
+          (testing (str "lock-step mode " max-message-length " messages server error")
+            (let [mode "SEND_ERROR"
+                  {:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)]
+              (with-service-cleanup
+                service-id
+                (let [error-index (* iteration (/ num-messages num-iterations))
+                      collect-cid (str (rand-name) "." mode "." error-index "-" num-messages "." max-message-length)
+                      from (rand-name "f")
+                      ids (map #(str "id-" (cond-> % (= % error-index) (str "." mode))) (range num-messages))
+                      messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))
+                      request-headers (assoc request-headers "x-cid" collect-cid)
+                      _ (println collect-cid error-index) ;; TODO shams remove
+                      summaries (GrpcClient/collectPackages
+                                  host h2c-port request-headers ids from messages 1 true (inc num-messages))
+                      assertion-message (str {:collect-cid collect-cid
+                                              :error-index error-index
+                                              :iteration iteration
+                                              :service-id service-id
+                                              :summaries (map (fn [s]
+                                                                {:num-messages (.getNumMessages s)
+                                                                 :status-code (.getStatusCode s)
+                                                                 :status-description (.getStatusDescription s)
+                                                                 :total-length (.getTotalLength s)})
+                                                              summaries)})
+                      expected-summary-count error-index
+                      message-summaries (take (dec (count summaries)) summaries)
+                      status-summary (last summaries)]
+                  (log/info "result" assertion-message)
+                  (is (= expected-summary-count (count message-summaries)) assertion-message)
+                  (when (seq message-summaries)
+                    (is (= (range 1 (inc expected-summary-count))
+                           (map #(.getNumMessages %) message-summaries))
+                        assertion-message)
+                    (is (= (reductions + (map count (take expected-summary-count messages)))
+                           (map #(.getTotalLength %) message-summaries))
+                        assertion-message))
+                  (is status-summary)
+                  (when status-summary
+                    (println status-summary)
+                    (is (= "CANCELLED" (.getStatusCode status-summary))
+                        assertion-message)
+                    (is (= "Cancelled by server" (.getStatusDescription status-summary))
+                        assertion-message)
+                    (is (zero? (.getNumMessages status-summary))
+                        assertion-message)))))))))))
