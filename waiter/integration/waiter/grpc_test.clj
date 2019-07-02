@@ -271,7 +271,7 @@
 (deftest ^:parallel ^:integration-slow test-grpc-streaming-server-exit
   (testing-using-waiter-url
     (let [num-messages 100
-          num-iterations 20]
+          num-iterations 5]
       (dotimes [iteration num-iterations]
         (doseq [max-message-length [1000 10000 100000]]
           (doseq [mode ["EXIT_PRE_RESPONSE" "EXIT_POST_RESPONSE"]]
@@ -320,7 +320,7 @@
 (deftest ^:parallel ^:integration-slow test-grpc-streaming-server-cancellation
   (testing-using-waiter-url
     (let [num-messages 100
-          num-iterations 20]
+          num-iterations 5]
       (dotimes [iteration num-iterations]
         (doseq [max-message-length [1000 10000 100000]]
           (testing (str "lock-step mode " max-message-length " messages server error")
