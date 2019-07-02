@@ -314,9 +314,7 @@
                     (is status-summary)
                     (when status-summary
                       (log/info "server exit summary" status-summary)
-                      (is (= (if (= "EXIT_PRE_RESPONSE" mode) "UNAVAILABLE" "INTERNAL")
-                             (.getStatusCode status-summary))
-                          assertion-message)
+                      (is (contains? #{"UNAVAILABLE" "INTERNAL"} (.getStatusCode status-summary)) assertion-message)
                       (is (zero? (.getNumMessages status-summary)) assertion-message))))))))))))
 
 (deftest ^:parallel ^:integration-slow test-grpc-streaming-server-cancellation
