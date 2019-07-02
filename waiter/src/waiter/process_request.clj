@@ -373,10 +373,10 @@
         ;; client request needs to be closed, trigger early EOF to
         ;; - unblock any calls to input-stream.read()
         ;; - trigger clean up of request processing
-        (when (instance? HttpInput input-stream)
+        (comment when (instance? HttpInput input-stream)
           (when-not (.isFinished ^HttpInput input-stream)
-            (log/info "triggering early eof on client request")
-            (.earlyEOF ^HttpInput input-stream)))))
+            (log/info "releasing blocked client request")
+            (.unblock ^HttpInput input-stream)))))
     (try
       (submit-request-streaming-task executor stream-http-request-fn)
       (catch Throwable throwable
