@@ -997,7 +997,7 @@
   [waiter-url]
   (or (using-saml-authenticator? waiter-url)
       (and (using-composite-authenticator? waiter-url)
-           (get-in (waiter-settings waiter-url) [:authenticator-config :composite :authentication-providers "saml"]))))
+           (get-in (waiter-settings waiter-url) [:authenticator-config :composite :authentication-providers :saml]))))
 
 (defn can-query-for-grace-period?
   "Returns true if Waiter supports querying for grace period"
