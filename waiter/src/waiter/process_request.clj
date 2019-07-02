@@ -55,15 +55,9 @@
   (let [state (au/poll! control-chan :still-running)]
     (cond
       (= :still-running state) :still-running
-      (= (first state) ::servlet/error) (let [ex (ex-info "Error in server" {:cid correlation-id} (second state))]
-                                          (log/error ex "error discovered in check-control")
-                                          (throw ex))
-      (= (first state) ::servlet/timeout) (let [ex (ex-info "Operation timed out" {:cid correlation-id} (second state))]
-                                            (log/error ex "timeout discovered in check-control")
-                                            (throw ex))
-      :else (let [ex (ex-info "Connection closed while still processing" {:cid correlation-id})]
-              (log/error ex "connection closed in check-control")
-              (throw ex)))))
+      (= (first state) ::servlet/error) (throw (ex-info "Error in server" {:cid correlation-id} (second state)))
+      (= (first state) ::servlet/timeout) (throw (ex-info "Operation timed out" {:cid correlation-id} (second state)))
+      :else (throw (ex-info "Connection closed while still processing" {:cid correlation-id})))))
 
 (defn confirm-live-connection-factory
   "Confirms that the connection to the client is live by checking the ctrl channel, else it throws an exception."
@@ -373,14 +367,16 @@
                 (catch Throwable throwable
                   (error-handler-fn (ex-info "error in client request" {:error-cause :client-error} throwable))
                   false))
+          ;; keep looping if no client errors were determined
           (async/<! (async/timeout 5000))
           (recur))
-        (do
-          (log/info "done tracking client request")
-          (when (instance? HttpInput input-stream)
-            (when-not (.isFinished ^HttpInput input-stream)
-              (log/info "triggering early eof on client request")
-              (.earlyEOF ^HttpInput input-stream))))))
+        ;; client request needs to be closed, trigger early EOF to
+        ;; - unblock any calls to input-stream.read()
+        ;; - trigger clean up of request processing
+        (when (instance? HttpInput input-stream)
+          (when-not (.isFinished ^HttpInput input-stream)
+            (log/info "triggering early eof on client request")
+            (.earlyEOF ^HttpInput input-stream)))))
     (try
       (submit-request-streaming-task executor stream-http-request-fn)
       (catch Throwable throwable
