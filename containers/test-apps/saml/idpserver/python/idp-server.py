@@ -65,6 +65,13 @@ def make_saml_response():
 class MyHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         """Respond to a GET request."""
+        if self.path == "/healthcheck":
+            self.send_response(200)
+            self.send_header("content-type", "text/html")
+            self.end_headers()
+            self.wfile.write(b"OK")
+            return
+
         url_tokens = self.path.split("?")
         if not url_tokens or len(url_tokens) < 2:
             return
