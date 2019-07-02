@@ -45,7 +45,7 @@ WAITER_DIR=${DIR}/..
 
 # Wait for waiter to be listening
 timeout 180s bash -c "wait_for_waiter ${WAITER_URI}"
-if [ $? -ne 0 ]; then
+if [[ $? -ne 0 ]]; then
   echo "$(date +%H:%M:%S) timed out waiting for waiter to start listening, displaying waiter log"
   cat ${WAITER_DIR}/log/*waiter.log
   exit 1
@@ -53,15 +53,15 @@ fi
 curl -s ${WAITER_URI}/state | jq .routers
 curl -s ${WAITER_URI}/settings | jq .port
 
-# TODO shams remove this thread-dump snippet
-mkdir -p ${WAITER_DIR}/log
+THREAD_DUMP_DIR=${WAITER_DIR}/log/thread-dump
+mkdir -p ${THREAD_DUMP_DIR}
 WAITER_PID=$(lsof -Pi :9091 -sTCP:LISTEN -t)
 echo "$(date +%H:%M:%S) waiter pid is ${WAITER_PID}"
 while true; do
   sleep 15
-  file_name="thread-dump-$(date +%Y%m%d-%H%M%S).log"
-  echo "$(date +%H:%M:%S) writing thread dump to ${WAITER_DIR}/log/${file_name}"
-  jstack ${WAITER_PID} > "${WAITER_DIR}/log/${file_name}"
+  file_name="$(date +%Y%m%d-%H%M%S).log"
+  echo "$(date +%H:%M:%S) writing thread dump to ${THREAD_DUMP_DIR}/${file_name}"
+  jstack ${WAITER_PID} > "${THREAD_DUMP_DIR}/${file_name}"
 done &
 
 # Run the integration tests
