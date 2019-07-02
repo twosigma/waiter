@@ -40,108 +40,94 @@
 
 (defn- run-backend-proto-service-test
   "Helper method to run tests with various backend protocols"
-  ([waiter-url backend-proto health-check-port-index backend-scheme backend-proto-version]
-   (run-backend-proto-service-test
-     waiter-url backend-proto backend-proto health-check-port-index backend-scheme backend-proto-version))
-  ([waiter-url backend-proto health-check-proto health-check-port-index backend-scheme backend-proto-version]
-   (let [nginx-command (nginx-server-command backend-proto)
-         request-headers {:x-waiter-backend-proto backend-proto
-                          :x-waiter-cmd nginx-command
-                          :x-waiter-env-kitchen_cmd (kitchen-cmd)
-                          :x-waiter-health-check-port-index health-check-port-index
-                          :x-waiter-health-check-proto health-check-proto
-                          :x-waiter-name (rand-name)
-                          :x-waiter-ports 3}
-         {:keys [headers request-headers service-id] :as response}
-         (make-request-with-debug-info request-headers #(make-shell-request waiter-url % :path "/request-info"))]
-     (with-service-cleanup
-       service-id
-       (is service-id)
-       (assert-response-status response 200)
-       (let [{:strs [x-nginx-client-proto x-nginx-client-scheme x-waiter-backend-proto]} headers]
-         (is (= backend-proto-version x-nginx-client-proto))
-         (is (= backend-scheme x-nginx-client-scheme))
-         (is (= backend-proto x-waiter-backend-proto)))
-       (let [service-settings (service-settings waiter-url service-id)]
-         (is (= backend-proto (get-in service-settings [:service-description :backend-proto])))
-         (is (= nginx-command (get-in service-settings [:service-description :cmd]))))
+  [waiter-url backend-proto backend-scheme backend-proto-version]
+  (let [nginx-command (nginx-server-command backend-proto)
+        request-headers {:x-waiter-backend-proto backend-proto
+                         :x-waiter-cmd nginx-command
+                         :x-waiter-env-kitchen_cmd (kitchen-cmd)
+                         :x-waiter-health-check-port-index 1
+                         :x-waiter-health-check-proto "http"
+                         :x-waiter-name (rand-name)
+                         :x-waiter-ports 3}
+        {:keys [headers request-headers service-id] :as response}
+        (make-request-with-debug-info request-headers #(make-shell-request waiter-url % :path "/request-info"))]
+    (with-service-cleanup
+      service-id
+      (is service-id)
+      (assert-response-status response 200)
+      (let [{:strs [x-nginx-client-proto x-nginx-client-scheme x-waiter-backend-proto]} headers]
+        (is (= backend-proto-version x-nginx-client-proto))
+        (is (= backend-scheme x-nginx-client-scheme))
+        (is (= backend-proto x-waiter-backend-proto)))
+      (let [service-settings (service-settings waiter-url service-id)]
+        (is (= backend-proto (get-in service-settings [:service-description :backend-proto])))
+        (is (= nginx-command (get-in service-settings [:service-description :cmd]))))
 
-       (let [{:keys [http2c? http2? ssl-port]} (:server-options (waiter-settings waiter-url))
-             test-protocols (cond-> ["http"]
-                              http2c? (conj "h2c")
-                              ssl-port (conj "https")
-                              (and http2? ssl-port) (conj "h2"))]
-         (doseq [protocol test-protocols]
-           (let [waiter-url (cond-> waiter-url
-                              (= "h2c" protocol) (retrieve-h2c-url)
-                              (or (= "h2" protocol) (= "https" protocol)) (retrieve-ssl-url (retrieve-ssl-port ssl-port)))]
+      (let [{:keys [http2c? http2? ssl-port]} (:server-options (waiter-settings waiter-url))
+            test-protocols (cond-> ["http"]
+                             http2c? (conj "h2c")
+                             ssl-port (conj "https")
+                             (and http2? ssl-port) (conj "h2"))]
+        (doseq [protocol test-protocols]
+          (let [waiter-url (cond-> waiter-url
+                             (= "h2c" protocol) (retrieve-h2c-url)
+                             (or (= "h2" protocol) (= "https" protocol)) (retrieve-ssl-url (retrieve-ssl-port ssl-port)))]
 
-             (testing (str "using protocol " protocol)
-               (testing "streaming single request"
-                 (dotimes [iteration 20]
-                   (testing (str "iteration-" iteration)
-                     (let [kitchen-response-size (+ 2000000 (* 10000 (rand-int 20)))
-                           correlation-id (rand-name)
-                           request-headers (-> request-headers
-                                             (dissoc "x-cid")
-                                             (assoc :x-cid correlation-id
-                                                    :x-kitchen-chunk-delay (rand-int 10)
-                                                    :x-kitchen-chunk-size 2000
-                                                    :x-kitchen-response-size kitchen-response-size
-                                                    :x-waiter-debug true))
-                           response (make-shell-request waiter-url request-headers :path "/chunked" :protocol protocol)]
-                       (assert-streaming-response waiter-url correlation-id protocol kitchen-response-size response)))))
+            (testing (str "using protocol " protocol)
+              (testing "streaming single request"
+                (dotimes [iteration 20]
+                  (testing (str "iteration-" iteration)
+                    (let [kitchen-response-size (+ 2000000 (* 10000 (rand-int 20)))
+                          correlation-id (rand-name)
+                          request-headers (-> request-headers
+                                              (dissoc "x-cid")
+                                              (assoc :x-cid correlation-id
+                                                     :x-kitchen-chunk-delay (rand-int 10)
+                                                     :x-kitchen-chunk-size 2000
+                                                     :x-kitchen-response-size kitchen-response-size
+                                                     :x-waiter-debug true))
+                          response (make-shell-request waiter-url request-headers :path "/chunked" :protocol protocol)]
+                      (assert-streaming-response waiter-url correlation-id protocol kitchen-response-size response)))))
 
-               (testing "streaming multiple requests"
-                 (doseq [{:keys [correlation-id expected-response-size response]}
-                         (parallelize-requests
-                           10 ;; num threads
-                           5 ;; num iterations
-                           (fn []
-                             (let [correlation-id (rand-name)
-                                   kitchen-response-size (+ 200000 (* 10000 (rand-int 20)))
-                                   request-headers (-> request-headers
-                                                     (dissoc "x-cid")
-                                                     (assoc :x-cid correlation-id
-                                                            :x-kitchen-chunk-delay (rand-int 10)
-                                                            :x-kitchen-chunk-size (+ 2000 (* 100 (rand-int 20)))
-                                                            :x-kitchen-response-size kitchen-response-size
-                                                            :x-waiter-debug true))]
-                               {:correlation-id correlation-id
-                                :expected-response-size kitchen-response-size
-                                :response (make-shell-request waiter-url request-headers :path "/chunked" :protocol protocol)}))
-                           :verbose true)]
-                   (assert-streaming-response waiter-url correlation-id protocol expected-response-size response)))))))))))
+              (testing "streaming multiple requests"
+                (doseq [{:keys [correlation-id expected-response-size response]}
+                        (parallelize-requests
+                          10 ;; num threads
+                          5 ;; num iterations
+                          (fn []
+                            (let [correlation-id (rand-name)
+                                  kitchen-response-size (+ 200000 (* 10000 (rand-int 20)))
+                                  request-headers (-> request-headers
+                                                      (dissoc "x-cid")
+                                                      (assoc :x-cid correlation-id
+                                                             :x-kitchen-chunk-delay (rand-int 10)
+                                                             :x-kitchen-chunk-size (+ 2000 (* 100 (rand-int 20)))
+                                                             :x-kitchen-response-size kitchen-response-size
+                                                             :x-waiter-debug true))]
+                              {:correlation-id correlation-id
+                               :expected-response-size kitchen-response-size
+                               :response (make-shell-request waiter-url request-headers :path "/chunked" :protocol protocol)}))
+                          :verbose true)]
+                  (assert-streaming-response waiter-url correlation-id protocol expected-response-size response))))))))))
 
 (deftest ^:parallel ^:integration-slow test-http-backend-proto-service
   (testing-using-waiter-url
-    (run-backend-proto-service-test waiter-url "http" 1 "http" "HTTP/1.1")
+    (run-backend-proto-service-test waiter-url "http" "http" "HTTP/1.1")
     (is "test completed marker")))
 
 (deftest ^:parallel ^:integration-slow test-https-backend-proto-service
   (testing-using-waiter-url
-    (run-backend-proto-service-test waiter-url "https" 1 "https" "HTTP/1.1")
+    (run-backend-proto-service-test waiter-url "https" "https" "HTTP/1.1")
     (is "test completed marker")))
 
 (deftest ^:parallel ^:integration-slow test-h2c-backend-proto-service
   (testing-using-waiter-url
-    (run-backend-proto-service-test waiter-url "h2c" 1 "http" "HTTP/2.0")
+    (run-backend-proto-service-test waiter-url "h2c" "http" "HTTP/2.0")
     (is "test completed marker")))
 
 (deftest ^:parallel ^:integration-slow test-h2-backend-proto-service
   (testing-using-waiter-url
-    (run-backend-proto-service-test waiter-url "h2" 1 "https" "HTTP/2.0")
-    (is "test completed marker")))
-
-(deftest ^:parallel ^:integration-slow test-h2-backend-proto-service-health-check-on-port0
-  (testing-using-waiter-url
-    (run-backend-proto-service-test waiter-url "h2" 0 "https" "HTTP/2.0")
-    (is "test completed marker")))
-
-(deftest ^:parallel ^:integration-slow test-health-check-proto
-  (testing-using-waiter-url
-    ;; PORT2 is running kitchen without SSL enabled
-    (run-backend-proto-service-test waiter-url "h2" "https" 1 "https" "HTTP/2.0")
+    (run-backend-proto-service-test waiter-url "h2" "https" "HTTP/2.0")
     (is "test completed marker")))
 
 (deftest ^:parallel ^:integration-fast test-internal-protocol
