@@ -48,7 +48,7 @@
            (javax.servlet ServletOutputStream)
            (org.eclipse.jetty.client HttpClient)
            (org.eclipse.jetty.io EofException)
-           (org.eclipse.jetty.server HttpChannel HttpOutput Response)))
+           (org.eclipse.jetty.server HttpChannel HttpInput HttpOutput Response)))
 
 (defn check-control
   [control-chan correlation-id]
@@ -375,7 +375,12 @@
                   false))
           (async/<! (async/timeout 5000))
           (recur))
-        (log/info "done tracking client request")))
+        (do
+          (log/info "done tracking client request")
+          (when (instance? HttpInput input-stream)
+            (when-not (.isFinished ^HttpInput input-stream)
+              (log/info "triggering early eof on client request")
+              (.earlyEOF ^HttpInput input-stream))))))
     (try
       (submit-request-streaming-task executor stream-http-request-fn)
       (catch Throwable throwable
@@ -610,7 +615,7 @@
   "Eagerly terminates grpc requests with error status headers.
    We cannot rely on jetty to close the request for us in a timely manner,
    please see https://github.com/eclipse/jetty.project/issues/3842 for details."
-  [{:keys [abort-ch body] :as response} request backend-proto reservation-status-promise]
+  [{:keys [abort-ch body error-chan] :as response} request-control-chan request backend-proto reservation-status-promise]
   (let [request-headers (:headers request)
         {:strs [grpc-status]} (:headers response)
         proto-version (hu/backend-protocol->http-version backend-proto)]
@@ -625,7 +630,9 @@
       ;; mark the request as successful, grpc failures are reported in the headers
       (deliver reservation-status-promise :success)
       ;; stop writing any content in the body
-      (async/close! body))
+      (async/close! body)
+      (async/close! error-chan)
+      (async/close! request-control-chan))
     response))
 
 (defn process-http-response
@@ -639,7 +646,8 @@
   (let [{:keys [service-description service-id]} descriptor
         {:strs [backend-proto blacklist-on-503 metric-group]} service-description
         waiter-debug-enabled? (utils/request->debug-enabled? request)
-        resp-chan (async/chan 5)]
+        resp-chan (async/chan 5)
+        request-control-chan (:request-control-chan instance-request-properties)]
     (when (and blacklist-on-503 (hu/service-unavailable? request response))
       (log/info "service unavailable according to response status"
                 {:instance instance
@@ -661,9 +669,9 @@
             location (post-process-async-request-response-fn
                        service-id metric-group backend-proto instance (handler/make-auth-user-map request)
                        reason-map instance-request-properties location query-string))
-          (assoc :body resp-chan)
           (forward-grpc-status-headers-in-trailers)
-          (handle-grpc-response request backend-proto reservation-status-promise)
+          (handle-grpc-response request-control-chan request backend-proto reservation-status-promise)
+          (assoc :body resp-chan)
           (update-in [:headers] (fn update-response-headers [headers]
                                   (utils/filterm #(not= "connection" (str/lower-case (str (key %)))) headers)))))))
 
@@ -758,7 +766,9 @@
                                                                     passthrough-headers uri metric-group backend-proto
                                                                     proto-version request-control-chan)))
                                 response-elapsed (:elapsed timed-response)
-                                {:keys [error] :as response} (:out timed-response)]
+                                {:keys [error] :as response} (:out timed-response)
+                                ;; TODO shams cleanly pass arg
+                                instance-request-properties (assoc instance-request-properties :request-control-chan request-control-chan)]
                             (statsd/histo! metric-group "backend_response" response-elapsed)
                             (-> (if error
                                   (let [error-response (handle-response-error error reservation-status-promise service-id request)]

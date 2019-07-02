@@ -70,6 +70,7 @@
                           "x-waiter-timeout" "60000")]
     (assert-response-status response 200)
     (is service-id)
+    (log/info "ping cid:" (get headers "x-cid"))
     (log/info "service-id:" service-id)
     (let [{:keys [ping-response service-state]} (some-> response :body try-parse-json walk/keywordize-keys)]
       (is (= "received-response" (:result ping-response)) (str ping-response))
@@ -274,15 +275,18 @@
   (testing-using-waiter-url
     (let [num-messages 100
           num-iterations 10]
-      (dotimes [iteration num-iterations]
-        (doseq [max-message-length [1000 10000 100000]]
-          (doseq [mode ["EXIT_PRE_RESPONSE" "EXIT_POST_RESPONSE"]]
+      (dotimes [iteration 1] ;; TODO shams num-iterations
+        (doseq [max-message-length [1000]] ;; TODO shams  10000 100000
+          (doseq [mode ["EXIT_POST_RESPONSE"]] ;; TODO shams "EXIT_PRE_RESPONSE" "EXIT_POST_RESPONSE"
             (testing (str "lock-step mode " max-message-length " messages cancellations pre-response")
-              (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)]
+              (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)
+                    ]
                 (with-service-cleanup
                   service-id
                   (let [cancellation-index (* iteration (/ num-messages num-iterations))
                         collect-cid (str (rand-name) "." mode "." cancellation-index "-" num-messages "." max-message-length)
+                        _ (println "collect packages cid" collect-cid "for"
+                                    {:iteration iteration :max-message-length max-message-length})
                         from (rand-name "f")
                         ids (map #(str "id-" (cond-> % (= % cancellation-index) (str "." mode))) (range num-messages))
                         messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))
@@ -295,26 +299,37 @@
                                                 :service-id service-id
                                                 :summaries (map (fn [s]
                                                                   {:num-messages (.getNumMessages s)
+                                                                   :status-code (.getStatusCode s)
+                                                                   :status-description (.getStatusDescription s)
                                                                    :total-length (.getTotalLength s)})
                                                                 summaries)})
+                        message-summaries (take (dec (count summaries)) summaries)
+                        status-summary (last summaries)
                         expected-summary-count (cond-> cancellation-index
                                                  (= "EXIT_POST_RESPONSE" mode) inc)]
                     (log/info "result" assertion-message) ;; TODO shams convert to log
-                    (is (= expected-summary-count (count summaries)) assertion-message)
-                    (when (seq summaries)
+                    (is (= expected-summary-count (count message-summaries)) assertion-message)
+                    (when (seq message-summaries)
                       (is (= (range 1 (inc expected-summary-count))
-                             (map #(.getNumMessages %) summaries))
+                             (map #(.getNumMessages %) message-summaries))
                           assertion-message)
                       (is (= (reductions + (map count (take expected-summary-count messages)))
-                             (map #(.getTotalLength %) summaries))
+                             (map #(.getTotalLength %) message-summaries))
+                          assertion-message))
+                    (is status-summary)
+                    (when status-summary
+                      (log/info "server cancellation summary" status-summary)
+                      (is (= "UNAVAILABLE" (.getStatusCode status-summary))
+                          assertion-message)
+                      (is (zero? (.getNumMessages status-summary))
                           assertion-message))))))))))))
 
 (deftest ^:parallel ^:integration-slow test-grpc-streaming-server-error
   (testing-using-waiter-url
     (let [num-messages 100
           num-iterations 10]
-      (dotimes [iteration 1] ;; TODO shams num-iterations
-        (doseq [max-message-length [1000 10000 100000]] ;; TODO shams 10000 100000
+      (dotimes [iteration num-iterations]
+        (doseq [max-message-length [1000 10000 100000]]
           (testing (str "lock-step mode " max-message-length " messages server error")
             (let [mode "SEND_ERROR"
                   {:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)]
@@ -326,7 +341,8 @@
                       ids (map #(str "id-" (cond-> % (= % error-index) (str "." mode))) (range num-messages))
                       messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))
                       request-headers (assoc request-headers "x-cid" collect-cid)
-                      _ (println collect-cid error-index) ;; TODO shams remove
+                      _ (log/info "collect packages cid" collect-cid "for"
+                                  {:iteration iteration :max-message-length max-message-length})
                       summaries (GrpcClient/collectPackages
                                   host h2c-port request-headers ids from messages 1 true (inc num-messages))
                       assertion-message (str {:collect-cid collect-cid
@@ -353,7 +369,7 @@
                         assertion-message))
                   (is status-summary)
                   (when status-summary
-                    (println status-summary)
+                    (log/info "server cancellation summary" status-summary)
                     (is (= "CANCELLED" (.getStatusCode status-summary))
                         assertion-message)
                     (is (= "Cancelled by server" (.getStatusDescription status-summary))
