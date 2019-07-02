@@ -75,7 +75,7 @@
 
             (testing (str "using protocol " protocol)
               (testing "streaming single request"
-                (dotimes [iteration 20]
+                (dotimes [iteration 5]
                   (testing (str "iteration-" iteration)
                     (let [kitchen-response-size (+ 2000000 (* 10000 (rand-int 20)))
                           correlation-id (rand-name)
