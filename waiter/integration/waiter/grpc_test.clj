@@ -129,13 +129,11 @@
       :else
       (do
         (when-not (= ["INIT" "READY"] (take 2 states))
-          (println assertion-message)
           (log/info "FAIL:" assertion-message))
         (if (> (count states) 6)
           (is (= ["INIT" "READY" "RECEIVE_MESSAGE" "SEND_HEADERS"] (take 4 states)) assertion-message)
           (is (= ["INIT" "READY"] (take 2 states)) assertion-message))
         (when-not (every? #{"RECEIVE_MESSAGE" "SEND_MESSAGE"} (->> states (drop 4) (drop-last 4)))
-          (println assertion-message)
           (log/info "FAIL:" assertion-message))
         (is (every? #{"RECEIVE_MESSAGE" "SEND_MESSAGE"} (->> states (drop 4) (drop-last 4))) assertion-message)
         (if expect-cancel?
@@ -144,7 +142,6 @@
                 actual-last-two-states (take-last 2 states)]
             (is (every? expected-last-two-state-members actual-last-two-states) assertion-message)
             (when-not (some #{"CANCEL"} actual-last-two-states)
-              (println assertion-message)
               (log/info "FAIL:" assertion-message))
             (is (some #{"CANCEL"} actual-last-two-states) assertion-message)
             (is (= 2 (count (set actual-last-two-states))) assertion-message))
@@ -181,7 +178,7 @@
                 from (rand-name "f")
                 content (rand-str 1000)
                 request-cid (rand-name)
-                _ (println request-cid)
+                _ (log/info "cid:" request-cid)
                 request-headers (assoc request-headers "x-cid" request-cid)
                 reply (GrpcClient/sendPackage host h2c-port request-headers id from content)]
             (is reply)
@@ -233,7 +230,7 @@
                 (let [states (retrieve-states host h2c-port request-headers service-id collect-cid false)]
                   (is (= (+ 6 (* 2 num-messages)) (count states)) (str collect-cid " -> " states)))))))))))
 
-(deftest ^:parallel ^:integration-slow test-grpc-streaming-client-cancellation
+(deftest ^:parallel ^:integration-slow test-grpc-streaming-client-return
   (testing-using-waiter-url
     (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)]
       (with-service-cleanup
@@ -242,8 +239,8 @@
           (let [num-messages 100
                 messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))]
 
-            (dotimes [_ 20]
-              (testing (str "independent mode " max-message-length " messages cancellations")
+            (dotimes [_ 20] ;; TODO shams reduce number of iterations to 5
+              (testing (str "independent mode " max-message-length " messages client return")
                 (log/info "starting streaming to and from server - independent mode test")
                 (let [cancel-threshold (+ 5 (rand-int (- num-messages 5)))
                       from (rand-name "f")
@@ -257,7 +254,7 @@
                   (let [states (retrieve-states host h2c-port request-headers service-id collect-cid true)]
                     (is (>= (+ 6 (* 2 cancel-threshold)) (count states)) (str collect-cid " -> " states)))))
 
-              (testing (str "lock-step mode " max-message-length " messages cancellations")
+              (testing (str "lock-step mode " max-message-length " messages client return")
                 (log/info "starting streaming to and from server - lock-step mode test")
                 (let [cancel-threshold (+ 5 (rand-int (- num-messages 5)))
                       from (rand-name "f")
@@ -271,41 +268,39 @@
                   (let [states (retrieve-states host h2c-port request-headers service-id collect-cid true)]
                     (is (>= (+ 6 (* 2 cancel-threshold)) (count states)) (str collect-cid " -> " states))))))))))))
 
-(deftest ^:parallel ^:integration-slow test-grpc-streaming-server-cancellation
+(deftest ^:parallel ^:integration-slow test-grpc-streaming-server-exit
   (testing-using-waiter-url
     (let [num-messages 100
           num-iterations 10]
-      (dotimes [iteration 1] ;; TODO shams num-iterations
-        (doseq [max-message-length [1000]] ;; TODO shams  10000 100000
-          (doseq [mode ["EXIT_POST_RESPONSE"]] ;; TODO shams "EXIT_PRE_RESPONSE" "EXIT_POST_RESPONSE"
-            (testing (str "lock-step mode " max-message-length " messages cancellations pre-response")
-              (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)
-                    ]
+      (dotimes [iteration num-iterations]
+        (doseq [max-message-length [1000 10000 100000]]
+          (doseq [mode ["EXIT_PRE_RESPONSE" "EXIT_POST_RESPONSE"]]
+            (testing (str "lock-step mode " max-message-length " messages exits pre-response")
+              (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)]
                 (with-service-cleanup
                   service-id
-                  (let [cancellation-index (* iteration (/ num-messages num-iterations))
-                        collect-cid (str (rand-name) "." mode "." cancellation-index "-" num-messages "." max-message-length)
-                        _ (println "collect packages cid" collect-cid "for"
+                  (let [exit-index (* iteration (/ num-messages num-iterations))
+                        collect-cid (str (rand-name) "." mode "." exit-index "-" num-messages "." max-message-length)
+                        _ (log/info "collect packages cid" collect-cid "for"
                                     {:iteration iteration :max-message-length max-message-length})
                         from (rand-name "f")
-                        ids (map #(str "id-" (cond-> % (= % cancellation-index) (str "." mode))) (range num-messages))
+                        ids (map #(str "id-" (cond-> % (= % exit-index) (str "." mode))) (range num-messages))
                         messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))
                         request-headers (assoc request-headers "x-cid" collect-cid)
                         summaries (GrpcClient/collectPackages
                                     host h2c-port request-headers ids from messages 1 true (inc num-messages))
-                        assertion-message (str {:cancellation-index cancellation-index
+                        assertion-message (str {:exit-index exit-index
                                                 :collect-cid collect-cid
                                                 :iteration iteration
                                                 :service-id service-id
                                                 :summaries (map (fn [s]
                                                                   {:num-messages (.getNumMessages s)
                                                                    :status-code (.getStatusCode s)
-                                                                   :status-description (.getStatusDescription s)
                                                                    :total-length (.getTotalLength s)})
                                                                 summaries)})
                         message-summaries (take (dec (count summaries)) summaries)
                         status-summary (last summaries)
-                        expected-summary-count (cond-> cancellation-index
+                        expected-summary-count (cond-> exit-index
                                                  (= "EXIT_POST_RESPONSE" mode) inc)]
                     (log/info "result" assertion-message) ;; TODO shams convert to log
                     (is (= expected-summary-count (count message-summaries)) assertion-message)
@@ -318,13 +313,13 @@
                           assertion-message))
                     (is status-summary)
                     (when status-summary
-                      (log/info "server cancellation summary" status-summary)
-                      (is (= "UNAVAILABLE" (.getStatusCode status-summary))
+                      (log/info "server exit summary" status-summary)
+                      (is (= (if (= "EXIT_PRE_RESPONSE" mode) "UNAVAILABLE" "INTERNAL")
+                             (.getStatusCode status-summary))
                           assertion-message)
-                      (is (zero? (.getNumMessages status-summary))
-                          assertion-message))))))))))))
+                      (is (zero? (.getNumMessages status-summary)) assertion-message))))))))))))
 
-(deftest ^:parallel ^:integration-slow test-grpc-streaming-server-error
+(deftest ^:parallel ^:integration-slow test-grpc-streaming-server-cancellation
   (testing-using-waiter-url
     (let [num-messages 100
           num-iterations 10]

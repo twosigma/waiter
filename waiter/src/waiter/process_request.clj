@@ -544,7 +544,7 @@
           (meters/mark! stream-exception-meter)
           ;; assign instance-error or client-error correctly
           (let [[error-cause message _] (classify-error e)]
-            (log/error (.getMessage e) "identified as" error-cause "with message" message)
+            (log/error (-> e .getClass .getCanonicalName) (.getMessage e) "identified as" error-cause message)
             (deliver reservation-status-promise error-cause))
           (log/info "sending poison pill to response channel")
           (let [poison-pill-function (poison-pill-fn (cid/get-correlation-id))]
