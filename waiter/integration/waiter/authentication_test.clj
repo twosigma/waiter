@@ -60,29 +60,7 @@
           (is (string/includes? body error-message)))))))
 
 (defn- perform-saml-authentication
-  "Default implementation of performing authentication with an identity provider service.
-   Return map of waiter acs endpoint, saml-response and relay-state"
-  [saml-redirect-location]
-  (let [{:keys [headers cookies]} (make-request saml-redirect-location "")
-        saml-redirect-location-2 (get headers "location")
-        login-form-location (first (string/split saml-redirect-location-2 #"\?"))
-        {:keys [cookies body]} (make-request saml-redirect-location-2 "" :cookies cookies)
-        {:keys [login-form-action auth-state]}
-        (reaver/extract (reaver/parse body) [:login-form-action :auth-state]
-                        "form" (reaver/attr :action)
-                        "form input[name=AuthState]" (reaver/attr :value))
-        {:keys [body]} (make-request (str login-form-location login-form-action) ""
-                                     :body (str "AuthState=" (URLEncoder/encode auth-state) "&username=user2&password=user2pass")
-                                     :cookies cookies
-                                     :headers {"content-type" "application/x-www-form-urlencoded"}
-                                     :method :post)]
-    (reaver/extract (reaver/parse body) [:waiter-saml-acs-endpoint :saml-response :relay-state]
-                    "form" (reaver/attr :action)
-                    "form input[name=SAMLResponse]" (reaver/attr :value)
-                    "form input[name=RelayState]" (reaver/attr :value))))
-
-(defn- perform-saml-authentication-kerberos
-  "Implementation of performing authentication with an identity provider service using kerberos.
+  "Perform authentication wtih an identity provider service.
    Return map of waiter acs endpoint, saml-response and relay-state"
   [saml-redirect-location]
   (let [make-connection (fn [request-url]
@@ -99,8 +77,7 @@
                     "form input[name=SAMLResponse]" (reaver/attr :value)
                     "form input[name=RelayState]" (reaver/attr :value))))
 
-;; need to temporarily turn off this test until ADFS setting is updated
-(deftest ^:parallel ^:integration-fast ^:explicit test-saml-authentication
+(deftest ^:parallel ^:integration-fast test-saml-authentication
   (testing-using-waiter-url
     (when (supports-saml-authentication? waiter-url)
       (let [token (rand-name)
@@ -117,9 +94,7 @@
                 {:keys [headers] :as response} (make-request waiter-url "/request-info" :headers {:x-waiter-token token})
                 _ (assert-response-status response 302)
                 saml-redirect-location (get headers "location")
-                saml-authentication-fn (if use-spnego perform-saml-authentication-kerberos perform-saml-authentication)
-                {:keys [relay-state saml-response waiter-saml-acs-endpoint]} (saml-authentication-fn saml-redirect-location)
-                _ (println relay-state)
+                {:keys [relay-state saml-response waiter-saml-acs-endpoint]} (perform-saml-authentication saml-redirect-location)
             {:keys [body]} (make-request waiter-saml-acs-endpoint ""
                                          :body (str "SAMLResponse=" (URLEncoder/encode saml-response) "&RelayState=" (URLEncoder/encode relay-state))
                                          :headers {"content-type" "application/x-www-form-urlencoded"}
@@ -146,7 +121,7 @@
                 body-json (json/read-str (str body))]
             (with-service-cleanup
               service-id
-              (is (= auth-principal (get-in body-json ["headers" "x-waiter-auth-principal"])))))
+              (is (= (retrieve-username) (get-in body-json ["headers" "x-waiter-auth-principal"])))))
           (finally
             (delete-token-and-assert waiter-url token)))))))
 

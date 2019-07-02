@@ -21,69 +21,83 @@
 #  IN THE SOFTWARE.
 #
 
+import base64
+import html
+import re
+import sys
+import zlib
+from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from signxml import XMLSigner, XMLVerifier
-from xml.etree import ElementTree
-from os import path, getcwd, chdir
+from os import chdir
 from urllib.parse import parse_qs
 
-# def print_my_path():
-#     print('cwd:     {}'.format(getcwd()))
-#     print('__file__:{}'.format(__file__))
-#     print('abspath: {}'.format(path.abspath(__file__)))
-#
-# print_my_path()
+from lxml import etree as _etree
+from signxml import XMLSigner
+
+port = sys.argv[1]
+expected_acs_endpoint = sys.argv[2]
+acs_redirect_url = sys.argv[3]
+auth_user = sys.argv[4]
 
 chdir('..')
 
-# print_my_path()
+saml_response_redirect_template = open("resources/saml-response-redirect-template.html").read()
 
-saml_response_redirect_template = open("resources/saml-response-redirect-template.html").read().encode('ascii')
-saml_response_template = open("resources/saml-response-template.xml").read().encode('ascii')
 
-print("hi")
+def format_time(time):
+    return time.replace(microsecond=0).isoformat() + 'Z'
 
-print(ElementTree.parse("/home/nsinkov/x509/test.xml").getroot())
 
-def sign(xml_path):
-    cert = open("/home/nsinkov/x509/publickey.cer").read().encode('ascii')
-    key = open("/home/nsinkov/x509/privatekey.pem").read().encode('ascii')
-    # root = ElementTree.fromstring(data_to_sign)
-    root = ElementTree.parse(xml_path)
-    print(root)
-    signed_root = XMLSigner().sign(root.getroot(), key=key, cert=cert)
-    return signed_root
-    # verified_data = XMLVerifier().verify(signed_root).signed_xml
+def make_saml_response():
+    key = open("resources/privatekey.pem").read().encode('ascii')
+    cert = open("resources/idp.crt").read().encode('ascii')
+    saml_response_template = open("resources/saml-response-template.xml").read()
+    saml_response = saml_response_template \
+        .replace("issue-instant-field", format_time(datetime.utcnow())) \
+        .replace("session-not-on-or-after-field", format_time(datetime.utcnow() + timedelta(days=1))) \
+        .replace("not-on-or-after-field", format_time(datetime.utcnow() + timedelta(minutes=5))) \
+        .replace("auth-user-field", auth_user)
+    root = _etree.fromstring(saml_response)
+    signed_root = XMLSigner().sign(root, key=key, cert=cert)
+    return base64.b64encode(_etree.tostring(signed_root)).decode()
 
 
 class MyHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         """Respond to a GET request."""
-        query_params = parse_qs(self.path.split("?")[1])
+        url_tokens = self.path.split("?")
+        if not url_tokens or len(url_tokens) < 2:
+            return
+        query_params = parse_qs(url_tokens[1])
         saml_request = query_params["SAMLRequest"][0]
         relay_state = query_params["RelayState"][0]
 
-        xxx get this out:
-        # AssertionConsumerServiceURL="https://127.0.0.1/waiter-auth/saml/acs"
+        saml_request_b64_decoded = base64.b64decode(saml_request)
+        saml_request_zlib_decoded = zlib.decompress(saml_request_b64_decoded, -15)
 
-
-        self.send_response(200)
-        self.send_header("content-type", "text/html")
-        self.end_headers()
-        response = saml_response_redirect_template\
-            .replace("form-action-field", )\
-            .replace("saml-response-field", )\
-            .replace("relay-state-field", relay_state)
-        self.wfile.write(response.encode())
-        signed_root = sign("/home/nsinkov/x509/test.xml")
-        xml_str = ElementTree.tostring(signed_root, encoding='utf8', method='xml')
-        print(xml_str)
-        self.wfile.write(b"xml is: %s" % xml_str)
+        acs_endpoint_match = re.search('AssertionConsumerServiceURL="([^"]+)"', str(saml_request_zlib_decoded))
+        if acs_endpoint_match and acs_endpoint_match[1] == expected_acs_endpoint:
+            self.send_response(200)
+            self.send_header("content-type", "text/html")
+            self.end_headers()
+            response = saml_response_redirect_template \
+                .replace("form-action-field", html.escape(acs_redirect_url)) \
+                .replace("saml-response-field", html.escape(make_saml_response())) \
+                .replace("relay-state-field", html.escape(relay_state))
+            self.wfile.write(response.encode('ascii'))
+        else:
+            self.send_response(400)
+            self.send_header("content-type", "text/html")
+            self.end_headers()
+            self.wfile.write(b"Invalid AssertionConsumerServiceURL is SAML request. Expecting %s. SAML request: %s"
+                             % (expected_acs_endpoint.encode('ascii'), saml_request_zlib_decoded))
         return
 
+
 def run(server_class=HTTPServer, handler_class=MyHandler):
-    server_address = ('', 8000)
+    server_address = ('', int(port))
     httpd = server_class(server_address, handler_class)
     httpd.serve_forever()
+
 
 run()
