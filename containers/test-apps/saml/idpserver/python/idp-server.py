@@ -28,10 +28,10 @@ import sys
 import zlib
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from os import chdir
+from os import path
 from urllib.parse import parse_qs
 
-from lxml import etree as _etree
+from lxml import etree
 from signxml import XMLSigner
 
 port = sys.argv[1]
@@ -39,9 +39,14 @@ expected_acs_endpoint = sys.argv[2]
 acs_redirect_url = sys.argv[3]
 auth_user = sys.argv[4]
 
-chdir('..')
+idpserver_root_dir = path.join(path.dirname(path.abspath(__file__)), "..")
 
-saml_response_redirect_template = open("resources/saml-response-redirect-template.html").read()
+
+def readfile(file):
+    return open(path.join(idpserver_root_dir, file)).read()
+
+
+saml_response_redirect_template = readfile("resources/saml-response-redirect-template.html")
 
 
 def format_time(time):
@@ -49,17 +54,17 @@ def format_time(time):
 
 
 def make_saml_response():
-    key = open("resources/privatekey.pem").read().encode('ascii')
-    cert = open("resources/idp.crt").read().encode('ascii')
-    saml_response_template = open("resources/saml-response-template.xml").read()
+    key = readfile("resources/privatekey.pem").encode('ascii')
+    cert = readfile("resources/idp.crt").encode('ascii')
+    saml_response_template = readfile("resources/saml-response-template.xml")
     saml_response = saml_response_template \
         .replace("issue-instant-field", format_time(datetime.utcnow())) \
         .replace("session-not-on-or-after-field", format_time(datetime.utcnow() + timedelta(days=1))) \
         .replace("not-on-or-after-field", format_time(datetime.utcnow() + timedelta(minutes=5))) \
         .replace("auth-user-field", auth_user)
-    root = _etree.fromstring(saml_response)
+    root = etree.fromstring(saml_response)
     signed_root = XMLSigner().sign(root, key=key, cert=cert)
-    return base64.b64encode(_etree.tostring(signed_root)).decode()
+    return base64.b64encode(etree.tostring(signed_root)).decode()
 
 
 class MyHandler(BaseHTTPRequestHandler):
