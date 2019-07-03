@@ -352,11 +352,21 @@
      :failed-instances (get service-id->failed-instances service-id)
      :killed-instances (get service-id->killed-instances service-id)}))
 
+(defn- get-current-for-tokens
+  [source-token-entries token->token-hash]
+  (->> source-token-entries
+       (reduce (fn [acc tokens] (into acc tokens)) [])
+       (filter (fn [{:strs [token version]}]
+                 (let [current-version (token->token-hash token)]
+                   (log/info "checking token" token ". Current version" current-version "source version" version)
+                   (= version current-version))))
+       (map (fn [m] (get m "token")))))
+
 (defn- get-service-handler
   "Returns details about the service such as the service description, metrics, instances, etc."
   [router-id service-id core-service-description kv-store generate-log-url-fn make-inter-router-requests-fn
    service-id->service-description-fn service-id->source-tokens-entries-fn query-state-fn service-id->metrics-fn
-   request]
+   token->token-hash request]
   (let [global-state (query-state-fn)
         service-instance-maps (try
                                 (let [assoc-log-url-to-instances
@@ -395,6 +405,7 @@
                                   (catch Exception e
                                     (log/error e "Error in retrieving service suspended state for" service-id)))
         source-tokens-entries (service-id->source-tokens-entries-fn service-id)
+        current-for-tokens (get-current-for-tokens source-tokens-entries token->token-hash)
         request-params (-> request ru/query-params-request :query-params)
         include-effective-parameters? (utils/request-flag request-params "effective-parameters")
         last-request-time (get-in (service-id->metrics-fn) [service-id "last-request-time"])
@@ -419,7 +430,9 @@
                      (:time service-suspended-state)
                      (assoc :service-suspended-state service-suspended-state)
                      (seq source-tokens-entries)
-                     (assoc :source-tokens source-tokens-entries))]
+                     (assoc :source-tokens source-tokens-entries)
+                     (seq current-for-tokens)
+                     (assoc :current-for-tokens current-for-tokens))]
     (utils/clj->streaming-json-response result-map)))
 
 (defn service-handler
@@ -429,7 +442,7 @@
      :get returns details about the service such as the service description, metrics, instances, etc."
   [router-id service-id scheduler kv-store allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-fn
    service-id->service-description-fn service-id->source-tokens-entries-fn query-state-fn service-id->metrics-fn
-   scheduler-interactions-thread-pool request]
+   scheduler-interactions-thread-pool token->token-hash request]
   (try
     (when-not service-id
       (throw (ex-info "Missing service-id" {:log-level :info :status 400})))
@@ -441,7 +454,8 @@
                                           scheduler-interactions-thread-pool request)
           :get (get-service-handler router-id service-id core-service-description kv-store generate-log-url-fn
                                     make-inter-router-requests-fn service-id->service-description-fn
-                                    service-id->source-tokens-entries-fn query-state-fn service-id->metrics-fn request))))
+                                    service-id->source-tokens-entries-fn query-state-fn service-id->metrics-fn
+                                    token->token-hash request))))
     (catch Exception ex
       (utils/exception->response ex request))))
 
