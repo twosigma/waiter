@@ -24,6 +24,7 @@
   (:import clojure.lang.ExceptionInfo
            org.eclipse.jetty.util.UrlEncoded))
 
+; TODO: make a url-encode method, move these methods to utils, and refactor usages of java.util.URLDecoder java.util.URLEncoder
 (defn url-decode
   "Decode a URL-encoded string.  java.util.URLDecoder is super slow."
   [^String string]
