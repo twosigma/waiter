@@ -10,7 +10,7 @@
 set -e
 
 echo Starting SAML IdP server
-${WAITER_DIR}/containers/test-apps/saml/idpserver/bin/run-idp-server \
+${WAITER_DIR}/../containers/test-apps/saml/idpserver/bin/run-idp-server \
     $SAML_IDP_PORT \
     https://127.0.0.1/waiter-auth/saml/acs \
     http://${WAITER_URI}/waiter-auth/saml/acs \
