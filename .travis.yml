@@ -28,7 +28,7 @@ install:
 
 matrix:
   include:
-     - name: 'Waiter integration tests: composite-fast'
+    - name: 'Waiter integration tests: composite-fast'
       services: docker
       before_script: cd waiter
       script: ./bin/ci/run-integration-tests.sh composite parallel-test integration-fast
