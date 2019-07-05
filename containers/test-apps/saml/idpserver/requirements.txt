@@ -1,1 +1,1 @@
-signxml==2.2.2
+signxml==2.4.0
