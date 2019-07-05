@@ -537,7 +537,7 @@
   [service-description username]
   (assoc service-description "run-as-user" username "permitted-user" username))
 
-(defrecord DefaultServiceDescriptionBuilder [max-constraints-schema]
+(defrecord DefaultServiceDescriptionBuilder [max-constraints-schema state-atom]
   ServiceDescriptionBuilder
 
   (build [_ user-service-description
@@ -558,6 +558,9 @@
        :service-description service-description
        :service-id service-id}))
 
+  (state [_]
+    @state-atom)
+
   (validate [_ service-description args-map]
     (->> (merge-with set/union args-map {:valid-cmd-types #{"docker" "shell"}})
          (validate-schema service-description max-constraints-schema))))
@@ -571,7 +574,7 @@
 
 (defn create-default-service-description-builder
   "Returns a new DefaultServiceDescriptionBuilder which uses the specified resource limits."
-  [{:keys [constraints]}]
+  [{:keys [constraints state-atom]}]
   (let [max-constraints-schema (->> constraints
                                     extract-max-constraints
                                     (map (fn [[k v]]
@@ -579,8 +582,9 @@
                                              [(s/optional-key k)
                                               (s/pred #(<= (if string-param? (count %) %) v)
                                                       (symbol (str "limit-" v)))])))
-                                    (into {s/Str s/Any}))]
-    (->DefaultServiceDescriptionBuilder max-constraints-schema)))
+                                    (into {s/Str s/Any}))
+        state-atom (or state-atom (atom {}))]
+    (->DefaultServiceDescriptionBuilder max-constraints-schema state-atom)))
 
 (defn service-description->health-check-url
   "Returns the configured health check Url or a default value (available in `default-health-check-path`)"
