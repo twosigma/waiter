@@ -9,7 +9,7 @@
 
 set -e
 
-pip3 install -r ${WAITER_DIR}/../containers/test-apps/saml/idpserver/requirements.txt
+pip install -r ${WAITER_DIR}/../containers/test-apps/saml/idpserver/requirements.txt
 
 echo Starting SAML IdP server
 ${WAITER_DIR}/../containers/test-apps/saml/idpserver/bin/run-idp-server \
