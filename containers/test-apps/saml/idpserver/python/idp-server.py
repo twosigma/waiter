@@ -72,52 +72,59 @@ def make_saml_response():
 
 
 class MyHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        """Respond to a GET request."""
-        if self.path == "/healthcheck":
-            self.send_response(200)
-            print("zzzxxx 200 health check\n")
-            sys.stdout.flush()
-            self.send_header("content-type", "text/html")
-            self.end_headers()
-            self.wfile.write(b"OK")
-            return
+    try:
+        def do_GET(self):
+            """Respond to a GET request."""
+            if self.path == "/healthcheck":
+                self.send_response(200)
+                print("zzzxxx 200 health check\n")
+                sys.stdout.flush()
+                self.send_header("content-type", "text/html")
+                self.end_headers()
+                self.wfile.write(b"OK")
+                return
 
-        print("zzzxxx trying %s" % self.path)
+            print("zzzxxx trying %s" % self.path)
+            sys.stdout.flush()
+            url_tokens = self.path.split("?")
+            
+            print("zzzxxx url_tokens ", url_tokens)
+            sys.stdout.flush()
+            if not url_tokens or len(url_tokens) < 2:
+                return
+            query_params = parse_qs(url_tokens[1])
+            saml_request = query_params["SAMLRequest"][0]
+            relay_state = query_params["RelayState"][0]
+
+            saml_request_b64_decoded = base64.b64decode(saml_request)
+            saml_request_zlib_decoded = zlib.decompress(saml_request_b64_decoded, -15)
+
+            acs_endpoint_match = re.search('AssertionConsumerServiceURL="([^"]+)"', str(saml_request_zlib_decoded))
+            if acs_endpoint_match and acs_endpoint_match[1] == expected_acs_endpoint:
+                self.send_response(200)
+                print("zzzxxx 200 acs")
+                sys.stdout.flush()
+                self.send_header("content-type", "text/html")
+                self.end_headers()
+                response = saml_response_redirect_template \
+                    .replace("form-action-field", html.escape(acs_redirect_url)) \
+                    .replace("saml-response-field", html.escape(make_saml_response())) \
+                    .replace("relay-state-field", html.escape(relay_state))
+                self.wfile.write(response.encode('ascii'))
+            else:
+                self.send_response(400)
+                print("Invalid AssertionConsumerServiceURL is SAML request. Expecting %s. SAML request: %s"
+                                 % (expected_acs_endpoint, saml_request_zlib_decoded.decode()))
+                print("zzzxxx 400 acs")
+                sys.stdout.flush()
+                self.send_header("content-type", "text/html")
+                self.end_headers()
+                self.wfile.write(b"Invalid AssertionConsumerServiceURL is SAML request. Expecting %s. SAML request: %s"
+                                 % (expected_acs_endpoint.encode('ascii'), saml_request_zlib_decoded))
+    except:
+        print("zzzxxx error", sys.exc_info())
         sys.stdout.flush()
-        url_tokens = self.path.split("?")
-        if not url_tokens or len(url_tokens) < 2:
-            return
-        query_params = parse_qs(url_tokens[1])
-        saml_request = query_params["SAMLRequest"][0]
-        relay_state = query_params["RelayState"][0]
-
-        saml_request_b64_decoded = base64.b64decode(saml_request)
-        saml_request_zlib_decoded = zlib.decompress(saml_request_b64_decoded, -15)
-
-        acs_endpoint_match = re.search('AssertionConsumerServiceURL="([^"]+)"', str(saml_request_zlib_decoded))
-        if acs_endpoint_match and acs_endpoint_match[1] == expected_acs_endpoint:
-            self.send_response(200)
-            print("zzzxxx 200 acs")
-            sys.stdout.flush()
-            self.send_header("content-type", "text/html")
-            self.end_headers()
-            response = saml_response_redirect_template \
-                .replace("form-action-field", html.escape(acs_redirect_url)) \
-                .replace("saml-response-field", html.escape(make_saml_response())) \
-                .replace("relay-state-field", html.escape(relay_state))
-            self.wfile.write(response.encode('ascii'))
-        else:
-            self.send_response(400)
-            print("Invalid AssertionConsumerServiceURL is SAML request. Expecting %s. SAML request: %s"
-                             % (expected_acs_endpoint, saml_request_zlib_decoded.decode()))
-            print("zzzxxx 400 acs")
-            sys.stdout.flush()
-            self.send_header("content-type", "text/html")
-            self.end_headers()
-            self.wfile.write(b"Invalid AssertionConsumerServiceURL is SAML request. Expecting %s. SAML request: %s"
-                             % (expected_acs_endpoint.encode('ascii'), saml_request_zlib_decoded))
-        return
+    return
 
 
 def run(server_class=HTTPServer, handler_class=MyHandler):
