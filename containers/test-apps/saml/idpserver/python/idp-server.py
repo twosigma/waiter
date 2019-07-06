@@ -21,6 +21,8 @@
 #  IN THE SOFTWARE.
 #
 
+print("zzzxxx starting -1")
+
 import base64
 import html
 import re
