@@ -9,6 +9,8 @@
 
 set -e
 
+python --version
+
 pip install --user -r ${WAITER_DIR}/../containers/test-apps/saml/idpserver/requirements.txt
 
 echo Starting SAML IdP server
