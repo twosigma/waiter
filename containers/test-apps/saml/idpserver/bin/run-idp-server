@@ -16,4 +16,5 @@ set -ex
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 cd ${DIR}/..
-python3 python/idp-server.py "$@" > idp-server-out.txt 2>&1 
+echo python3 python/idp-server.py "$@" > idp-server-out.txt
+python3 python/idp-server.py "$@" >> idp-server-out.txt 2>&1 
