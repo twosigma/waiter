@@ -10,7 +10,7 @@
 set -e
 echo trying to apt-get install python3-pip
 sudo apt-get install python3-pip
-echo trying to apt-get install python-setuptools
+echo trying to apt-get install python3-setuptools
 sudo apt-get install python-setuptools
 echo trying to pip3 install
 sudo -H pip3 install -r ${WAITER_DIR}/../containers/test-apps/saml/idpserver/requirements.txt
