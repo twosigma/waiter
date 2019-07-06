@@ -8,11 +8,9 @@
 # SAML authentication request can be routed to: http://localhost:<$SAML_IDP_PORT>/
 
 set -e
-echo trying to apt-get install python3-pip
+
 sudo apt-get install python3-pip
-echo trying to apt-get install python3-setuptools
 sudo apt-get install python3-setuptools
-echo trying to pip3 install
 sudo -H pip3 install -r ${WAITER_DIR}/../containers/test-apps/saml/idpserver/requirements.txt
 
 echo Starting SAML IdP server
@@ -23,9 +21,8 @@ ${WAITER_DIR}/../containers/test-apps/saml/idpserver/bin/run-idp-server \
     $(id -un) &
 
 echo -n Waiting for SAML IdP server
-while ! curl -k https://localhost:${SAML_IDP_PORT}/healthcheck &>/dev/null; do
+while ! curl http://localhost:${SAML_IDP_PORT}/healthcheck &>/dev/null; do
     echo -n .
-    echo $(curl -k https://localhost:${SAML_IDP_PORT}/healthcheck -v)
     sleep 3
 done
 echo
