@@ -44,6 +44,8 @@ auth_user = sys.argv[4]
 idpserver_root_dir = path.join(path.dirname(path.abspath(__file__)), "..")
 
 print("zzzxxx starting")
+print("zzzxxx ", sys.version_info)
+print("zzzxxx ", re.search('ab(c)d', "abcde"))
 sys.stdout.flush()
 
 def readfile(file):
@@ -100,7 +102,7 @@ class MyHandler(BaseHTTPRequestHandler):
             saml_request_zlib_decoded = zlib.decompress(saml_request_b64_decoded, -15)
 
             acs_endpoint_match = re.search('AssertionConsumerServiceURL="([^"]+)"', str(saml_request_zlib_decoded))
-            if acs_endpoint_match and acs_endpoint_match[1] == expected_acs_endpoint:
+            if acs_endpoint_match and acs_endpoint_match.group(1) == expected_acs_endpoint:
                 self.send_response(200)
                 print("zzzxxx 200 acs")
                 sys.stdout.flush()
