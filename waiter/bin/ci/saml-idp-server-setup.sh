@@ -11,7 +11,7 @@ set -e
 echo trying to apt-get install python3-pip
 sudo apt-get install python3-pip
 echo trying to pip3 install
-sudo pip3 install -r ${WAITER_DIR}/../containers/test-apps/saml/idpserver/requirements.txt
+sudo -H pip3 install -r ${WAITER_DIR}/../containers/test-apps/saml/idpserver/requirements.txt
 
 echo Starting SAML IdP server
 ${WAITER_DIR}/../containers/test-apps/saml/idpserver/bin/run-idp-server \
