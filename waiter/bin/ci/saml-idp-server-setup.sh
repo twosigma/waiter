@@ -25,7 +25,7 @@ ${WAITER_DIR}/../containers/test-apps/saml/idpserver/bin/run-idp-server \
 echo -n Waiting for SAML IdP server
 while ! curl -k https://localhost:${SAML_IDP_PORT}/healthcheck &>/dev/null; do
     echo -n .
-    curl -k https://localhost:${SAML_IDP_PORT}/healthcheck -v
+    echo $(curl -k https://localhost:${SAML_IDP_PORT}/healthcheck -v)
     sleep 3
 done
 echo
