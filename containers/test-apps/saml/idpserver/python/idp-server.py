@@ -76,13 +76,15 @@ class MyHandler(BaseHTTPRequestHandler):
         """Respond to a GET request."""
         if self.path == "/healthcheck":
             self.send_response(200)
-            print("zzzxxx 200 health check")
+            print("zzzxxx 200 health check\n")
             sys.stdout.flush()
             self.send_header("content-type", "text/html")
             self.end_headers()
             self.wfile.write(b"OK")
             return
 
+        print("zzzxxx trying %s" % self.path)
+        sys.stdout.flush()
         url_tokens = self.path.split("?")
         if not url_tokens or len(url_tokens) < 2:
             return
@@ -107,12 +109,12 @@ class MyHandler(BaseHTTPRequestHandler):
             self.wfile.write(response.encode('ascii'))
         else:
             self.send_response(400)
+            print("Invalid AssertionConsumerServiceURL is SAML request. Expecting %s. SAML request: %s"
+                             % (expected_acs_endpoint, saml_request_zlib_decoded.decode()))
             print("zzzxxx 400 acs")
             sys.stdout.flush()
             self.send_header("content-type", "text/html")
             self.end_headers()
-            print("Invalid AssertionConsumerServiceURL is SAML request. Expecting %s. SAML request: %s"
-                             % (expected_acs_endpoint, saml_request_zlib_decoded.decode()))
             self.wfile.write(b"Invalid AssertionConsumerServiceURL is SAML request. Expecting %s. SAML request: %s"
                              % (expected_acs_endpoint.encode('ascii'), saml_request_zlib_decoded))
         return
