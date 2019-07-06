@@ -101,6 +101,8 @@ class MyHandler(BaseHTTPRequestHandler):
             self.send_response(400)
             self.send_header("content-type", "text/html")
             self.end_headers()
+            print("Invalid AssertionConsumerServiceURL is SAML request. Expecting %s. SAML request: %s"
+                             % (expected_acs_endpoint, saml_request_zlib_decoded.decode()))
             self.wfile.write(b"Invalid AssertionConsumerServiceURL is SAML request. Expecting %s. SAML request: %s"
                              % (expected_acs_endpoint.encode('ascii'), saml_request_zlib_decoded))
         return
