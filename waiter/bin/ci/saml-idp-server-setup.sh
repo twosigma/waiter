@@ -10,6 +10,7 @@
 set -e
 
 python --version
+python3 --version
 
 pip install --user -r ${WAITER_DIR}/../containers/test-apps/saml/idpserver/requirements.txt
 
