@@ -53,7 +53,7 @@ fi
 
 echo zzzxxx
 echo $(ls -l ./containers/test-apps/saml/idpserver/idp-server-out.txt)
-echo $(cat ./containers/test-apps/saml/idpserver/idp-server-out.txt)
+cat ./containers/test-apps/saml/idpserver/idp-server-out.txt
 
 echo zzzxxx
 ./waiter/bin/ci/gdrive-upload "travis-${dump_name}" $tarball
