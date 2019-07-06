@@ -52,4 +52,4 @@ export WAITER_TEST_COURIER_CMD=${COURIER_DIR}/bin/run-courier-server.sh
 export WAITER_TEST_KITCHEN_CMD=${KITCHEN_DIR}/bin/kitchen
 export WAITER_TEST_NGINX_CMD=${NGINX_DIR}/bin/run-nginx-server.sh
 export WAITER_TEST_SEDIMENT_CMD=${SEDIMENT_DIR}/bin/run-sediment-server.sh
-${WAITER_DIR}/bin/test.sh ${TEST_COMMAND} "only waiter.authentication-test/test-saml-authentication"
+${WAITER_DIR}/bin/test.sh ${TEST_COMMAND} ${TEST_SELECTOR}
