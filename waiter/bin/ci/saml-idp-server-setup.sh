@@ -20,7 +20,7 @@ ${WAITER_DIR}/../containers/test-apps/saml/idpserver/bin/run-idp-server \
     $SAML_IDP_PORT \
     https://127.0.0.1/waiter-auth/saml/acs \
     http://${WAITER_URI}/waiter-auth/saml/acs \
-    $(id -un)
+    $(id -un) &
 
 echo -n Waiting for SAML IdP server
 while ! curl -k https://localhost:8443/healthcheck &>/dev/null; do
