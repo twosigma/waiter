@@ -50,4 +50,9 @@ if [ "$exitcode" == 2 ]; then
   echo "The tar command exited with a fatal error (exit code $exitcode), exiting..."
   exit $exitcode
 fi
+
+echo zzzxxx
+cat ./containers/test-apps/saml/idpserver/idp-server-out.txt
+
+echo zzzxxx
 ./waiter/bin/ci/gdrive-upload "travis-${dump_name}" $tarball
