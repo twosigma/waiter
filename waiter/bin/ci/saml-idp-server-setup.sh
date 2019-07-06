@@ -8,8 +8,10 @@
 # SAML authentication request can be routed to: http://localhost:<$SAML_IDP_PORT>/
 
 set -e
+echo trying to apt-get install python3-pip
 sudo apt-get install python3-pip
-sudo pip3 install --user -r ${WAITER_DIR}/../containers/test-apps/saml/idpserver/requirements.txt
+echo trying to pip3 install
+sudo pip3 install -r ${WAITER_DIR}/../containers/test-apps/saml/idpserver/requirements.txt
 
 echo Starting SAML IdP server
 ${WAITER_DIR}/../containers/test-apps/saml/idpserver/bin/run-idp-server \
