@@ -44,6 +44,7 @@ auth_user = sys.argv[4]
 idpserver_root_dir = path.join(path.dirname(path.abspath(__file__)), "..")
 
 print("zzzxxx starting")
+sys.stdout.flush()
 
 def readfile(file):
     return open(path.join(idpserver_root_dir, file)).read()
@@ -76,6 +77,7 @@ class MyHandler(BaseHTTPRequestHandler):
         if self.path == "/healthcheck":
             self.send_response(200)
             print("zzzxxx 200 health check")
+            sys.stdout.flush()
             self.send_header("content-type", "text/html")
             self.end_headers()
             self.wfile.write(b"OK")
@@ -95,6 +97,7 @@ class MyHandler(BaseHTTPRequestHandler):
         if acs_endpoint_match and acs_endpoint_match[1] == expected_acs_endpoint:
             self.send_response(200)
             print("zzzxxx 200 acs")
+            sys.stdout.flush()
             self.send_header("content-type", "text/html")
             self.end_headers()
             response = saml_response_redirect_template \
@@ -105,6 +108,7 @@ class MyHandler(BaseHTTPRequestHandler):
         else:
             self.send_response(400)
             print("zzzxxx 400 acs")
+            sys.stdout.flush()
             self.send_header("content-type", "text/html")
             self.end_headers()
             print("Invalid AssertionConsumerServiceURL is SAML request. Expecting %s. SAML request: %s"
