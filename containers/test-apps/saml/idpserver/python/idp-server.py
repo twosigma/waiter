@@ -72,9 +72,9 @@ def make_saml_response():
 
 
 class MyHandler(BaseHTTPRequestHandler):
-    try:
-        def do_GET(self):
-            """Respond to a GET request."""
+    def do_GET(self):
+        """Respond to a GET request."""
+        try:
             if self.path == "/healthcheck":
                 self.send_response(200)
                 print("zzzxxx 200 health check\n")
@@ -87,7 +87,7 @@ class MyHandler(BaseHTTPRequestHandler):
             print("zzzxxx trying %s" % self.path)
             sys.stdout.flush()
             url_tokens = self.path.split("?")
-            
+
             print("zzzxxx url_tokens ", url_tokens)
             sys.stdout.flush()
             if not url_tokens or len(url_tokens) < 2:
@@ -121,10 +121,10 @@ class MyHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(b"Invalid AssertionConsumerServiceURL is SAML request. Expecting %s. SAML request: %s"
                                  % (expected_acs_endpoint.encode('ascii'), saml_request_zlib_decoded))
-    except:
-        print("zzzxxx error", sys.exc_info())
-        sys.stdout.flush()
-    return
+        except:
+            print("zzzxxx error", sys.exc_info())
+            sys.stdout.flush()
+        return
 
 
 def run(server_class=HTTPServer, handler_class=MyHandler):
