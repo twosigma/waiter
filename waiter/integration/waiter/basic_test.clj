@@ -34,10 +34,10 @@
 
 (deftest ^:parallel ^:integration-fast test-basic-functionality
   (testing-using-waiter-url
-    (let [{:keys [service-id request-headers]}
-          (make-request-with-debug-info
-            {:x-waiter-name (rand-name)}
-            #(make-kitchen-request waiter-url % :path "/hello"))]
+    (let [{:keys [service-id request-headers]} (make-request-with-debug-info
+                                                 {:x-waiter-name (rand-name)}
+                                                 #(make-kitchen-request waiter-url % :path "/hello"))
+          request-headers (dissoc request-headers "x-cid")]
 
       (let [service-settings (service-settings waiter-url service-id)]
         (testing "instances are non-null"

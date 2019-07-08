@@ -592,8 +592,6 @@
    :start-service-cache (pc/fnk []
                           (cu/cache-factory {:threshold 100
                                              :ttl (-> 1 t/minutes t/in-millis)}))
-   :stream-reader-executor (pc/fnk [[:settings [:stream-reader concurrency-level keep-alive-mins queue-limit]]]
-                             (pr/make-stream-reader-executor concurrency-level keep-alive-mins queue-limit))
    :token-cluster-calculator (pc/fnk [[:settings [:cluster-config name] [:token-config cluster-calculator]]]
                                (utils/create-component
                                  cluster-calculator :context {:default-cluster name}))
@@ -793,9 +791,9 @@
                          (fn make-basic-auth-fn [uri username password]
                            (BasicAuthentication$BasicResult. (URI. uri) username password)))
    :make-http-request-fn (pc/fnk [[:settings instance-request-properties]
-                                  [:state http-clients stream-reader-executor]
+                                  [:state http-clients]
                                   make-basic-auth-fn service-id->password-fn]
-                           (let [make-request-fn (partial pr/make-request stream-reader-executor)]
+                           (let [make-request-fn pr/make-request]
                              (handler/async-make-request-helper
                                http-clients instance-request-properties make-basic-auth-fn service-id->password-fn
                                pr/prepare-request-properties make-request-fn)))
@@ -1238,11 +1236,11 @@
    :process-request-handler-fn (pc/fnk [[:routines determine-priority-fn make-basic-auth-fn post-process-async-request-response-fn
                                          service-id->password-fn start-new-service-fn]
                                         [:settings instance-request-properties]
-                                        [:state http-clients instance-rpc-chan local-usage-agent stream-reader-executor]]
+                                        [:state http-clients instance-rpc-chan local-usage-agent]]
                                  (let [make-request-fn (fn [instance request request-properties passthrough-headers end-route metric-group
                                                             backend-proto proto-version]
                                                          (pr/make-request
-                                                           stream-reader-executor http-clients make-basic-auth-fn service-id->password-fn
+                                                           http-clients make-basic-auth-fn service-id->password-fn
                                                            instance request request-properties passthrough-headers end-route metric-group
                                                            backend-proto proto-version))
                                        process-response-fn (partial pr/process-http-response post-process-async-request-response-fn)]
