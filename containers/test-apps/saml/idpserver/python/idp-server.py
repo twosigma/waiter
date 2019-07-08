@@ -88,7 +88,7 @@ class MyHandler(BaseHTTPRequestHandler):
         saml_request_zlib_decoded = zlib.decompress(saml_request_b64_decoded, -15)
 
         acs_endpoint_match = re.search('AssertionConsumerServiceURL="([^"]+)"', str(saml_request_zlib_decoded))
-        if acs_endpoint_match and acs_endpoint_match[1] == expected_acs_endpoint:
+        if acs_endpoint_match and acs_endpoint_match.group(1) == expected_acs_endpoint:
             self.send_response(200)
             self.send_header("content-type", "text/html")
             self.end_headers()

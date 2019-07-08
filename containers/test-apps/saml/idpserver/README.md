@@ -12,6 +12,8 @@ $ pip3 install -r requirements.txt
 
 ## Running
 
+Run ```bin/run-idp-server```; see file for usage details.
+
 ```bash
-$ ./bin/run-idp-server -p 8080
+$ ./bin/run-idp-server -p 8000 https://127.0.0.1/waiter-auth/saml/acs http://127.0.0.1:9091/waiter-auth/saml/acs myusername
 ```

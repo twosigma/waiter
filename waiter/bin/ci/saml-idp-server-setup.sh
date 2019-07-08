@@ -9,17 +9,19 @@
 
 set -e
 
-pip install -r ${WAITER_DIR}/../containers/test-apps/saml/idpserver/requirements.txt
+sudo apt-get install python3-pip
+sudo apt-get install python3-setuptools
+sudo -H pip3 install -r ${WAITER_DIR}/../containers/test-apps/saml/idpserver/requirements.txt
 
 echo Starting SAML IdP server
 ${WAITER_DIR}/../containers/test-apps/saml/idpserver/bin/run-idp-server \
     $SAML_IDP_PORT \
     https://127.0.0.1/waiter-auth/saml/acs \
     http://${WAITER_URI}/waiter-auth/saml/acs \
-    $(id -un)
+    $(id -un) &
 
 echo -n Waiting for SAML IdP server
-while ! curl -k https://localhost:8443/healthcheck &>/dev/null; do
+while ! curl -k https://localhost:${SAML_IDP_PORT}/healthcheck &>/dev/null; do
     echo -n .
     sleep 3
 done

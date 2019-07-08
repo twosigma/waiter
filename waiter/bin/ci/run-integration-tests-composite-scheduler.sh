@@ -46,7 +46,6 @@ fi
 # Start waiter
 ${WAITER_DIR}/bin/run-using-composite-scheduler.sh ${WAITER_PORT} &
 
-
 # Run the integration tests
 export WAITER_TEST_COURIER_CMD=${COURIER_DIR}/bin/run-courier-server.sh
 export WAITER_TEST_KITCHEN_CMD=${KITCHEN_DIR}/bin/kitchen
