@@ -40,7 +40,9 @@
         (assert-response-status canary-response 200)
 
         (testing "jet returns some trailers"
-          (let [response (make-shell-request
+          (let [waiter-url (cond-> waiter-url
+                             (= "h2c" backend-proto) retrieve-h2c-url)
+                response (make-shell-request
                            waiter-url
                            (assoc request-headers
                              "x-cid" (rand-name))
