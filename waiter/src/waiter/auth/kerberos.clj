@@ -101,7 +101,8 @@
                         {:message (utils/message :prestashed-tickets-not-available)
                          :service-id service-id
                          :status 403
-                         :user run-as-user}))))))
+                         :user run-as-user
+                         :log-level :warn}))))))
 
 (defrecord KerberosAuthenticator [^ThreadPoolExecutor executor max-queue-length password]
   auth/Authenticator
