@@ -95,10 +95,11 @@
                 _ (assert-response-status response 302)
                 saml-redirect-location (get headers "location")
                 {:keys [relay-state saml-response waiter-saml-acs-endpoint]} (perform-saml-authentication saml-redirect-location)
-            {:keys [body]} (make-request waiter-saml-acs-endpoint ""
+            {:keys [body] :as response} (make-request waiter-saml-acs-endpoint ""
                                          :body (str "SAMLResponse=" (URLEncoder/encode saml-response) "&RelayState=" (URLEncoder/encode relay-state))
                                          :headers {"content-type" "application/x-www-form-urlencoded"}
                                          :method :post)
+            _ (assert-response-status response 200)
             {:keys [waiter-saml-auth-redirect-endpoint saml-auth-data]}
             (reaver/extract (reaver/parse body) [:waiter-saml-auth-redirect-endpoint :saml-auth-data]
                             "form" (reaver/attr :action)
