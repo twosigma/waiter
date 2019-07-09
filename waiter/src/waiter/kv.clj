@@ -95,9 +95,9 @@
   given the underlying ZooKeeper implementation."
   [key]
   (when (re-matches #".*/.*" key)
-    (throw (ex-info "Key may not contain '/'" {:key key})))
+    (throw (ex-info "Key may not contain '/'" {:key key :log-level :warn})))
   (when (re-matches #"^\..*" key)
-    (throw (ex-info "Key may not begin with '.'" {:key key}))))
+    (throw (ex-info "Key may not begin with '.'" {:key key :log-level :warn}))))
 
 (defn zk-keys
   "Create a lazy sequence of keys."
