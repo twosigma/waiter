@@ -417,9 +417,9 @@
                               [bytes-streamed false])))
                         (catch Exception e
                           (histograms/update! (metrics/service-histogram service-id "response-size") bytes-streamed)
-                          (log/error "error occurred after streaming" bytes-streamed "bytes in response.")
                           ; Handle lower down
-                          (throw e)))]
+                          (throw (Exception.
+                                   (str "error occurred after streaming" bytes-streamed "bytes in response.") e))))]
                   (let [bytes-reported-to-statsd'
                         (let [unreported-bytes (- bytes-streamed' bytes-reported-to-statsd)]
                           (if (or (and (not more-bytes-possibly-available?) (pos? unreported-bytes))

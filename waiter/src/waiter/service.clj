@@ -89,7 +89,6 @@
            (throw (ex-info "Unable to put instance on work-stealing-chan."
                            {:offer-params ~offer-params, :service-id ~service-id}))))
        (do
-         (log/error "Unable to find work-stealing-chan for service" ~service-id)
          (throw (ex-info "Unable to find work-stealing-chan."
                          {:offer-params ~offer-params, :service-id ~service-id}))))))
 
@@ -165,9 +164,8 @@
          (throw (ex-info "Unable to put instance on release-chan."
                          {:instance ~instance})))
        (do
-         (log/error "Unable to find release-chan for service" service-id#)
          (throw (ex-info "Unable to find release-chan."
-                         {:instance ~instance}))))))
+                         {:instance ~instance :service service-id#}))))))
 
 (defn release-instance-go
   "Sends a rpc to the router state to release the lock on the given instance."
