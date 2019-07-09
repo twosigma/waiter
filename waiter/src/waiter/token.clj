@@ -295,17 +295,20 @@
               (do
                 (when-not (or (get token-metadata "deleted") version-hash)
                   (throw (ex-info "Must specify if-match header for token hard deletes"
-                                  {:request-headers headers, :status 400})))
+                                  {:request-headers headers, :status 400
+                                   :log-level :warn})))
                 (when-not (authz/administer-token? entitlement-manager authenticated-user token token-metadata)
                   (throw (ex-info "Cannot hard-delete token"
                                   {:metadata token-metadata
                                    :status 403
-                                   :user authenticated-user}))))
+                                   :user authenticated-user
+                                   :log-level :warn}))))
               (when-not (authz/manage-token? entitlement-manager authenticated-user token token-metadata)
                 (throw (ex-info "User not allowed to delete token"
                                 {:owner token-owner
                                  :status 403
-                                 :user authenticated-user}))))
+                                 :user authenticated-user
+                                 :log-level :warn}))))
             (delete-service-description-for-token
               clock synchronize-fn kv-store history-length token token-owner authenticated-user
               :hard-delete hard-delete :version-hash version-hash)
@@ -316,8 +319,8 @@
             (utils/clj->json-response {:delete token, :hard-delete hard-delete, :success true}
                                       :headers {"etag" version-hash}))
           (throw (ex-info (str "Token " token " does not exist")
-                          {:status 404 :token token}))))
-      (throw (ex-info "Couldn't find token in request" {:status 400 :token token})))))
+                          {:status 404 :token token :log-level :warn}))))
+      (throw (ex-info "Couldn't find token in request" {:status 400 :token token :log-level :warn})))))
 
 (defn- handle-get-token-request
   "Returns the configuration if found.
@@ -354,7 +357,8 @@
       (throw (ex-info (str "Couldn't find token " token)
                       {:headers {"etag" token-hash}
                        :status 404
-                       :token token})))))
+                       :token token
+                       :log-level :warn})))))
 
 (defn- handle-post-token-request
   "Validates that the user is the creator of the token if it already exists.
@@ -373,7 +377,8 @@
             (throw (ex-info "The token should be provided only as a query parameter or in the json payload"
                             {:status 400
                              :token {:json-payload token
-                                     :query-parameter token-param}})))
+                                     :query-parameter token-param}
+                             :log-level :warn})))
         token (or token token-param)
         new-token-metadata (select-keys new-token-data sd/token-metadata-keys)
         new-user-metadata (select-keys new-token-metadata sd/user-metadata-keys)
@@ -385,16 +390,16 @@
                   authenticated-user)
         version-hash (get headers "if-match")]
     (when (str/blank? token)
-      (throw (ex-info "Must provide the token" {:status 400})))
+      (throw (ex-info "Must provide the token" {:status 400 :log-level :warn})))
     (when (some #(= token %) waiter-hostnames)
-      (throw (ex-info "Token name is reserved" {:status 403 :token token})))
+      (throw (ex-info "Token name is reserved" {:status 403 :token token :log-level :warn})))
     (when (empty? (select-keys new-token-data sd/token-user-editable-keys))
-      (throw (ex-info (str "No parameters provided for " token) {:status 400})))
+      (throw (ex-info (str "No parameters provided for " token) {:status 400 :log-level :warn})))
     (sd/validate-token token)
     (validate-service-description-fn new-service-parameter-template)
     (when-let [user-metadata-check (s/check sd/user-metadata-schema new-user-metadata)]
       (throw (ex-info "User metadata validation failed"
-                      {:failed-check user-metadata-check :status 400 :token token})))
+                      {:failed-check user-metadata-check :status 400 :token token :log-level :warn})))
     (let [unknown-keys (-> new-token-data
                            keys
                            set
@@ -402,33 +407,35 @@
                            (disj "token"))]
       (when (not-empty unknown-keys)
         (throw (ex-info (str "Unsupported key(s) in token: " (str (vec unknown-keys)))
-                        {:status 400 :token token}))))
+                        {:status 400 :token token :log-level :warn}))))
     (when (= authentication "disabled")
       (when (not= permitted-user "*")
         (throw (ex-info (str "Tokens with authentication disabled must specify"
                              " permitted-user as *, instead provided " permitted-user)
-                        {:status 400 :token token})))
+                        {:status 400 :token token :log-level :warn})))
       ;; partial tokens not supported when authentication is disabled
       (when-not (sd/required-keys-present? new-service-parameter-template)
         (throw (ex-info "Tokens with authentication disabled must specify all required parameters"
                         {:missing-parameters (->> sd/service-required-keys
                                                   (remove #(contains? new-service-parameter-template %1)) seq)
                          :service-description new-service-parameter-template
-                         :status 400}))))
+                         :status 400
+                         :log-level :warn}))))
     (when (and interstitial-secs (not (sd/required-keys-present? new-service-parameter-template)))
       (throw (ex-info (str "Tokens with missing required parameters cannot use interstitial support")
-                      {:status 400 :token token})))
+                      {:status 400 :token token :log-level :warn})))
     (case (get request-params "update-mode")
       "admin"
       (do
         (when (and (seq existing-token-metadata) (not version-hash))
           (throw (ex-info "Must specify if-match header for admin mode token updates"
-                          {:request-headers headers, :status 400})))
+                          {:request-headers headers, :status 400 :log-level :warn})))
         (when-not (authz/administer-token? entitlement-manager authenticated-user token new-token-metadata)
           (throw (ex-info "Cannot administer token"
                           {:status 403
                            :token-metadata new-token-metadata
-                           :user authenticated-user}))))
+                           :user authenticated-user
+                           :log-level :warn}))))
 
       nil
       (do
@@ -437,44 +444,52 @@
             (throw (ex-info "Cannot run as user"
                             {:authenticated-user authenticated-user
                              :run-as-user run-as-user
-                             :status 403}))))
+                             :status 403
+                             :log-level :warn}))))
         (let [existing-service-description-owner (get existing-token-metadata "owner")]
           (if-not (str/blank? existing-service-description-owner)
             (when-not (authz/manage-token? entitlement-manager authenticated-user token existing-token-metadata)
               (throw (ex-info "Cannot change owner of token"
                               {:existing-owner existing-service-description-owner
                                :new-user owner
-                               :status 403})))
+                               :status 403
+                               :log-level :warn})))
             (when-not (authz/run-as? entitlement-manager authenticated-user owner)
               (throw (ex-info "Cannot create token as user"
                               {:authenticated-user authenticated-user
                                :owner owner
-                               :status 403})))))
+                               :status 403
+                               :log-level :warn})))))
         (when (contains? new-token-metadata "last-update-time")
           (throw (ex-info "Cannot modify last-update-time token metadata"
                           {:status 400
-                           :token-metadata new-token-metadata})))
+                           :token-metadata new-token-metadata
+                           :log-level :warn})))
         (when (contains? new-token-metadata "last-update-user")
           (throw (ex-info "Cannot modify last-update-user token metadata"
                           {:status 400
-                           :token-metadata new-token-metadata})))
+                           :token-metadata new-token-metadata
+                           :log-level :warn})))
         (when (contains? new-token-metadata "root")
           (throw (ex-info "Cannot modify root token metadata"
                           {:status 400
-                           :token-metadata new-token-metadata})))
+                           :token-metadata new-token-metadata
+                           :log-level :warn})))
         (when (contains? new-token-metadata "previous")
           (throw (ex-info "Cannot modify previous token metadata"
                           {:status 400
-                           :token-metadata new-token-metadata}))))
+                           :token-metadata new-token-metadata
+                           :log-level :warn}))))
 
       (throw (ex-info "Invalid update-mode"
                       {:mode (get request-params "update-mode")
-                       :status 400})))
+                       :status 400
+                       :log-level :warn})))
 
     (when-let [previous (get new-token-metadata "previous")]
       (when-not (map? previous)
         (throw (ex-info (str "Token previous must be a map")
-                        {:previous previous :status 400 :token token}))))
+                        {:previous previous :status 400 :token token :log-level :warn}))))
 
     ; Store the token
     (let [new-token-metadata (merge {"cluster" (calculate-cluster cluster-calculator request)
