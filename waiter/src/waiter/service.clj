@@ -261,7 +261,7 @@
                     (cid/with-correlation-id cid (service-not-found-fn))
                     (async/<! (async/timeout 1500))
                     (recur (inc iterations)))))))))
-      (catch Exception e
+      (catch Throwable e
         (cid/cerror cid e "Error in get-available-instance")
         e)
       (finally
