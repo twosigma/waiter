@@ -108,14 +108,13 @@
 
 (defmacro assert-grpc-cancel-status
   "Asserts that the status represents a grpc OK status."
-  [status message assertion-message]
+  [status assertion-message]
   `(let [status# ~status
-         message# ~message
          assertion-message# ~assertion-message]
      (is status# assertion-message#)
      (when status#
        (is (= "CANCELLED" (-> status# .getCode str)) assertion-message#)
-       (is (= message# (.getDescription status#)) assertion-message#))))
+       (is (= "Cancelled by server" (.getDescription status#)) assertion-message#))))
 
 (defmacro assert-grpc-server-exit-status
   "Asserts that the status represents a grpc OK status."
@@ -238,7 +237,7 @@
                                     (into (sorted-map))
                                     str)]
             (is (nil? reply) assertion-message)
-            (assert-grpc-cancel-status status "Cancelled by server" assertion-message)
+            (assert-grpc-cancel-status status assertion-message)
             (Thread/sleep 1500) ;; sleep to allow cancellation propagation to backend
             (assert-request-state grpc-client request-headers service-id correlation-id ::server-cancel)))))))
 
@@ -435,7 +434,7 @@
                                             str)
                         expected-summary-count error-index]
                     (log/info "result" assertion-message)
-                    (assert-grpc-cancel-status status "Cancelled by server" assertion-message)
+                    (assert-grpc-cancel-status status assertion-message)
                     (is (= expected-summary-count (count message-summaries)) assertion-message)
                     (when (seq message-summaries)
                       (is (= (range 1 (inc expected-summary-count))
@@ -562,7 +561,7 @@
                                             (into (sorted-map))
                                             str)]
                     (log/info "result" assertion-message)
-                    (assert-grpc-cancel-status status "Cancelled by server" assertion-message)
+                    (assert-grpc-cancel-status status assertion-message)
                     (is (nil? message-summary) assertion-message)
                     (Thread/sleep 1500) ;; sleep to allow cancellation propagation to backend
                     (assert-request-state grpc-client request-headers service-id correlation-id ::server-cancel)))))))))))

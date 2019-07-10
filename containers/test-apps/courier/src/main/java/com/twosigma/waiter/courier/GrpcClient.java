@@ -15,6 +15,7 @@
  */
 package com.twosigma.waiter.courier;
 
+import com.google.common.util.concurrent.ListenableFuture;
 import io.grpc.CallOptions;
 import io.grpc.Channel;
 import io.grpc.ClientCall;
