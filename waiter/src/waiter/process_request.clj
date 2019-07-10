@@ -487,10 +487,8 @@
               (try
                 (let [trailers-map (async/<! trailers)
                       modified-trailers (merge grpc-headers trailers-map)]
-                  (when (seq grpc-headers)
-                    (log/info "attaching grpc headers into trailer:" grpc-headers))
-                  (when (seq modified-trailers)
-                    (async/>! trailers-copy-ch modified-trailers)))
+                  (log/info "attaching grpc headers into trailer:" grpc-headers)
+                  (async/>! trailers-copy-ch modified-trailers))
                 (catch Throwable th
                   (log/error th "error in parsing response trailers")))
               (log/info "closing response trailers channel")
