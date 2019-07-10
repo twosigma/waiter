@@ -25,6 +25,9 @@ public class Main {
     public static void main(final String... args) throws Exception {
         final int port0 = args.length > 0 ? Integer.parseInt(args[0]) : 8080;
         final int port1 = args.length > 1 ? Integer.parseInt(args[1]) : 8081;
+
+        LoggingConfig.initializeLogging();
+
         LOGGER.info("gRPC server configured to run on port " + port0);
         LOGGER.info("health-check (http) server configured to run on port " + port1);
 

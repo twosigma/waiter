@@ -15,6 +15,8 @@
  */
 package com.twosigma.waiter.courier;
 
+import io.grpc.Context;
+import io.grpc.Contexts;
 import io.grpc.ForwardingServerCall;
 import io.grpc.Metadata;
 import io.grpc.Server;
@@ -28,6 +30,12 @@ import io.grpc.stub.ServerCallStreamObserver;
 import io.grpc.stub.StreamObserver;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.logging.Logger;
 
@@ -36,12 +44,71 @@ import static io.grpc.Metadata.ASCII_STRING_MARSHALLER;
 public class GrpcServer {
 
     private final static Logger LOGGER = Logger.getLogger(GrpcServer.class.getName());
+    private final static Context.Key<CidTimestamp> CID_TIMESTAMP = Context.key("CID.TIMESTAMP");
+    private final static Map<String, Map<Long, List<String>>> requestCidToStateList = new HashMap<>();
 
-    private static void sleep(final int durationMillis) {
-        try {
-            Thread.sleep(durationMillis);
-        } catch (final Exception ex) {
-            ex.printStackTrace();
+    private static List<String> trackState(final String correlationId, final long timestamp, final String state) {
+        if (correlationId != null) {
+            synchronized (requestCidToStateList) {
+                final List<String> stateList;
+
+                final Map<Long, List<String>> stateEntriesCurrent = requestCidToStateList.get(correlationId);
+                if (stateEntriesCurrent != null) {
+                    final List<String> stateListCurrent = stateEntriesCurrent.get(timestamp);
+                    if (stateListCurrent == null) {
+                        stateList = new ArrayList<>();
+                        stateEntriesCurrent.put(timestamp, stateList);
+                    } else {
+                        stateList = stateListCurrent;
+                    }
+                } else {
+                    stateList = new ArrayList<>();
+                    final Map<Long, List<String>> stateEntriesNew = new HashMap<>();
+                    stateEntriesNew.put(timestamp, stateList);
+                    requestCidToStateList.put(correlationId, stateEntriesNew);
+                }
+
+                stateList.add(state);
+                return stateList;
+            }
+        }
+        return new ArrayList<>();
+    }
+
+    private static List<String> trackState(final String correlationId) {
+        synchronized (requestCidToStateList) {
+            final Map<Long, List<String>> stateEntries = requestCidToStateList.get(correlationId);
+            if (stateEntries != null && !stateEntries.isEmpty()) {
+                final List<Long> timestamps = new ArrayList<Long>(stateEntries.keySet());
+                Collections.sort(timestamps);
+                final Long requestTime = timestamps.get(0);
+                return stateEntries.get(requestTime);
+            } else {
+                return new ArrayList<>();
+            }
+        }
+    }
+
+    private static void sleep(final long durationMillis) {
+        if (durationMillis > 0) {
+            try {
+                Thread.sleep(durationMillis);
+            } catch (final Exception ex) {
+                ex.printStackTrace();
+            }
+        }
+    }
+
+    private static void registerOnCancelHandler(final StreamObserver<?> responseObserver) {
+        if (responseObserver instanceof ServerCallStreamObserver) {
+            final CidTimestamp cidTimestamp = CID_TIMESTAMP.get();
+            final String correlationId = cidTimestamp.correlationId;
+            final long timestamp = cidTimestamp.timestamp;
+
+            ((ServerCallStreamObserver) responseObserver).setOnCancelHandler(() -> {
+                LOGGER.info("CancelHandler for " + cidTimestamp + " was triggered");
+                trackState(correlationId, timestamp, "CANCEL_HANDLER");
+            });
         }
     }
 
@@ -53,6 +120,7 @@ public class GrpcServer {
             .forPort(port)
             .addService(new CourierImpl())
             .intercept(new GrpcServerInterceptor())
+            .intercept(new CorrelationIdInterceptor())
             .build()
             .start();
         LOGGER.info("gRPC server started, listening on " + port);
@@ -79,7 +147,47 @@ public class GrpcServer {
         }
     }
 
+    private static class CidTimestamp {
+        private final String correlationId;
+        private final long timestamp;
+
+        private CidTimestamp(String correlationId, long timestamp) {
+            this.correlationId = correlationId;
+            this.timestamp = timestamp;
+        }
+
+        @Override
+        public String toString() {
+            return "CidTimestamp{" +
+                "correlationId='" + correlationId + '\'' +
+                ", timestamp=" + timestamp +
+                '}';
+        }
+    }
+
     private static class CourierImpl extends CourierGrpc.CourierImplBase {
+
+        @Override
+        public void retrieveState(final StateRequest request, final StreamObserver<StateReply> responseObserver) {
+            final String correlationId = request.getCid();
+            LOGGER.info("received StateRequest{" + "cid=" + correlationId + "}");
+
+            registerOnCancelHandler(responseObserver);
+            final StateReply.Builder builder = StateReply
+                .newBuilder()
+                .setCid(correlationId);
+            final List<String> stateList = trackState(correlationId);
+            LOGGER.info("cid " + correlationId + " has states: " + stateList);
+            if (stateList != null) {
+                for (final String state : stateList) {
+                    builder.addState(state);
+                }
+            }
+            final StateReply reply = builder.build();
+            LOGGER.info("Sending StateReply for cid=" + reply.getCid());
+            responseObserver.onNext(reply);
+            responseObserver.onCompleted();
+        }
 
         @Override
         public void sendPackage(final CourierRequest request, final StreamObserver<CourierReply> responseObserver) {
@@ -87,11 +195,8 @@ public class GrpcServer {
                 "id=" + request.getId() + ", " +
                 "from=" + request.getFrom() + ", " +
                 "message.length=" + request.getMessage().length() + "}");
-            if (responseObserver instanceof ServerCallStreamObserver) {
-                ((ServerCallStreamObserver) responseObserver).setOnCancelHandler(() -> {
-                    LOGGER.info("CancelHandler:sendPackage CourierRequest{" + "id=" + request.getId() + "} was cancelled");
-                });
-            }
+            registerOnCancelHandler(responseObserver);
+            sleep(request.getSleepDurationMillis());
             if (Variant.SEND_ERROR.equals(request.getVariant())) {
                 final StatusRuntimeException error = Status.CANCELLED
                     .withCause(new RuntimeException(request.getId()))
@@ -119,11 +224,7 @@ public class GrpcServer {
         @Override
         public StreamObserver<CourierRequest> collectPackages(final StreamObserver<CourierSummary> responseObserver) {
 
-            if (responseObserver instanceof ServerCallStreamObserver) {
-                ((ServerCallStreamObserver) responseObserver).setOnCancelHandler(() -> {
-                    LOGGER.info("CancelHandler:collectPackages() was cancelled");
-                });
-            }
+            registerOnCancelHandler(responseObserver);
             return new StreamObserver<CourierRequest>() {
 
                 private long numMessages = 0;
@@ -137,6 +238,8 @@ public class GrpcServer {
                     totalLength += request.getMessage().length();
                     LOGGER.info("Summary of collected packages: numMessages=" + numMessages +
                         " with totalLength=" + totalLength);
+
+                    sleep(request.getSleepDurationMillis());
 
                     if (Variant.EXIT_PRE_RESPONSE.equals(request.getVariant())) {
                         sleep(1000);
@@ -183,11 +286,7 @@ public class GrpcServer {
         @Override
         public StreamObserver<CourierRequest> aggregatePackages(final StreamObserver<CourierSummary> responseObserver) {
 
-            if (responseObserver instanceof ServerCallStreamObserver) {
-                ((ServerCallStreamObserver) responseObserver).setOnCancelHandler(() -> {
-                    LOGGER.info("CancelHandler:collectPackages() was cancelled");
-                });
-            }
+            registerOnCancelHandler(responseObserver);
             return new StreamObserver<CourierRequest>() {
 
                 private long numMessages = 0;
@@ -201,6 +300,8 @@ public class GrpcServer {
                     totalLength += request.getMessage().length();
                     LOGGER.info("Summary of collected packages: numMessages=" + numMessages +
                         " with totalLength=" + totalLength);
+
+                    sleep(request.getSleepDurationMillis());
 
                     if (Variant.EXIT_PRE_RESPONSE.equals(request.getVariant()) || Variant.EXIT_POST_RESPONSE.equals(request.getVariant())) {
                         sleep(1000);
@@ -238,6 +339,27 @@ public class GrpcServer {
         }
     }
 
+    public class CorrelationIdInterceptor implements ServerInterceptor {
+        @Override
+        public <ReqT, RespT> ServerCall.Listener<ReqT> interceptCall(
+            final ServerCall<ReqT, RespT> serverCall,
+            final Metadata requestMetadata,
+            final ServerCallHandler<ReqT, RespT> serverCallHandler) {
+
+            final Metadata.Key<String> xCidKey = Metadata.Key.of("x-cid", ASCII_STRING_MARSHALLER);
+            String correlationId = requestMetadata.get(xCidKey);
+            if (correlationId == null) {
+                correlationId = "courier-" + System.nanoTime();
+            }
+            final long timestamp = System.nanoTime();
+
+            final Context currentContext = Context.current();
+            final Context newContext = currentContext.withValue(CID_TIMESTAMP, new CidTimestamp(correlationId, timestamp));
+
+            return Contexts.interceptCall(newContext, serverCall, requestMetadata, serverCallHandler);
+        }
+    }
+
     private static class GrpcServerInterceptor implements ServerInterceptor {
 
         @Override
@@ -248,8 +370,12 @@ public class GrpcServer {
 
             logMetadata(requestMetadata, "request");
 
-            final Metadata.Key<String> xCidKey = Metadata.Key.of("x-cid", ASCII_STRING_MARSHALLER);
-            final String correlationId = requestMetadata.get(xCidKey);
+            final CidTimestamp cidTimestamp = CID_TIMESTAMP.get();
+            final String correlationId = cidTimestamp.correlationId;
+            final long timestamp = cidTimestamp.timestamp;
+
+            // handle duplicates with the same CID
+            trackState(correlationId, timestamp, "INIT");
 
             final ForwardingServerCall.SimpleForwardingServerCall<ReqT, RespT> wrapperCall =
                 new ForwardingServerCall.SimpleForwardingServerCall<ReqT, RespT>(serverCall) {
@@ -259,7 +385,8 @@ public class GrpcServer {
                         logMetadata(requestMetadata, "response");
                         if (correlationId != null) {
                             LOGGER.info("response linked to cid: " + correlationId);
-                            responseHeaders.put(xCidKey, correlationId);
+                            responseHeaders.put(Metadata.Key.of("x-cid", ASCII_STRING_MARSHALLER), correlationId);
+                            trackState(correlationId, timestamp, "SEND_HEADERS");
                         }
                         super.sendHeaders(responseHeaders);
                     }
@@ -267,12 +394,14 @@ public class GrpcServer {
                     @Override
                     public void sendMessage(final RespT response) {
                         LOGGER.info("GrpcServerInterceptor.sendMessage[cid=" + correlationId + "]");
+                        trackState(correlationId, timestamp, "SEND_MESSAGE");
                         super.sendMessage(response);
                     }
 
                     @Override
                     public void close(final Status status, final Metadata trailers) {
                         LOGGER.info("GrpcServerInterceptor.close[cid=" + correlationId + "] " + status + ", " + trailers);
+                        trackState(correlationId, timestamp, "CLOSE");
                         super.close(status, trailers);
                     }
                 };
@@ -280,26 +409,33 @@ public class GrpcServer {
             return new ServerCall.Listener<ReqT>() {
                 public void onMessage(final ReqT message) {
                     LOGGER.info("GrpcServerInterceptor.onMessage[cid=" + correlationId + "]");
+                    trackState(correlationId, timestamp, "RECEIVE_MESSAGE");
                     listener.onMessage(message);
                 }
 
                 public void onHalfClose() {
                     LOGGER.info("GrpcServerInterceptor.onHalfClose[cid=" + correlationId + "]");
+                    trackState(correlationId, timestamp, "HALF_CLOSE");
                     listener.onHalfClose();
                 }
 
                 public void onCancel() {
                     LOGGER.info("GrpcServerInterceptor.onCancel[cid=" + correlationId + "]");
+                    final List<String> stateList = trackState(correlationId, timestamp, "CANCEL");
+                    LOGGER.info(correlationId + " states: " + stateList);
                     listener.onCancel();
                 }
 
                 public void onComplete() {
                     LOGGER.info("GrpcServerInterceptor.onComplete[cid=" + correlationId + "]");
+                    final List<String> stateList = trackState(correlationId, timestamp, "COMPLETE");
+                    LOGGER.info(correlationId + " states: " + stateList);
                     listener.onComplete();
                 }
 
                 public void onReady() {
                     LOGGER.info("GrpcServerInterceptor.onReady[cid=" + correlationId + "]");
+                    trackState(correlationId, timestamp, "READY");
                     listener.onReady();
                 }
             };
