@@ -74,15 +74,15 @@
     (log/info "service-id:" service-id)
     (let [{:keys [ping-response service-state]} (some-> response :body try-parse-json walk/keywordize-keys)]
       (is (= "received-response" (:result ping-response)) (str ping-response))
-      (is (str/starts-with? (str (some-> ping-response :headers :server)) "courier-health-check"))
+      (is (= "OK" (some-> ping-response :body)) (str ping-response))
+      (is (str/starts-with? (str (some-> ping-response :headers :server)) "courier-health-check") (str ping-response))
       (assert-response-status ping-response 200)
       (is (or (= {:exists? true :healthy? true :service-id service-id :status "Running"} service-state)
               (= {:exists? true :healthy? false :service-id service-id :status "Starting"} service-state))
           (str service-state)))
     (assert-service-on-all-routers waiter-url service-id cookies)
 
-    {:cookies cookies
-     :h2c-port h2c-port
+    {:h2c-port h2c-port
      :host host
      :request-headers request-headers
      :service-id service-id}))
@@ -98,14 +98,20 @@
                 from (rand-name "f")
                 content (rand-str 1000)
                 request-headers (assoc request-headers "x-cid" (rand-name))
-                reply (GrpcClient/sendPackage host h2c-port request-headers id from content)]
+                rpc-result (GrpcClient/sendPackage host h2c-port request-headers id from content)
+                reply (.result rpc-result)
+                status (.status rpc-result)]
             (is reply)
             (when reply
               (is (= id (.getId reply)))
               (is (= content (.getMessage reply)))
-              (is (= "received" (.getResponse reply))))))))))
+              (is (= "received" (.getResponse reply))))
+            (is status)
+            (when status
+              (is (= "OK" (-> status .getCode str)) (str status))
+              (is (str/blank? (.getDescription status)) (str status)))))))))
 
-(deftest ^:parallel ^:integration-fast test-grpc-unary-call-server-error
+(deftest ^:parallel ^:integration-fast test-grpc-unary-call-server-cancellation
   (testing-using-waiter-url
     (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)]
       (with-service-cleanup
@@ -118,12 +124,35 @@
                 request-cid (rand-name)
                 _ (log/info "cid:" request-cid)
                 request-headers (assoc request-headers "x-cid" request-cid)
-                reply (GrpcClient/sendPackage host h2c-port request-headers id from content)]
-            (is reply)
-            (when reply
-              (is (= "CANCELLED" (.getId reply)))
-              (is (= "Cancelled by server" (.getMessage reply)))
-              (is (= "error" (.getResponse reply))))))))))
+                rpc-result (GrpcClient/sendPackage host h2c-port request-headers id from content)
+                reply (.result rpc-result)
+                status (.status rpc-result)]
+            (is (nil? reply))
+            (is status)
+            (when status
+              (is (= "CANCELLED" (-> status .getCode str)) (str status))
+              (is (= "Cancelled by server" (.getDescription status)) (str status)))))))))
+
+(deftest ^:parallel ^:integration-fast test-grpc-unary-call-server-exit
+  (testing-using-waiter-url
+    (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)]
+      (with-service-cleanup
+        service-id
+        (testing "small request and reply"
+          (log/info "starting small request and reply test")
+          (let [id (str (rand-name "m") ".EXIT_PRE_RESPONSE")
+                from (rand-name "f")
+                content (rand-str 1000)
+                request-cid (rand-name)
+                _ (log/info "cid:" request-cid)
+                request-headers (assoc request-headers "x-cid" request-cid)
+                rpc-result (GrpcClient/sendPackage host h2c-port request-headers id from content)
+                reply (.result rpc-result)
+                status (.status rpc-result)]
+            (is (nil? reply))
+            (is status)
+            (when status
+              (is (contains? #{"UNAVAILABLE" "INTERNAL"} (-> status .getCode str)) (str status)))))))))
 
 (deftest ^:parallel ^:integration-fast test-grpc-streaming-successful
   (testing-using-waiter-url
@@ -131,7 +160,7 @@
       (with-service-cleanup
         service-id
         (doseq [max-message-length [1000 100000]]
-          (let [num-messages 100
+          (let [num-messages 120
                 messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))]
 
             (testing (str "independent mode " max-message-length " messages completion")
@@ -140,13 +169,19 @@
                     from (rand-name "f")
                     collect-cid (str (rand-name) "-independent-complete")
                     request-headers (assoc request-headers "x-cid" collect-cid)
-                    summaries (GrpcClient/collectPackages
-                                host h2c-port request-headers "m-" from messages 10 false cancel-threshold)]
+                    rpc-result (GrpcClient/collectPackages
+                                 host h2c-port request-headers "m-" from messages 10 false cancel-threshold)
+                    summaries (.result rpc-result)
+                    status (.status rpc-result)]
                 (log/info collect-cid "collecting independent packages...")
                 (is (= (count messages) (count summaries)))
                 (when (seq summaries)
                   (is (= (range 1 (inc (count messages))) (map #(.getNumMessages %) summaries)))
-                  (is (= (reductions + (map count messages)) (map #(.getTotalLength %) summaries))))))
+                  (is (= (reductions + (map count messages)) (map #(.getTotalLength %) summaries))))
+                (is status)
+                (when status
+                  (is (= "OK" (-> status .getCode str)) (str status))
+                  (is (str/blank? (.getDescription status)) (str status)))))
 
             (testing (str "lock-step mode " max-message-length " messages completion")
               (log/info "starting streaming to and from server - lock-step mode test")
@@ -154,48 +189,102 @@
                     from (rand-name "f")
                     collect-cid (str (rand-name) "-lock-step-complete")
                     request-headers (assoc request-headers "x-cid" collect-cid)
-                    summaries (GrpcClient/collectPackages
-                                host h2c-port request-headers "m-" from messages 1 true cancel-threshold)]
+                    rpc-result (GrpcClient/collectPackages
+                                 host h2c-port request-headers "m-" from messages 1 true cancel-threshold)
+                    summaries (.result rpc-result)
+                    status (.status rpc-result)]
                 (log/info collect-cid "collecting lock-step packages...")
                 (is (= (count messages) (count summaries)))
                 (when (seq summaries)
                   (is (= (range 1 (inc (count messages))) (map #(.getNumMessages %) summaries)))
-                  (is (= (reductions + (map count messages)) (map #(.getTotalLength %) summaries))))))))))))
+                  (is (= (reductions + (map count messages)) (map #(.getTotalLength %) summaries))))
+                (is status)
+                (when status
+                  (is (= "OK" (-> status .getCode str)) (str status))
+                  (is (str/blank? (.getDescription status)) (str status)))))))))))
 
 (deftest ^:parallel ^:integration-slow test-grpc-streaming-server-exit
   (testing-using-waiter-url
-    (let [num-messages 100
-          num-iterations 4]
-      (dotimes [iteration num-iterations]
-        (doseq [max-message-length [1000 100000]]
-          (doseq [mode ["EXIT_PRE_RESPONSE" "EXIT_POST_RESPONSE"]]
-            (testing (str "lock-step mode " max-message-length " messages exits pre-response")
-              (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)]
+    (let [num-messages 120
+          num-iterations 3]
+      (doseq [max-message-length [1000 100000]]
+        (let [messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))]
+          (dotimes [iteration num-iterations]
+            (doseq [mode ["EXIT_PRE_RESPONSE" "EXIT_POST_RESPONSE"]]
+              (testing (str "lock-step mode " max-message-length " messages exits pre-response")
+                (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)]
+                  (with-service-cleanup
+                    service-id
+                    (let [exit-index (* iteration (/ num-messages num-iterations))
+                          collect-cid (str (rand-name) "." mode "." exit-index "-" num-messages "." max-message-length)
+                          _ (log/info "collect packages cid" collect-cid "for"
+                                      {:iteration iteration :max-message-length max-message-length})
+                          from (rand-name "f")
+                          ids (map #(str "id-" (cond-> % (= % exit-index) (str "." mode))) (range num-messages))
+                          request-headers (assoc request-headers "x-cid" collect-cid)
+                          rpc-result (GrpcClient/collectPackages
+                                       host h2c-port request-headers ids from messages 1 true (inc num-messages))
+                          message-summaries (.result rpc-result)
+                          status (.status rpc-result)
+                          assertion-message (str (cond-> {:collect-cid collect-cid
+                                                          :exit-index exit-index
+                                                          :iteration iteration
+                                                          :service-id service-id
+                                                          :summaries (map (fn [s]
+                                                                            {:num-messages (.getNumMessages s)
+                                                                             :total-length (.getTotalLength s)})
+                                                                          message-summaries)}
+                                                   status (assoc :status {:code (-> status .getCode str)
+                                                                          :description (.getDescription status)})))
+                          expected-summary-count (cond-> exit-index
+                                                   (= "EXIT_POST_RESPONSE" mode) inc)]
+                      (log/info "result" assertion-message)
+                      (is (= expected-summary-count (count message-summaries)) assertion-message)
+                      (when (seq message-summaries)
+                        (is (= (range 1 (inc expected-summary-count))
+                               (map #(.getNumMessages %) message-summaries))
+                            assertion-message)
+                        (is (= (reductions + (map count (take expected-summary-count messages)))
+                               (map #(.getTotalLength %) message-summaries))
+                            assertion-message))
+                      (is status)
+                      (when status
+                        (is (contains? #{"UNAVAILABLE" "INTERNAL"} (-> status .getCode str)) (str status))))))))))))))
+
+(deftest ^:parallel ^:integration-slow test-grpc-streaming-server-cancellation
+  (testing-using-waiter-url
+    (let [num-messages 120
+          num-iterations 3]
+      (doseq [max-message-length [1000 100000]]
+        (let [messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))]
+          (dotimes [iteration num-iterations]
+            (testing (str "lock-step mode " max-message-length " messages server error")
+              (let [mode "SEND_ERROR"
+                    {:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)]
                 (with-service-cleanup
                   service-id
-                  (let [exit-index (* iteration (/ num-messages num-iterations))
-                        collect-cid (str (rand-name) "." mode "." exit-index "-" num-messages "." max-message-length)
+                  (let [error-index (* iteration (/ num-messages num-iterations))
+                        collect-cid (str (rand-name) "." mode "." error-index "-" num-messages "." max-message-length)
+                        from (rand-name "f")
+                        ids (map #(str "id-" (cond-> % (= % error-index) (str "." mode))) (range num-messages))
+                        request-headers (assoc request-headers "x-cid" collect-cid)
                         _ (log/info "collect packages cid" collect-cid "for"
                                     {:iteration iteration :max-message-length max-message-length})
-                        from (rand-name "f")
-                        ids (map #(str "id-" (cond-> % (= % exit-index) (str "." mode))) (range num-messages))
-                        messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))
-                        request-headers (assoc request-headers "x-cid" collect-cid)
-                        summaries (GrpcClient/collectPackages
-                                    host h2c-port request-headers ids from messages 1 true (inc num-messages))
-                        assertion-message (str {:exit-index exit-index
-                                                :collect-cid collect-cid
-                                                :iteration iteration
-                                                :service-id service-id
-                                                :summaries (map (fn [s]
-                                                                  {:num-messages (.getNumMessages s)
-                                                                   :status-code (.getStatusCode s)
-                                                                   :total-length (.getTotalLength s)})
-                                                                summaries)})
-                        message-summaries (take (dec (count summaries)) summaries)
-                        status-summary (last summaries)
-                        expected-summary-count (cond-> exit-index
-                                                 (= "EXIT_POST_RESPONSE" mode) inc)]
+                        rpc-result (GrpcClient/collectPackages
+                                     host h2c-port request-headers ids from messages 1 true (inc num-messages))
+                        message-summaries (.result rpc-result)
+                        status (.status rpc-result)
+                        assertion-message (str (cond-> {:collect-cid collect-cid
+                                                        :error-index error-index
+                                                        :iteration iteration
+                                                        :service-id service-id
+                                                        :summaries (map (fn [s]
+                                                                          {:num-messages (.getNumMessages s)
+                                                                           :total-length (.getTotalLength s)})
+                                                                        message-summaries)}
+                                                 status (assoc :status {:code (-> status .getCode str)
+                                                                        :description (.getDescription status)})))
+                        expected-summary-count error-index]
                     (log/info "result" assertion-message)
                     (is (= expected-summary-count (count message-summaries)) assertion-message)
                     (when (seq message-summaries)
@@ -205,58 +294,7 @@
                       (is (= (reductions + (map count (take expected-summary-count messages)))
                              (map #(.getTotalLength %) message-summaries))
                           assertion-message))
-                    (is status-summary assertion-message)
-                    (when status-summary
-                      (log/info "server exit summary" status-summary)
-                      (is (contains? #{"UNAVAILABLE" "INTERNAL"} (.getStatusCode status-summary)) assertion-message)
-                      (is (zero? (.getNumMessages status-summary)) assertion-message))))))))))))
-
-(deftest ^:parallel ^:integration-slow test-grpc-streaming-server-cancellation
-  (testing-using-waiter-url
-    (let [num-messages 100
-          num-iterations 4]
-      (dotimes [iteration num-iterations]
-        (doseq [max-message-length [1000 100000]]
-          (testing (str "lock-step mode " max-message-length " messages server error")
-            (let [mode "SEND_ERROR"
-                  {:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)]
-              (with-service-cleanup
-                service-id
-                (let [error-index (* iteration (/ num-messages num-iterations))
-                      collect-cid (str (rand-name) "." mode "." error-index "-" num-messages "." max-message-length)
-                      from (rand-name "f")
-                      ids (map #(str "id-" (cond-> % (= % error-index) (str "." mode))) (range num-messages))
-                      messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))
-                      request-headers (assoc request-headers "x-cid" collect-cid)
-                      _ (log/info "collect packages cid" collect-cid "for"
-                                  {:iteration iteration :max-message-length max-message-length})
-                      summaries (GrpcClient/collectPackages
-                                  host h2c-port request-headers ids from messages 1 true (inc num-messages))
-                      assertion-message (str {:collect-cid collect-cid
-                                              :error-index error-index
-                                              :iteration iteration
-                                              :service-id service-id
-                                              :summaries (map (fn [s]
-                                                                {:num-messages (.getNumMessages s)
-                                                                 :status-code (.getStatusCode s)
-                                                                 :status-description (.getStatusDescription s)
-                                                                 :total-length (.getTotalLength s)})
-                                                              summaries)})
-                      expected-summary-count error-index
-                      message-summaries (take (dec (count summaries)) summaries)
-                      status-summary (last summaries)]
-                  (log/info "result" assertion-message)
-                  (is (= expected-summary-count (count message-summaries)) assertion-message)
-                  (when (seq message-summaries)
-                    (is (= (range 1 (inc expected-summary-count))
-                           (map #(.getNumMessages %) message-summaries))
-                        assertion-message)
-                    (is (= (reductions + (map count (take expected-summary-count messages)))
-                           (map #(.getTotalLength %) message-summaries))
-                        assertion-message))
-                  (is status-summary assertion-message)
-                  (when status-summary
-                    (log/info "server cancellation summary" status-summary)
-                    (is (= "CANCELLED" (.getStatusCode status-summary)) assertion-message)
-                    (is (= "Cancelled by server" (.getStatusDescription status-summary)) assertion-message)
-                    (is (zero? (.getNumMessages status-summary)) assertion-message)))))))))))
+                    (is status)
+                    (when status
+                      (is (= "CANCELLED" (-> status .getCode str)) (str status))
+                      (is (= "Cancelled by server" (.getDescription status)) (str status)))))))))))))

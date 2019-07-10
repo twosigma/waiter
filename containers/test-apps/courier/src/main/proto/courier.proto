@@ -29,10 +29,18 @@ service Courier {
     rpc CollectPackages (stream CourierRequest) returns (stream CourierSummary);
 }
 
+enum Variant {
+    NORMAL = 0;
+    SEND_ERROR = 1;
+    EXIT_PRE_RESPONSE = 2;
+    EXIT_POST_RESPONSE = 3;
+}
+
 message CourierRequest {
     string id = 1;
     string from = 2;
     string message = 3;
+    Variant variant = 4;
 }
 
 message CourierReply {
@@ -44,6 +52,4 @@ message CourierReply {
 message CourierSummary {
     int64 num_messages = 1;
     int64 total_length = 2;
-    string status_code = 3;
-    string status_description = 4;
 }

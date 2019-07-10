@@ -42,6 +42,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -50,6 +51,24 @@ import java.util.stream.IntStream;
 public class GrpcClient {
 
     private final static Logger LOGGER = Logger.getLogger(GrpcServer.class.getName());
+
+    public static final class RpcResult<Result> {
+        private final Result result;
+        private final Status status;
+
+        private RpcResult(final Result result, final Status status) {
+            this.result = result;
+            this.status = status;
+        }
+
+        public Result result() {
+            return result;
+        }
+
+        public Status status() {
+            return status;
+        }
+    }
 
     private static Function<String, Void> logFunction = new Function<String, Void>() {
         @Override
@@ -122,12 +141,24 @@ public class GrpcClient {
         });
     }
 
-    public static CourierReply sendPackage(final String host,
-                                           final int port,
-                                           final Map<String, Object> headers,
-                                           final String id,
-                                           final String from,
-                                           final String message) throws InterruptedException {
+    private static Variant retrieveVariant(final String id) {
+        if (id.contains("SEND_ERROR")) {
+            return Variant.SEND_ERROR;
+        } else if (id.contains("EXIT_PRE_RESPONSE")) {
+            return Variant.EXIT_PRE_RESPONSE;
+        } else if (id.contains("EXIT_POST_RESPONSE")) {
+            return Variant.EXIT_POST_RESPONSE;
+        } else {
+            return Variant.NORMAL;
+        }
+    }
+
+    public static RpcResult<CourierReply> sendPackage(final String host,
+                                                      final int port,
+                                                      final Map<String, Object> headers,
+                                                      final String id,
+                                                      final String from,
+                                                      final String message) throws InterruptedException {
         final ManagedChannel channel = initializeChannel(host, port);
 
         try {
@@ -143,47 +174,50 @@ public class GrpcClient {
                 .setId(id)
                 .setFrom(from)
                 .setMessage(message)
+                .setVariant(retrieveVariant(id))
                 .build();
-            final CourierReply response;
+
+            final AtomicReference<Status> status = new AtomicReference<>(Status.OK);
+            final AtomicReference<CourierReply> response = new AtomicReference<>();
             try {
-                response = futureStub.sendPackage(request).get();
-            } catch (final StatusRuntimeException e) {
-                logFunction.apply("RPC failed, status: " + e.getStatus());
-                return null;
-            } catch (ExecutionException e) {
-                final Status status = Status.fromThrowable(e.getCause());
-                logFunction.apply("RPC execution failed: " + status);
-                return CourierReply
-                    .newBuilder()
-                    .setId(status.getCode().toString())
-                    .setMessage(status.getDescription())
-                    .setResponse("error")
-                    .build();
-            } catch (final Exception e) {
-                logFunction.apply("RPC failed, message: " + e.getMessage());
-                return null;
+                response.set(futureStub.sendPackage(request).get());
+            } catch (final StatusRuntimeException ex) {
+                final Status errorStatus = ex.getStatus();
+                logFunction.apply("RPC failed, status: " + errorStatus);
+                status.set(errorStatus);
+            } catch (final ExecutionException ex) {
+                final Status errorStatus = Status.fromThrowable(ex.getCause());
+                logFunction.apply("RPC execution failed: " + errorStatus);
+                status.set(errorStatus);
+            } catch (final Throwable th) {
+                logFunction.apply("RPC failed, message: " + th.getMessage());
+                status.set(Status.UNKNOWN.withDescription(th.getMessage()));
             }
-            logFunction.apply("received response CourierReply{" +
-                "id=" + response.getId() + ", " +
-                "response=" + response.getResponse() + ", " +
-                "message.length=" + response.getMessage().length() + "}");
-            logFunction.apply("messages equal = " + message.equals(response.getMessage()));
-            return response;
+
+            if (response.get() != null) {
+                final CourierReply reply = response.get();
+                logFunction.apply("received response CourierReply{" +
+                    "id=" + reply.getId() + ", " +
+                    "response=" + reply.getResponse() + ", " +
+                    "message.length=" + reply.getMessage().length() + "}");
+                logFunction.apply("messages equal = " + message.equals(reply.getMessage()));
+            }
+            return new RpcResult<>(response.get(), status.get());
 
         } finally {
             shutdownChannel(channel);
         }
     }
 
-    public static List<CourierSummary> collectPackages(final String host,
-                                                       final int port,
-                                                       final Map<String, Object> headers,
-                                                       final List<String> ids,
-                                                       final String from,
-                                                       final List<String> messages,
-                                                       final int interMessageSleepMs,
-                                                       final boolean lockStepMode,
-                                                       final int cancelThreshold) throws InterruptedException {
+    public static RpcResult<List<CourierSummary>> collectPackages(final String host,
+                                                                  final int port,
+                                                                  final Map<String, Object> headers,
+                                                                  final List<String> ids,
+                                                                  final String from,
+                                                                  final List<String> messages,
+                                                                  final int interMessageSleepMs,
+                                                                  final boolean lockStepMode,
+                                                                  final int cancelThreshold) throws InterruptedException {
         final ManagedChannel channel = initializeChannel(host, port);
         final AtomicBoolean awaitChannelTermination = new AtomicBoolean(true);
 
@@ -198,6 +232,9 @@ public class GrpcClient {
             final CourierGrpc.CourierStub futureStub = MetadataUtils.attachHeaders(rawStub, headerMetadata);
 
             logFunction.apply("will try to send package from " + from + " ...");
+
+            final AtomicReference<Status> status = new AtomicReference<>(Status.OK);
+            final AtomicReference<List<CourierSummary>> response = new AtomicReference<>();
 
             final CompletableFuture<List<CourierSummary>> responsePromise = new CompletableFuture<>();
             try {
@@ -219,23 +256,19 @@ public class GrpcClient {
                         }
 
                         @Override
-                        public void onError(final Throwable throwable) {
-                            logFunction.apply("error in collecting summaries " + throwable);
+                        public void onError(final Throwable th) {
+                            logFunction.apply("error in collecting summaries " + th);
                             errorSignal.compareAndSet(false, true);
                             resolveResponsePromise();
                             if (lockStepMode) {
                                 logFunction.apply("releasing semaphore after receiving error");
                                 lockStep.release();
                             }
-                            if (throwable instanceof StatusRuntimeException) {
-                                final StatusRuntimeException exception = (StatusRuntimeException) throwable;
-                                final CourierSummary response = CourierSummary
-                                    .newBuilder()
-                                    .setNumMessages(0)
-                                    .setStatusCode(exception.getStatus().getCode().name())
-                                    .setStatusDescription(exception.getStatus().getDescription())
-                                    .build();
-                                resultList.add(response);
+                            if (th instanceof StatusRuntimeException) {
+                                final StatusRuntimeException exception = (StatusRuntimeException) th;
+                                status.set(exception.getStatus());
+                            } else {
+                                status.set(Status.UNKNOWN.withDescription(th.getMessage()));
                             }
                         }
 
@@ -255,7 +288,6 @@ public class GrpcClient {
                     if (i >= cancelThreshold) {
                         logFunction.apply("cancelling sending messages");
                         awaitChannelTermination.set(false);
-                        channel.shutdownNow();
                         throw new CancellationException("Cancel threshold reached: " + cancelThreshold);
                     }
                     if (errorSignal.get()) {
@@ -272,6 +304,7 @@ public class GrpcClient {
                         .setId(requestId)
                         .setFrom(from)
                         .setMessage(messages.get(i))
+                        .setVariant(retrieveVariant(requestId))
                         .build();
                     logFunction.apply("sending message CourierRequest{" +
                         "id=" + request.getId() + ", " +
@@ -283,31 +316,35 @@ public class GrpcClient {
                 logFunction.apply("completed sending packages");
                 collector.onCompleted();
 
-                return responsePromise.get();
+                response.set(responsePromise.get());
             } catch (final StatusRuntimeException e) {
                 logFunction.apply("RPC failed, status: " + e.getStatus());
-                return null;
+                status.set(e.getStatus());
             } catch (final Exception e) {
                 logFunction.apply("RPC failed, message: " + e.getMessage());
-                return null;
+                status.set(Status.UNKNOWN);
             }
+
+            return new RpcResult<>(response.get(), status.get());
 
         } finally {
             if (awaitChannelTermination.get()) {
                 shutdownChannel(channel);
+            } else {
+                channel.shutdownNow();
             }
         }
     }
 
-    public static List<CourierSummary> collectPackages(final String host,
-                                                       final int port,
-                                                       final Map<String, Object> headers,
-                                                       final String idPrefix,
-                                                       final String from,
-                                                       final List<String> messages,
-                                                       final int interMessageSleepMs,
-                                                       final boolean lockStepMode,
-                                                       final int cancelThreshold) throws InterruptedException {
+    public static RpcResult<List<CourierSummary>> collectPackages(final String host,
+                                                                  final int port,
+                                                                  final Map<String, Object> headers,
+                                                                  final String idPrefix,
+                                                                  final String from,
+                                                                  final List<String> messages,
+                                                                  final int interMessageSleepMs,
+                                                                  final boolean lockStepMode,
+                                                                  final int cancelThreshold) throws InterruptedException {
 
         final List<String> ids = new ArrayList<>(messages.size());
         for (int i = 0; i < messages.size(); i++) {
@@ -323,75 +360,104 @@ public class GrpcClient {
      */
     public static void main(final String... args) throws Exception {
         /* Access a service running on the local machine on port 8080 */
-        final long startTimeMillis = System.currentTimeMillis();
         final String host = "localhost";
         final int port = 8080;
+
+        // runSendPackageSuccess(host, port);
+        // runSendPackageSendError(host, port);
+        // runCollectPackagesSuccess(host, port);
+        // runCollectPackagesExitPreResponse(host, port);
+        // runCollectPackagesExitPostResponse(host, port);
+        // runCollectPackagesSendError(host, port);
+    }
+
+    private static void runSendPackageSuccess(final String host, final int port) throws InterruptedException {
+        final String id = UUID.randomUUID().toString();
+        final String user = "Jim";
+        final StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 100_000; i++) {
+            sb.append("a");
+            if (i % 1000 == 0) {
+                sb.append(".");
+            }
+        }
+
         final HashMap<String, Object> headers = new HashMap<>();
+        headers.put("x-cid", "cid-send-package." + System.currentTimeMillis());
+        final RpcResult<CourierReply> rpcResult = sendPackage(host, port, headers, id, user, sb.toString());
+        final CourierReply courierReply = rpcResult.result();
+        logFunction.apply("sendPackage response = " + courierReply);
+        final Status status = rpcResult.status();
+        logFunction.apply("sendPackage status = " + status);
+    }
 
-        if (false) {
-            final String id = UUID.randomUUID().toString() + ".SEND_ERROR";
-            final String user = "Jim";
-            final StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < 100_000; i++) {
-                sb.append("a");
-                if (i % 1000 == 0) {
-                    sb.append(".");
-                }
-            }
-
-            headers.put("x-cid", "cid-send-package." + startTimeMillis);
-            final CourierReply courierReply = sendPackage(host, port, headers, id, user, sb.toString());
-            logFunction.apply("sendPackage response = " + courierReply);
-        }
-
-        if (false) {
-            headers.put("x-cid", "cid-collect-packages-complete." + startTimeMillis);
-            final List<String> messages = IntStream.range(0, 10).mapToObj(i -> "message-" + i).collect(Collectors.toList());
-            final List<CourierSummary> courierSummaries =
-                collectPackages(host, port, headers, "id-", "User", messages, 100, true, messages.size());
-            logFunction.apply("collectPackages response size = " + courierSummaries.size());
-            if (!courierSummaries.isEmpty()) {
-                final CourierSummary courierSummary = courierSummaries.get(courierSummaries.size() - 1);
-                logFunction.apply("collectPackages[complete] summary = " + courierSummary.toString());
+    private static void runSendPackageSendError(final String host, final int port) throws InterruptedException {
+        final String id = UUID.randomUUID().toString() + ".SEND_ERROR";
+        final String user = "Jim";
+        final StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 100_000; i++) {
+            sb.append("a");
+            if (i % 1000 == 0) {
+                sb.append(".");
             }
         }
 
-        if (false) {
-            headers.put("x-cid", "cid-collect-packages-cancel." + startTimeMillis);
-            final List<String> messages = IntStream.range(0, 10).mapToObj(i -> "message-" + i).collect(Collectors.toList());
-            final List<CourierSummary> courierSummaries =
-                collectPackages(host, port, headers, "id-", "User", messages, 100, true, messages.size() / 2);
-            logFunction.apply("collectPackages[cancel] summary = " + courierSummaries);
-        }
+        final HashMap<String, Object> headers = new HashMap<>();
+        headers.put("x-cid", "cid-send-package." + System.currentTimeMillis());
+        final RpcResult<CourierReply> rpcResult = sendPackage(host, port, headers, id, user, sb.toString());
+        final CourierReply courierReply = rpcResult.result();
+        logFunction.apply("sendPackage response = " + courierReply);
+        final Status status = rpcResult.status();
+        logFunction.apply("sendPackage status = " + status);
+    }
 
-        if (false) {
-            headers.put("x-cid", "cid-collect-packages-server-pre-cancel." + startTimeMillis);
-            final List<String> ids = IntStream.range(0, 10).mapToObj(i -> "id-" + i).collect(Collectors.toList());
-            ids.set(5, ids.get(5) + ".EXIT_PRE_RESPONSE");
-            final List<String> messages = IntStream.range(0, 10).mapToObj(i -> "message-" + i).collect(Collectors.toList());
-            final List<CourierSummary> courierSummaries =
-                collectPackages(host, port, headers, ids, "User", messages, 100, true, messages.size() + 1);
-            logFunction.apply("collectPackages[cancel] summary = " + courierSummaries);
-        }
+    private static void runCollectPackagesSuccess(final String host, final int port) throws InterruptedException {
+        final HashMap<String, Object> headers = new HashMap<>();
+        headers.put("x-cid", "cid-collect-packages-success." + System.currentTimeMillis());
+        final List<String> messages = IntStream.range(0, 10).mapToObj(i -> "message-" + i).collect(Collectors.toList());
+        final RpcResult<List<CourierSummary>> rpcResult = collectPackages(host, port, headers, "id-", "User", messages, 100, true, messages.size() + 1);
+        final List<CourierSummary> courierSummaries = rpcResult.result();
+        logFunction.apply("collectPackages[success] summary = " + courierSummaries);
+        final Status status = rpcResult.status();
+        logFunction.apply("collectPackages[success] status = " + status);
+    }
 
-        if (false) {
-            headers.put("x-cid", "cid-collect-packages-server-post-cancel." + startTimeMillis);
-            final List<String> ids = IntStream.range(0, 10).mapToObj(i -> "id-" + i).collect(Collectors.toList());
-            ids.set(5, ids.get(5) + ".EXIT_POST_RESPONSE");
-            final List<String> messages = IntStream.range(0, 10).mapToObj(i -> "message-" + i).collect(Collectors.toList());
-            final List<CourierSummary> courierSummaries =
-                collectPackages(host, port, headers, ids, "User", messages, 100, true, messages.size() + 1);
-            logFunction.apply("collectPackages[cancel] summary = " + courierSummaries);
-        }
+    private static void runCollectPackagesSendError(final String host, final int port) throws InterruptedException {
+        final HashMap<String, Object> headers = new HashMap<>();
+        headers.put("x-cid", "cid-collect-packages-server-error." + System.currentTimeMillis());
+        final List<String> ids = IntStream.range(0, 10).mapToObj(i -> "id-" + i).collect(Collectors.toList());
+        ids.set(5, ids.get(5) + ".SEND_ERROR");
+        final List<String> messages = IntStream.range(0, 10).mapToObj(i -> "message-" + i).collect(Collectors.toList());
+        final RpcResult<List<CourierSummary>> rpcResult = collectPackages(host, port, headers, ids, "User", messages, 100, true, messages.size() + 1);
+        final List<CourierSummary> courierSummaries = rpcResult.result();
+        logFunction.apply("collectPackages[cancel] summary = " + courierSummaries);
+        final Status status = rpcResult.status();
+        logFunction.apply("collectPackages[cancel] status = " + status);
+    }
 
-        if (true) {
-            headers.put("x-cid", "cid-collect-packages-server-error." + startTimeMillis);
-            final List<String> ids = IntStream.range(0, 10).mapToObj(i -> "id-" + i).collect(Collectors.toList());
-            ids.set(5, ids.get(5) + ".SEND_ERROR");
-            final List<String> messages = IntStream.range(0, 10).mapToObj(i -> "message-" + i).collect(Collectors.toList());
-            final List<CourierSummary> courierSummaries =
-                collectPackages(host, port, headers, ids, "User", messages, 100, true, messages.size() + 1);
-            logFunction.apply("collectPackages[cancel] summary = " + courierSummaries);
-        }
+    private static void runCollectPackagesExitPostResponse(final String host, final int port) throws InterruptedException {
+        final HashMap<String, Object> headers = new HashMap<>();
+        headers.put("x-cid", "cid-collect-packages-server-post-cancel." + System.currentTimeMillis());
+        final List<String> ids = IntStream.range(0, 10).mapToObj(i -> "id-" + i).collect(Collectors.toList());
+        ids.set(5, ids.get(5) + ".EXIT_POST_RESPONSE");
+        final List<String> messages = IntStream.range(0, 10).mapToObj(i -> "message-" + i).collect(Collectors.toList());
+        final RpcResult<List<CourierSummary>> rpcResult = collectPackages(host, port, headers, ids, "User", messages, 100, true, messages.size() + 1);
+        final List<CourierSummary> courierSummaries = rpcResult.result();
+        logFunction.apply("collectPackages[cancel] summary = " + courierSummaries);
+        final Status status = rpcResult.status();
+        logFunction.apply("collectPackages[cancel] status = " + status);
+    }
+
+    private static void runCollectPackagesExitPreResponse(final String host, final int port) throws InterruptedException {
+        final HashMap<String, Object> headers = new HashMap<>();
+        headers.put("x-cid", "cid-collect-packages-server-pre-cancel." + System.currentTimeMillis());
+        final List<String> ids = IntStream.range(0, 10).mapToObj(i -> "id-" + i).collect(Collectors.toList());
+        ids.set(5, ids.get(5) + ".EXIT_PRE_RESPONSE");
+        final List<String> messages = IntStream.range(0, 10).mapToObj(i -> "message-" + i).collect(Collectors.toList());
+        final RpcResult<List<CourierSummary>> rpcResult = collectPackages(host, port, headers, ids, "User", messages, 100, true, messages.size() + 1);
+        final List<CourierSummary> courierSummaries = rpcResult.result();
+        logFunction.apply("collectPackages[cancel] summary = " + courierSummaries);
+        final Status status = rpcResult.status();
+        logFunction.apply("collectPackages[cancel] status = " + status);
     }
 }

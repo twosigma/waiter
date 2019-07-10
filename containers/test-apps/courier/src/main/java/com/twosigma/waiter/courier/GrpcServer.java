@@ -28,12 +28,6 @@ import io.grpc.stub.ServerCallStreamObserver;
 import io.grpc.stub.StreamObserver;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.logging.Logger;
 
@@ -42,6 +36,15 @@ import static io.grpc.Metadata.ASCII_STRING_MARSHALLER;
 public class GrpcServer {
 
     private final static Logger LOGGER = Logger.getLogger(GrpcServer.class.getName());
+
+    private static void sleep(final int durationMillis) {
+        try {
+            Thread.sleep(durationMillis);
+        } catch (final Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+
     private Server server;
 
     void start(final int port) throws IOException {
@@ -89,13 +92,17 @@ public class GrpcServer {
                     LOGGER.info("CancelHandler:sendPackage CourierRequest{" + "id=" + request.getId() + "} was cancelled");
                 });
             }
-            if (request.getId().contains("SEND_ERROR")) {
+            if (Variant.SEND_ERROR.equals(request.getVariant())) {
                 final StatusRuntimeException error = Status.CANCELLED
                     .withCause(new RuntimeException(request.getId()))
                     .withDescription("Cancelled by server")
                     .asRuntimeException();
                 LOGGER.info("Sending cancelled by server error");
                 responseObserver.onError(error);
+            } else if (Variant.EXIT_PRE_RESPONSE.equals(request.getVariant())) {
+                sleep(1000);
+                LOGGER.info("Exiting server abruptly");
+                System.exit(1);
             } else {
                 final CourierReply reply = CourierReply
                     .newBuilder()
@@ -123,21 +130,21 @@ public class GrpcServer {
                 private long totalLength = 0;
 
                 @Override
-                public void onNext(final CourierRequest courierRequest) {
-                    LOGGER.info("Received CourierRequest id=" + courierRequest.getId());
+                public void onNext(final CourierRequest request) {
+                    LOGGER.info("Received CourierRequest id=" + request.getId());
 
                     numMessages += 1;
-                    totalLength += courierRequest.getMessage().length();
-                    LOGGER.severe("Summary of collected packages: numMessages=" + numMessages +
+                    totalLength += request.getMessage().length();
+                    LOGGER.info("Summary of collected packages: numMessages=" + numMessages +
                         " with totalLength=" + totalLength);
 
-                    if (courierRequest.getId().contains("EXIT_PRE_RESPONSE")) {
+                    if (Variant.EXIT_PRE_RESPONSE.equals(request.getVariant())) {
                         sleep(1000);
                         LOGGER.info("Exiting server abruptly");
                         System.exit(1);
-                    } else if (courierRequest.getId().contains("SEND_ERROR")) {
+                    } else if (Variant.SEND_ERROR.equals(request.getVariant())) {
                         final StatusRuntimeException error = Status.CANCELLED
-                            .withCause(new RuntimeException(courierRequest.getId()))
+                            .withCause(new RuntimeException(request.getId()))
                             .withDescription("Cancelled by server")
                             .asRuntimeException();
                         LOGGER.info("Sending cancelled by server error");
@@ -148,29 +155,21 @@ public class GrpcServer {
                             .setNumMessages(numMessages)
                             .setTotalLength(totalLength)
                             .build();
-                        LOGGER.info("Sending CourierSummary for id=" + courierRequest.getId());
+                        LOGGER.info("Sending CourierSummary for id=" + request.getId());
                         responseObserver.onNext(courierSummary);
                     }
 
-                    if (courierRequest.getId().contains("EXIT_POST_RESPONSE")) {
+                    if (Variant.EXIT_POST_RESPONSE.equals(request.getVariant())) {
                         sleep(1000);
                         LOGGER.info("Exiting server abruptly");
                         System.exit(1);
                     }
                 }
 
-                private void sleep(final int durationMillis) {
-                    try {
-                        Thread.sleep(durationMillis);
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-                }
-
                 @Override
-                public void onError(final Throwable throwable) {
-                    LOGGER.severe("Error in collecting packages: " + throwable.getMessage());
-                    responseObserver.onError(throwable);
+                public void onError(final Throwable th) {
+                    LOGGER.severe("Error in collecting packages: " + th.getMessage());
+                    responseObserver.onError(th);
                 }
 
                 @Override
