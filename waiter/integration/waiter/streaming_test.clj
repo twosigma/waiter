@@ -41,7 +41,7 @@
                         :content-type "application/octet-stream"
                         :x-cid request-cid)
               {:keys [body] :as response} (make-kitchen-request waiter-url headers :body post-body :path "/streaming")]
-          (is (= 200 (:status response)) (str "Request correlation-id: " request-cid))
+          (assert-response-status response 200)
           (is (.equals post-body body) (str response)))) ;; avoids printing the post-body when assertion fails
       ; wait to allow metrics to be aggregated
       (let [sleep-period (max (* 20 metrics-sync-interval-ms) 10000)]
