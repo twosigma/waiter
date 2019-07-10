@@ -177,10 +177,12 @@ public class GrpcClient {
                 .setVariant(retrieveVariant(id))
                 .build();
 
-            final AtomicReference<Status> status = new AtomicReference<>(Status.OK);
+            final AtomicReference<Status> status = new AtomicReference<>();
             final AtomicReference<CourierReply> response = new AtomicReference<>();
             try {
-                response.set(futureStub.sendPackage(request).get());
+                final CourierReply reply = futureStub.sendPackage(request).get();
+                status.set(Status.OK);
+                response.set(reply);
             } catch (final StatusRuntimeException ex) {
                 final Status errorStatus = ex.getStatus();
                 logFunction.apply("RPC failed, status: " + errorStatus);
@@ -233,7 +235,7 @@ public class GrpcClient {
 
             logFunction.apply("will try to send package from " + from + " ...");
 
-            final AtomicReference<Status> status = new AtomicReference<>(Status.OK);
+            final AtomicReference<Status> status = new AtomicReference<>();
             final AtomicReference<List<CourierSummary>> response = new AtomicReference<>();
 
             final CompletableFuture<List<CourierSummary>> responsePromise = new CompletableFuture<>();
@@ -275,6 +277,7 @@ public class GrpcClient {
                         @Override
                         public void onCompleted() {
                             logFunction.apply("completed collecting summaries");
+                            status.set(Status.OK);
                             resolveResponsePromise();
                         }
 
@@ -317,12 +320,12 @@ public class GrpcClient {
                 collector.onCompleted();
 
                 response.set(responsePromise.get());
-            } catch (final StatusRuntimeException e) {
-                logFunction.apply("RPC failed, status: " + e.getStatus());
-                status.set(e.getStatus());
-            } catch (final Exception e) {
-                logFunction.apply("RPC failed, message: " + e.getMessage());
-                status.set(Status.UNKNOWN);
+            } catch (final StatusRuntimeException ex) {
+                logFunction.apply("RPC failed, status: " + ex.getStatus());
+                status.set(ex.getStatus());
+            } catch (final Exception ex) {
+                logFunction.apply("RPC failed, message: " + ex.getMessage());
+                status.set(Status.UNKNOWN.withDescription(ex.getMessage()));
             }
 
             return new RpcResult<>(response.get(), status.get());
@@ -358,7 +361,7 @@ public class GrpcClient {
 
             logFunction.apply("will try to agggreate package from " + from + " ...");
 
-            final AtomicReference<Status> status = new AtomicReference<>(Status.OK);
+            final AtomicReference<Status> status = new AtomicReference<>();
             final AtomicReference<CourierSummary> response = new AtomicReference<>();
 
             final CompletableFuture<CourierSummary> responsePromise = new CompletableFuture<>();
@@ -390,6 +393,7 @@ public class GrpcClient {
                         @Override
                         public void onCompleted() {
                             logFunction.apply("completed aggregating summaries");
+                            status.set(Status.OK);
                             resolveResponsePromise();
                         }
 
@@ -429,12 +433,12 @@ public class GrpcClient {
                 collector.onCompleted();
 
                 responsePromise.get();
-            } catch (final StatusRuntimeException e) {
-                logFunction.apply("RPC failed, status: " + e.getStatus());
-                status.set(e.getStatus());
-            } catch (final Exception e) {
-                logFunction.apply("RPC failed, message: " + e.getMessage());
-                status.set(Status.UNKNOWN);
+            } catch (final StatusRuntimeException ex) {
+                logFunction.apply("RPC failed, status: " + ex.getStatus());
+                status.set(ex.getStatus());
+            } catch (final Exception ex) {
+                logFunction.apply("RPC failed, message: " + ex.getMessage());
+                status.set(Status.UNKNOWN.withDescription(ex.getMessage()));
             }
 
             return new RpcResult<>(response.get(), status.get());

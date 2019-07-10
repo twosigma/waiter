@@ -32,7 +32,7 @@
 
   :dependencies [[bidi "2.1.5"
                   :exclusions [prismatic/schema ring/ring-core]]
-                 [twosigma/courier "1.4.1"
+                 [twosigma/courier "1.4.3"
                   :exclusions [com.google.guava/guava io.grpc/grpc-core]
                   :scope "test"]
                  ;; avoids the following:

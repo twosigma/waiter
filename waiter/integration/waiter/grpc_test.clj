@@ -77,9 +77,9 @@
       (is (= "OK" (some-> ping-response :body)) (str ping-response))
       (is (str/starts-with? (str (some-> ping-response :headers :server)) "courier-health-check") (str ping-response))
       (assert-response-status ping-response 200)
-      (is (or (= {:exists? true :healthy? true :service-id service-id :status "Running"} service-state)
-              (= {:exists? true :healthy? false :service-id service-id :status "Starting"} service-state))
-          (str service-state)))
+      (is (true? (:exists? service-state)) (str service-state))
+      (is (= service-id (:service-id service-state)) (str service-state))
+      (is (contains? #{"Running" "Starting"} (:status service-state)) (str service-state)))
     (assert-service-on-all-routers waiter-url service-id cookies)
 
     {:h2c-port h2c-port
