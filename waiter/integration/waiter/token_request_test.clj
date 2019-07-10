@@ -1358,6 +1358,36 @@
         (finally
           (delete-token-and-assert waiter-url token))))))
 
+(deftest ^:parallel ^:integration-fast test-current-for-tokens
+  (testing-using-waiter-url
+    (let [service-name (rand-name)
+          token (create-token-name waiter-url service-name)
+          service-description (assoc (kitchen-request-headers :prefix "")
+                                :name service-name)]
+      (try
+        (testing "creating initial token"
+          (let [response (post-token waiter-url (assoc service-description :token token))]
+            (assert-response-status response 200)))
+
+        (let [initial-service-id (retrieve-service-id waiter-url {:x-waiter-token token})]
+          (testing "current service reports as current for token"
+            (let [initial-service-details (service-settings waiter-url initial-service-id)]
+              (is (= [token] (:current-for-tokens initial-service-details)))))
+
+          (testing "updating token"
+            (let [new-service-description (assoc service-description :metadata {"foo" "bar"})
+                  response (post-token waiter-url (assoc new-service-description :token token))]
+              (assert-response-status response 200)))
+
+          (testing "old service is no longer current for token"
+            (let [initial-service-details' (service-settings waiter-url initial-service-id)
+                  new-service-id (retrieve-service-id waiter-url {:x-waiter-token token})
+                  new-service-details (service-settings waiter-url new-service-id)]
+              (is (nil? (:current-for-tokens initial-service-details')))
+              (is (= [token] (:current-for-tokens new-service-details))))))
+        (finally
+          (delete-token-and-assert waiter-url token))))))
+
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-service-fallback-support
   (testing-using-waiter-url
     (let [service-name (rand-name)
