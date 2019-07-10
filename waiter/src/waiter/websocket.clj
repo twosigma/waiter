@@ -24,7 +24,6 @@
             [metrics.meters :as meters]
             [metrics.timers :as timers]
             [qbits.jet.client.websocket :as ws-client]
-            [slingshot.slingshot :refer [try+]]
             [waiter.auth.authentication :as auth]
             [waiter.cookie-support :as cookie-support]
             [waiter.correlation-id :as cid]
