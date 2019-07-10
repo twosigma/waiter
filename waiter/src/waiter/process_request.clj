@@ -477,7 +477,7 @@
   [{:keys [headers trailers] :as response}]
   (if trailers
     (let [correlation-id (cid/get-correlation-id)
-          trailers-copy-ch (async/chan 5)
+          trailers-copy-ch (async/chan 1)
           grpc-headers (select-keys headers ["grpc-message" "grpc-status"])]
       (if (seq grpc-headers)
         (do
@@ -497,7 +497,7 @@
         response))
     response))
 
-(defn- handle-grpc-response
+(defn- handle-grpc-error-response
   "Eagerly terminates grpc requests with error status headers.
    We cannot rely on jetty to close the request for us in a timely manner,
    please see https://github.com/eclipse/jetty.project/issues/3842 for details."
@@ -513,11 +513,14 @@
       ;; mark the request as successful, grpc failures are reported in the headers
       (deliver reservation-status-promise :success)
       (when abort-ch
-        ;; disallow aborting the request
+        ;; disallow aborting the request as we deem the request a success and will trigger normal
+        ;; request completion by closing the body channel
         (async/close! abort-ch))
-      ;; stop writing any content in the body
+      ;; stop writing any content in the body from stream-http-response and trigger request completion
       (async/close! body)
+      ;; do not expect any trailers either in the response
       (async/close! trailers)
+      ;; eagerly close channel as request is deemed a success and avoid blocking in stream-http-response
       (async/close! error-chan))
     response))
 
@@ -554,7 +557,7 @@
             location (post-process-async-request-response-fn
                        service-id metric-group backend-proto instance (handler/make-auth-user-map request)
                        reason-map instance-request-properties location query-string))
-          (handle-grpc-response request backend-proto reservation-status-promise)
+          (handle-grpc-error-response request backend-proto reservation-status-promise)
           (forward-grpc-status-headers-in-trailers)
           (assoc :body resp-chan)
           (update-in [:headers] (fn update-response-headers [headers]
