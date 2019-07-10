@@ -6,7 +6,7 @@
 
     <groupId>twosigma</groupId>
     <artifactId>courier</artifactId>
-    <version>1.4.0</version>
+    <version>1.4.1</version>
 
     <name>courier</name>
     <url>https://github.com/twosigma/waiter/tree/master/test-apps/courier</url>

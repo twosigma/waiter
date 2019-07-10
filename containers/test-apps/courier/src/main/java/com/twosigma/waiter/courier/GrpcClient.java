@@ -336,6 +336,118 @@ public class GrpcClient {
         }
     }
 
+    public static RpcResult<CourierSummary> aggregatePackages(final String host,
+                                                              final int port,
+                                                              final Map<String, Object> headers,
+                                                              final List<String> ids,
+                                                              final String from,
+                                                              final List<String> messages,
+                                                              final int interMessageSleepMs,
+                                                              final int cancelThreshold) throws InterruptedException {
+        final ManagedChannel channel = initializeChannel(host, port);
+        final AtomicBoolean awaitChannelTermination = new AtomicBoolean(true);
+
+        try {
+            final AtomicBoolean errorSignal = new AtomicBoolean(false);
+
+            final Channel wrappedChannel = wrapResponseLogger(channel);
+            final Metadata headerMetadata = createRequestHeadersMetadata(headers);
+
+            final CourierGrpc.CourierStub rawStub = CourierGrpc.newStub(wrappedChannel);
+            final CourierGrpc.CourierStub futureStub = MetadataUtils.attachHeaders(rawStub, headerMetadata);
+
+            logFunction.apply("will try to agggreate package from " + from + " ...");
+
+            final AtomicReference<Status> status = new AtomicReference<>(Status.OK);
+            final AtomicReference<CourierSummary> response = new AtomicReference<>();
+
+            final CompletableFuture<CourierSummary> responsePromise = new CompletableFuture<>();
+            try {
+                final StreamObserver<CourierRequest> collector =
+                    futureStub.aggregatePackages(new StreamObserver<CourierSummary>() {
+
+                        @Override
+                        public void onNext(final CourierSummary summary) {
+                            logFunction.apply("received response CourierSummary{" +
+                                "count=" + summary.getNumMessages() + ", " +
+                                "length=" + summary.getTotalLength() + "}");
+                            response.set(summary);
+                        }
+
+                        @Override
+                        public void onError(final Throwable th) {
+                            logFunction.apply("error in aggregating summaries " + th);
+                            errorSignal.compareAndSet(false, true);
+                            resolveResponsePromise();
+                            if (th instanceof StatusRuntimeException) {
+                                final StatusRuntimeException exception = (StatusRuntimeException) th;
+                                status.set(exception.getStatus());
+                            } else {
+                                status.set(Status.UNKNOWN.withDescription(th.getMessage()));
+                            }
+                        }
+
+                        @Override
+                        public void onCompleted() {
+                            logFunction.apply("completed aggregating summaries");
+                            resolveResponsePromise();
+                        }
+
+                        private void resolveResponsePromise() {
+                            final CourierSummary courierSummary = response.get();
+                            logFunction.apply("client result: " + courierSummary);
+                            responsePromise.complete(courierSummary);
+                        }
+                    });
+
+                for (int i = 0; i < messages.size(); i++) {
+                    if (i >= cancelThreshold) {
+                        logFunction.apply("cancelling sending messages");
+                        awaitChannelTermination.set(false);
+                        throw new CancellationException("Cancel threshold reached: " + cancelThreshold);
+                    }
+                    if (errorSignal.get()) {
+                        logFunction.apply("aborting sending messages as error was discovered");
+                        break;
+                    }
+                    final String requestId = ids.get(i);
+                    final CourierRequest request = CourierRequest
+                        .newBuilder()
+                        .setId(requestId)
+                        .setFrom(from)
+                        .setMessage(messages.get(i))
+                        .setVariant(retrieveVariant(requestId))
+                        .build();
+                    logFunction.apply("sending message CourierRequest{" +
+                        "id=" + request.getId() + ", " +
+                        "from=" + request.getFrom() + ", " +
+                        "message.length=" + request.getMessage().length() + "}");
+                    collector.onNext(request);
+                    Thread.sleep(interMessageSleepMs);
+                }
+                logFunction.apply("completed sending packages");
+                collector.onCompleted();
+
+                responsePromise.get();
+            } catch (final StatusRuntimeException e) {
+                logFunction.apply("RPC failed, status: " + e.getStatus());
+                status.set(e.getStatus());
+            } catch (final Exception e) {
+                logFunction.apply("RPC failed, message: " + e.getMessage());
+                status.set(Status.UNKNOWN);
+            }
+
+            return new RpcResult<>(response.get(), status.get());
+
+        } finally {
+            if (awaitChannelTermination.get()) {
+                shutdownChannel(channel);
+            } else {
+                channel.shutdownNow();
+            }
+        }
+    }
+
     public static RpcResult<List<CourierSummary>> collectPackages(final String host,
                                                                   final int port,
                                                                   final Map<String, Object> headers,
@@ -366,9 +478,12 @@ public class GrpcClient {
         // runSendPackageSuccess(host, port);
         // runSendPackageSendError(host, port);
         // runCollectPackagesSuccess(host, port);
+        // runCollectPackagesSendError(host, port);
         // runCollectPackagesExitPreResponse(host, port);
         // runCollectPackagesExitPostResponse(host, port);
-        // runCollectPackagesSendError(host, port);
+        // runAggregatePackagesSuccess(host, port);
+        // runAggregatePackagesSendError(host, port);
+        // runAggregatePackagesExitPreResponse(host, port);
     }
 
     private static void runSendPackageSuccess(final String host, final int port) throws InterruptedException {
@@ -435,6 +550,19 @@ public class GrpcClient {
         logFunction.apply("collectPackages[cancel] status = " + status);
     }
 
+    private static void runCollectPackagesExitPreResponse(final String host, final int port) throws InterruptedException {
+        final HashMap<String, Object> headers = new HashMap<>();
+        headers.put("x-cid", "cid-collect-packages-server-pre-cancel." + System.currentTimeMillis());
+        final List<String> ids = IntStream.range(0, 10).mapToObj(i -> "id-" + i).collect(Collectors.toList());
+        ids.set(5, ids.get(5) + ".EXIT_PRE_RESPONSE");
+        final List<String> messages = IntStream.range(0, 10).mapToObj(i -> "message-" + i).collect(Collectors.toList());
+        final RpcResult<List<CourierSummary>> rpcResult = collectPackages(host, port, headers, ids, "User", messages, 100, true, messages.size() + 1);
+        final List<CourierSummary> courierSummaries = rpcResult.result();
+        logFunction.apply("collectPackages[cancel] summary = " + courierSummaries);
+        final Status status = rpcResult.status();
+        logFunction.apply("collectPackages[cancel] status = " + status);
+    }
+
     private static void runCollectPackagesExitPostResponse(final String host, final int port) throws InterruptedException {
         final HashMap<String, Object> headers = new HashMap<>();
         headers.put("x-cid", "cid-collect-packages-server-post-cancel." + System.currentTimeMillis());
@@ -448,16 +576,41 @@ public class GrpcClient {
         logFunction.apply("collectPackages[cancel] status = " + status);
     }
 
-    private static void runCollectPackagesExitPreResponse(final String host, final int port) throws InterruptedException {
+    private static void runAggregatePackagesSuccess(final String host, final int port) throws InterruptedException {
         final HashMap<String, Object> headers = new HashMap<>();
-        headers.put("x-cid", "cid-collect-packages-server-pre-cancel." + System.currentTimeMillis());
+        headers.put("x-cid", "cid-aggregate-packages-success." + System.currentTimeMillis());
+        final List<String> ids = IntStream.range(0, 10).mapToObj(i -> "id-" + i).collect(Collectors.toList());
+        final List<String> messages = IntStream.range(0, 10).mapToObj(i -> "message-" + i).collect(Collectors.toList());
+        final RpcResult<CourierSummary> rpcResult = aggregatePackages(host, port, headers, ids, "User", messages, 100, messages.size() + 1);
+        final CourierSummary courierSummary = rpcResult.result();
+        logFunction.apply("aggregatePackages[success] summary = " + courierSummary);
+        final Status status = rpcResult.status();
+        logFunction.apply("aggregatePackages[success] status = " + status);
+    }
+
+    private static void runAggregatePackagesSendError(final String host, final int port) throws InterruptedException {
+        final HashMap<String, Object> headers = new HashMap<>();
+        headers.put("x-cid", "cid-aggregate-packages-server-error." + System.currentTimeMillis());
+        final List<String> ids = IntStream.range(0, 10).mapToObj(i -> "id-" + i).collect(Collectors.toList());
+        ids.set(5, ids.get(5) + ".SEND_ERROR");
+        final List<String> messages = IntStream.range(0, 10).mapToObj(i -> "message-" + i).collect(Collectors.toList());
+        final RpcResult<CourierSummary> rpcResult = aggregatePackages(host, port, headers, ids, "User", messages, 100, messages.size() + 1);
+        final CourierSummary courierSummary = rpcResult.result();
+        logFunction.apply("aggregatePackages[cancel] summary = " + courierSummary);
+        final Status status = rpcResult.status();
+        logFunction.apply("aggregatePackages[cancel] status = " + status);
+    }
+
+    private static void runAggregatePackagesExitPreResponse(final String host, final int port) throws InterruptedException {
+        final HashMap<String, Object> headers = new HashMap<>();
+        headers.put("x-cid", "cid-aggregate-packages-server-pre-cancel." + System.currentTimeMillis());
         final List<String> ids = IntStream.range(0, 10).mapToObj(i -> "id-" + i).collect(Collectors.toList());
         ids.set(5, ids.get(5) + ".EXIT_PRE_RESPONSE");
         final List<String> messages = IntStream.range(0, 10).mapToObj(i -> "message-" + i).collect(Collectors.toList());
-        final RpcResult<List<CourierSummary>> rpcResult = collectPackages(host, port, headers, ids, "User", messages, 100, true, messages.size() + 1);
-        final List<CourierSummary> courierSummaries = rpcResult.result();
-        logFunction.apply("collectPackages[cancel] summary = " + courierSummaries);
+        final RpcResult<CourierSummary> rpcResult = aggregatePackages(host, port, headers, ids, "User", messages, 100, messages.size() + 1);
+        final CourierSummary courierSummary = rpcResult.result();
+        logFunction.apply("aggregatePackages[cancel] summary = " + courierSummary);
         final Status status = rpcResult.status();
-        logFunction.apply("collectPackages[cancel] status = " + status);
+        logFunction.apply("aggregatePackages[cancel] status = " + status);
     }
 }

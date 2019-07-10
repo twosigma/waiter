@@ -179,6 +179,63 @@ public class GrpcServer {
                 }
             };
         }
+
+        @Override
+        public StreamObserver<CourierRequest> aggregatePackages(final StreamObserver<CourierSummary> responseObserver) {
+
+            if (responseObserver instanceof ServerCallStreamObserver) {
+                ((ServerCallStreamObserver) responseObserver).setOnCancelHandler(() -> {
+                    LOGGER.info("CancelHandler:collectPackages() was cancelled");
+                });
+            }
+            return new StreamObserver<CourierRequest>() {
+
+                private long numMessages = 0;
+                private long totalLength = 0;
+
+                @Override
+                public void onNext(final CourierRequest request) {
+                    LOGGER.info("Received CourierRequest id=" + request.getId());
+
+                    numMessages += 1;
+                    totalLength += request.getMessage().length();
+                    LOGGER.info("Summary of collected packages: numMessages=" + numMessages +
+                        " with totalLength=" + totalLength);
+
+                    if (Variant.EXIT_PRE_RESPONSE.equals(request.getVariant()) || Variant.EXIT_POST_RESPONSE.equals(request.getVariant())) {
+                        sleep(1000);
+                        LOGGER.info("Exiting server abruptly");
+                        System.exit(1);
+                    } else if (Variant.SEND_ERROR.equals(request.getVariant())) {
+                        final StatusRuntimeException error = Status.CANCELLED
+                            .withCause(new RuntimeException(request.getId()))
+                            .withDescription("Cancelled by server")
+                            .asRuntimeException();
+                        LOGGER.info("Sending cancelled by server error");
+                        responseObserver.onError(error);
+                    }
+                }
+
+                @Override
+                public void onError(final Throwable th) {
+                    LOGGER.severe("Error in aggregating packages: " + th.getMessage());
+                    responseObserver.onError(th);
+                }
+
+                @Override
+                public void onCompleted() {
+                    LOGGER.severe("Completed aggregating packages");
+                    final CourierSummary courierSummary = CourierSummary
+                        .newBuilder()
+                        .setNumMessages(numMessages)
+                        .setTotalLength(totalLength)
+                        .build();
+                    LOGGER.info("Sending aggregated CourierSummary");
+                    responseObserver.onNext(courierSummary);
+                    responseObserver.onCompleted();
+                }
+            };
+        }
     }
 
     private static class GrpcServerInterceptor implements ServerInterceptor {

@@ -25,8 +25,10 @@ package courier;
 service Courier {
     // Sends a package.
     rpc SendPackage (CourierRequest) returns (CourierReply);
-    // Processes a stream of messages
+    // Processes a stream of messages, returns a stream of messages
     rpc CollectPackages (stream CourierRequest) returns (stream CourierSummary);
+    // Processes a stream of messages, returns a unary message
+    rpc AggregatePackages (stream CourierRequest) returns (CourierSummary);
 }
 
 enum Variant {
