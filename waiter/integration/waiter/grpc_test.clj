@@ -196,7 +196,7 @@
                         status-summary (last summaries)
                         expected-summary-count (cond-> exit-index
                                                  (= "EXIT_POST_RESPONSE" mode) inc)]
-                    (log/info "result" assertion-message) ;; TODO shams convert to log
+                    (log/info "result" assertion-message)
                     (is (= expected-summary-count (count message-summaries)) assertion-message)
                     (when (seq message-summaries)
                       (is (= (range 1 (inc expected-summary-count))
@@ -205,7 +205,7 @@
                       (is (= (reductions + (map count (take expected-summary-count messages)))
                              (map #(.getTotalLength %) message-summaries))
                           assertion-message))
-                    (is status-summary)
+                    (is status-summary assertion-message)
                     (when status-summary
                       (log/info "server exit summary" status-summary)
                       (is (contains? #{"UNAVAILABLE" "INTERNAL"} (.getStatusCode status-summary)) assertion-message)
@@ -254,7 +254,7 @@
                     (is (= (reductions + (map count (take expected-summary-count messages)))
                            (map #(.getTotalLength %) message-summaries))
                         assertion-message))
-                  (is status-summary)
+                  (is status-summary assertion-message)
                   (when status-summary
                     (log/info "server cancellation summary" status-summary)
                     (if (zero? iteration)
