@@ -207,7 +207,7 @@
                         (min max-buffer-size))
           buffer-bytes (byte-array buffer-size)
           bytes-read (.read input-stream buffer-bytes)]
-      (log/info "processed bytes from the request input stream" {:available bytes-available :read bytes-read})
+      (log/debug "processed bytes from the request input stream" {:available bytes-available :read bytes-read})
       (when (pos? bytes-read)
         (let [byte-buffer (ByteBuffer/wrap buffer-bytes 0 bytes-read)]
           (when-not (au/timed-offer!! body-ch byte-buffer streaming-timeout-ms)
@@ -263,7 +263,7 @@
             (try
               (cid/with-correlation-id
                 correlation-id
-                (log/info "reading available bytes from request input stream")
+                (log/debug "reading available bytes from request input stream")
                 (loop []
                   (let [bytes-read (read-available-bytes!! streaming-timeout-ms complete-request-streaming input-stream body-ch)]
                     (when (pos? bytes-read)
