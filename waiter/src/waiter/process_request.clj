@@ -487,7 +487,6 @@
               (try
                 (let [trailers-map (async/<! trailers)
                       modified-trailers (merge grpc-headers trailers-map)]
-                  (log/info "response trailers:" trailers-map)
                   (when (seq grpc-headers)
                     (log/info "attaching grpc headers into trailer:" grpc-headers))
                   (when (seq modified-trailers)
@@ -504,7 +503,7 @@
   "Eagerly terminates grpc requests with error status headers.
    We cannot rely on jetty to close the request for us in a timely manner,
    please see https://github.com/eclipse/jetty.project/issues/3842 for details."
-  [{:keys [abort-ch body error-chan] :as response} request backend-proto reservation-status-promise]
+  [{:keys [abort-ch body error-chan trailers] :as response} request backend-proto reservation-status-promise]
   (let [request-headers (:headers request)
         {:strs [grpc-status]} (:headers response)
         proto-version (hu/backend-protocol->http-version backend-proto)]
@@ -513,13 +512,14 @@
                (not= "0" grpc-status)
                (au/chan? body))
       (log/info "eagerly closing response body as grpc status is" grpc-status)
+      ;; mark the request as successful, grpc failures are reported in the headers
+      (deliver reservation-status-promise :success)
       (when abort-ch
         ;; disallow aborting the request
         (async/close! abort-ch))
-      ;; mark the request as successful, grpc failures are reported in the headers
-      (deliver reservation-status-promise :success)
       ;; stop writing any content in the body
       (async/close! body)
+      (async/close! trailers)
       (async/close! error-chan))
     response))
 
@@ -556,8 +556,8 @@
             location (post-process-async-request-response-fn
                        service-id metric-group backend-proto instance (handler/make-auth-user-map request)
                        reason-map instance-request-properties location query-string))
-          (forward-grpc-status-headers-in-trailers)
           (handle-grpc-response request backend-proto reservation-status-promise)
+          (forward-grpc-status-headers-in-trailers)
           (assoc :body resp-chan)
           (update-in [:headers] (fn update-response-headers [headers]
                                   (utils/filterm #(not= "connection" (str/lower-case (str (key %)))) headers)))))))

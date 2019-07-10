@@ -130,7 +130,7 @@
     (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)]
       (with-service-cleanup
         service-id
-        (doseq [max-message-length [1000 10000 100000]]
+        (doseq [max-message-length [1000 100000]]
           (let [num-messages 100
                 messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))]
 
@@ -165,9 +165,9 @@
 (deftest ^:parallel ^:integration-slow test-grpc-streaming-server-exit
   (testing-using-waiter-url
     (let [num-messages 100
-          num-iterations 5]
+          num-iterations 4]
       (dotimes [iteration num-iterations]
-        (doseq [max-message-length [1000 10000 100000]]
+        (doseq [max-message-length [1000 100000]]
           (doseq [mode ["EXIT_PRE_RESPONSE" "EXIT_POST_RESPONSE"]]
             (testing (str "lock-step mode " max-message-length " messages exits pre-response")
               (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)]
@@ -214,9 +214,9 @@
 (deftest ^:parallel ^:integration-slow test-grpc-streaming-server-cancellation
   (testing-using-waiter-url
     (let [num-messages 100
-          num-iterations 5]
+          num-iterations 4]
       (dotimes [iteration num-iterations]
-        (doseq [max-message-length [1000 10000 100000]]
+        (doseq [max-message-length [1000 100000]]
           (testing (str "lock-step mode " max-message-length " messages server error")
             (let [mode "SEND_ERROR"
                   {:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)]
@@ -228,7 +228,7 @@
                       ids (map #(str "id-" (cond-> % (= % error-index) (str "." mode))) (range num-messages))
                       messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))
                       request-headers (assoc request-headers "x-cid" collect-cid)
-                      _ (println "collect packages cid" collect-cid "for"
+                      _ (log/info "collect packages cid" collect-cid "for"
                                   {:iteration iteration :max-message-length max-message-length})
                       summaries (GrpcClient/collectPackages
                                   host h2c-port request-headers ids from messages 1 true (inc num-messages))
@@ -257,17 +257,6 @@
                   (is status-summary assertion-message)
                   (when status-summary
                     (log/info "server cancellation summary" status-summary)
-                    (if (zero? iteration)
-                      (do
-                        ;; TODO this if-block should not be needed, cancellation should be propagated correctly to the client
-                        (is (= "INTERNAL" (.getStatusCode status-summary))
-                            assertion-message)
-                        (is (str/includes? (.getStatusDescription status-summary) "Received Rst Stream")
-                            assertion-message))
-                      (do
-                        (is (= "CANCELLED" (.getStatusCode status-summary))
-                            assertion-message)
-                        (is (= "Cancelled by server" (.getStatusDescription status-summary))
-                            assertion-message)))
-                    (is (zero? (.getNumMessages status-summary))
-                        assertion-message)))))))))))
+                    (is (= "CANCELLED" (.getStatusCode status-summary)) assertion-message)
+                    (is (= "Cancelled by server" (.getStatusDescription status-summary)) assertion-message)
+                    (is (zero? (.getNumMessages status-summary)) assertion-message)))))))))))
