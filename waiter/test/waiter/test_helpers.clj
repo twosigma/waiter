@@ -29,7 +29,7 @@
             [waiter.util.client-tools :as ct]
             [waiter.util.date-utils :as du])
   (:import java.io.ByteArrayOutputStream
-           (java.net InetAddress)
+           (java.net InetAddress URL)
            (javax.servlet ServletOutputStream ServletResponse)))
 
 (def expected-html-response-headers {"content-type" "text/html"
@@ -49,11 +49,12 @@
 (defonce ^:private replaced-layout
          (future (cid/replace-pattern-layout-in-log4j-appenders)))
 
-(defonce ^:private test-metrics-es-url
-         (System/getenv "TEST_METRICS_ES_URL"))
+(defonce ^:private test-metrics-url
+         (if-let [url (System/getenv "TEST_METRICS_URL")]
+           (ct/strip-trailing-slash url)))
 
 (defonce ^:private git-repo
-         (when test-metrics-es-url
+         (when test-metrics-url
            (try
              (jgit/load-repo (str (System/getProperty "user.dir") "/.."))
              (catch Throwable _
@@ -77,7 +78,7 @@
          (atom {}))
 
 (defonce ^:private http-client
-         (when test-metrics-es-url
+         (when test-metrics-url
            (:http1-client (ct/make-http-clients))))
 
 (defn- test-name-info
@@ -104,6 +105,19 @@
 
 (defonce ^:private hostname
          (.getCanonicalHostName (InetAddress/getLocalHost)))
+
+(defn- post-json
+  [url json]
+  (let [conn (doto (.openConnection (URL. url))
+               (.setDoOutput true)
+               (.setDoInput true)
+               (.setRequestMethod "POST")
+               (.setRequestProperty "content-type" "application/json")
+               (.setUseCaches false)
+               (.connect))]
+    (with-open [writer (io/writer (.getOutputStream conn))]
+      (.write writer json))
+    (.getResponseCode conn)))
 
 (defn blue [message] (str ANSI-BLUE message ANSI-RESET))
 (defn magenta [message] (str ANSI-MAGENTA message ANSI-RESET))
@@ -151,7 +165,7 @@
       (with-test-out
         (println \tab (blue "FINISH:") test-name (cyan (format-duration elapsed-millis))
                  (assoc @*report-counters* :running (count @running-tests)))
-        (when test-metrics-es-url
+        (when test-metrics-url
           (let [{:keys [full-name name namespace]} (test-name-info (:var m))
                 num-fails (or (@test-name->num-fails-atom full-name) 0)
                 num-errors (or (@test-name->num-errors-atom full-name) 0)
@@ -159,28 +173,24 @@
                 test-skipped? (= 0 (+ num-fails num-errors num-passes))
                 test-failed? (> (+ num-fails num-errors) 0)
                 result (if test-failed? "failed" (if test-skipped? "skipped" "passed"))
-                es-index (str "waiter-tests-" (du/date-to-str (t/now) (f/formatters :basic-date)))
-                doc-id (str namespace "_" name "_" (.getMillis (t/now)))]
+                es-index (str "waiter-tests-" (du/date-to-str (t/now) (f/formatters :basic-date)))]
             ;TODO: can check for outstanding commits: (println (jgit/git-status git-repo))
-            ; ct/make-request strips trailing slash from test-metrics-es-url
-            (ct/make-request test-metrics-es-url (str "/" es-index "/test-result/" doc-id)
-                             :body (json/write-str {:timestamp (du/date-to-str (t/now))
-                                                    :project "waiter"
-                                                    :test-namespace namespace
-                                                    :test-name name
-                                                    :git-branch current-git-branch
-                                                    :git-commit-hash current-git-commit
-                                                    :git-branch-under-test (System/getenv "TEST_METRICS_BRANCH_UNDER_TEST")
-                                                    :git-commit-hash-under-test (System/getenv "TEST_METRICS_COMMIT_HASH_UNDER_TEST")
-                                                    :host hostname
-                                                    :user username
-                                                    :run-id (System/getenv "")
-                                                    :build-id (System/getenv "")
-                                                    :result result
-                                                    :runtime-ms elapsed-millis})
-                             :client http-client
-                             :headers {"content-type" "application/json"}
-                             :method :post))))
+            (post-json (str test-metrics-url "/" es-index "/test-result")
+                       (json/write-str {:timestamp (du/date-to-str (t/now))
+                                        :project "waiter"
+                                        :test-namespace namespace
+                                        :test-name name
+                                        :git-branch current-git-branch
+                                        :git-commit-hash current-git-commit
+                                        :git-branch-under-test (System/getenv "TEST_METRICS_BRANCH_UNDER_TEST")
+                                        :git-commit-hash-under-test (System/getenv "TEST_METRICS_COMMIT_HASH_UNDER_TEST")
+                                        :host hostname
+                                        :user username
+                                        :run-id (System/getenv "")
+                                        :build-id (System/getenv "")
+                                        :result result
+                                        :runtime-milliseconds elapsed-millis
+                                        :expected-to-fail (-> (System/getenv "TEST_METRICS_EXPECTED_TO_FAIL") str Boolean/parseBoolean)})))))
       (log-running-tests)))
 
   (defmethod report :summary [m]
