@@ -354,13 +354,16 @@
 
 (defn- get-current-for-tokens
   [source-token-entries token->token-hash]
-  (->> source-token-entries
-       (reduce (fn [acc tokens] (into acc tokens)) [])
-       (filter (fn [{:strs [token version]}]
-                 (let [current-version (token->token-hash token)]
-                   (log/info "checking token" token ". Current version" current-version "source version" version)
-                   (= version current-version))))
-       (map (fn [m] (get m "token")))))
+  (reduce (fn [acc source-tokens]
+            (let [current-for-tokens (map (fn [{:strs [token version]}]
+                                            (let [current-version (token->token-hash token)]
+                                              (= version current-version)))
+                                          source-tokens)]
+              (if (every? true? current-for-tokens)
+                (into acc (map (fn [t] (get t "token")) source-tokens))
+                acc)))
+          []
+          source-token-entries))
 
 (defn- get-service-handler
   "Returns details about the service such as the service description, metrics, instances, etc."
