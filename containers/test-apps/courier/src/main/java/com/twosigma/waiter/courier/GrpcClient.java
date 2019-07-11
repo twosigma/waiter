@@ -854,7 +854,7 @@ public class GrpcClient {
         final List<String> messages = IntStream.range(0, 10).mapToObj(i -> "message-" + i).collect(Collectors.toList());
         final RpcResult<CourierSummary> rpcResult =
             client.aggregatePackages(headers, ids, "User", messages, 100,
-                messages.size() / 2, CancellationPolicy.EXCEPTION);
+                messages.size() / 2, CancellationPolicy.EXCEPTION, 10000);
         final CourierSummary courierSummary = rpcResult.result();
         client.logFunction.apply("aggregatePackages[success] summary = " + courierSummary);
         final Status status = rpcResult.status();
