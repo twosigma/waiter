@@ -1358,6 +1358,71 @@
         (finally
           (delete-token-and-assert waiter-url token))))))
 
+(deftest ^:parallel ^:integration-fast test-current-for-tokens
+  (testing-using-waiter-url
+    (let [service-name (rand-name)
+          token (create-token-name waiter-url service-name)
+          service-description (assoc (kitchen-request-headers :prefix "")
+                                :name service-name)]
+      (try
+        (testing "creating initial token"
+          (let [response (post-token waiter-url (assoc service-description :token token))]
+            (assert-response-status response 200)))
+
+        (let [initial-service-id (retrieve-service-id waiter-url {:x-waiter-token token})]
+          (testing "current service reports as current for token"
+            (let [initial-service-details (service-settings waiter-url initial-service-id)]
+              (is (= [token] (:current-for-tokens initial-service-details)))))
+
+          (testing "updating token"
+            (let [new-service-description (assoc service-description :metadata {"foo" "bar"})
+                  response (post-token waiter-url (assoc new-service-description :token token))]
+              (assert-response-status response 200)))
+
+          (testing "old service is no longer current for token"
+            (let [initial-service-details' (service-settings waiter-url initial-service-id)
+                  new-service-id (retrieve-service-id waiter-url {:x-waiter-token token})
+                  new-service-details (service-settings waiter-url new-service-id)]
+              (is (nil? (:current-for-tokens initial-service-details')))
+              (is (= [token] (:current-for-tokens new-service-details))))))
+        (finally
+          (delete-token-and-assert waiter-url token))))))
+
+(deftest ^:parallel ^:integration-fast test-current-for-tokens-multiple-source-tokens
+  (testing-using-waiter-url
+    (let [service-name (rand-name)
+          token-name-a (create-token-name waiter-url (str service-name "-A"))
+          token-name-b (create-token-name waiter-url (str service-name "-B"))
+          first-service-description (assoc (kitchen-request-headers :prefix "")
+                                      :name service-name)
+          combined-token-header (str token-name-a "," token-name-b)]
+      (try
+        (let [response (post-token waiter-url (assoc first-service-description :token token-name-a))]
+            (assert-response-status response 200))
+          (let [response (post-token waiter-url (assoc first-service-description :token token-name-b))]
+            (assert-response-status response 200))
+
+        (let [service-id-a (retrieve-service-id waiter-url {:x-waiter-token combined-token-header})
+              new-service-description (update first-service-description :cpus #(+ % 0.1))]
+          (let [response (post-token waiter-url (assoc new-service-description :token token-name-a))]
+            (assert-response-status response 200))
+
+          (let [service-id-b (retrieve-service-id waiter-url {:x-waiter-token combined-token-header})]
+            (let [response (post-token waiter-url (assoc new-service-description :token token-name-b))]
+              (assert-response-status response 200))
+
+            (let [service-id-c (retrieve-service-id waiter-url {:x-waiter-token combined-token-header})
+                  service-a-details (service-settings waiter-url service-id-a)
+                  service-b-details (service-settings waiter-url service-id-b)
+                  service-c-details (service-settings waiter-url service-id-c)]
+              (is (nil? (:current-for-tokens service-a-details)))
+              (is (nil? (:current-for-tokens service-b-details)))
+              (is (= [token-name-a token-name-b]
+                     (:current-for-tokens service-c-details))))))
+        (finally
+          (delete-token-and-assert waiter-url token-name-a)
+          (delete-token-and-assert waiter-url token-name-b))))))
+
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-service-fallback-support
   (testing-using-waiter-url
     (let [service-name (rand-name)

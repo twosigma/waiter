@@ -417,7 +417,8 @@
                                   :make-inter-router-requests-sync-fn nil
                                   :router-metrics-helpers {:service-id->metrics-fn (constantly {})}
                                   :service-id->service-description-fn (constantly {})
-                                  :service-id->source-tokens-entries-fn (constantly #{})}
+                                  :service-id->source-tokens-entries-fn (constantly #{})
+                                  :token->token-hash identity}
                        :scheduler {:scheduler (reify scheduler/ServiceScheduler
                                                 (delete-service [_ _]
                                                   (let [result @delete-service-result-atom]
@@ -511,7 +512,8 @@
                                   :make-inter-router-requests-sync-fn nil
                                   :router-metrics-helpers {:service-id->metrics-fn (constantly service-id->metrics)}
                                   :service-id->service-description-fn (constantly {})
-                                  :service-id->source-tokens-entries-fn (constantly #{})}
+                                  :service-id->source-tokens-entries-fn (constantly #{})
+                                  :token->token-hash identity}
                        :scheduler {:scheduler (Object.)}
                        :state {:router-id "router-id"
                                :scheduler-interactions-thread-pool scheduler-interactions-thread-pool}
