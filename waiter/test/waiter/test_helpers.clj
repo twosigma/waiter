@@ -91,14 +91,13 @@
      :namespace namespace}))
 
 (defn- full-test-name
-  ([]
-   (:full-name (test-name-info (first *testing-vars*))))
-  ([m]
-   (:full-name (test-name-info (:var m)))))
+  [m]
+  (:full-name (test-name-info (:var m))))
 
 (defn- inc-test-counter
   [test-name->counter-atom]
-  (swap! test-name->counter-atom (fn [map] (update-in map [(full-test-name)] #(inc (or % 0))))))
+  (if-let [testing-var (first *testing-vars*)]
+    (swap! test-name->counter-atom (fn [map] (update-in map [(:full-name (test-name-info testing-var))] #(inc (or % 0)))))))
 
 (defonce ^:private username
          (ct/retrieve-username))

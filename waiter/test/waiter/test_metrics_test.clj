@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.test-metrics-test
-  (:require [clojure.test :refer :all]))
+  (:require [clojure.test :refer :all])
+  (:import (java.util.concurrent Executors)))
 
 (deftest test-2-assertions
   (testing "assertion 1"
@@ -44,3 +45,13 @@
   (testing "assertion 2"
     (Thread/sleep 300)
     (is (= 4 (+ 2 2)))))
+
+(deftest test-assertion-in-thread-pool
+  (let [thread-pool (Executors/newFixedThreadPool 1)]
+    (testing "assertion-in-thread-pool"
+      (waiter.util.async-utils/execute
+        #(is (= 2 (+ 1 1)))
+        thread-pool)
+      (Thread/sleep 1000)
+      (is (= 4 (+ 2 2)))
+      (.shutdown thread-pool))))
