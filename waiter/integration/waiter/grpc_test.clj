@@ -18,15 +18,20 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
+            [waiter.correlation-id :as cid]
             [waiter.util.client-tools :refer :all])
   (:import (com.twosigma.waiter.courier CourierReply CourierSummary GrpcClient)
            (io.grpc Status)
            (java.util.function Function)))
 
-;; initialize logging on the grpc client
-(GrpcClient/setLogFunction (reify Function
-                             (apply [_ message]
-                               (log/info message))))
+(defn- initialize-grpc-client
+  "Initializes grpc client logging to specific correlation id"
+  [correlation-id host port]
+  (GrpcClient. host port (reify Function
+                           (apply [_ message]
+                             (cid/with-correlation-id
+                               correlation-id
+                               (log/info message))))))
 
 (defn- basic-grpc-service-parameters
   []
@@ -100,7 +105,8 @@
                 content (rand-str 1000)
                 correlation-id (rand-name)
                 request-headers (assoc request-headers "x-cid" correlation-id)
-                rpc-result (GrpcClient/sendPackage host h2c-port request-headers id from content)
+                grpc-client (initialize-grpc-client correlation-id host h2c-port)
+                rpc-result (.sendPackage grpc-client request-headers id from content)
                 ^CourierReply reply (.result rpc-result)
                 ^Status status (.status rpc-result)
                 assertion-message (str (cond-> {:correlation-id correlation-id
@@ -132,7 +138,8 @@
                 correlation-id (rand-name)
                 _ (log/info "cid:" correlation-id)
                 request-headers (assoc request-headers "x-cid" correlation-id)
-                rpc-result (GrpcClient/sendPackage host h2c-port request-headers id from content)
+                grpc-client (initialize-grpc-client correlation-id host h2c-port)
+                rpc-result (.sendPackage grpc-client request-headers id from content)
                 ^CourierReply reply (.result rpc-result)
                 ^Status status (.status rpc-result)
                 assertion-message (str (cond-> {:correlation-id correlation-id
@@ -160,7 +167,8 @@
                 correlation-id (rand-name)
                 _ (log/info "cid:" correlation-id)
                 request-headers (assoc request-headers "x-cid" correlation-id)
-                rpc-result (GrpcClient/sendPackage host h2c-port request-headers id from content)
+                grpc-client (initialize-grpc-client correlation-id host h2c-port)
+                rpc-result (.sendPackage grpc-client request-headers id from content)
                 ^CourierReply reply (.result rpc-result)
                 ^Status status (.status rpc-result)
                 assertion-message (str (cond-> {:correlation-id correlation-id
@@ -190,8 +198,8 @@
                     correlation-id (str (rand-name) "-independent-complete")
                     request-headers (assoc request-headers "x-cid" correlation-id)
                     ids (map #(str "id-inde-" %) (range num-messages))
-                    rpc-result (GrpcClient/collectPackages
-                                 host h2c-port request-headers ids from messages 10 false cancel-threshold)
+                    grpc-client (initialize-grpc-client correlation-id host h2c-port)
+                    rpc-result (.collectPackages grpc-client request-headers ids from messages 10 false cancel-threshold)
                     summaries (.result rpc-result)
                     ^Status status (.status rpc-result)
                     assertion-message (str (cond-> {:correlation-id correlation-id
@@ -221,8 +229,8 @@
                     correlation-id (str (rand-name) "-lock-step-complete")
                     request-headers (assoc request-headers "x-cid" correlation-id)
                     ids (map #(str "id-lock-" %) (range num-messages))
-                    rpc-result (GrpcClient/collectPackages
-                                 host h2c-port request-headers ids from messages 1 true cancel-threshold)
+                    grpc-client (initialize-grpc-client correlation-id host h2c-port)
+                    rpc-result (.collectPackages grpc-client request-headers ids from messages 1 true cancel-threshold)
                     summaries (.result rpc-result)
                     ^Status status (.status rpc-result)
                     assertion-message (str (cond-> {:correlation-id correlation-id
@@ -264,8 +272,8 @@
                           from (rand-name "f")
                           ids (map #(str "id-" (cond-> % (= % exit-index) (str "." mode))) (range num-messages))
                           request-headers (assoc request-headers "x-cid" correlation-id)
-                          rpc-result (GrpcClient/collectPackages
-                                       host h2c-port request-headers ids from messages 1 true (inc num-messages))
+                          grpc-client (initialize-grpc-client correlation-id host h2c-port)
+                          rpc-result (.collectPackages grpc-client request-headers ids from messages 1 true (inc num-messages))
                           message-summaries (.result rpc-result)
                           ^Status status (.status rpc-result)
                           assertion-message (str (cond-> {:correlation-id correlation-id
@@ -312,8 +320,8 @@
                         request-headers (assoc request-headers "x-cid" correlation-id)
                         _ (log/info "collect packages cid" correlation-id "for"
                                     {:iteration iteration :max-message-length max-message-length})
-                        rpc-result (GrpcClient/collectPackages
-                                     host h2c-port request-headers ids from messages 1 true (inc num-messages))
+                        grpc-client (initialize-grpc-client correlation-id host h2c-port)
+                        rpc-result (.collectPackages grpc-client request-headers ids from messages 1 true (inc num-messages))
                         message-summaries (.result rpc-result)
                         ^Status status (.status rpc-result)
                         assertion-message (str (cond-> {:correlation-id correlation-id
@@ -357,8 +365,8 @@
                     correlation-id (rand-name)
                     request-headers (assoc request-headers "x-cid" correlation-id)
                     ids (map #(str "id-" %) (range num-messages))
-                    rpc-result (GrpcClient/aggregatePackages
-                                 host h2c-port request-headers ids from messages 10 cancel-threshold)
+                    grpc-client (initialize-grpc-client correlation-id host h2c-port)
+                    rpc-result (.aggregatePackages grpc-client request-headers ids from messages 10 cancel-threshold)
                     ^CourierSummary summary (.result rpc-result)
                     ^Status status (.status rpc-result)
                     assertion-message (str (cond-> {:correlation-id correlation-id
@@ -396,8 +404,8 @@
                           from (rand-name "f")
                           ids (map #(str "id-" (cond-> % (= % exit-index) (str "." mode))) (range num-messages))
                           request-headers (assoc request-headers "x-cid" correlation-id)
-                          rpc-result (GrpcClient/aggregatePackages
-                                       host h2c-port request-headers ids from messages 1 (inc num-messages))
+                          grpc-client (initialize-grpc-client correlation-id host h2c-port)
+                          rpc-result (.aggregatePackages grpc-client request-headers ids from messages 1 (inc num-messages))
                           ^CourierSummary message-summary (.result rpc-result)
                           ^Status status (.status rpc-result)
                           assertion-message (str (cond-> {:correlation-id correlation-id
@@ -433,8 +441,8 @@
                         request-headers (assoc request-headers "x-cid" correlation-id)
                         _ (log/info "aggregate packages cid" correlation-id "for"
                                     {:iteration iteration :max-message-length max-message-length})
-                        rpc-result (GrpcClient/aggregatePackages
-                                     host h2c-port request-headers ids from messages 1 (inc num-messages))
+                        grpc-client (initialize-grpc-client correlation-id host h2c-port)
+                        rpc-result (.aggregatePackages grpc-client request-headers ids from messages 1 (inc num-messages))
                         ^CourierSummary message-summary (.result rpc-result)
                         ^Status status (.status rpc-result)
                         assertion-message (str (cond-> {:correlation-id correlation-id

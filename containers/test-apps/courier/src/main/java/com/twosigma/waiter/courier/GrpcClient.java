@@ -70,19 +70,39 @@ public class GrpcClient {
         }
     }
 
-    private static Function<String, Void> logFunction = new Function<String, Void>() {
-        @Override
-        public Void apply(final String message) {
-            LOGGER.info(message);
-            return null;
+    private static Variant retrieveVariant(final String id) {
+        if (id.contains("SEND_ERROR")) {
+            return Variant.SEND_ERROR;
+        } else if (id.contains("EXIT_PRE_RESPONSE")) {
+            return Variant.EXIT_PRE_RESPONSE;
+        } else if (id.contains("EXIT_POST_RESPONSE")) {
+            return Variant.EXIT_POST_RESPONSE;
+        } else {
+            return Variant.NORMAL;
         }
-    };
-
-    public static void setLogFunction(final Function<String, Void> logFunction) {
-        GrpcClient.logFunction = logFunction;
     }
 
-    private static ManagedChannel initializeChannel(final String host, final int port) {
+    private final Function<String, Void> logFunction;
+    private final String host;
+    private final int port;
+
+    public GrpcClient(final String host, final int port) {
+        this(host, port, new Function<String, Void>() {
+            @Override
+            public Void apply(final String message) {
+                LOGGER.info(message);
+                return null;
+            }
+        });
+    }
+
+    public GrpcClient(final String host, final int port, final Function<String, Void> logFunction) {
+        this.host = host;
+        this.port = port;
+        this.logFunction = logFunction;
+    }
+
+    private ManagedChannel initializeChannel() {
         logFunction.apply("initializing plaintext client at " + host + ":" + port);
         return ManagedChannelBuilder
             .forAddress(host, port)
@@ -90,17 +110,21 @@ public class GrpcClient {
             .build();
     }
 
-    private static void shutdownChannel(final ManagedChannel channel) throws InterruptedException {
+    private void shutdownChannel(final ManagedChannel channel) {
         logFunction.apply("shutting down channel");
-        channel.shutdown().awaitTermination(1, TimeUnit.SECONDS);
-        if (channel.isShutdown()) {
-            logFunction.apply("channel shutdown successfully");
-        } else {
-            logFunction.apply("channel shutdown timed out!");
+        try {
+            channel.shutdown().awaitTermination(1, TimeUnit.SECONDS);
+            if (channel.isShutdown()) {
+                logFunction.apply("channel shutdown successfully");
+            } else {
+                logFunction.apply("channel shutdown timed out!");
+            }
+        } catch (Exception ex) {
+            logFunction.apply("error in channel shutdown: " + ex.getMessage());
         }
     }
 
-    private static Metadata createRequestHeadersMetadata(final Map<String, Object> headers) {
+    private Metadata createRequestHeadersMetadata(final Map<String, Object> headers) {
         final Metadata headerMetadata = new Metadata();
         for (Map.Entry<String, Object> entry : headers.entrySet()) {
             final String key = entry.getKey();
@@ -110,7 +134,7 @@ public class GrpcClient {
         return headerMetadata;
     }
 
-    private static Channel wrapResponseLogger(final ManagedChannel channel) {
+    private Channel wrapResponseLogger(final ManagedChannel channel) {
         return ClientInterceptors.intercept(channel, new ClientInterceptor() {
             @Override
             public <ReqT, RespT> ClientCall<ReqT, RespT> interceptCall(final MethodDescriptor<ReqT, RespT> method,
@@ -141,25 +165,11 @@ public class GrpcClient {
         });
     }
 
-    private static Variant retrieveVariant(final String id) {
-        if (id.contains("SEND_ERROR")) {
-            return Variant.SEND_ERROR;
-        } else if (id.contains("EXIT_PRE_RESPONSE")) {
-            return Variant.EXIT_PRE_RESPONSE;
-        } else if (id.contains("EXIT_POST_RESPONSE")) {
-            return Variant.EXIT_POST_RESPONSE;
-        } else {
-            return Variant.NORMAL;
-        }
-    }
-
-    public static RpcResult<CourierReply> sendPackage(final String host,
-                                                      final int port,
-                                                      final Map<String, Object> headers,
-                                                      final String id,
-                                                      final String from,
-                                                      final String message) throws InterruptedException {
-        final ManagedChannel channel = initializeChannel(host, port);
+    public RpcResult<CourierReply> sendPackage(final Map<String, Object> headers,
+                                               final String id,
+                                               final String from,
+                                               final String message) {
+        final ManagedChannel channel = initializeChannel();
 
         try {
             final Channel wrappedChannel = wrapResponseLogger(channel);
@@ -211,16 +221,14 @@ public class GrpcClient {
         }
     }
 
-    public static RpcResult<List<CourierSummary>> collectPackages(final String host,
-                                                                  final int port,
-                                                                  final Map<String, Object> headers,
-                                                                  final List<String> ids,
-                                                                  final String from,
-                                                                  final List<String> messages,
-                                                                  final int interMessageSleepMs,
-                                                                  final boolean lockStepMode,
-                                                                  final int cancelThreshold) throws InterruptedException {
-        final ManagedChannel channel = initializeChannel(host, port);
+    public RpcResult<List<CourierSummary>> collectPackages(final Map<String, Object> headers,
+                                                           final List<String> ids,
+                                                           final String from,
+                                                           final List<String> messages,
+                                                           final int interMessageSleepMs,
+                                                           final boolean lockStepMode,
+                                                           final int cancelThreshold) {
+        final ManagedChannel channel = initializeChannel();
         final AtomicBoolean awaitChannelTermination = new AtomicBoolean(true);
 
         try {
@@ -339,15 +347,13 @@ public class GrpcClient {
         }
     }
 
-    public static RpcResult<CourierSummary> aggregatePackages(final String host,
-                                                              final int port,
-                                                              final Map<String, Object> headers,
-                                                              final List<String> ids,
-                                                              final String from,
-                                                              final List<String> messages,
-                                                              final int interMessageSleepMs,
-                                                              final int cancelThreshold) throws InterruptedException {
-        final ManagedChannel channel = initializeChannel(host, port);
+    public RpcResult<CourierSummary> aggregatePackages(final Map<String, Object> headers,
+                                                       final List<String> ids,
+                                                       final String from,
+                                                       final List<String> messages,
+                                                       final int interMessageSleepMs,
+                                                       final int cancelThreshold) {
+        final ManagedChannel channel = initializeChannel();
         final AtomicBoolean awaitChannelTermination = new AtomicBoolean(true);
 
         try {
@@ -460,19 +466,20 @@ public class GrpcClient {
         /* Access a service running on the local machine on port 8080 */
         final String host = "localhost";
         final int port = 8080;
+        final GrpcClient client = new GrpcClient(host, port);
 
-        // runSendPackageSuccess(host, port);
-        // runSendPackageSendError(host, port);
-        // runCollectPackagesSuccess(host, port);
-        // runCollectPackagesSendError(host, port);
-        // runCollectPackagesExitPreResponse(host, port);
-        // runCollectPackagesExitPostResponse(host, port);
-        // runAggregatePackagesSuccess(host, port);
-        // runAggregatePackagesSendError(host, port);
-        // runAggregatePackagesExitPreResponse(host, port);
+        // runSendPackageSuccess(client);
+        // runSendPackageSendError(client);
+        // runCollectPackagesSuccess(client);
+        // runCollectPackagesSendError(client);
+        // runCollectPackagesExitPreResponse(client);
+        // runCollectPackagesExitPostResponse(client);
+        // runAggregatePackagesSuccess(client);
+        // runAggregatePackagesSendError(client);
+        // runAggregatePackagesExitPreResponse(client);
     }
 
-    private static void runSendPackageSuccess(final String host, final int port) throws InterruptedException {
+    private static void runSendPackageSuccess(final GrpcClient client) {
         final String id = UUID.randomUUID().toString();
         final String user = "Jim";
         final StringBuilder sb = new StringBuilder();
@@ -485,14 +492,14 @@ public class GrpcClient {
 
         final HashMap<String, Object> headers = new HashMap<>();
         headers.put("x-cid", "cid-send-package." + System.currentTimeMillis());
-        final RpcResult<CourierReply> rpcResult = sendPackage(host, port, headers, id, user, sb.toString());
+        final RpcResult<CourierReply> rpcResult = client.sendPackage(headers, id, user, sb.toString());
         final CourierReply courierReply = rpcResult.result();
-        logFunction.apply("sendPackage response = " + courierReply);
+        client.logFunction.apply("sendPackage response = " + courierReply);
         final Status status = rpcResult.status();
-        logFunction.apply("sendPackage status = " + status);
+        client.logFunction.apply("sendPackage status = " + status);
     }
 
-    private static void runSendPackageSendError(final String host, final int port) throws InterruptedException {
+    private static void runSendPackageSendError(final GrpcClient client) {
         final String id = UUID.randomUUID().toString() + ".SEND_ERROR";
         final String user = "Jim";
         final StringBuilder sb = new StringBuilder();
@@ -505,99 +512,106 @@ public class GrpcClient {
 
         final HashMap<String, Object> headers = new HashMap<>();
         headers.put("x-cid", "cid-send-package." + System.currentTimeMillis());
-        final RpcResult<CourierReply> rpcResult = sendPackage(host, port, headers, id, user, sb.toString());
+        final RpcResult<CourierReply> rpcResult = client.sendPackage(headers, id, user, sb.toString());
         final CourierReply courierReply = rpcResult.result();
-        logFunction.apply("sendPackage response = " + courierReply);
+        client.logFunction.apply("sendPackage response = " + courierReply);
         final Status status = rpcResult.status();
-        logFunction.apply("sendPackage status = " + status);
+        client.logFunction.apply("sendPackage status = " + status);
     }
 
-    private static void runCollectPackagesSuccess(final String host, final int port) throws InterruptedException {
+    private static void runCollectPackagesSuccess(final GrpcClient client) {
         final HashMap<String, Object> headers = new HashMap<>();
         headers.put("x-cid", "cid-collect-packages-success." + System.currentTimeMillis());
         final List<String> ids = IntStream.range(0, 10).mapToObj(i -> "id-" + i).collect(Collectors.toList());
         final List<String> messages = IntStream.range(0, 10).mapToObj(i -> "message-" + i).collect(Collectors.toList());
-        final RpcResult<List<CourierSummary>> rpcResult = collectPackages(host, port, headers, ids, "User", messages, 100, true, messages.size() + 1);
+        final RpcResult<List<CourierSummary>> rpcResult =
+            client.collectPackages(headers, ids, "User", messages, 100, true, messages.size() + 1);
         final List<CourierSummary> courierSummaries = rpcResult.result();
-        logFunction.apply("collectPackages[success] summary = " + courierSummaries);
+        client.logFunction.apply("collectPackages[success] summary = " + courierSummaries);
         final Status status = rpcResult.status();
-        logFunction.apply("collectPackages[success] status = " + status);
+        client.logFunction.apply("collectPackages[success] status = " + status);
     }
 
-    private static void runCollectPackagesSendError(final String host, final int port) throws InterruptedException {
+    private static void runCollectPackagesSendError(final GrpcClient client) {
         final HashMap<String, Object> headers = new HashMap<>();
         headers.put("x-cid", "cid-collect-packages-server-error." + System.currentTimeMillis());
         final List<String> ids = IntStream.range(0, 10).mapToObj(i -> "id-" + i).collect(Collectors.toList());
         ids.set(5, ids.get(5) + ".SEND_ERROR");
         final List<String> messages = IntStream.range(0, 10).mapToObj(i -> "message-" + i).collect(Collectors.toList());
-        final RpcResult<List<CourierSummary>> rpcResult = collectPackages(host, port, headers, ids, "User", messages, 100, true, messages.size() + 1);
+        final RpcResult<List<CourierSummary>> rpcResult =
+            client.collectPackages(headers, ids, "User", messages, 100, true, messages.size() + 1);
         final List<CourierSummary> courierSummaries = rpcResult.result();
-        logFunction.apply("collectPackages[cancel] summary = " + courierSummaries);
+        client.logFunction.apply("collectPackages[cancel] summary = " + courierSummaries);
         final Status status = rpcResult.status();
-        logFunction.apply("collectPackages[cancel] status = " + status);
+        client.logFunction.apply("collectPackages[cancel] status = " + status);
     }
 
-    private static void runCollectPackagesExitPreResponse(final String host, final int port) throws InterruptedException {
+    private static void runCollectPackagesExitPreResponse(final GrpcClient client) {
         final HashMap<String, Object> headers = new HashMap<>();
         headers.put("x-cid", "cid-collect-packages-server-pre-cancel." + System.currentTimeMillis());
         final List<String> ids = IntStream.range(0, 10).mapToObj(i -> "id-" + i).collect(Collectors.toList());
         ids.set(5, ids.get(5) + ".EXIT_PRE_RESPONSE");
         final List<String> messages = IntStream.range(0, 10).mapToObj(i -> "message-" + i).collect(Collectors.toList());
-        final RpcResult<List<CourierSummary>> rpcResult = collectPackages(host, port, headers, ids, "User", messages, 100, true, messages.size() + 1);
+        final RpcResult<List<CourierSummary>> rpcResult =
+            client.collectPackages(headers, ids, "User", messages, 100, true, messages.size() + 1);
         final List<CourierSummary> courierSummaries = rpcResult.result();
-        logFunction.apply("collectPackages[cancel] summary = " + courierSummaries);
+        client.logFunction.apply("collectPackages[cancel] summary = " + courierSummaries);
         final Status status = rpcResult.status();
-        logFunction.apply("collectPackages[cancel] status = " + status);
+        client.logFunction.apply("collectPackages[cancel] status = " + status);
     }
 
-    private static void runCollectPackagesExitPostResponse(final String host, final int port) throws InterruptedException {
+    private static void runCollectPackagesExitPostResponse(final GrpcClient client) {
         final HashMap<String, Object> headers = new HashMap<>();
         headers.put("x-cid", "cid-collect-packages-server-post-cancel." + System.currentTimeMillis());
         final List<String> ids = IntStream.range(0, 10).mapToObj(i -> "id-" + i).collect(Collectors.toList());
         ids.set(5, ids.get(5) + ".EXIT_POST_RESPONSE");
         final List<String> messages = IntStream.range(0, 10).mapToObj(i -> "message-" + i).collect(Collectors.toList());
-        final RpcResult<List<CourierSummary>> rpcResult = collectPackages(host, port, headers, ids, "User", messages, 100, true, messages.size() + 1);
+        final RpcResult<List<CourierSummary>> rpcResult =
+            client.collectPackages(headers, ids, "User", messages, 100, true, messages.size() + 1);
         final List<CourierSummary> courierSummaries = rpcResult.result();
-        logFunction.apply("collectPackages[cancel] summary = " + courierSummaries);
+        client.logFunction.apply("collectPackages[cancel] summary = " + courierSummaries);
         final Status status = rpcResult.status();
-        logFunction.apply("collectPackages[cancel] status = " + status);
+        client.logFunction.apply("collectPackages[cancel] status = " + status);
     }
 
-    private static void runAggregatePackagesSuccess(final String host, final int port) throws InterruptedException {
+    private static void runAggregatePackagesSuccess(final GrpcClient client) {
         final HashMap<String, Object> headers = new HashMap<>();
         headers.put("x-cid", "cid-aggregate-packages-success." + System.currentTimeMillis());
         final List<String> ids = IntStream.range(0, 10).mapToObj(i -> "id-" + i).collect(Collectors.toList());
         final List<String> messages = IntStream.range(0, 10).mapToObj(i -> "message-" + i).collect(Collectors.toList());
-        final RpcResult<CourierSummary> rpcResult = aggregatePackages(host, port, headers, ids, "User", messages, 100, messages.size() + 1);
+        final RpcResult<CourierSummary> rpcResult =
+            client.aggregatePackages(headers, ids, "User", messages, 100, messages.size() + 1);
         final CourierSummary courierSummary = rpcResult.result();
-        logFunction.apply("aggregatePackages[success] summary = " + courierSummary);
+        client.logFunction.apply("aggregatePackages[success] summary = " + courierSummary);
         final Status status = rpcResult.status();
-        logFunction.apply("aggregatePackages[success] status = " + status);
+        client.logFunction.apply("aggregatePackages[success] status = " + status);
     }
 
-    private static void runAggregatePackagesSendError(final String host, final int port) throws InterruptedException {
+    private static void runAggregatePackagesSendError(final GrpcClient client) {
         final HashMap<String, Object> headers = new HashMap<>();
         headers.put("x-cid", "cid-aggregate-packages-server-error." + System.currentTimeMillis());
         final List<String> ids = IntStream.range(0, 10).mapToObj(i -> "id-" + i).collect(Collectors.toList());
         ids.set(5, ids.get(5) + ".SEND_ERROR");
         final List<String> messages = IntStream.range(0, 10).mapToObj(i -> "message-" + i).collect(Collectors.toList());
-        final RpcResult<CourierSummary> rpcResult = aggregatePackages(host, port, headers, ids, "User", messages, 100, messages.size() + 1);
+        final RpcResult<CourierSummary> rpcResult =
+            client.aggregatePackages(headers, ids, "User", messages, 100, messages.size() + 1);
         final CourierSummary courierSummary = rpcResult.result();
-        logFunction.apply("aggregatePackages[cancel] summary = " + courierSummary);
+        client.logFunction.apply("aggregatePackages[cancel] summary = " + courierSummary);
         final Status status = rpcResult.status();
-        logFunction.apply("aggregatePackages[cancel] status = " + status);
+        client.logFunction.apply("aggregatePackages[cancel] status = " + status);
     }
 
-    private static void runAggregatePackagesExitPreResponse(final String host, final int port) throws InterruptedException {
+    private static void runAggregatePackagesExitPreResponse(final GrpcClient client) {
         final HashMap<String, Object> headers = new HashMap<>();
         headers.put("x-cid", "cid-aggregate-packages-server-pre-cancel." + System.currentTimeMillis());
         final List<String> ids = IntStream.range(0, 10).mapToObj(i -> "id-" + i).collect(Collectors.toList());
         ids.set(5, ids.get(5) + ".EXIT_PRE_RESPONSE");
         final List<String> messages = IntStream.range(0, 10).mapToObj(i -> "message-" + i).collect(Collectors.toList());
-        final RpcResult<CourierSummary> rpcResult = aggregatePackages(host, port, headers, ids, "User", messages, 100, messages.size() + 1);
+        final RpcResult<CourierSummary> rpcResult =
+            client.aggregatePackages(headers, ids, "User", messages, 100, messages.size() + 1);
         final CourierSummary courierSummary = rpcResult.result();
-        logFunction.apply("aggregatePackages[cancel] summary = " + courierSummary);
+        client.logFunction.apply("aggregatePackages[cancel] summary = " + courierSummary);
         final Status status = rpcResult.status();
-        logFunction.apply("aggregatePackages[cancel] status = " + status);
+        client.logFunction.apply("aggregatePackages[cancel] status = " + status);
     }
 }
