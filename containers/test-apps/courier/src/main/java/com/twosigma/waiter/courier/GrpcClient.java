@@ -269,7 +269,6 @@ public class GrpcClient {
                         public void onError(final Throwable th) {
                             logFunction.apply("error in collecting summaries " + th);
                             errorSignal.compareAndSet(false, true);
-                            resolveResponsePromise();
                             if (lockStepMode) {
                                 logFunction.apply("releasing semaphore after receiving error");
                                 lockStep.release();
@@ -280,6 +279,7 @@ public class GrpcClient {
                             } else {
                                 status.set(Status.UNKNOWN.withDescription(th.getMessage()));
                             }
+                            resolveResponsePromise();
                         }
 
                         @Override
@@ -387,13 +387,13 @@ public class GrpcClient {
                         public void onError(final Throwable th) {
                             logFunction.apply("error in aggregating summaries " + th);
                             errorSignal.compareAndSet(false, true);
-                            resolveResponsePromise();
                             if (th instanceof StatusRuntimeException) {
                                 final StatusRuntimeException exception = (StatusRuntimeException) th;
                                 status.set(exception.getStatus());
                             } else {
                                 status.set(Status.UNKNOWN.withDescription(th.getMessage()));
                             }
+                            resolveResponsePromise();
                         }
 
                         @Override
