@@ -22,8 +22,16 @@
   (testing "assertion 2"
     (is (= 4 (+ 2 2)))))
 
-(deftest test-2-assertions-fail
-  (dotimes [_ 2]
+; failing test needs to be commented out when actually committed
+;(deftest test-2-assertions-fail
+;  (dotimes [_ 2]
+;    (testing "assertion 1"
+;      (is (= 3 (+ 1 1))))
+;    (testing "assertion 2"
+;      (is (= 5 (+ 2 2))))))
+
+(deftest test-2-assertions-skip
+  (dotimes [_ 0]
     (testing "assertion 1"
       (is (= 3 (+ 1 1))))
     (testing "assertion 2"
@@ -36,10 +44,3 @@
   (testing "assertion 2"
     (Thread/sleep 300)
     (is (= 4 (+ 2 2)))))
-
-(deftest test-2-assertions-skip
-  (dotimes [_ 0]
-    (testing "assertion 1"
-      (is (= 3 (+ 1 1))))
-    (testing "assertion 2"
-      (is (= 5 (+ 2 2))))))

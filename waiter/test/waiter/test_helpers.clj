@@ -177,8 +177,7 @@
                                                     :run-id (System/getenv "")
                                                     :build-id (System/getenv "")
                                                     :result result
-                                                    :runtime-ms elapsed-millis
-                                                    })
+                                                    :runtime-ms elapsed-millis})
                              :client http-client
                              :headers {"content-type" "application/json"}
                              :method :post))))
@@ -195,7 +194,7 @@
       (println "\nRan" (:test m) "tests containing"
                (+ (:pass m) (:fail m) (:error m)) "assertions.")
       (println (:fail m) "failures," (:error m) "errors.")
-      (http/stop-client! http-client))))
+      (when http-client (http/stop-client! http-client)))))
 
 ;; Overrides the default reporter for :error so that the ex-data of
 ;; an exception is printed.  The default report doesn't print the ex-data.
