@@ -22,29 +22,35 @@ option objc_class_prefix = "TSCP";
 
 package courier;
 
-// The greeting service definition.
 service Courier {
     // Sends a package.
     rpc SendPackage (CourierRequest) returns (CourierReply);
-    // Processes a stream of messages
+    // Processes a stream of messages, returns a stream of messages
     rpc CollectPackages (stream CourierRequest) returns (stream CourierSummary);
+    // Processes a stream of messages, returns a unary message
+    rpc AggregatePackages (stream CourierRequest) returns (CourierSummary);
 }
 
-// The request message containing the package's name.
+enum Variant {
+    NORMAL = 0;
+    SEND_ERROR = 1;
+    EXIT_PRE_RESPONSE = 2;
+    EXIT_POST_RESPONSE = 3;
+}
+
 message CourierRequest {
     string id = 1;
     string from = 2;
     string message = 3;
+    Variant variant = 4;
 }
 
-// The response message containing the package response.
 message CourierReply {
     string id = 1;
     string message = 2;
     string response = 3;
 }
 
-// The response message containing the package response.
 message CourierSummary {
     int64 num_messages = 1;
     int64 total_length = 2;

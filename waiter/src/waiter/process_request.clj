@@ -469,6 +469,61 @@
                     (log/warn "unable to abort as request not found inside response!"))]
       (log/info "aborted backend request:" aborted))))
 
+(defn- forward-grpc-status-headers-in-trailers
+  "Adds logging for tracking response trailers for requests.
+   Since we always send some trailers, we need to repeat the grpc status headers in the trailers
+   to ensure client evaluates the request to the same grpc error.
+   Please see https://github.com/eclipse/jetty.project/issues/3829 for details."
+  [{:keys [headers trailers] :as response}]
+  (if trailers
+    (let [correlation-id (cid/get-correlation-id)
+          trailers-copy-ch (async/chan 1)
+          grpc-headers (select-keys headers ["grpc-message" "grpc-status"])]
+      (if (seq grpc-headers)
+        (do
+          (async/go
+            (cid/with-correlation-id
+              correlation-id
+              (try
+                (let [trailers-map (async/<! trailers)
+                      modified-trailers (merge grpc-headers trailers-map)]
+                  (log/info "attaching grpc headers into trailer:" grpc-headers)
+                  (async/>! trailers-copy-ch modified-trailers))
+                (catch Throwable th
+                  (log/error th "error in parsing response trailers")))
+              (log/info "closing response trailers channel")
+              (async/close! trailers-copy-ch)))
+          (assoc response :trailers trailers-copy-ch))
+        response))
+    response))
+
+(defn- handle-grpc-error-response
+  "Eagerly terminates grpc requests with error status headers.
+   We cannot rely on jetty to close the request for us in a timely manner,
+   please see https://github.com/eclipse/jetty.project/issues/3842 for details."
+  [{:keys [abort-ch body error-chan trailers] :as response} request backend-proto reservation-status-promise]
+  (let [request-headers (:headers request)
+        {:strs [grpc-status]} (:headers response)
+        proto-version (hu/backend-protocol->http-version backend-proto)]
+    (when (and (hu/grpc? request-headers proto-version)
+               (not (str/blank? grpc-status))
+               (not= "0" grpc-status)
+               (au/chan? body))
+      (log/info "eagerly closing response body as grpc status is" grpc-status)
+      ;; mark the request as successful, grpc failures are reported in the headers
+      (deliver reservation-status-promise :success)
+      (when abort-ch
+        ;; disallow aborting the request as we deem the request a success and will trigger normal
+        ;; request completion by closing the body channel
+        (async/close! abort-ch))
+      ;; stop writing any content in the body from stream-http-response and trigger request completion
+      (async/close! body)
+      ;; do not expect any trailers either in the response
+      (async/close! trailers)
+      ;; eagerly close channel as request is deemed a success and avoid blocking in stream-http-response
+      (async/close! error-chan))
+    response))
+
 (defn process-http-response
   "Processes a response resulting from a http request.
    It includes book-keeping for async requests and asynchronously streaming the content."
@@ -502,6 +557,8 @@
             location (post-process-async-request-response-fn
                        service-id metric-group backend-proto instance (handler/make-auth-user-map request)
                        reason-map instance-request-properties location query-string))
+          (handle-grpc-error-response request backend-proto reservation-status-promise)
+          (forward-grpc-status-headers-in-trailers)
           (assoc :body resp-chan)
           (update-in [:headers] (fn update-response-headers [headers]
                                   (utils/filterm #(not= "connection" (str/lower-case (str (key %)))) headers)))))))
