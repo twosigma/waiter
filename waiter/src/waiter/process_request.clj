@@ -39,7 +39,8 @@
             [waiter.util.http-utils :as hu]
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils])
-  (:import (java.io ByteArrayOutputStream InputStream IOException)
+  (:import (clojure.lang ExceptionInfo)
+           (java.io ByteArrayOutputStream InputStream IOException)
            (java.nio ByteBuffer)
            (java.util.concurrent TimeoutException)
            (javax.servlet ServletOutputStream ReadListener ServletInputStream)
@@ -175,18 +176,31 @@
                             (log/error e "error releasing instance!"))))
       instance)))
 
+(defn- classify-error
+  "Classifies the error responses from the backend into the following vector:
+   - error cause (:client-error, :instance-error or :generic-error),
+   - associated error message, and
+   - the http status code."
+  [error]
+  (cond (instance? ExceptionInfo error)
+        (let [[error-cause message status] (classify-error (ex-cause error))
+              error-cause (or (-> error ex-data :error-cause) error-cause)]
+          [error-cause message status])
+        (instance? IllegalStateException error)
+        [:generic-error (.getMessage error) 400]
+        (instance? EofException error)
+        [:client-error "Connection unexpectedly closed while streaming request" 400]
+        (instance? TimeoutException error)
+        [:instance-error (utils/message :backend-request-timed-out) 504]
+        :else
+        [:instance-error (utils/message :backend-request-failed) 502]))
+
 (defn- handle-response-error
   "Handles error responses from the backend."
   [error reservation-status-promise service-id request]
-  (let [metrics-map (metrics/retrieve-local-stats-for-service service-id)
-        [promise-value message status]
-        (cond (instance? EofException error)
-              [:client-error "Connection unexpectedly closed while sending request" 400]
-              (instance? TimeoutException error)
-              [:instance-error (utils/message :backend-request-timed-out) 504]
-              :else
-              [:instance-error (utils/message :backend-request-failed) 502])]
-    (deliver reservation-status-promise promise-value)
+  (let [[error-cause message status] (classify-error error)
+        metrics-map (metrics/retrieve-local-stats-for-service service-id)]
+    (deliver reservation-status-promise error-cause)
     (utils/exception->response (ex-info message (assoc metrics-map :status status) error) request)))
 
 (let [min-buffer-size 1024
@@ -284,12 +298,15 @@
                     (when (and (utils/non-neg? bytes-read) (.isReady input-stream))
                       (recur)))))
               (catch Throwable throwable
-                (complete-request-streaming "there was error in streaming data" throwable)
+                (let [ex (ex-info "error reading available data" {:error-cause :client-error} throwable)]
+                  (complete-request-streaming "there was error in streaming data" ex))
                 (throw throwable))))
           (onError [_ throwable]
-            (complete-request-streaming "there was error in request data stream" throwable))))
+            (let [ex (ex-info "error in frontend request" {:error-cause :client-error} throwable)]
+              (complete-request-streaming "there was error in request data stream" ex)))))
       (catch Throwable throwable
-        (complete-request-streaming "there was error in registering read listener" throwable)))
+        (let [ex (ex-info "error in registering read listener on request stream" {:error-cause :generic-error} throwable)]
+          (complete-request-streaming "there was error in registering read listener" ex))))
     body-ch))
 
 (defn- make-http-request
@@ -456,7 +473,9 @@
                       (recur bytes-streamed' bytes-reported-to-statsd'))))))))
         (catch Exception e
           (meters/mark! stream-exception-meter)
-          (deliver reservation-status-promise :instance-error)
+          (let [[error-cause _ _] (classify-error e)]
+            (log/info (-> e .getClass .getCanonicalName) (.getMessage e) "identified as" error-cause)
+            (deliver reservation-status-promise error-cause))
           (log/info "sending poison pill to response channel")
           (let [poison-pill-function (poison-pill-fn (cid/get-correlation-id))]
             (when-not (au/timed-offer! resp-chan poison-pill-function 5000)
