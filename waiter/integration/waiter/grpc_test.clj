@@ -407,7 +407,7 @@
             (let [num-messages 120
                   messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))]
 
-              (testing (str "independent mode " max-message-length " messages completion")
+              (testing (str "independent mode " max-message-length " messages completion " cancel-policy)
                 (log/info "starting streaming to and from server - independent mode test")
                 (let [cancel-threshold (/ num-messages 2)
                       from (rand-name "f")
