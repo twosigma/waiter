@@ -298,11 +298,13 @@
           (throw (ex-info "Authenticated user cannot run service"
                           {:authenticated-user auth-user
                            :run-as-user run-as-user
-                           :status 403})))
+                           :status 403
+                           :log-level :warn})))
         (when-not (request-authorized? auth-user permitted-user)
           (throw (ex-info "This user isn't allowed to invoke this service"
                           {:authenticated-user auth-user
                            :service-description service-description
-                           :status 403})))
+                           :status 403
+                           :log-level :warn})))
         {:descriptor descriptor
          :latest-descriptor latest-descriptor}))))
