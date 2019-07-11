@@ -224,6 +224,7 @@
         ConnectException (log/debug error "error while connecting to backend for health check" error-map)
         SocketTimeoutException (log/debug error "timeout while connecting to backend for health check" error-map)
         TimeoutException (log/debug error "timeout while connecting to backend for health check" error-map)
+        EOFException (log/info "Got an EOF when connecting to backend for health check" error-map)
         Throwable (log/error error "unexpected error while connecting to backend for health check" error-map)))
     (when-not (or (<= 200 status 299)
                   (= 404 status)
