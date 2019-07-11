@@ -165,7 +165,7 @@
                          {:instance ~instance})))
        (do
          (throw (ex-info "Unable to find release-chan."
-                         {:instance ~instance :service service-id#}))))))
+                         {:instance ~instance :service-id service-id#}))))))
 
 (defn release-instance-go
   "Sends a rpc to the router state to release the lock on the given instance."
