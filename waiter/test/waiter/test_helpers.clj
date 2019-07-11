@@ -185,8 +185,8 @@
                                         :git-commit-hash-under-test (System/getenv "TEST_METRICS_COMMIT_HASH_UNDER_TEST")
                                         :host hostname
                                         :user username
-                                        :run-id (System/getenv "")
-                                        :build-id (System/getenv "")
+                                        :run-id (System/getenv "TEST_METRICS_RUN_ID")
+                                        :build-id (System/getenv "TEST_METRICS_BUILD_ID")
                                         :result result
                                         :runtime-milliseconds elapsed-millis
                                         :expected-to-fail (-> (System/getenv "TEST_METRICS_EXPECTED_TO_FAIL") str Boolean/parseBoolean)})))))
