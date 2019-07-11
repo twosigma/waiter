@@ -50,7 +50,8 @@
           (when-not (preflight-allowed? cors-validator request)
             (throw (ex-info "Cross-origin request not allowed" {:origin origin
                                                                 :request-method request-method
-                                                                :status 403})))
+                                                                :status 403
+                                                                :log-level :warn})))
           (let [{:strs [access-control-request-headers]} headers]
             {:status 200
              :headers {"access-control-allow-origin" origin
@@ -85,7 +86,8 @@
                 (throw (ex-info "Cross-origin request not allowed"
                                 {:origin origin
                                  :request-method request-method
-                                 :status 403}))))
+                                 :status 403
+                                 :log-level :warn}))))
             (ru/update-response bless))))))
 
 (defrecord PatternBasedCorsValidator [pattern-matches?]
