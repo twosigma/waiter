@@ -14,18 +14,23 @@
 ;; limitations under the License.
 ;;
 (ns waiter.test-helpers
-  (:require [clj-time.core :as t]
+  (:require [clj-jgit.porcelain :as jgit]
+            [clj-time.core :as t]
+            [clj-time.format :as f]
             [clojure.core.async :as async]
             [clojure.data :as data]
+            [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.tools.namespace.find :as find]
+            [qbits.jet.client.http :as http]
             [waiter.correlation-id :as cid]
-            [waiter.util.client-tools :as ct])
+            [waiter.util.client-tools :as ct]
+            [waiter.util.date-utils :as du])
   (:import java.io.ByteArrayOutputStream
-           (javax.servlet ServletOutputStream
-                          ServletResponse)))
+           (java.net InetAddress)
+           (javax.servlet ServletOutputStream ServletResponse)))
 
 (def expected-html-response-headers {"content-type" "text/html"
                                      "server" "waiter"})
@@ -44,14 +49,66 @@
 (defonce ^:private replaced-layout
          (future (cid/replace-pattern-layout-in-log4j-appenders)))
 
+(defonce ^:private test-metrics-es-url
+         (System/getenv "TEST_METRICS_ES_URL"))
+
+(defonce ^:private git-repo
+         (when test-metrics-es-url
+           (try
+             (jgit/load-repo (str (System/getProperty "user.dir") "/.."))
+             (catch Throwable _
+                    (log/warn "Could not get git repo when trying to report test metrics.")))))
+
+(defonce ^:private current-git-branch
+         (when git-repo
+           (jgit/git-branch-current git-repo)))
+
+(defonce ^:private current-git-commit
+         (when git-repo
+           (-> git-repo jgit/git-log first .getId .name)))
+
+(defonce ^:private test-name->num-fails-atom
+         (atom {}))
+
+(defonce ^:private test-name->num-errors-atom
+         (atom {}))
+
+(defonce ^:private test-name->num-passes-atom
+         (atom {}))
+
+(defonce ^:private http-client
+         (when test-metrics-es-url
+           (:http1-client (ct/make-http-clients))))
+
+(defn- test-name-info
+  [testing-var]
+  (let [test-meta (meta testing-var)
+        namespace (ns-name (:ns test-meta))
+        name (:name test-meta)]
+    {:full-name (str name "/" namespace)
+     :name name
+     :namespace namespace}))
+
+(defn- full-test-name
+  ([]
+   (:full-name (test-name-info (first *testing-vars*))))
+  ([m]
+   (:full-name (test-name-info (:var m)))))
+
+(defn- inc-test-counter
+  [test-name->counter-atom]
+  (swap! test-name->counter-atom (fn [map] (update-in map [(full-test-name)] #(inc (or % 0))))))
+
+(defonce ^:private username
+         (ct/retrieve-username))
+
+(defonce ^:private hostname
+         (.getCanonicalHostName (InetAddress/getLocalHost)))
+
 (defn blue [message] (str ANSI-BLUE message ANSI-RESET))
 (defn magenta [message] (str ANSI-MAGENTA message ANSI-RESET))
 (defn cyan [message] (str ANSI-CYAN message ANSI-RESET))
 
-(defn- full-test-name
-  [m]
-  (let [test-meta (-> m :var meta)]
-    (str (-> test-meta :ns (.getName)) "/" (:name test-meta))))
 
 (defn- log-memory-info
   "Logs memory usage information"
@@ -93,7 +150,38 @@
       (swap! running-tests #(dissoc % test-name))
       (with-test-out
         (println \tab (blue "FINISH:") test-name (cyan (format-duration elapsed-millis))
-                 (assoc @*report-counters* :running (count @running-tests))))
+                 (assoc @*report-counters* :running (count @running-tests)))
+        (when test-metrics-es-url
+          (let [{:keys [full-name name namespace]} (test-name-info (:var m))
+                num-fails (or (@test-name->num-fails-atom full-name) 0)
+                num-errors (or (@test-name->num-errors-atom full-name) 0)
+                num-passes (or (@test-name->num-passes-atom full-name) 0)
+                test-skipped? (= 0 (+ num-fails num-errors num-passes))
+                test-failed? (> (+ num-fails num-errors) 0)
+                result (if test-failed? "failed" (if test-skipped? "skipped" "passed"))
+                es-index (str "waiter-tests-" (du/date-to-str (t/now) (f/formatters :basic-date)))
+                doc-id (str namespace "_" name "_" (.getMillis (t/now)))]
+            ;TODO: can check for outstanding commits: (println (jgit/git-status git-repo))
+            ; ct/make-request strips trailing slash from test-metrics-es-url
+            (ct/make-request test-metrics-es-url (str "/" es-index "/test-result/" doc-id)
+                             :body (json/write-str {:timestamp (du/date-to-str (t/now))
+                                                    :project "waiter"
+                                                    :test-namespace namespace
+                                                    :test-name name
+                                                    :git-branch current-git-branch
+                                                    :git-commit-hash current-git-commit
+                                                    :git-branch-under-test (System/getenv "TEST_METRICS_BRANCH_UNDER_TEST")
+                                                    :git-commit-hash-under-test (System/getenv "TEST_METRICS_COMMIT_HASH_UNDER_TEST")
+                                                    :host hostname
+                                                    :user username
+                                                    :run-id (System/getenv "")
+                                                    :build-id (System/getenv "")
+                                                    :result result
+                                                    :runtime-ms elapsed-millis
+                                                    })
+                             :client http-client
+                             :headers {"content-type" "application/json"}
+                             :method :post))))
       (log-running-tests)))
 
   (defmethod report :summary [m]
@@ -106,7 +194,8 @@
         (println test-name (cyan (format-duration duration))))
       (println "\nRan" (:test m) "tests containing"
                (+ (:pass m) (:fail m) (:error m)) "assertions.")
-      (println (:fail m) "failures," (:error m) "errors."))))
+      (println (:fail m) "failures," (:error m) "errors.")
+      (http/stop-client! http-client))))
 
 ;; Overrides the default reporter for :error so that the ex-data of
 ;; an exception is printed.  The default report doesn't print the ex-data.
@@ -118,7 +207,25 @@
     (when (seq *testing-contexts*) (println (testing-contexts-str)))
     (when-let [message (:message m)] (println message))
     (println "expected:" (pr-str (:expected m)))
-    (print "  actual: " (pr-str (:actual m)))))
+    (print "  actual: " (pr-str (:actual m)))
+    (inc-test-counter test-name->num-errors-atom)))
+
+(defmethod report :pass
+  [m]
+  (with-test-out
+    (inc-report-counter :pass)
+    (inc-test-counter test-name->num-passes-atom)))
+
+(defmethod report :fail
+  [m]
+  (with-test-out
+    (inc-report-counter :fail)
+    (println "\nFAIL in" (testing-vars-str m))
+    (when (seq *testing-contexts*) (println (testing-contexts-str)))
+    (when-let [message (:message m)] (println message))
+    (println "expected:" (pr-str (:expected m)))
+    (println "  actual:" (pr-str (:actual m)))
+    (inc-test-counter test-name->num-fails-atom)))
 
 (defn- elapsed-millis [start-nanos finish-nanos]
   (->

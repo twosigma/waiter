@@ -32,6 +32,8 @@
 
   :dependencies [[bidi "2.1.5"
                   :exclusions [prismatic/schema ring/ring-core]]
+                 [clj-jgit "0.8.10"
+                  :scope "test"]
                  [twosigma/courier "1.4.6"
                   :exclusions [com.google.guava/guava io.grpc/grpc-core]
                   :scope "test"]
@@ -141,7 +143,8 @@
   :profiles {:debug {:jvm-opts
                      ;; enable remote debugger to connect on port 5005
                      ["-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005"]}
-             :test {:jvm-opts
+             :test {:injections [(require 'waiter.test-helpers)]
+                    :jvm-opts
                     [~(str "-Dwaiter.test.courier.cmd="
                         (or (System/getenv "WAITER_TEST_COURIER_CMD")
                           (.getCanonicalPath (clojure.java.io/file "../containers/test-apps/courier/bin/run-courier-server.sh"))))
