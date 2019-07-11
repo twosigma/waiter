@@ -452,24 +452,6 @@ public class GrpcClient {
         }
     }
 
-    public static RpcResult<List<CourierSummary>> collectPackages(final String host,
-                                                                  final int port,
-                                                                  final Map<String, Object> headers,
-                                                                  final String idPrefix,
-                                                                  final String from,
-                                                                  final List<String> messages,
-                                                                  final int interMessageSleepMs,
-                                                                  final boolean lockStepMode,
-                                                                  final int cancelThreshold) throws InterruptedException {
-
-        final List<String> ids = new ArrayList<>(messages.size());
-        for (int i = 0; i < messages.size(); i++) {
-            ids.add(idPrefix + i);
-        }
-
-        return collectPackages(host, port, headers, ids, from, messages, interMessageSleepMs, lockStepMode, cancelThreshold);
-    }
-
     /**
      * Greet server. If provided, the first element of {@code args} is the name to use in the
      * greeting.
@@ -533,8 +515,9 @@ public class GrpcClient {
     private static void runCollectPackagesSuccess(final String host, final int port) throws InterruptedException {
         final HashMap<String, Object> headers = new HashMap<>();
         headers.put("x-cid", "cid-collect-packages-success." + System.currentTimeMillis());
+        final List<String> ids = IntStream.range(0, 10).mapToObj(i -> "id-" + i).collect(Collectors.toList());
         final List<String> messages = IntStream.range(0, 10).mapToObj(i -> "message-" + i).collect(Collectors.toList());
-        final RpcResult<List<CourierSummary>> rpcResult = collectPackages(host, port, headers, "id-", "User", messages, 100, true, messages.size() + 1);
+        final RpcResult<List<CourierSummary>> rpcResult = collectPackages(host, port, headers, ids, "User", messages, 100, true, messages.size() + 1);
         final List<CourierSummary> courierSummaries = rpcResult.result();
         logFunction.apply("collectPackages[success] summary = " + courierSummaries);
         final Status status = rpcResult.status();
