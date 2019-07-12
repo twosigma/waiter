@@ -163,6 +163,8 @@
                               (log/info "done processing request" status)
                               (when (= :success status)
                                 (counters/inc! (metrics/service-counter service-id "request-counts" "successful")))
+                              (when (str/ends-with? status "error")
+                                (counters/inc! (metrics/service-counter service-id "request-counts" (name status))))
                               (when (= :generic-error status)
                                 (log/error "there was a generic error in processing the request;"
                                             "if this is a client or server related issue, the code needs to be updated."))
@@ -474,6 +476,7 @@
                     (when more-bytes-possibly-available?
                       (recur bytes-streamed' bytes-reported-to-statsd'))))))))
         (catch Exception e
+          (log/error e "exception occurred while streaming response for" service-id)
           (meters/mark! stream-exception-meter)
           (let [[error-cause _ _] (classify-error e)]
             (deliver reservation-status-promise error-cause))
@@ -487,8 +490,7 @@
               (log/info "poison pill offer on response channel timed out!")
               (when-let [output-stream @output-stream-atom]
                 (log/info "invoking poison pill directly on output stream")
-                (poison-pill-function output-stream))))
-          (log/error e "exception occurred while streaming response for" service-id))
+                (poison-pill-function output-stream)))))
         (finally
           (async/close! resp-chan)
           (async/close! body)
