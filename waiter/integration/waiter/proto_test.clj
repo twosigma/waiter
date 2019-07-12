@@ -110,22 +110,22 @@
                           :verbose true)]
                   (assert-streaming-response waiter-url correlation-id protocol expected-response-size response))))))))))
 
-(deftest ^:parallel ^:integration-slow ^:resource-heavy test-http-backend-proto-service
+(deftest ^:parallel ^:integration-slow ^:resource-heavy ^:explicit test-http-backend-proto-service
   (testing-using-waiter-url
     (run-backend-proto-service-test waiter-url "http" "http" "HTTP/1.1")
     (is "test completed marker")))
 
-(deftest ^:parallel ^:integration-slow ^:resource-heavy test-https-backend-proto-service
+(deftest ^:parallel ^:integration-slow ^:resource-heavy ^:explicit test-https-backend-proto-service
   (testing-using-waiter-url
     (run-backend-proto-service-test waiter-url "https" "https" "HTTP/1.1")
     (is "test completed marker")))
 
-(deftest ^:parallel ^:integration-slow ^:resource-heavy test-h2c-backend-proto-service
+(deftest ^:parallel ^:integration-slow ^:resource-heavy ^:explicit test-h2c-backend-proto-service
   (testing-using-waiter-url
     (run-backend-proto-service-test waiter-url "h2c" "http" "HTTP/2.0")
     (is "test completed marker")))
 
-(deftest ^:parallel ^:integration-slow ^:resource-heavy test-h2-backend-proto-service
+(deftest ^:parallel ^:integration-slow ^:resource-heavy ^:explicit test-h2-backend-proto-service
   (testing-using-waiter-url
     (run-backend-proto-service-test waiter-url "h2" "https" "HTTP/2.0")
     (is "test completed marker")))
