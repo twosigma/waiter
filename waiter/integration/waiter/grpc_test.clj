@@ -32,6 +32,8 @@
 
 (def cancel-policy-exception GrpcClient$CancellationPolicy/EXCEPTION)
 
+(def cancel-policy-observer GrpcClient$CancellationPolicy/OBSERVER)
+
 (defn- initialize-grpc-client
   "Initializes grpc client logging to specific correlation id"
   [correlation-id host port]
@@ -144,12 +146,15 @@
 
 (defmacro assert-grpc-unknown-status
   "Asserts that the status represents a grpc OK status."
-  [status assertion-message]
+  [status message assertion-message]
   `(let [status# ~status
+         message# ~message
          assertion-message# ~assertion-message]
      (is status# assertion-message#)
      (when status#
-       (is (= "UNKNOWN" (-> status# .getCode str)) assertion-message#))))
+       (is (= "UNKNOWN" (-> status# .getCode str)) assertion-message#)
+       (when message#
+         (is (= message# (.getDescription status#)) assertion-message#)))))
 
 (defn- count-items
   [xs x]
@@ -406,7 +411,7 @@
     (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)]
       (with-service-cleanup
         service-id
-        (doseq [cancel-policy [cancel-policy-context cancel-policy-exception]]
+        (doseq [cancel-policy [cancel-policy-context cancel-policy-exception cancel-policy-observer]]
           (doseq [max-message-length [1000 100000]]
             (let [num-messages 120
                   messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))]
@@ -435,7 +440,9 @@
                     (= cancel-policy-context cancel-policy)
                     (assert-grpc-cancel-status status "Context cancelled" assertion-message)
                     (= cancel-policy-exception cancel-policy)
-                    (assert-grpc-unknown-status status assertion-message))
+                    (assert-grpc-unknown-status status nil assertion-message)
+                    (= cancel-policy-observer cancel-policy)
+                    (assert-grpc-unknown-status status "call was cancelled" assertion-message))
                   (is (= cancel-threshold (count summaries)) assertion-message)
                   (when (seq summaries)
                     (is (= (range 1 (inc cancel-threshold)) (map #(.getNumMessages ^CourierSummary %) summaries))
@@ -469,7 +476,9 @@
                     (= cancel-policy-context cancel-policy)
                     (assert-grpc-cancel-status status "Context cancelled" assertion-message)
                     (= cancel-policy-exception cancel-policy)
-                    (assert-grpc-unknown-status status assertion-message))
+                    (assert-grpc-unknown-status status nil assertion-message)
+                    (= cancel-policy-observer cancel-policy)
+                    (assert-grpc-unknown-status status "call was cancelled" assertion-message))
                   (is (= cancel-threshold (count summaries)) assertion-message)
                   (when (seq summaries)
                     (is (= (range 1 (inc cancel-threshold)) (map #(.getNumMessages ^CourierSummary %) summaries))
@@ -625,7 +634,7 @@
     (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)]
       (with-service-cleanup
         service-id
-        (doseq [cancel-policy [cancel-policy-context cancel-policy-exception]]
+        (doseq [cancel-policy [cancel-policy-context cancel-policy-exception cancel-policy-observer]]
           (doseq [max-message-length [1000 100000]]
             (let [num-messages 120
                   messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))]
@@ -652,7 +661,9 @@
                     (= cancel-policy-context cancel-policy)
                     (assert-grpc-cancel-status status "Context cancelled" assertion-message)
                     (= cancel-policy-exception cancel-policy)
-                    (assert-grpc-unknown-status status assertion-message))
+                    (assert-grpc-unknown-status status nil assertion-message)
+                    (= cancel-policy-observer cancel-policy)
+                    (assert-grpc-unknown-status status "call was cancelled" assertion-message))
                   (is (nil? summary) assertion-message)
                   (Thread/sleep 1500) ;; sleep to allow cancellation propagation to backend
                   (assert-request-state grpc-client request-headers service-id correlation-id ::client-cancel))))))))))
