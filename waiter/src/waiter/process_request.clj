@@ -182,18 +182,21 @@
    - associated error message, and
    - the http status code."
   [error]
-  (cond (instance? ExceptionInfo error)
-        (let [[error-cause message status] (classify-error (ex-cause error))
-              error-cause (or (-> error ex-data :error-cause) error-cause)]
-          [error-cause message status])
-        (instance? IllegalStateException error)
-        [:generic-error (.getMessage error) 400]
-        (instance? EofException error)
-        [:client-error "Connection unexpectedly closed while streaming request" 400]
-        (instance? TimeoutException error)
-        [:instance-error (utils/message :backend-request-timed-out) 504]
-        :else
-        [:instance-error (utils/message :backend-request-failed) 502]))
+  (let [classification (cond (instance? ExceptionInfo error)
+                             (let [[error-cause message status] (classify-error (ex-cause error))
+                                   error-cause (or (-> error ex-data :error-cause) error-cause)]
+                               [error-cause message status])
+                             (instance? IllegalStateException error)
+                             [:generic-error (.getMessage error) 400]
+                             (instance? EofException error)
+                             [:client-error "Connection unexpectedly closed while streaming request" 400]
+                             (instance? TimeoutException error)
+                             [:instance-error (utils/message :backend-request-timed-out) 504]
+                             :else
+                             [:instance-error (utils/message :backend-request-failed) 502])
+        [error-cause _ _] classification]
+    (log/info (-> error .getClass .getCanonicalName) (.getMessage error) "identified as" error-cause)
+    classification))
 
 (defn- handle-response-error
   "Handles error responses from the backend."
@@ -473,7 +476,6 @@
         (catch Exception e
           (meters/mark! stream-exception-meter)
           (let [[error-cause _ _] (classify-error e)]
-            (log/info (-> e .getClass .getCanonicalName) (.getMessage e) "identified as" error-cause)
             (deliver reservation-status-promise error-cause))
           ;; TODO shams remove this when clause
           (when-let [backend-request (:request response)]
