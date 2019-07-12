@@ -606,7 +606,7 @@
       (utils/clj->streaming-json-response {:details (->> ["autoscaler" "autoscaling-multiplexer" "codahale-reporters" "fallback"
                                                           "gc-broken-services" "gc-services" "gc-transient-metrics" "interstitial"
                                                           "kv-store" "launch-metrics" "leader" "local-usage" "maintainer"
-                                                          "router-metrics" "scheduler"
+                                                          "router-metrics" "scheduler" "service-description-builder"
                                                           "statsd"]
                                                          (pc/map-from-keys make-url))
                                            :router-id router-id
