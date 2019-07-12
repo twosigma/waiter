@@ -44,7 +44,7 @@
            (java.nio ByteBuffer)
            (java.util.concurrent TimeoutException)
            (javax.servlet ServletOutputStream ReadListener ServletInputStream)
-           (org.eclipse.jetty.client HttpClient)
+           (org.eclipse.jetty.client HttpClient HttpRequest)
            (org.eclipse.jetty.io EofException)
            (org.eclipse.jetty.server HttpChannel HttpOutput Response)))
 
@@ -394,7 +394,7 @@
    Otherwise, it is assumed the body is a input stream, in which case, the function
    buffers bytes, and push byte input streams onto the channel until the body input
    stream is exhausted."
-  [{:keys [body error-chan]} confirm-live-connection request-abort-callback resp-chan
+  [{:keys [body error-chan] :as response} confirm-live-connection request-abort-callback resp-chan
    {:keys [streaming-timeout-ms]}
    reservation-status-promise request-state-chan metric-group waiter-debug-enabled?
    {:keys [throughput-meter requests-streaming requests-waiting-to-stream
@@ -469,8 +469,12 @@
                               (statsd/inc! metric-group "response_bytes" unreported-bytes)
                               bytes-streamed')
                             bytes-reported-to-statsd))]
-                    (when more-bytes-possibly-available?
-                      (recur bytes-streamed' bytes-reported-to-statsd'))))))))
+                    (if more-bytes-possibly-available?
+                      (recur bytes-streamed' bytes-reported-to-statsd')
+                      ;; TODO shams remove this when clause
+                      (when-let [backend-request (:request response)]
+                        (when (instance? HttpRequest backend-request)
+                          (log/error "abort cause for backend request:" (.getAbortCause ^HttpRequest backend-request)))))))))))
         (catch Exception e
           (meters/mark! stream-exception-meter)
           (let [[error-cause _ _] (classify-error e)]
