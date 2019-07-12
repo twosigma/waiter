@@ -408,11 +408,12 @@
 
 (deftest ^:parallel ^:integration-slow test-grpc-bidi-streaming-client-cancellation
   (testing-using-waiter-url
-    (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)]
+    (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)
+          correlation-id-prefix (rand-name)]
       (with-service-cleanup
         service-id
         (doseq [cancel-policy [cancel-policy-context cancel-policy-exception cancel-policy-observer]]
-          (doseq [max-message-length [1000 100000]]
+          (doseq [max-message-length [1000 50000]]
             (let [num-messages 120
                   messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))]
 
@@ -420,7 +421,7 @@
                 (log/info "starting streaming to and from server - independent mode test")
                 (let [cancel-threshold (/ num-messages 2)
                       from (rand-name "f")
-                      correlation-id (str (rand-name) "-in-" cancel-policy)
+                      correlation-id (str correlation-id-prefix "-in-" max-message-length "-" cancel-policy)
                       request-headers (assoc request-headers "x-cid" correlation-id)
                       ids (map #(str "id-inde-" %) (range num-messages))
                       grpc-client (initialize-grpc-client correlation-id host h2c-port)
@@ -456,7 +457,7 @@
                 (log/info "starting streaming to and from server - lock-step mode test")
                 (let [cancel-threshold (/ num-messages 2)
                       from (rand-name "f")
-                      correlation-id (str (rand-name) "-ls-" cancel-policy)
+                      correlation-id (str correlation-id-prefix "-ls-" max-message-length "-" cancel-policy)
                       request-headers (assoc request-headers "x-cid" correlation-id)
                       ids (map #(str "id-lock-" %) (range num-messages))
                       grpc-client (initialize-grpc-client correlation-id host h2c-port)
@@ -631,11 +632,12 @@
 
 (deftest ^:parallel ^:integration-fast test-grpc-client-streaming-client-cancellation
   (testing-using-waiter-url
-    (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)]
+    (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)
+          correlation-id-prefix (rand-name)]
       (with-service-cleanup
         service-id
         (doseq [cancel-policy [cancel-policy-context cancel-policy-exception cancel-policy-observer]]
-          (doseq [max-message-length [1000 100000]]
+          (doseq [max-message-length [1000 50000]]
             (let [num-messages 120
                   messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))]
 
@@ -643,7 +645,7 @@
                 (log/info "starting streaming to and from server - independent mode test")
                 (let [cancel-threshold (/ num-messages 2)
                       from (rand-name "f")
-                      correlation-id (str (rand-name) "-" cancel-policy)
+                      correlation-id (str correlation-id-prefix "-in-" max-message-length "-" cancel-policy)
                       request-headers (assoc request-headers "x-cid" correlation-id)
                       ids (map #(str "id-" %) (range num-messages))
                       grpc-client (initialize-grpc-client correlation-id host h2c-port)
@@ -670,10 +672,11 @@
 
 (deftest ^:parallel ^:integration-fast test-grpc-client-streaming-deadline-exceeded
   (testing-using-waiter-url
-    (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)]
+    (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)
+          correlation-id-prefix (rand-name)]
       (with-service-cleanup
         service-id
-        (doseq [max-message-length [1000 100000]]
+        (doseq [max-message-length [1000 50000]]
           (let [num-messages 120
                 messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))]
 
@@ -681,7 +684,7 @@
               (log/info "starting streaming to and from server - independent mode test")
               (let [cancel-threshold (inc num-messages)
                     from (rand-name "f")
-                    correlation-id (rand-name)
+                    correlation-id (str correlation-id-prefix "-" max-message-length)
                     request-headers (assoc request-headers "x-cid" correlation-id)
                     ids (map #(str "id-" %) (range num-messages))
                     grpc-client (initialize-grpc-client correlation-id host h2c-port)
