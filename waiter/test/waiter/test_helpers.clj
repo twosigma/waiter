@@ -50,15 +50,30 @@
          (future (cid/replace-pattern-layout-in-log4j-appenders)))
 
 (defonce ^:private test-metrics-url
-         (if-let [url (System/getenv "TEST_METRICS_URL")]
+         (when-let [url (System/getenv "TEST_METRICS_URL")]
            (ct/strip-trailing-slash url)))
+
+(defonce ^:private test-metrics-build-id
+         (System/getenv "TEST_METRICS_BUILD_ID"))
+
+(defonce ^:private test-metrics-expected-to-fail
+         (-> (System/getenv "TEST_METRICS_EXPECTED_TO_FAIL") str Boolean/parseBoolean))
+
+(defonce ^:private test-metrics-branch-under-test
+         (System/getenv "TEST_METRICS_BRANCH_UNDER_TEST"))
+
+(defonce ^:private test-metrics-commit-hash-under-test
+         (System/getenv "TEST_METRICS_COMMIT_HASH_UNDER_TEST"))
+
+(defonce ^:private test-metrics-run-id
+         (System/getenv "TEST_METRICS_RUN_ID"))
 
 (defonce ^:private git-repo
          (when test-metrics-url
            (try
              (jgit/load-repo (str (System/getProperty "user.dir") "/.."))
              (catch Throwable _
-                    (log/warn "Could not get git repo when trying to report test metrics.")))))
+               (log/warn "Could not get git repo when trying to report test metrics.")))))
 
 (defonce ^:private current-git-branch
          (when git-repo
@@ -175,21 +190,21 @@
                 es-index (str "waiter-tests-" (du/date-to-str (t/now) (f/formatters :basic-date)))]
             ;TODO: can check for outstanding commits: (println (jgit/git-status git-repo))
             (post-json (str test-metrics-url "/" es-index "/test-result")
-                       (json/write-str {:timestamp (du/date-to-str (t/now))
-                                        :project "waiter"
-                                        :test-namespace namespace
-                                        :test-name name
+                       (json/write-str {:build-id test-metrics-build-id
+                                        :expected-to-fail test-metrics-expected-to-fail
                                         :git-branch current-git-branch
+                                        :git-branch-under-test test-metrics-branch-under-test
                                         :git-commit-hash current-git-commit
-                                        :git-branch-under-test (System/getenv "TEST_METRICS_BRANCH_UNDER_TEST")
-                                        :git-commit-hash-under-test (System/getenv "TEST_METRICS_COMMIT_HASH_UNDER_TEST")
+                                        :git-commit-hash-under-test test-metrics-commit-hash-under-test
                                         :host hostname
-                                        :user username
-                                        :run-id (System/getenv "TEST_METRICS_RUN_ID")
-                                        :build-id (System/getenv "TEST_METRICS_BUILD_ID")
+                                        :project "waiter"
                                         :result result
+                                        :run-id test-metrics-run-id
                                         :runtime-milliseconds elapsed-millis
-                                        :expected-to-fail (-> (System/getenv "TEST_METRICS_EXPECTED_TO_FAIL") str Boolean/parseBoolean)})))))
+                                        :test-name name
+                                        :test-namespace namespace
+                                        :timestamp (du/date-to-str (t/now))
+                                        :user username})))))
       (log-running-tests)))
 
   (defmethod report :summary [m]
