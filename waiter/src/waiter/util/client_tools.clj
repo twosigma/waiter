@@ -97,8 +97,8 @@
         waiter-uri)
       (let [port WAITER-PORT]
         (if (utils/port-available? port)
-          (log/warn "port" port "is not in use, you may need to start Waiter")
-          (log/info "port" port "is already in use, assuming Waiter is running"))
+          (log/warn "port" port "is not in use, you may need to start Waiter.")
+          (log/info "port" port "is already in use, assuming Waiter is running."))
         (str (retrieve-hostname) ":" port)))))
 
 (defn retrieve-h2c-port
