@@ -509,13 +509,12 @@
 
 (defn abort-http-request-callback-factory
   "Creates a callback to abort the http request."
-  [response]
-  (fn abort-http-request-callback [^Exception e]
-    (let [ex (if (instance? IOException e) e (IOException. e))
-          aborted (if-let [request (:request response)]
-                    (.abort request ex)
-                    (log/warn "unable to abort as request not found inside response!"))]
-      (log/info "aborted backend request:" aborted))))
+  [{:keys [abort-ch] :as response}]
+  (fn abort-backend-request-callback [^Exception ex]
+    (if (and abort-ch (async/>!! abort-ch ex))
+      (log/info "requested backend to be aborted via abort-ch")
+      (let [aborted? (some-> response :request (.abort ex))]
+        (log/info "result of aborting backend request directly:" aborted?)))))
 
 (defn- introspect-trailers
   "Introspects and logs trailers received in the response"
