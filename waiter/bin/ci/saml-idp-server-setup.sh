@@ -1,25 +1,27 @@
 #!/bin/bash
-# Usage: run-unit-tests.sh
+# Usage: saml-idp-server-setup.sh
 #
 # Examples:
-#   run-unit-tests.sh
+#   saml-idp-server-setup.sh
 #
-# Run a test SAML identity provider (IdP) server via docker
-# Server UI will be accessible at: https://localhost:8443/simplesaml/module.php/core/frontpage_welcome.php
-# SAML authentication request can be routed to: https://localhost:8443/simplesaml/saml2/idp/SSOService.php
-# Further documentation can be found at: https://hub.docker.com/r/kristophjunge/test-saml-idp/
+# Run a dummy SAML identity provider (IdP) server
+# SAML authentication request can be routed to: http://localhost:<$SAML_IDP_PORT>/
 
 set -e
 
-echo Starting SAML IdP server docker container
-docker run --name=testsamlidp_idp --detach --rm -p 8090:8090 -p 8443:8443 \
--e SIMPLESAMLPHP_SP_ENTITY_ID=waiter \
--e SIMPLESAMLPHP_SP_ASSERTION_CONSUMER_SERVICE=http://localhost:9091/waiter-auth/saml/acs \
--e SIMPLESAMLPHP_SP_SINGLE_LOGOUT_SERVICE=http://localhost:9091/waiter-auth/saml/logout \
--d kristophjunge/test-saml-idp:1.15
+sudo apt-get install python3-pip
+sudo apt-get install python3-setuptools
+sudo -H pip3 install -r ${WAITER_DIR}/../containers/test-apps/saml/idpserver/requirements.txt
+
+echo Starting SAML IdP server
+${WAITER_DIR}/../containers/test-apps/saml/idpserver/bin/run-idp-server \
+    $SAML_IDP_PORT \
+    https://localhost/waiter-auth/saml/acs \
+    http://${WAITER_URI}/waiter-auth/saml/acs \
+    $(id -un) &
 
 echo -n Waiting for SAML IdP server
-while ! curl -k https://localhost:8443/simplesaml/saml2/idp/metadata.php &>/dev/null; do
+while ! curl -k http://localhost:${SAML_IDP_PORT}/healthcheck &>/dev/null; do
     echo -n .
     sleep 3
 done
