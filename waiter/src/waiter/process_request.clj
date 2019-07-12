@@ -459,8 +459,7 @@
                         (catch Exception e
                           (histograms/update! (metrics/service-histogram service-id "response-size") bytes-streamed)
                           ; Handle lower down
-                          (throw (Exception.
-                                   (str "error occurred after streaming" bytes-streamed "bytes in response.") e))))]
+                          (throw (ex-info (str "error occurred after streaming " bytes-streamed " bytes in response") {} e))))]
                   (let [bytes-reported-to-statsd'
                         (let [unreported-bytes (- bytes-streamed' bytes-reported-to-statsd)]
                           (if (or (and (not more-bytes-possibly-available?) (pos? unreported-bytes))
@@ -469,17 +468,17 @@
                               (statsd/inc! metric-group "response_bytes" unreported-bytes)
                               bytes-streamed')
                             bytes-reported-to-statsd))]
-                    (if more-bytes-possibly-available?
-                      (recur bytes-streamed' bytes-reported-to-statsd')
-                      ;; TODO shams remove this when clause
-                      (when-let [backend-request (:request response)]
-                        (when (instance? HttpRequest backend-request)
-                          (log/error "abort cause for backend request:" (.getAbortCause ^HttpRequest backend-request)))))))))))
+                    (when more-bytes-possibly-available?
+                      (recur bytes-streamed' bytes-reported-to-statsd'))))))))
         (catch Exception e
           (meters/mark! stream-exception-meter)
           (let [[error-cause _ _] (classify-error e)]
             (log/info (-> e .getClass .getCanonicalName) (.getMessage e) "identified as" error-cause)
             (deliver reservation-status-promise error-cause))
+          ;; TODO shams remove this when clause
+          (when-let [backend-request (:request response)]
+            (when (instance? HttpRequest backend-request)
+              (log/error "abort cause for backend request:" (.getAbortCause ^HttpRequest backend-request))))
           (log/info "sending poison pill to response channel")
           (let [poison-pill-function (poison-pill-fn (cid/get-correlation-id))]
             (when-not (au/timed-offer! resp-chan poison-pill-function 5000)
