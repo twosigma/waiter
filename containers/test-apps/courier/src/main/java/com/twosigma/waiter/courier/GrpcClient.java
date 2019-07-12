@@ -763,7 +763,7 @@ public class GrpcClient {
         final List<String> messages = IntStream.range(0, 10).mapToObj(i -> "message-" + i).collect(Collectors.toList());
         final RpcResult<List<CourierSummary>> rpcResult =
             client.collectPackages(headers, ids, "User", messages, 100, true,
-                messages.size() / 2, CancellationPolicy.EXCEPTION, 10000);
+                messages.size() / 2, CancellationPolicy.CONTEXT, 10000);
         final List<CourierSummary> courierSummaries = rpcResult.result();
         client.logFunction.apply("collectPackages[cancel] summary = " + courierSummaries);
         final Status status = rpcResult.status();
@@ -846,14 +846,14 @@ public class GrpcClient {
         client.logFunction.apply("aggregatePackages[success] status = " + status);
     }
 
-    private static void runAggregatePackagesClientCancel(final GrpcClient client, final String correlationId) {
+    private static void runAggregatePackagesClientContext(final GrpcClient client, final String correlationId) {
         final HashMap<String, Object> headers = new HashMap<>();
         headers.put("x-cid", correlationId);
         final List<String> ids = IntStream.range(0, 10).mapToObj(i -> "id-" + i).collect(Collectors.toList());
         final List<String> messages = IntStream.range(0, 10).mapToObj(i -> "message-" + i).collect(Collectors.toList());
         final RpcResult<CourierSummary> rpcResult =
             client.aggregatePackages(headers, ids, "User", messages, 100,
-                messages.size() / 2, CancellationPolicy.EXCEPTION, 10000);
+                messages.size() / 2, CancellationPolicy.CONTEXT, 10000);
         final CourierSummary courierSummary = rpcResult.result();
         client.logFunction.apply("aggregatePackages[success] summary = " + courierSummary);
         final Status status = rpcResult.status();
