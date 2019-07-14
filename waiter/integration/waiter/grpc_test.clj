@@ -30,8 +30,6 @@
 
 (def cancel-policy-context GrpcClient$CancellationPolicy/CONTEXT)
 
-(def cancel-policy-exception GrpcClient$CancellationPolicy/EXCEPTION)
-
 (def cancel-policy-observer GrpcClient$CancellationPolicy/OBSERVER)
 
 (defn- initialize-grpc-client
@@ -412,7 +410,7 @@
           correlation-id-prefix (rand-name)]
       (with-service-cleanup
         service-id
-        (doseq [cancel-policy [cancel-policy-context cancel-policy-exception cancel-policy-observer]]
+        (doseq [cancel-policy [cancel-policy-context cancel-policy-observer]]
           (doseq [max-message-length [1000 50000]]
             (let [num-messages 120
                   messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))]
@@ -440,8 +438,6 @@
                   (cond
                     (= cancel-policy-context cancel-policy)
                     (assert-grpc-cancel-status status "Context cancelled" assertion-message)
-                    (= cancel-policy-exception cancel-policy)
-                    (assert-grpc-unknown-status status nil assertion-message)
                     (= cancel-policy-observer cancel-policy)
                     (assert-grpc-unknown-status status "call was cancelled" assertion-message))
                   (is (= cancel-threshold (count summaries)) assertion-message)
@@ -476,8 +472,6 @@
                   (cond
                     (= cancel-policy-context cancel-policy)
                     (assert-grpc-cancel-status status "Context cancelled" assertion-message)
-                    (= cancel-policy-exception cancel-policy)
-                    (assert-grpc-unknown-status status nil assertion-message)
                     (= cancel-policy-observer cancel-policy)
                     (assert-grpc-unknown-status status "call was cancelled" assertion-message))
                   (is (= cancel-threshold (count summaries)) assertion-message)
@@ -636,7 +630,7 @@
           correlation-id-prefix (rand-name)]
       (with-service-cleanup
         service-id
-        (doseq [cancel-policy [cancel-policy-context cancel-policy-exception cancel-policy-observer]]
+        (doseq [cancel-policy [cancel-policy-context cancel-policy-observer]]
           (doseq [max-message-length [1000 50000]]
             (let [num-messages 120
                   messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))]
@@ -662,8 +656,6 @@
                   (cond
                     (= cancel-policy-context cancel-policy)
                     (assert-grpc-cancel-status status "Context cancelled" assertion-message)
-                    (= cancel-policy-exception cancel-policy)
-                    (assert-grpc-unknown-status status nil assertion-message)
                     (= cancel-policy-observer cancel-policy)
                     (assert-grpc-unknown-status status "call was cancelled" assertion-message))
                   (is (nil? summary) assertion-message)
