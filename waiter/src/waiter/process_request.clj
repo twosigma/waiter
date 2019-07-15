@@ -274,10 +274,19 @@
                                              (log/debug "closing request body as" message)
                                              (counters/dec! request-body-streaming-counter)
                                              (when throwable
-                                               (log/error throwable "unable to stream request bytes, aborting request")
-                                               (async/>!! abort-ch throwable))
+                                               (let [callback (fn complete-request-streaming-abort-result-callback [aborted?]
+                                                                (cid/with-correlation-id
+                                                                  correlation-id
+                                                                  (log/info "request byte stream error, result of aborted request:" aborted?)
+                                                                  (async/close! body-ch)))]
+                                                 (log/error throwable "unable to stream request bytes, aborting request")
+                                                 (async/>!! abort-ch [throwable callback])))
                                              (report-request-size-metrics 0 true)
-                                             (async/close! body-ch))))))]
+                                             (if throwable
+                                               (async/go
+                                                 (async/<! (async/timeout 1000))
+                                                 (async/close! body-ch))
+                                               (async/close! body-ch)))))))]
     (counters/inc! request-body-streaming-counter)
     (when ctrl-ch
       (async/go
@@ -513,10 +522,16 @@
   "Creates a callback to abort the http request."
   [{:keys [abort-ch] :as response}]
   (fn abort-backend-request-callback [^Exception ex]
-    (if (and abort-ch (async/>!! abort-ch ex))
-      (log/info "requested backend to be aborted via abort-ch")
-      (let [aborted? (some-> response :request (.abort ex))]
-        (log/info "result of aborting backend request directly:" aborted?)))))
+    (let [correlation-id (cid/get-correlation-id)
+          callback (fn abort-http-request-result-callback [aborted?]
+                     (cid/with-correlation-id
+                       correlation-id
+                       (log/debug "aborted backend request:" aborted? "due to" (.getClass ex))))]
+      (if (and abort-ch (async/>!! abort-ch [ex callback]))
+        (log/info "requested backend to be aborted via abort-ch")
+        (let [_ (log/debug "attempting to abort request directly as abort-ch option failed")
+              aborted? (some-> response :request (.abort ex))]
+          (log/info "result of aborting backend request directly:" aborted?))))))
 
 (defn- introspect-trailers
   "Introspects and logs trailers received in the response"
