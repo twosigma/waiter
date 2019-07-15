@@ -493,10 +493,6 @@
           (meters/mark! stream-exception-meter)
           (let [[error-cause _ _] (classify-error e)]
             (deliver reservation-status-promise error-cause))
-          ;; TODO shams remove this when clause
-          (when-let [backend-request (:request response)]
-            (when (instance? HttpRequest backend-request)
-              (log/error "abort cause for backend request:" (.getAbortCause ^HttpRequest backend-request))))
           (log/info "sending poison pill to response channel")
           (let [poison-pill-function (poison-pill-fn (cid/get-correlation-id))]
             (when-not (au/timed-offer! resp-chan poison-pill-function 5000)
@@ -533,8 +529,7 @@
                        (log/debug "aborted backend request:" aborted? "due to" (.getClass ex))))]
       (if (and abort-ch (async/>!! abort-ch [ex callback]))
         (log/info "requested backend to be aborted via abort-ch")
-        (let [_ (log/debug "attempting to abort request directly as abort-ch option failed")
-              aborted? (some-> response :request (.abort ex))]
+        (let [aborted? (some-> response :request (.abort ex))]
           (log/info "result of aborting backend request directly:" aborted?))))))
 
 (defn- introspect-trailers
