@@ -32,8 +32,7 @@
 
   :dependencies [[bidi "2.1.5"
                   :exclusions [prismatic/schema ring/ring-core]]
-                 [clj-jgit "0.8.10"
-                  :scope "test"]
+                 [clj-jgit "0.8.10"]
                  [twosigma/courier "1.4.6"
                   :exclusions [com.google.guava/guava io.grpc/grpc-core]
                   :scope "test"]
