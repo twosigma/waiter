@@ -68,6 +68,9 @@
 (defonce ^:private test-metrics-run-id
          (System/getenv "TEST_METRICS_RUN_ID"))
 
+(defonce ^:private test-metrics-run-description
+         (System/getenv "TEST_METRICS_RUN_DESCRIPTION"))
+
 (defonce ^:private git-repo
          (when test-metrics-url
            (try
@@ -199,6 +202,7 @@
                                         :host hostname
                                         :project "waiter"
                                         :result result
+                                        :run-description test-metrics-run-description
                                         :run-id test-metrics-run-id
                                         :runtime-milliseconds elapsed-millis
                                         :test-name name
