@@ -30,7 +30,9 @@
                    :dev :dev
                    :perf (every-pred :perf (complement :explicit))}
 
-  :dependencies [[bidi "2.1.5"
+  :dependencies [[org.apache.httpcomponents/httpclient "4.3.6"]
+                 [org.slf4j/slf4j-api "1.7.2"]
+                 [bidi "2.1.5"
                   :exclusions [prismatic/schema ring/ring-core]]
                  [clj-jgit "0.8.10"]
                  [twosigma/courier "1.4.6"
