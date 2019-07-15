@@ -273,6 +273,9 @@
                                            (when (= complete-trigger-id @complete-triggered-promise)
                                              (log/debug "closing request body as" message)
                                              (counters/dec! request-body-streaming-counter)
+                                             ;; the callback is necessary as there is a data race between aborting the
+                                             ;; request and closing of the body channel triggering a normal complete before
+                                             ;; the abort request gets processed.
                                              (when throwable
                                                (let [callback (fn complete-request-streaming-abort-result-callback [aborted?]
                                                                 (cid/with-correlation-id
@@ -283,6 +286,7 @@
                                                  (async/>!! abort-ch [throwable callback])))
                                              (report-request-size-metrics 0 true)
                                              (if throwable
+                                               ;; TODO avoid the need for the timeout while sending to abort channel
                                                (async/go
                                                  (async/<! (async/timeout 1000))
                                                  (async/close! body-ch))
