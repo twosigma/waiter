@@ -413,8 +413,12 @@
                                         ;; don't wait forever to write to server
                                         (au/timed-offer! resp-chan buffer streaming-timeout-ms)))
                                 [(+ bytes-streamed bytes-read) true]
-                                (let [ex (ex-info "Unable to stream, back pressure in resp-chan. Is connection live?"
-                                                  {:cid (cid/get-correlation-id), :bytes-streamed bytes-streamed})]
+                                (let [{:keys [error]} (async/alts! [error-chan (async/timeout 5000)] :priority true)
+                                      ex (ex-info "Unable to stream, back pressure in resp-chan. Is connection live?"
+                                                  {:bytes-pending bytes-read
+                                                   :bytes-streamed bytes-streamed
+                                                   :correlation-id (cid/get-correlation-id)}
+                                                  error)]
                                   (meters/mark! stream-back-pressure)
                                   (deliver reservation-status-promise :client-error)
                                   (request-abort-callback (IOException. ^Exception ex))
