@@ -563,15 +563,6 @@
       (log/info ks "=" value))
     value))
 
-(defn default-scheduler-settings
-  "Return the default 'leaf-level' scheduler's settings map"
-  [waiter-url]
-  (let [{:keys [kind] :as top-settings} (-> waiter-url waiter-settings :scheduler-config)
-        settings (get top-settings (keyword kind))]
-    (if-let [default-sub-scheduler (:default-scheduler settings)]
-      (get-in settings [:components (keyword default-sub-scheduler)])
-      settings)))
-
 (defn retrieve-default-scheduler-name
   "Return the name of the default 'leaf-level' scheduler"
   [waiter-url & {:keys [settings] :or {settings nil}}]
@@ -580,10 +571,27 @@
         default-scheduler (get-in settings [:scheduler-config (keyword kind) :default-scheduler])]
     (or default-scheduler kind)))
 
+(defn get-scheduler-settings
+  "Return the specified scheduler's settings even if the scheduler is part of a composite scheduler."
+  [waiter-url scheduler]
+  (let [{:keys [kind] :as settings} (-> waiter-url waiter-settings :scheduler-config)]
+    (or (get-in settings [(keyword kind) :components scheduler])
+        (get-in settings [scheduler]))))
+
+(defn get-marathon-scheduler-settings
+  "Return the marathon scheduler's settings even if the scheduler is part of a composite scheduler."
+  [waiter-url]
+  (get-scheduler-settings waiter-url :marathon))
+
+(defn get-kubernetes-scheduler-settings
+  "Return the kubernetes scheduler's settings even if the scheduler is part of a composite scheduler."
+  [waiter-url]
+  (get-scheduler-settings waiter-url :kubernetes))
+
 (defn marathon-url
   "Returns the Marathon URL setting"
   [waiter-url]
-  (-> (default-scheduler-settings waiter-url) :url))
+  (-> waiter-url get-marathon-scheduler-settings :url))
 
 (defn num-marathon-tasks-running [waiter-url service-id & {:keys [prev-tasks-running] :or {prev-tasks-running -1}}]
   (let [http-options {:conn-timeout 10000, :socket-timeout 10000, :spnego-auth use-spnego}
@@ -979,6 +987,7 @@
       (and (using-composite-authenticator? waiter-url)
            (get-in (waiter-settings waiter-url) [:authenticator-config :composite :authentication-providers :saml]))))
 
+;; TODO: make this work not just for marathon
 (defn can-query-for-grace-period?
   "Returns true if Waiter supports querying for grace period"
   [waiter-url]
