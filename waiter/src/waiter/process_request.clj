@@ -222,8 +222,9 @@
    The input stream is read asynchronously using the ReadListener from the servlet api.
    Bytes read are reported to statsd and codahale metrics.
    It will report any errors while reading data on the provided abort channel."
-  [service-id metric-group streaming-timeout-ms abort-ch ^ServletInputStream input-stream]
+  [service-id metric-group streaming-timeout-ms abort-ch ctrl-ch ^ServletInputStream input-stream]
   (let [correlation-id (cid/get-correlation-id)
+        request-body-streaming-counter (metrics/service-counter service-id "request-counts" "request-body-streaming")
         body-ch (async/chan 2048)
         report-request-size-metrics (let [bytes-streamed-atom (atom 0)
                                           statsd-unreported-bytes-atom (atom 0)]
@@ -244,20 +245,33 @@
                                                 (swap! statsd-unreported-bytes-atom - unreported-bytes-to-statsd))))
                                           (catch Throwable throwable
                                             (log/error throwable "error in reporting request size metrics")))))
-        complete-request-streaming (fn complete-request-streaming [throwable]
-                                     (cid/with-correlation-id
-                                       correlation-id
-                                       (when throwable
-                                         (log/error throwable "unable to stream request bytes, aborting request")
-                                         (async/>!! abort-ch throwable))
-                                       (report-request-size-metrics 0 true)
-                                       (async/close! body-ch)))]
+        complete-request-streaming (let [complete-triggered-promise (promise)]
+                                     (fn complete-request-streaming [message throwable]
+                                       (cid/with-correlation-id
+                                         correlation-id
+                                         (let [complete-trigger-id (utils/unique-identifier)]
+                                           (deliver complete-triggered-promise complete-trigger-id)
+                                           (when (= complete-trigger-id @complete-triggered-promise)
+                                             (log/info "closing request body as" message)
+                                             (counters/dec! request-body-streaming-counter)
+                                             (when throwable
+                                               (log/error throwable "unable to stream request bytes, aborting request")
+                                               (async/>!! abort-ch throwable))
+                                             (report-request-size-metrics 0 true)
+                                             (async/close! body-ch))))))]
+    (counters/inc! request-body-streaming-counter)
+    (when ctrl-ch
+      (async/go
+        (let [ctrl-data (async/<! ctrl-ch)
+              ctrl-ex (some-> ctrl-data second)]
+          (complete-request-streaming "ctrl-chan has been triggered" ctrl-ex)
+          (async/close! ctrl-ch))))
     (try
       (.setReadListener
         input-stream
         (reify ReadListener
           (onAllDataRead [_]
-            (complete-request-streaming nil))
+            (complete-request-streaming "all data has been read" nil))
           (onDataAvailable [_]
             (try
               (cid/with-correlation-id
@@ -270,12 +284,12 @@
                     (when (and (utils/non-neg? bytes-read) (.isReady input-stream))
                       (recur)))))
               (catch Throwable throwable
-                (complete-request-streaming throwable)
+                (complete-request-streaming "there was error in streaming data" throwable)
                 (throw throwable))))
           (onError [_ throwable]
-            (complete-request-streaming throwable))))
+            (complete-request-streaming "there was error in request data stream" throwable))))
       (catch Throwable throwable
-        (complete-request-streaming throwable)))
+        (complete-request-streaming "there was error in registering read listener" throwable)))
     body-ch))
 
 (defn- make-http-request
@@ -283,13 +297,13 @@
   [^HttpClient http-client make-basic-auth-fn
    request-method endpoint query-string headers body trailers-fn
    service-id service-password metric-group {:keys [username principal]}
-   idle-timeout streaming-timeout-ms output-buffer-size proto-version]
+   idle-timeout streaming-timeout-ms output-buffer-size proto-version ctrl-ch]
   (let [auth (make-basic-auth-fn endpoint "waiter" service-password)
         headers (headers/assoc-auth-headers headers username principal)
         abort-ch (async/promise-chan)
         body' (cond->> body
                 (instance? ServletInputStream body)
-                (servlet-input-stream->channel service-id metric-group streaming-timeout-ms abort-ch))]
+                (servlet-input-stream->channel service-id metric-group streaming-timeout-ms abort-ch ctrl-ch))]
     (http/request
       http-client
       {:abort-ch abort-ch
@@ -310,7 +324,7 @@
 (defn make-request
   "Makes an asynchronous http request to the instance endpoint and returns a channel."
   [http-clients make-basic-auth-fn service-id->password-fn {:keys [host] :as instance}
-   {:keys [body instance-request-overrides query-string request-method trailers-fn] :as request}
+   {:keys [body ctrl-mult instance-request-overrides query-string request-method trailers-fn] :as request}
    {:keys [initial-socket-timeout-ms output-buffer-size streaming-timeout-ms]}
    passthrough-headers end-route metric-group backend-proto proto-version]
   (let [port-index (get instance-request-overrides :port-index 0)
@@ -323,6 +337,8 @@
         headers (-> (dissoc passthrough-headers "authorization" "expect")
                     (headers/dissoc-hop-by-hop-headers proto-version)
                     (assoc "cookie" (auth/remove-auth-cookie (get passthrough-headers "cookie"))))
+        ctrl-ch (when ctrl-mult
+                  (async/tap ctrl-mult (au/latest-chan) true))
         waiter-debug-enabled? (utils/request->debug-enabled? request)]
     (try
       (let [content-length-str (get passthrough-headers "content-length")
@@ -340,7 +356,7 @@
       (make-http-request
         http-client make-basic-auth-fn request-method instance-endpoint query-string headers body trailers-fn
         service-id service-password metric-group auth-user-map initial-socket-timeout-ms streaming-timeout-ms
-        output-buffer-size proto-version))))
+        output-buffer-size proto-version ctrl-ch))))
 
 (defn extract-async-request-response-data
   "Helper function that inspects the response and returns the location and query-string if the response
