@@ -263,12 +263,14 @@
                 rpc-result (.sendPackage grpc-client request-headers id from content sleep-duration-ms deadline-duration-ms)
                 ^CourierReply reply (.result rpc-result)
                 ^Status status (.status rpc-result)
-                assertion-message (str (cond-> {:correlation-id correlation-id
+                assertion-message (->> (cond-> {:correlation-id correlation-id
                                                 :service-id service-id}
                                          reply (assoc :reply {:id (.getId reply)
                                                               :response (.getResponse reply)})
                                          status (assoc :status {:code (-> status .getCode str)
-                                                                :description (.getDescription status)})))]
+                                                                :description (.getDescription status)}))
+                                    (into (sorted-map))
+                                    str)]
             (assert-grpc-deadline-exceeded-status status assertion-message)
             (is (nil? reply) assertion-message)
             (.await sleep-duration-latch)
@@ -428,14 +430,16 @@
                       rpc-result (.collectPackages grpc-client request-headers ids from messages 100 false cancel-threshold cancel-policy 60000)
                       summaries (.result rpc-result)
                       ^Status status (.status rpc-result)
-                      assertion-message (str (cond-> {:correlation-id correlation-id
+                      assertion-message (->> (cond-> {:correlation-id correlation-id
                                                       :service-id service-id
                                                       :summaries (map (fn [^CourierSummary s]
                                                                         {:num-messages (.getNumMessages s)
                                                                          :total-length (.getTotalLength s)})
                                                                       summaries)}
                                                status (assoc :status {:code (-> status .getCode str)
-                                                                      :description (.getDescription status)})))]
+                                                                      :description (.getDescription status)}))
+                                          (into (sorted-map))
+                                          str)]
                   (log/info correlation-id "collecting independent packages...")
                   (cond
                     (= cancel-policy-context cancel-policy)
@@ -467,14 +471,16 @@
                       rpc-result (.collectPackages grpc-client request-headers ids from messages 100 true cancel-threshold cancel-policy 60000)
                       summaries (.result rpc-result)
                       ^Status status (.status rpc-result)
-                      assertion-message (str (cond-> {:correlation-id correlation-id
+                      assertion-message (->> (cond-> {:correlation-id correlation-id
                                                       :service-id service-id
                                                       :summaries (map (fn [^CourierSummary s]
                                                                         {:num-messages (.getNumMessages s)
                                                                          :total-length (.getTotalLength s)})
                                                                       summaries)}
                                                status (assoc :status {:code (-> status .getCode str)
-                                                                      :description (.getDescription status)})))]
+                                                                      :description (.getDescription status)}))
+                                          (into (sorted-map))
+                                          str)]
                   (log/info correlation-id "collecting lock-step packages...")
                   (cond
                     (= cancel-policy-context cancel-policy)
@@ -657,12 +663,14 @@
                       rpc-result (.aggregatePackages grpc-client request-headers ids from messages 10 cancel-threshold cancel-policy 60000)
                       ^CourierSummary summary (.result rpc-result)
                       ^Status status (.status rpc-result)
-                      assertion-message (str (cond-> {:correlation-id correlation-id
+                      assertion-message (->> (cond-> {:correlation-id correlation-id
                                                       :service-id service-id}
                                                summary (assoc :summary {:num-messages (.getNumMessages summary)
                                                                         :total-length (.getTotalLength summary)})
                                                status (assoc :status {:code (-> status .getCode str)
-                                                                      :description (.getDescription status)})))]
+                                                                      :description (.getDescription status)}))
+                                          (into (sorted-map))
+                                          str)]
                   (log/info correlation-id "aggregated packages...")
                   (cond
                     (= cancel-policy-context cancel-policy)
@@ -703,12 +711,14 @@
                                                    cancel-threshold cancel-policy-none deadline-duration-ms)
                     ^CourierSummary summary (.result rpc-result)
                     ^Status status (.status rpc-result)
-                    assertion-message (str (cond-> {:correlation-id correlation-id
+                    assertion-message (->> (cond-> {:correlation-id correlation-id
                                                     :service-id service-id}
                                              summary (assoc :summary {:num-messages (.getNumMessages summary)
                                                                       :total-length (.getTotalLength summary)})
                                              status (assoc :status {:code (-> status .getCode str)
-                                                                    :description (.getDescription status)})))]
+                                                                    :description (.getDescription status)}))
+                                        (into (sorted-map))
+                                        str)]
                 (log/info correlation-id "aggregated packages...")
                 (assert-grpc-deadline-exceeded-status status assertion-message)
                 (is (nil? summary) assertion-message)
