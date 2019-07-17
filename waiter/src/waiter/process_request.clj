@@ -469,6 +469,20 @@
                     (log/warn "unable to abort as request not found inside response!"))]
       (log/info "aborted backend request:" aborted))))
 
+(defn- introspect-trailers
+  "Introspects and logs trailers received in the response"
+  [{:keys [trailers] :as response}]
+  (if trailers
+    (let [trailers-ch (async/promise-chan)
+          correlation-id (cid/get-correlation-id)]
+      (async/go
+        (when-let [trailers-data (async/<! trailers)]
+          (async/>! trailers-ch trailers-data)
+          (cid/cinfo correlation-id "response trailers:" trailers-data))
+        (async/close! trailers-ch))
+      (assoc response :trailers trailers-ch))
+    response))
+
 (defn- forward-grpc-status-headers-in-trailers
   "Adds logging for tracking response trailers for requests.
    Since we always send some trailers, we need to repeat the grpc status headers in the trailers
@@ -518,8 +532,9 @@
         (async/close! abort-ch))
       ;; stop writing any content in the body from stream-http-response and trigger request completion
       (async/close! body)
-      ;; do not expect any trailers either in the response
-      (async/close! trailers)
+      (when trailers
+        ;; do not expect any trailers either in the response
+        (async/close! trailers))
       ;; eagerly close channel as request is deemed a success and avoid blocking in stream-http-response
       (async/close! error-chan))
     response))
@@ -557,6 +572,7 @@
             location (post-process-async-request-response-fn
                        service-id metric-group backend-proto instance (handler/make-auth-user-map request)
                        reason-map instance-request-properties location query-string))
+          (introspect-trailers)
           (handle-grpc-error-response request backend-proto reservation-status-promise)
           (forward-grpc-status-headers-in-trailers)
           (assoc :body resp-chan)
