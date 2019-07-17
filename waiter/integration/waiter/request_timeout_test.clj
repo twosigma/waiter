@@ -223,7 +223,7 @@
                                                  (quot 1000000))] ; truncated nanos->millis
               (is (<= startup-delay-ms instance-acquired-delay-ms)
                   (str "Healthy instance was found in just " instance-acquired-delay-ms " ms (too short)")))
-            (when (using-marathon? waiter-url)
+            (when (can-query-for-grace-period? waiter-url)
               (is (= (t/in-seconds grace-period) (service-id->grace-period waiter-url service-id)))))
           (delete-service waiter-url service-id))
         (finally
