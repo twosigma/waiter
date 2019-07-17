@@ -31,7 +31,7 @@
   (:import (org.apache.commons.codec.binary Base64)
            (org.eclipse.jetty.client.api Authentication$Result Request)
            (org.eclipse.jetty.http HttpHeader)
-           (org.ietf.jgss GSSManager GSSCredential GSSContext GSSName Oid)
+           (org.ietf.jgss GSSManager GSSCredential GSSContext GSSException GSSName Oid)
            (java.net URI)
            (java.util.concurrent ThreadPoolExecutor)))
 
@@ -120,6 +120,13 @@
                               (gss-get-principal gss-context))]
               (async/>!! response-chan {:principal principal
                                         :token token}))
+            (catch GSSException ex
+              (log/error ex "gss exception during kerberos auth")
+              (async/>!! response-chan
+                         {:error (ex-info "Error during Kerberos authentication"
+                                          {:details (.getMessage ex)
+                                           :status 403}
+                                          ex)}))
             (catch Throwable th
               (log/error th "error while performing kerberos auth")
               (async/>!! response-chan {:error th}))
