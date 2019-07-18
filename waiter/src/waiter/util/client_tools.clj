@@ -103,12 +103,17 @@
           (log/info "port" port "is already in use, assuming Waiter is running"))
         (str (retrieve-hostname) ":" port)))))
 
+(defn retrieve-waiter-port
+  "Retrieves the Waiter port for receiving http requests."
+  [waiter-url]
+  (or (second (str/split waiter-url #":" 2))
+      "80"))
+
 (defn retrieve-h2c-port
   "Retrieves the Waiter port for receiving h2c requests."
   [waiter-url]
   (or (System/getenv "WAITER_H2C_PORT")
-      (second (str/split waiter-url #":" 2))
-      "80"))
+      (retrieve-waiter-port waiter-url)))
 
 (defn retrieve-h2c-url
   "Retrieves the Waiter url for receiving h2c requests."
@@ -130,6 +135,12 @@
   (str (first (str/split waiter-url #":" 2))
        ":"
        (retrieve-ssl-port ssl-port)))
+
+(defn behind-proxy?
+  "Returns true if Waiter if running behind a proxy."
+  [waiter-url]
+  (not= (retrieve-waiter-port waiter-url)
+        (retrieve-h2c-port waiter-url)))
 
 (defn interval-to-str [^Period interval]
   (let [builder (doto (PeriodFormatterBuilder.)

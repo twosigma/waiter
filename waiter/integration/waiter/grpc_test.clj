@@ -274,7 +274,9 @@
             (assert-grpc-deadline-exceeded-status status assertion-message)
             (is (nil? reply) assertion-message)
             (.await sleep-duration-latch)
-            (assert-request-state grpc-client request-headers service-id correlation-id ::deadline-exceeded)))))))
+            ;; TODO undo after fix to https://github.com/haproxy/haproxy/issues/172
+            (when-not (behind-proxy? waiter-url)
+              (assert-request-state grpc-client request-headers service-id correlation-id ::deadline-exceeded))))))))
 
 (deftest ^:parallel ^:integration-fast test-grpc-unary-call-server-cancellation
   (testing-using-waiter-url
@@ -458,7 +460,9 @@
                            (map #(.getTotalLength ^CourierSummary %) summaries))
                         assertion-message))
                   (Thread/sleep 1500) ;; sleep to allow cancellation propagation to backend
-                  (assert-request-state grpc-client request-headers service-id correlation-id ::client-cancel)))
+                  ;; TODO undo after fix to https://github.com/haproxy/haproxy/issues/172
+                  (when-not (behind-proxy? waiter-url)
+                    (assert-request-state grpc-client request-headers service-id correlation-id ::client-cancel))))
 
               (testing (str "lock-step mode " max-message-length " messages completion")
                 (log/info "starting streaming to and from server - lock-step mode test")
@@ -498,7 +502,9 @@
                            (map #(.getTotalLength ^CourierSummary %) summaries))
                         assertion-message))
                   (Thread/sleep 1500) ;; sleep to allow cancellation propagation to backend
-                  (assert-request-state grpc-client request-headers service-id correlation-id ::client-cancel))))))))))
+                  ;; TODO undo after fix to https://github.com/haproxy/haproxy/issues/172
+                  (when-not (behind-proxy? waiter-url)
+                    (assert-request-state grpc-client request-headers service-id correlation-id ::client-cancel)))))))))))
 
 (deftest ^:parallel ^:integration-slow test-grpc-bidi-streaming-server-exit
   (testing-using-waiter-url
@@ -681,7 +687,9 @@
                     (assert-grpc-unknown-status status "call was cancelled" assertion-message))
                   (is (nil? summary) assertion-message)
                   (Thread/sleep 1500) ;; sleep to allow cancellation propagation to backend
-                  (assert-request-state grpc-client request-headers service-id correlation-id ::client-cancel))))))))))
+                  ;; TODO undo after fix to https://github.com/haproxy/haproxy/issues/172
+                  (when-not (behind-proxy? waiter-url)
+                    (assert-request-state grpc-client request-headers service-id correlation-id ::client-cancel)))))))))))
 
 (deftest ^:parallel ^:integration-fast test-grpc-client-streaming-deadline-exceeded
   (testing-using-waiter-url
@@ -723,7 +731,9 @@
                 (assert-grpc-deadline-exceeded-status status assertion-message)
                 (is (nil? summary) assertion-message)
                 (.await sleep-duration-latch)
-                (assert-request-state grpc-client request-headers service-id correlation-id ::deadline-exceeded)))))))))
+                ;; TODO undo after fix to https://github.com/haproxy/haproxy/issues/172
+                (when-not (behind-proxy? waiter-url)
+                  (assert-request-state grpc-client request-headers service-id correlation-id ::deadline-exceeded))))))))))
 
 (deftest ^:parallel ^:integration-slow test-grpc-client-streaming-server-exit
   (testing-using-waiter-url
