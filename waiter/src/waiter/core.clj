@@ -115,6 +115,7 @@
                               ["/maintainer" :state-maintainer-handler-fn]
                               ["/router-metrics" :state-router-metrics-handler-fn]
                               ["/scheduler" :state-scheduler-handler-fn]
+                              ["/service-description-builder" :state-service-description-builder-handler-fn]
                               ["/statsd" :state-statsd-handler-fn]
                               [["/" :service-id] :state-service-handler-fn]]
                      "status" :status-handler-fn
@@ -1448,6 +1449,12 @@
                                  (wrap-secure-request-fn
                                    (fn scheduler-state-handler-fn [request]
                                      (handler/get-scheduler-state router-id scheduler request))))
+   :state-service-description-builder-handler-fn (pc/fnk [[:state router-id service-description-builder]]
+                                                   (fn service-description-builder-state-handler-fn [request]
+                                                     (handler/get-query-fn-state
+                                                       router-id
+                                                       #(sd/state service-description-builder)
+                                                       request)))
    :state-service-handler-fn (pc/fnk [[:daemons state-sources]
                                       [:state instance-rpc-chan local-usage-agent router-id]
                                       wrap-secure-request-fn]

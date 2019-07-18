@@ -2375,3 +2375,6 @@
     (store-source-tokens! synchronize-fn kv-store service-id source-tokens-4)
     (is (= #{source-tokens-1 source-tokens-3 source-tokens-4}
            (service-id->source-tokens-entries kv-store service-id)))))
+
+(deftest test-service-description-builder-state
+  (is {} (state (create-default-service-description-builder {}))))

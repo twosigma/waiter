@@ -525,6 +525,9 @@
   (build [this core-service-description args-map]
     "Returns a map of {:service-id ..., :service-description ..., :core-service-description...}")
 
+  (state [this]
+    "Returns the global (i.e. non-service-specific) state the service description builder is maintaining")
+
   (validate [this service-description args-map]
     "Throws if the provided service-description is not valid"))
 
@@ -554,6 +557,9 @@
       {:core-service-description core-service-description
        :service-description service-description
        :service-id service-id}))
+
+  (state [_]
+    {})
 
   (validate [_ service-description args-map]
     (->> (merge-with set/union args-map {:valid-cmd-types #{"docker" "shell"}})
