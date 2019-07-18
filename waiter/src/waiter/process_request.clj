@@ -413,7 +413,10 @@
                                         ;; don't wait forever to write to server
                                         (au/timed-offer! resp-chan buffer streaming-timeout-ms)))
                                 [(+ bytes-streamed bytes-read) true]
-                                (let [{:keys [error]} (async/alts! [error-chan (async/timeout 5000)] :priority true)
+                                (let [timeout-ch (async/timeout 5000)
+                                      [{:keys [error]} source-ch] (async/alts! [error-chan timeout-ch] :priority true)
+                                      _ (when (= timeout-ch source-ch)
+                                          (log/warn "timeout while reading from error-chan"))
                                       ex (ex-info "Unable to stream, back pressure in resp-chan. Is connection live?"
                                                   {:bytes-pending bytes-read
                                                    :bytes-streamed bytes-streamed
