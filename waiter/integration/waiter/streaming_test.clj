@@ -52,12 +52,14 @@
             _ (log/info "metrics" (get service-settings :metrics))
             aggregate-metrics (get-in service-settings [:metrics :aggregate])
             request-counts (get-in aggregate-metrics [:counters :request-counts])
+            request-counts-str (str request-counts)
             request-size-histogram (get-in aggregate-metrics [:histograms :request-size])
             response-size-histogram (get-in aggregate-metrics [:histograms :response-size])]
-        (is (zero? (:outstanding request-counts)) (-> aggregate-metrics))
-        (is (zero? (:streaming request-counts)))
-        (is (= (inc num-streaming-requests) (:successful request-counts)))
-        (is (= (inc num-streaming-requests) (:total request-counts)))
+        (is (zero? (:outstanding request-counts)) request-counts-str)
+        (is (zero? (:request-body-streaming request-counts)) request-counts-str)
+        (is (zero? (:streaming request-counts)) request-counts-str)
+        (is (= (inc num-streaming-requests) (:successful request-counts)) request-counts-str)
+        (is (= (inc num-streaming-requests) (:total request-counts)) request-counts-str)
         ;; there is no content length on the canary request
         (is (= (inc num-streaming-requests) (get request-size-histogram :count 0))
             (str "request-size-histogram: " request-size-histogram))
