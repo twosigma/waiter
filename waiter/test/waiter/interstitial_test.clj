@@ -20,8 +20,11 @@
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.test :refer :all]
+            [metrics.counters :as counters]
             [plumbing.core :as pc]
             [waiter.interstitial :refer :all]
+            [waiter.metrics :as metrics]
+            [waiter.test-helpers :refer :all]
             [waiter.util.async-utils :as au]
             [waiter.util.client-tools :as ct])
   (:import (org.joda.time DateTime)))
@@ -178,49 +181,58 @@
           (is (= :interstitial-timeout (deref interstitial-promise 0 :not-initialized))))))))
 
 (deftest test-interstitial-maintainer
-  (let [resolved-service-ids #{"service-1" "service-3" "service-5" "service-7"}
-        unresolved-service-ids #{"service-2" "service-4" "service-6"}
-        all-service-ids (set/union resolved-service-ids unresolved-service-ids)
-        interstitial-state-atom (->> all-service-ids
-                                     (pc/map-from-keys (fn [service-id]
-                                                         (let [p (promise)]
-                                                           (when (contains? resolved-service-ids service-id)
-                                                             (deliver p :resolved-from-test))
-                                                           p)))
-                                     (assoc {:initialized? false} :service-id->interstitial-promise)
-                                     atom)
-        available-service-ids #{"service-0" "service-7" "service-8" "service-9"}
-        router-message {:all-available-service-ids available-service-ids
-                        :service-id->healthy-instances {"service-0" [{:id "service-0.1"}]
-                                                        "service-4" nil
-                                                        "service-6" [{:id "service-6.1"}]
-                                                        "service-8" [{:id "service-8.1"}]
-                                                        "service-9" []}}
-        service-id->service-description (fn [service-id]
-                                          {"interstitial-secs" (->> (str/last-index-of service-id "-")
-                                                                    inc
-                                                                    (subs service-id)
-                                                                    Integer/parseInt)})
-        router-state-chan (au/latest-chan)
-        initial-state {:available-service-ids all-service-ids}
-        {:keys [exit-chan query-chan]}
-        (interstitial-maintainer service-id->service-description router-state-chan interstitial-state-atom initial-state)]
+  (with-isolated-registry
+    (let [resolved-service-ids #{"service-1" "service-3" "service-5" "service-7"}
+          unresolved-service-ids #{"service-2" "service-4" "service-6"}
+          all-service-ids (set/union resolved-service-ids unresolved-service-ids)
+          interstitial-state-atom (->> all-service-ids
+                                    (pc/map-from-keys (fn [service-id]
+                                                        (let [p (promise)]
+                                                          (when (contains? resolved-service-ids service-id)
+                                                            (deliver p :resolved-from-test))
+                                                          p)))
+                                    (assoc {:initialized? false} :service-id->interstitial-promise)
+                                    atom)
+          available-service-ids #{"service-0" "service-7" "service-8" "service-9"}
+          router-message {:all-available-service-ids available-service-ids
+                          :service-id->healthy-instances {"service-0" [{:id "service-0.1"}]
+                                                          "service-4" nil
+                                                          "service-6" [{:id "service-6.1"}]
+                                                          "service-8" [{:id "service-8.1"}]
+                                                          "service-9" []}}
+          service-id->service-description (fn [service-id]
+                                            {"interstitial-secs" (->> (str/last-index-of service-id "-")
+                                                                   inc
+                                                                   (subs service-id)
+                                                                   Integer/parseInt)})
+          router-state-chan (au/latest-chan)
+          initial-state {:available-service-ids all-service-ids}
+          {:keys [exit-chan query-chan]}
+          (interstitial-maintainer service-id->service-description router-state-chan interstitial-state-atom initial-state)]
 
-    (async/>!! router-state-chan router-message)
-    (let [response-chan (async/promise-chan)
-          _ (async/>!! query-chan {:response-chan response-chan})
-          state (async/<!! response-chan)]
-      (is (= (set/union (set available-service-ids) unresolved-service-ids)
-             (set (get-in state [:maintainer :available-service-ids]))))
-      (is (get-in state [:interstitial :initialized?]))
-      (is (= {"service-2" :not-realized
-              "service-4" :not-realized
-              "service-6" :healthy-instance-found
-              "service-7" :resolved-from-test
-              "service-8" :healthy-instance-found
-              "service-9" :not-realized}
-             (get-in state [:interstitial :service-id->interstitial-promise]))))
-    (async/>!! exit-chan :exit)))
+      (async/>!! router-state-chan router-message)
+      (let [response-chan (async/promise-chan)
+            _ (async/>!! query-chan {:response-chan response-chan})
+            state (async/<!! response-chan)
+            expected-available-service-ids (set/union (set available-service-ids) unresolved-service-ids)]
+        (is (wait-for #(= (count expected-available-service-ids)
+                          (counters/value (metrics/waiter-counter "interstitial" "available-services")))))
+        (is (= expected-available-service-ids
+               (set (get-in state [:maintainer :available-service-ids]))))
+        (is (get-in state [:interstitial :initialized?]))
+        (is (= {"service-2" :not-realized
+                "service-4" :not-realized
+                "service-6" :healthy-instance-found
+                "service-7" :resolved-from-test
+                "service-8" :healthy-instance-found
+                "service-9" :not-realized}
+               (get-in state [:interstitial :service-id->interstitial-promise]))))
+      (async/>!! exit-chan :exit)
+      ;; ensures async processes that are writing metrics have completed
+      (is (wait-for #(= 2 (counters/value (metrics/waiter-counter "interstitial" "promise" "resolved")))))
+      (is (wait-for #(= 2 (counters/value (metrics/waiter-counter "interstitial" "promise" "total")))))
+      (is (wait-for #(= 2 (counters/value (metrics/waiter-counter "interstitial" "resolution" "healthy-instance-found")))))
+      (is (wait-for #(zero? (counters/value (metrics/waiter-counter "interstitial" "resolution" "interstitial-timeout"))))))))
 
 (deftest test-wrap-interstitial
   (let [handler (fn [request] (assoc (select-keys request [:query-string :request-id]) :status 201))

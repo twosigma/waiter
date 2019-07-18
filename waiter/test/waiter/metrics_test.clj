@@ -26,10 +26,10 @@
             [plumbing.core :as pc]
             [waiter.core :as core]
             [waiter.metrics :refer :all]
-            [waiter.test-helpers :as test-helpers]
+            [waiter.test-helpers :refer :all]
             [waiter.util.async-utils :as au]
             [waiter.util.utils :as utils])
-  (:import (com.codahale.metrics MetricFilter MetricRegistry)
+  (:import (com.codahale.metrics MetricFilter)
            (org.joda.time DateTime)))
 
 (deftest test-compress-strings
@@ -55,15 +55,6 @@
   (is (= '(.concat (.concat "a." b) ".c") (metric-name ["a" 'b "c"])))
   (is (= '(.concat (.concat "a.b." c) ".d") (metric-name ["a" "b" 'c "d"])))
   (is (= '(.concat (.concat "a." b) ".c.d") (metric-name ["a" 'b "c" "d"]))))
-
-(def ^:private all-metrics-match-filter (reify MetricFilter (matches [_ _ _] true)))
-
-(defmacro with-isolated-registry
-  [& body]
-  `(with-redefs [mc/default-registry (MetricRegistry.)]
-     (.removeMatching mc/default-registry all-metrics-match-filter)
-     (do ~@body)
-     (.removeMatching mc/default-registry all-metrics-match-filter)))
 
 (deftest test-service-counter
   (with-isolated-registry
@@ -363,9 +354,9 @@
                                            {:keys [iteration]} (async/<!! response-chan)]
                                        iteration))
                 initial-iteration (retrieve-iteration)]
-            (test-helpers/wait-for #(> (retrieve-iteration) initial-iteration)
-                                   :interval metrics-gc-interval-ms
-                                   :unit-multiplier 1)))]
+            (wait-for #(> (retrieve-iteration) initial-iteration)
+                      :interval metrics-gc-interval-ms
+                      :unit-multiplier 1)))]
     (testing "Transient Data producer"
       (reset! service-id->metrics-atom {})
       (create-metrics "test-service-1")
