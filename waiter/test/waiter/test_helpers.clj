@@ -24,11 +24,13 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.tools.namespace.find :as find]
+            [metrics.core :as mc]
             [qbits.jet.client.http :as http]
             [waiter.correlation-id :as cid]
             [waiter.util.client-tools :as ct]
             [waiter.util.date-utils :as du])
-  (:import java.io.ByteArrayOutputStream
+  (:import (com.codahale.metrics MetricFilter MetricRegistry)
+           (java.io ByteArrayOutputStream)
            (java.net InetAddress URL)
            (javax.servlet ServletOutputStream ServletResponse)))
 
@@ -369,4 +371,15 @@
       (throw (ex-info (str fail " failure(s)") m)))
     (when-not (zero? error)
       (throw (ex-info (str error " error(s)") m)))))
+
+(def all-metrics-match-filter (reify MetricFilter (matches [_ _ _] true)))
+
+(defmacro with-isolated-registry
+  [& body]
+  `(with-redefs [mc/default-registry (MetricRegistry.)]
+     (.removeMatching mc/default-registry all-metrics-match-filter)
+     (try
+       (do ~@body)
+       (finally
+         (.removeMatching mc/default-registry all-metrics-match-filter)))))
 

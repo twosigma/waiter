@@ -19,20 +19,12 @@
             [metrics.core :as mc]
             [metrics.counters :as counters]
             [waiter.metrics :as metrics]
+            [waiter.test-helpers :refer :all]
             [waiter.reporter :refer :all])
   (:import (clojure.lang ExceptionInfo)
-           (com.codahale.metrics MetricFilter MetricRegistry ConsoleReporter)
+           (com.codahale.metrics ConsoleReporter)
            (com.codahale.metrics.graphite GraphiteSender)
            (java.io PrintStream ByteArrayOutputStream)))
-
-(def ^:private all-metrics-match-filter (reify MetricFilter (matches [_ _ _] true)))
-
-(defmacro with-isolated-registry
-  [& body]
-  `(with-redefs [mc/default-registry (MetricRegistry.)]
-     (.removeMatching mc/default-registry all-metrics-match-filter)
-     (do ~@body)
-     (.removeMatching mc/default-registry all-metrics-match-filter)))
 
 (deftest console-reporter-bad-schema
   (is (thrown-with-msg? ExceptionInfo #"period-ms missing-required-key"
