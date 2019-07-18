@@ -76,30 +76,27 @@
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-s3-logs
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
-      (let [headers {:x-waiter-name (rand-name)
+      (let [log-bucket-url (-> waiter-url get-kubernetes-scheduler-settings :log-bucket-url)
+            headers {:x-waiter-name (rand-name)
+                     :x-waiter-concurrency-level 1
+                     :x-waiter-distribution-scheme "simple"
                      :x-waiter-max-instances 2
                      :x-waiter-scale-up-factor 0.99
-                     :x-waiter-scale-down-factor 0.99
-                     :x-kitchen-delay-ms 500}
+                     :x-waiter-scale-down-factor 0.99}
             _ (log/info "making canary request...")
-            {:keys [cookies instance-id service-id]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
-            request-fn (fn [] (->> #(make-kitchen-request waiter-url %)
-                                   (make-request-with-debug-info headers)
-                                   :instance-id))]
+            {:keys [cookies instance-id service-id]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
+
         (with-service-cleanup
           service-id
           (assert-service-on-all-routers waiter-url service-id cookies)
 
           ;; Test that the active instances' logs are available.
-          ;; This portion of the test logic was copied from basic-test/test-basic-logs
           (let [active-instances (get-in (service-settings waiter-url service-id :cookies cookies)
                                          [:instances :active-instances])
                 log-url (:log-url (first active-instances))
-                _ (log/debug "Log Url Active:" log-url)
                 make-request-fn (fn [url] (make-request url "" :verbose true))
                 {:keys [body] :as logs-response} (make-request-fn log-url)
                 _ (assert-response-status logs-response 200)
-                _ (log/debug "Response body:" body)
                 log-files-list (walk/keywordize-keys (json/read-str body))
                 stdout-file-link (:url (first (filter #(= (:name %) "stdout") log-files-list)))
                 stderr-file-link (:url (first (filter #(= (:name %) "stderr") log-files-list)))]
@@ -108,21 +105,34 @@
             (doseq [file-link [stderr-file-link stdout-file-link]]
               (if (string/starts-with? (str file-link) "http")
                 (assert-response-status (make-request-fn file-link) 200)
-                (log/warn "test-basic-logs did not verify file link:" stdout-file-link))))
+                (log/warn "test-s3-logs did not verify file link:" file-link))))
 
-          ;; Get a service with at least one active and one killed instance.
-          ;; This portion of the test logic was copied from basic-test/test-killed-instances
+          ;; Get a service with at least one killed instance.
           (log/info "starting parallel requests")
-          (let [instance-ids-atom (atom #{})
-                instance-request-fn (fn []
-                                      (let [instance-id (request-fn)]
-                                        (swap! instance-ids-atom conj instance-id)))
-                instance-ids (->> (parallelize-requests 4 16 instance-request-fn
-                                                        :canceled? (fn [] (> (count @instance-ids-atom) 2))
-                                                        :verbose true
-                                                        :service-id service-id)
-                                  (reduce set/union))]
-            (is (> (count instance-ids) 1) (str instance-ids)))
+          (let [async-create-headers (assoc headers :x-kitchen-delay-ms 60000)
+                async-request-fn (fn [] (->> #(make-kitchen-request waiter-url % :method :get :path "/async/request")
+                                             (make-request-with-debug-info async-create-headers)))
+                async-responses (->> async-request-fn (repeatedly 2) vec)
+                instance-ids (->> async-responses (map :instance-id) set)]
+            (assert-response-status (first async-responses) 202)
+            (assert-response-status (second async-responses) 202)
+            (is (> (count instance-ids) 1) (str instance-ids))
+            ;; Canceling both of the async requests should scale down to 1 by killing 1 instance.
+            (doseq [async-response async-responses]
+              (let [status-endpoint (response->location async-response)
+                    cancel-response (make-kitchen-request waiter-url headers :method :delete :path status-endpoint)]
+                (assert-response-status cancel-response 204)))
+            (log/info "waiting for at least one instance to get killed")
+            (is (wait-for #(->> (get-in (service-settings waiter-url service-id) [:instances :killed-instances])
+                                (map :id) distinct seq)
+                          :interval 2 :timeout 45)
+                (str "no killed instances found for " service-id)))
+
+            (log/info "waiting for at least one instance to get killed")
+            (is (wait-for #(->> (get-in (service-settings waiter-url service-id) [:instances :killed-instances])
+                                (map :id) distinct seq)
+                          :interval 2 :timeout 45)
+                (str "no killed instances found for " service-id))
 
           (log/info "waiting for at least one instance to get killed")
           (is (wait-for #(->> (get-in (service-settings waiter-url service-id) [:instances :killed-instances])
@@ -160,7 +170,7 @@
             (doseq [file-link [stderr-file-link stdout-file-link]]
               (if (string/starts-with? (str file-link) "http")
                 (assert-response-status (make-request-fn file-link) 200)
-                (log/warn "test-basic-logs did not verify file link:" stdout-file-link)))))))))
+                (log/warn "test-s3-logs did not verify file link:" file-link)))))))))
 
 (defn- check-pod-namespace
   [waiter-url headers expected-namespace]
