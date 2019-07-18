@@ -252,7 +252,7 @@
                                          (let [complete-trigger-id (utils/unique-identifier)]
                                            (deliver complete-triggered-promise complete-trigger-id)
                                            (when (= complete-trigger-id @complete-triggered-promise)
-                                             (log/info "closing request body as" message)
+                                             (log/debug "closing request body as" message)
                                              (counters/dec! request-body-streaming-counter)
                                              (when throwable
                                                (log/error throwable "unable to stream request bytes, aborting request")
