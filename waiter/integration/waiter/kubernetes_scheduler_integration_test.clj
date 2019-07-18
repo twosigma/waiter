@@ -134,7 +134,7 @@
 
           ;; Test that the killed instances' logs were persisted to S3.
           ;; This portion of the test logic was modified from the active-instances tests above.
-          (let [log-bucket-url (k8s-log-bucket-url waiter-url)
+          (let [log-bucket-url (-> waiter-url get-kubernetes-scheduler-settings :log-bucket-url)
                 killed-instances (get-in (service-settings waiter-url service-id :cookies cookies)
                                          [:instances :killed-instances])
                 log-url (:log-url (first killed-instances))
@@ -205,7 +205,7 @@
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
       (let [current-user (retrieve-username)
-            default-namespace (-> waiter-url default-scheduler-settings :replicaset-spec-builder :default-namespace)
+            default-namespace (-> waiter-url get-kubernetes-scheduler-settings :replicaset-spec-builder :default-namespace)
             star-user-header {:x-waiter-run-as-user "*"}
             current-user-header {:x-waiter-run-as-user current-user}
             not-current-user "not-current-user"]

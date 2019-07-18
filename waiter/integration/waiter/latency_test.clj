@@ -74,50 +74,51 @@
 
 (deftest ^:perf test-request-latency-apache-bench
   (testing-using-waiter-url
-    (let [max-instances (Integer/parseInt (or (System/getenv "WAITER_TEST_REQUEST_LATENCY_MAX_INSTANCES") "50"))
-          _ (log/info "using max-instances =" max-instances)
-          client-concurrency-level 300
-          waiter-concurrency-level 4
-          total-requests 100000
-          name (rand-name)
-          extra-headers {:x-waiter-max-instances max-instances
-                         :x-waiter-name name
-                         :x-waiter-scale-down-factor 0.001
-                         :x-waiter-scale-up-factor 0.999
-                         :x-waiter-concurrency-level waiter-concurrency-level
-                         :x-waiter-metric-group "stress_test"}
-          headers (merge (kitchen-request-headers) extra-headers)
-          endpoint "/endpoint"
-          _ (log/info (str "Making canary request..."))
-          canary-response (make-request waiter-url endpoint :headers headers)
-          _ (assert-response-status canary-response 200)
-          service-id (retrieve-service-id waiter-url (:request-headers canary-response))
-          run-apache-bench #(apache-bench waiter-url endpoint headers client-concurrency-level %)
-          warm-up-requests (/ total-requests 10)
-          warm-up-run (run-apache-bench warm-up-requests)]
-      (is (= 0 (:exit warm-up-run)) (:err warm-up-run))
-      (is (= 0 (:failed-requests warm-up-run)))
-      (is (or (= 0 (:write-errors warm-up-run)) (nil? (:write-errors warm-up-run))))
-      (is (= 0 (:non-2xx-responses warm-up-run)))
-      (is (= warm-up-requests (:complete-requests warm-up-run)))
-      (if (= warm-up-requests (:non-2xx-responses warm-up-run))
-        (log/error "All" warm-up-requests "requests had non-2xx responses, bailing out of perf test")
-        (let [running-max-instances #(= max-instances (num-tasks-running waiter-url service-id))
-              running-close-to-max-instances #(<= (int (* 0.90 max-instances)) (num-tasks-running waiter-url service-id))
-              warmed-up (wait-for running-max-instances :interval 1 :timeout 60)]
-          (if warmed-up
-            (let [timing-run (run-apache-bench total-requests)]
-              (is (running-close-to-max-instances))
-              (is (= 0 (:exit timing-run)) (:err timing-run))
-              (is (> (/ 1 1000) (/ (:failed-requests timing-run) total-requests)))
-              (is (or (= 0 (:write-errors timing-run)) (nil? (:write-errors timing-run))))
-              (is (= 0 (:non-2xx-responses warm-up-run)))
-              (is (= total-requests (:complete-requests timing-run)))
-              (log/info "Number of async-threads Waiter is using =" (:async-threads (waiter-settings waiter-url)))
-              (statsd-timing "test_request_latency_apache_bench" waiter-url "latency_50" (:latency-50% timing-run))
-              (statsd-timing "test_request_latency_apache_bench" waiter-url "latency_66" (:latency-66% timing-run))
-              (statsd-timing "test_request_latency_apache_bench" waiter-url "latency_75" (:latency-75% timing-run))
-              (statsd-timing "test_request_latency_apache_bench" waiter-url "latency_80" (:latency-80% timing-run))
-              (statsd-timing "test_request_latency_apache_bench" waiter-url "latency_90" (:latency-90% timing-run)))
-            (log/warn "Failed to warm-up properly"))))
-      (delete-service waiter-url service-id))))
+    (when (using-marathon? waiter-url) ; TODO: this performance test only works on marathon
+      (let [max-instances (Integer/parseInt (or (System/getenv "WAITER_TEST_REQUEST_LATENCY_MAX_INSTANCES") "50"))
+            _ (log/info "using max-instances =" max-instances)
+            client-concurrency-level 300
+            waiter-concurrency-level 4
+            total-requests 100000
+            name (rand-name)
+            extra-headers {:x-waiter-max-instances max-instances
+                           :x-waiter-name name
+                           :x-waiter-scale-down-factor 0.001
+                           :x-waiter-scale-up-factor 0.999
+                           :x-waiter-concurrency-level waiter-concurrency-level
+                           :x-waiter-metric-group "stress_test"}
+            headers (merge (kitchen-request-headers) extra-headers)
+            endpoint "/endpoint"
+            _ (log/info (str "Making canary request..."))
+            canary-response (make-request waiter-url endpoint :headers headers)
+            _ (assert-response-status canary-response 200)
+            service-id (retrieve-service-id waiter-url (:request-headers canary-response))
+            run-apache-bench #(apache-bench waiter-url endpoint headers client-concurrency-level %)
+            warm-up-requests (/ total-requests 10)
+            warm-up-run (run-apache-bench warm-up-requests)]
+        (is (= 0 (:exit warm-up-run)) (:err warm-up-run))
+        (is (= 0 (:failed-requests warm-up-run)))
+        (is (or (= 0 (:write-errors warm-up-run)) (nil? (:write-errors warm-up-run))))
+        (is (= 0 (:non-2xx-responses warm-up-run)))
+        (is (= warm-up-requests (:complete-requests warm-up-run)))
+        (if (= warm-up-requests (:non-2xx-responses warm-up-run))
+          (log/error "All" warm-up-requests "requests had non-2xx responses, bailing out of perf test")
+          (let [running-max-instances #(= max-instances (num-marathon-tasks-running waiter-url service-id))
+                running-close-to-max-instances #(<= (int (* 0.90 max-instances)) (num-marathon-tasks-running waiter-url service-id))
+                warmed-up (wait-for running-max-instances :interval 1 :timeout 60)]
+            (if warmed-up
+              (let [timing-run (run-apache-bench total-requests)]
+                (is (running-close-to-max-instances))
+                (is (= 0 (:exit timing-run)) (:err timing-run))
+                (is (> (/ 1 1000) (/ (:failed-requests timing-run) total-requests)))
+                (is (or (= 0 (:write-errors timing-run)) (nil? (:write-errors timing-run))))
+                (is (= 0 (:non-2xx-responses warm-up-run)))
+                (is (= total-requests (:complete-requests timing-run)))
+                (log/info "Number of async-threads Waiter is using =" (:async-threads (waiter-settings waiter-url)))
+                (statsd-timing "test_request_latency_apache_bench" waiter-url "latency_50" (:latency-50% timing-run))
+                (statsd-timing "test_request_latency_apache_bench" waiter-url "latency_66" (:latency-66% timing-run))
+                (statsd-timing "test_request_latency_apache_bench" waiter-url "latency_75" (:latency-75% timing-run))
+                (statsd-timing "test_request_latency_apache_bench" waiter-url "latency_80" (:latency-80% timing-run))
+                (statsd-timing "test_request_latency_apache_bench" waiter-url "latency_90" (:latency-90% timing-run)))
+              (log/warn "Failed to warm-up properly"))))
+        (delete-service waiter-url service-id)))))

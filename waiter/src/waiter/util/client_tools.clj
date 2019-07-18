@@ -563,37 +563,45 @@
       (log/info ks "=" value))
     value))
 
+(defn retrieve-default-scheduler-name
+  "Return the name of the default 'leaf-level' scheduler"
+  [waiter-url & {:keys [settings] :or {settings nil}}]
+  (let [settings (or settings (waiter-settings waiter-url))
+        kind (get-in settings [:scheduler-config :kind])
+        default-scheduler (get-in settings [:scheduler-config (keyword kind) :default-scheduler])]
+    (or default-scheduler kind)))
+
+(defn get-scheduler-settings
+  "Return the specified scheduler's settings even if the scheduler is part of a composite scheduler."
+  [waiter-url scheduler]
+  (let [{:keys [kind] :as settings} (-> waiter-url waiter-settings :scheduler-config)]
+    (or (get-in settings [(keyword kind) :components scheduler])
+        (get-in settings [scheduler]))))
+
+(defn get-marathon-scheduler-settings
+  "Return the marathon scheduler's settings even if the scheduler is part of a composite scheduler."
+  [waiter-url]
+  (get-scheduler-settings waiter-url :marathon))
+
+(defn get-kubernetes-scheduler-settings
+  "Return the kubernetes scheduler's settings even if the scheduler is part of a composite scheduler."
+  [waiter-url]
+  (get-scheduler-settings waiter-url :kubernetes))
+
 (defn marathon-url
   "Returns the Marathon URL setting"
-  [waiter-url & {:keys [verbose] :or {verbose false}}]
-  (setting waiter-url [:scheduler-config :marathon :url] :verbose verbose))
+  [waiter-url]
+  (-> waiter-url get-marathon-scheduler-settings :url))
 
-(defn k8s-log-bucket-url
-  "Returns the S3 bucket url for K8s service log backups"
-  [waiter-url & {:keys [verbose] :or {verbose false}}]
-  (setting waiter-url [:scheduler-config :kubernetes :log-bucket-url] :verbose verbose))
-
-(defn num-tasks-running [waiter-url service-id & {:keys [verbose prev-tasks-running] :or {verbose false prev-tasks-running -1}}]
+(defn num-marathon-tasks-running [waiter-url service-id & {:keys [prev-tasks-running] :or {prev-tasks-running -1}}]
   (let [http-options {:conn-timeout 10000, :socket-timeout 10000, :spnego-auth use-spnego}
-        marathon-url (marathon-url waiter-url :verbose verbose)
+        marathon-url (marathon-url waiter-url)
         marathon-api (marathon/api-factory http1-client http-options marathon-url)
         info-response (marathon/get-app marathon-api service-id)
         tasks-running' (get-in info-response [:app :tasksRunning])]
     (when (not= prev-tasks-running tasks-running')
       (log/debug service-id "has" tasks-running' "task(s) running."))
     (int tasks-running')))
-
-(defn scale-service-to [waiter-url service-id target-instances]
-  (let [marathon-url (marathon-url waiter-url)]
-    (log/info service-id "being scaled to" target-instances "task(s).")
-    (let [http-options {:conn-timeout 10000, :socket-timeout 10000, :spnego-auth use-spnego}
-          marathon-api (marathon/api-factory http1-client http-options marathon-url)
-          old-descriptor (:app (marathon/get-app marathon-api service-id))
-          new-descriptor (update-in
-                           (select-keys old-descriptor [:id :cmd :mem :cpus :instances])
-                           [:instances]
-                           (fn [_] target-instances))]
-      (marathon/update-app marathon-api service-id new-descriptor))))
 
 (defn delete-service
   ([waiter-url service-id-or-waiter-headers]
@@ -615,11 +623,8 @@
              (when (and (not delete-success) (not no-such-service))
                (log/warn "Unable to delete" service-id)
                (throw (Exception. (str "Unable to delete" service-id)))))))
-       (catch Exception _
-         (try
-           (scale-service-to waiter-url service-id 0)
-           (catch Exception e
-             (log/error "Error in deleting service" service-id ":" (.getMessage e)))))))))
+       (catch Exception e
+         (log/error "Error in deleting service" service-id ":" (.getMessage e)))))))
 
 (defn await-futures
   [futures & {:keys [verbose] :or {verbose false}}]
@@ -940,23 +945,6 @@
         app-info-map (walk/keywordize-keys (try-parse-json (:body app-info-response)))]
     (:gracePeriodSeconds (first (:healthChecks (:app app-info-map))))))
 
-(defn default-scheduler-settings
-  "Return the default 'leaf-level' scheduler's settings map"
-  [waiter-url]
-  (let [{:keys [kind] :as top-settings} (-> waiter-url waiter-settings :scheduler-config)
-        settings (get top-settings (keyword kind))]
-    (if-let [default-sub-scheduler (:default-scheduler settings)]
-      (get-in settings [:components (keyword default-sub-scheduler)])
-      settings)))
-
-(defn retrieve-default-scheduler-name
-  "Return the name of the default 'leaf-level' scheduler"
-  [waiter-url]
-  (let [settings (waiter-settings waiter-url)
-        kind (get-in settings [:scheduler-config :kind])
-        default-scheduler (get-in settings [:scheduler-config (keyword kind) :default-scheduler])]
-    (or default-scheduler kind)))
-
 (defn using-cook?
   "Returns true if Waiter is configured to use Cook for scheduling"
   [waiter-url]
@@ -999,6 +987,7 @@
       (and (using-composite-authenticator? waiter-url)
            (get-in (waiter-settings waiter-url) [:authenticator-config :composite :authentication-providers :saml]))))
 
+;; TODO: make this work not just for marathon
 (defn can-query-for-grace-period?
   "Returns true if Waiter supports querying for grace period"
   [waiter-url]
