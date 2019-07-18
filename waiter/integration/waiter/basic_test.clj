@@ -149,10 +149,11 @@
                                waiter-url request-headers
                                :path "/request-info"
                                :body long-request)
-                  plain-body-json (json/read-str (str (:body plain-resp)))]
-              (is (= (str request-length) (get-in plain-body-json ["headers" "content-length"])))
-              (is (= request-length (get-in plain-body-json ["request-length"])))
-              (is (nil? (get-in plain-body-json ["headers" "transfer-encoding"])))))
+                  plain-body-str (str (:body plain-resp))
+                  plain-body-json (json/read-str plain-body-str)]
+              (is (= (str request-length) (get-in plain-body-json ["headers" "content-length"])) plain-body-str)
+              (is (= request-length (get-in plain-body-json ["request-length"])) plain-body-str)
+              (is (nil? (get-in plain-body-json ["headers" "transfer-encoding"])) plain-body-str)))
 
           (testing "chunked request"
             (let [chunked-resp (make-kitchen-request
@@ -160,10 +161,11 @@
                                  request-headers
                                  :path "/request-info"
                                  :body (ByteArrayInputStream. (.getBytes long-request)))
-                  chunked-body-json (json/read-str (str (:body chunked-resp)))]
-              (is (= request-length (get-in chunked-body-json ["request-length"])))
-              (is (= "chunked" (get-in chunked-body-json ["headers" "transfer-encoding"])))
-              (is (nil? (get-in chunked-body-json ["headers" "content-length"])))))))
+                  chunked-body-str (str (:body chunked-resp))
+                  chunked-body-json (json/read-str chunked-body-str)]
+              (is (= request-length (get-in chunked-body-json ["request-length"])) chunked-body-str)
+              (is (= "chunked" (get-in chunked-body-json ["headers" "transfer-encoding"])) chunked-body-str)
+              (is (nil? (get-in chunked-body-json ["headers" "content-length"])) chunked-body-str)))))
 
       (testing "large header"
         (let [all-chars (map char (range 33 127))
