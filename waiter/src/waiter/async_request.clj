@@ -22,8 +22,9 @@
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.service :as service]
-            [waiter.statsd :as statsd])
-  (:import [java.net ConnectException SocketTimeoutException URI URLEncoder]
+            [waiter.statsd :as statsd]
+            [waiter.util.utils :as utils])
+  (:import [java.net ConnectException SocketTimeoutException URI]
            java.util.concurrent.TimeoutException))
 
 (defn normalize-location-header
@@ -137,7 +138,7 @@
    The function expects prefix to end with a slash and location to begin with a slash.
    Returns a formatted url: prefix/{request-id}/{router-id}/{service-id}/{host}/{port}{location}"
   [prefix {:keys [host location port request-id router-id service-id]}]
-  (let [encode #(if %1 (URLEncoder/encode %1 "UTF-8") (str %1))]
+  (let [encode #(if %1 (utils/url-encode %1 "UTF-8") (str %1))]
     (str prefix (encode request-id) "/" (encode router-id) "/" service-id "/" (str host) "/" (str port) location)))
 
 (defn post-process-async-request-response

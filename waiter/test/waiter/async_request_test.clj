@@ -19,8 +19,8 @@
             [clojure.test :refer :all]
             [plumbing.core :as pc]
             [waiter.async-request :refer :all]
-            [waiter.service :as service])
-  (:import java.net.URLDecoder))
+            [waiter.service :as service]
+            [waiter.util.utils :as utils]))
 
 (deftest test-monitor-async-request
   (let [check-interval-ms 10
@@ -331,7 +331,7 @@
                             (when (str/starts-with? (str uri) prefix)
                               (let [route-uri (subs (str uri) (count prefix))
                                     [request-id router-id service-id host port & remaining] (str/split (str route-uri) #"/")
-                                    decode #(URLDecoder/decode %1 "UTF-8")]
+                                    decode #(utils/url-decode %1 "UTF-8")]
                                 {:host (when-not (str/blank? host) host)
                                  :location (when (seq remaining) (str "/" (str/join "/" remaining)))
                                  :port (when-not (str/blank? port) port)

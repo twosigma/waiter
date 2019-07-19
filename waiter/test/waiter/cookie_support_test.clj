@@ -19,14 +19,9 @@
             [clojure.data.codec.base64 :as b64]
             [clojure.test :refer :all]
             [taoensso.nippy :as nippy]
-            [waiter.cookie-support :refer :all])
-  (:import (clojure.lang ExceptionInfo)
-           org.eclipse.jetty.util.UrlEncoded))
-
-(deftest test-url-decode
-  (is (= "testtest" (url-decode "testtest")))
-  (is (= "test test" (url-decode "test%20test")))
-  (is (nil? (url-decode nil))))
+            [waiter.cookie-support :refer :all]
+            [waiter.util.utils :as utils])
+  (:import (clojure.lang ExceptionInfo)))
 
 (deftest test-cookie-value
   (let [cookie-string "user=john; mode=test; product-name=waiter; special=\"quotes\"abound\""]
@@ -49,7 +44,7 @@
 (deftest test-add-encoded-cookie
   (let [cookie-attrs ";Max-Age=864000;Path=/;HttpOnly=true"
         max-age-sec (-> 10 t/days t/in-seconds)
-        user-cookie (str "user=" (UrlEncoded/encodeString "data:john") cookie-attrs)]
+        user-cookie (str "user=" (utils/url-encode "data:john") cookie-attrs)]
     (with-redefs [b64/encode (fn [^String data-string] (.getBytes data-string))
                   nippy/freeze (fn [input _] (str "data:" input))]
       (is (= {:headers {"set-cookie" user-cookie}}

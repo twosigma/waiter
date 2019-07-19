@@ -21,8 +21,9 @@
             [waiter.cookie-support :as cs]
             [waiter.correlation-id :as cid]
             [waiter.test-helpers]
+            [waiter.util.utils :as utils]
             [waiter.websocket :refer :all])
-  (:import (java.net HttpCookie SocketTimeoutException URLDecoder)
+  (:import (java.net HttpCookie SocketTimeoutException)
            (java.util ArrayList Collection)
            (org.eclipse.jetty.websocket.api MessageTooLargeException UpgradeRequest)
            (org.eclipse.jetty.websocket.client ClientUpgradeRequest)
@@ -166,7 +167,7 @@
                                     (when (= auth/AUTH-COOKIE-NAME (.getName cookie))
                                       (.getValue cookie)))
                                   cookie-list)
-          decoded-auth-value (cs/decode-cookie (URLDecoder/decode auth-cookie-value) password)]
+          decoded-auth-value (cs/decode-cookie (utils/url-decode auth-cookie-value) password)]
       (is (= 1 (count cookie-list)))
       (is auth-cookie-value)
       (is (= 2 (count decoded-auth-value)))

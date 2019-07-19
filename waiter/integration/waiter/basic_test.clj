@@ -27,10 +27,8 @@
             [waiter.service-description :as sd]
             [waiter.util.client-tools :refer :all]
             [waiter.util.date-utils :as du]
-            [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
-  (:import (java.io ByteArrayInputStream)
-           (java.net URLEncoder)))
+  (:import (java.io ByteArrayInputStream)))
 
 (deftest ^:parallel ^:integration-fast test-basic-functionality
   (testing-using-waiter-url
@@ -117,7 +115,7 @@
           (is (= bad-query-string (get (json/read-str body) "query-string"))))
 
         (log/info "Basic test for query-string with encoded characters")
-        (let [bad-query-string (str "q=" (URLEncoder/encode "~`!@$%^&*()_-+={}[]|:;'<>,.?&foo=%12jhsdf"))
+        (let [bad-query-string (str "q=" (utils/url-encode "~`!@$%^&*()_-+={}[]|:;'<>,.?&foo=%12jhsdf"))
               {:keys [body] :as response} (make-kitchen-request
                                             waiter-url
                                             (assoc request-headers :accept "application/json")

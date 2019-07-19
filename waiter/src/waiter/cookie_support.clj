@@ -20,15 +20,9 @@
             [clojure.tools.logging :as log]
             [taoensso.nippy :as nippy]
             [waiter.util.cache-utils :as cu]
-            [waiter.util.ring-utils :as ru])
-  (:import clojure.lang.ExceptionInfo
-           org.eclipse.jetty.util.UrlEncoded))
-
-(defn url-decode
-  "Decode a URL-encoded string.  java.util.URLDecoder is super slow."
-  [^String string]
-  (when string
-    (UrlEncoded/decodeString string)))
+            [waiter.util.ring-utils :as ru]
+            [waiter.util.utils :as utils])
+  (:import clojure.lang.ExceptionInfo))
 
 (defn- strip-double-quotes
   [value]
@@ -43,7 +37,7 @@
   (when cookie-string
     (let [name-regex (re-pattern (str "(?i)" cookie-name "=([^;]+)"))]
       (when-let [^String value (second (re-find name-regex cookie-string))]
-        (-> value url-decode strip-double-quotes)))))
+        (-> value utils/url-decode strip-double-quotes)))))
 
 (defn remove-cookie
   "Removes the specified cookie"
@@ -61,7 +55,7 @@
   "Inserts the provided name-value pair as a Set-Cookie header in the response"
   [response password name value age-in-seconds]
   (letfn [(add-cookie-into-response [response]
-            (let [encoded-cookie (UrlEncoded/encodeString (encode-cookie value password))
+            (let [encoded-cookie (utils/url-encode (encode-cookie value password))
                   path "/"
                   set-cookie-header (str name "=" encoded-cookie ";Max-Age=" age-in-seconds ";Path=" path ";HttpOnly=true")
                   existing-header (get-in response [:headers "set-cookie"])

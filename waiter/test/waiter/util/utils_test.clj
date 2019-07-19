@@ -623,3 +623,13 @@
 (deftest test-update-exception
   (is (= {:a 1 :b 2} (ex-data (update-exception (ex-info "test" {:a 1}) #(assoc % :b 2)))))
   (is (= {:b 2} (ex-data (update-exception (RuntimeException. "test") #(assoc % :b 2))))))
+
+(deftest test-url-decode
+  (is (= "testtest" (url-decode "testtest")))
+  (is (= "test test" (url-decode "test%20test")))
+  (is (nil? (url-decode nil))))
+
+(deftest test-url-encode
+  (is (= "testtest" (url-encode "testtest")))
+  (is (= "test%20test" (url-encode "test test")))
+  (is (nil? (url-encode nil))))

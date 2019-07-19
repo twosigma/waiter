@@ -4,8 +4,9 @@
             [clojure.string :as string]
             [clojure.test :refer :all]
             [reaver :as reaver]
-            [waiter.util.client-tools :refer :all])
-  (:import (java.net URL URLEncoder)))
+            [waiter.util.client-tools :refer :all]
+            [waiter.util.utils :as utils])
+  (:import (java.net URL)))
 
 (deftest ^:parallel ^:integration-fast test-default-composite-authenticator
   (testing-using-waiter-url
@@ -95,8 +96,8 @@
                 saml-redirect-location (get headers "location")
                 {:keys [relay-state saml-response waiter-saml-acs-endpoint]} (perform-saml-authentication saml-redirect-location)
                 {:keys [body] :as response} (make-request waiter-saml-acs-endpoint ""
-                                                          :body (str "SAMLResponse=" (URLEncoder/encode saml-response)
-                                                                     "&RelayState=" (URLEncoder/encode relay-state))
+                                                          :body (str "SAMLResponse=" (utils/url-encode saml-response)
+                                                                     "&RelayState=" (utils/url-encode relay-state))
                                                           :headers {"content-type" "application/x-www-form-urlencoded"}
                                                           :method :post)
                 _ (assert-response-status response 200)
@@ -106,7 +107,7 @@
                                 "form input[name=saml-auth-data]" (reaver/attr :value))
                 _ (is (= (str "http://" waiter-url "/waiter-auth/saml/auth-redirect") waiter-saml-auth-redirect-endpoint))
                 {:keys [cookies headers] :as response} (make-request waiter-url "/waiter-auth/saml/auth-redirect"
-                                                                     :body (str "saml-auth-data=" (URLEncoder/encode saml-auth-data))
+                                                                     :body (str "saml-auth-data=" (utils/url-encode saml-auth-data))
                                                                      :headers {"content-type" "application/x-www-form-urlencoded"}
                                                                      :method :post)
                 _ (assert-response-status response 303)

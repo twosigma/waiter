@@ -23,7 +23,6 @@
             [clojure.walk :as walk]
             [comb.template :as template]
             [digest]
-            [plumbing.core :as pc]
             [taoensso.nippy :as nippy]
             [taoensso.nippy.compression :as compression]
             [waiter.util.date-utils :as du])
@@ -33,10 +32,12 @@
            java.lang.Process
            java.net.ServerSocket
            java.nio.ByteBuffer
+           java.nio.charset.Charset
            java.util.UUID
            java.util.concurrent.ThreadLocalRandom
            java.util.regex.Pattern
            javax.servlet.ServletResponse
+           org.eclipse.jetty.util.UrlEncoded
            (org.joda.time DateTime)
            (schema.utils ValidationError)))
 
@@ -544,3 +545,21 @@
   (if (instance? ExceptionInfo e)
     (ex-info (.getMessage e) (update-fn (ex-data e)) (or (.getCause e) e))
     (ex-info (.getMessage e) (update-fn {}) e)))
+
+(defn url-decode
+  "Decode a URL-encoded string.  java.util.URLDecoder is super slow."
+  ([^String string]
+   (when string
+     (UrlEncoded/decodeString string)))
+  ([^String string charset-name]
+   (when string
+     (UrlEncoded/decodeString string 0 (.length string) (Charset/forName charset-name)))))
+
+(defn url-encode
+  "URL-encode a string.  java.util.URLEncoder is super slow."
+  ([^String string]
+   (when string
+     (UrlEncoded/encodeString string)))
+  ([^String string charset-name]
+   (when string
+     (UrlEncoded/encodeString string (Charset/forName charset-name)))))

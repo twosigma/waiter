@@ -34,8 +34,9 @@
             [waiter.statsd :as statsd]
             [waiter.util.async-utils :as au]
             [waiter.util.http-utils :as hu]
-            [waiter.util.ring-utils :as ru])
-  (:import (java.net HttpCookie SocketTimeoutException URLDecoder URLEncoder)
+            [waiter.util.ring-utils :as ru]
+            [waiter.util.utils :as utils])
+  (:import (java.net HttpCookie SocketTimeoutException)
            (java.nio ByteBuffer)
            (org.eclipse.jetty.websocket.api MessageTooLargeException StatusCode UpgradeRequest)
            (org.eclipse.jetty.websocket.common WebSocketSession)
@@ -56,7 +57,7 @@
                             (seq (.getCookies request)))
           auth-cookie-valid? (and auth-cookie
                                   (-> auth-cookie
-                                      (URLDecoder/decode "UTF-8")
+                                      (utils/url-decode "UTF-8")
                                       (auth/decode-auth-cookie password)
                                       auth/decoded-auth-valid?))]
       (when-not auth-cookie-valid?
@@ -94,7 +95,7 @@
   "Attaches a dummy x-waiter-auth cookie into the request to enable mimic-ing auth in inter-router websocket requests."
   [router-id password ^UpgradeRequest request]
   (let [cookie-value [(str router-id "@waiter-peer-router") (System/currentTimeMillis)]
-        auth-cookie-value (URLEncoder/encode (cookie-support/encode-cookie cookie-value password) "UTF-8")]
+        auth-cookie-value (utils/url-encode (cookie-support/encode-cookie cookie-value password) "UTF-8")]
     (log/info "attaching" auth-cookie-value "to websocket request")
     (-> request
         (.getCookies)
