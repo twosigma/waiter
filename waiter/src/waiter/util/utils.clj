@@ -199,6 +199,7 @@
     (and accept (str/includes? accept "application/json")) "application/json"
     (and accept (str/includes? accept "text/html")) "text/html"
     (and accept (str/includes? accept "text/plain")) "text/plain"
+    (= "application/grpc" content-type) "application/grpc"
     (= "application/json" content-type) "application/json"
     :else "text/plain"))
 
@@ -250,6 +251,10 @@
         content-type (request->content-type request)]
     (attach-waiter-source
       {:body (case content-type
+               "application/grpc"
+               (-> (or (-> data-map :details :friendly-error-message)
+                       (:message error-context))
+                 (str/replace #"\n" "; "))
                "application/json"
                (json/write-str {:waiter-error error-context}
                                :escape-slash false
@@ -294,7 +299,10 @@
       :info (log/info (.getMessage wrapped-ex))
       :warn (log/warn (.getMessage wrapped-ex))
       (log/error wrapped-ex))
-    (-> {:details data, :headers processed-headers, :message response-msg, :status status}
+    (-> {:details data
+         :headers processed-headers
+         :message response-msg
+         :status status}
         (data->error-response request))))
 
 (defmacro log-and-suppress-when-exception-thrown

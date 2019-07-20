@@ -126,6 +126,19 @@
      (when status#
        (is (contains? #{"UNAVAILABLE" "INTERNAL"} (-> status# .getCode str)) assertion-message#))))
 
+(defmacro assert-grpc-status
+  "Asserts that the status represents a grpc status."
+  [status code message-substring assertion-message]
+  `(let [status# ~status
+         code# ~code
+         message-substring# ~message-substring
+         assertion-message# ~assertion-message]
+     (is status# assertion-message#)
+     (when status#
+       (is (= code# (-> status# .getCode str)) assertion-message#)
+       (when message-substring#
+         (is (str/includes? (.getDescription status#) message-substring#) assertion-message#)))))
+
 (defn- count-items
   [xs x]
   (count (filter #(= x %) xs)))
@@ -182,35 +195,67 @@
 
 (deftest ^:parallel ^:integration-fast test-grpc-unary-call
   (testing-using-waiter-url
-    (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)]
+    (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)
+          id (rand-name "m")
+          from (rand-name "f")
+          content (rand-str 1000)
+          grpc-result->assertion-message (fn [correlation-id rpc-result]
+                                           (let [^CourierReply reply (.result rpc-result)
+                                                 ^Status status (.status rpc-result)]
+                                             (->> (cond-> {:correlation-id correlation-id
+                                                           :service-id service-id}
+                                                    reply (assoc :reply {:id (.getId reply)
+                                                                         :response (.getResponse reply)})
+                                                    status (assoc :status {:code (-> status .getCode str)
+                                                                           :description (.getDescription status)}))
+                                               (into (sorted-map))
+                                               str)))]
       (with-service-cleanup
         service-id
         (testing "small request and reply"
           (log/info "starting small request and reply test")
-          (let [id (rand-name "m")
-                from (rand-name "f")
-                content (rand-str 1000)
-                correlation-id (rand-name)
+          (let [correlation-id (rand-name)
                 request-headers (assoc request-headers "x-cid" correlation-id)
                 grpc-client (initialize-grpc-client correlation-id host h2c-port)
                 rpc-result (.sendPackage grpc-client request-headers id from content 1000 10000)
                 ^CourierReply reply (.result rpc-result)
                 ^Status status (.status rpc-result)
-                assertion-message (->> (cond-> {:correlation-id correlation-id
-                                                :service-id service-id}
-                                         reply (assoc :reply {:id (.getId reply)
-                                                              :response (.getResponse reply)})
-                                         status (assoc :status {:code (-> status .getCode str)
-                                                                :description (.getDescription status)}))
-                                    (into (sorted-map))
-                                    str)]
+                assertion-message (grpc-result->assertion-message correlation-id rpc-result)]
             (assert-grpc-ok-status status assertion-message)
             (is reply assertion-message)
             (when reply
               (is (= id (.getId reply)) assertion-message)
               (is (= content (.getMessage reply)) assertion-message)
               (is (= "received" (.getResponse reply)) assertion-message))
-            (assert-request-state grpc-client request-headers service-id correlation-id ::success)))))))
+            (assert-request-state grpc-client request-headers service-id correlation-id ::success)))
+
+        (testing "waiter error - invalid parameters"
+          (log/info "starting waiter error test")
+          (let [correlation-id (rand-name)
+                request-headers (assoc request-headers
+                                  "x-cid" correlation-id
+                                  "x-waiter-concurrency-level" "invalid-value")
+                grpc-client (initialize-grpc-client correlation-id host h2c-port)
+                rpc-result (.sendPackage grpc-client request-headers id from content 1000 10000)
+                ^CourierReply reply (.result rpc-result)
+                ^Status status (.status rpc-result)
+                assertion-message (grpc-result->assertion-message correlation-id rpc-result)]
+            (assert-grpc-status status "INVALID_ARGUMENT" "concurrency-level must be an integer in the range [1, 10000]" assertion-message)
+            (is (nil? reply) assertion-message)))
+
+        (testing "waiter error - response timeout"
+          (log/info "starting waiter error test")
+          (let [correlation-id (rand-name)
+                request-headers (assoc request-headers
+                                  "x-cid" correlation-id
+                                  "x-waiter-timeout" "1000")
+                grpc-client (initialize-grpc-client correlation-id host h2c-port)
+                rpc-result (.sendPackage grpc-client request-headers id from content 5000 10000)
+                ^CourierReply reply (.result rpc-result)
+                ^Status status (.status rpc-result)
+                assertion-message (grpc-result->assertion-message correlation-id rpc-result)]
+            (assert-grpc-status status "DEADLINE_EXCEEDED" "Request to service backend timed out" assertion-message)
+            (is (nil? reply) assertion-message)))))))
 
 (deftest ^:parallel ^:integration-fast test-grpc-unary-call-server-cancellation
   (testing-using-waiter-url

@@ -285,6 +285,48 @@
       (catch Exception e
         (utils/exception->response e request)))))
 
+(defn add-grpc-headers-and-trailers
+  "Finds and attaches the equivalent grpc status codes for the provided http status code."
+  [server-name {:keys [body headers status trailers] :as response}]
+  (if (= server-name (get-in response [:headers "server"]))
+    (if-let [grpc-status-data (cond
+                                (= status 400) ["3" "Bad Request"]
+                                (= status 401) ["16" "Unauthorized"]
+                                (= status 500) ["13" "Internal Server Error"]
+                                (= status 503) ["14" "Service Unavailable"]
+                                (= status 504) ["4" "Gateway Timeout"])]
+      (let [[grpc-status grpc-message] grpc-status-data
+            grpc-message (if (string? body)
+                           (utils/truncate body 128)
+                           grpc-message)
+            trailers-ch (async/promise-chan)
+            new-headers (assoc headers
+                          "content-type" "application/grpc"
+                          "grpc-message" grpc-message
+                          "grpc-status" grpc-status)]
+        (async/go
+          (let [trailers-data (and trailers (async/<! trailers))
+                new-trailers-data (assoc trailers-data
+                                    "grpc-message" grpc-message
+                                    "grpc-status" grpc-status)]
+            (async/>! trailers-ch new-trailers-data)))
+        (-> response
+          (dissoc :body)
+          (assoc :headers new-headers
+                 :trailers trailers-ch)))
+      response)
+    response))
+
+(defn wrap-grpc-status
+  "Attaches grpc-status on Waiter generated responses based on http status codes."
+  [handler server-name]
+  (fn wrap-grpc-status-fn
+    [{:keys [client-protocol headers] :as request}]
+    (let [response (handler request)]
+      (cond-> response
+        (http-utils/grpc? headers client-protocol)
+        (ru/update-response #(add-grpc-headers-and-trailers server-name %))))))
+
 (defn- make-blacklist-request
   [make-inter-router-requests-fn blacklist-period-ms dest-router-id dest-endpoint {:keys [id] :as instance} reason]
   (log/info "peer communication requesting" dest-router-id "to blacklist" id "via endpoint" dest-endpoint)
