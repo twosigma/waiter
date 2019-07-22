@@ -33,6 +33,8 @@
             [waiter.util.http-utils :as http-utils]
             [waiter.util.utils :as utils])
   (:import (java.net HttpCookie URI)
+           (java.io ByteArrayInputStream)
+           (java.nio ByteBuffer)
            (java.util.concurrent Callable Future Executors)
            (org.joda.time Period)
            (org.joda.time.format PeriodFormatterBuilder)))
@@ -1082,3 +1084,20 @@
          cookies# ~cookies]
      (doseq [[_# router-url#] (routers ~waiter-url)]
        (is (wait-for #(seq (active-instances router-url# service-id# :cookies cookies#)))))))
+
+(defn make-chunked-body
+  "Returns a channel that receives chunks from the input body string.
+   Introducing the delay affects the jetty behavior of converting chunked encoding to non-chunked."
+  [body-str chunk-size chunk-delay-ms]
+  (let [body-ch (async/chan 1024)
+        input-stream (ByteArrayInputStream. (.getBytes (str body-str)))]
+    (async/go
+      (loop []
+        (let [buffer-bytes (byte-array chunk-size)
+              bytes-read (.read input-stream buffer-bytes)]
+          (when (pos? bytes-read)
+            (async/put! body-ch (ByteBuffer/wrap buffer-bytes 0 bytes-read))
+            (async/<! (async/timeout chunk-delay-ms))
+            (recur))))
+      (async/close! body-ch))
+    body-ch))

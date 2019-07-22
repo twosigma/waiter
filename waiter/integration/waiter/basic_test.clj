@@ -27,10 +27,8 @@
             [waiter.service-description :as sd]
             [waiter.util.client-tools :refer :all]
             [waiter.util.date-utils :as du]
-            [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
-  (:import (java.io ByteArrayInputStream)
-           (java.net URLEncoder)))
+  (:import (java.net URLEncoder)))
 
 (deftest ^:parallel ^:integration-fast test-basic-functionality
   (testing-using-waiter-url
@@ -160,7 +158,7 @@
                                  waiter-url
                                  request-headers
                                  :path "/request-info"
-                                 :body (ByteArrayInputStream. (.getBytes long-request)))
+                                 :body (make-chunked-body long-request 4096 20))
                   chunked-body-str (str (:body chunked-resp))
                   chunked-body-json (json/read-str chunked-body-str)]
               (is (= request-length (get-in chunked-body-json ["request-length"])) chunked-body-str)
