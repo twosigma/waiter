@@ -121,6 +121,11 @@ def gzip_compress(in_data):
     return out_data
 
 
+def truncate(in_string, truncate_length):
+    "Collapse and truncate the given text to the given length."
+    return in_string[:truncate_length] + (in_string[truncate_length:] and '...')
+
+
 class LoggerMixin():
     def logger(self):
         return logging.getLogger()
@@ -943,10 +948,22 @@ class Kitchen(HTTPWebSocketsHandler):
                  'request-length': self.__request_body_length,
                  'request-method': self.__method,
                  'uri': self.__path }
+
         if len(self.headers) > 0:
             info['headers'] = { k.lower(): v for k, v in self.headers.items() }
+
+            cookie_value = info['headers'].get('authorization', None)
+            if cookie_value is not None:
+                info['headers']['authorization'] = truncate(cookie_value, 15)
+
+            cookie_value = info['headers'].get('cookie', None)
+            if cookie_value is not None:
+                cookie_entries = [e for e in cookie_value.split(';') if e]
+                info['headers']['cookie'] = [truncate(v, 25) for v in cookie_entries]
+
         if self.__query is not None:
             info['query-string'] = self.__query
+
         return json.dumps(info, sort_keys=True)
 
     def __set_response(self, response_bytes, response_length=None):

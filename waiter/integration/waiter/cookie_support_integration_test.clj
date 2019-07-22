@@ -50,11 +50,11 @@
                                                                                               :discard false
                                                                                               :path "/"})))
               body-json (json/read-str (str body))]
-          (is (= "test=cookie" (get-in body-json ["headers" "cookie"])))))
+          (is (= ["test=cookie"] (get-in body-json ["headers" "cookie"])))))
       (testing "no cookies sent to backend (x-waiter-auth removed)"
         (let [{:keys [service-id cookies]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
               {:keys [body]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :path "/request-info"
                                                                                           :cookies cookies))
               {:strs [headers]} (json/read-str (str body))]
-          (is (str/blank? (get headers "cookie")))
+          (is (empty? (get headers "cookie")))
           (delete-service waiter-url service-id))))))
