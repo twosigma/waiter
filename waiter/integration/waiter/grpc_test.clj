@@ -21,10 +21,13 @@
             [clojure.walk :as walk]
             [waiter.correlation-id :as cid]
             [waiter.util.client-tools :refer :all])
-  (:import (com.twosigma.waiter.courier CourierReply CourierSummary GrpcClient GrpcClient$CancellationPolicy StateReply)
+  (:import (com.twosigma.waiter.courier CourierReply CourierSummary GrpcClient GrpcClient$CancellationPolicy
+                                        LoggingConfig StateReply)
            (io.grpc Status)
            (java.util.concurrent CountDownLatch)
            (java.util.function Function)))
+
+(LoggingConfig/initializeLogging)
 
 (def cancel-policy-none GrpcClient$CancellationPolicy/NONE)
 
