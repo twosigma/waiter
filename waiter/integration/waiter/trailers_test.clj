@@ -18,14 +18,13 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [waiter.util.client-tools :refer :all]
-            [waiter.util.http-utils :as hu])
-  (:import (java.io ByteArrayInputStream)))
+            [waiter.util.http-utils :as hu]))
 
 (defn- run-sediment-trailers-support-test
   [waiter-url backend-proto]
   (testing "request and response trailers"
     (let [request-length 100000
-          long-request (apply str (repeat request-length "a"))
+          long-request (apply str (take request-length (cycle "abcdefghijklmnopqrstuvwxyz")))
           sediment-command (sediment-server-command "${PORT0}")
           request-headers {:x-waiter-backend-proto backend-proto
                            :x-waiter-cmd sediment-command
@@ -46,7 +45,7 @@
                            waiter-url
                            (assoc request-headers
                              "x-cid" (rand-name))
-                           :body (ByteArrayInputStream. (.getBytes long-request))
+                           :body (make-chunked-body long-request 4096 20)
                            :path "/trailers"
                            :protocol backend-proto)
                 body-json (try
@@ -94,7 +93,7 @@
                                    "x-sediment-sleep-before-response-trailer-ms" response-trailer-delay-ms
                                    "x-sediment-sleep-after-chunk-send-ms" 100)
                                  (seq response-trailers))
-                               :body (ByteArrayInputStream. (.getBytes long-request))
+                               :body (make-chunked-body long-request 4096 20)
                                :path "/trailers"
                                :protocol backend-proto
                                :trailers-fn (fn []
@@ -114,7 +113,9 @@
                       (str body-json))
                   (is (= "chunked" (get-in response [:headers "transfer-encoding"]))
                       (-> response :headers str)))
-                (is (= request-trailers (get body-json "trailers"))
+                ;; we do not sent trailers to http/1 backends
+                (is (= (if (hu/http2? http-version) request-trailers {})
+                       (get body-json "trailers"))
                     (-> response :headers str))
                 (is (= response-trailers (some-> response :trailers))
                     (-> response :headers str))))))))))
@@ -131,7 +132,7 @@
   [waiter-url backend-proto]
   (testing "request and response trailers"
     (let [request-length 100000
-          long-request (apply str (repeat request-length "a"))
+          long-request (apply str (take request-length (cycle "abcdefghijklmnopqrstuvwxyz")))
           request-headers {:x-waiter-backend-proto backend-proto
                            :x-waiter-debug true
                            :x-waiter-name (rand-name)}
@@ -156,7 +157,7 @@
                                (assoc request-headers
                                  "x-kitchen-pre-trailer-sleep-ms" response-trailer-delay-ms)
                                (seq response-trailers))
-                             :body (ByteArrayInputStream. (.getBytes long-request))
+                             :body (make-chunked-body long-request 4096 20)
                              :path "/chunked"
                              :protocol backend-proto)]
               (log/info "response headers:" (:headers response))
