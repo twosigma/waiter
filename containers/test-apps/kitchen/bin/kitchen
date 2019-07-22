@@ -595,6 +595,7 @@ class Kitchen(HTTPWebSocketsHandler):
                         break
                     else:
                         if self.__chunked:
+                            self.logger().debug('Writing {} bytes in chunk'.format(len(chunk)))
                             chunk_header = '{:X}\r\n'.format(len(chunk))
                             self.wfile.write(chunk_header.encode('ascii'))
                         self.wfile.write(chunk)
@@ -606,6 +607,7 @@ class Kitchen(HTTPWebSocketsHandler):
                             if self.__chunk_delay_secs > 0:
                                 time.sleep(self.__chunk_delay_secs)
                         self.wfile.flush()
+                self.logger().debug('Streamed {} total bytes in response'.format(bytes_written))
 
         finally:
             # Optionally trigger a fatal server error (exit)
