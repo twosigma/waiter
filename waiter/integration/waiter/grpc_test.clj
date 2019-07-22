@@ -742,7 +742,8 @@
                                         str)]
                 (log/info correlation-id "aggregated packages...")
                 ;; TODO undo after fix to https://github.com/haproxy/haproxy/issues/172
-                (if (behind-proxy? waiter-url)
+                (if (and (behind-proxy? waiter-url)
+                         (= "UNAVAILABLE" (some-> status .getCode str)))
                   (assert-grpc-status status "UNAVAILABLE" "Received Rst Stream" assertion-message)
                   (assert-grpc-deadline-exceeded-status status assertion-message))
                 (is (nil? summary) assertion-message)
