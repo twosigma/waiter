@@ -25,9 +25,24 @@
                                         LoggingConfig StateReply)
            (io.grpc Status)
            (java.util.concurrent CountDownLatch)
-           (java.util.function Function)))
+           (java.util.function Function)
+           (java.util.logging Handler Level LogRecord)))
 
-(LoggingConfig/initializeLogging)
+;; TODO shams - remove after debugging is complete
+(LoggingConfig/initializeLogging
+  (proxy [Handler] []
+    (publish [^LogRecord log-record]
+      (log/logp
+        (condp = (.getLevel log-record)
+          Level/SEVERE :error
+          Level/WARNING :warn
+          Level/INFO :info
+          :debug)
+        (str
+          (.getSourceClassName log-record)
+          "#"
+          (.getSourceMethodName log-record))
+        (.getMessage log-record)))))
 
 (def cancel-policy-none GrpcClient$CancellationPolicy/NONE)
 
