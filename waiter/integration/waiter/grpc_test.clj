@@ -156,6 +156,19 @@
        (when message#
          (is (= message# (.getDescription status#)) assertion-message#)))))
 
+(defmacro assert-grpc-status
+  "Asserts that the status represents a grpc status."
+  [status code message-substring assertion-message]
+  `(let [status# ~status
+         code# ~code
+         message-substring# ~message-substring
+         assertion-message# ~assertion-message]
+     (is status# assertion-message#)
+     (when status#
+       (is (= code# (-> status# .getCode str)) assertion-message#)
+       (when message-substring#
+         (is (str/includes? (.getDescription status#) message-substring#) assertion-message#)))))
+
 (defn- count-items
   [xs x]
   (count (filter #(= x %) xs)))
@@ -728,7 +741,10 @@
                                         (into (sorted-map))
                                         str)]
                 (log/info correlation-id "aggregated packages...")
-                (assert-grpc-deadline-exceeded-status status assertion-message)
+                ;; TODO undo after fix to https://github.com/haproxy/haproxy/issues/172
+                (if (behind-proxy? waiter-url)
+                  (assert-grpc-status status "UNAVAILABLE" "Received Rst Stream" assertion-message)
+                  (assert-grpc-deadline-exceeded-status status assertion-message))
                 (is (nil? summary) assertion-message)
                 (.await sleep-duration-latch)
                 ;; TODO undo after fix to https://github.com/haproxy/haproxy/issues/172
