@@ -217,9 +217,7 @@
 (defn current-test-name
   "Get the name of the currently-running test."
   []
-  (str (-> *testing-vars* first meta :ns str)
-       "/"
-       (-> *testing-vars* first meta :name)))
+  (-> *testing-vars* first meta :name (or "test-unknown-name") str))
 
 (defmacro testing-using-waiter-url
   [& body]
@@ -255,27 +253,16 @@
       :instance-id instance-id
       :service-id service-id)))
 
-(defn extract-acronym
-  "Shortens the name taking only the leading characters across the delimiters.
-   E.g. `(extract-acronym \"aaa.bbb-ccc/ddd#eee-fff.ggg\") -> \"abcdfg\"`"
-  [name-with-dashes]
-  (->> (str/split (str name-with-dashes) #"-|\.|/")
-    (remove str/blank?)
-    (map first)
-    (str/join "")
-    str/lower-case))
-
 (defn ensure-cid-in-headers
   [request-headers & {:keys [verbose] :or {verbose false}}]
   (let [cid (or (get request-headers "x-cid")
                 (get request-headers :x-cid))]
     (if cid
       request-headers
-      (let [correlation-id (cid/get-correlation-id)
-            new-cid (str "test-" (extract-acronym (current-test-name)) "-" (utils/unique-identifier))]
+      (let [new-cid (str (cid/get-correlation-id) "-" (utils/unique-identifier))]
         (when verbose
           (log/info "Using cid" new-cid))
-        (when (str/includes? correlation-id "UNKNOWN")
+        (when (str/includes? new-cid "UNKNOWN")
           (log/info "Correlation id context unspecified")
           (when verbose
             (log/warn (RuntimeException.))))
@@ -724,11 +711,12 @@
 
 (defn rand-name
   ([]
-   (let [service-name (current-test-name)]
+   (let [service-name (str (or (:name (meta (first *testing-vars*))) "test-unknown-name"))]
      (rand-name service-name)))
   ([service-name]
-   (let [test-prefix (System/getenv "WAITER_TEST_PREFIX")]
-     (str/replace (str test-prefix (extract-acronym service-name) (System/nanoTime)) #"-" ""))))
+   (let [username (System/getProperty "user.name")
+         test-prefix (System/getenv "WAITER_TEST_PREFIX")]
+     (str/replace (str test-prefix service-name username (rand-int 3000000)) #"-" ""))))
 
 (defn- token->etag
   "Returns the current etag of a token"
