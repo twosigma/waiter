@@ -757,19 +757,13 @@
                :running-pids running-pids})
     (run! kill-process-group! orphaned-pids)))
 
-(defn- str-to-date-safe
-  "nil-safe str-to-date call"
-  [date-str]
-  (when date-str
-    (du/str-to-date date-str)))
-
 (defn- mark-lost-processes
   "Detects and marks lost processes."
   [running-pids id->instance]
   (pc/map-vals
     (fn [{:strs [killed?] pid "shell-scheduler/pid" :as instance}]
       (cond-> (-> (pc/map-keys keyword instance)
-                  (update :started-at str-to-date-safe))
+                  (update :started-at du/str-to-date-safe))
         (and (not killed?) (not (contains? running-pids pid)))
         (assoc :killed? true
                :message "Process lost after restart")))
@@ -811,7 +805,7 @@
                                          (pc/map-vals
                                            (fn [reservation]
                                              (-> (pc/map-keys keyword reservation)
-                                                 (update :expiry-time str-to-date-safe)
+                                                 (update :expiry-time du/str-to-date-safe)
                                                  (update :state keyword)))))]
               (log/info "restoring" (count port->reservation) "entries into port->reservation-atom")
               (reset! port->reservation-atom port->reservation))

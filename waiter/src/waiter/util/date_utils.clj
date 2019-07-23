@@ -44,6 +44,13 @@
        (log/error "unable to parse" date-str "with formatter" formatter)
        (throw ex)))))
 
+(defn str-to-date-safe
+  "nil-safe str-to-date call"
+  (^DateTime [date-str]
+   (str-to-date-safe date-str formatter-iso8601))
+  (^DateTime [date-str formatter]
+    (when date-str (str-to-date date-str formatter))))
+
 (defn time-seq
   "Returns a sequence of date-time values growing over specific period.
   Takes as input the starting value and the growing value, returning a
