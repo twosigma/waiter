@@ -34,7 +34,7 @@
                   :exclusions [prismatic/schema ring/ring-core]]
                  [clj-jgit "0.8.10"
                   :scope "test"]
-                 [twosigma/courier "1.4.6"
+                 [twosigma/courier "1.5.9"
                   :exclusions [com.google.guava/guava io.grpc/grpc-core]
                   :scope "test"]
                  ;; avoids the following:
