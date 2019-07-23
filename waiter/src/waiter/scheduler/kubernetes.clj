@@ -58,7 +58,7 @@
 (defn timestamp-str->datetime
   "Parse a Kubernetes API timestamp string."
   [k8s-timestamp-str]
-  (du/str-to-date k8s-timestamp-str k8s-timestamp-format))
+  (du/str-to-date-safe k8s-timestamp-str k8s-timestamp-format))
 
 (defn- use-short-service-hash? [k8s-max-name-length]
   ;; This is fairly arbitrary, but if we have at least 48 characters for the app name,
