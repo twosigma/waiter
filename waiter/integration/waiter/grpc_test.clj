@@ -335,7 +335,7 @@
                                     (into (sorted-map))
                                     str)]
             (is (nil? reply) assertion-message)
-            (assert-grpc-cancel-status status assertion-message)
+            (assert-grpc-cancel-status status "Cancelled by server" assertion-message)
             (Thread/sleep 1500) ;; sleep to allow cancellation propagation to backend
             (assert-request-state grpc-client request-headers service-id correlation-id ::server-cancel)))))))
 
