@@ -295,10 +295,8 @@
                                 (= status 500) ["13" "Internal Server Error"]
                                 (= status 503) ["14" "Service Unavailable"]
                                 (= status 504) ["4" "Gateway Timeout"])]
-      (let [[grpc-status grpc-message] grpc-status-data
-            grpc-message (if (string? body)
-                           (utils/truncate body 128)
-                           grpc-message)
+      (let [[grpc-status standard-message] grpc-status-data
+            grpc-message (if (string? body) body standard-message)
             trailers-ch (async/promise-chan)
             new-headers (assoc headers
                           "content-type" "application/grpc"
