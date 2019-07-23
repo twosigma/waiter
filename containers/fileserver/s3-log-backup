@@ -8,8 +8,10 @@ fi
 
 # Detect graceful shutdown of main container in pod
 await_graceful_shutdown() {
-    grace_millis=$(( ${WAITER_GRACE_SECS:-3} * 1000 ))
-    for (( t=0; t<=grace_millis; t+=100 )); do
+    # We wait an extra 500ms after the grace period to ensure that
+    # the waiter-k8s-init script has had sufficient time to finish.
+    grace_millis=$(( ${WAITER_GRACE_SECS:-3} * 1000 + 500 ))
+    for (( t=0; t<grace_millis; t+=100 )); do
         [ -f './latest/.waiter_cmd_exited' ] && break
         sleep 0.1
     done
@@ -41,12 +43,19 @@ sandbox_backup() {
     echo "Finished S3 backups for $sandbox_dir"
 }
 
+run_completed() {
+    local run_number=$1
+    # Either the presence of the sentinal file or the next run's directory
+    # are each sufficient to determine that the current run was completed.
+    [[ -f "./r${run_number}/.waiter_cmd_exited" || -d "./r$((run_number+1))" ]]
+}
+
 cd "${1:-/srv/www}"
 # For each ./r* directory created by a container restart,
 # we upload the stdout and stderr to the target directory in the S3 bucket.
 i=0
 while ! $graceful_shutdown_complete || (( i <= last_run )); do
-    while ! [ -f "./r$i/.waiter_cmd_exited" ] && ! $graceful_shutdown_complete; do
+    while ! run_completed $i && ! $graceful_shutdown_complete; do
         sleep 0.1
     done
     sandbox_backup "./r$i"
