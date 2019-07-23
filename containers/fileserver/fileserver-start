@@ -1,11 +1,32 @@
-#!/bin/sh
+#!/bin/bash
 
 # Set default server port
 : ${WAITER_FILESERVER_PORT:=9090}
 export WAITER_FILESERVER_PORT
 
 # Generate server config from template
-envsubst </root/nginx.conf.template >/root/nginx.conf
+envsubst <./nginx.conf.template >./nginx.conf
 
-# Start server in non-daemon mode, replacing current process
-exec nginx -c /root/nginx.conf
+# Start server in non-daemon mode
+nginx -c $PWD/nginx.conf &
+nginx_pid=$!
+
+# Start s3 upload daemon
+s3-log-backup &
+s3_daemon_pid=$!
+
+# On SIGTERM, upload logs to S3 before exiting
+handle_sigterm() {
+    echo GOT SIGTERM
+    if kill -0 $s3_daemon_pid &>/dev/null; then
+        kill $s3_daemon_pid  # propagate sigterm to s3 upload daemon
+        wait $s3_daemon_pid  # wait for s3 upload daemon to exit
+    fi
+    kill $nginx_pid  # propagate sigterm to nginx
+}
+trap handle_sigterm SIGTERM
+
+# Wait for nginx to terminate
+while kill -0 $nginx_pid &>/dev/null; do
+    wait $nginx_pid || sleep 0.1
+done

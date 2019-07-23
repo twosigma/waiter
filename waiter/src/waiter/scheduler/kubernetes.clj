@@ -733,9 +733,6 @@
                    ;; in order to provide extra time for logs to sync to an s3 bucket.
                    {:name "WAITER_GRACE_SECS" :value (str pod-sigkill-delay-secs)}]
                   (concat
-                    (when log-bucket-url
-                      [{:name "WAITER_LOG_BUCKET_URL"
-                        :value (str log-bucket-url "/" run-as-user "/" service-id)}])
                     (for [[k v] base-env]
                       {:name k :value v})
                     [{:name "PORT" :value (str port0)}]
@@ -821,7 +818,11 @@
         (let [{:keys [cmd image port] {:keys [cpu mem]} :resources} fileserver
               memory (str mem "Mi")]
           {:command cmd
-           :env [{:name "WAITER_FILESERVER_PORT" :value (str port)}]
+           :env (into [{:name "WAITER_FILESERVER_PORT" :value (str port)}
+                       {:name "WAITER_GRACE_SECS" :value (str pod-sigkill-delay-secs)}]
+                      (when log-bucket-url
+                        [{:name "WAITER_LOG_BUCKET_URL"
+                          :value (str log-bucket-url "/" run-as-user "/" service-id)}]))
            :image image
            :imagePullPolicy "IfNotPresent"
            :name "waiter-fileserver"
@@ -829,8 +830,7 @@
            :resources {:limits {:memory memory}
                        :requests {:cpu cpu :memory memory}}
            :volumeMounts [{:mountPath "/srv/www"
-                           :name "user-home"}]
-           :workingDir work-path})))))
+                           :name "user-home"}]})))))
 
 (defn start-auth-renewer
   "Initialize the k8s-api-auth-str atom,

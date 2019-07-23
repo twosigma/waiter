@@ -255,6 +255,12 @@
       :instance-id instance-id
       :service-id service-id)))
 
+(defn response->location
+  "Get the Location header from an HTTP response.
+   Handles both HTTP v1 and v2 styles of capitalization."
+  [{:keys [headers]}]
+  (or (get headers "Location") (get headers "location")))
+
 (defn extract-acronym
   "Shortens the name taking only the leading characters across the delimiters.
    E.g. `(extract-acronym \"aaa.bbb-ccc/ddd#eee-fff.ggg\") -> \"abcdfg\"`"

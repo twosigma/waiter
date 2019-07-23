@@ -148,22 +148,4 @@ assert $working_dir != $old_working_dir
 assert -f $working_dir/$fresh_file_name
 assert $(cat $working_dir/$fresh_file_name) == hello
 
-#
-# Ensure that the stdout file captured by the wrapper script
-# is uploaded to S3 when the script is terminated.
-# This test runs iff WAITER_LOG_BUCKET_URL is non-null.
-#
-start_guarded_test 'stdout uploaded to s3 bucket' "$WAITER_LOG_BUCKET_URL" <<EOF
-echo TestString && sleep 10
-EOF
-if $test_started; then
-    send_sigterm
-    send_sigterm
-    await_exit_and_assert_code 143
-    pod_name=$(hostname --short)
-    target_bucket_dir=$WAITER_LOG_BUCKET_URL/$pod_name/$working_dir
-    assert "$(curl -s $target_bucket_dir/stdout)" == TestString
-    assert "$(curl -s $target_bucket_dir/stdout | wc -c)" == 11
-fi
-
 printf '\n\nAll tests passed\n'
