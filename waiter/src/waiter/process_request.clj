@@ -682,6 +682,8 @@
                         instance (:out timed-instance)
                         instance-elapsed (:elapsed timed-instance)
                         proto-version (hu/backend-protocol->http-version backend-proto)]
+                    (when-not instance
+                      (throw (ex-info "Suggested instance was nil" reason-map)))
                     (statsd/histo! metric-group "get_instance" instance-elapsed)
                     (-> (try
                           (log/info "suggested instance:" (:id instance) (:host instance) (:port instance))
