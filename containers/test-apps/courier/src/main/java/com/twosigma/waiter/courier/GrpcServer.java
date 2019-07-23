@@ -374,27 +374,6 @@ public class GrpcServer {
             final String correlationId = cidTimestamp.correlationId;
             final long timestamp = cidTimestamp.timestamp;
 
-            final Context currentContext = Context.current();
-            final Context newContext = currentContext.withValue(CID_TIMESTAMP, new CidTimestamp(correlationId, timestamp));
-
-            return Contexts.interceptCall(newContext, serverCall, requestMetadata, serverCallHandler);
-        }
-    }
-
-    private static class GrpcServerInterceptor implements ServerInterceptor {
-
-        @Override
-        public <ReqT, RespT> ServerCall.Listener<ReqT> interceptCall(
-            final ServerCall<ReqT, RespT> serverCall,
-            final Metadata requestMetadata,
-            final ServerCallHandler<ReqT, RespT> serverCallHandler) {
-
-            logMetadata(requestMetadata, "request");
-
-            final CidTimestamp cidTimestamp = CID_TIMESTAMP.get();
-            final String correlationId = cidTimestamp.correlationId;
-            final long timestamp = cidTimestamp.timestamp;
-
             // handle duplicates with the same CID
             trackState(correlationId, timestamp, "INIT");
 
