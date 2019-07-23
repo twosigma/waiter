@@ -29,6 +29,8 @@ service Courier {
     rpc CollectPackages (stream CourierRequest) returns (stream CourierSummary);
     // Processes a stream of messages, returns a unary message
     rpc AggregatePackages (stream CourierRequest) returns (CourierSummary);
+    // Sends summary about a request (identified by a correlation id).
+    rpc RetrieveState (StateRequest) returns (StateReply);
 }
 
 enum Variant {
@@ -43,6 +45,7 @@ message CourierRequest {
     string from = 2;
     string message = 3;
     Variant variant = 4;
+    int64 sleep_duration_millis = 5;
 }
 
 message CourierReply {
@@ -54,4 +57,13 @@ message CourierReply {
 message CourierSummary {
     int64 num_messages = 1;
     int64 total_length = 2;
+}
+
+message StateRequest {
+    string cid = 1;
+}
+
+message StateReply {
+    string cid = 1;
+    repeated string state = 2;
 }
