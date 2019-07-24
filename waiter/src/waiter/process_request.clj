@@ -65,12 +65,13 @@
     (fn confirm-live-connection []
       (try
         (check-control confirm-live-chan correlation-id)
-        (catch Exception e
+        (catch Throwable throwable
           ; flag the error as an I/O error as the connection is no longer live
           (deliver reservation-status-promise :client-error)
+          (log/debug throwable "error while checking for live connection")
           (when error-callback
-            (error-callback e))
-          (throw e))))))
+            (error-callback throwable))
+          (throw throwable))))))
 
 (defn set-idle-timeout!
   "Configures the idle timeout in the response output stream (HttpOutput) to `idle-timeout-ms` ms."
@@ -270,6 +271,7 @@
                                        (cid/with-correlation-id
                                          correlation-id
                                          (let [complete-trigger-id (utils/unique-identifier)]
+                                           (log/debug throwable "received from ctrl-chan" message)
                                            (deliver complete-triggered-promise complete-trigger-id)
                                            (when (= complete-trigger-id @complete-triggered-promise)
                                              (log/debug "closing request body as" message)
@@ -462,7 +464,8 @@
                                                    :body-target-closed? (protocols/closed? resp-chan)
                                                    :bytes-pending bytes-read
                                                    :bytes-streamed bytes-streamed
-                                                   :correlation-id (cid/get-correlation-id)}
+                                                   :correlation-id (cid/get-correlation-id)
+                                                   :error-cause :client-error}
                                                   error)]
                                   (meters/mark! stream-back-pressure)
                                   (deliver reservation-status-promise :client-error)
