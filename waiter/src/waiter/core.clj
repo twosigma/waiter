@@ -595,10 +595,10 @@
    :server-name (pc/fnk [[:settings git-version]] (str "waiter/" (str/join (take 7 git-version))))
    :service-description-builder (pc/fnk [[:settings service-description-builder-config service-description-constraints]]
                                   (when-let [unknown-keys (-> service-description-constraints
-                                                              keys
-                                                              set
-                                                              (set/difference sd/service-parameter-keys)
-                                                              seq)]
+                                                            keys
+                                                            set
+                                                            (set/difference sd/service-parameter-keys)
+                                                            seq)]
                                     (throw (ex-info "Unsupported keys present in the service description constraints"
                                                     {:service-description-constraints service-description-constraints
                                                      :unsupported-keys (-> unknown-keys vec sort)})))
