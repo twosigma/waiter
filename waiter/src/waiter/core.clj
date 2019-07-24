@@ -219,12 +219,20 @@
         handler)))
 
 (defn wrap-debug
-  "Attaches debugging headers to requests when enabled."
+  "Attaches debugging headers to requests when enabled.
+   Logs any request trailers when they are provided."
   [handler generate-log-url-fn]
   (fn wrap-debug-fn
-    [{:keys [client-protocol internal-protocol request-id request-time router-id] :as request}]
+    [{:keys [client-protocol internal-protocol request-id request-time router-id trailers-fn] :as request}]
     (if (utils/request->debug-enabled? request)
-      (let [response (handler request)
+      (let [request (cond-> request
+                      trailers-fn
+                      (assoc :trailers-fn (let [correlation-id (cid/get-correlation-id)]
+                                            (fn retrieve-request-trailers []
+                                              (when-let [trailers-data (trailers-fn)]
+                                                (cid/cinfo correlation-id "request trailers:" trailers-data)
+                                                trailers-data)))))
+            response (handler request)
             add-headers (fn [{:keys [descriptor instance] :as response}]
                           (let [{:strs [backend-proto]} (:service-description descriptor)
                                 backend-directory (:log-directory instance)
