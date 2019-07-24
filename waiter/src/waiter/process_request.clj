@@ -526,7 +526,7 @@
           callback (fn abort-http-request-result-callback [aborted?]
                      (cid/with-correlation-id
                        correlation-id
-                       (log/debug "aborted backend request:" aborted? "due to" (.getClass ex))))]
+                       (log/debug ex "aborted backend request:" aborted? "due to" (.getClass ex))))]
       (if (and abort-ch (async/>!! abort-ch [ex callback]))
         (log/info "requested backend to be aborted via abort-ch")
         (let [aborted? (some-> response :request (.abort ex))]
