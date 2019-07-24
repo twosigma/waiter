@@ -112,27 +112,23 @@
 
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-http-backend-proto-service
   (testing-using-waiter-url
-    (when-not (using-k8s? waiter-url) ; temporarily disable on kubernetes until failing test issue resolved
-      (run-backend-proto-service-test waiter-url "http" "http" "HTTP/1.1")
-      (is "test completed marker"))))
+    (run-backend-proto-service-test waiter-url "http" "http" "HTTP/1.1")
+    (is "test completed marker")))
 
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-https-backend-proto-service
   (testing-using-waiter-url
-    (when-not (using-k8s? waiter-url) ; temporarily disable on kubernetes until failing test issue resolved
-      (run-backend-proto-service-test waiter-url "https" "https" "HTTP/1.1")
-      (is "test completed marker"))))
+    (run-backend-proto-service-test waiter-url "https" "https" "HTTP/1.1")
+    (is "test completed marker")))
 
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-h2c-backend-proto-service
   (testing-using-waiter-url
-    (when-not (using-k8s? waiter-url) ; temporarily disable on kubernetes until failing test issue resolved
-      (run-backend-proto-service-test waiter-url "h2c" "http" "HTTP/2.0")
-      (is "test completed marker"))))
+    (run-backend-proto-service-test waiter-url "h2c" "http" "HTTP/2.0")
+    (is "test completed marker")))
 
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-h2-backend-proto-service
   (testing-using-waiter-url
-    (when-not (using-k8s? waiter-url) ; temporarily disable on kubernetes until failing test issue resolved
-      (run-backend-proto-service-test waiter-url "h2" "https" "HTTP/2.0")
-      (is "test completed marker"))))
+    (run-backend-proto-service-test waiter-url "h2" "https" "HTTP/2.0")
+    (is "test completed marker")))
 
 (deftest ^:parallel ^:integration-fast test-internal-protocol
   (testing-using-waiter-url

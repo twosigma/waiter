@@ -319,9 +319,11 @@
           headers {}
           method :get
           query-params {}
-          scheme "http"
           verbose false}}]
-   (let [client (or client
+   (let [scheme (or scheme
+                    (some-> protocol http-utils/backend-proto->scheme)
+                    "http")
+         client (or client
                     (when protocol
                       (http-utils/select-http-client
                         protocol {:http1-client http1-client :http2-client http2-client}))
