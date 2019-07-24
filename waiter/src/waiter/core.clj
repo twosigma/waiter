@@ -287,8 +287,8 @@
 
 (defn add-grpc-headers-and-trailers
   "Finds and attaches the equivalent grpc status codes for the provided http status code."
-  [server-name {:keys [body headers status trailers] :as response}]
-  (if (= server-name (get-in response [:headers "server"]))
+  [{:keys [body headers status trailers] :as response}]
+  (if (utils/waiter-generated-response? response)
     (if-let [grpc-status-data (cond
                                 (= status 400) ["3" "Bad Request"]
                                 (= status 401) ["16" "Unauthorized"]
@@ -317,13 +317,13 @@
 
 (defn wrap-grpc-status
   "Attaches grpc-status on Waiter generated responses based on http status codes."
-  [handler server-name]
+  [handler]
   (fn wrap-grpc-status-fn
     [{:keys [client-protocol headers] :as request}]
     (let [response (handler request)]
       (cond-> response
         (http-utils/grpc? headers client-protocol)
-        (ru/update-response #(add-grpc-headers-and-trailers server-name %))))))
+        (ru/update-response add-grpc-headers-and-trailers)))))
 
 (defn- make-blacklist-request
   [make-inter-router-requests-fn blacklist-period-ms dest-router-id dest-endpoint {:keys [id] :as instance} reason]
