@@ -596,12 +596,13 @@
             location (post-process-async-request-response-fn
                        service-id metric-group backend-proto instance (handler/make-auth-user-map request)
                        reason-map instance-request-properties location query-string))
-          (introspect-trailers)
-          (handle-grpc-error-response request backend-proto reservation-status-promise)
-          (forward-grpc-status-headers-in-trailers)
-          (assoc :body resp-chan)
-          (update-in [:headers] (fn update-response-headers [headers]
-                                  (utils/filterm #(not= "connection" (str/lower-case (str (key %)))) headers)))))))
+        (utils/attach-waiter-source :backend)
+        (introspect-trailers)
+        (handle-grpc-error-response request backend-proto reservation-status-promise)
+        (forward-grpc-status-headers-in-trailers)
+        (assoc :body resp-chan)
+        (update-in [:headers] (fn update-response-headers [headers]
+                                (utils/filterm #(not= "connection" (str/lower-case (str (key %)))) headers)))))))
 
 (defn track-process-error-metrics
   "Updates metrics for process errors."

@@ -77,7 +77,7 @@
    :state core/state
    :http-server (pc/fnk [[:routines generate-log-url-fn waiter-request?-fn websocket-request-acceptor]
                          [:settings cors-config host port server-options support-info websocket-config]
-                         [:state cors-validator router-id]
+                         [:state cors-validator router-id server-name]
                          handlers] ; Insist that all systems are running before we start server
                   (let [options (merge (cond-> server-options
                                          (:ssl-port server-options) (assoc :ssl? true))
@@ -89,6 +89,7 @@
                                                           rlog/wrap-log
                                                           core/correlation-id-middleware
                                                           (core/wrap-request-info router-id support-info)
+                                                          (core/attach-server-header-middleware server-name)
                                                           consume-request-stream)
                                         :websocket-acceptor websocket-request-acceptor
                                         :websocket-handler (-> (core/websocket-handler-factory handlers)

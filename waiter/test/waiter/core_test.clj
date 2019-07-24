@@ -1420,9 +1420,9 @@
               {:keys [handled-request response]} (execute-request test-request)]
           (is (nil? handled-request))
           (is (= {:body ""
-                  :headers {"Location" "https://token.localtest.me"
-                            "server" "waiter"}
-                  :status 307}
+                  :headers {"Location" "https://token.localtest.me"}
+                  :status 307
+                  :waiter/response-source :waiter}
                  response))))
 
       (testing "http request with waiter header https-redirect set to false"
@@ -1438,9 +1438,9 @@
               {:keys [handled-request response]} (execute-request test-request)]
           (is (nil? handled-request))
           (is (= {:body ""
-                  :headers {"Location" "https://token.localtest.me"
-                            "server" "waiter"}
-                  :status 301}
+                  :headers {"Location" "https://token.localtest.me"}
+                  :status 301
+                  :waiter/response-source :waiter}
                  response)))))))
 
 (deftest test-request->protocol
