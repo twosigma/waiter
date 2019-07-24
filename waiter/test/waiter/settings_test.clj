@@ -213,7 +213,7 @@
                                            :work-directory "scheduler"}}}
                (deep-merge-settings defaults configured)))))
 
-    (testing "should not merge sub-maps not related to the configured :kind"
+    (testing "should merge sub-maps not related to the configured :kind"
       (let [defaults {:scheduler-config {:kind :foo
                                          :foo {:bar 1
                                                :baz 2}
@@ -223,7 +223,9 @@
                                            :qux {:two "c"}
                                            :foo {:other 3}}}]
         (is (= {:scheduler-config {:kind :qux
-                                   :foo {:other 3}
+                                   :foo {:bar 1
+                                         :baz 2
+                                         :other 3}
                                    :qux {:one "a"
                                          :two "c"}}}
                (deep-merge-settings defaults configured)))))
