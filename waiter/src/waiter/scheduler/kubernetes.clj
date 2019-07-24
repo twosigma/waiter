@@ -184,26 +184,30 @@
    Note that unique instance-ids are deterministically generated each time the pod is restarted
    by passing the pod's restartCount value to the pod->instance-id function."
   [{:keys [service-id] :as live-instance} {:keys [service-id->failed-instances-transient-store] :as scheduler} pod]
-  (when-let [newest-failure (get-in pod [:status :containerStatuses 0 :lastState :terminated])]
-    (let [failure-flags (if (= "OOMKilled" (:reason newest-failure)) #{:memory-limit-exceeded} #{})
-          newest-failure-start-time (-> newest-failure :startedAt timestamp-str->datetime)
-          restart-count (get-in pod [:status :containerStatuses 0 :restartCount])
-          newest-failure-id (pod->instance-id pod (dec restart-count))
-          failures (-> service-id->failed-instances-transient-store deref (get service-id))]
-      (when-not (contains? failures newest-failure-id)
-        (let [newest-failure-instance (cond-> (assoc live-instance
-                                                :flags failure-flags
-                                                :healthy? false
-                                                :id newest-failure-id
-                                                :log-directory (log-dir-path (:k8s/user live-instance)
-                                                                             (dec restart-count))
-                                                :started-at newest-failure-start-time)
-                                        ;; To match the behavior of the marathon scheduler,
-                                        ;; we don't include the exit code in failed instances that were killed by k8s.
-                                        (not (killed-by-k8s? newest-failure))
-                                        (assoc :exit-code (:exitCode newest-failure)))]
-          (swap! service-id->failed-instances-transient-store
-                 update-in [service-id] assoc newest-failure-id newest-failure-instance))))))
+  (try
+    (when-let [newest-failure (get-in pod [:status :containerStatuses 0 :lastState :terminated])]
+      (let [failure-flags (if (= "OOMKilled" (:reason newest-failure)) #{:memory-limit-exceeded} #{})
+            newest-failure-start-time (-> newest-failure :startedAt timestamp-str->datetime)
+            restart-count (get-in pod [:status :containerStatuses 0 :restartCount])
+            newest-failure-id (pod->instance-id pod (dec restart-count))
+            failures (-> service-id->failed-instances-transient-store deref (get service-id))]
+        (when-not (contains? failures newest-failure-id)
+          (let [newest-failure-instance (cond-> (assoc live-instance
+                                                       :flags failure-flags
+                                                       :healthy? false
+                                                       :id newest-failure-id
+                                                       :log-directory (log-dir-path (:k8s/user live-instance)
+                                                                                    (dec restart-count))
+                                                       :started-at newest-failure-start-time)
+                                          ;; To match the behavior of the marathon scheduler,
+                                          ;; we don't include the exit code in failed instances that were killed by k8s.
+                                          (not (killed-by-k8s? newest-failure))
+                                          (assoc :exit-code (:exitCode newest-failure)))]
+            (swap! service-id->failed-instances-transient-store
+                   update-in [service-id] assoc newest-failure-id newest-failure-instance)))))
+    (catch Throwable e
+      (log/error e "error converting failed pod to waiter service instance" pod)
+      (comment "Returning nil on failure."))))
 
 (defn pod->ServiceInstance
   "Convert a Kubernetes Pod JSON response into a Waiter Service Instance record."
