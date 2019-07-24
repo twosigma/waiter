@@ -15,6 +15,7 @@
 ;;
 (ns waiter.process-request
   (:require [clojure.core.async :as async]
+            [clojure.core.async.impl.protocols :as protocols]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [full.async :as fa]
@@ -440,6 +441,7 @@
                         (confirm-live-connection)
                         (let [buffer (timers/start-stop-time! stream-read-body (async/<! body))
                               bytes-read (if buffer (count buffer) -1)]
+                          (log/debug "received" bytes-read "bytes from backend response")
                           (if-not (= -1 bytes-read)
                             (do
                               (meters/mark! throughput-meter bytes-read)
@@ -448,13 +450,17 @@
                                         stream-onto-resp-chan
                                         ;; don't wait forever to write to server
                                         (au/timed-offer! resp-chan buffer streaming-timeout-ms)))
-                                [(+ bytes-streamed bytes-read) true]
+                                (do
+                                  (log/debug "offered" bytes-read "bytes to client response")
+                                  [(+ bytes-streamed bytes-read) true])
                                 (let [timeout-ch (async/timeout 5000)
                                       [{:keys [error]} source-ch] (async/alts! [error-chan timeout-ch] :priority true)
                                       _ (when (= timeout-ch source-ch)
                                           (log/warn "timeout while reading from error-chan"))
                                       ex (ex-info "Unable to stream, back pressure in resp-chan. Is connection live?"
-                                                  {:bytes-pending bytes-read
+                                                  {:body-source-closed? (protocols/closed? body)
+                                                   :body-target-closed? (protocols/closed? resp-chan)
+                                                   :bytes-pending bytes-read
                                                    :bytes-streamed bytes-streamed
                                                    :correlation-id (cid/get-correlation-id)}
                                                   error)]
