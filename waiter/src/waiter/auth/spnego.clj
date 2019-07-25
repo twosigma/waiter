@@ -64,8 +64,8 @@
   (-> (rr/response "Unauthorized")
       (rr/status 401)
       (rr/header "content-type" "text/plain")
-      (rr/header "server" (utils/get-current-server-name))
       (rr/header "www-authenticate" "Negotiate")
+      (utils/attach-waiter-source)
       (cookies/cookies-response)))
 
 (defn response-503-temporarily-unavailable
@@ -77,7 +77,7 @@
   (-> (rr/response "Too many Kerberos authentication requests")
       (rr/status 503)
       (rr/header "content-type" "text/plain")
-      (rr/header "server" (utils/get-current-server-name))
+      (utils/attach-waiter-source)
       (cookies/cookies-response)))
 
 (defn gss-context-init

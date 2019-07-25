@@ -229,8 +229,9 @@
       (when (not= core-service-description (sd/fetch-core kv-store service-id))
         ; eagerly store the service description for this service-id
         (store-service-description-fn descriptor))
-      {:body service-id
-       :status 200})
+      (utils/attach-waiter-source
+        {:body service-id
+         :status 200}))
     (catch Exception ex
       (utils/exception->response ex request))))
 
@@ -782,7 +783,8 @@
           (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "approve-success"))
           (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "approve-success"))
           (-> {:body (str "Added cookie " cookie-name), :headers {}, :status 200}
-              (add-encoded-cookie cookie-name cookie-value consent-expiry-days)))))
+            (utils/attach-waiter-source)
+            (add-encoded-cookie cookie-name cookie-value consent-expiry-days)))))
     (catch Exception ex
       (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "approve-error"))
       (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "approve-error"))
@@ -822,16 +824,17 @@
                                       (interstitial/request-time->interstitial-param-string request-time))))]
         (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "form-render"))
         (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "form-render"))
-        {:body (render-consent-template
-                 {:auth-user auth-user
-                  :consent-expiry-days consent-expiry-days
-                  :service-description-template service-description-template
-                  :service-id service-id
-                  :target-url (str (name (utils/request->scheme request)) "://" host-header "/" path
-                                   (when-not (str/blank? query-string') (str "?" query-string')))
-                  :token token})
-         :headers {"content-type" "text/html"}
-         :status 200}))
+        (utils/attach-waiter-source
+          {:body (render-consent-template
+                   {:auth-user auth-user
+                    :consent-expiry-days consent-expiry-days
+                    :service-description-template service-description-template
+                    :service-id service-id
+                    :target-url (str (name (utils/request->scheme request)) "://" host-header "/" path
+                                     (when-not (str/blank? query-string') (str "?" query-string')))
+                    :token token})
+           :headers {"content-type" "text/html"}
+           :status 200})))
     (catch Exception ex
       (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "form-error"))
       (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "form-error"))
@@ -864,11 +867,12 @@
         content-type (utils/request->content-type request)]
     (try
       (case request-method
-        :get {:body (case content-type
-                      "application/json" (utils/clj->json welcome-info)
-                      "text/html" (render-welcome-html welcome-info)
-                      "text/plain" (render-welcome-text welcome-info))
-              :headers {"content-type" content-type}}
+        :get (utils/attach-waiter-source
+               {:body (case content-type
+                        "application/json" (utils/clj->json welcome-info)
+                        "text/html" (render-welcome-html welcome-info)
+                        "text/plain" (render-welcome-text welcome-info))
+                :headers {"content-type" content-type}})
         (throw (ex-info "Only GET supported" {:log-level :info :status 405})))
       (catch Exception ex
         (utils/exception->response ex request)))))

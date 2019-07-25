@@ -34,14 +34,11 @@
            (java.net InetAddress URL)
            (javax.servlet ServletOutputStream ServletResponse)))
 
-(def expected-html-response-headers {"content-type" "text/html"
-                                     "server" "waiter"})
+(def expected-html-response-headers {"content-type" "text/html"})
 
-(def expected-json-response-headers {"content-type" "application/json"
-                                     "server" "waiter"})
+(def expected-json-response-headers {"content-type" "application/json"})
 
-(def expected-text-response-headers {"content-type" "text/plain"
-                                     "server" "waiter"})
+(def expected-text-response-headers {"content-type" "text/plain"})
 
 (def ^:const ANSI-RESET "\033[0m")
 (def ^:const ANSI-BLUE "\033[34m")

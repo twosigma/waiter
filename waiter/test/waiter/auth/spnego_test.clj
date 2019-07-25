@@ -41,9 +41,9 @@
         handler (require-gss request-handler thread-pool max-queue-length password)
         standard-401-response {:body "Unauthorized"
                                :headers {"content-type" "text/plain"
-                                         "server" "waiter"
                                          "www-authenticate" "Negotiate"}
-                               :status 401}]
+                               :status 401
+                               :waiter/response-source :waiter}]
 
     (testing "valid auth cookie"
       (with-redefs [auth/decode-auth-cookie (constantly [auth-principal nil])
@@ -59,9 +59,9 @@
                     too-many-pending-auth-requests? (constantly true)]
         (let [handler (require-gss request-handler thread-pool max-queue-length password)]
           (is (= {:body "Too many Kerberos authentication requests"
-                  :headers {"content-type" "text/plain"
-                            "server" "waiter"}
-                  :status 503}
+                  :headers {"content-type" "text/plain"}
+                  :status 503
+                  :waiter/response-source :waiter}
                  (handler standard-request))))))
 
     (testing "standard 401 response on missing authorization header"
