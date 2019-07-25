@@ -124,16 +124,20 @@
 
 (defn- post-json
   [url json]
-  (let [conn (doto (.openConnection (URL. url))
-               (.setDoOutput true)
-               (.setDoInput true)
-               (.setRequestMethod "POST")
-               (.setRequestProperty "content-type" "application/json")
-               (.setUseCaches false)
-               (.connect))]
-    (with-open [writer (io/writer (.getOutputStream conn))]
-      (.write writer json))
-    (.getResponseCode conn)))
+  (try
+    (let [conn (doto (.openConnection (URL. url))
+                 (.setDoOutput true)
+                 (.setDoInput true)
+                 (.setRequestMethod "POST")
+                 (.setRequestProperty "content-type" "application/json")
+                 (.setUseCaches false)
+                 (.connect))]
+      (with-open [writer (io/writer (.getOutputStream conn))]
+        (.write writer json))
+      (.getResponseCode conn))
+    (catch Throwable e
+      (log/error "Failed to post test metrics json " e url json)
+      (throw e))))
 
 (defn blue [message] (str ANSI-BLUE message ANSI-RESET))
 (defn magenta [message] (str ANSI-MAGENTA message ANSI-RESET))
@@ -182,32 +186,35 @@
         (println \tab (blue "FINISH:") test-name (cyan (format-duration elapsed-millis))
                  (assoc @*report-counters* :running (count @running-tests)))
         (when test-metrics-url
-          (let [{:keys [full-name name namespace]} (test-name-info (:var m))
-                num-fails (or (@test-name->num-fails-atom full-name) 0)
-                num-errors (or (@test-name->num-errors-atom full-name) 0)
-                num-passes (or (@test-name->num-passes-atom full-name) 0)
-                test-skipped? (= 0 (+ num-fails num-errors num-passes))
-                test-failed? (> (+ num-fails num-errors) 0)
-                result (if test-failed? "failed" (if test-skipped? "skipped" "passed"))
-                es-index (str "waiter-tests-" (du/date-to-str (t/now) (f/formatters :basic-date)))]
-            ;TODO: can check for outstanding commits: (println (jgit/git-status git-repo))
-            (post-json (str test-metrics-url "/" es-index "/test-result")
-                       (json/write-str {:build-id test-metrics-build-id
-                                        :expected-to-fail test-metrics-expected-to-fail
-                                        :git-branch current-git-branch
-                                        :git-branch-under-test test-metrics-branch-under-test
-                                        :git-commit-hash current-git-commit
-                                        :git-commit-hash-under-test test-metrics-commit-hash-under-test
-                                        :host hostname
-                                        :project "waiter"
-                                        :result result
-                                        :run-description test-metrics-run-description
-                                        :run-id test-metrics-run-id
-                                        :runtime-milliseconds elapsed-millis
-                                        :test-name name
-                                        :test-namespace namespace
-                                        :timestamp (du/date-to-str (t/now))
-                                        :user username})))))
+          (try
+            (let [{:keys [full-name name namespace]} (test-name-info (:var m))
+                  num-fails (or (@test-name->num-fails-atom full-name) 0)
+                  num-errors (or (@test-name->num-errors-atom full-name) 0)
+                  num-passes (or (@test-name->num-passes-atom full-name) 0)
+                  test-skipped? (= 0 (+ num-fails num-errors num-passes))
+                  test-failed? (> (+ num-fails num-errors) 0)
+                  result (if test-failed? "failed" (if test-skipped? "skipped" "passed"))
+                  es-index (str "waiter-tests-" (du/date-to-str (t/now) (f/formatters :basic-date)))]
+              ;TODO: can check for outstanding commits: (println (jgit/git-status git-repo))
+              (post-json (str test-metrics-url "/" es-index "/test-result")
+                         (json/write-str {:build-id test-metrics-build-id
+                                          :expected-to-fail test-metrics-expected-to-fail
+                                          :git-branch current-git-branch
+                                          :git-branch-under-test test-metrics-branch-under-test
+                                          :git-commit-hash current-git-commit
+                                          :git-commit-hash-under-test test-metrics-commit-hash-under-test
+                                          :host hostname
+                                          :project "waiter"
+                                          :result result
+                                          :run-description test-metrics-run-description
+                                          :run-id test-metrics-run-id
+                                          :runtime-milliseconds elapsed-millis
+                                          :test-name name
+                                          :test-namespace namespace
+                                          :timestamp (du/date-to-str (t/now))
+                                          :user username})))
+            (catch Throwable e
+              (log/error "Failed to post test metrics " e test-metrics-url)))))
       (log-running-tests)))
 
   (defmethod report :summary [m]
