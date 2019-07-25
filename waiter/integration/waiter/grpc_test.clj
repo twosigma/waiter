@@ -15,6 +15,7 @@
 ;;
 (ns waiter.grpc-test
   (:require [clojure.core.async :as async]
+            [clojure.java.shell :as sh]
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
@@ -597,6 +598,23 @@
                   (is (= (count messages) (.getNumMessages summary)) assertion-message)
                   (is (= (reduce + (map count messages)) (.getTotalLength summary)) assertion-message))
                 (assert-request-state grpc-client request-headers service-id correlation-id ::success)))))))))
+
+(deftest ^:parallel ^:integration-slow test-grpc-bidi-streaming-client-exit
+  (testing-using-waiter-url
+    (when-not (behind-proxy? waiter-url)
+      (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)
+            {:strs [cookie]} request-headers]
+        (with-service-cleanup
+          service-id
+          (let [correlation-id (rand-name)
+                {:keys [err out]} (sh/sh "lein" "exec" "-p"
+                                         "test-files/grpc/grpc_client_exit.clj"
+                                         host (str h2c-port) service-id correlation-id cookie)]
+            (log/info "exec stdout:" out)
+            (log/info "exec stderr:" err)
+            (Thread/sleep 1500) ;; sleep to allow cancellation propagation to backend
+            (let [grpc-client (initialize-grpc-client correlation-id host h2c-port)]
+              (assert-request-state grpc-client request-headers service-id correlation-id ::client-cancel))))))))
 
 (deftest ^:parallel ^:integration-fast test-grpc-client-streaming-deadline-exceeded
   (testing-using-waiter-url
