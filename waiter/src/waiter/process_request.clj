@@ -165,7 +165,7 @@
                               (log/info "done processing request" status)
                               (when (= :success status)
                                 (counters/inc! (metrics/service-counter service-id "request-counts" "successful")))
-                              (when (str/ends-with? status "error")
+                              (when (contains? #{:client-error :generic-error :instance-error} status)
                                 (counters/inc! (metrics/service-counter service-id "request-counts" (name status))))
                               (when (= :generic-error status)
                                 (log/error "there was a generic error in processing the request;"
@@ -481,7 +481,7 @@
                     (when more-bytes-possibly-available?
                       (recur bytes-streamed' bytes-reported-to-statsd'))))))))
         (catch Exception e
-          (log/error e "exception occurred while streaming response for" service-id)
+          (log/info e "exception occurred while streaming response for" service-id)
           (meters/mark! stream-exception-meter)
           (let [[error-cause _ _] (classify-error e)]
             (deliver reservation-status-promise error-cause))
