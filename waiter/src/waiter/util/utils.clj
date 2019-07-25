@@ -252,9 +252,8 @@
     (attach-waiter-source
       {:body (case content-type
                "application/grpc"
-               (-> (or (-> data-map :details :friendly-error-message)
-                       (:message error-context))
-                 (str/replace #"\n" "; "))
+               ;; grpc error responses should not have a body as the client will try to parse it into a proto object
+               nil
                "application/json"
                (json/write-str {:waiter-error error-context}
                                :escape-slash false
@@ -275,6 +274,9 @@
                  (str/replace #"\n  $" "\n")))
        :headers (-> headers
                   (assoc-if-absent "content-type" content-type))
+       :waiter/message (-> (or (-> data-map :details :friendly-error-message)
+                               (:message error-context))
+                         (str/replace #"\n" "; "))
        :status status})))
 
 (defn- wrap-unhandled-exception

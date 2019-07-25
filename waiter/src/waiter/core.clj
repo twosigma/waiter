@@ -287,7 +287,7 @@
 
 (defn add-grpc-headers-and-trailers
   "Finds and attaches the equivalent grpc status codes for the provided http status code."
-  [{:keys [body headers status trailers] :as response}]
+  [{:keys [headers status trailers waiter/message] :as response}]
   (if (utils/waiter-generated-response? response)
     (if-let [grpc-status-data (cond
                                 (= status 400) ["3" "Bad Request"]
@@ -296,7 +296,7 @@
                                 (= status 503) ["14" "Service Unavailable"]
                                 (= status 504) ["4" "Gateway Timeout"])]
       (let [[grpc-status standard-message] grpc-status-data
-            grpc-message (if (string? body) body standard-message)
+            grpc-message (if (string? message) message standard-message)
             trailers-ch (async/promise-chan)
             new-headers (assoc headers
                           "content-type" "application/grpc"
@@ -308,10 +308,9 @@
                                     "grpc-message" grpc-message
                                     "grpc-status" grpc-status)]
             (async/>! trailers-ch new-trailers-data)))
-        (-> response
-          (dissoc :body)
-          (assoc :headers new-headers
-                 :trailers trailers-ch)))
+        (assoc response
+          :headers new-headers
+          :trailers trailers-ch))
       response)
     response))
 

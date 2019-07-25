@@ -1457,15 +1457,14 @@
   (is (= "WS/13" (request->protocol {:headers {"sec-websocket-version" "13"} :scheme :ws}))))
 
 (deftest test-add-grpc-headers-and-trailers
-  (let [server-name "test-server-name"
-        make-response (fn make-response
+  (let [make-response (fn make-response
                         [status trailers]
                         (let [trailers-ch (async/promise-chan)]
                           (when trailers
                             (async/>!! trailers-ch trailers)
                             (async/close! trailers-ch))
-                          (cond-> {:headers {"server" server-name}
-                                   :status status}
+                          (cond-> {:status status
+                                   :waiter/response-source :waiter}
                             trailers (assoc :trailers trailers-ch))))
         load-trailers (fn load-trailers [{:keys [trailers] :as response}]
                         (cond-> response
@@ -1481,41 +1480,40 @@
                                        "grpc-message" grpc-message
                                        "grpc-status" (str grpc-status))))]
     (let [response (make-response 200 nil)]
-      (is (= response (->> response (add-grpc-headers-and-trailers server-name) load-trailers))))
+      (is (= response (->> response add-grpc-headers-and-trailers load-trailers))))
     (let [response (make-response 200 {"foo" "bar"})]
       (is (= (load-trailers response)
-             (->> response (add-grpc-headers-and-trailers server-name) load-trailers))))
+             (->> response add-grpc-headers-and-trailers load-trailers))))
     (let [response (make-response 301 {"foo" "bar"})]
       (is (= (load-trailers response)
-             (->> response (add-grpc-headers-and-trailers server-name) load-trailers))))
+             (->> response add-grpc-headers-and-trailers load-trailers))))
     (let [response (make-response 400 nil)]
       (is (= (attach-grpc-errors response 3 "Bad Request")
-             (->> response (add-grpc-headers-and-trailers server-name) load-trailers))))
+             (->> response add-grpc-headers-and-trailers load-trailers))))
     (let [response (make-response 401 nil)]
       (is (= (attach-grpc-errors response 16 "Unauthorized")
-             (->> response (add-grpc-headers-and-trailers server-name) load-trailers))))
+             (->> response add-grpc-headers-and-trailers load-trailers))))
     (let [response (make-response 403 {"foo" "bar"})]
       (is (= (load-trailers response)
-             (->> response (add-grpc-headers-and-trailers server-name) load-trailers))))
+             (->> response add-grpc-headers-and-trailers load-trailers))))
     (let [response (make-response 500 nil)]
       (is (= (attach-grpc-errors response 13 "Internal Server Error")
-             (->> response (add-grpc-headers-and-trailers server-name) load-trailers))))
+             (->> response add-grpc-headers-and-trailers load-trailers))))
     (let [response (make-response 502 {"foo" "bar"})]
       (is (= (load-trailers response)
-             (->> response (add-grpc-headers-and-trailers server-name) load-trailers))))
+             (->> response add-grpc-headers-and-trailers load-trailers))))
     (let [response (make-response 503 nil)]
       (is (= (attach-grpc-errors response 14 "Service Unavailable")
-             (->> response (add-grpc-headers-and-trailers server-name) load-trailers))))
+             (->> response add-grpc-headers-and-trailers load-trailers))))
     (let [response (make-response 504 nil)]
       (is (= (attach-grpc-errors response 4 "Gateway Timeout")
-             (->> response (add-grpc-headers-and-trailers server-name) load-trailers))))))
+             (->> response add-grpc-headers-and-trailers load-trailers))))))
 
 (deftest test-wrap-grpc-status
-  (let [server-name "test-server-name"
-        standard-response {:body "hello" :status 200}
+  (let [standard-response {:body "hello" :status 200}
         handler (constantly standard-response)
-        test-handler (wrap-grpc-status handler server-name)]
-    (with-redefs [add-grpc-headers-and-trailers (fn [_ response]
+        test-handler (wrap-grpc-status handler)]
+    (with-redefs [add-grpc-headers-and-trailers (fn [response]
                                                   (assoc response :add-grpc-headers-and-trailers true))]
       (testing "non-grpc request"
         (is (= standard-response (test-handler {:headers {}})))
