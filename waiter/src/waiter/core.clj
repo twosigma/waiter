@@ -292,7 +292,10 @@
     (if-let [grpc-status-data (cond
                                 (= status 400) ["3" "Bad Request"]
                                 (= status 401) ["16" "Unauthorized"]
+                                (= status 403) ["7" "Permission Denied"]
+                                (= status 429) ["14" "Too Many Requests"]
                                 (= status 500) ["13" "Internal Server Error"]
+                                (= status 502) ["14" "Bad Gateway"]
                                 (= status 503) ["14" "Service Unavailable"]
                                 (= status 504) ["4" "Gateway Timeout"])]
       (let [[grpc-status standard-message] grpc-status-data

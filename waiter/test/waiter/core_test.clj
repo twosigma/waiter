@@ -1494,13 +1494,16 @@
       (is (= (attach-grpc-errors response 16 "Unauthorized")
              (->> response add-grpc-headers-and-trailers load-trailers))))
     (let [response (make-response 403 {"foo" "bar"})]
-      (is (= (load-trailers response)
+      (is (= (attach-grpc-errors response 7 "Permission Denied")
+             (->> response add-grpc-headers-and-trailers load-trailers))))
+    (let [response (make-response 429 nil)]
+      (is (= (attach-grpc-errors response 14 "Too Many Requests")
              (->> response add-grpc-headers-and-trailers load-trailers))))
     (let [response (make-response 500 nil)]
       (is (= (attach-grpc-errors response 13 "Internal Server Error")
              (->> response add-grpc-headers-and-trailers load-trailers))))
     (let [response (make-response 502 {"foo" "bar"})]
-      (is (= (load-trailers response)
+      (is (= (attach-grpc-errors response 14 "Bad Gateway")
              (->> response add-grpc-headers-and-trailers load-trailers))))
     (let [response (make-response 503 nil)]
       (is (= (attach-grpc-errors response 14 "Service Unavailable")
