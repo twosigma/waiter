@@ -274,6 +274,7 @@
                                        (cid/with-correlation-id
                                          correlation-id
                                          (let [complete-trigger-id (utils/unique-identifier)]
+                                           (log/debug throwable "received from ctrl-chan" message)
                                            (deliver complete-triggered-promise complete-trigger-id)
                                            (when (= complete-trigger-id @complete-triggered-promise)
                                              ;; avoid decrementing the counter multiple times
