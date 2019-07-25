@@ -264,7 +264,7 @@
                                                                   correlation-id
                                                                   (log/info "request byte stream error, result of aborted request:" aborted?)
                                                                   (async/close! body-ch)))]
-                                                 (log/error throwable "unable to stream request bytes, aborting request")
+                                                 (log/info throwable "unable to stream request bytes, aborting request")
                                                  (async/>!! abort-ch [throwable callback])))
                                              (report-request-size-metrics 0 true)
                                              (if throwable
