@@ -28,6 +28,7 @@
             [waiter.curator :as curator]
             [waiter.metrics :as metrics]
             [waiter.scheduler :refer :all]
+            [waiter.util.async-utils :as au]
             [waiter.util.client-tools :as ct]
             [waiter.util.date-utils :as du])
   (:import (java.net ConnectException SocketTimeoutException)
@@ -535,9 +536,12 @@
         (let [resp (async/<!! (available? http-client scheduler-name service-instance health-check-proto 0 "/health-check"))]
           (is (= {:error :operation-timeout, :healthy? false, :status nil} resp)))
         (let [abort-chan @abort-chan-atom]
-          (is abort-chan)
+          (is (au/chan? abort-chan))
           (is (protocols/closed? abort-chan))
-          (is (instance? TimeoutException (async/<!! abort-chan))))))))
+          (when (au/chan? abort-chan)
+            (let [[abort-ex abort-cb] (async/<!! abort-chan)]
+              (is (instance? TimeoutException abort-ex))
+              (is abort-cb))))))))
 
 (defmacro check-trackers
   [all-trackers assertion-maps]

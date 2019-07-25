@@ -262,7 +262,10 @@
 
                 (async/timeout request-timeout-ms)
                 ([_]
-                  (async/>! request-abort-chan (TimeoutException. "Health check request exceeded its allocated time"))
+                 (let [ex (TimeoutException. "Health check request exceeded its allocated time")
+                       callback (fn abort-health-check-callback [aborted?]
+                                  (log/info "health check aborted:" aborted?))]
+                   (async/>! request-abort-chan [ex callback]))
                   (meters/mark! (metrics/waiter-meter "scheduler" scheduler-name "health-check" "timeout-rate"))
                   (log/info "health check timed out before receiving response"
                             {:health-check-path health-check-path
