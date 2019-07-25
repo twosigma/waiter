@@ -192,6 +192,9 @@
                                [error-cause message status])
                              (instance? IllegalStateException error)
                              [:generic-error (.getMessage error) 400]
+                             ;; cancel_stream_error is used to indicate that the stream is no longer needed
+                             (and (instance? IOException error) (= "cancel_stream_error" (.getMessage error)))
+                             [:client-error "Client action means stream is no longer needed" 400]
                              (instance? EofException error)
                              [:client-error "Connection unexpectedly closed while streaming request" 400]
                              (instance? TimeoutException error)

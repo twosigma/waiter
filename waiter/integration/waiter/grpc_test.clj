@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.grpc-test
-  (:require [clojure.string :as str]
+  (:require [clojure.core.async :as async]
+            [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
@@ -22,6 +23,7 @@
             [waiter.util.client-tools :refer :all])
   (:import (com.twosigma.waiter.courier CourierReply CourierSummary GrpcClient GrpcClient$CancellationPolicy StateReply)
            (io.grpc Status)
+           (java.util.concurrent CountDownLatch)
            (java.util.function Function)))
 
 (def cancel-policy-none GrpcClient$CancellationPolicy/NONE)
@@ -116,6 +118,16 @@
      (when status#
        (is (= "CANCELLED" (-> status# .getCode str)) assertion-message#)
        (is (= message# (.getDescription status#)) assertion-message#))))
+
+(defmacro assert-grpc-deadline-exceeded-status
+  "Asserts that the status represents a grpc OK status."
+  [status assertion-message]
+  `(let [status# ~status
+         assertion-message# ~assertion-message]
+     (is status# assertion-message#)
+     (when status#
+       (is (= "DEADLINE_EXCEEDED" (-> status# .getCode str)) assertion-message#)
+       (is (str/includes? (.getDescription status#) "deadline exceeded after") assertion-message#))))
 
 (defmacro assert-grpc-server-exit-status
   "Asserts that the status represents a grpc OK status."
@@ -256,6 +268,42 @@
                 assertion-message (grpc-result->assertion-message correlation-id rpc-result)]
             (assert-grpc-status status "DEADLINE_EXCEEDED" "Request to service backend timed out" assertion-message)
             (is (nil? reply) assertion-message)))))))
+
+(deftest ^:parallel ^:integration-fast test-grpc-unary-call-deadline-exceeded
+  (testing-using-waiter-url
+    (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)]
+      (with-service-cleanup
+        service-id
+        (testing "deadline exceeded"
+          (let [id (rand-name "m")
+                from (rand-name "f")
+                content (rand-str 1000)
+                correlation-id (rand-name)
+                request-headers (assoc request-headers "x-cid" correlation-id)
+                grpc-client (initialize-grpc-client correlation-id host h2c-port)
+                sleep-duration-latch (CountDownLatch. 1)
+                sleep-duration-ms 5000
+                deadline-duration-ms (- sleep-duration-ms 1000)
+                _ (async/go
+                    (async/<! (async/timeout (+ sleep-duration-ms 1000)))
+                    (.countDown sleep-duration-latch))
+                rpc-result (.sendPackage grpc-client request-headers id from content sleep-duration-ms deadline-duration-ms)
+                ^CourierReply reply (.result rpc-result)
+                ^Status status (.status rpc-result)
+                assertion-message (->> (cond-> {:correlation-id correlation-id
+                                                :service-id service-id}
+                                         reply (assoc :reply {:id (.getId reply)
+                                                              :response (.getResponse reply)})
+                                         status (assoc :status {:code (-> status .getCode str)
+                                                                :description (.getDescription status)}))
+                                    (into (sorted-map))
+                                    str)]
+            (assert-grpc-deadline-exceeded-status status assertion-message)
+            (is (nil? reply) assertion-message)
+            (.await sleep-duration-latch)
+            ;; TODO undo after fix to https://github.com/haproxy/haproxy/issues/172
+            (when-not (behind-proxy? waiter-url)
+              (assert-request-state grpc-client request-headers service-id correlation-id ::deadline-exceeded))))))))
 
 (deftest ^:parallel ^:integration-fast test-grpc-unary-call-server-cancellation
   (testing-using-waiter-url
@@ -529,6 +577,54 @@
                   (is (= (count messages) (.getNumMessages summary)) assertion-message)
                   (is (= (reduce + (map count messages)) (.getTotalLength summary)) assertion-message))
                 (assert-request-state grpc-client request-headers service-id correlation-id ::success)))))))))
+
+(deftest ^:parallel ^:integration-fast test-grpc-client-streaming-deadline-exceeded
+  (testing-using-waiter-url
+    (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)
+          correlation-id-prefix (rand-name)]
+      (with-service-cleanup
+        service-id
+        (doseq [max-message-length [1000 50000]]
+          (let [num-messages 120
+                messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))]
+
+            (testing (str max-message-length " messages completion")
+              (log/info "starting streaming to and from server - independent mode test")
+              (let [cancel-threshold (inc num-messages)
+                    from (rand-name "f")
+                    correlation-id (str correlation-id-prefix "-" max-message-length)
+                    request-headers (assoc request-headers "x-cid" correlation-id)
+                    ids (map #(str "id-" %) (range num-messages))
+                    grpc-client (initialize-grpc-client correlation-id host h2c-port)
+                    sleep-duration-latch (CountDownLatch. 1)
+                    sleep-duration-ms 5000
+                    deadline-duration-ms (- sleep-duration-ms 1000)
+                    _ (async/go
+                        (async/<! (async/timeout (+ sleep-duration-ms 1000)))
+                        (.countDown sleep-duration-latch))
+                    rpc-result (.aggregatePackages grpc-client request-headers ids from messages 1000
+                                                   cancel-threshold cancel-policy-none deadline-duration-ms)
+                    ^CourierSummary summary (.result rpc-result)
+                    ^Status status (.status rpc-result)
+                    assertion-message (->> (cond-> {:correlation-id correlation-id
+                                                    :service-id service-id}
+                                             summary (assoc :summary {:num-messages (.getNumMessages summary)
+                                                                      :total-length (.getTotalLength summary)})
+                                             status (assoc :status {:code (-> status .getCode str)
+                                                                    :description (.getDescription status)}))
+                                        (into (sorted-map))
+                                        str)]
+                (log/info correlation-id "aggregated packages...")
+                ;; TODO undo after fix to https://github.com/haproxy/haproxy/issues/172
+                (if (and (behind-proxy? waiter-url)
+                         (= "UNAVAILABLE" (some-> status .getCode str)))
+                  (assert-grpc-status status "UNAVAILABLE" "Received Rst Stream" assertion-message)
+                  (assert-grpc-deadline-exceeded-status status assertion-message))
+                (is (nil? summary) assertion-message)
+                (.await sleep-duration-latch)
+                ;; TODO undo after fix to https://github.com/haproxy/haproxy/issues/172
+                (when-not (behind-proxy? waiter-url)
+                  (assert-request-state grpc-client request-headers service-id correlation-id ::deadline-exceeded))))))))))
 
 (deftest ^:parallel ^:integration-slow test-grpc-client-streaming-server-exit
   (testing-using-waiter-url
