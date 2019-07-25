@@ -243,7 +243,7 @@
       (if (and (pos? port) host)
         (let [instance-health-check-url (health-check-url service-instance protocol health-check-port-index health-check-path)
               request-timeout-ms (max (+ (.getConnectTimeout http-client) (.getIdleTimeout http-client)) 200)
-              request-abort-chan (async/promise-chan)
+              request-abort-chan (async/chan 1)
               health-check-response-chan (http/get http-client instance-health-check-url {:abort-ch request-abort-chan})
               _ (meters/mark! (metrics/waiter-meter "scheduler" scheduler-name "health-check" "invocation-rate"))
               {:keys [error-flag status]}
