@@ -75,9 +75,9 @@
 ;; Fails on (is (> (count instance-ids) 1) (str instance-ids)) as there is only one instance
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-s3-logs
   (testing-using-waiter-url
-    (when (using-k8s? waiter-url)
-      (let [log-bucket-url (-> waiter-url get-kubernetes-scheduler-settings :log-bucket-url)
-            headers {:x-waiter-name (rand-name)
+    (when-let [log-bucket-url (when (using-k8s? waiter-url)
+                                (-> waiter-url get-kubernetes-scheduler-settings :log-bucket-url))]
+      (let [headers {:x-waiter-name (rand-name)
                      :x-waiter-concurrency-level 1
                      :x-waiter-distribution-scheme "simple"
                      :x-waiter-max-instances 2
