@@ -274,8 +274,9 @@
                  (str/replace #"\n  $" "\n")))
        :headers (-> headers
                   (assoc-if-absent "content-type" content-type))
-       :waiter/message (-> (or (-> data-map :details :friendly-error-message)
-                               (:message error-context))
+       :waiter/message (-> error-context
+                         :message
+                         str
                          (str/replace #"\n" "; "))
        :status status})))
 
