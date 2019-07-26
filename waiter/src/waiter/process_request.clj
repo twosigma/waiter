@@ -15,6 +15,7 @@
 ;;
 (ns waiter.process-request
   (:require [clojure.core.async :as async]
+            [clojure.core.async.impl.protocols :as protocols]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [full.async :as fa]
@@ -39,7 +40,8 @@
             [waiter.util.http-utils :as hu]
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils])
-  (:import (java.io ByteArrayOutputStream InputStream IOException)
+  (:import (clojure.lang ExceptionInfo)
+           (java.io ByteArrayOutputStream InputStream IOException)
            (java.nio ByteBuffer)
            (java.util.concurrent TimeoutException)
            (javax.servlet ServletOutputStream ReadListener ServletInputStream)
@@ -63,12 +65,13 @@
     (fn confirm-live-connection []
       (try
         (check-control confirm-live-chan correlation-id)
-        (catch Exception e
+        (catch Throwable throwable
           ; flag the error as an I/O error as the connection is no longer live
           (deliver reservation-status-promise :client-error)
+          (log/debug throwable "error while checking for live connection")
           (when error-callback
-            (error-callback e))
-          (throw e))))))
+            (error-callback throwable))
+          (throw throwable))))))
 
 (defn set-idle-timeout!
   "Configures the idle timeout in the response output stream (HttpOutput) to `idle-timeout-ms` ms."
@@ -162,9 +165,11 @@
                               (log/info "done processing request" status)
                               (when (= :success status)
                                 (counters/inc! (metrics/service-counter service-id "request-counts" "successful")))
+                              (when (contains? #{:client-error :generic-error :instance-error} status)
+                                (counters/inc! (metrics/service-counter service-id "request-counts" (name status))))
                               (when (= :generic-error status)
                                 (log/error "there was a generic error in processing the request;"
-                                            "if this is a client or server related issue, the code needs to be updated."))
+                                           "if this is a client or server related issue, the code needs to be updated."))
                               (when (not= :success-async status)
                                 (counters/dec! (metrics/service-counter service-id "request-counts" "outstanding"))
                                 (statsd/gauge-delta! metric-group "request_outstanding" -1))
@@ -175,18 +180,34 @@
                             (log/error e "error releasing instance!"))))
       instance)))
 
+(defn- classify-error
+  "Classifies the error responses from the backend into the following vector:
+   - error cause (:client-error, :instance-error or :generic-error),
+   - associated error message, and
+   - the http status code."
+  [error]
+  (let [classification (cond (instance? ExceptionInfo error)
+                             (let [[error-cause message status] (classify-error (ex-cause error))
+                                   error-cause (or (-> error ex-data :error-cause) error-cause)]
+                               [error-cause message status])
+                             (instance? IllegalStateException error)
+                             [:generic-error (.getMessage error) 400]
+                             (instance? EofException error)
+                             [:client-error "Connection unexpectedly closed while streaming request" 400]
+                             (instance? TimeoutException error)
+                             [:instance-error (utils/message :backend-request-timed-out) 504]
+                             :else
+                             [:instance-error (utils/message :backend-request-failed) 502])
+        [error-cause _ _] classification]
+    (log/info (-> error .getClass .getCanonicalName) (.getMessage error) "identified as" error-cause)
+    classification))
+
 (defn- handle-response-error
   "Handles error responses from the backend."
   [error reservation-status-promise service-id request]
-  (let [metrics-map (metrics/retrieve-local-stats-for-service service-id)
-        [promise-value message status]
-        (cond (instance? EofException error)
-              [:client-error "Connection unexpectedly closed while sending request" 400]
-              (instance? TimeoutException error)
-              [:instance-error (utils/message :backend-request-timed-out) 504]
-              :else
-              [:instance-error (utils/message :backend-request-failed) 502])]
-    (deliver reservation-status-promise promise-value)
+  (let [[error-cause message status] (classify-error error)
+        metrics-map (metrics/retrieve-local-stats-for-service service-id)]
+    (deliver reservation-status-promise error-cause)
     (utils/exception->response (ex-info message (assoc metrics-map :status status) error) request)))
 
 (let [min-buffer-size 1024
@@ -284,12 +305,15 @@
                     (when (and (utils/non-neg? bytes-read) (.isReady input-stream))
                       (recur)))))
               (catch Throwable throwable
-                (complete-request-streaming "there was error in streaming data" throwable)
+                (let [ex (ex-info "error reading available data" {:error-cause :client-error} throwable)]
+                  (complete-request-streaming "there was error in streaming data" ex))
                 (throw throwable))))
           (onError [_ throwable]
-            (complete-request-streaming "there was error in request data stream" throwable))))
+            (let [ex (ex-info "error in frontend request" {:error-cause :client-error} throwable)]
+              (complete-request-streaming "there was error in request data stream" ex)))))
       (catch Throwable throwable
-        (complete-request-streaming "there was error in registering read listener" throwable)))
+        (let [ex (ex-info "error in registering read listener on request stream" {:error-cause :generic-error} throwable)]
+          (complete-request-streaming "there was error in registering read listener" ex))))
     body-ch))
 
 (defn- make-http-request
@@ -419,9 +443,12 @@
                                       _ (when (= timeout-ch source-ch)
                                           (log/warn "timeout while reading from error-chan"))
                                       ex (ex-info "Unable to stream, back pressure in resp-chan. Is connection live?"
-                                                  {:bytes-pending bytes-read
+                                                  {:body-source-closed? (protocols/closed? body)
+                                                   :body-target-closed? (protocols/closed? resp-chan)
+                                                   :bytes-pending bytes-read
                                                    :bytes-streamed bytes-streamed
-                                                   :correlation-id (cid/get-correlation-id)}
+                                                   :correlation-id (cid/get-correlation-id)
+                                                   :error-cause :client-error}
                                                   error)]
                                   (meters/mark! stream-back-pressure)
                                   (deliver reservation-status-promise :client-error)
@@ -442,8 +469,7 @@
                         (catch Exception e
                           (histograms/update! (metrics/service-histogram service-id "response-size") bytes-streamed)
                           ; Handle lower down
-                          (throw (Exception.
-                                   (str "error occurred after streaming" bytes-streamed "bytes in response.") e))))]
+                          (throw (ex-info (str "error occurred after streaming " bytes-streamed " bytes in response") {} e))))]
                   (let [bytes-reported-to-statsd'
                         (let [unreported-bytes (- bytes-streamed' bytes-reported-to-statsd)]
                           (if (or (and (not more-bytes-possibly-available?) (pos? unreported-bytes))
@@ -455,16 +481,17 @@
                     (when more-bytes-possibly-available?
                       (recur bytes-streamed' bytes-reported-to-statsd'))))))))
         (catch Exception e
+          (log/info e "exception occurred while streaming response for" service-id)
           (meters/mark! stream-exception-meter)
-          (deliver reservation-status-promise :instance-error)
+          (let [[error-cause _ _] (classify-error e)]
+            (deliver reservation-status-promise error-cause))
           (log/info "sending poison pill to response channel")
           (let [poison-pill-function (poison-pill-fn (cid/get-correlation-id))]
             (when-not (au/timed-offer! resp-chan poison-pill-function 5000)
               (log/info "poison pill offer on response channel timed out!")
               (when-let [output-stream @output-stream-atom]
                 (log/info "invoking poison pill directly on output stream")
-                (poison-pill-function output-stream))))
-          (log/error e "exception occurred while streaming response for" service-id))
+                (poison-pill-function output-stream)))))
         (finally
           (async/close! resp-chan)
           (async/close! body)
