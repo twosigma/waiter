@@ -775,11 +775,9 @@
                                                                          health-check-port-index health-check-path))]
                                   (fn start-scheduler-syncer-fn
                                     [scheduler-name get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs]
-                                    (let [timeout-chan (->> (t/seconds scheduler-syncer-interval-secs)
-                                                            (du/time-seq (t/now))
-                                                            chime/chime-ch)]
+                                    (let [timer-ch (-> scheduler-syncer-interval-secs t/seconds t/in-millis au/timer-chan)]
                                       (scheduler/start-scheduler-syncer
-                                        clock timeout-chan service-id->service-description-fn* available?
+                                        clock timer-ch service-id->service-description-fn* available?
                                         failed-check-threshold scheduler-name get-service->instances-fn scheduler-state-chan)))))})
 
 (def routines

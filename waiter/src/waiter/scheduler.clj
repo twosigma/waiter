@@ -602,7 +602,7 @@
   The nested map has the following keys: :active-instances and :failed-instances.
   The active-instances should not be assumed to be healthy (or live).
   The failed-instances are guaranteed to be dead.\""
-  [clock timeout-chan service-id->service-description-fn available? failed-check-threshold
+  [clock timer-ch service-id->service-description-fn available? failed-check-threshold
    scheduler-name get-service->instances-fn scheduler-state-chan]
   (log/info "starting scheduler syncer")
   (let [exit-chan (async/chan 1)
@@ -628,7 +628,7 @@
                                      (retrieve-syncer-state current-state)))
                          current-state)
 
-                       timeout-chan
+                       timer-ch
                        ([]
                          (try
                            (timers/start-stop-time!

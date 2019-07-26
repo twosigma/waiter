@@ -14,9 +14,9 @@
 ;; limitations under the License.
 ;;
 (ns waiter.util.date-utils
-  (:require [chime :as chime]
-            [clj-time.core :as t]
+  (:require [clj-time.core :as t]
             [clj-time.format :as f]
+            [clojure.core.async :as async]
             [clojure.tools.logging :as log])
   (:import (org.joda.time DateTime ReadablePeriod)))
 
@@ -59,13 +59,26 @@
   (iterate (fn [^DateTime t] (.plus t period)) start))
 
 (defn start-timer-task
-  "Executes the callback functions sequentially as specified intervals. Returns
-  a function that will cancel the timer when called."
+  "Executes the callback function sequentially at specified intervals on an core.async thread.
+   Returns a function that will cancel the timer when called."
   [interval-period callback-fn & {:keys [delay-ms] :or {delay-ms 0}}]
-  (chime/chime-at
-    (time-seq (t/plus (t/now) (t/millis delay-ms)) interval-period)
-    (fn [_] (callback-fn))
-    {:error-handler (fn [ex] (log/error ex (str "Exception in timer task.")))}))
+  (let [error-handler (fn start-timer-task-error-handler [ex]
+                        (log/error ex (str "Exception in timer task.")))
+        interval-ms (t/in-millis interval-period)
+        cancel-promise (promise)]
+    (async/go
+      (when (pos? delay-ms)
+        (async/<! (async/timeout delay-ms)))
+      (loop []
+        (when-not (realized? cancel-promise)
+          (try
+            (callback-fn)
+            (catch Throwable th
+              (error-handler th)))
+          (async/<! (async/timeout interval-ms))
+          (recur))))
+    (fn cancel-timer-task []
+      (deliver cancel-promise ::cancel))))
 
 (defn older-than? [current-time duration {:keys [started-at]}]
   (if (and duration started-at)

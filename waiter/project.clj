@@ -60,11 +60,6 @@
                   :exclusions [org.clojure/clojure org.clojure/core.async]]
                  [io.dropwizard.metrics/metrics-graphite "3.1.1"
                   :exclusions [org.slf4j/slf4j-api]]
-                 [jarohen/chime "0.2.2"
-                  :exclusions
-                  [org.clojure/clojure
-                   clj-time/clj-time
-                   org.clojure/core.async]]
                  [joda-time "2.10.1"]
                  [twosigma/metrics-clojure "2.6.0-20180124_201441-g72cee16"
                   :exclusions [org.clojure/clojure io.netty/netty org.slf4j/slf4j-api]]
