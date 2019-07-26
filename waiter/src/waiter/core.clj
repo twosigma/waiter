@@ -311,6 +311,8 @@
                                     "grpc-message" grpc-message
                                     "grpc-status" grpc-status)]
             (async/>! trailers-ch new-trailers-data)))
+        ;; when only headers are provided jetty terminates the request with an empty data frame,
+        ;; we work around that limitation by sending trailers that carry the same grpc error message.
         (assoc response
           :headers new-headers
           :trailers trailers-ch))
