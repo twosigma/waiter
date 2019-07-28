@@ -273,13 +273,26 @@
                                          (let [complete-trigger-id (utils/unique-identifier)]
                                            (deliver complete-triggered-promise complete-trigger-id)
                                            (when (= complete-trigger-id @complete-triggered-promise)
-                                             (log/debug "closing request body as" message)
+                                             ;; avoid decrementing the counter multiple times
                                              (counters/dec! request-body-streaming-counter)
-                                             (when throwable
-                                               (log/error throwable "unable to stream request bytes, aborting request")
-                                               (async/>!! abort-ch throwable))
-                                             (report-request-size-metrics 0 true)
-                                             (async/close! body-ch))))))]
+                                             (report-request-size-metrics 0 true))
+                                           (if throwable
+                                             (let [identifier-map {:identifier complete-trigger-id}
+                                                   ;; the callback is necessary as there is a data race between aborting the
+                                                   ;; request and closing of the body channel triggering a normal complete before
+                                                   ;; the abort request gets processed.
+                                                   callback (fn complete-request-streaming-abort-result-callback [aborted?]
+                                                              (cid/with-correlation-id
+                                                                correlation-id
+                                                                (log/info "result of aborted request:" aborted? identifier-map)
+                                                                (async/close! body-ch)))]
+                                               (log/info throwable "aborting request" message identifier-map)
+                                               (when-not (async/put! abort-ch [throwable callback])
+                                                 ;; abort channel already closed, cleanup by closing the body channel
+                                                 (async/close! body-ch)))
+                                             (do
+                                               (log/debug "closing request input body" message)
+                                               (async/close! body-ch)))))))]
     (counters/inc! request-body-streaming-counter)
     (when ctrl-ch
       (async/go
@@ -324,7 +337,7 @@
    idle-timeout streaming-timeout-ms output-buffer-size proto-version ctrl-ch]
   (let [auth (make-basic-auth-fn endpoint "waiter" service-password)
         headers (headers/assoc-auth-headers headers username principal)
-        abort-ch (async/promise-chan)
+        abort-ch (async/chan 10)
         body' (cond->> body
                 (instance? ServletInputStream body)
                 (servlet-input-stream->channel service-id metric-group streaming-timeout-ms abort-ch ctrl-ch))]
@@ -512,13 +525,22 @@
 
 (defn abort-http-request-callback-factory
   "Creates a callback to abort the http request."
-  [response]
-  (fn abort-http-request-callback [^Exception e]
-    (let [ex (if (instance? IOException e) e (IOException. e))
-          aborted (if-let [request (:request response)]
-                    (.abort request ex)
-                    (log/warn "unable to abort as request not found inside response!"))]
-      (log/info "aborted backend request:" aborted))))
+  [{:keys [abort-ch] :as response}]
+  (fn abort-backend-request-callback [^Exception ex]
+    (let [correlation-id (cid/get-correlation-id)
+          callback (fn abort-http-request-result-callback [aborted?]
+                     (cid/with-correlation-id
+                       correlation-id
+                       (log/info ex "aborted backend request:" aborted?)))]
+      (when-not abort-ch
+        (log/warn "abort-ch not available in response"))
+      (log/debug "aborting backend request")
+      (when-not (and abort-ch (async/put! abort-ch [ex callback]))
+        (log/debug "aborting backend request directly")
+        (if-let [request (:request response)]
+          (let [aborted? (.abort request ex)]
+            (log/info ex "result of aborting backend request directly:" aborted?))
+          (log/warn ex "cannot abort request as it is not available in response"))))))
 
 (defn- introspect-trailers
   "Introspects and logs trailers received in the response"
