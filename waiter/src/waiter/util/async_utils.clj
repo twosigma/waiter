@@ -31,6 +31,22 @@
   []
   (sliding-buffer-chan 1))
 
+(defn timer-chan
+  "Returns a core.async channel that 'chimes' at the specified intervals after the specified delay (default of 0 ms).
+   The go block that is triggering the chimes can be terminated by closing the returned channel."
+  ([interval-ms]
+   (timer-chan interval-ms 0))
+  ([interval-ms delay-ms]
+   (let [timer-ch (latest-chan)]
+     (async/go
+       (when (pos? delay-ms)
+         (async/<! (async/timeout delay-ms)))
+       (loop []
+         (when (async/>! timer-ch ::trigger)
+           (async/<! (async/timeout interval-ms))
+           (recur))))
+     timer-ch)))
+
 (defn on-chan-close
   "Repeatedly pulls off `c` until the channel closes.
    Once closed, calls `f`. If `ex-handler` is specified,

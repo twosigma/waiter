@@ -31,7 +31,6 @@
   (:import clojure.lang.ExceptionInfo
            java.net.ServerSocket
            java.util.UUID
-           org.joda.time.DateTime
            waiter.cors.PatternBasedCorsValidator
            waiter.service_description.DefaultServiceDescriptionBuilder))
 
@@ -468,26 +467,6 @@
   (testing "periodic-seq throws due to overflow after a large number of iterations"
     (let [every-ten-secs (periodic/periodic-seq (t/now) (t/millis 10000))]
       (is (thrown-with-msg? ArithmeticException #"Multiplication overflows an int" (nth every-ten-secs 1000000))))))
-
-(deftest test-time-seq
-  (testing "Generation of a sequence of times"
-
-    (testing "should work for small numbers of iterations"
-      (let [start (DateTime. 1000)
-            every-milli (time-seq start (t/millis 1))
-            every-ten-secs (time-seq start (t/seconds 10))]
-        (is (= (DateTime. 1000) (first every-milli)))
-        (is (= (DateTime. 1001) (second every-milli)))
-        (is (= (DateTime. 1002) (nth every-milli 2)))
-        (is (= (map #(DateTime. %) [1000 1001 1002 1003 1004 1005 1006 1007 1008 1009])
-               (take 10 every-milli)))
-        (is (= (map #(DateTime. %) [1000 11000 21000 31000 41000 51000 61000 71000 81000 91000])
-               (take 10 every-ten-secs)))))
-
-    (testing "should work for 52 weeks worth of ten-second intervals"
-      (let [now (t/now)
-            every-ten-secs (time-seq now (t/millis 10000))]
-        (is (true? (t/equal? (t/plus now (t/weeks 52)) (nth every-ten-secs 3144960))))))))
 
 (deftest test-authority->host
   (is (nil? (authority->host nil)))

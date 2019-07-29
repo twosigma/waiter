@@ -328,3 +328,26 @@
                  (execute task-thread-pool)
                  (async/<!!)))))
     (.shutdown task-thread-pool)))
+
+(deftest test-timer-chan
+  (let [num-iterations 8
+        interval-ms 100
+        tolerance-ms 20
+        call-times-atom (atom [])
+        callback-fn #(swap! call-times-atom conj (System/currentTimeMillis))
+        timer-ch (timer-chan interval-ms)]
+    (async/go
+      (loop []
+        (when (async/<! timer-ch)
+          (callback-fn)
+          (recur))))
+    (Thread/sleep (+ tolerance-ms (* interval-ms num-iterations)))
+    (async/close! timer-ch)
+    (let [invocation-times @call-times-atom
+          invocation-diffs (map -
+                                (drop 1 invocation-times)
+                                (drop-last 1 invocation-times))]
+      (is (>= (count invocation-times) num-iterations))
+      (is (every? #(>= % (- interval-ms tolerance-ms)) invocation-diffs)
+          (str {:invocation-diffs invocation-diffs
+                :invocation-times invocation-times})))))
