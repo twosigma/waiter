@@ -109,7 +109,7 @@
 
             ;; Get a service with at least one killed instance.
             (log/info "starting parallel requests")
-            (let [async-create-headers (assoc headers :x-kitchen-delay-ms 60000)
+            (let [async-create-headers (assoc headers :x-kitchen-delay-ms 120000)
                   async-request-fn (fn [] (->> #(make-kitchen-request waiter-url % :method :get :path "/async/request")
                                                (make-request-with-debug-info async-create-headers)))
                   async-responses (->> async-request-fn (repeatedly 2) vec)
