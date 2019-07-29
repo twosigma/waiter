@@ -77,12 +77,12 @@
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
       (when-let [log-bucket-url (-> waiter-url get-kubernetes-scheduler-settings :log-bucket-url)]
-        (let [headers {:x-waiter-name (rand-name)
-                       :x-waiter-concurrency-level 1
+        (let [headers {:x-waiter-concurrency-level 1
                        :x-waiter-distribution-scheme "simple"
                        :x-waiter-max-instances 2
-                       :x-waiter-scale-up-factor 0.99
-                       :x-waiter-scale-down-factor 0.99}
+                       :x-waiter-name (rand-name)
+                       :x-waiter-scale-down-factor 0.99
+                       :x-waiter-scale-up-factor 0.99}
               _ (log/info "making canary request...")
               {:keys [cookies instance-id service-id]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
 
