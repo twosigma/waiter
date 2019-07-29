@@ -243,6 +243,33 @@
     [context]
     (text-fn context)))
 
+(defn error-context->json-body
+  "Converts the error-context to the response body json string."
+  [error-context]
+  (json/write-str {:waiter-error error-context}
+                  :escape-slash false
+                  :key-fn stringify-keys
+                  :value-fn stringify-elements))
+
+(defn error-context->html-body
+  "Converts the error-context to the response body html string."
+  [error-context]
+  (-> error-context
+    (update :message urls->html-links)
+    (update :details #(with-out-str (pprint/pprint %)))
+    render-error-html))
+
+(defn error-context->text-body
+  "Converts the error-context to the response body plaintext string."
+  [error-context]
+  (-> error-context
+    (update :details (fn [v]
+                       (when v
+                         (str/replace (with-out-str (pprint/pprint v)) #"\n" "\n  "))))
+    render-error-text
+    (str/replace #"\n" "\n  ")
+    (str/replace #"\n  $" "\n")))
+
 (defn data->error-response
   "Converts the provided data map into a ring response.
    The data map is expected to contain the following keys: details, headers, message, and status."
@@ -251,33 +278,13 @@
         content-type (request->content-type request)]
     (attach-waiter-source
       {:body (case content-type
-               "application/grpc"
                ;; grpc error responses should not have a body as the client will try to parse it into a proto object
-               nil
-               "application/json"
-               (json/write-str {:waiter-error error-context}
-                               :escape-slash false
-                               :key-fn stringify-keys
-                               :value-fn stringify-elements)
-               "text/html"
-               (-> error-context
-                 (update :message urls->html-links)
-                 (update :details #(with-out-str (pprint/pprint %)))
-                 render-error-html)
-               "text/plain"
-               (-> error-context
-                 (update :details (fn [v]
-                                    (when v
-                                      (str/replace (with-out-str (pprint/pprint v)) #"\n" "\n  "))))
-                 render-error-text
-                 (str/replace #"\n" "\n  ")
-                 (str/replace #"\n  $" "\n")))
+               "application/grpc" nil
+               "application/json" (error-context->json-body error-context)
+               "text/html" (error-context->html-body error-context)
+               "text/plain" (error-context->text-body error-context))
        :headers (-> headers
                   (assoc-if-absent "content-type" content-type))
-       :waiter/message (-> error-context
-                         :message
-                         str
-                         (str/replace #"\n" "; "))
        :status status})))
 
 (defn- wrap-unhandled-exception
