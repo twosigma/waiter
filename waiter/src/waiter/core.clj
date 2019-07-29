@@ -61,7 +61,7 @@
             [waiter.util.async-utils :as au]
             [waiter.util.cache-utils :as cu]
             [waiter.util.date-utils :as du]
-            [waiter.util.http-utils :as http-utils]
+            [waiter.util.http-utils :as hu]
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils]
             [waiter.websocket :as ws]
@@ -326,7 +326,7 @@
     [{:keys [client-protocol headers] :as request}]
     (let [response (handler request)]
       (cond-> response
-        (http-utils/grpc? headers client-protocol)
+        (hu/grpc? headers client-protocol)
         (ru/update-response add-grpc-headers-and-trailers)))))
 
 (defn- make-blacklist-request
@@ -608,7 +608,7 @@
    :fallback-state-atom (pc/fnk [] (atom {:available-service-ids #{}
                                           :healthy-service-ids #{}}))
    :http-clients (pc/fnk [[:settings [:instance-request-properties connection-timeout-ms]]]
-                   (http-utils/prepare-http-clients
+                   (hu/prepare-http-clients
                      {:client-name "waiter-client"
                       :conn-timeout connection-timeout-ms
                       :follow-redirects? false}))
@@ -662,7 +662,7 @@
                               [hostname])))
    :websocket-client (pc/fnk [[:settings [:websocket-config ws-max-binary-message-size ws-max-text-message-size]]
                               http-clients]
-                       (let [http-client (http-utils/select-http-client "http" http-clients)
+                       (let [http-client (hu/select-http-client "http" http-clients)
                              websocket-client (WebSocketClient. ^HttpClient http-client)]
                          (doto (.getPolicy websocket-client)
                            (.setMaxBinaryMessageSize ws-max-binary-message-size)
@@ -764,7 +764,7 @@
    :start-scheduler-syncer-fn (pc/fnk [[:settings [:health-check-config health-check-timeout-ms failed-check-threshold] git-version]
                                        [:state clock]
                                        service-id->service-description-fn*]
-                                (let [http-client (http-utils/http-client-factory
+                                (let [http-client (hu/http-client-factory
                                                     {:client-name (str "waiter-syncer-" (str/join (take 7 git-version)))
                                                      :conn-timeout health-check-timeout-ms
                                                      :socket-timeout health-check-timeout-ms
@@ -859,7 +859,7 @@
                                                  [:settings [:instance-request-properties initial-socket-timeout-ms]]
                                                  [:state http-clients passwords router-id]
                                                  make-basic-auth-fn]
-                                          (let [http-client (http-utils/select-http-client "http" http-clients)
+                                          (let [http-client (hu/select-http-client "http" http-clients)
                                                 make-request-async-fn (fn make-request-async-fn [method endpoint-url auth body config]
                                                                         (make-request-async http-client initial-socket-timeout-ms method endpoint-url auth body config))]
                                             (fn make-inter-router-requests-async-fn [endpoint & args]
@@ -868,7 +868,7 @@
                                                 [:settings [:instance-request-properties initial-socket-timeout-ms]]
                                                 [:state http-clients passwords router-id]
                                                 make-basic-auth-fn]
-                                         (let [http-client (http-utils/select-http-client "http" http-clients)
+                                         (let [http-client (hu/select-http-client "http" http-clients)
                                                make-request-sync-fn (fn make-request-sync-fn [method endpoint-url auth body config]
                                                                       (make-request-sync http-client initial-socket-timeout-ms method endpoint-url auth body config))]
                                            (fn make-inter-router-requests-sync-fn [endpoint & args]

@@ -34,7 +34,7 @@
             [waiter.service-description :as sd]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
-            [waiter.util.http-utils :as http-utils]
+            [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
   (:import (java.io InputStreamReader)
            (org.joda.time.format DateTimeFormat)))
@@ -285,7 +285,7 @@
     (let [auth-str @k8s-api-auth-str
           result (timers/start-stop-time!
                    (metrics/waiter-timer "scheduler" scheduler-name (name request-method))
-                   (pc/mapply http-utils/http-request http-client url
+                   (pc/mapply hu/http-request http-client url
                               :accept "application/json"
                               (cond-> options
                                 auth-str (assoc-in [:headers "Authorization"] auth-str)
@@ -640,7 +640,7 @@
           ;; the pod is live: try accessing logs through sidecar
           (when port
             (let [target-url (str scheme "://" host ":" port "/" instance-base-dir browse-path)
-                  result (http-utils/http-request
+                  result (hu/http-request
                            http-client
                            target-url
                            :accept "application/json")]
@@ -652,7 +652,7 @@
           (when log-bucket-url
             (let [prefix (str run-as-user "/" service-id "/" pod-name "/" instance-base-dir browse-path)
                   query-string (str "delimiter=/&prefix=" prefix)
-                  result (http-utils/http-request
+                  result (hu/http-request
                            http-client
                            log-bucket-url
                            :query-string query-string
@@ -743,7 +743,7 @@
                     (for [i (range ports)]
                       {:name (str "PORT" i) :value (str (+ port0 i))})))
         k8s-name (service-id->k8s-app-name scheduler service-id)
-        health-check-scheme (-> (or health-check-proto backend-proto) http-utils/backend-proto->scheme string/upper-case)
+        health-check-scheme (-> (or health-check-proto backend-proto) hu/backend-proto->scheme string/upper-case)
         health-check-url (sd/service-description->health-check-url service-description)
         memory (str mem "Mi")
         service-hash (service-id->service-hash service-id)]
@@ -1061,7 +1061,7 @@
         http-client (-> http-options
                       (utils/assoc-if-absent :client-name "waiter-k8s")
                       (utils/assoc-if-absent :user-agent "waiter-k8s")
-                      http-utils/http-client-factory)
+                      hu/http-client-factory)
         service-id->failed-instances-transient-store (atom {})
         replicaset-spec-builder-ctx (assoc replicaset-spec-builder
                                       :log-bucket-sync-secs log-bucket-sync-secs

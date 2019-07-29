@@ -31,7 +31,7 @@
             [waiter.scheduler :as scheduler]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
-            [waiter.util.http-utils :as http-utils]
+            [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
   (:import java.io.File
            java.lang.UNIXProcess
@@ -848,7 +848,7 @@
         (create-shell-scheduler (assoc config
                                   :id->service-agent id->service-agent
                                   :retrieve-syncer-state-fn retrieve-syncer-state-fn))
-        http-client (http-utils/http-client-factory
+        http-client (hu/http-client-factory
                       {:client-name "waiter-shell"
                        :conn-timeout health-check-timeout-ms
                        :socket-timeout health-check-timeout-ms
