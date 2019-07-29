@@ -85,7 +85,6 @@
                                        {:ring-handler (-> (core/ring-handler-factory waiter-request?-fn handlers)
                                                           (cors/wrap-cors-preflight cors-validator (:max-age cors-config))
                                                           core/wrap-error-handling
-                                                          core/wrap-grpc-status
                                                           (core/wrap-debug generate-log-url-fn)
                                                           rlog/wrap-log
                                                           core/correlation-id-middleware

@@ -285,49 +285,7 @@
       (catch Exception e
         (utils/exception->response e request)))))
 
-(defn add-grpc-headers-and-trailers
-  "Finds and attaches the equivalent grpc status codes for the provided http status code."
-  [{:keys [headers status trailers waiter/message] :as response}]
-  (if (utils/waiter-generated-response? response)
-    (if-let [grpc-status-data (cond
-                                (= status 400) ["3" "Bad Request"]
-                                (= status 401) ["16" "Unauthorized"]
-                                (= status 403) ["7" "Permission Denied"]
-                                (= status 429) ["14" "Too Many Requests"]
-                                (= status 500) ["13" "Internal Server Error"]
-                                (= status 502) ["14" "Bad Gateway"]
-                                (= status 503) ["14" "Service Unavailable"]
-                                (= status 504) ["4" "Gateway Timeout"])]
-      (let [[grpc-status standard-message] grpc-status-data
-            grpc-message (if (string? message) message standard-message)
-            trailers-ch (async/promise-chan)
-            new-headers (assoc headers
-                          "content-type" "application/grpc"
-                          "grpc-message" grpc-message
-                          "grpc-status" grpc-status)]
-        (async/go
-          (let [trailers-data (and trailers (async/<! trailers))
-                new-trailers-data (assoc trailers-data
-                                    "grpc-message" grpc-message
-                                    "grpc-status" grpc-status)]
-            (async/>! trailers-ch new-trailers-data)))
-        ;; when only headers are provided jetty terminates the request with an empty data frame,
-        ;; we work around that limitation by sending trailers that carry the same grpc error message.
-        (assoc response
-          :headers new-headers
-          :trailers trailers-ch))
-      response)
-    response))
 
-(defn wrap-grpc-status
-  "Attaches grpc-status on Waiter generated responses based on http status codes."
-  [handler]
-  (fn wrap-grpc-status-fn
-    [{:keys [client-protocol headers] :as request}]
-    (let [response (handler request)]
-      (cond-> response
-        (hu/grpc? headers client-protocol)
-        (ru/update-response add-grpc-headers-and-trailers)))))
 
 (defn- make-blacklist-request
   [make-inter-router-requests-fn blacklist-period-ms dest-router-id dest-endpoint {:keys [id] :as instance} reason]

@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.util.utils
-  (:require [clojure.data.codec.base64 :as b64]
+  (:require [clojure.core.async :as async]
+            [clojure.data.codec.base64 :as b64]
             [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.pprint :as pprint]
@@ -23,10 +24,10 @@
             [clojure.walk :as walk]
             [comb.template :as template]
             [digest]
-            [plumbing.core :as pc]
             [taoensso.nippy :as nippy]
             [taoensso.nippy.compression :as compression]
-            [waiter.util.date-utils :as du])
+            [waiter.util.date-utils :as du]
+            [waiter.util.http-utils :as hu])
   (:import clojure.core.async.impl.channels.ManyToManyChannel
            clojure.lang.ExceptionInfo
            java.io.OutputStreamWriter
@@ -270,22 +271,59 @@
     (str/replace #"\n" "\n  ")
     (str/replace #"\n  $" "\n")))
 
+(defn add-grpc-headers-and-trailers
+  "Finds and attaches the equivalent grpc status codes for the provided http status code."
+  [{:keys [headers status] :as response} {:keys [message]}]
+  (if-let [grpc-status-data (cond
+                              (= status 400) ["3" "Bad Request"]
+                              (= status 401) ["16" "Unauthorized"]
+                              (= status 403) ["7" "Permission Denied"]
+                              (= status 429) ["14" "Too Many Requests"]
+                              (= status 500) ["13" "Internal Server Error"]
+                              (= status 502) ["14" "Bad Gateway"]
+                              (= status 503) ["14" "Service Unavailable"]
+                              (= status 504) ["4" "Gateway Timeout"])]
+    (let [[grpc-status standard-message] grpc-status-data
+          grpc-message (if (string? message) (str/replace message #"\n" "; ") standard-message)
+          new-headers (assoc headers
+                        "content-type" "application/grpc"
+                        "grpc-message" grpc-message
+                        "grpc-status" grpc-status)
+          ;; when only headers are provided jetty terminates the request with an empty data frame,
+          ;; we work around that limitation by sending trailers that carry the same grpc error message.
+          trailers-ch (async/promise-chan)
+          trailers-data {"grpc-message" grpc-message
+                         "grpc-status" grpc-status}]
+      (async/>!! trailers-ch trailers-data)
+      (assoc response
+        :headers new-headers
+        :trailers trailers-ch))
+    response))
+
+(defn attach-grpc-status
+  "Attaches grpc-status on Waiter generated responses based on http status codes for grpc requests."
+  [response error-context {:keys [client-protocol headers]}]
+  (cond-> response
+    (hu/grpc? headers client-protocol)
+    (add-grpc-headers-and-trailers error-context)))
+
 (defn data->error-response
   "Converts the provided data map into a ring response.
    The data map is expected to contain the following keys: details, headers, message, and status."
   [{:keys [headers status] :or {status 400} :as data-map} request]
   (let [error-context (build-error-context data-map request)
         content-type (request->content-type request)]
-    (attach-waiter-source
-      {:body (case content-type
-               ;; grpc error responses should not have a body as the client will try to parse it into a proto object
-               "application/grpc" nil
-               "application/json" (error-context->json-body error-context)
-               "text/html" (error-context->html-body error-context)
-               "text/plain" (error-context->text-body error-context))
-       :headers (-> headers
-                  (assoc-if-absent "content-type" content-type))
-       :status status})))
+    (-> {:body (case content-type
+                 ;; grpc error responses should not have a body as the client will try to parse it into a proto object
+                 "application/grpc" nil
+                 "application/json" (error-context->json-body error-context)
+                 "text/html" (error-context->html-body error-context)
+                 "text/plain" (error-context->text-body error-context))
+         :headers (-> headers
+                    (assoc-if-absent "content-type" content-type))
+         :status status}
+      (attach-grpc-status error-context request)
+      attach-waiter-source)))
 
 (defn- wrap-unhandled-exception
   "Wraps any exception that doesn't already set status in a parent
