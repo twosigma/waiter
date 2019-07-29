@@ -17,17 +17,45 @@
   (:require [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.string :as str]
+            [clojure.tools.logging :as log]
             [clojure.walk :as walk]
             [qbits.jet.client.http :as http]
-            [slingshot.slingshot :as ss]
-            [waiter.auth.spnego :as spnego])
+            [slingshot.slingshot :as ss])
   (:import (java.net URI)
+           (java.net URI)
            (java.util ArrayList)
+           (org.apache.commons.codec.binary Base64)
            (org.eclipse.jetty.client HttpClient)
+           (org.eclipse.jetty.client.api Authentication$Result Request)
            (org.eclipse.jetty.http HttpField HttpHeader)
            (org.eclipse.jetty.http2.client HTTP2Client)
            (org.eclipse.jetty.http2.client.http HttpClientTransportOverHTTP2)
-           (org.eclipse.jetty.util HttpCookieStore$Empty)))
+           (org.eclipse.jetty.util HttpCookieStore$Empty)
+           (org.ietf.jgss GSSManager)
+           (org.ietf.jgss GSSManager GSSContext GSSName Oid)))
+
+(def ^Oid spnego-oid (Oid. "1.3.6.1.5.5.2"))
+
+(def ^Base64 base64 (Base64.))
+
+(defn spnego-authentication
+  "Returns an Authentication$Result for endpoint which will use SPNEGO to generate an Authorization header"
+  [^URI endpoint]
+  (reify Authentication$Result
+    (getURI [_] endpoint)
+
+    (^void apply [_ ^Request request]
+      (try
+        (let [gss-manager (GSSManager/getInstance)
+              server-principal (str "HTTP@" (.getHost endpoint))
+              server-name (.createName gss-manager server-principal GSSName/NT_HOSTBASED_SERVICE spnego-oid)
+              gss-context (.createContext gss-manager server-name spnego-oid nil GSSContext/DEFAULT_LIFETIME)
+              _ (.requestMutualAuth gss-context true)
+              token (.initSecContext gss-context (make-array Byte/TYPE 0) 0 0)
+              header (str "Negotiate " (String. (.encode base64 token)))]
+          (.header request HttpHeader/AUTHORIZATION header))
+        (catch Exception e
+          (log/warn e "failure during spnego authentication"))))))
 
 (defn http-request
   "Wrapper over the qbits.jet.client.http/request function.
@@ -40,7 +68,7 @@
   (let [request-map (cond-> {:as :string
                              :method (or request-method :get)
                              :url request-url}
-                      spnego-auth (assoc :auth (spnego/spnego-authentication (URI. request-url)))
+                      spnego-auth (assoc :auth (spnego-authentication (URI. request-url)))
                       accept (assoc :accept accept)
                       body (assoc :body body)
                       (not (str/blank? content-type)) (assoc :content-type content-type)
