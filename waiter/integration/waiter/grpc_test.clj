@@ -31,6 +31,12 @@
 
 (def cancel-policy-none GrpcClient$CancellationPolicy/NONE)
 
+(def cancel-policy-context GrpcClient$CancellationPolicy/CONTEXT)
+
+(def cancel-policy-exception GrpcClient$CancellationPolicy/EXCEPTION)
+
+(def cancel-policy-observer GrpcClient$CancellationPolicy/OBSERVER)
+
 (defn- initialize-grpc-client
   "Initializes grpc client logging to specific correlation id"
   [correlation-id host port]
@@ -140,6 +146,18 @@
      (is status# assertion-message#)
      (when status#
        (is (contains? #{"UNAVAILABLE" "INTERNAL"} (-> status# .getCode str)) assertion-message#))))
+
+(defmacro assert-grpc-unknown-status
+  "Asserts that the status represents a grpc OK status."
+  [status message assertion-message]
+  `(let [status# ~status
+         message# ~message
+         assertion-message# ~assertion-message]
+     (is status# assertion-message#)
+     (when status#
+       (is (= "UNKNOWN" (-> status# .getCode str)) assertion-message#)
+       (when message#
+         (is (= message# (.getDescription status#)) assertion-message#)))))
 
 (defmacro assert-grpc-status
   "Asserts that the status represents a grpc status."
@@ -459,6 +477,102 @@
                       assertion-message))
                 (assert-request-state grpc-client request-headers service-id correlation-id ::success)))))))))
 
+(deftest ^:parallel ^:integration-slow test-grpc-bidi-streaming-client-cancellation
+  (testing-using-waiter-url
+    (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)
+          correlation-id-prefix (rand-name)]
+      (with-service-cleanup
+        service-id
+        (doseq [cancel-policy [cancel-policy-context cancel-policy-exception cancel-policy-observer]]
+          (doseq [max-message-length [1000 50000]]
+            (let [num-messages 120
+                  messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))]
+
+              (testing (str "independent mode " max-message-length " messages completion " cancel-policy)
+                (log/info "starting streaming to and from server - independent mode test")
+                (let [cancel-threshold (/ num-messages 2)
+                      from (rand-name "f")
+                      correlation-id (str correlation-id-prefix "-in-" max-message-length "-" cancel-policy)
+                      request-headers (assoc request-headers "x-cid" correlation-id)
+                      ids (map #(str "id-inde-" %) (range num-messages))
+                      grpc-client (initialize-grpc-client correlation-id host h2c-port)
+                      rpc-result (.collectPackages grpc-client request-headers ids from messages 100 false cancel-threshold cancel-policy 60000)
+                      summaries (.result rpc-result)
+                      ^Status status (.status rpc-result)
+                      assertion-message (->> (cond-> {:correlation-id correlation-id
+                                                      :service-id service-id
+                                                      :summaries (map (fn [^CourierSummary s]
+                                                                        {:num-messages (.getNumMessages s)
+                                                                         :total-length (.getTotalLength s)})
+                                                                      summaries)}
+                                               status (assoc :status {:code (-> status .getCode str)
+                                                                      :description (.getDescription status)}))
+                                             (into (sorted-map))
+                                             str)]
+                  (log/info correlation-id "collecting independent packages...")
+                  (cond
+                    (= cancel-policy-context cancel-policy)
+                    (assert-grpc-cancel-status status "Context cancelled" assertion-message)
+                    (= cancel-policy-exception cancel-policy)
+                    (assert-grpc-unknown-status status nil assertion-message)
+                    (= cancel-policy-observer cancel-policy)
+                    (assert-grpc-unknown-status status "call was cancelled" assertion-message))
+                  ;; allow for cancellation to trigger before message has been received and processed on server-side
+                  (is (<= (count summaries) (inc cancel-threshold)) assertion-message)
+                  (when (seq summaries)
+                    (is (= (range 1 (inc (count summaries)))
+                           (map #(.getNumMessages ^CourierSummary %) summaries))
+                        assertion-message)
+                    (is (= (reductions + (map count (take (count summaries) messages)))
+                           (map #(.getTotalLength ^CourierSummary %) summaries))
+                        assertion-message))
+                  (Thread/sleep 1500) ;; sleep to allow cancellation propagation to backend
+                  ;; TODO undo after fix to https://github.com/haproxy/haproxy/issues/172
+                  (when-not (behind-proxy? waiter-url)
+                    (assert-request-state grpc-client request-headers service-id correlation-id ::client-cancel))))
+
+              (testing (str "lock-step mode " max-message-length " messages completion")
+                (log/info "starting streaming to and from server - lock-step mode test")
+                (let [cancel-threshold (/ num-messages 2)
+                      from (rand-name "f")
+                      correlation-id (str correlation-id-prefix "-ls-" max-message-length "-" cancel-policy)
+                      request-headers (assoc request-headers "x-cid" correlation-id)
+                      ids (map #(str "id-lock-" %) (range num-messages))
+                      grpc-client (initialize-grpc-client correlation-id host h2c-port)
+                      rpc-result (.collectPackages grpc-client request-headers ids from messages 100 true cancel-threshold cancel-policy 60000)
+                      summaries (.result rpc-result)
+                      ^Status status (.status rpc-result)
+                      assertion-message (->> (cond-> {:correlation-id correlation-id
+                                                      :service-id service-id
+                                                      :summaries (map (fn [^CourierSummary s]
+                                                                        {:num-messages (.getNumMessages s)
+                                                                         :total-length (.getTotalLength s)})
+                                                                      summaries)}
+                                               status (assoc :status {:code (-> status .getCode str)
+                                                                      :description (.getDescription status)}))
+                                             (into (sorted-map))
+                                             str)]
+                  (log/info correlation-id "collecting lock-step packages...")
+                  (cond
+                    (= cancel-policy-context cancel-policy)
+                    (assert-grpc-cancel-status status "Context cancelled" assertion-message)
+                    (= cancel-policy-exception cancel-policy)
+                    (assert-grpc-unknown-status status nil assertion-message)
+                    (= cancel-policy-observer cancel-policy)
+                    (assert-grpc-unknown-status status "call was cancelled" assertion-message))
+                  (is (<= (count summaries) (inc cancel-threshold)) assertion-message)
+                  (when (seq summaries)
+                    (is (= (range 1 (inc (count summaries)))
+                           (map #(.getNumMessages ^CourierSummary %) summaries))
+                        assertion-message)
+                    (is (= (reductions + (map count (take (count summaries) messages)))
+                           (map #(.getTotalLength ^CourierSummary %) summaries))
+                        assertion-message))
+                  (Thread/sleep 1500) ;; sleep to allow cancellation propagation to backend
+                  ;; TODO undo after fix to https://github.com/haproxy/haproxy/issues/172
+                  (when-not (behind-proxy? waiter-url)
+                    (assert-request-state grpc-client request-headers service-id correlation-id ::client-cancel)))))))))))
+
 (deftest ^:parallel ^:integration-slow test-grpc-bidi-streaming-server-exit
   (testing-using-waiter-url
     (let [num-messages 120
@@ -598,6 +712,50 @@
                   (is (= (count messages) (.getNumMessages summary)) assertion-message)
                   (is (= (reduce + (map count messages)) (.getTotalLength summary)) assertion-message))
                 (assert-request-state grpc-client request-headers service-id correlation-id ::success)))))))))
+
+(deftest ^:parallel ^:integration-fast test-grpc-client-streaming-client-cancellation
+  (testing-using-waiter-url
+    (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)
+          correlation-id-prefix (rand-name)]
+      (with-service-cleanup
+        service-id
+        (doseq [cancel-policy [cancel-policy-context cancel-policy-exception cancel-policy-observer]]
+          (doseq [max-message-length [1000 50000]]
+            (let [num-messages 120
+                  messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))]
+
+              (testing (str max-message-length " messages completion " cancel-policy)
+                (log/info "starting streaming to and from server - independent mode test")
+                (let [cancel-threshold (/ num-messages 2)
+                      from (rand-name "f")
+                      correlation-id (str correlation-id-prefix "-in-" max-message-length "-" cancel-policy)
+                      request-headers (assoc request-headers "x-cid" correlation-id)
+                      ids (map #(str "id-" %) (range num-messages))
+                      grpc-client (initialize-grpc-client correlation-id host h2c-port)
+                      rpc-result (.aggregatePackages grpc-client request-headers ids from messages 10 cancel-threshold cancel-policy 60000)
+                      ^CourierSummary summary (.result rpc-result)
+                      ^Status status (.status rpc-result)
+                      assertion-message (->> (cond-> {:correlation-id correlation-id
+                                                      :service-id service-id}
+                                               summary (assoc :summary {:num-messages (.getNumMessages summary)
+                                                                        :total-length (.getTotalLength summary)})
+                                               status (assoc :status {:code (-> status .getCode str)
+                                                                      :description (.getDescription status)}))
+                                             (into (sorted-map))
+                                             str)]
+                  (log/info correlation-id "aggregated packages...")
+                  (cond
+                    (= cancel-policy-context cancel-policy)
+                    (assert-grpc-cancel-status status "Context cancelled" assertion-message)
+                    (= cancel-policy-exception cancel-policy)
+                    (assert-grpc-unknown-status status nil assertion-message)
+                    (= cancel-policy-observer cancel-policy)
+                    (assert-grpc-unknown-status status "call was cancelled" assertion-message))
+                  (is (nil? summary) assertion-message)
+                  (Thread/sleep 1500) ;; sleep to allow cancellation propagation to backend
+                  ;; TODO undo after fix to https://github.com/haproxy/haproxy/issues/172
+                  (when-not (behind-proxy? waiter-url)
+                    (assert-request-state grpc-client request-headers service-id correlation-id ::client-cancel)))))))))))
 
 (deftest ^:parallel ^:integration-slow test-grpc-bidi-streaming-client-exit
   (testing-using-waiter-url
