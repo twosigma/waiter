@@ -20,7 +20,9 @@
             [waiter.util.client-tools :refer :all]
             [waiter.util.utils :as utils]))
 
-(deftest ^:parallel ^:integration-slow ^:resource-heavy test-busy-instance-not-reserved
+;; the following assertion is flaky: (is (every? #(not %) results))
+;; every now and then at least one of the values in that array will be true.
+(deftest ^:explicit ^:parallel ^:integration-slow ^:resource-heavy test-busy-instance-not-reserved
   (testing-using-waiter-url
     (let [extra-headers {:x-waiter-name (rand-name)
                          :x-waiter-scale-up-factor 0.99}
