@@ -76,57 +76,57 @@
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-s3-logs
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
-      (let [log-bucket-url (-> waiter-url get-kubernetes-scheduler-settings :log-bucket-url)
-            headers {:x-waiter-name (rand-name)
-                     :x-waiter-concurrency-level 1
-                     :x-waiter-distribution-scheme "simple"
-                     :x-waiter-max-instances 2
-                     :x-waiter-scale-up-factor 0.99
-                     :x-waiter-scale-down-factor 0.99}
-            _ (log/info "making canary request...")
-            {:keys [cookies instance-id service-id]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
+      (when-let [log-bucket-url (-> waiter-url get-kubernetes-scheduler-settings :log-bucket-url)]
+        (let [headers {:x-waiter-concurrency-level 1
+                       :x-waiter-distribution-scheme "simple"
+                       :x-waiter-max-instances 2
+                       :x-waiter-name (rand-name)
+                       :x-waiter-scale-down-factor 0.99
+                       :x-waiter-scale-up-factor 0.99}
+              _ (log/info "making canary request...")
+              {:keys [cookies instance-id service-id]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
 
-        (with-service-cleanup
-          service-id
-          (assert-service-on-all-routers waiter-url service-id cookies)
+          (with-service-cleanup
+            service-id
+            (assert-service-on-all-routers waiter-url service-id cookies)
 
-          ;; Test that the active instances' logs are available.
-          (let [active-instances (get-in (service-settings waiter-url service-id :cookies cookies)
-                                         [:instances :active-instances])
-                log-url (:log-url (first active-instances))
-                make-request-fn (fn [url] (make-request url "" :verbose true))
-                {:keys [body] :as logs-response} (make-request-fn log-url)
-                _ (assert-response-status logs-response 200)
-                log-files-list (walk/keywordize-keys (json/read-str body))
-                stdout-file-link (:url (first (filter #(= (:name %) "stdout") log-files-list)))
-                stderr-file-link (:url (first (filter #(= (:name %) "stderr") log-files-list)))]
-            (is (every? #(string/includes? body %) ["stderr" "stdout"])
-                (str "Live directory listing is missing entries: stderr and stdout, got response: " logs-response))
-            (doseq [file-link [stderr-file-link stdout-file-link]]
-              (if (string/starts-with? (str file-link) "http")
-                (assert-response-status (make-request-fn file-link) 200)
-                (log/warn "test-s3-logs did not verify file link:" file-link))))
+            ;; Test that the active instances' logs are available.
+            (let [active-instances (get-in (service-settings waiter-url service-id :cookies cookies)
+                                           [:instances :active-instances])
+                  log-url (:log-url (first active-instances))
+                  make-request-fn (fn [url] (make-request url "" :verbose true))
+                  {:keys [body] :as logs-response} (make-request-fn log-url)
+                  _ (assert-response-status logs-response 200)
+                  log-files-list (walk/keywordize-keys (json/read-str body))
+                  stdout-file-link (:url (first (filter #(= (:name %) "stdout") log-files-list)))
+                  stderr-file-link (:url (first (filter #(= (:name %) "stderr") log-files-list)))]
+              (is (every? #(string/includes? body %) ["stderr" "stdout"])
+                  (str "Live directory listing is missing entries: stderr and stdout, got response: " logs-response))
+              (doseq [file-link [stderr-file-link stdout-file-link]]
+                (if (string/starts-with? (str file-link) "http")
+                  (assert-response-status (make-request-fn file-link) 200)
+                  (log/warn "test-s3-logs did not verify file link:" file-link))))
 
-          ;; Get a service with at least one killed instance.
-          (log/info "starting parallel requests")
-          (let [async-create-headers (assoc headers :x-kitchen-delay-ms 60000)
-                async-request-fn (fn [] (->> #(make-kitchen-request waiter-url % :method :get :path "/async/request")
-                                             (make-request-with-debug-info async-create-headers)))
-                async-responses (->> async-request-fn (repeatedly 2) vec)
-                instance-ids (->> async-responses (map :instance-id) set)]
-            (assert-response-status (first async-responses) 202)
-            (assert-response-status (second async-responses) 202)
-            (is (> (count instance-ids) 1) (str instance-ids))
-            ;; Canceling both of the async requests should scale down to 1 by killing 1 instance.
-            (doseq [async-response async-responses]
-              (let [status-endpoint (response->location async-response)
-                    cancel-response (make-kitchen-request waiter-url headers :method :delete :path status-endpoint)]
-                (assert-response-status cancel-response 204)))
-            (log/info "waiting for at least one instance to get killed")
-            (is (wait-for #(->> (get-in (service-settings waiter-url service-id) [:instances :killed-instances])
-                                (map :id) distinct seq)
-                          :interval 2 :timeout 45)
-                (str "no killed instances found for " service-id)))
+            ;; Get a service with at least one killed instance.
+            (log/info "starting parallel requests")
+            (let [async-create-headers (assoc headers :x-kitchen-delay-ms 120000)
+                  async-request-fn (fn [] (->> #(make-kitchen-request waiter-url % :method :get :path "/async/request")
+                                               (make-request-with-debug-info async-create-headers)))
+                  async-responses (->> async-request-fn (repeatedly 2) vec)
+                  instance-ids (->> async-responses (map :instance-id) set)]
+              (assert-response-status (first async-responses) 202)
+              (assert-response-status (second async-responses) 202)
+              (is (> (count instance-ids) 1) (str instance-ids))
+              ;; Canceling both of the async requests should scale down to 1 by killing 1 instance.
+              (doseq [async-response async-responses]
+                (let [status-endpoint (response->location async-response)
+                      cancel-response (make-kitchen-request waiter-url headers :method :delete :path status-endpoint)]
+                  (assert-response-status cancel-response 204)))
+              (log/info "waiting for at least one instance to get killed")
+              (is (wait-for #(->> (get-in (service-settings waiter-url service-id) [:instances :killed-instances])
+                                  (map :id) distinct seq)
+                            :interval 2 :timeout 45)
+                  (str "no killed instances found for " service-id)))
 
             (log/info "waiting for at least one instance to get killed")
             (is (wait-for #(->> (get-in (service-settings waiter-url service-id) [:instances :killed-instances])
@@ -134,43 +134,43 @@
                           :interval 2 :timeout 45)
                 (str "no killed instances found for " service-id))
 
-          (log/info "waiting for at least one instance to get killed")
-          (is (wait-for #(->> (get-in (service-settings waiter-url service-id) [:instances :killed-instances])
-                              (map :id)
-                              set
-                              seq)
-                        :interval 2 :timeout 45)
-              (str "No killed instances found for " service-id))
+            (log/info "waiting for at least one instance to get killed")
+            (is (wait-for #(->> (get-in (service-settings waiter-url service-id) [:instances :killed-instances])
+                                (map :id)
+                                set
+                                seq)
+                          :interval 2 :timeout 45)
+                (str "No killed instances found for " service-id))
 
-          ;; Test that the killed instances' logs were persisted to S3.
-          ;; This portion of the test logic was modified from the active-instances tests above.
-          (let [log-bucket-url (-> waiter-url get-kubernetes-scheduler-settings :log-bucket-url)
-                killed-instances (get-in (service-settings waiter-url service-id :cookies cookies)
-                                         [:instances :killed-instances])
-                log-url (:log-url (first killed-instances))
-                make-request-fn (fn [url] (make-request url "" :verbose true))
-                _ (do
-                    (log/info "waiting s3 logs to appear")
-                    (is (wait-for
-                          #(let [{:keys [body] :as logs-response} (make-request-fn log-url)]
-                             (string/includes? body log-bucket-url))
-                          :interval 1 :timeout 60)
-                        (str "Log URL never pointed to S3 bucket " log-bucket-url)))
-                _ (log/debug "Log Url Killed:" log-url)
-                {:keys [body] :as logs-response} (make-request-fn log-url)
-                _ (assert-response-status logs-response 200)
-                _ (log/debug "Response body:" body)
-                log-files-list (walk/keywordize-keys (json/read-str body))
-                stdout-file-link (:url (first (filter #(= (:name %) "stdout") log-files-list)))
-                stderr-file-link (:url (first (filter #(= (:name %) "stderr") log-files-list)))]
-            (is (wait-for
-                  #(every? (partial string/includes? body) ["stderr" "stdout"])
-                  :interval 1 :timeout 30)
-                (str "Killed directory listing is missing entries: stderr and stdout, got response: " logs-response))
-            (doseq [file-link [stderr-file-link stdout-file-link]]
-              (if (string/starts-with? (str file-link) "http")
-                (assert-response-status (make-request-fn file-link) 200)
-                (log/warn "test-s3-logs did not verify file link:" file-link)))))))))
+            ;; Test that the killed instances' logs were persisted to S3.
+            ;; This portion of the test logic was modified from the active-instances tests above.
+            (let [log-bucket-url (-> waiter-url get-kubernetes-scheduler-settings :log-bucket-url)
+                  killed-instances (get-in (service-settings waiter-url service-id :cookies cookies)
+                                           [:instances :killed-instances])
+                  log-url (:log-url (first killed-instances))
+                  make-request-fn (fn [url] (make-request url "" :verbose true))
+                  _ (do
+                      (log/info "waiting s3 logs to appear")
+                      (is (wait-for
+                            #(let [{:keys [body] :as logs-response} (make-request-fn log-url)]
+                               (string/includes? body log-bucket-url))
+                            :interval 1 :timeout 60)
+                          (str "Log URL never pointed to S3 bucket " log-bucket-url)))
+                  _ (log/debug "Log Url Killed:" log-url)
+                  {:keys [body] :as logs-response} (make-request-fn log-url)
+                  _ (assert-response-status logs-response 200)
+                  _ (log/debug "Response body:" body)
+                  log-files-list (walk/keywordize-keys (json/read-str body))
+                  stdout-file-link (:url (first (filter #(= (:name %) "stdout") log-files-list)))
+                  stderr-file-link (:url (first (filter #(= (:name %) "stderr") log-files-list)))]
+              (is (wait-for
+                    #(every? (partial string/includes? body) ["stderr" "stdout"])
+                    :interval 1 :timeout 30)
+                  (str "Killed directory listing is missing entries: stderr and stdout, got response: " logs-response))
+              (doseq [file-link [stderr-file-link stdout-file-link]]
+                (if (string/starts-with? (str file-link) "http")
+                  (assert-response-status (make-request-fn file-link) 200)
+                  (log/warn "test-s3-logs did not verify file link:" file-link))))))))))
 
 (defn- check-pod-namespace
   [waiter-url headers expected-namespace]
