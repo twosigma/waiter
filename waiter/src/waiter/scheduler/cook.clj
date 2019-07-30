@@ -29,7 +29,7 @@
             [waiter.util.async-utils :as au]
             [waiter.util.cache-utils :as cu]
             [waiter.util.date-utils :as du]
-            [waiter.util.http-utils :as http-utils]
+            [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
   (:import (java.util UUID)))
 
@@ -39,7 +39,7 @@
   "Post a job description to Cook."
   [{:keys [http-client impersonate spnego-auth url]} job-description]
   (let [run-as-user (-> job-description :jobs first :labels :user)]
-    (http-utils/http-request
+    (hu/http-request
       http-client
       (str url "/jobs")
       :accept "application/json"
@@ -52,7 +52,7 @@
 (defn delete-jobs
   "Delete the specified jobs on Cook."
   [{:keys [http-client impersonate spnego-auth url]} run-as-user job-uuids]
-  (http-utils/http-request
+  (hu/http-request
     http-client
     (str url "/rawscheduler")
     :accept "application/json"
@@ -71,7 +71,7 @@
         end-time-str (du/date-to-str end-time)
         start-time (or start-time (t/minus end-time search-interval))
         start-time-str (du/date-to-str start-time)
-        jobs (http-utils/http-request
+        jobs (hu/http-request
                http-client (str url "/jobs")
                :accept "application/json"
                :content-type "application/json"
@@ -86,11 +86,11 @@
 
 ;; Instance health checks
 
-(let [http-client (http-utils/http-client-factory {:client-name "waiter-cook-health-check"
-                                                   :conn-timeout 10000
-                                                   :socket-timeout 10000
-                                                   :spnego-auth false
-                                                   :user-agent "waiter-cook-health-check"})
+(let [http-client (hu/http-client-factory {:client-name "waiter-cook-health-check"
+                                           :conn-timeout 10000
+                                           :socket-timeout 10000
+                                           :spnego-auth false
+                                           :user-agent "waiter-cook-health-check"})
       ;; TODO make this cache configurable
       healthy-instance-cache (cu/cache-factory {:threshold 5000
                                                 :ttl (-> 10 t/seconds t/in-millis)})]
@@ -105,7 +105,7 @@
                             (try
                               ;; no exception thrown means we got a 2XX response
                               (log/info "performing health check for" task-id "at" health-check-url)
-                              (http-utils/http-request http-client health-check-url)
+                              (hu/http-request http-client health-check-url)
                               (catch Exception e
                                 (log/error e "exception thrown while performing health check"
                                            {:health-check-url health-check-url})
@@ -135,7 +135,7 @@
              health-check-url (-> job :labels :health-check-url)
              task-id (-> job-instance :task_id)]
          (when (and host port protocol health-check-url)
-           (let [scheme (http-utils/backend-proto->scheme protocol)]
+           (let [scheme (hu/backend-proto->scheme protocol)]
              (instance-healthy? task-id (str scheme "://" host ":" port health-check-url)))))))
 
 ;; Helper Methods
@@ -535,7 +535,7 @@
   (let [http-client (-> http-options
                       (utils/assoc-if-absent :client-name "waiter-cook")
                       (utils/assoc-if-absent :user-agent "waiter-cook")
-                      http-utils/http-client-factory)
+                      hu/http-client-factory)
         cook-api {:http-client http-client
                   :impersonate impersonate
                   :slave-port mesos-slave-port

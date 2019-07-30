@@ -23,7 +23,7 @@
             [waiter.mesos.mesos :as mesos]
             [waiter.scheduler :as scheduler]
             [waiter.util.date-utils :as du]
-            [waiter.util.http-utils :as http-utils]
+            [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
   (:import (clojure.lang ExceptionInfo)
            (java.util UUID)
@@ -42,7 +42,7 @@
       (let [cook-api {:http-client http-client
                       :spnego-auth "test-spnego-auth"
                       :url cook-url}]
-        (with-redefs [http-utils/http-request
+        (with-redefs [hu/http-request
                       (fn [in-http-client in-request-url & {:as options}]
                         (is (= http-client in-http-client))
                         (is (= (str cook-url "/jobs") in-request-url))
@@ -60,7 +60,7 @@
                       :impersonate true
                       :spnego-auth "test-spnego-auth"
                       :url cook-url}]
-        (with-redefs [http-utils/http-request
+        (with-redefs [hu/http-request
                       (fn [in-http-client in-request-url & {:as options}]
                         (is (= http-client in-http-client))
                         (is (= (str cook-url "/jobs") in-request-url))
@@ -83,7 +83,7 @@
       (let [cook-api {:http-client http-client
                       :spnego-auth "test-spnego-auth"
                       :url cook-url}]
-        (with-redefs [http-utils/http-request
+        (with-redefs [hu/http-request
                       (fn [in-http-client in-request-url & {:as options}]
                         (is (= http-client in-http-client))
                         (is (= (str cook-url "/rawscheduler") in-request-url))
@@ -101,7 +101,7 @@
                       :impersonate true
                       :spnego-auth "test-spnego-auth"
                       :url cook-url}]
-        (with-redefs [http-utils/http-request
+        (with-redefs [hu/http-request
                       (fn [in-http-client in-request-url & {:as options}]
                         (is (= http-client in-http-client))
                         (is (= (str cook-url "/rawscheduler") in-request-url))
@@ -151,7 +151,7 @@
                             :start (du/date-to-str start-time)
                             :state states
                             :user test-user}]
-          (with-redefs [http-utils/http-request (http-request-fn-factory query-string)]
+          (with-redefs [hu/http-request (http-request-fn-factory query-string)]
             (is (= [cook-job-2 cook-job-3]
                    (get-jobs cook-api test-user states))))))
 
@@ -164,7 +164,7 @@
                             :start (du/date-to-str start-time)
                             :state states
                             :user test-user}]
-          (with-redefs [http-utils/http-request (http-request-fn-factory query-string)]
+          (with-redefs [hu/http-request (http-request-fn-factory query-string)]
             (is (= [cook-job-2 cook-job-3]
                    (get-jobs cook-api test-user states :search-interval search-interval))))))
 
@@ -177,7 +177,7 @@
                             :start (du/date-to-str start-time)
                             :state states
                             :user test-user}]
-          (with-redefs [http-utils/http-request (http-request-fn-factory query-string)]
+          (with-redefs [hu/http-request (http-request-fn-factory query-string)]
             (is (= [cook-job-2 cook-job-3]
                    (get-jobs cook-api test-user states :end-time end-time))))))
 
@@ -191,7 +191,7 @@
                             :start (du/date-to-str start-time)
                             :state states
                             :user test-user}]
-          (with-redefs [http-utils/http-request (http-request-fn-factory query-string)]
+          (with-redefs [hu/http-request (http-request-fn-factory query-string)]
             (is (= [cook-job-2 cook-job-3]
                    (get-jobs cook-api test-user states :service-id service-id))))))
 
@@ -204,17 +204,17 @@
                             :start (du/date-to-str start-time)
                             :state states
                             :user test-user}]
-          (with-redefs [http-utils/http-request (http-request-fn-factory query-string)]
+          (with-redefs [hu/http-request (http-request-fn-factory query-string)]
             (is (= [cook-job-2 cook-job-3]
                    (get-jobs cook-api test-user states
                              :end-time end-time
                              :start-time start-time)))))))))
 
 (deftest test-job-healthy?
-  (with-redefs [http-utils/http-request (fn [_ in-health-check-url]
-                                          (is (str/starts-with? in-health-check-url "http://www.hostname.com:1234/"))
-                                          (when-not (str/includes? in-health-check-url "unhealthy")
-                                            in-health-check-url))]
+  (with-redefs [hu/http-request (fn [_ in-health-check-url]
+                                  (is (str/starts-with? in-health-check-url "http://www.hostname.com:1234/"))
+                                  (when-not (str/includes? in-health-check-url "unhealthy")
+                                    in-health-check-url))]
     (is (job-healthy? {:status "running"
                        :instances [{:hostname "www.hostname.com"
                                     :ports [1234]

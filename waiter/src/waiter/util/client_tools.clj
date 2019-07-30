@@ -30,7 +30,7 @@
             [waiter.mesos.marathon :as marathon]
             [waiter.statsd :as statsd]
             [waiter.util.date-utils :as du]
-            [waiter.util.http-utils :as http-utils]
+            [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
   (:import (java.net HttpCookie URI)
            (java.io ByteArrayInputStream)
@@ -209,10 +209,10 @@
 (defn make-http-clients
   "Instantiates and returns http1 and http2 clients without a cookie store"
   []
-  (http-utils/prepare-http-clients {:client-name (str "waiter-test-" (retrieve-git-branch))
-                                    :clear-content-decoders false
-                                    :conn-timeout 10000
-                                    :user-agent (str "waiter-test/" (retrieve-git-branch))}))
+  (hu/prepare-http-clients {:client-name (str "waiter-test-" (retrieve-git-branch))
+                            :clear-content-decoders false
+                            :conn-timeout 10000
+                            :user-agent (str "waiter-test/" (retrieve-git-branch))}))
 
 (defn current-test-name
   "Get the name of the currently-running test."
@@ -321,11 +321,11 @@
           query-params {}
           verbose false}}]
    (let [scheme (or scheme
-                    (some-> protocol http-utils/backend-proto->scheme)
+                    (some-> protocol hu/backend-proto->scheme)
                     "http")
          client (or client
                     (when protocol
-                      (http-utils/select-http-client
+                      (hu/select-http-client
                         protocol {:http1-client http1-client :http2-client http2-client}))
                     http1-client)
          request-url (str
