@@ -232,6 +232,9 @@
                                    :concurrency-level 20
                                    ;; the idle time before cached threads from the invocation throttler are terminated
                                    :keep-alive-mins 5
+                                   ;; the maximum rate of requests per host that can trigger Kerberos authentication
+                                   ;; before server responds with a 503 temporarily unavailable
+                                   :max-one-minute-rate-per-host 100
                                    ;; the maximum number of request waiting for Kerberos auth before server responds
                                    ;; with a 503 temporarily unavailable
                                    :max-queue-length 1000}

@@ -17,6 +17,7 @@
   (:require [clojure.core.async :as async]
             [clojure.string :as str]
             [clojure.test :refer :all]
+            [metrics.meters :as meters]
             [waiter.auth.authentication :as auth]
             [waiter.auth.spnego :refer :all]
             [waiter.util.utils :as utils]))
@@ -34,15 +35,20 @@
   (let [ideal-response {:body "OK" :status 200}
         request-handler (constantly ideal-response)
         thread-pool (Object.)
+        max-one-minute-rate-per-host 100
         max-queue-length 10
         password [:cached "test-password"]
         auth-principal "user@test.com"
         standard-request {}
-        handler (require-gss request-handler thread-pool max-queue-length password)
+        handler (require-gss request-handler thread-pool max-one-minute-rate-per-host max-queue-length password)
         standard-401-response {:body "Unauthorized"
                                :headers {"content-type" "text/plain"
                                          "www-authenticate" "Negotiate"}
                                :status 401
+                               :waiter/response-source :waiter}
+        standard-503-response {:body "Too many Kerberos authentication requests; consider enabling cookies in your client"
+                               :headers {"content-type" "text/plain"}
+                               :status 503
                                :waiter/response-source :waiter}]
 
     (testing "valid auth cookie"
@@ -53,23 +59,28 @@
                  :authorization/user (first (str/split auth-principal #"@" 2)))
                (handler standard-request)))))
 
-    (testing "too many pending kerberos requests"
+    (testing "standard 503 response on too many pending kerberos requests"
       (with-redefs [auth/decode-auth-cookie (constantly [auth-principal nil])
                     auth/decoded-auth-valid? (constantly false)
                     too-many-pending-auth-requests? (constantly true)]
-        (let [handler (require-gss request-handler thread-pool max-queue-length password)]
-          (is (= {:body "Too many Kerberos authentication requests"
-                  :headers {"content-type" "text/plain"}
-                  :status 503
-                  :waiter/response-source :waiter}
-                 (handler standard-request))))))
+        (let [handler (require-gss request-handler thread-pool max-one-minute-rate-per-host max-queue-length password)]
+          (is (= standard-503-response (handler standard-request))))))
 
     (testing "standard 401 response on missing authorization header"
       (with-redefs [auth/decode-auth-cookie (constantly [auth-principal nil])
                     auth/decoded-auth-valid? (constantly false)
                     too-many-pending-auth-requests? (constantly false)]
-        (let [handler (require-gss request-handler thread-pool max-queue-length password)]
+        (let [handler (require-gss request-handler thread-pool max-one-minute-rate-per-host max-queue-length password)]
           (is (= standard-401-response (handler standard-request))))))
+
+    (testing "standard 503 response on too many recent kerberos requests"
+      (with-redefs [auth/decode-auth-cookie (constantly [auth-principal nil])
+                    auth/decoded-auth-valid? (constantly false)
+                    meters/rate-one (constantly (inc max-one-minute-rate-per-host))
+                    too-many-pending-auth-requests? (constantly false)]
+        (let [standard-request (assoc-in standard-request [:headers "host"] "www.test-.com")
+              handler (require-gss request-handler thread-pool max-one-minute-rate-per-host max-queue-length password)]
+          (is (= standard-503-response (handler standard-request))))))
 
     (testing "kerberos authentication path"
       (with-redefs [auth/decode-auth-cookie (constantly [auth-principal nil])
@@ -81,7 +92,7 @@
           (testing "401 response on failed authentication"
             (with-redefs [populate-gss-credentials (fn [_ _ response-chan]
                                                      (async/>!! response-chan {:foo :bar}))]
-              (let [handler (require-gss request-handler thread-pool max-queue-length password)
+              (let [handler (require-gss request-handler thread-pool max-one-minute-rate-per-host max-queue-length password)
                     response (handler auth-request)
                     response (if (map? response)
                                response
@@ -91,7 +102,7 @@
           (testing "error object on exception"
             (with-redefs [populate-gss-credentials (fn [_ _ response-chan]
                                                      (async/>!! response-chan {:error error-object}))]
-              (let [handler (require-gss request-handler thread-pool max-queue-length password)
+              (let [handler (require-gss request-handler thread-pool max-one-minute-rate-per-host max-queue-length password)
                     response (handler auth-request)
                     response (if (map? response)
                                response
@@ -102,7 +113,7 @@
             (with-redefs [populate-gss-credentials (fn [_ _ response-chan]
                                                      (async/>!! response-chan {:principal auth-principal
                                                                                :token "test-token"}))]
-              (let [handler (require-gss request-handler thread-pool max-queue-length password)
+              (let [handler (require-gss request-handler thread-pool max-one-minute-rate-per-host max-queue-length password)
                     response (handler auth-request)
                     response (if (map? response)
                                response
@@ -116,7 +127,7 @@
           (testing "successful authentication - principal only"
             (with-redefs [populate-gss-credentials (fn [_ _ response-chan]
                                                      (async/>!! response-chan {:principal auth-principal}))]
-              (let [handler (require-gss request-handler thread-pool max-queue-length password)
+              (let [handler (require-gss request-handler thread-pool max-one-minute-rate-per-host max-queue-length password)
                     response (handler auth-request)
                     response (if (map? response)
                                response

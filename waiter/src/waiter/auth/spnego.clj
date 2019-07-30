@@ -69,16 +69,36 @@
       (cookies/cookies-response)))
 
 (defn response-503-temporarily-unavailable
-  "Tell the client you're overloaded and would like them to try later"
+  "Tell the client you're overloaded and would like them to try later."
   []
-  (log/info "triggering 401 negotiate for spnego authentication")
+  (log/info "triggering 503 temporarily unavailable")
   (counters/inc! (metrics/waiter-counter "core" "response-status" "503"))
   (meters/mark! (metrics/waiter-meter "core" "response-status-rate" "503"))
-  (-> (rr/response "Too many Kerberos authentication requests")
+  (-> (rr/response "Too many Kerberos authentication requests; consider enabling cookies in your client")
       (rr/status 503)
       (rr/header "content-type" "text/plain")
       (utils/attach-waiter-source)
       (cookies/cookies-response)))
+
+(defn response-401-negotiate-or-503-temporarily-unavailable
+  "Depending upon the rate of requests requiring kerberos auth,
+   either tell the client you're overloaded and would like them to try later,
+   or tell the client you'd like them to use kerberos to authenticate."
+  [max-one-minute-rate-per-host request]
+  (let [host-name (-> request
+                    :headers
+                    (get "host")
+                    (or "_unknown_")
+                    utils/authority->host
+                    (str/replace "." "_")
+                    str/lower-case)
+        kerberos-meter (metrics/waiter-meter "core" "gss-auth-request" host-name)
+        one-minute-rate (meters/rate-one kerberos-meter)]
+    (if (>= one-minute-rate max-one-minute-rate-per-host)
+      (response-503-temporarily-unavailable)
+      (do
+        (meters/mark! kerberos-meter)
+        (response-401-negotiate)))))
 
 (defn gss-context-init
   "Initialize a new gss context with name 'svc_name'"
@@ -139,7 +159,7 @@
    will be run, otherwise the handler will not be run and 401
    returned instead.  This middleware doesn't handle cookies for
    authentication, but that should be stacked before this handler."
-  [request-handler ^ThreadPoolExecutor thread-pool-executor max-queue-length password]
+  [request-handler ^ThreadPoolExecutor thread-pool-executor max-one-minute-rate-per-host max-queue-length password]
   (fn require-gss-handler [{:keys [headers] :as request}]
     (let [waiter-cookie (auth/get-auth-cookie-value (get headers "cookie"))
           [auth-principal _ :as decoded-auth-cookie] (auth/decode-auth-cookie waiter-cookie password)]
@@ -173,14 +193,14 @@
                             (let [actual-response (async/<! response)]
                               (rr/header actual-response "www-authenticate" token)))
                           response))
-                      (response-401-negotiate))
+                      (response-401-negotiate-or-503-temporarily-unavailable max-one-minute-rate-per-host request))
                     (catch Throwable th
                       (log/error th "error while processing response")
                       th))
                   error)))))
         ;; Default to unauthorized
         :else
-        (response-401-negotiate)))))
+        (response-401-negotiate-or-503-temporarily-unavailable max-one-minute-rate-per-host request)))))
 
 (def ^Oid spnego-oid (Oid. "1.3.6.1.5.5.2"))
 

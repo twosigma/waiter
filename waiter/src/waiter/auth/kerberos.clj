@@ -104,19 +104,21 @@
                          :user run-as-user
                          :log-level :warn}))))))
 
-(defrecord KerberosAuthenticator [^ThreadPoolExecutor executor max-queue-length password]
+(defrecord KerberosAuthenticator [^ThreadPoolExecutor executor max-one-minute-rate-per-host max-queue-length password]
   auth/Authenticator
   (wrap-auth-handler [_ request-handler]
-    (spnego/require-gss request-handler executor max-queue-length password)))
+    (spnego/require-gss request-handler executor max-one-minute-rate-per-host max-queue-length password)))
 
 (defn kerberos-authenticator
   "Factory function for creating Kerberos authenticator middleware"
-  [{:keys [concurrency-level keep-alive-mins max-queue-length password]}]
+  [{:keys [concurrency-level keep-alive-mins max-one-minute-rate-per-host max-queue-length password]}]
   {:pre [(not-empty password)
          (integer? concurrency-level)
          (pos? concurrency-level)
          (integer? keep-alive-mins)
          (pos? keep-alive-mins)
+         (integer? max-one-minute-rate-per-host)
+         (pos? max-one-minute-rate-per-host)
          (integer? max-queue-length)
          (pos? max-queue-length)]}
   (let [queue (LinkedBlockingQueue.)
@@ -131,7 +133,7 @@
                           "core" "kerberos" "throttle" "pending-task-count")
     (metrics/waiter-gauge #(.getTaskCount executor)
                           "core" "kerberos" "throttle" "scheduled-task-count")
-    (->KerberosAuthenticator executor max-queue-length password)))
+    (->KerberosAuthenticator executor max-one-minute-rate-per-host max-queue-length password)))
 
 (defrecord KerberosAuthorizer
   [prestash-cache query-chan]

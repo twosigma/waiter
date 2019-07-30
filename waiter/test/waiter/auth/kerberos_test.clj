@@ -112,6 +112,7 @@
   (with-redefs [start-prestash-cache-maintainer (constantly nil)]
     (let [config {:concurrency-level 20
                   :keep-alive-mins 5
+                  :max-one-minute-rate-per-host 100
                   :max-queue-length 100
                   :password "test-password"
                   :prestash-cache-refresh-ms 100

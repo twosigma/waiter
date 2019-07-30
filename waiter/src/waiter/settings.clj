@@ -247,6 +247,7 @@
                           :kerberos {:factory-fn 'waiter.auth.kerberos/kerberos-authenticator
                                      :concurrency-level 20
                                      :keep-alive-mins 5
+                                     :max-one-minute-rate-per-host 100
                                      :max-queue-length 1000}
                           :one-user {:factory-fn 'waiter.auth.authentication/one-user-authenticator}}
    :cors-config {:kind :patterns
