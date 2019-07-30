@@ -221,6 +221,7 @@
                                           :host hostname
                                           :project "waiter"
                                           :result result
+                                          :run-attempt test-metrics-run-attempt
                                           :run-description test-metrics-run-description
                                           :run-id test-metrics-run-id
                                           :runtime-milliseconds elapsed-millis
