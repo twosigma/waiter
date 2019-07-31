@@ -45,83 +45,85 @@
                                :status 401
                                :waiter/response-source :waiter}]
 
-    (testing "valid auth cookie"
-      (with-redefs [auth/decode-auth-cookie (constantly [auth-principal nil])
-                    auth/decoded-auth-valid? (constantly true)]
-        (is (= (assoc ideal-response
-                 :authorization/principal auth-principal
-                 :authorization/user (first (str/split auth-principal #"@" 2)))
-               (handler standard-request)))))
+    (with-redefs [utils/error-context->text-body #(-> % :message str)]
 
-    (testing "too many pending kerberos requests"
-      (with-redefs [auth/decode-auth-cookie (constantly [auth-principal nil])
-                    auth/decoded-auth-valid? (constantly false)
-                    too-many-pending-auth-requests? (constantly true)]
-        (let [handler (require-gss request-handler thread-pool max-queue-length password)]
-          (is (= {:body "Too many Kerberos authentication requests"
-                  :headers {"content-type" "text/plain"}
-                  :status 503
-                  :waiter/response-source :waiter}
-                 (handler standard-request))))))
+      (testing "valid auth cookie"
+        (with-redefs [auth/decode-auth-cookie (constantly [auth-principal nil])
+                      auth/decoded-auth-valid? (constantly true)]
+          (is (= (assoc ideal-response
+                   :authorization/principal auth-principal
+                   :authorization/user (first (str/split auth-principal #"@" 2)))
+                 (handler standard-request)))))
 
-    (testing "standard 401 response on missing authorization header"
-      (with-redefs [auth/decode-auth-cookie (constantly [auth-principal nil])
-                    auth/decoded-auth-valid? (constantly false)
-                    too-many-pending-auth-requests? (constantly false)]
-        (let [handler (require-gss request-handler thread-pool max-queue-length password)]
-          (is (= standard-401-response (handler standard-request))))))
+      (testing "too many pending kerberos requests"
+        (with-redefs [auth/decode-auth-cookie (constantly [auth-principal nil])
+                      auth/decoded-auth-valid? (constantly false)
+                      too-many-pending-auth-requests? (constantly true)]
+          (let [handler (require-gss request-handler thread-pool max-queue-length password)]
+            (is (= {:body "Too many Kerberos authentication requests"
+                    :headers {"content-type" "text/plain"}
+                    :status 503
+                    :waiter/response-source :waiter}
+                   (handler standard-request))))))
 
-    (testing "kerberos authentication path"
-      (with-redefs [auth/decode-auth-cookie (constantly [auth-principal nil])
-                    auth/decoded-auth-valid? (constantly false)
-                    too-many-pending-auth-requests? (constantly false)]
-        (let [auth-request (update standard-request :headers assoc "authorization" "foo-bar")
-              error-object (Object.)]
+      (testing "standard 401 response on missing authorization header"
+        (with-redefs [auth/decode-auth-cookie (constantly [auth-principal nil])
+                      auth/decoded-auth-valid? (constantly false)
+                      too-many-pending-auth-requests? (constantly false)]
+          (let [handler (require-gss request-handler thread-pool max-queue-length password)]
+            (is (= standard-401-response (handler standard-request))))))
 
-          (testing "401 response on failed authentication"
-            (with-redefs [populate-gss-credentials (fn [_ _ response-chan]
-                                                     (async/>!! response-chan {:foo :bar}))]
-              (let [handler (require-gss request-handler thread-pool max-queue-length password)
-                    response (handler auth-request)
-                    response (if (map? response)
-                               response
-                               (async/<!! response))]
-                (is (= standard-401-response response)))))
+      (testing "kerberos authentication path"
+        (with-redefs [auth/decode-auth-cookie (constantly [auth-principal nil])
+                      auth/decoded-auth-valid? (constantly false)
+                      too-many-pending-auth-requests? (constantly false)]
+          (let [auth-request (update standard-request :headers assoc "authorization" "foo-bar")
+                error-object (Object.)]
 
-          (testing "error object on exception"
-            (with-redefs [populate-gss-credentials (fn [_ _ response-chan]
-                                                     (async/>!! response-chan {:error error-object}))]
-              (let [handler (require-gss request-handler thread-pool max-queue-length password)
-                    response (handler auth-request)
-                    response (if (map? response)
-                               response
-                               (async/<!! response))]
-                (is (= error-object response)))))
+            (testing "401 response on failed authentication"
+              (with-redefs [populate-gss-credentials (fn [_ _ response-chan]
+                                                       (async/>!! response-chan {:foo :bar}))]
+                (let [handler (require-gss request-handler thread-pool max-queue-length password)
+                      response (handler auth-request)
+                      response (if (map? response)
+                                 response
+                                 (async/<!! response))]
+                  (is (= standard-401-response response)))))
 
-          (testing "successful authentication - principal and token"
-            (with-redefs [populate-gss-credentials (fn [_ _ response-chan]
-                                                     (async/>!! response-chan {:principal auth-principal
-                                                                               :token "test-token"}))]
-              (let [handler (require-gss request-handler thread-pool max-queue-length password)
-                    response (handler auth-request)
-                    response (if (map? response)
-                               response
-                               (async/<!! response))]
-                (is (= (assoc ideal-response
-                         :authorization/principal "user@test.com"
-                         :authorization/user "user"
-                         :headers {"www-authenticate" "test-token"})
-                       (utils/dissoc-in response [:headers "set-cookie"]))))))
+            (testing "error object on exception"
+              (with-redefs [populate-gss-credentials (fn [_ _ response-chan]
+                                                       (async/>!! response-chan {:error error-object}))]
+                (let [handler (require-gss request-handler thread-pool max-queue-length password)
+                      response (handler auth-request)
+                      response (if (map? response)
+                                 response
+                                 (async/<!! response))]
+                  (is (= error-object response)))))
 
-          (testing "successful authentication - principal only"
-            (with-redefs [populate-gss-credentials (fn [_ _ response-chan]
-                                                     (async/>!! response-chan {:principal auth-principal}))]
-              (let [handler (require-gss request-handler thread-pool max-queue-length password)
-                    response (handler auth-request)
-                    response (if (map? response)
-                               response
-                               (async/<!! response))]
-                (is (= (assoc ideal-response
-                         :authorization/principal "user@test.com"
-                         :authorization/user "user")
-                       (utils/dissoc-in response [:headers "set-cookie"])))))))))))
+            (testing "successful authentication - principal and token"
+              (with-redefs [populate-gss-credentials (fn [_ _ response-chan]
+                                                       (async/>!! response-chan {:principal auth-principal
+                                                                                 :token "test-token"}))]
+                (let [handler (require-gss request-handler thread-pool max-queue-length password)
+                      response (handler auth-request)
+                      response (if (map? response)
+                                 response
+                                 (async/<!! response))]
+                  (is (= (assoc ideal-response
+                           :authorization/principal "user@test.com"
+                           :authorization/user "user"
+                           :headers {"www-authenticate" "test-token"})
+                         (utils/dissoc-in response [:headers "set-cookie"]))))))
+
+            (testing "successful authentication - principal only"
+              (with-redefs [populate-gss-credentials (fn [_ _ response-chan]
+                                                       (async/>!! response-chan {:principal auth-principal}))]
+                (let [handler (require-gss request-handler thread-pool max-queue-length password)
+                      response (handler auth-request)
+                      response (if (map? response)
+                                 response
+                                 (async/<!! response))]
+                  (is (= (assoc ideal-response
+                           :authorization/principal "user@test.com"
+                           :authorization/user "user")
+                         (utils/dissoc-in response [:headers "set-cookie"]))))))))))))

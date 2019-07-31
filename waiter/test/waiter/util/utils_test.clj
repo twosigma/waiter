@@ -602,3 +602,65 @@
 (deftest test-update-exception
   (is (= {:a 1 :b 2} (ex-data (update-exception (ex-info "test" {:a 1}) #(assoc % :b 2)))))
   (is (= {:b 2} (ex-data (update-exception (RuntimeException. "test") #(assoc % :b 2))))))
+
+(deftest test-add-grpc-headers-and-trailers
+  (let [make-response (fn make-response
+                        [status]
+                        {:status status
+                         :waiter/response-source :waiter})
+        load-trailers (fn load-trailers [{:keys [trailers] :as response}]
+                        (cond-> response
+                          trailers (update :trailers async/<!!)))
+        attach-grpc-errors (fn attach-grpc-errors [response grpc-status grpc-message]
+                             (-> response
+                               load-trailers
+                               (update :headers assoc
+                                       "content-type" "application/grpc"
+                                       "grpc-message" grpc-message
+                                       "grpc-status" (str grpc-status))
+                               (update :trailers assoc
+                                       "grpc-message" grpc-message
+                                       "grpc-status" (str grpc-status))))]
+    (let [response (make-response 200)]
+      (is (= response (-> response (add-grpc-headers-and-trailers {}) load-trailers))))
+    (let [response (make-response 301)]
+      (is (= response (-> response (add-grpc-headers-and-trailers {}) load-trailers))))
+    (let [response (make-response 400)]
+      (is (= (attach-grpc-errors response 3 "Bad Request")
+             (-> response (add-grpc-headers-and-trailers {}) load-trailers))))
+    (let [response (make-response 401)]
+      (is (= (attach-grpc-errors response 16 "Unauthorized")
+             (-> response (add-grpc-headers-and-trailers {}) load-trailers))))
+    (let [response (make-response 403)]
+      (is (= (attach-grpc-errors response 7 "Permission Denied")
+             (-> response (add-grpc-headers-and-trailers {}) load-trailers))))
+    (let [response (make-response 429)]
+      (is (= (attach-grpc-errors response 14 "Too Many Requests")
+             (-> response (add-grpc-headers-and-trailers {}) load-trailers))))
+    (let [response (make-response 500)]
+      (is (= (attach-grpc-errors response 13 "Internal Server Error")
+             (-> response (add-grpc-headers-and-trailers {}) load-trailers))))
+    (let [response (make-response 502)]
+      (is (= (attach-grpc-errors response 14 "Bad Gateway")
+             (-> response (add-grpc-headers-and-trailers {}) load-trailers))))
+    (let [response (make-response 503)]
+      (is (= (attach-grpc-errors response 14 "Service Unavailable")
+             (-> response (add-grpc-headers-and-trailers {}) load-trailers))))
+    (let [response (make-response 504)]
+      (is (= (attach-grpc-errors response 4 "Gateway Timeout")
+             (-> response (add-grpc-headers-and-trailers {}) load-trailers))))))
+
+(deftest test-attach-grpc-status
+  (let [standard-response {:body "hello" :status 200}]
+    (with-redefs [add-grpc-headers-and-trailers (fn [response _]
+                                                  (assoc response :add-grpc-headers-and-trailers true))]
+      (testing "non-grpc request"
+        (is (= standard-response (attach-grpc-status standard-response {} {:headers {}})))
+        (is (= standard-response (attach-grpc-status standard-response {} {:headers {"content-type" "application/xml"}})))
+        (is (= standard-response (attach-grpc-status standard-response {} {:client-protocol "HTTP/1.1"
+                                                                           :headers {"content-type" "application/grpc"}}))))
+
+      (testing "grpc request"
+        (is (= (assoc standard-response :add-grpc-headers-and-trailers true)
+               (attach-grpc-status standard-response {} {:client-protocol "HTTP/2.0"
+                                                         :headers {"content-type" "application/grpc"}})))))))

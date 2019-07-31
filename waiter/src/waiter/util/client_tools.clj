@@ -350,7 +350,7 @@
                                    :query-string query-params
                                    :url request-url}
                             multipart (assoc :multipart multipart)
-                            add-spnego-auth (assoc :auth (spnego/spnego-authentication (URI. request-url)))
+                            add-spnego-auth (assoc :auth (hu/spnego-authentication (URI. request-url)))
                             form-params (assoc :form-params form-params)
                             (not (str/blank? content-type)) (assoc :content-type content-type)
                             cookies (assoc :cookies (map (fn [c] [(:name c) (:value c)]) cookies))

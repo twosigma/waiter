@@ -28,11 +28,7 @@
             [waiter.middleware :as middleware]
             [waiter.metrics :as metrics]
             [waiter.util.utils :as utils])
-  (:import (org.apache.commons.codec.binary Base64)
-           (org.eclipse.jetty.client.api Authentication$Result Request)
-           (org.eclipse.jetty.http HttpHeader)
-           (org.ietf.jgss GSSManager GSSCredential GSSContext GSSException GSSName Oid)
-           (java.net URI)
+  (:import (org.ietf.jgss GSSManager GSSCredential GSSContext GSSException)
            (java.util.concurrent ThreadPoolExecutor)))
 
 (defn decode-input-token
@@ -57,28 +53,26 @@
 
 (defn response-401-negotiate
   "Tell the client you'd like them to use kerberos"
-  []
+  [request]
   (log/info "triggering 401 negotiate for spnego authentication")
   (counters/inc! (metrics/waiter-counter "core" "response-status" "401"))
   (meters/mark! (metrics/waiter-meter "core" "response-status-rate" "401"))
-  (-> (rr/response "Unauthorized")
-      (rr/status 401)
-      (rr/header "content-type" "text/plain")
-      (rr/header "www-authenticate" "Negotiate")
-      (utils/attach-waiter-source)
-      (cookies/cookies-response)))
+  (-> {:headers {"www-authenticate" "Negotiate"}
+       :message "Unauthorized"
+       :status 401}
+    (utils/data->error-response request)
+    (cookies/cookies-response)))
 
 (defn response-503-temporarily-unavailable
   "Tell the client you're overloaded and would like them to try later"
-  []
+  [request]
   (log/info "triggering 401 negotiate for spnego authentication")
   (counters/inc! (metrics/waiter-counter "core" "response-status" "503"))
   (meters/mark! (metrics/waiter-meter "core" "response-status-rate" "503"))
-  (-> (rr/response "Too many Kerberos authentication requests")
-      (rr/status 503)
-      (rr/header "content-type" "text/plain")
-      (utils/attach-waiter-source)
-      (cookies/cookies-response)))
+  (-> {:message "Too many Kerberos authentication requests"
+       :status 503}
+    (utils/data->error-response request)
+    (cookies/cookies-response)))
 
 (defn gss-context-init
   "Initialize a new gss context with name 'svc_name'"
@@ -151,7 +145,7 @@
           (request-handler' request))
         ;; Ensure we are not already queued with lots of Kerberos auth requests
         (too-many-pending-auth-requests? thread-pool-executor max-queue-length)
-        (response-503-temporarily-unavailable)
+        (response-503-temporarily-unavailable request)
         ;; Try and authenticate using kerberos and add cookie in response when valid
         (get-in request [:headers "authorization"])
         (let [current-correlation-id (cid/get-correlation-id)
@@ -173,34 +167,11 @@
                             (let [actual-response (async/<! response)]
                               (rr/header actual-response "www-authenticate" token)))
                           response))
-                      (response-401-negotiate))
+                      (response-401-negotiate request))
                     (catch Throwable th
                       (log/error th "error while processing response")
                       th))
                   error)))))
         ;; Default to unauthorized
         :else
-        (response-401-negotiate)))))
-
-(def ^Oid spnego-oid (Oid. "1.3.6.1.5.5.2"))
-
-(def ^Base64 base64 (Base64.))
-
-(defn spnego-authentication
-  "Returns an Authentication$Result for endpoint which will use SPNEGO to generate an Authorization header"
-  [^URI endpoint]
-  (reify Authentication$Result
-    (getURI [_] endpoint)
-
-    (^void apply [_ ^Request request]
-      (try
-        (let [gss-manager (GSSManager/getInstance)
-              server-princ (str "HTTP@" (.getHost endpoint))
-              server-name (.createName gss-manager server-princ GSSName/NT_HOSTBASED_SERVICE spnego-oid)
-              gss-context (.createContext gss-manager server-name spnego-oid nil GSSContext/DEFAULT_LIFETIME)
-              _ (.requestMutualAuth gss-context true)
-              token (.initSecContext gss-context (make-array Byte/TYPE 0) 0 0)
-              header (str "Negotiate " (String. (.encode base64 token)))]
-          (.header request HttpHeader/AUTHORIZATION header))
-        (catch Exception e
-          (log/warn e "failure during spnego authentication"))))))
+        (response-401-negotiate request)))))

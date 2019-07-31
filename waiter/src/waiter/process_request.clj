@@ -533,14 +533,14 @@
                        correlation-id
                        (log/info ex "aborted backend request:" aborted?)))]
       (when-not abort-ch
-        (log/warn "abort-ch not available in response"))
+        (log/error "abort-ch not available in response"))
       (log/debug "aborting backend request")
       (when-not (and abort-ch (async/put! abort-ch [ex callback]))
         (log/debug "aborting backend request directly")
         (if-let [request (:request response)]
           (let [aborted? (.abort request ex)]
             (log/info ex "result of aborting backend request directly:" aborted?))
-          (log/warn ex "cannot abort request as it is not available in response"))))))
+          (log/error ex "cannot abort request as it is not available in response"))))))
 
 (defn- introspect-trailers
   "Introspects and logs trailers received in the response"
