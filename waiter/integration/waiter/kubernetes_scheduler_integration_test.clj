@@ -72,29 +72,33 @@
             _ (is (not (string/blank? custom-image)) "You must provide a custom image in the INTEGRATION_TEST_CUSTOM_IMAGE_ALIAS environment variable")]
         (validate-kubernetes-custom-image waiter-url custom-image)))))
 
-;; Fails on (is (> (count instance-ids) 1) (str instance-ids)) as there is only one instance
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-s3-logs
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
       (when-let [log-bucket-url (-> waiter-url get-kubernetes-scheduler-settings :log-bucket-url)]
-        (let [headers {:x-waiter-concurrency-level 1
+        (let [router-url (-> waiter-url routers first val)
+              headers {:x-waiter-concurrency-level 1
                        :x-waiter-distribution-scheme "simple"
                        :x-waiter-max-instances 2
                        :x-waiter-name (rand-name)
                        :x-waiter-scale-down-factor 0.99
                        :x-waiter-scale-up-factor 0.99}
               _ (log/info "making canary request...")
-              {:keys [cookies instance-id service-id]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
+              {:keys [cookies instance-id service-id]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
+              make-request-fn (fn [url] (make-request url "" :verbose true :cookies cookies))]
 
           (with-service-cleanup
             service-id
             (assert-service-on-all-routers waiter-url service-id cookies)
 
+            (log/info "waiting for at least one active instance on target router")
+            (is (wait-for #(seq (active-instances router-url service-id :cookies cookies))
+                          :interval 2 :timeout 45)
+                (str "no active instances found for " service-id))
+
             ;; Test that the active instances' logs are available.
-            (let [active-instances (get-in (service-settings waiter-url service-id :cookies cookies)
-                                           [:instances :active-instances])
+            (let [active-instances (active-instances router-url service-id :cookies cookies)
                   log-url (:log-url (first active-instances))
-                  make-request-fn (fn [url] (make-request url "" :verbose true))
                   {:keys [body] :as logs-response} (make-request-fn log-url)
                   _ (assert-response-status logs-response 200)
                   log-files-list (walk/keywordize-keys (json/read-str body))
@@ -109,7 +113,8 @@
 
             ;; Get a service with at least one killed instance.
             (log/info "starting parallel requests")
-            (let [async-create-headers (assoc headers :x-kitchen-delay-ms 120000)
+            (let [async-create-headers (merge headers {:x-kitchen-delay-ms 120000
+                                                       :x-waiter-async-request-timeout 125000})
                   async-request-fn (fn [] (->> #(make-kitchen-request waiter-url % :method :get :path "/async/request")
                                                (make-request-with-debug-info async-create-headers)))
                   async-responses (->> async-request-fn (repeatedly 2) vec)
@@ -121,34 +126,17 @@
               (doseq [async-response async-responses]
                 (let [status-endpoint (response->location async-response)
                       cancel-response (make-kitchen-request waiter-url headers :method :delete :path status-endpoint)]
-                  (assert-response-status cancel-response 204)))
-              (log/info "waiting for at least one instance to get killed")
-              (is (wait-for #(->> (get-in (service-settings waiter-url service-id) [:instances :killed-instances])
-                                  (map :id) distinct seq)
-                            :interval 2 :timeout 45)
-                  (str "no killed instances found for " service-id)))
+                  (assert-response-status cancel-response 204))))
 
-            (log/info "waiting for at least one instance to get killed")
-            (is (wait-for #(->> (get-in (service-settings waiter-url service-id) [:instances :killed-instances])
-                                (map :id) distinct seq)
+            (log/info "waiting for at least one killed instance on target router")
+            (is (wait-for #(seq (killed-instances router-url service-id :cookies cookies))
                           :interval 2 :timeout 45)
                 (str "no killed instances found for " service-id))
 
-            (log/info "waiting for at least one instance to get killed")
-            (is (wait-for #(->> (get-in (service-settings waiter-url service-id) [:instances :killed-instances])
-                                (map :id)
-                                set
-                                seq)
-                          :interval 2 :timeout 45)
-                (str "No killed instances found for " service-id))
-
             ;; Test that the killed instances' logs were persisted to S3.
             ;; This portion of the test logic was modified from the active-instances tests above.
-            (let [log-bucket-url (-> waiter-url get-kubernetes-scheduler-settings :log-bucket-url)
-                  killed-instances (get-in (service-settings waiter-url service-id :cookies cookies)
-                                           [:instances :killed-instances])
+            (let [killed-instances (killed-instances router-url service-id :cookies cookies)
                   log-url (:log-url (first killed-instances))
-                  make-request-fn (fn [url] (make-request url "" :verbose true))
                   _ (do
                       (log/info "waiting s3 logs to appear")
                       (is (wait-for
@@ -169,7 +157,7 @@
                   (str "Killed directory listing is missing entries: stderr and stdout, got response: " logs-response))
               (doseq [file-link [stderr-file-link stdout-file-link]]
                 (if (string/starts-with? (str file-link) "http")
-                  (assert-response-status (make-request-fn file-link) 200)
+                  (assert-response-status (make-request file-link "" :verbose true) 200)
                   (log/warn "test-s3-logs did not verify file link:" file-link))))))))))
 
 (defn- check-pod-namespace
