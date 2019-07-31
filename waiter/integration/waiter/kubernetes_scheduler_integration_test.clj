@@ -72,7 +72,7 @@
             _ (is (not (string/blank? custom-image)) "You must provide a custom image in the INTEGRATION_TEST_CUSTOM_IMAGE_ALIAS environment variable")]
         (validate-kubernetes-custom-image waiter-url custom-image)))))
 
-(deftest ^:parallel ^:integration-slow ^:resource-heavy test-s3-logs
+(deftest ^:parallel ^:integration-slow ^:resource-heavy ^:explicit test-s3-logs
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
       (when-let [log-bucket-url (-> waiter-url get-kubernetes-scheduler-settings :log-bucket-url)]
