@@ -21,7 +21,9 @@
             [clojure.walk :as walk]
             [waiter.correlation-id :as cid]
             [waiter.util.client-tools :refer :all])
-  (:import (com.twosigma.waiter.courier CourierReply CourierSummary GrpcClient GrpcClient$CancellationPolicy StateReply)
+  (:import (com.twosigma.waiter.courier
+             CourierReply CourierSummary GrpcClient
+             GrpcClient$CancellationPolicy GrpcClient$RpcResult StateReply)
            (io.grpc Status)
            (java.util.concurrent CountDownLatch)
            (java.util.function Function)))
@@ -155,12 +157,32 @@
   [xs x]
   (count (filter #(= x %) xs)))
 
+(defn retrieve-request-state
+  "Retrieves the request state for the specified correlation-id.
+   When timeout is proivded, retries for specified interval until state contains CLOSED."
+  ([grpc-client request-headers query-correlation-id]
+   (let [state-correlation-id (rand-name)
+         state-request-headers (assoc request-headers "x-cid" state-correlation-id)]
+     (.retrieveState grpc-client state-request-headers query-correlation-id)))
+  ([grpc-client request-headers query-correlation-id timeout-secs]
+   (or (wait-for
+         (fn retrieve-closed-request-state []
+           (when-let [^GrpcClient$RpcResult rpc-result
+                      (retrieve-request-state grpc-client request-headers query-correlation-id)]
+             (let [^StateReply reply (.result rpc-result)
+                   states (seq (.getStateList reply))]
+               (log/info "retrieve-request-state:" query-correlation-id
+                         {:cid (some-> reply .getCid) :state (some-> reply .getStateList)})
+               (when (some #(= "CLOSE" %) states)
+                 rpc-result))))
+         :interval 1 :timeout timeout-secs)
+       (retrieve-request-state grpc-client request-headers query-correlation-id))))
+
 (defn assert-request-state
   "Asserts the states on the cid of a previously successful rpc call."
   [grpc-client request-headers service-id query-correlation-id mode]
-  (let [state-correlation-id (rand-name)
-        state-request-headers (assoc request-headers "x-cid" state-correlation-id)
-        rpc-result (.retrieveState grpc-client state-request-headers query-correlation-id)
+  (let [timeout-secs 10
+        rpc-result (retrieve-request-state grpc-client request-headers query-correlation-id timeout-secs)
         ^StateReply reply (.result rpc-result)
         ^Status status (.status rpc-result)
         assertion-message (->> (cond-> {:correlation-id query-correlation-id
@@ -170,8 +192,8 @@
                                                       :state (seq (.getStateList reply))})
                                  status (assoc :status {:code (-> status .getCode str)
                                                         :description (.getDescription status)}))
-                            (into (sorted-map))
-                            str)]
+                               (into (sorted-map))
+                               str)]
     (is status assertion-message)
     (assert-grpc-ok-status status assertion-message)
     (is reply assertion-message)
@@ -332,7 +354,6 @@
                                     str)]
             (is (nil? reply) assertion-message)
             (assert-grpc-cancel-status status "Cancelled by server" assertion-message)
-            (Thread/sleep 1500) ;; sleep to allow cancellation propagation to backend
             (assert-request-state grpc-client request-headers service-id correlation-id ::server-cancel)))))))
 
 (deftest ^:parallel ^:integration-fast test-grpc-unary-call-server-exit
@@ -537,7 +558,6 @@
                       (is (= (reductions + (map count (take expected-summary-count messages)))
                              (map #(.getTotalLength %) message-summaries))
                           assertion-message))
-                    (Thread/sleep 1500) ;; sleep to allow cancellation propagation to backend
                     (assert-request-state grpc-client request-headers service-id correlation-id ::server-cancel)))))))))))
 
 (deftest ^:parallel ^:integration-fast test-grpc-client-streaming-successful
@@ -705,5 +725,4 @@
                     (log/info "result" assertion-message)
                     (assert-grpc-cancel-status status "Cancelled by server" assertion-message)
                     (is (nil? message-summary) assertion-message)
-                    (Thread/sleep 1500) ;; sleep to allow cancellation propagation to backend
                     (assert-request-state grpc-client request-headers service-id correlation-id ::server-cancel)))))))))))
