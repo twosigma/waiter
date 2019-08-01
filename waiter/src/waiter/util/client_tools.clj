@@ -1072,6 +1072,12 @@
   (get-in (service-settings waiter-url service-id :cookies cookies)
           [:instances :active-instances]))
 
+(defn killed-instances
+  "Returns the killed instances for the given service-id"
+  [waiter-url service-id & {:keys [cookies] :or {cookies {}}}]
+  (get-in (service-settings waiter-url service-id :cookies cookies)
+          [:instances :killed-instances]))
+
 (defn num-instances
   "Returns the number of active instances for the given service-id"
   [waiter-url service-id & {:keys [cookies] :or {cookies {}}}]
