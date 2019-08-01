@@ -93,7 +93,7 @@
    (s/optional-key "jitter-threshold") schema/greater-than-or-equal-to-0-less-than-1
    (s/optional-key "max-instances") (s/both s/Int (s/pred #(<= 1 % 1000) 'between-one-and-1000))
    (s/optional-key "min-instances") (s/both s/Int (s/pred #(<= 1 % 4) 'between-one-and-four))
-   (s/optional-key "scale-factor") schema/positive-fraction-less-than-or-equal-to-1
+   (s/optional-key "scale-factor") schema/positive-fraction-less-than-or-equal-to-2
    (s/optional-key "scale-down-factor") schema/positive-fraction-less-than-1
    (s/optional-key "scale-up-factor") schema/positive-fraction-less-than-1
    ; per-request related
