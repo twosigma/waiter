@@ -34,6 +34,21 @@ if [ -d ./waiter/.minimesos ]; then
     log_dirs+=' ./waiter/.minimesos ./mesos/master-logs ./mesos/agent-logs'
 fi
 
+# Grab Kubernetes pod logs from S3 server
+if [ "$(docker ps -qf name=s3server)" ]; then
+    mkdir -p ./s3-bucket/pod-logs
+    # Get all files in the bucket, using the default cloudserver credentials
+    # https://github.com/scality/cloudserver#run-it-with-a-file-backend
+    AWS_ACCESS_KEY_ID=accessKey1 AWS_SECRET_ACCESS_KEY=verySecretKey1 \
+        aws s3 --endpoint http://localhost:8888 ls --recursive s3://waiter-service-logs/ | \
+        awk '{ print $4 }' | \
+        while read log_file_path; do
+            mkdir -p ./s3-bucket/pod-logs/$(dirname $log_file_path)
+            curl -s http://localhost:8888/waiter-service-logs/$log_file_path > ./s3-bucket/pod-logs/$log_file_path
+        done
+    log_dirs+=' ./s3-bucket/pod-logs'
+fi
+
 # Grab shell scheduler logs
 if [ -d ./waiter/scheduler ]; then
     log_dirs+=' ./waiter/scheduler'
