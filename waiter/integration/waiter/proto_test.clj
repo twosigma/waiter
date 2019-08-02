@@ -37,6 +37,8 @@
          (str {:cid correlation-id#
                :error (:error response#)
                :protocol protocol#
+               :response-headers (:headers response#)
+               :response-status (:status response#)
                :waiter-url waiter-url#}))))
 
 (defn- run-backend-proto-service-test
