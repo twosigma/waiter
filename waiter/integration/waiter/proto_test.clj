@@ -34,7 +34,8 @@
             {:client-protocol (-> response# :headers (get "x-waiter-client-protocol"))
              :internal-protocol (-> response# :headers (get "x-waiter-internal-protocol"))
              :response-size (-> response# :body str .getBytes count)})
-         (str {:cid correlation-id# 
+         (str {:cid correlation-id#
+               :error (:error response#)
                :protocol protocol#
                :waiter-url waiter-url#}))))
 

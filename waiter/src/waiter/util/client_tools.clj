@@ -25,7 +25,6 @@
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [waiter.auth.authentication :as authentication]
-            [waiter.auth.spnego :as spnego]
             [waiter.correlation-id :as cid]
             [waiter.mesos.marathon :as marathon]
             [waiter.statsd :as statsd]
@@ -351,7 +350,7 @@
          (log/info "request headers:" (into (sorted-map) request-headers)))
        (let [waiter-auth-cookie (some #(= authentication/AUTH-COOKIE-NAME (:name %)) cookies)
              add-spnego-auth (and (not disable-auth) use-spnego (not waiter-auth-cookie))
-             {:keys [body headers status trailers]}
+             {:keys [body error error-chan headers status trailers]}
              (async/<!! (http/request
                           client
                           (cond-> {:body body
@@ -366,11 +365,14 @@
                             (not (str/blank? content-type)) (assoc :content-type content-type)
                             cookies (assoc :cookies (map (fn [c] [(:name c) (:value c)]) cookies))
                             trailers-fn (assoc :trailers-fn trailers-fn))))
-             response-body (when body (async/<!! body))]
+             response-body (when body (async/<!! body))
+             error (or error
+                       (when error-chan (async/<!! error-chan)))]
          (when verbose
            (log/info (get request-headers "x-cid") "response size:" (count (str response-body))))
          {:body response-body
           :cookies (parse-cookies (get headers "set-cookie"))
+          :error error
           :headers headers
           :request-headers request-headers
           :status status
@@ -393,9 +395,9 @@
          response-body# (:body ~response)
          response-error# (:error ~response)
          assertion-message# (str "[CID=" response-cid# ", server=" response-server# "] "
-                                 "Expected status: " ~expected-status
-                                 ", actual: " actual-status# "\r\n Body:" response-body#
-                                 (when response-error# (str "\r\n Error: " response-error#)))]
+                                 "Expected status: " ~expected-status ", actual: " actual-status#
+                                 \newline "Body:" response-body#
+                                 (when response-error# (str \newline "Error: " response-error#)))]
      (when-not (contains? expected-status-set# actual-status#)
        (log/error assertion-message#))
      (is (contains? expected-status-set# actual-status#) assertion-message#)))
