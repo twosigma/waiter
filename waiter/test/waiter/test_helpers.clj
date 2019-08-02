@@ -30,7 +30,7 @@
             [waiter.util.client-tools :as ct]
             [waiter.util.date-utils :as du])
   (:import (com.codahale.metrics MetricFilter MetricRegistry)
-           (java.io ByteArrayOutputStream)
+           (java.io ByteArrayOutputStream File)
            (java.net InetAddress URL)
            (javax.servlet ServletOutputStream ServletResponse)))
 
@@ -70,12 +70,22 @@
 (defonce ^:private test-metrics-run-description
          (System/getenv "TEST_METRICS_RUN_DESCRIPTION"))
 
+(defonce ^:private test-metrics-run-attempt
+         (System/getenv "TEST_METRICS_RUN_ATTEMPT"))
+
+(defonce ^:private test-metrics-failed-tests-file
+         (if-let [given-path (System/getenv "TEST_METRICS_FAILED_TESTS_FILE")]
+           given-path
+           (do
+             (.mkdirs (File. ".test_metrics"))
+             ".test_metrics/last_failed_tests")))
+
 (defonce ^:private git-repo
          (when test-metrics-url
            (try
              (jgit/load-repo (str (System/getProperty "user.dir") "/.."))
              (catch Throwable _
-               (log/warn "Could not get git repo when trying to report test metrics.")))))
+               (log/info "Could not get git repo when trying to report test metrics.")))))
 
 (defonce ^:private current-git-branch
          (when git-repo
@@ -103,7 +113,7 @@
   (let [test-meta (meta testing-var)
         namespace (ns-name (:ns test-meta))
         name (:name test-meta)]
-    {:full-name (str name "/" namespace)
+    {:full-name (str namespace "/" name)
      :name name
      :namespace namespace}))
 
@@ -131,12 +141,14 @@
                  (.setRequestMethod "POST")
                  (.setRequestProperty "content-type" "application/json")
                  (.setUseCaches false)
+                 (.setReadTimeout 10000)
+                 (.setConnectTimeout 10000)
                  (.connect))]
       (with-open [writer (io/writer (.getOutputStream conn))]
         (.write writer json))
       (.getResponseCode conn))
     (catch Throwable e
-      (log/error "Failed to post test metrics json " e url json)
+      (log/error e "Failed to post test metrics json " url json)
       (throw e))))
 
 (defn blue [message] (str ANSI-BLUE message ANSI-RESET))
@@ -162,7 +174,8 @@
 
 (let [running-tests (atom {})
       start-millis (atom {})
-      test-durations (atom {})]
+      test-durations (atom {})
+      failed-tests (atom #{})]
   (defn- log-running-tests []
     (let [tests @running-tests]
       (log/debug (count tests) "running test(s):" tests))
@@ -195,6 +208,8 @@
                   test-failed? (> (+ num-fails num-errors) 0)
                   result (if test-failed? "failed" (if test-skipped? "skipped" "passed"))
                   es-index (str "waiter-tests-" (du/date-to-str (t/now) (f/formatters :basic-date)))]
+              (when test-failed?
+                (swap! failed-tests conj full-name))
               ;TODO: can check for outstanding commits: (println (jgit/git-status git-repo))
               (post-json (str test-metrics-url "/" es-index "/test-result")
                          (json/write-str {:build-id test-metrics-build-id
@@ -206,6 +221,7 @@
                                           :host hostname
                                           :project "waiter"
                                           :result result
+                                          :run-attempt test-metrics-run-attempt
                                           :run-description test-metrics-run-description
                                           :run-id test-metrics-run-id
                                           :runtime-milliseconds elapsed-millis
@@ -214,7 +230,7 @@
                                           :timestamp (du/date-to-str (t/now))
                                           :user username})))
             (catch Throwable e
-              (log/error "Failed to post test metrics " e test-metrics-url)))))
+              (log/error e "Failed to post test metrics " test-metrics-url)))))
       (log-running-tests)))
 
   (defmethod report :summary [m]
@@ -228,6 +244,10 @@
       (println "\nRan" (:test m) "tests containing"
                (+ (:pass m) (:fail m) (:error m)) "assertions.")
       (println (:fail m) "failures," (:error m) "errors.")
+      (try
+        (spit test-metrics-failed-tests-file (json/write-str {:failed-tests @failed-tests}))
+        (catch Exception e
+          (log/error e "Failed to write out failed tests " test-metrics-failed-tests-file @failed-tests)))
       (when http-client (http/stop-client! http-client)))))
 
 ;; Overrides the default reporter for :error so that the ex-data of
