@@ -13,6 +13,9 @@
 ;; See the License for the specific language governing permissions and
 ;; limitations under the License.
 ;;
+
+INTENTIONALLY BROKEN
+
 (defproject waiter "0.1.0-SNAPSHOT"
   :test-paths ["test" "integration"]
   :test-selectors {:default (every-pred
