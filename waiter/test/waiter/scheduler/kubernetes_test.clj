@@ -395,7 +395,6 @@
                                            :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:phase "Pending"
-                           :podIP "1.2.3.4"
                            :startTime "2014-09-13T00:24:46Z"
                            :containerStatuses [{:name "test-app-1234"
                                                 :ready false
@@ -488,7 +487,7 @@
                    {:active-instances
                     [(scheduler/make-ServiceInstance
                        {:healthy? false
-                        :host "1.2.3.4"
+                        :host "0.0.0.0"
                         :id "test-app-1234.test-app-1234-abcd0-0"
                         :k8s/container-statuses [{:name "test-app-1234" :ready false :reason "ContainerCreating":state :waiting}]
                         :k8s/pod-phase "Pending"

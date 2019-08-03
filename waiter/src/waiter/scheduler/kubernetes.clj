@@ -150,13 +150,10 @@
   "Construct the Waiter instance-id for the given Kubernetes pod incarnation.
    Note that a new Waiter Service Instance is created each time a pod restarts,
    and that we generate a unique instance-id by including the pod's restartCount value."
-  ([pod]
-   ;; waiter-app is the first container we register, hence first container in the reported status
-   (pod->instance-id pod (get-in pod [:status :containerStatuses 0 :restartCount])))
-  ([pod restart-count]
-   (let [pod-name (k8s-object->id pod)
-         service-id (k8s-object->service-id pod)]
-     (str service-id \. pod-name \- restart-count))))
+  [pod restart-count]
+  (let [pod-name (k8s-object->id pod)
+        service-id (k8s-object->service-id pod)]
+    (str service-id \. pod-name \- restart-count)))
 
 (defn- unpack-instance-id
   "Extract the service-id, pod name, and pod restart-number from an instance-id."
@@ -186,26 +183,27 @@
    by passing the pod's restartCount value to the pod->instance-id function."
   [{:keys [service-id] :as live-instance} {:keys [service-id->failed-instances-transient-store] :as scheduler} pod]
   (try
-    (when-let [newest-failure (get-in pod [:status :containerStatuses 0 :lastState :terminated])]
-      (let [failure-flags (if (= "OOMKilled" (:reason newest-failure)) #{:memory-limit-exceeded} #{})
-            newest-failure-start-time (-> newest-failure :startedAt timestamp-str->datetime)
-            restart-count (get-in pod [:status :containerStatuses 0 :restartCount])
-            newest-failure-id (pod->instance-id pod (dec restart-count))
-            failures (-> service-id->failed-instances-transient-store deref (get service-id))]
-        (when-not (contains? failures newest-failure-id)
-          (let [newest-failure-instance (cond-> (assoc live-instance
-                                                       :flags failure-flags
-                                                       :healthy? false
-                                                       :id newest-failure-id
-                                                       :log-directory (log-dir-path (:k8s/user live-instance)
-                                                                                    (dec restart-count))
-                                                       :started-at newest-failure-start-time)
-                                          ;; To match the behavior of the marathon scheduler,
-                                          ;; we don't include the exit code in failed instances that were killed by k8s.
-                                          (not (killed-by-k8s? newest-failure))
-                                          (assoc :exit-code (:exitCode newest-failure)))]
-            (swap! service-id->failed-instances-transient-store
-                   update-in [service-id] assoc newest-failure-id newest-failure-instance)))))
+    (let [primary-container-status (get-in pod [:status :containerStatuses 0])]
+      (when-let [newest-failure (get-in primary-container-status [:lastState :terminated])]
+        (when-let [restart-count (get primary-container-status :restartCount)]
+          (let [failure-flags (if (= "OOMKilled" (:reason newest-failure)) #{:memory-limit-exceeded} #{})
+                newest-failure-start-time (-> newest-failure :startedAt timestamp-str->datetime)
+                newest-failure-id (pod->instance-id pod (dec restart-count))
+                failures (-> service-id->failed-instances-transient-store deref (get service-id))]
+            (when-not (contains? failures newest-failure-id)
+              (let [newest-failure-instance (cond-> (assoc live-instance
+                                                      :flags failure-flags
+                                                      :healthy? false
+                                                      :id newest-failure-id
+                                                      :log-directory (log-dir-path (:k8s/user live-instance)
+                                                                                   (dec restart-count))
+                                                      :started-at newest-failure-start-time)
+                                              ;; To match the behavior of the marathon scheduler,
+                                              ;; we don't include the exit code in failed instances that were killed by k8s.
+                                              (not (killed-by-k8s? newest-failure))
+                                              (assoc :exit-code (:exitCode newest-failure)))]
+                (swap! service-id->failed-instances-transient-store
+                       update-in [service-id] assoc newest-failure-id newest-failure-instance)))))))
     (catch Throwable e
       (log/error e "error converting failed pod to waiter service instance" pod)
       (comment "Returning nil on failure."))))
@@ -222,14 +220,16 @@
                           (k8s-object->namespace pod))
           ;; pod phase documentation: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-phase
           {:keys [phase] :as pod-status} (:status pod)
-          container-statuses (get pod-status :containerStatuses)]
+          container-statuses (get pod-status :containerStatuses)
+          pod-host (or (get-in pod [:status :podIP]) scheduler/UNKNOWN_IP)]
       (scheduler/make-ServiceInstance
         (cond-> {:extra-ports (->> (get-in pod [:metadata :annotations :waiter/port-count])
                                    Integer/parseInt range next (mapv #(+ port0 %)))
                  :flags (cond-> #{} (>= restart-count restart-expiry-threshold) (conj :expired))
-                 :healthy? (get-in pod [:status :containerStatuses 0 :ready] false)
-                 :host (get-in pod [:status :podIP])
-                 :id (pod->instance-id pod)
+                 :healthy? (and (not= scheduler/UNKNOWN_IP pod-host)
+                                (get-in pod [:status :containerStatuses 0 :ready] false))
+                 :host pod-host
+                 :id (pod->instance-id pod restart-count)
                  :k8s/app-name (get-in pod [:metadata :labels :app])
                  :k8s/namespace (k8s-object->namespace pod)
                  :k8s/pod-name (k8s-object->id pod)
@@ -331,8 +331,7 @@
 (defn- live-pod?
   "Returns true if the pod has started, but has not yet been deleted."
   [pod]
-  (and (some? (get-in pod [:status :podIP]))
-       (nil? (get-in pod [:metadata :deletionTimestamp]))))
+  (nil? (get-in pod [:metadata :deletionTimestamp])))
 
 (defn- get-service-instances!
   "Get all active Waiter Service Instances associated with the given Waiter Service.
