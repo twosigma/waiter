@@ -74,6 +74,7 @@
                                           :ports [31045],
                                           :stagedAt "2014-09-12T23:28:28.594Z",
                                           :startedAt "2014-09-13T00:24:46.959Z",
+                                          :state "TASK_RUNNING",
                                           :version "2014-09-12T23:28:21.737Z"},
                                          {
                                           :appId "/test-app-1234",
@@ -108,6 +109,7 @@
                                                   :host "10.141.141.11",
                                                   :id "test-app-1234.A",
                                                   :log-directory nil,
+                                                  :marathon/state "TASK_RUNNING"
                                                   :message nil,
                                                   :port 31045,
                                                   :service-id "test-app-1234",
@@ -139,6 +141,7 @@
                                                   :host "10.141.141.10",
                                                   :id "test-app-1234.D",
                                                   :log-directory nil,
+                                                  :marathon/state "TASK_FAILED"
                                                   :message "Abnormal executor termination",
                                                   :port 0,
                                                   :service-id "test-app-1234",
@@ -370,6 +373,7 @@
                          :host "10.141.141.10"
                          :port 0
                          :started-at (du/str-to-date "2014-09-12T23:23:41.711Z" formatter-marathon)
+                         :marathon/state "TASK_FAILED"
                          :message "Abnormal executor termination"}))})
         service-id->failed-instances-transient-store (atom {})
         actual (response-data->service->service-instances

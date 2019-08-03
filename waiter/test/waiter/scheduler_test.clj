@@ -513,6 +513,21 @@
         service-instance {:extra-ports [81] :host "www.example.com" :port 80}]
     (.setConnectTimeout http-client 200)
     (.setIdleTimeout http-client 200)
+
+    (testing "unknown host"
+      (let [service-instance {:host "www.example.com"}
+            resp (async/<!! (available? http-client scheduler-name service-instance health-check-proto 0 "/health-check"))]
+        (is (= {:error :unknown-authority :healthy? false} resp)))
+      (let [service-instance {:host "www.example.com" :port 0}
+            resp (async/<!! (available? http-client scheduler-name service-instance health-check-proto 0 "/health-check"))]
+        (is (= {:error :unknown-authority :healthy? false} resp)))
+      (let [service-instance {:port 80}
+            resp (async/<!! (available? http-client scheduler-name service-instance health-check-proto 0 "/health-check"))]
+        (is (= {:error :unknown-authority :healthy? false} resp)))
+      (let [service-instance {:host "0.0.0.0" :port 80}
+            resp (async/<!! (available? http-client scheduler-name service-instance health-check-proto 0 "/health-check"))]
+        (is (= {:error :unknown-authority :healthy? false} resp))))
+
     (with-redefs [http/get (fn [in-http-client in-health-check-url _]
                              (is (= http-client in-http-client))
                              (is (= "http://www.example.com:80/health-check" in-health-check-url))
