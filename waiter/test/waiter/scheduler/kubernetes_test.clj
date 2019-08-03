@@ -384,7 +384,7 @@
         pods-response
         {:kind "PodList"
          :apiVersion "v1"
-         :items [{:metadata {:name "test-app-1234-abcd1"
+         :items [{:metadata {:name "test-app-1234-abcd0"
                              :namespace "myself"
                              :labels {:app "test-app-1234"
                                       :waiter-cluster "waiter"
@@ -394,11 +394,30 @@
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
-                  :status {:podIP "10.141.141.11"
+                  :status {:phase "Pending"
+                           :podIP "0.0.0.0"
+                           :startTime "2014-09-13T00:24:46Z"
+                           :containerStatuses [{:name "test-app-1234"
+                                                :ready false
+                                                :restartCount 0
+                                                :state {:waiting {:reason "ContainerCreating"}}}]}}
+                 {:metadata {:name "test-app-1234-abcd1"
+                             :namespace "myself"
+                             :labels {:app "test-app-1234"
+                                      :waiter-cluster "waiter"
+                                      :waiter/cluster "waiter"
+                                      :waiter/service-hash "test-app-1234"
+                                      :waiter/user "myself"}
+                             :annotations {:waiter/port-count "1"
+                                           :waiter/service-id "test-app-1234"}}
+                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
+                  :status {:phase "Running"
+                           :podIP "10.141.141.11"
                            :startTime "2014-09-13T00:24:46Z"
                            :containerStatuses [{:name "test-app-1234"
                                                 :ready true
-                                                :restartCount 0}]}}
+                                                :restartCount 0
+                                                :state {:running {}}}]}}
                  {:metadata {:name "test-app-1234-abcd2"
                              :namespace "myself"
                              :labels {:app "test-app-1234"
@@ -468,9 +487,21 @@
                                             :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
                    {:active-instances
                     [(scheduler/make-ServiceInstance
+                       {:healthy? false
+                        :host "0.0.0.0"
+                        :id "test-app-1234.test-app-1234-abcd0-0"
+                        :k8s/pod-phase "Pending"
+                        :k8s/primary-container-state {:waiting "ContainerCreating"}
+                        :log-directory "/home/myself/r0"
+                        :port 8080
+                        :service-id "test-app-1234"
+                        :started-at (du/str-to-date "2014-09-13T00:24:46Z" k8s-timestamp-format)})
+                     (scheduler/make-ServiceInstance
                        {:healthy? true
                         :host "10.141.141.11"
                         :id "test-app-1234.test-app-1234-abcd1-0"
+                        :k8s/pod-phase "Running"
+                        :k8s/primary-container-state {:running "reason_unknown"}
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-1234"

@@ -151,6 +151,7 @@
    Note that a new Waiter Service Instance is created each time a pod restarts,
    and that we generate a unique instance-id by including the pod's restartCount value."
   ([pod]
+   ;; waiter-app is the first container we register, hence first container in the reported status
    (pod->instance-id pod (get-in pod [:status :containerStatuses 0 :restartCount])))
   ([pod restart-count]
    (let [pod-name (k8s-object->id pod)
@@ -214,28 +215,34 @@
   [restart-expiry-threshold pod]
   (try
     (let [port0 (get-in pod [:spec :containers 0 :ports 0 :containerPort])
-          restart-count (get-in pod [:status :containerStatuses 0 :restartCount])
+          restart-count (get-in pod [:status :containerStatuses 0 :restartCount] 0)
           run-as-user (or (get-in pod [:metadata :labels :waiter/user])
                           ;; falling back to namespace for legacy pods missing the waiter/user label
-                          (k8s-object->namespace pod))]
+                          (k8s-object->namespace pod))
+          {:keys [phase] :as pod-status} (:status pod)
+          ;; waiter-app is the first container we register
+          primary-container-state (pc/map-vals #(or (:reason %) "reason_unknown")
+                                               (get-in pod-status [:containerStatuses 0 :state]))]
       (scheduler/make-ServiceInstance
-        {:extra-ports (->> (get-in pod [:metadata :annotations :waiter/port-count])
-                           Integer/parseInt range next (mapv #(+ port0 %)))
-         :flags (cond-> #{} (>= restart-count restart-expiry-threshold) (conj :expired))
-         :healthy? (get-in pod [:status :containerStatuses 0 :ready] false)
-         :host (get-in pod [:status :podIP])
-         :id (pod->instance-id pod)
-         :k8s/app-name (get-in pod [:metadata :labels :app])
-         :k8s/namespace (k8s-object->namespace pod)
-         :k8s/pod-name (k8s-object->id pod)
-         :k8s/restart-count restart-count
-         :k8s/user run-as-user
-         :log-directory (log-dir-path run-as-user restart-count)
-         :port port0
-         :service-id (k8s-object->service-id pod)
-         :started-at (-> pod
-                         (get-in [:status :startTime])
-                         (timestamp-str->datetime))}))
+        (cond-> {:extra-ports (->> (get-in pod [:metadata :annotations :waiter/port-count])
+                                   Integer/parseInt range next (mapv #(+ port0 %)))
+                 :flags (cond-> #{} (>= restart-count restart-expiry-threshold) (conj :expired))
+                 :healthy? (get-in pod [:status :containerStatuses 0 :ready] false)
+                 :host (get-in pod [:status :podIP])
+                 :id (pod->instance-id pod)
+                 :k8s/app-name (get-in pod [:metadata :labels :app])
+                 :k8s/namespace (k8s-object->namespace pod)
+                 :k8s/pod-name (k8s-object->id pod)
+                 :k8s/restart-count restart-count
+                 :k8s/user run-as-user
+                 :log-directory (log-dir-path run-as-user restart-count)
+                 :port port0
+                 :service-id (k8s-object->service-id pod)
+                 :started-at (-> pod
+                               (get-in [:status :startTime])
+                               (timestamp-str->datetime))}
+          phase (assoc :k8s/pod-phase phase)
+          (seq primary-container-state) (assoc :k8s/primary-container-state primary-container-state))))
     (catch Throwable e
       (log/error e "error converting pod to waiter service instance" pod)
       (comment "Returning nil on failure."))))
@@ -783,6 +790,7 @@
                                 ;; Note that even if the run-as-user matches the default namespace,
                                 ;; the token is still not mounted unless the namespace was explicitly set.
                                 :automountServiceAccountToken (= namespace run-as-user)
+                                ;; Note: waiter-app must always be the first container we register
                                 :containers [{:command (conj (vec container-init-commands) cmd)
                                               :env env
                                               :image (compute-image image default-container-image image-aliases)
