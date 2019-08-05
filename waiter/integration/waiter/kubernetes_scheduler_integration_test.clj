@@ -1,10 +1,11 @@
 (ns waiter.kubernetes-scheduler-integration-test
-  (:require [clojure.data.json :as json]
-            [clojure.set :as set]
+  (:require [clojure.core.async :as async]
+            [clojure.data.json :as json]
             [clojure.string :as string]
             [clojure.walk :as walk]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
+            [plumbing.core :as pc]
             [waiter.util.client-tools :refer :all]))
 
 (defn- get-watch-state [state-json]
@@ -237,7 +238,7 @@
                                 (kitchen-cmd "-p $PORT0"))}
             namespace-arg
             (assoc :x-waiter-namespace namespace-arg))
-        #(make-kitchen-request waiter-url % :path "/environment"))]
+          #(make-kitchen-request waiter-url % :path "/environment"))]
     (when-not (= 200 status)
       (throw (ex-info "Failed to create service"
                       {:response-body body
@@ -258,7 +259,7 @@
           (let [service-account (get-pod-service-account waiter-url current-user current-user)]
             (is (= current-user service-account))))))))
 
-(deftest ^:parallel ^:integration-slow ^:resource-heavy test-kubernetes-pod-expiry
+(deftest ^:parallel ^:integration-slow ^:resource-heavy test-kubernetes-pod-expiry-failing-instance
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
       (let [{:keys [request-headers service-id] :as response}
@@ -279,9 +280,55 @@
                 (fn []
                   (let [{:keys [active-instances failed-instances]} (:instances (service-settings waiter-url service-id))
                         pod-ids (->> (concat active-instances failed-instances)
-                                  (map :id)
-                                  (map (fn [instance-id]
-                                         (subs instance-id 0 (string/last-index-of instance-id "-"))))
-                                  (into #{}))]
+                                     (map :k8s/pod-name)
+                                     (into #{}))]
                     (log/info pod-ids)
                     (< 1 (count pod-ids)))))))))))
+
+(deftest ^:parallel ^:integration-slow ^:resource-heavy test-kubernetes-pod-expiry-grace-period
+  (testing-using-waiter-url
+    (when (using-k8s? waiter-url)
+      (if-let [custom-image (System/getenv "INTEGRATION_TEST_BAD_IMAGE")]
+        (let [{:keys [container-running-grace-secs]} (get-kubernetes-scheduler-settings waiter-url)
+              request-timeout-ms (* 3 container-running-grace-secs 1000)
+              waiter-params (assoc (kitchen-params)
+                              :distribution-scheme "simple"
+                              :image custom-image
+                              :name (rand-name)
+                              :timeout request-timeout-ms)
+              waiter-headers (pc/map-keys #(str "x-waiter-" (name %)) waiter-params)
+              service-id (retrieve-service-id waiter-url waiter-headers)
+              abort-ch (async/promise-chan)
+              status-promise (promise)]
+          (is service-id)
+          (if (> container-running-grace-secs 150)
+            (is false "container-running-grace-secs will cause the test to run for too long")
+            (with-service-cleanup
+              service-id
+              ;; make request to launch service
+              (async/thread
+                (let [response (make-request waiter-url "/status" :abort-ch abort-ch :headers waiter-headers)]
+                  (async/close! abort-ch)
+                  (if (async/<!! abort-ch)
+                    (deliver status-promise ::cancel)
+                    (deliver status-promise response))))
+              ;; wait until first instance is expired
+              (Thread/sleep (* 1000 container-running-grace-secs))
+              ;; assert that more than one pod was created
+              (is (wait-for
+                    (fn []
+                      (let [{:keys [active-instances failed-instances]} (:instances (service-settings waiter-url service-id))
+                            pod-ids (->> (concat active-instances failed-instances)
+                                         (map :k8s/pod-name)
+                                         (into #{}))]
+                        (log/info "active-instances" active-instances)
+                        (log/info "failed-instances" failed-instances)
+                        (< 1 (count pod-ids))))
+                    :interval 15
+                    :timeout 120))
+              (async/>!! abort-ch [(Exception. "Test complete") nil])
+              (let [response (deref status-promise 15000 {:body "Timed out waiting for response"})]
+                (log/info "response:" response)
+                (when-not (= ::cancel response)
+                  (assert-response-status response #{502 503}))))))
+        (log/warn "skipping test as INTEGRATION_TEST_BAD_IMAGE is not specified")))))

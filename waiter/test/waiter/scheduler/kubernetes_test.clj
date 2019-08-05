@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.scheduler.kubernetes-test
-  (:require [clojure.core.async :as async]
+  (:require [clj-time.core :as t]
+            [clojure.core.async :as async]
             [clojure.data]
             [clojure.pprint]
             [clojure.string :as str]
@@ -53,6 +54,7 @@
                    :default {:factory-fn 'waiter.authorization/noop-authorizer}}
       :daemon-state (atom nil)
       :cluster-name "waiter"
+      :container-running-grace-secs 120
       :fileserver {:port 9090
                    :scheme "http"}
       :log-bucket-sync-secs 60
@@ -557,7 +559,7 @@
                         :port 8080
                         :service-id "test-app-6789"
                         :started-at (du/str-to-date "2014-09-13T00:24:36Z" k8s-timestamp-format)})]})
-        dummy-scheduler (make-dummy-scheduler ["test-app-1234" "test-app-6789"])
+        dummy-scheduler (make-dummy-scheduler ["test-app-1234" "test-app-6789"] {:container-running-grace-secs 0})
         _ (reset-scheduler-watch-state! dummy-scheduler rs-response pods-response)
         actual (->> dummy-scheduler
                     get-service->instances
@@ -906,6 +908,7 @@
                     :authorizer {:kind :default
                                  :default {:factory-fn 'waiter.authorization/noop-authorizer}}
                     :cluster-name "waiter"
+                    :container-running-grace-secs 120
                     :custom-options custom-options
                     :fileserver {:port 9090
                                  :scheme "http"}
@@ -956,7 +959,11 @@
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-sigkill-delay-secs -1))))
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-sigkill-delay-secs "10"))))
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-sigkill-delay-secs 1200))))
-            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-sigkill-delay-secs 1234567890))))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-sigkill-delay-secs 1234567890)))))
+
+          (testing "bad container running grace seconds"
+            (is (thrown? Throwable (kubernetes-scheduler (dissoc base-config :container-running-grace-secs))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :container-running-grace-secs -1))))))
 
         (testing "should work with valid configuration"
           (is (instance? KubernetesScheduler (kubernetes-scheduler base-config))))
@@ -1138,7 +1145,7 @@
         pods-watch-stream (make-watch-stream pods-watch-updates watch-update-signals)
         rs-watch-stream (make-watch-stream rs-watch-updates watch-update-signals)
 
-        {:keys [restart-expiry-threshold watch-state] :as dummy-scheduler} (make-dummy-scheduler ["test-app-1234"])
+        {:keys [watch-state] :as dummy-scheduler} (make-dummy-scheduler ["test-app-1234"])
 
         rs-watch-thread (start-replicasets-watch!
                           dummy-scheduler
@@ -1156,7 +1163,7 @@
                        (let [pod-id (str "test-app-1234-abcd" index)
                              pod (get-in @watch-state [:service-id->pod-id->pod service-id pod-id])]
                          (when pod
-                           (pod->ServiceInstance restart-expiry-threshold pod))))
+                           (pod->ServiceInstance dummy-scheduler pod))))
         wait-for-version (fn [version-tag value]
                            (ct/wait-for
                              #(= value
@@ -1433,7 +1440,7 @@
                                  (concat updates ["hang after last update"])
                                  (concat signals [(promise)])))
 
-        {:keys [restart-expiry-threshold watch-state] :as dummy-scheduler} (make-dummy-scheduler ["test-app-1234"])
+        {:keys [watch-state] :as dummy-scheduler} (make-dummy-scheduler ["test-app-1234"])
 
         ;; replicasets have a single uninterrupted stream of updates
         rs-watch-stream (make-watch-stream rs-watch-updates watch-update-signals)
@@ -1480,7 +1487,7 @@
                        (let [pod-id (str "test-app-1234-abcd" index)
                              pod (get-in @watch-state [:service-id->pod-id->pod service-id pod-id])]
                          (when pod
-                           (pod->ServiceInstance restart-expiry-threshold pod))))
+                           (pod->ServiceInstance dummy-scheduler pod))))
         wait-for-version (fn [resource version-tag value]
                            (ct/wait-for
                              #(= value
@@ -1595,7 +1602,9 @@
       (is (= "an/image" (compute-image nil "an/image" image-aliases))))))
 
 (deftest test-pod->ServiceInstance
-  (let [pod {:metadata {:name "test-app-1234-abcd1"
+  (let [pod-start-time (t/minus (t/now) (t/seconds 60))
+        pod-start-time-k8s-str (du/date-to-str pod-start-time k8s-timestamp-format)
+        pod {:metadata {:name "test-app-1234-abcd1"
                         :namespace "myself"
                         :labels {:app "test-app-1234"
                                  :waiter-cluster "waiter"
@@ -1605,7 +1614,7 @@
                                       :waiter/service-id "test-app-1234"}}
              :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
              :status {:podIP "10.141.141.11"
-                      :startTime "2014-09-13T00:24:46Z"
+                      :startTime pod-start-time-k8s-str
                       :containerStatuses [{:name "test-app-1234"
                                            :ready true
                                            :restartCount 9}]}}
@@ -1620,7 +1629,7 @@
                       :message nil
                       :port 8080
                       :service-id "test-app-1234"
-                      :started-at (timestamp-str->datetime "2014-09-13T00:24:46Z")
+                      :started-at (timestamp-str->datetime pod-start-time-k8s-str)
                       :k8s/app-name "test-app-1234"
                       :k8s/container-statuses [{:name "test-app-1234" :ready true}]
                       :k8s/namespace "myself"
@@ -1630,15 +1639,28 @@
 
     (testing "pod to live instance"
       (let [restart-expiry-threshold 10
-            instance (pod->ServiceInstance restart-expiry-threshold pod)]
+            dummy-scheduler {:container-running-grace-secs 120
+                             :restart-expiry-threshold restart-expiry-threshold}
+            instance (pod->ServiceInstance dummy-scheduler pod)]
         (is (= (scheduler/make-ServiceInstance instance-map) instance))))
 
     (testing "pod to expired instance threshold"
       (let [restart-expiry-threshold 9
-            instance (pod->ServiceInstance restart-expiry-threshold pod)]
+            dummy-scheduler {:container-running-grace-secs 120
+                             :restart-expiry-threshold restart-expiry-threshold}
+            instance (pod->ServiceInstance dummy-scheduler pod)]
         (is (= (scheduler/make-ServiceInstance (assoc instance-map :flags #{:expired})) instance))))
 
     (testing "pod to expired instance exceeded threshold"
       (let [restart-expiry-threshold 5
-            instance (pod->ServiceInstance restart-expiry-threshold pod)]
+            dummy-scheduler {:container-running-grace-secs 120
+                             :restart-expiry-threshold restart-expiry-threshold}
+            instance (pod->ServiceInstance dummy-scheduler pod)]
+        (is (= (scheduler/make-ServiceInstance (assoc instance-map :flags #{:expired})) instance))))
+
+    (testing "pod to expired instance exceeded running grace period"
+      (let [restart-expiry-threshold 25
+            dummy-scheduler {:container-running-grace-secs 45
+                             :restart-expiry-threshold restart-expiry-threshold}
+            instance (pod->ServiceInstance dummy-scheduler pod)]
         (is (= (scheduler/make-ServiceInstance (assoc instance-map :flags #{:expired})) instance))))))

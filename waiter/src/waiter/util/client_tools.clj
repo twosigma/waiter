@@ -321,9 +321,10 @@
 
 (defn make-request
   ([waiter-url path &
-    {:keys [body client cookies content-type disable-auth form-params headers
+    {:keys [abort-ch body client cookies content-type disable-auth form-params headers
             method multipart protocol query-params scheme trailers-fn verbose]
-     :or {body nil
+     :or {abort-ch (async/promise-chan)
+          body nil
           cookies []
           disable-auth false
           headers {}
@@ -353,7 +354,8 @@
              {:keys [body error error-chan headers status trailers]}
              (async/<!! (http/request
                           client
-                          (cond-> {:body body
+                          (cond-> {:abort-ch abort-ch
+                                   :body body
                                    :follow-redirects? false
                                    :headers request-headers
                                    :method method
@@ -370,7 +372,8 @@
                        (when error-chan (async/<!! error-chan)))]
          (when verbose
            (log/info (get request-headers "x-cid") "response size:" (count (str response-body))))
-         {:body response-body
+         {:abort-ch abort-ch
+          :body response-body
           :cookies (parse-cookies (get headers "set-cookie"))
           :error error
           :headers headers
