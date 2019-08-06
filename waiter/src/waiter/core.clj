@@ -1540,7 +1540,9 @@
    :waiter-auth-handler-fn (pc/fnk [wrap-secure-request-fn]
                              (wrap-secure-request-fn
                                (fn waiter-auth-handler-fn [request]
-                                 {:body (str (:authorization/user request)), :status 200})))
+                                 (utils/attach-waiter-source
+                                   {:body (str (:authorization/user request))
+                                    :status 200}))))
    :waiter-request-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template]
                                                [:settings consent-expiry-days]
                                                wrap-secure-request-fn]
