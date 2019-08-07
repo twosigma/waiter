@@ -361,7 +361,7 @@
   {:pre [(<= 0 scale-up-factor 1)
          (<= 0 scale-down-factor 1)
          (pos? scale-factor)
-         (<= scale-factor 1)
+         (<= scale-factor 2)
          (>= concurrency-level 1)
          (> 1 jitter-threshold)
          (utils/non-neg? jitter-threshold)

@@ -29,6 +29,8 @@
                                                         'positive-number-greater-than-or-equal-to-1))
 (def positive-fraction-less-than-or-equal-to-1 (s/pred #(and (pos? %) (<= % 1))
                                                        'positive-fraction-less-than-or-equal-to-1))
+(def positive-fraction-less-than-or-equal-to-2 (s/pred #(and (pos? %) (<= % 2))
+                                                       'positive-fraction-less-than-or-equal-to-2))
 (def greater-than-or-equal-to-0-less-than-1 (s/pred #(and (<= 0 %) (< % 1))
                                                     'greater-than-or-equal-to-0-less-than-1))
 
