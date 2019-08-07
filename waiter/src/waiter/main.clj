@@ -86,10 +86,10 @@
                                                           (cors/wrap-cors-preflight cors-validator (:max-age cors-config))
                                                           core/wrap-error-handling
                                                           (core/wrap-debug generate-log-url-fn)
+                                                          (core/attach-server-header-middleware server-name)
                                                           rlog/wrap-log
                                                           core/correlation-id-middleware
                                                           (core/wrap-request-info router-id support-info)
-                                                          (core/attach-server-header-middleware server-name)
                                                           consume-request-stream)
                                         :websocket-acceptor websocket-request-acceptor
                                         :websocket-handler (-> (core/websocket-handler-factory handlers)
