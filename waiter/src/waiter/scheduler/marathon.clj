@@ -161,15 +161,18 @@
   (let [service-id (remove-slash-prefix (get-in marathon-response (conj service-keys :id)))
         framework-id (retrieve-framework-id-fn)
         common-extractor-fn (fn [instance-id marathon-task-response]
-                              (let [{:keys [appId host message slaveId]} marathon-task-response
+                              (let [{:keys [appId host message slaveId state]} marathon-task-response
                                     log-directory (mesos/build-sandbox-path mesos-api slaveId framework-id instance-id)]
-                                (cond-> {:host host
+                                (cond-> {:host (or host scheduler/UNKNOWN_IP)
                                          :service-id (remove-slash-prefix appId)}
                                   log-directory
                                   (assoc :log-directory log-directory)
 
                                   message
                                   (assoc :message (str/trim message))
+
+                                  state
+                                  (assoc :marathon/state state)
 
                                   (str/includes? (str message) "Memory limit exceeded:")
                                   (assoc :flags #{:memory-limit-exceeded})

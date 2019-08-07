@@ -50,6 +50,8 @@
    task-count
    task-stats])
 
+(def ^:const UNKNOWN_IP "0.0.0.0")
+
 (defn make-Service [value-map]
   (map->Service (merge {:task-stats {:running 0
                                      :healthy 0
@@ -240,7 +242,7 @@
    protocol health-check-port-index health-check-path]
   (async/go
     (try
-      (if (and (pos? port) host)
+      (if (and port (pos? port) host (not= UNKNOWN_IP host))
         (let [instance-health-check-url (health-check-url service-instance protocol health-check-port-index health-check-path)
               request-timeout-ms (max (+ (.getConnectTimeout http-client) (.getIdleTimeout http-client)) 200)
               request-abort-chan (async/chan 1)
@@ -277,7 +279,8 @@
           {:healthy? (and (nil? error-flag) (<= 200 status 299))
            :status status
            :error error-flag})
-        {:healthy? false})
+        {:error :unknown-authority
+         :healthy? false})
       (catch Exception e
         (log/error e "exception thrown while performing health check" {:instance service-instance
                                                                        :health-check-path health-check-path})
@@ -456,10 +459,12 @@
                                             (update :flags
                                                     (fn [flags]
                                                       (cond-> flags
-                                                        (not= error :connect-exception)
+                                                        (and (not= error :unknown-authority)
+                                                             (not= error :connect-exception))
                                                         (conj :has-connected)
 
-                                                        (not (contains? connection-errors error))
+                                                        (and (not= error :unknown-authority)
+                                                             (not (contains? connection-errors error)))
                                                         (conj :has-responded))))))
             protocol (service-description->health-check-protocol service-description)
             health-check-refs (map (fn [instance]
