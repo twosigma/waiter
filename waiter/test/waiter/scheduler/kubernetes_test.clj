@@ -395,7 +395,7 @@
                                            :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:phase "Pending"
-                           :podIP "0.0.0.0"
+                           :podIP "1.2.3.4"
                            :startTime "2014-09-13T00:24:46Z"
                            :containerStatuses [{:name "test-app-1234"
                                                 :ready false
@@ -488,10 +488,11 @@
                    {:active-instances
                     [(scheduler/make-ServiceInstance
                        {:healthy? false
-                        :host "0.0.0.0"
+                        :host "1.2.3.4"
                         :id "test-app-1234.test-app-1234-abcd0-0"
                         :k8s/pod-phase "Pending"
-                        :k8s/primary-container-state {:waiting "ContainerCreating"}
+                        :k8s/primary-container-state {:reason "ContainerCreating"
+                                                      :state :waiting}
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-1234"
@@ -501,7 +502,7 @@
                         :host "10.141.141.11"
                         :id "test-app-1234.test-app-1234-abcd1-0"
                         :k8s/pod-phase "Running"
-                        :k8s/primary-container-state {:running "reason_unknown"}
+                        :k8s/primary-container-state {:state :running}
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-1234"

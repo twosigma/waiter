@@ -215,14 +215,16 @@
   [restart-expiry-threshold pod]
   (try
     (let [port0 (get-in pod [:spec :containers 0 :ports 0 :containerPort])
+          ;; waiter-app is the first container we register
           restart-count (get-in pod [:status :containerStatuses 0 :restartCount] 0)
           run-as-user (or (get-in pod [:metadata :labels :waiter/user])
                           ;; falling back to namespace for legacy pods missing the waiter/user label
                           (k8s-object->namespace pod))
+          ;; pod phase documentation: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-phase
           {:keys [phase] :as pod-status} (:status pod)
-          ;; waiter-app is the first container we register
-          primary-container-state (pc/map-vals #(or (:reason %) "reason_unknown")
-                                               (get-in pod-status [:containerStatuses 0 :state]))]
+          primary-container-state (get-in pod-status [:containerStatuses 0 :state])]
+      (when (> (count primary-container-state) 1)
+        (log/warn "received multiple states for waiter-app:" primary-container-state))
       (scheduler/make-ServiceInstance
         (cond-> {:extra-ports (->> (get-in pod [:metadata :annotations :waiter/port-count])
                                    Integer/parseInt range next (mapv #(+ port0 %)))
@@ -242,7 +244,10 @@
                                (get-in [:status :startTime])
                                (timestamp-str->datetime))}
           phase (assoc :k8s/pod-phase phase)
-          (seq primary-container-state) (assoc :k8s/primary-container-state primary-container-state))))
+          (seq primary-container-state) (assoc :k8s/primary-container-state
+                                               (let [[state {:keys [reason]}] (first primary-container-state)]
+                                                 (cond-> {:state state}
+                                                   (some? reason) (assoc :reason reason)))))))
     (catch Throwable e
       (log/error e "error converting pod to waiter service instance" pod)
       (comment "Returning nil on failure."))))
