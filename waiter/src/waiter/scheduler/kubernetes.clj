@@ -222,9 +222,7 @@
                           (k8s-object->namespace pod))
           ;; pod phase documentation: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-phase
           {:keys [phase] :as pod-status} (:status pod)
-          primary-container-state (get-in pod-status [:containerStatuses 0 :state])]
-      (when (> (count primary-container-state) 1)
-        (log/warn "received multiple states for waiter-app:" primary-container-state))
+          container-statuses (get pod-status :containerStatuses)]
       (scheduler/make-ServiceInstance
         (cond-> {:extra-ports (->> (get-in pod [:metadata :annotations :waiter/port-count])
                                    Integer/parseInt range next (mapv #(+ port0 %)))
@@ -244,10 +242,15 @@
                                (get-in [:status :startTime])
                                (timestamp-str->datetime))}
           phase (assoc :k8s/pod-phase phase)
-          (seq primary-container-state) (assoc :k8s/primary-container-state
-                                               (let [[state {:keys [reason]}] (first primary-container-state)]
-                                                 (cond-> {:state state}
-                                                   (some? reason) (assoc :reason reason)))))))
+          (seq container-statuses) (assoc :k8s/container-statuses
+                                          (map (fn [{:keys [state] :as status}]
+                                                 (when (> (count state) 1)
+                                                   (log/warn "received multiple states for container:" status))
+                                                 (let [[state {:keys [reason]}] (first state)]
+                                                   (cond-> (select-keys status [:image :name :ready])
+                                                     (some? reason) (assoc :reason reason)
+                                                     (some? state) (assoc :state state))))
+                                               container-statuses)))))
     (catch Throwable e
       (log/error e "error converting pod to waiter service instance" pod)
       (comment "Returning nil on failure."))))
