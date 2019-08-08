@@ -490,9 +490,8 @@
                        {:healthy? false
                         :host "1.2.3.4"
                         :id "test-app-1234.test-app-1234-abcd0-0"
+                        :k8s/container-statuses [{:name "test-app-1234" :ready false :reason "ContainerCreating":state :waiting}]
                         :k8s/pod-phase "Pending"
-                        :k8s/primary-container-state {:reason "ContainerCreating"
-                                                      :state :waiting}
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-1234"
@@ -501,8 +500,8 @@
                        {:healthy? true
                         :host "10.141.141.11"
                         :id "test-app-1234.test-app-1234-abcd1-0"
+                        :k8s/container-statuses [{:name "test-app-1234" :ready true :state :running}]
                         :k8s/pod-phase "Running"
-                        :k8s/primary-container-state {:state :running}
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-1234"
@@ -511,6 +510,7 @@
                        {:healthy? true
                         :host "10.141.141.12"
                         :id "test-app-1234.test-app-1234-abcd2-0"
+                        :k8s/container-statuses [{:name "test-app-1234" :ready true}]
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-1234"
@@ -524,6 +524,7 @@
                        {:healthy? true
                         :host "10.141.141.13"
                         :id "test-app-6789.test-app-6789-abcd1-0"
+                        :k8s/container-statuses [{:name "test-app-6789" :ready true}]
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-6789"
@@ -532,6 +533,7 @@
                        {:healthy? false
                         :host "10.141.141.14"
                         :id "test-app-6789.test-app-6789-abcd2-1"
+                        :k8s/container-statuses [{:name "test-app-6789"}]
                         :log-directory "/home/myself/r1"
                         :port 8080
                         :service-id "test-app-6789"
@@ -540,6 +542,7 @@
                        {:healthy? false
                         :host "10.141.141.15"
                         :id "test-app-6789.test-app-6789-abcd3-0"
+                        :k8s/container-statuses [{:name "test-app-6789"}]
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-6789"
@@ -550,6 +553,7 @@
                         :healthy? false
                         :host "10.141.141.14"
                         :id "test-app-6789.test-app-6789-abcd2-0"
+                        :k8s/container-statuses [{:name "test-app-6789"}]
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-6789"
@@ -1619,6 +1623,7 @@
                       :service-id "test-app-1234"
                       :started-at (timestamp-str->datetime "2014-09-13T00:24:46Z")
                       :k8s/app-name "test-app-1234"
+                      :k8s/container-statuses [{:name "test-app-1234" :ready true}]
                       :k8s/namespace "myself"
                       :k8s/pod-name "test-app-1234-abcd1"
                       :k8s/restart-count 9
