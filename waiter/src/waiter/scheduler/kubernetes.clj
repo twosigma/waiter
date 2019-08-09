@@ -185,7 +185,7 @@
   (try
     (let [primary-container-status (get-in pod [:status :containerStatuses 0])]
       (when-let [newest-failure (get-in primary-container-status [:lastState :terminated])]
-        (when-let [restart-count (get primary-container-status :restartCount)]
+        (when-let [restart-count (:restartCount primary-container-status)]
           (let [failure-flags (if (= "OOMKilled" (:reason newest-failure)) #{:memory-limit-exceeded} #{})
                 newest-failure-start-time (-> newest-failure :startedAt timestamp-str->datetime)
                 newest-failure-id (pod->instance-id pod (dec restart-count))
@@ -220,15 +220,13 @@
                           (k8s-object->namespace pod))
           ;; pod phase documentation: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-phase
           {:keys [phase] :as pod-status} (:status pod)
-          container-statuses (get pod-status :containerStatuses)
-          pod-host (or (get-in pod [:status :podIP]) scheduler/UNKNOWN_IP)]
+          container-statuses (get pod-status :containerStatuses)]
       (scheduler/make-ServiceInstance
         (cond-> {:extra-ports (->> (get-in pod [:metadata :annotations :waiter/port-count])
                                    Integer/parseInt range next (mapv #(+ port0 %)))
                  :flags (cond-> #{} (>= restart-count restart-expiry-threshold) (conj :expired))
-                 :healthy? (and (not= scheduler/UNKNOWN_IP pod-host)
-                                (get-in pod [:status :containerStatuses 0 :ready] false))
-                 :host pod-host
+                 :healthy? (get-in pod [:status :containerStatuses 0 :ready] false)
+                 :host (get-in pod [:status :podIP] scheduler/UNKNOWN-IP)
                  :id (pod->instance-id pod restart-count)
                  :k8s/app-name (get-in pod [:metadata :labels :app])
                  :k8s/namespace (k8s-object->namespace pod)
