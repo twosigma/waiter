@@ -111,7 +111,7 @@
                  [slingshot "0.12.2"]
                  [try-let "1.3.1"
                   :exclusions [org.clojure/clojure]]]
-
+  :eftest {:report clojure.test/report}
   :resource-paths ["resources"]
   :main waiter.main
   :plugins [[com.holychao/parallel-test "0.3.2"]
