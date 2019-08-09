@@ -58,6 +58,41 @@
       (= (first state) ::servlet/timeout) (throw (ex-info "Operation timed out" {:cid correlation-id} (second state)))
       :else (throw (ex-info "Connection closed while still processing" {:cid correlation-id})))))
 
+(defn- classify-error
+  "Classifies the error responses from the backend into the following vector:
+   - error cause (:client-eagerly-closed, :client-error, :instance-error or :generic-error),
+   - associated error message, and
+   - the http status code."
+  [error]
+  (let [classification (cond (instance? ExceptionInfo error)
+                             (let [[error-cause message status] (classify-error (ex-cause error))
+                                   error-cause (or (-> error ex-data :error-cause) error-cause)]
+                               [error-cause message status])
+                             (instance? IllegalStateException error)
+                             [:generic-error (.getMessage error) 400]
+                             ;; cancel_stream_error is used to indicate that the stream is no longer needed
+                             (and (instance? IOException error) (= "cancel_stream_error" (.getMessage error)))
+                             [:client-error "Client action means stream is no longer needed" 400]
+                             ;; connection has already been closed by the client
+                             (and (instance? EofException error) (= "reset" (.getMessage error)))
+                             [:client-eagerly-closed "Connection eagerly closed by client" 400]
+                             (instance? EofException error)
+                             [:client-error "Connection unexpectedly closed while streaming request" 400]
+                             (instance? TimeoutException error)
+                             [:instance-error (utils/message :backend-request-timed-out) 504]
+                             :else
+                             [:instance-error (utils/message :backend-request-failed) 502])
+        [error-cause _ _] classification]
+    (log/info (-> error .getClass .getCanonicalName) (.getMessage error) "identified as" error-cause)
+    classification))
+
+(defn- determine-client-error
+  "Classifies the error into one of :client-eagerly-closed or :client-error"
+  [error]
+  (let [[error-cause _ _] (classify-error error)]
+    (or (get #{:client-eagerly-closed :client-error} error-cause)
+        :client-error)))
+
 (defn confirm-live-connection-factory
   "Confirms that the connection to the client is live by checking the ctrl channel, else it throws an exception."
   [control-mult reservation-status-promise correlation-id error-callback]
@@ -67,7 +102,7 @@
         (check-control confirm-live-chan correlation-id)
         (catch Throwable throwable
           ; flag the error as an I/O error as the connection is no longer live
-          (deliver reservation-status-promise :client-error)
+          (deliver reservation-status-promise (determine-client-error throwable))
           (log/debug throwable "error while checking for live connection")
           (when error-callback
             (error-callback throwable))
@@ -180,31 +215,6 @@
                             (log/error e "error releasing instance!"))))
       instance)))
 
-(defn- classify-error
-  "Classifies the error responses from the backend into the following vector:
-   - error cause (:client-error, :instance-error or :generic-error),
-   - associated error message, and
-   - the http status code."
-  [error]
-  (let [classification (cond (instance? ExceptionInfo error)
-                             (let [[error-cause message status] (classify-error (ex-cause error))
-                                   error-cause (or (-> error ex-data :error-cause) error-cause)]
-                               [error-cause message status])
-                             (instance? IllegalStateException error)
-                             [:generic-error (.getMessage error) 400]
-                             ;; cancel_stream_error is used to indicate that the stream is no longer needed
-                             (and (instance? IOException error) (= "cancel_stream_error" (.getMessage error)))
-                             [:client-error "Client action means stream is no longer needed" 400]
-                             (instance? EofException error)
-                             [:client-error "Connection unexpectedly closed while streaming request" 400]
-                             (instance? TimeoutException error)
-                             [:instance-error (utils/message :backend-request-timed-out) 504]
-                             :else
-                             [:instance-error (utils/message :backend-request-failed) 502])
-        [error-cause _ _] classification]
-    (log/info (-> error .getClass .getCanonicalName) (.getMessage error) "identified as" error-cause)
-    classification))
-
 (defn- handle-response-error
   "Handles error responses from the backend."
   [error reservation-status-promise service-id request]
@@ -279,23 +289,25 @@
                                              ;; avoid decrementing the counter multiple times
                                              (counters/dec! request-body-streaming-counter)
                                              (report-request-size-metrics 0 true))
-                                           (if throwable
-                                             (let [identifier-map {:identifier complete-trigger-id}
-                                                   ;; the callback is necessary as there is a data race between aborting the
-                                                   ;; request and closing of the body channel triggering a normal complete before
-                                                   ;; the abort request gets processed.
-                                                   callback (fn complete-request-streaming-abort-result-callback [aborted?]
-                                                              (cid/with-correlation-id
-                                                                correlation-id
-                                                                (log/info "result of aborted request:" aborted? identifier-map)
-                                                                (async/close! body-ch)))]
-                                               (log/info throwable "aborting request" message identifier-map)
-                                               (when-not (async/put! abort-ch [throwable callback])
-                                                 ;; abort channel already closed, cleanup by closing the body channel
-                                                 (async/close! body-ch)))
-                                             (do
-                                               (log/debug "closing request input body" message)
-                                               (async/close! body-ch)))))))]
+                                           (let [[error-cause _ _] (when throwable
+                                                                     (classify-error throwable))]
+                                             (if (and throwable (not= :client-eagerly-closed error-cause))
+                                               (let [identifier-map {:identifier complete-trigger-id}
+                                                     ;; the callback is necessary as there is a data race between aborting the
+                                                     ;; request and closing of the body channel triggering a normal complete before
+                                                     ;; the abort request gets processed.
+                                                     callback (fn complete-request-streaming-abort-result-callback [aborted?]
+                                                                (cid/with-correlation-id
+                                                                  correlation-id
+                                                                  (log/info "result of aborted request:" aborted? identifier-map)
+                                                                  (async/close! body-ch)))]
+                                                 (log/info throwable "aborting request" message identifier-map)
+                                                 (when-not (async/put! abort-ch [throwable callback])
+                                                   ;; abort channel already closed, cleanup by closing the body channel
+                                                   (async/close! body-ch)))
+                                               (do
+                                                 (log/debug "closing request input body" message)
+                                                 (async/close! body-ch))))))))]
     (counters/inc! request-body-streaming-counter)
     (when ctrl-ch
       (async/go
@@ -500,14 +512,15 @@
           (log/info e "exception occurred while streaming response for" service-id)
           (meters/mark! stream-exception-meter)
           (let [[error-cause _ _] (classify-error e)]
-            (deliver reservation-status-promise error-cause))
-          (log/info "sending poison pill to response channel")
-          (let [poison-pill-function (poison-pill-fn (cid/get-correlation-id))]
-            (when-not (au/timed-offer! resp-chan poison-pill-function 5000)
-              (log/info "poison pill offer on response channel timed out!")
-              (when-let [output-stream @output-stream-atom]
-                (log/info "invoking poison pill directly on output stream")
-                (poison-pill-function output-stream)))))
+            (deliver reservation-status-promise error-cause)
+            (when-not (= :client-eagerly-closed error-cause)
+              (log/info "sending poison pill to response channel")
+              (let [poison-pill-function (poison-pill-fn (cid/get-correlation-id))]
+                (when-not (au/timed-offer! resp-chan poison-pill-function 5000)
+                  (log/info "poison pill offer on response channel timed out!")
+                  (when-let [output-stream @output-stream-atom]
+                    (log/info "invoking poison pill directly on output stream")
+                    (poison-pill-function output-stream)))))))
         (finally
           (async/close! resp-chan)
           (async/close! body)
