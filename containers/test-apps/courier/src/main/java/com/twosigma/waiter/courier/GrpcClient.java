@@ -92,6 +92,14 @@ public class GrpcClient {
                 throw new CancellationException(message);
             }
         },
+        EXIT() {
+            @Override
+            public void apply(final Context.CancellableContext cancellableContext,
+                              final ClientCallStreamObserver<?> observer,
+                              final String message) {
+                System.exit(1);
+            }
+        },
         NONE() {
             @Override
             public void apply(final Context.CancellableContext cancellableContext,

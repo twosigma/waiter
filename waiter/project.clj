@@ -34,7 +34,7 @@
                   :exclusions [prismatic/schema ring/ring-core]]
                  [clj-jgit "0.8.10"
                   :scope "test"]
-                 [twosigma/courier "1.5.9"
+                 [twosigma/courier "1.5.14"
                   :exclusions [com.google.guava/guava io.grpc/grpc-core]
                   :scope "test"]
                  ;; avoids the following:
@@ -114,8 +114,9 @@
 
   :resource-paths ["resources"]
   :main waiter.main
-  :plugins [[test2junit "1.2.2"]
-            [com.holychao/parallel-test "0.3.2"]]
+  :plugins [[com.holychao/parallel-test "0.3.2"]
+            [lein-exec "0.3.7"]
+            [test2junit "1.2.2"]]
   ; In case of kerberos problems, export KRB5_KTNAME=/var/spool/keytabs/$(id -un)
   :jvm-opts ["-server"
              "-Dsun.security.jgss.lib=/opt/mitkrb5/lib/libgssapi_krb5.so"
