@@ -116,7 +116,8 @@
                   curator/write-path (fn [_ path data & _] (swap! state-store (fn [v] (assoc v path data))))]
       (let [available-services-atom (atom #{"service01" "service02" "service03" "service04stayalive" "service05"
                                             "service06faulty" "service07" "service08stayalive" "service09stayalive"
-                                            "service10broken" "service11broken" "service12missingmetrics"})
+                                            "service10broken" "service11broken" "service12missingmetrics"
+                                            "service13zerooutmetrics"})
             initial-global-state {"service01" {"last-request-time" (tc/from-long 10)
                                                "outstanding" 0}
                                   "service02" {"last-request-time" (tc/from-long 20)
@@ -138,7 +139,9 @@
                                   "service11broken" {"last-request-time" (tc/from-long 80)
                                                      "outstanding" 95}
                                   "service12missingmetrics" {"last-request-time" (tc/from-long 30)
-                                                             "outstanding" 24}}
+                                                             "outstanding" 24}
+                                  "service13zerooutmetrics" {"last-request-time" (tc/from-long 40)
+                                                             "outstanding" 5000}}
             deleted-services-atom (atom #{})
             scheduler (reify ServiceScheduler
                         (delete-service [_ service-id]
@@ -172,6 +175,8 @@
                                               (when (or (not (str/includes? service-id "missingmetrics"))
                                                         (< n 10))
                                                 (cond-> (update state "outstanding" (fn [v] (max 0 (- v n))))
+                                                  (str/includes? service-id "zerooutmetrics")
+                                                  (assoc "outstanding" 0)
                                                   (-> n inc (mod 5) zero?)
                                                   (dissoc "last-request-time")
                                                   (-> n inc (mod 7) zero?)
@@ -183,7 +188,7 @@
                 (Thread/sleep 2)
                 (swap! iteration-counter inc)))
             (async/>!! service-gc-exit-chan :exit)
-            (is (= #{"service01" "service02" "service03" "service05" "service07"}
+            (is (= #{"service01" "service02" "service03" "service05" "service07" "service13zerooutmetrics"}
                    @deleted-services-atom))
             (is (= #{"service04stayalive" "service06faulty" "service08stayalive" "service09stayalive"
                      "service10broken" "service11broken" "service12missingmetrics"}

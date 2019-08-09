@@ -323,7 +323,7 @@
                                    (fn scheduler-services-gc-service->raw-data-fn [service-id]
                                      (let [{:strs [last-request-time outstanding]} (get global-state service-id)]
                                        ;; if outstanding and total are missing return unknown which results in cur state
-                                       (if (or last-request-time (and outstanding (pos? outstanding)))
+                                       (if (or last-request-time outstanding)
                                          {"last-request-time" last-request-time
                                           "outstanding" (or outstanding 0)}
                                          ::unknown)))
