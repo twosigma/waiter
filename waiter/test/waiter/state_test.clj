@@ -1222,14 +1222,14 @@
             healthy-instances-fn (fn [service-id index n]
                                    (vec (map #(assoc
                                                 {:started-at start-time}
-                                                :id (str service-id "." % "1"))
+                                                :id (str service-id "." % ".h"))
                                              (range (if (zero? (mod index 2)) 1 (max 1 n))))))
             unhealthy-instances-fn (fn [service-id index]
-                                     (vec (map (fn [x] {:id (str service-id "." x "1")
+                                     (vec (map (fn [x] {:id (str service-id "." x ".u")
                                                         :started-at start-time})
                                                (range (if (zero? (mod index 2)) 1 0)))))
             failed-instances-fn (fn [service-id index]
-                                  (vec (map (fn [x] {:id (str service-id "." x "1")
+                                  (vec (map (fn [x] {:id (str service-id "." x ".f")
                                                      :started-at start-time})
                                             (range (if (zero? (mod index 2)) 1 0)))))]
         (dotimes [n num-message-iterations]
@@ -1267,11 +1267,12 @@
                                     (pc/map-from-keys
                                       (fn [service]
                                         (let [healthy-instances (healthy-instances-fn service (index-fn service) n)
+                                              unhealthy-instances (unhealthy-instances-fn service (index-fn service))
                                               expiry-mins-int (Integer/parseInt (str/replace service "service-" ""))
                                               expiry-mins (t/minutes expiry-mins-int)]
                                           (filter #(and (pos? expiry-mins-int)
                                                         (du/older-than? current-time expiry-mins %1))
-                                                  healthy-instances)))
+                                                  (concat healthy-instances unhealthy-instances))))
                                       expected-service-ids)
                                     :service-id->starting-instances
                                     (pc/map-from-keys
