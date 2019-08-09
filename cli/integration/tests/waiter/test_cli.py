@@ -602,6 +602,7 @@ class WaiterCliTest(util.WaiterTest):
         finally:
             util.delete_token(self.waiter_url, token_name)
 
+    @pytest.mark.xfail
     def test_kill_services_sorted(self):
         token_name = self.token_name()
         service_description_1 = util.minimal_service_description()
