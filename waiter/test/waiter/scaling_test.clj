@@ -706,6 +706,26 @@
   (is (= 0.5 (normalize-factor 0.5 1)))
   (is (= 0.75 (normalize-factor 0.5 2))))
 
+(defn scales-like
+  [expected-scale-amount expected-scale-to-instances expected-target-instances
+   config total-instances outstanding-requests target-instances healthy-instances expired-instances]
+  (let [epsilon 1e-2
+        {:keys [scale-amount scale-to-instances target-instances]}
+        (scale-service config {:total-instances total-instances
+                               :outstanding-requests outstanding-requests
+                               :target-instances target-instances
+                               :healthy-instances healthy-instances
+                               :expired-instances expired-instances})]
+    (is (> epsilon (Math/abs (double (- scale-amount expected-scale-amount))))
+        (str (last *testing-contexts*) ": scale-amount=" scale-amount
+             " expected-scale-amount=" expected-scale-amount))
+    (is (= scale-to-instances expected-scale-to-instances)
+        (str (last *testing-contexts*) ": scale-to-instances=" scale-to-instances
+             " expected-scale-to-instances=" expected-scale-to-instances))
+    (is (> epsilon (Math/abs (double (- target-instances expected-target-instances))))
+        (str (last *testing-contexts*) ": target-instances=" target-instances
+             " expected-target-instances=" expected-target-instances))))
+
 (deftest scale-service-test
   (let [jitter-threshold 0.9
         default-scaling {"concurrency-level" 1
@@ -720,24 +740,7 @@
         fast-scaling (assoc default-scaling
                        "scale-up-factor" 0.999
                        "scale-down-factor" 0.999)
-        epsilon 1e-2
-        scales-like (fn [expected-scale-amount expected-scale-to-instances expected-target-instances
-                         config total-instances outstanding-requests target-instances healthy-instances expired-instances]
-                      (let [{:keys [scale-amount scale-to-instances target-instances]}
-                            (scale-service config {:total-instances total-instances
-                                                   :outstanding-requests outstanding-requests
-                                                   :target-instances target-instances
-                                                   :healthy-instances healthy-instances
-                                                   :expired-instances expired-instances})]
-                        (is (> epsilon (Math/abs (double (- scale-amount expected-scale-amount))))
-                            (str (last *testing-contexts*) ": scale-amount=" scale-amount
-                                 " expected-scale-amount=" expected-scale-amount))
-                        (is (= scale-to-instances expected-scale-to-instances)
-                            (str (last *testing-contexts*) ": scale-to-instances=" scale-to-instances
-                                 " expected-scale-to-instances=" expected-scale-to-instances))
-                        (is (> epsilon (Math/abs (double (- target-instances expected-target-instances))))
-                            (str (last *testing-contexts*) ": target-instances=" target-instances
-                                 " expected-target-instances=" expected-target-instances))))]
+        epsilon 1e-2]
     (testing "scale whole way"
       (scales-like 5 10 10, fast-scaling 5 10 5 5 0))
     (testing "don't scale up if there are enough instances for outstanding requests"
@@ -798,7 +801,10 @@
     (testing "apply expired scale factor"
       (scales-like 2 22 19.95, default-scaling 20 20 19.9 20 20)
       (scales-like 20 40 20, (assoc default-scaling "expired-instance-restart-rate" 1) 20 20 20 20 20)
-      (scales-like 0 1 1, (assoc default-scaling "expired-instance-restart-rate" 0) 1 0 1 1 1))))
+      (scales-like 0 1 1, (assoc default-scaling "expired-instance-restart-rate" 0) 1 0 1 1 1))
+    (testing "scale up when there is at least one expired instance"
+      (scales-like 1 2 1, (assoc default-scaling "expired-instance-restart-rate" 1) 1 1 1 0 1)
+      (scales-like 3 6 5, (assoc default-scaling "expired-instance-restart-rate" 1) 3 5 5 2 1))))
 
 (let [leader?-fn (constantly true)
       instance-killer-multiplexer-fn (fn [_])
