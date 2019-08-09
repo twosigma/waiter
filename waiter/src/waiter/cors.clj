@@ -25,9 +25,15 @@
   "A simple protocol for validating CORS requests.
    It provides two functions: one for preflight requests, and one for regular requests"
   (preflight-allowed? [this request]
-    "Returns true if the preflight request is allowed.")
+    "Returns a map containing the result whether the preflight request is allowed.
+     The map has two keys: :result and :summary.
+     :result contains a boolean value on whether preflight is allowed.
+     :summary is a map that contains a summary of all the checks that were performed.")
   (request-allowed? [this request]
-    "Returns true if the CORS request is allowed."))
+    "Returns true if the CORS request is allowed.
+     The map has two keys: :result and :summary.
+     :result contains a boolean value on whether preflight is allowed.
+     :summary is a map that contains a summary of all the checks that were performed."))
 
 (defn preflight-request?
   "Determines if a request is a CORS preflight request."
@@ -47,11 +53,13 @@
               {:strs [origin]} headers]
           (when-not origin
             (throw (ex-info "No origin provided" {:status 403})))
-          (when-not (preflight-allowed? cors-validator request)
-            (throw (ex-info "Cross-origin request not allowed" {:origin origin
-                                                                :request-method request-method
-                                                                :status 403
-                                                                :log-level :warn})))
+          (let [{:keys [result summary]} (preflight-allowed? cors-validator request)]
+            (when-not result
+              (throw (ex-info "Cross-origin request not allowed" {:cors-checks summary
+                                                                  :origin origin
+                                                                  :request-method request-method
+                                                                  :status 403
+                                                                  :log-level :warn}))))
           (let [{:strs [access-control-request-headers]} headers]
             {:status 200
              :headers {"access-control-allow-origin" origin
@@ -71,24 +79,29 @@
     (fn wrap-cors-fn [request]
       (let [{:keys [headers request-method]} request
             {:strs [origin]} headers
-            bless #(if (and origin (request-allowed? cors-validator request))
-                     (cond-> (update-in % [:headers] assoc
+            {:keys [result summary]} (if origin
+                                       (request-allowed? cors-validator request)
+                                       {:result false :summary [:origin-absent]})
+            bless (fn [response]
+                     (cond-> (update-in response [:headers] assoc
                                         "access-control-allow-origin" origin
                                         "access-control-allow-credentials" "true")
                        (and exposed-headers-str ;; exposed headers are configured
                             (not (utils/same-origin request)) ;; CORS request
                             (waiter-request? request)) ;; request made to a waiter router
-                       (update :headers assoc "access-control-expose-headers" exposed-headers-str))
-                     %)]
-        (-> request
-            (#(if (or (not origin) (request-allowed? cors-validator %))
-                (handler %)
-                (throw (ex-info "Cross-origin request not allowed"
-                                {:origin origin
-                                 :request-method request-method
-                                 :status 403
-                                 :log-level :warn}))))
-            (ru/update-response bless))))))
+                       (update :headers assoc "access-control-expose-headers" exposed-headers-str)))]
+        (if (not origin)
+          (handler request)
+          (do
+            (when-not result
+              (throw (ex-info "Cross-origin request not allowed"
+                              {:cors-checks summary
+                               :origin origin
+                               :request-method request-method
+                               :status 403
+                               :log-level :warn})))
+            (-> (handler request)
+              (ru/update-response bless))))))))
 
 (defrecord PatternBasedCorsValidator [pattern-matches?]
   CorsValidator
@@ -104,15 +117,21 @@
   (let [pattern-matches?
         (fn [{:keys [headers] :as request}]
           (let [{:strs [origin]} headers]
-            (and origin
-                 (or (utils/same-origin request)
-                     (some #(re-matches % origin) allowed-origins)))))]
+            (cond
+              (not origin)
+              {:result false :summary [:origin-absent]}
+              (utils/same-origin request)
+              {:result true :summary [:origin-present :origin-same]}
+              (some #(re-matches % origin) allowed-origins)
+              {:result true :summary [:origin-present :origin-different :pattern-matched]}
+              :else
+              {:result false :summary [:origin-present :origin-different :pattern-not-matched]})))]
     (->PatternBasedCorsValidator pattern-matches?)))
 
 (defrecord AllowAllCorsValidator []
   CorsValidator
-  (preflight-allowed? [_ _] true)
-  (request-allowed? [_ _] true))
+  (preflight-allowed? [_ _] {:result true :summary [:always-allow]})
+  (request-allowed? [_ _] {:result true :summary [:always-allow]}))
 
 (defn allow-all-validator
   "Creates a CORS validator that allows all cross-origin requests."
@@ -121,8 +140,8 @@
 
 (defrecord DenyAllCorsValidator []
   CorsValidator
-  (preflight-allowed? [_ _] false)
-  (request-allowed? [_ _] false))
+  (preflight-allowed? [_ _] {:result false :summary [:always-deny]})
+  (request-allowed? [_ _] {:result false :summary [:always-deny]}))
 
 (defn deny-all-validator
   "Creates a CORS validator that denies all cross-origin requests."
