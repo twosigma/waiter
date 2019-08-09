@@ -1174,14 +1174,20 @@
           failed-instance-flags (map :flags failed-instances)
           all-instances-flagged-with? (fn [flag] (every? #(contains? % flag) failed-instance-flags))
           no-instances-flagged-with? (fn [flag] (every? #(not (contains? % flag)) failed-instance-flags))
-          all-instances-exited-similarly? (and first-exit-code (every? #(= first-exit-code %) (map :exit-code failed-instances)))]
-      (cond
-        (and has-failed-instances? all-instances-exited-similarly?) :bad-startup-command
-        (and has-failed-instances? (all-instances-flagged-with? :memory-limit-exceeded)) :not-enough-memory
-        (and has-failed-instances? (no-instances-flagged-with? :has-connected)) :cannot-connect
-        (and has-failed-instances? (no-instances-flagged-with? :has-responded)) :health-check-timed-out
-        (and has-failed-instances? (all-instances-flagged-with? :never-passed-health-checks)) :invalid-health-check-response
-        (and has-unhealthy-instances? (= first-unhealthy-status 401)) :health-check-requires-authentication))))
+          all-instances-exited-similarly? (and first-exit-code (every? #(= first-exit-code %) (map :exit-code failed-instances)))
+          deployment-error (cond
+                             (and has-failed-instances? all-instances-exited-similarly?) :bad-startup-command
+                             (and has-failed-instances? (all-instances-flagged-with? :memory-limit-exceeded)) :not-enough-memory
+                             (and has-failed-instances? (no-instances-flagged-with? :has-connected)) :cannot-connect
+                             (and has-failed-instances? (no-instances-flagged-with? :has-responded)) :health-check-timed-out
+                             (and has-failed-instances? (all-instances-flagged-with? :never-passed-health-checks)) :invalid-health-check-response
+                             (and has-unhealthy-instances? (= first-unhealthy-status 401)) :health-check-requires-authentication)]
+      (when deployment-error
+        (log/debug "computed deployment error"
+                   {:deployment-error deployment-error
+                    :instances {:failed (map :id failed-instances)
+                                :unhealthy (map :id unhealthy-instances)}}))
+      deployment-error)))
 
 (defn get-instability-issue
   "Returns appropriate instability issue (only oom for now) for a service based on its instances, or nil if no such issues."

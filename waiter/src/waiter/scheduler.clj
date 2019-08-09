@@ -50,7 +50,7 @@
    task-count
    task-stats])
 
-(def ^:const UNKNOWN_IP "0.0.0.0")
+(def ^:const UNKNOWN-IP "0.0.0.0")
 
 (defn make-Service [value-map]
   (map->Service (merge {:task-stats {:running 0
@@ -242,7 +242,7 @@
    protocol health-check-port-index health-check-path]
   (async/go
     (try
-      (if (and port (pos? port) host (not= UNKNOWN_IP host))
+      (if (and port (pos? port) host (not= UNKNOWN-IP host))
         (let [instance-health-check-url (health-check-url service-instance protocol health-check-port-index health-check-path)
               request-timeout-ms (max (+ (.getConnectTimeout http-client) (.getIdleTimeout http-client)) 200)
               request-abort-chan (async/chan 1)

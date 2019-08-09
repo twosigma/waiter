@@ -163,7 +163,7 @@
         common-extractor-fn (fn [instance-id marathon-task-response]
                               (let [{:keys [appId host message slaveId state]} marathon-task-response
                                     log-directory (mesos/build-sandbox-path mesos-api slaveId framework-id instance-id)]
-                                (cond-> {:host (or host scheduler/UNKNOWN_IP)
+                                (cond-> {:host (or host scheduler/UNKNOWN-IP)
                                          :service-id (remove-slash-prefix appId)}
                                   log-directory
                                   (assoc :log-directory log-directory)
