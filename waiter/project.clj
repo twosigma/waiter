@@ -111,12 +111,13 @@
                  [slingshot "0.12.2"]
                  [try-let "1.3.1"
                   :exclusions [org.clojure/clojure]]]
-
+  :eftest {:report clojure.test/report}
   :resource-paths ["resources"]
   :main waiter.main
   :plugins [[com.holychao/parallel-test "0.3.2"]
             [lein-exec "0.3.7"]
-            [test2junit "1.2.2"]]
+            [test2junit "1.2.2"]
+            [lein-eftest "0.5.8"]]
   ; In case of kerberos problems, export KRB5_KTNAME=/var/spool/keytabs/$(id -un)
   :jvm-opts ["-server"
              "-Dsun.security.jgss.lib=/opt/mitkrb5/lib/libgssapi_krb5.so"
