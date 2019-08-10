@@ -410,7 +410,7 @@
   "Scales a sequence of services given the scale state of each service, and returns a new scale state which
   is fed back in the for the next call to scale-services."
   [service-ids service-id->service-description service-id->outstanding-requests service-id->scale-state apply-scaling-fn
-   scale-ticks scale-service-fn service-id->router-state service-id->scheduler-state]
+   scale-ticks scale-service-fn service-id->router-state service-id->scheduler-state max-expired-unhealthy-instances-to-consider]
   (try
     (log/trace "scaling apps" {:service-ids service-ids
                                :service-id->service-description service-id->service-description
@@ -422,7 +422,8 @@
     (pc/map-from-keys
       (fn [service-id]
         (let [outstanding-requests (or (service-id->outstanding-requests service-id) 0)
-              {:keys [healthy-instances expired-instances]} (service-id->router-state service-id)
+              {:keys [healthy-instances expired-healthy-instances expired-unhealthy-instances]} (service-id->router-state service-id)
+              expired-instances (+ expired-healthy-instances (min max-expired-unhealthy-instances-to-consider expired-unhealthy-instances))
               {:keys [instances task-count] :as scheduler-state} (service-id->scheduler-state service-id)
               ; if we don't have a target instance count, default to the number of tasks
               target-instances (get-in service-id->scale-state [service-id :target-instances] task-count)
@@ -477,7 +478,7 @@
   "Autoscaler encapsulated in goroutine.
    Acquires state of services and passes to scale-services."
   [initial-state leader?-fn service-id->metrics-fn executor-multiplexer-chan scheduler timeout-interval-ms scale-service-fn
-   service-id->service-description-fn state-mult scheduler-interactions-thread-pool]
+   service-id->service-description-fn state-mult scheduler-interactions-thread-pool max-expired-unhealthy-instances-to-consider]
   (let [state-atom (atom (merge {:continue-looping true
                                  :global-state {}
                                  :iter-counter 1
@@ -517,8 +518,11 @@
                               new-service-ids (set/difference service-ids-set existing-service-ids-set)
                               service-id->router-state' (pc/map-from-keys
                                                           (fn [service-id]
-                                                            {:healthy-instances (count (service-id->healthy-instances service-id))
-                                                             :expired-instances (count (service-id->expired-instances service-id))})
+                                                            (let [{expired-healthy-instances true expired-unhealthy-instances false}
+                                                                  (group-by (comp true? :healthy?) (service-id->expired-instances service-id))]
+                                                              {:expired-healthy-instances (count expired-healthy-instances)
+                                                               :expired-unhealthy-instances (count expired-unhealthy-instances)
+                                                               :healthy-instances (count (service-id->healthy-instances service-id))}))
                                                           service-ids-set)]
                           (when (seq new-service-ids)
                             (log/info "started tracking following services:" {:iteration iter-counter :service-ids new-service-ids}))
@@ -563,7 +567,8 @@
                                                         scale-ticks
                                                         scale-service-fn
                                                         service-id->router-state
-                                                        service-id->scheduler-state'))
+                                                        service-id->scheduler-state'
+                                                        max-expired-unhealthy-instances-to-consider))
                                       service-id->scale-state)]
                                 (log/info "scaling iteration took" (difference-in-millis (t/now) cycle-start-time)
                                           "ms for" (count service->scale-state') "services.")

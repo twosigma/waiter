@@ -623,6 +623,10 @@
            ;; Throttles the rate at which kill requests are sent to the scheduler:
            :inter-kill-request-wait-time-ms 1000
 
+           ;; The autoscaler accounts for expired (both healthy and unhealthy) instances while scaling.
+           ;; Limits the number of unhealthy expired instances taken into account by the scaling algorithm:
+           :max-expired-unhealthy-instances-to-consider 2
+
            ;; Individual scale-up operations are throttled so that we can minimize overshoot of instances.
            ;; The number of new instances started per scale-up is the maximum of 1 and the resource consumed
            ;; limit calculated based on the cpus and mem specified in the quanta-constraints.
