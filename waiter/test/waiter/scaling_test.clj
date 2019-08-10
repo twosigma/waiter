@@ -670,7 +670,7 @@
                                    10)
                           ; max instances is 20
                           "app5" (do
-                                   (is (= 11 scale-amount))
+                                   (is (= 7 scale-amount))
                                    (is (= 21 scale-to-instances))
                                    18)))
         ; simple scaling function that targets outstanding-requests
@@ -689,7 +689,7 @@
                                   "app2" (merge config {})
                                   "app3" (merge config {"min-instances" 5})
                                   "app4" (merge config {"max-instances" 10})
-                                  "app5" (merge config {"max-instances" 20})
+                                  "app5" (merge config {"max-instances" 20}) ;; scale past max instances to replace expired
                                   "app6" (merge config {})}
                                  ;; service-id->outstanding-requests
                                  {"app1" 10
@@ -713,22 +713,22 @@
                                   "app2" {:healthy-instances 5 :task-count 5 :expired-healthy-instances 0 :expired-unhealthy-instances 0}
                                   "app3" {:healthy-instances 0 :task-count 0 :expired-healthy-instances 0 :expired-unhealthy-instances 0}
                                   "app4" {:healthy-instances 15 :task-count 15 :expired-healthy-instances 0 :expired-unhealthy-instances 0}
-                                  "app5" {:healthy-instances 10 :task-count 10 :expired-healthy-instances 7 :expired-unhealthy-instances 4}
+                                  ;; scale past the max instances of 20 to replace 9 (7 + 2) of the expired instances
+                                  "app5" {:healthy-instances 10 :task-count 14 :expired-healthy-instances 7 :expired-unhealthy-instances 4}
                                   "app6" {:healthy-instances 5 :task-count 5 :expired-healthy-instances 0 :expired-unhealthy-instances 0}}
                                  ;; service-id->scheduler-state
                                  {"app1" {:instances 5 :task-count 5}
                                   "app2" {:instances 5 :task-count 5}
                                   "app3" {:instances 0 :task-count 0}
                                   "app4" {:instances 15 :task-count 15}
-                                  "app5" {:instances 10 :task-count 10}
+                                  "app5" {:instances 14 :task-count 14}
                                   "app6" {:instances 5 :task-count 5}}
                                  max-expired-unhealthy-instances-to-consider)]
-      (clojure.pprint/pprint result)
       (is (= {:target-instances 10, :scale-to-instances 10, :scale-amount 5} (get result "app1")))
       (is (= {:target-instances 5, :scale-to-instances 5, :scale-amount 0} (get result "app2")))
       (is (= {:target-instances 5, :scale-to-instances 5, :scale-amount 5} (get result "app3")))
       (is (= {:target-instances 10, :scale-to-instances 10, :scale-amount -5} (get result "app4")))
-      (is (= {:target-instances 12, :scale-to-instances 21, :scale-amount 11} (get result "app5")))
+      (is (= {:target-instances 12, :scale-to-instances 21, :scale-amount 7} (get result "app5")))
       (is (nil? (get result "app6"))))))
 
 (deftest normalize-factor-test
