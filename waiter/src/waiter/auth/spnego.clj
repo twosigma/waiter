@@ -135,43 +135,36 @@
    authentication, but that should be stacked before this handler."
   [request-handler ^ThreadPoolExecutor thread-pool-executor max-queue-length password]
   (fn require-gss-handler [{:keys [headers] :as request}]
-    (let [waiter-cookie (auth/get-auth-cookie-value (get headers "cookie"))
-          [auth-principal _ :as decoded-auth-cookie] (auth/decode-auth-cookie waiter-cookie password)]
-      (cond
-        ;; Use the cookie, if not expired
-        (auth/decoded-auth-valid? decoded-auth-cookie)
-        (let [auth-params-map (auth/auth-params-map auth-principal)
-              request-handler' (middleware/wrap-merge request-handler auth-params-map)]
-          (request-handler' request))
-        ;; Ensure we are not already queued with lots of Kerberos auth requests
-        (too-many-pending-auth-requests? thread-pool-executor max-queue-length)
-        (response-503-temporarily-unavailable request)
-        ;; Try and authenticate using kerberos and add cookie in response when valid
-        (get-in request [:headers "authorization"])
-        (let [current-correlation-id (cid/get-correlation-id)
-              gss-response-chan (async/promise-chan)]
-          ;; launch task that will populate the response in response-chan
-          (populate-gss-credentials thread-pool-executor request gss-response-chan)
-          (async/go
-            (cid/with-correlation-id
-              current-correlation-id
-              (let [{:keys [error principal token]} (async/<! gss-response-chan)]
-                (if-not error
-                  (try
-                    (if principal
-                      (let [response (auth/handle-request-auth request-handler request principal password)]
-                        (log/debug "added cookies to response")
-                        (if token
-                          (if (map? response)
-                            (rr/header response "www-authenticate" token)
-                            (let [actual-response (async/<! response)]
-                              (rr/header actual-response "www-authenticate" token)))
-                          response))
-                      (response-401-negotiate request))
-                    (catch Throwable th
-                      (log/error th "error while processing response")
-                      th))
-                  error)))))
-        ;; Default to unauthorized
-        :else
-        (response-401-negotiate request)))))
+    (cond
+      ;; Ensure we are not already queued with lots of Kerberos auth requests
+      (too-many-pending-auth-requests? thread-pool-executor max-queue-length)
+      (response-503-temporarily-unavailable request)
+      ;; Try and authenticate using kerberos and add cookie in response when valid
+      (get-in request [:headers "authorization"])
+      (let [current-correlation-id (cid/get-correlation-id)
+            gss-response-chan (async/promise-chan)]
+        ;; launch task that will populate the response in response-chan
+        (populate-gss-credentials thread-pool-executor request gss-response-chan)
+        (async/go
+          (cid/with-correlation-id
+            current-correlation-id
+            (let [{:keys [error principal token]} (async/<! gss-response-chan)]
+              (if-not error
+                (try
+                  (if principal
+                    (let [response (auth/handle-request-auth request-handler request principal password)]
+                      (log/debug "added cookies to response")
+                      (if token
+                        (if (map? response)
+                          (rr/header response "www-authenticate" token)
+                          (let [actual-response (async/<! response)]
+                            (rr/header actual-response "www-authenticate" token)))
+                        response))
+                    (response-401-negotiate request))
+                  (catch Throwable th
+                    (log/error th "error while processing response")
+                    th))
+                error)))))
+      ;; Default to unauthorized
+      :else
+      (response-401-negotiate request))))

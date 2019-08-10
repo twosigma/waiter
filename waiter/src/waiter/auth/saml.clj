@@ -283,27 +283,19 @@
 
 (defrecord SamlAuthenticator [auth-redirect-endpoint idp-uri password saml-request-factory saml-signature-validator]
   auth/Authenticator
-  (wrap-auth-handler [_ request-handler]
-    (fn saml-authenticator-handler [{:keys [headers query-string request-method uri] :as request}]
-      (let [waiter-cookie (auth/get-auth-cookie-value (get headers "cookie"))
-            [auth-principal _ :as decoded-auth-cookie] (auth/decode-auth-cookie waiter-cookie password)]
-        (cond
-          ;; Use the cookie, if not expired
-          (auth/decoded-auth-valid? decoded-auth-cookie)
-          (let [auth-params-map (auth/auth-params-map auth-principal)
-                request-handler' (middleware/wrap-merge request-handler auth-params-map)]
-            (request-handler' request))
-          :else
-          (do (counters/inc! (metrics/waiter-counter "auth" "saml" "auth-handler"))
-              (case request-method
-                :get (let [saml-request (saml-request-factory)
-                           scheme (name (utils/request->scheme request))
-                           host (get headers "host")
-                           request-url (str scheme "://" host uri (when query-string "?") query-string)
-                           relay-state (utils/map->base-64-string {:host host :request-url request-url :scheme scheme} password)]
-                       (get-idp-redirect idp-uri saml-request relay-state))
-                (throw (ex-info "Invalid request method for use with SAML authentication. Only GET supported."
-                                {:log-level :info :request-method request-method :status 405}))))))))
+  (wrap-auth-handler [_ _]
+    (fn saml-authenticator-handler
+      [{:keys [headers query-string request-method uri] :as request}]
+      (counters/inc! (metrics/waiter-counter "auth" "saml" "auth-handler"))
+      (case request-method
+        :get (let [saml-request (saml-request-factory)
+                   scheme (name (utils/request->scheme request))
+                   host (get headers "host")
+                   request-url (str scheme "://" host uri (when query-string "?") query-string)
+                   relay-state (utils/map->base-64-string {:host host :request-url request-url :scheme scheme} password)]
+               (get-idp-redirect idp-uri saml-request relay-state))
+        (throw (ex-info "Invalid request method for use with SAML authentication. Only GET supported."
+                        {:log-level :info :request-method request-method :status 405})))))
 
   auth/CallbackAuthenticator
   (process-callback [this {{:keys [operation]} :route-params :as request}]

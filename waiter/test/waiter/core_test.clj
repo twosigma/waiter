@@ -1266,20 +1266,31 @@
         (is (= handler-response response))))))
 
 (deftest test-authentication-method-wrapper-fn
-  (let [standard-handler (fn [_] {:source :standard-handler})]
+  (let [standard-handler (fn [{:keys [authorization/principal]}]
+                           {:principal principal
+                            :source ::standard-handler})]
     (let [authenticator (reify auth/Authenticator
                           (wrap-auth-handler [_ request-handler]
                             (is (= standard-handler request-handler))
-                            (fn [_]
-                              {:source :spnego-handler})))
-          authenticate-request-handler ((:authentication-method-wrapper-fn routines) {:state {:authenticator authenticator}})
+                            (fn [_] {:source ::auth-handler})))
+          {:keys [authentication-method-wrapper-fn]} routines
+          authenticate-request-handler (authentication-method-wrapper-fn {:state {:authenticator authenticator
+                                                                                  :passwords ["a" "b" "c"]}})
           request-handler (authenticate-request-handler standard-handler)]
 
       (testing "skip-authentication"
-        (is (= {:source :standard-handler} (request-handler {:skip-authentication true, :headers {}}))))
+        (is (= {:principal nil :source ::standard-handler}
+               (request-handler {:skip-authentication true, :headers {}}))))
+
+      (testing "cookie-authentication"
+        (with-redefs [auth/get-and-decode-auth-cookie-value (constantly ["user@test.com" (System/currentTimeMillis)])
+                      auth/decoded-auth-valid? (fn [[principal _]] (some? principal))]
+          (is (= {:principal "user@test.com" :source ::standard-handler}
+                 (request-handler {:headers {"cookie" "test-cookie"}})))))
 
       (testing "require-authentication"
-        (is (= {:source :spnego-handler} (request-handler {:headers {}})))))))
+        (is (= {:source ::auth-handler} (request-handler {})))
+        (is (= {:source ::auth-handler} (request-handler {:headers {"cookie" "test-cookie"}})))))))
 
 (deftest test-waiter-request?-fn
   (testing "string hostname config"

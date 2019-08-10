@@ -62,12 +62,6 @@
 (deftest test-wrap-handler
   (let [saml-authenticator (dummy-saml-authenticator)
         wrapped-handler (auth/wrap-auth-handler saml-authenticator identity)]
-    (testing "has auth cookie"
-      (with-redefs [auth/decode-auth-cookie (fn [waiter-cookie _] (if (= "my-auth-cookie" waiter-cookie) ["my-user@domain"] nil))
-                    auth/decoded-auth-valid? (fn [_] true)]
-        (is (= (merge dummy-request {:authorization/principal "my-user@domain"
-                                     :authorization/user "my-user"})
-               (wrapped-handler dummy-request)))))
     (testing "can't use POST"
       (is (thrown-with-msg? Exception #"Invalid request method for use with SAML authentication"
                             (wrapped-handler (assoc dummy-request :request-method :post)))))

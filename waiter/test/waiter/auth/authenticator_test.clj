@@ -58,3 +58,23 @@
     (is (false? (decoded-auth-valid? [(rand-int 10000) "invalid-string-time"])))
     (is (false? (decoded-auth-valid? ["test-principal"])))
     (is (false? (decoded-auth-valid? [])))))
+
+(deftest test-auth-cookie-handler
+  (let [request-handler (fn [{:keys [authorization/principal authorization/user]}]
+                          {:body {:principal principal
+                                  :user user}})
+        password "test-password"
+        auth-user "test-user"
+        auth-principal (str auth-user "@test.com")]
+
+    (testing "valid auth cookie"
+      (with-redefs [decode-auth-cookie (constantly [auth-principal (+ (System/currentTimeMillis) 60000)])]
+        (let [auth-cookie-handler (wrap-auth-cookie-handler password request-handler)]
+          (is (= {:body {:principal auth-principal :user auth-user}}
+                 (auth-cookie-handler {:headers {"cookie" "x-waiter-auth=test-auth-cookie"}}))))))
+
+    (testing "invalid auth cookie"
+      (let [auth-cookie-handler (wrap-auth-cookie-handler password request-handler)]
+        (is (= {:body {:principal nil :user nil}} (auth-cookie-handler {:headers {}})))
+        (is (= {:body {:principal nil :user nil}} (auth-cookie-handler {:headers {"cookie" "foo=bar"}})))
+        (is (= {:body {:principal nil :user nil}} (auth-cookie-handler {:headers {"cookie" "x-waiter-auth=foo"}})))))))
