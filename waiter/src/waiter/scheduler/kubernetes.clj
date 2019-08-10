@@ -224,10 +224,9 @@
       true)
     (and pod-started-at
          (pos? container-running-grace-secs)
-         (not (contains? (get primary-container-status :state) :running))
-         (-> (t/now)
-           (t/minus (t/seconds container-running-grace-secs))
-           (t/after? pod-started-at)))
+         (empty? (:lastState primary-container-status))
+         (not (contains? (:state primary-container-status) :running))
+         (<= container-running-grace-secs (t/in-seconds (t/interval pod-started-at (t/now)))))
     (do
       (log/info "instance expired as it took too long to transition to running state"
                 {:instance-id instance-id
