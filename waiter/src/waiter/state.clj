@@ -1293,10 +1293,13 @@
                                         (let [grace-period-secs (t/seconds (int (get service-description "grace-period-secs")))
                                               expiry-mins-int (int (get service-description "instance-expiry-mins"))
                                               expiry-mins (t/minutes expiry-mins-int)
-                                              expired-instances (filter #(or (contains? (:flags %) :expired)
-                                                                             (and (pos? expiry-mins-int)
-                                                                                  (du/older-than? scheduler-sync-time expiry-mins %)))
-                                                                        healthy-instances)
+                                              instance-expired? (fn instance-expired? [instance]
+                                                                  (or (contains? (:flags instance) :expired)
+                                                                      (and (pos? expiry-mins-int)
+                                                                           (du/older-than? scheduler-sync-time expiry-mins instance))))
+                                              expired-healthy-instances (filter instance-expired? healthy-instances)
+                                              expired-unhealthy-instances (filter instance-expired? unhealthy-instances)
+                                              expired-instances (concat expired-healthy-instances expired-unhealthy-instances)
                                               starting-instances (filter #(not (du/older-than? scheduler-sync-time grace-period-secs %)) unhealthy-instances)
                                               service-id->expired-instances' (assoc service-id->expired-instances service-id expired-instances)
                                               service-id->starting-instances' (assoc service-id->starting-instances service-id starting-instances)
@@ -1320,8 +1323,11 @@
                                                   rem-instance-ids (filterv (complement curr-instance-ids) prev-instance-ids)
                                                   unhealthy-instance-ids (mapv :id (get service-id->unhealthy-instances' service-id))]
                                               (log/info "update-healthy-instances:" service-id "has"
-                                                        (count healthy-instances) "healthy instance(s) and"
-                                                        (count unhealthy-instance-ids) "unhealthy instance(s)."
+                                                        {:num-expired-healthy-instances (count expired-healthy-instances)
+                                                         :num-expired-unhealthy-instances (count expired-unhealthy-instances)
+                                                         :num-healthy-instances (count healthy-instances)
+                                                         :num-unhealthy-instance-ids (count unhealthy-instance-ids)
+                                                         :service-d service-id}
                                                         (if (seq new-instance-ids) (str "New healthy instances: " new-instance-ids ".") "")
                                                         (if (seq rem-instance-ids) (str "Removed healthy instances: " rem-instance-ids ".") "")
                                                         (if (seq unhealthy-instance-ids) (str "Unhealthy instances: " unhealthy-instance-ids ".") ""))))

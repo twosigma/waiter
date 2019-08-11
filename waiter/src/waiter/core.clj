@@ -973,7 +973,7 @@
   {:autoscaler (pc/fnk [[:curator leader?-fn]
                         [:routines router-metrics-helpers service-id->service-description-fn]
                         [:scheduler scheduler]
-                        [:settings [:scaling autoscaler-interval-ms]]
+                        [:settings [:scaling autoscaler-interval-ms max-expired-unhealthy-instances-to-consider]]
                         [:state scheduler-interactions-thread-pool]
                         autoscaling-multiplexer router-state-maintainer]
                  (let [service-id->metrics-fn (:service-id->metrics-fn router-metrics-helpers)
@@ -982,7 +982,7 @@
                    (scaling/autoscaler-goroutine
                      {} leader?-fn service-id->metrics-fn executor-multiplexer-chan scheduler autoscaler-interval-ms
                      scaling/scale-service service-id->service-description-fn router-state-push-mult
-                     scheduler-interactions-thread-pool)))
+                     scheduler-interactions-thread-pool max-expired-unhealthy-instances-to-consider)))
    :autoscaling-multiplexer (pc/fnk [[:routines delegate-instance-kill-request-fn peers-acknowledged-blacklist-requests-fn
                                       service-id->service-description-fn]
                                      [:scheduler scheduler]
