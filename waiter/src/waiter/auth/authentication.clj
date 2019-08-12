@@ -62,6 +62,11 @@
    {:authorization/principal principal
     :authorization/user user}))
 
+(defn request-authenticated?
+  "Returns true if the authorization info is already available in the input map."
+  [{:keys [authorization/principal authorization/user]}]
+  (and principal user))
+
 (defn handle-request-auth
   "Invokes the given request-handler on the given request, adding the necessary
   auth headers on the way in, and the x-waiter-auth cookie on the way out."
@@ -105,6 +110,13 @@
   [cookie-string]
   (cookie-support/cookie-value cookie-string AUTH-COOKIE-NAME))
 
+(defn get-and-decode-auth-cookie-value
+  "Retrieves the auth cookie and decodes it using the provided password."
+  [headers password]
+  (some-> (get headers "cookie")
+    (get-auth-cookie-value)
+    (decode-auth-cookie password)))
+
 (defn remove-auth-cookie
   "Removes the auth cookie"
   [cookie-string]
@@ -131,3 +143,14 @@
   (log/warn "use of single-user authenticator is strongly discouraged for production use:"
             "requests will use principal" run-as-user)
   (->SingleUserAuthenticator run-as-user password))
+
+(defn wrap-auth-cookie-handler
+  "Returns a handler that can authenticate a request that contains a valid x-waiter-auth cookie."
+  [password handler]
+  (fn auth-cookie-handler
+    [{:keys [headers] :as request}]
+    (let [[auth-principal _ :as decoded-auth-cookie] (get-and-decode-auth-cookie-value headers password)]
+      (handler
+        (cond-> request
+          (decoded-auth-valid? decoded-auth-cookie)
+          (merge (auth-params-map auth-principal)))))))

@@ -767,15 +767,19 @@
                                  (fn async-trigger-terminate-fn [target-router-id service-id request-id]
                                    (async-req/async-trigger-terminate
                                      async-request-terminate-fn make-inter-router-requests-sync-fn router-id target-router-id service-id request-id)))
-   :authentication-method-wrapper-fn (pc/fnk [[:state authenticator]]
+   :authentication-method-wrapper-fn (pc/fnk [[:state authenticator passwords]]
                                        (fn authentication-method-wrapper [request-handler]
-                                         (let [auth-handler (auth/wrap-auth-handler authenticator request-handler)]
-                                           (fn authenticate-request [request]
-                                             (if (:skip-authentication request)
-                                               (do
-                                                 (log/info "skipping authentication for request")
-                                                 (request-handler request))
-                                               (auth-handler request))))))
+                                         (let [auth-handler (auth/wrap-auth-handler authenticator request-handler)
+                                               password (first passwords)]
+                                           (auth/wrap-auth-cookie-handler
+                                             password
+                                             (fn authenticate-request [request]
+                                               (cond
+                                                 (:skip-authentication request) (do
+                                                                                  (log/info "skipping authentication for request")
+                                                                                  (request-handler request))
+                                                 (auth/request-authenticated? request) (request-handler request)
+                                                 :else (auth-handler request)))))))
    :can-run-as?-fn (pc/fnk [[:state entitlement-manager]]
                      (fn can-run-as [auth-user run-as-user]
                        (authz/run-as? entitlement-manager auth-user run-as-user)))

@@ -38,7 +38,6 @@
         password [:cached "test-password"]
         auth-principal "user@test.com"
         standard-request {}
-        handler (require-gss request-handler thread-pool max-queue-length password)
         standard-401-response {:body "Unauthorized"
                                :headers {"content-type" "text/plain"
                                          "www-authenticate" "Negotiate"}
@@ -47,18 +46,8 @@
 
     (with-redefs [utils/error-context->text-body #(-> % :message str)]
 
-      (testing "valid auth cookie"
-        (with-redefs [auth/decode-auth-cookie (constantly [auth-principal nil])
-                      auth/decoded-auth-valid? (constantly true)]
-          (is (= (assoc ideal-response
-                   :authorization/principal auth-principal
-                   :authorization/user (first (str/split auth-principal #"@" 2)))
-                 (handler standard-request)))))
-
       (testing "too many pending kerberos requests"
-        (with-redefs [auth/decode-auth-cookie (constantly [auth-principal nil])
-                      auth/decoded-auth-valid? (constantly false)
-                      too-many-pending-auth-requests? (constantly true)]
+        (with-redefs [too-many-pending-auth-requests? (constantly true)]
           (let [handler (require-gss request-handler thread-pool max-queue-length password)]
             (is (= {:body "Too many Kerberos authentication requests"
                     :headers {"content-type" "text/plain"}
@@ -67,16 +56,12 @@
                    (handler standard-request))))))
 
       (testing "standard 401 response on missing authorization header"
-        (with-redefs [auth/decode-auth-cookie (constantly [auth-principal nil])
-                      auth/decoded-auth-valid? (constantly false)
-                      too-many-pending-auth-requests? (constantly false)]
+        (with-redefs [too-many-pending-auth-requests? (constantly false)]
           (let [handler (require-gss request-handler thread-pool max-queue-length password)]
             (is (= standard-401-response (handler standard-request))))))
 
       (testing "kerberos authentication path"
-        (with-redefs [auth/decode-auth-cookie (constantly [auth-principal nil])
-                      auth/decoded-auth-valid? (constantly false)
-                      too-many-pending-auth-requests? (constantly false)]
+        (with-redefs [too-many-pending-auth-requests? (constantly false)]
           (let [auth-request (update standard-request :headers assoc "authorization" "foo-bar")
                 error-object (Object.)]
 
