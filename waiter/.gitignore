@@ -30,3 +30,6 @@ bin/generated-nginx.conf
 
 # Minimesos
 .minimesos
+
+# waiter test_helpers tmp dir
+.test_metrics
