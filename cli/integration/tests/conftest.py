@@ -15,7 +15,9 @@ if 'TEST_METRICS_URL' in os.environ:
 
     elastic_search_url = os.getenv('TEST_METRICS_URL').rstrip('/')
     logging.info(f'Sending test metrics to {elastic_search_url}')
+    print("xxx initializng failed_tests")
     failed_tests = []
+    print("xxx done initializng failed_tests")
 
 
     @pytest.fixture(scope='session', autouse=True)
