@@ -2,9 +2,9 @@
 # Usage: test.sh [TEST_COMMAND] [TEST_SELECTOR]
 #
 # Examples:
-#   test.sh parallel-test integration-fast
-#   test.sh parallel-test integration-slow
-#   test.sh parallel-test
+#   test.sh eftest integration-fast
+#   test.sh eftest integration-slow
+#   test.sh eftest
 #   test.sh
 #
 # Waits for waiter to be listening and then runs the given test selector. Checks if WAITER_URI and
@@ -23,7 +23,7 @@ function wait_for_waiter {
 }
 export -f wait_for_waiter
 
-TEST_COMMAND=${1:-parallel-test}
+TEST_COMMAND=${1:-eftest}
 TEST_SELECTOR=${2:-integration}
 
 if [ -z ${WAITER_URI+x} ]; then

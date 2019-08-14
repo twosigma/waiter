@@ -2,16 +2,16 @@
 # Usage: run-integration-tests-composite-scheduler.sh [TEST_COMMAND] [TEST_SELECTOR]
 #
 # Examples:
-#   run-integration-tests-composite-scheduler.sh parallel-test integration-fast
-#   run-integration-tests-composite-scheduler.sh parallel-test integration-slow
-#   run-integration-tests-composite-scheduler.sh parallel-test
+#   run-integration-tests-composite-scheduler.sh eftest integration-fast
+#   run-integration-tests-composite-scheduler.sh eftest integration-slow
+#   run-integration-tests-composite-scheduler.sh eftest
 #   run-integration-tests-composite-scheduler.sh
 #
 # Runs the Waiter integration tests using the (local) composite scheduler.
 
 set -e
 
-TEST_COMMAND=${1:-parallel-test}
+TEST_COMMAND=${1:-eftest}
 TEST_SELECTOR=${2:-integration}
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"

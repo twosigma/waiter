@@ -2,9 +2,9 @@
 # Usage: run-integration-tests.sh [SCHEDULER_NAME] [TEST_COMMAND] [TEST_SELECTOR]
 #
 # Examples:
-#   run-integration-tests.sh shell parallel-test integration-fast
-#   run-integration-tests.sh shell parallel-test integration-slow
-#   run-integration-tests.sh shell parallel-test
+#   run-integration-tests.sh shell eftest integration-fast
+#   run-integration-tests.sh shell eftest integration-slow
+#   run-integration-tests.sh shell eftest
 #   run-integration-tests.sh shell
 #   run-integration-tests.sh
 #
@@ -13,7 +13,7 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WAITER_DIR=${DIR}/../..
 SCHEDULER="${1:-shell}-scheduler"
-SUBCMD="${DIR}/run-integration-tests-${SCHEDULER}.sh ${2:-parallel-test} ${3:-integration}"
+SUBCMD="${DIR}/run-integration-tests-${SCHEDULER}.sh ${2:-eftest} ${3:-integration}"
 
 # Start netcat to listen to a port. The Codahale Graphite reporter will be able to report without failing and spamming logs.
 export GRAPHITE_SERVER_PORT=5555

@@ -114,8 +114,7 @@
   :eftest {:report clojure.test/report}
   :resource-paths ["resources"]
   :main waiter.main
-  :plugins [[com.holychao/parallel-test "0.3.2"]
-            [lein-exec "0.3.7"]
+  :plugins [[lein-exec "0.3.7"]
             [test2junit "1.2.2"]
             [lein-eftest "0.5.8"]]
   ; In case of kerberos problems, export KRB5_KTNAME=/var/spool/keytabs/$(id -un)
@@ -153,11 +152,7 @@
                           (.getCanonicalPath (clojure.java.io/file "../containers/test-apps/nginx/bin/run-nginx-server.sh"))))
                      ~(str "-Dwaiter.test.sediment.cmd="
                         (or (System/getenv "WAITER_TEST_SEDIMENT_CMD")
-                          (.getCanonicalPath (clojure.java.io/file "../containers/test-apps/sediment/bin/run-sediment-server.sh"))))]
-                    :parallel-test {:pools {:serial (constantly 1)
-                                            :parallel (fn []
-                                                        (or (some-> (System/getenv "LEIN_TEST_THREADS") Long/valueOf)
-                                                            (.availableProcessors (Runtime/getRuntime))))}}}
+                          (.getCanonicalPath (clojure.java.io/file "../containers/test-apps/sediment/bin/run-sediment-server.sh"))))]}
              :test-console {:jvm-opts
                             ["-Dlog4j.configuration=log4j-console.properties"]}
              :test-log {:jvm-opts
