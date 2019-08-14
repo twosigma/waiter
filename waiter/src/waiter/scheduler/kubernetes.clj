@@ -212,9 +212,10 @@
   "Returns true when the pod instance can be classified as expired.
    An instance can be expired for the following reasons:
    - it has restarted too many times (reached the restart-expiry-threshold threshold)
-   - the primary container (waiter-apps) has not transitioned to running state in container-running-grace-secs seconds."
+   - the primary container (waiter-apps) has not transitioned to running state in container-running-grace-secs seconds
+   - the pod has the waiter/pod-expired=true annotation."
   [{:keys [container-running-grace-secs restart-expiry-threshold]}
-   instance-id restart-count primary-container-status pod-started-at]
+   instance-id restart-count {:keys [waiter/pod-expired]} primary-container-status pod-started-at]
   (cond
     (>= restart-count restart-expiry-threshold)
     (do
@@ -232,6 +233,12 @@
                 {:instance-id instance-id
                  :primary-container-status primary-container-status
                  :started-at pod-started-at})
+      true)
+    (= "true" pod-expired)
+    (do
+      (log/info "instance expired based on pod annotation"
+                {:instance-id instance-id
+                 :waiter/pod-expired pod-expired})
       true)))
 
 (defn pod->ServiceInstance
@@ -249,12 +256,12 @@
           {:keys [phase] :as pod-status} (:status pod)
           container-statuses (get pod-status :containerStatuses)
           primary-container-status (first container-statuses)
+          pod-annotations (get-in pod [:metadata :annotations])
           pod-started-at (-> pod (get-in [:status :startTime]) timestamp-str->datetime)]
       (scheduler/make-ServiceInstance
-        (cond-> {:extra-ports (->> (get-in pod [:metadata :annotations :waiter/port-count])
-                                   Integer/parseInt range next (mapv #(+ port0 %)))
+        (cond-> {:extra-ports (->> pod-annotations :waiter/port-count Integer/parseInt range next (mapv #(+ port0 %)))
                  :flags (cond-> #{}
-                          (check-expired scheduler instance-id restart-count primary-container-status pod-started-at)
+                          (check-expired scheduler instance-id restart-count pod-annotations primary-container-status pod-started-at)
                           (conj :expired))
                  :healthy? (true? (get primary-container-status :ready))
                  :host (get-in pod [:status :podIP] scheduler/UNKNOWN-IP)

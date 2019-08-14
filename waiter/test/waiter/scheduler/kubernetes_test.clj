@@ -1635,7 +1635,8 @@
                       :k8s/namespace "myself"
                       :k8s/pod-name "test-app-1234-abcd1"
                       :k8s/restart-count 9
-                      :k8s/user "myself"}]
+                      :k8s/user "myself"}
+        expired-instance-map (assoc instance-map :flags #{:expired})]
 
     (testing "pod to live instance"
       (let [restart-expiry-threshold 10
@@ -1644,26 +1645,34 @@
             instance (pod->ServiceInstance dummy-scheduler pod)]
         (is (= (scheduler/make-ServiceInstance instance-map) instance))))
 
+    (testing "pod with expired annotation"
+      (let [restart-expiry-threshold 10
+            dummy-scheduler {:container-running-grace-secs 120
+                             :restart-expiry-threshold restart-expiry-threshold}
+            pod' (assoc-in pod [:metadata :annotations :waiter/pod-expired] "true")
+            instance (pod->ServiceInstance dummy-scheduler pod')]
+        (is (= (scheduler/make-ServiceInstance expired-instance-map) instance))))
+
     (testing "pod to expired instance threshold"
       (let [restart-expiry-threshold 9
             dummy-scheduler {:container-running-grace-secs 120
                              :restart-expiry-threshold restart-expiry-threshold}
             instance (pod->ServiceInstance dummy-scheduler pod)]
-        (is (= (scheduler/make-ServiceInstance (assoc instance-map :flags #{:expired})) instance))))
+        (is (= (scheduler/make-ServiceInstance expired-instance-map) instance))))
 
     (testing "pod to expired instance exceeded threshold"
       (let [restart-expiry-threshold 5
             dummy-scheduler {:container-running-grace-secs 120
                              :restart-expiry-threshold restart-expiry-threshold}
             instance (pod->ServiceInstance dummy-scheduler pod)]
-        (is (= (scheduler/make-ServiceInstance (assoc instance-map :flags #{:expired})) instance))))
+        (is (= (scheduler/make-ServiceInstance expired-instance-map) instance))))
 
     (testing "pod to expired instance exceeded running grace period"
       (let [restart-expiry-threshold 25
             dummy-scheduler {:container-running-grace-secs 45
                              :restart-expiry-threshold restart-expiry-threshold}
             instance (pod->ServiceInstance dummy-scheduler pod)]
-        (is (= (scheduler/make-ServiceInstance (assoc instance-map :flags #{:expired})) instance))))
+        (is (= (scheduler/make-ServiceInstance expired-instance-map) instance))))
 
     (testing "previously started pod not expired despite instance exceeded running grace period"
       (let [restart-expiry-threshold 25
