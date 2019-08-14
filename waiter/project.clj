@@ -113,7 +113,7 @@
                   :exclusions [org.clojure/clojure]]]
   :eftest {:report clojure.test/report
            :thread-count (fn []
-                           (or (some-> (System/getenv "LEIN_TEST_THREADS") Long/valueOf)
+                           (or (some-> (System/getenv "LEIN_TEST_THREADS") Integer/valueOf)
                              (.availableProcessors (Runtime/getRuntime))))}
   :resource-paths ["resources"]
   :main waiter.main
