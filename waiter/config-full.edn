@@ -440,6 +440,11 @@
                                  ;; String value used to annotate Kubernetes objects that are orchestrated by this Waiter instantiation:
                                  :cluster-name "waiter"
 
+                                 ;; Duration to wait before marking a pod as expired when it hasn't transitioned to running state (default is 90).
+                                 ;; Configure the value to 0 to disable expiring instances and removing the duration constraint on pods
+                                 ;; before they transition to the running state.
+                                 :container-running-grace-secs 90
+
                                  ;; Configuration for creating and querying a sidecar container in each Waiter Service Instance's Kuberentes pod
                                  ;; running a server for directory listings (in JSON) and serving file contents.
                                  ;; Waiter expects the directory listings in the format returned by nginx's autoindex module when configured for JSON.

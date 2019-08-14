@@ -208,26 +208,57 @@
       (log/error e "error converting failed pod to waiter service instance" pod)
       (comment "Returning nil on failure."))))
 
+(defn- check-expired
+  "Returns true when the pod instance can be classified as expired.
+   An instance can be expired for the following reasons:
+   - it has restarted too many times (reached the restart-expiry-threshold threshold)
+   - the primary container (waiter-apps) has not transitioned to running state in container-running-grace-secs seconds."
+  [{:keys [container-running-grace-secs restart-expiry-threshold]}
+   instance-id restart-count primary-container-status pod-started-at]
+  (cond
+    (>= restart-count restart-expiry-threshold)
+    (do
+      (log/info "instance expired as it reached the restart threshold"
+                {:instance-id instance-id
+                 :restart-count restart-count})
+      true)
+    (and pod-started-at
+         (pos? container-running-grace-secs)
+         (empty? (:lastState primary-container-status))
+         (not (contains? (:state primary-container-status) :running))
+         (<= container-running-grace-secs (t/in-seconds (t/interval pod-started-at (t/now)))))
+    (do
+      (log/info "instance expired as it took too long to transition to running state"
+                {:instance-id instance-id
+                 :primary-container-status primary-container-status
+                 :started-at pod-started-at})
+      true)))
+
 (defn pod->ServiceInstance
   "Convert a Kubernetes Pod JSON response into a Waiter Service Instance record."
-  [restart-expiry-threshold pod]
+  [scheduler pod]
   (try
-    (let [port0 (get-in pod [:spec :containers 0 :ports 0 :containerPort])
-          ;; waiter-app is the first container we register
+    (let [;; waiter-app is the first container we register
           restart-count (get-in pod [:status :containerStatuses 0 :restartCount] 0)
+          instance-id (pod->instance-id pod restart-count)
+          port0 (get-in pod [:spec :containers 0 :ports 0 :containerPort])
           run-as-user (or (get-in pod [:metadata :labels :waiter/user])
                           ;; falling back to namespace for legacy pods missing the waiter/user label
                           (k8s-object->namespace pod))
           ;; pod phase documentation: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-phase
           {:keys [phase] :as pod-status} (:status pod)
-          container-statuses (get pod-status :containerStatuses)]
+          container-statuses (get pod-status :containerStatuses)
+          primary-container-status (first container-statuses)
+          pod-started-at (-> pod (get-in [:status :startTime]) timestamp-str->datetime)]
       (scheduler/make-ServiceInstance
         (cond-> {:extra-ports (->> (get-in pod [:metadata :annotations :waiter/port-count])
                                    Integer/parseInt range next (mapv #(+ port0 %)))
-                 :flags (cond-> #{} (>= restart-count restart-expiry-threshold) (conj :expired))
-                 :healthy? (get-in pod [:status :containerStatuses 0 :ready] false)
+                 :flags (cond-> #{}
+                          (check-expired scheduler instance-id restart-count primary-container-status pod-started-at)
+                          (conj :expired))
+                 :healthy? (true? (get primary-container-status :ready))
                  :host (get-in pod [:status :podIP] scheduler/UNKNOWN-IP)
-                 :id (pod->instance-id pod restart-count)
+                 :id instance-id
                  :k8s/app-name (get-in pod [:metadata :labels :app])
                  :k8s/namespace (k8s-object->namespace pod)
                  :k8s/pod-name (k8s-object->id pod)
@@ -236,9 +267,7 @@
                  :log-directory (log-dir-path run-as-user restart-count)
                  :port port0
                  :service-id (k8s-object->service-id pod)
-                 :started-at (-> pod
-                               (get-in [:status :startTime])
-                               (timestamp-str->datetime))}
+                 :started-at pod-started-at}
           phase (assoc :k8s/pod-phase phase)
           (seq container-statuses) (assoc :k8s/container-statuses
                                           (map (fn [{:keys [state] :as status}]
@@ -334,10 +363,10 @@
 (defn- get-service-instances!
   "Get all active Waiter Service Instances associated with the given Waiter Service.
    Also updates the service-id->failed-instances-transient-store as a side-effect."
-  [{:keys [restart-expiry-threshold] :as scheduler} basic-service-info]
+  [scheduler basic-service-info]
   (vec (for [pod (get-replicaset-pods scheduler basic-service-info)
              :when (live-pod? pod)]
-         (let [service-instance (pod->ServiceInstance restart-expiry-threshold pod)]
+         (let [service-instance (pod->ServiceInstance scheduler pod)]
            (track-failed-instances! service-instance scheduler pod)
            service-instance))))
 
@@ -523,6 +552,7 @@
 (defrecord KubernetesScheduler [api-server-url
                                 authorizer
                                 cluster-name
+                                container-running-grace-secs
                                 custom-options
                                 daemon-state
                                 fileserver
@@ -1035,13 +1065,14 @@
 (defn kubernetes-scheduler
   "Returns a new KubernetesScheduler with the provided configuration. Validates the
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
-  [{:keys [authentication authorizer cluster-name custom-options http-options log-bucket-sync-secs
+  [{:keys [authentication authorizer cluster-name container-running-grace-secs custom-options http-options log-bucket-sync-secs
            log-bucket-url max-patch-retries max-name-length pod-base-port pod-sigkill-delay-secs
            pod-suffix-length replicaset-api-version replicaset-spec-builder restart-expiry-threshold scheduler-name
            scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
            service-id->password-fn start-scheduler-syncer-fn url watch-retries]
     {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver :as context}]
   {:pre [(schema/contains-kind-sub-map? authorizer)
+         (or (zero? container-running-grace-secs) (pos-int? container-running-grace-secs))
          (or (nil? custom-options) (map? custom-options))
          (or (nil? fileserver-port)
              (and (integer? fileserver-port)
@@ -1093,6 +1124,7 @@
         scheduler-config {:api-server-url url
                           :http-client http-client
                           :cluster-name cluster-name
+                          :container-running-grace-secs container-running-grace-secs
                           :replicaset-api-version replicaset-api-version
                           :restart-expiry-threshold restart-expiry-threshold
                           :service-id->failed-instances-transient-store service-id->failed-instances-transient-store
@@ -1109,6 +1141,7 @@
           scheduler (->KubernetesScheduler url
                                            authorizer
                                            cluster-name
+                                           container-running-grace-secs
                                            custom-options
                                            daemon-state
                                            fileserver

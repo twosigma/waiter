@@ -345,6 +345,7 @@
                                    :authorizer {:kind :default
                                                 :default {:factory-fn 'waiter.authorization/noop-authorizer}}
                                    :cluster-name "waiter"
+                                   :container-running-grace-secs 90
                                    :fileserver {:cmd ["/bin/fileserver-start"]
                                                 :image "twosigma/waiter-fileserver"
                                                 :resources {:cpu 0.1 :mem 128}
