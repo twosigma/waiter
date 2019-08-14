@@ -11,19 +11,27 @@ if 'TEST_METRICS_URL' in os.environ:
     import socket
     from timeit import default_timer as timer
 
-    from pygit2 import Repository
-
     from tests.waiter import util
 
-    repository_path = os.path.abspath(f'{os.path.dirname(os.path.abspath(__file__))}/../..')
-    repo = Repository(repository_path)
-    head = repo.head
-    commit = repo.revparse_single('HEAD')
-    git_branch = head.name.replace('refs/heads/', '')
-    git_commit_hex = commit.hex
     elastic_search_url = os.getenv('TEST_METRICS_URL').rstrip('/')
     logging.info(f'Sending test metrics to {elastic_search_url}')
+    failed_tests = []
 
+
+    @pytest.fixture(scope='session', autouse=True)
+    def session_hook():
+        # Executed before tests
+        yield
+        # Executed after tests
+        failed_tests_file = os.getenv('TEST_METRICS_FAILED_TESTS_FILE', None)
+        if failed_tests_file is None:
+            try:
+                os.makedirs('.test_metrics')
+            except:
+                pass
+            failed_tests_file = '.test_metrics/last_failed_tests'
+        with open(failed_tests_file, 'w') as file_handle:
+            json.dump({'failed-tests': failed_tests}, file_handle)
 
     @pytest.fixture()
     def record_test_metric(request):
@@ -48,12 +56,14 @@ if 'TEST_METRICS_URL' in os.environ:
             else:
                 logging.warning('Unable to determine test result')
                 result = 'unknown'
+            if result == 'failed':
+                failed_tests.append(request_node._nodeid)
             metrics = {
                 'build-id': os.getenv('TEST_METRICS_BUILD_ID', None),
                 'expected-to-fail': xfail_mark is not None and xfail_mark.name == 'xfail',
-                'git-branch': git_branch,
+                'git-branch': os.getenv('TEST_METRICS_BRANCH', None),
                 'git-branch-under-test': os.getenv('TEST_METRICS_BRANCH_UNDER_TEST', None),
-                'git-commit-hash': git_commit_hex,
+                'git-commit-hash': os.getenv('TEST_METRICS_COMMIT_HASH', None),
                 'git-commit-hash-under-test': os.getenv('TEST_METRICS_COMMIT_HASH_UNDER_TEST', None),
                 'host': socket.gethostname(),
                 'project': 'waiter',

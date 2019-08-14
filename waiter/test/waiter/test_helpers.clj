@@ -14,8 +14,7 @@
 ;; limitations under the License.
 ;;
 (ns waiter.test-helpers
-  (:require [clj-jgit.porcelain :as jgit]
-            [clj-time.core :as t]
+  (:require [clj-time.core :as t]
             [clj-time.format :as f]
             [clojure.core.async :as async]
             [clojure.data :as data]
@@ -80,20 +79,11 @@
              (.mkdirs (File. ".test_metrics"))
              ".test_metrics/last_failed_tests")))
 
-(defonce ^:private git-repo
-         (when test-metrics-url
-           (try
-             (jgit/load-repo (str (System/getProperty "user.dir") "/.."))
-             (catch Throwable _
-               (log/info "Could not get git repo when trying to report test metrics.")))))
-
 (defonce ^:private current-git-branch
-         (when git-repo
-           (jgit/git-branch-current git-repo)))
+         (System/getenv "TEST_METRICS_BRANCH"))
 
 (defonce ^:private current-git-commit
-         (when git-repo
-           (-> git-repo jgit/git-log first .getId .name)))
+         (System/getenv "TEST_METRICS_COMMIT_HASH"))
 
 (defonce ^:private test-name->num-fails-atom
          (atom {}))
@@ -210,7 +200,7 @@
                   es-index (str "waiter-tests-" (du/date-to-str (t/now) (f/formatters :basic-date)))]
               (when test-failed?
                 (swap! failed-tests conj full-name))
-              ;TODO: can check for outstanding commits: (println (jgit/git-status git-repo))
+              ;TODO: can check for outstanding commits using git status
               (post-json (str test-metrics-url "/" es-index "/test-result")
                          (json/write-str {:build-id test-metrics-build-id
                                           :expected-to-fail test-metrics-expected-to-fail
