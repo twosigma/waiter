@@ -449,7 +449,7 @@
 ;{:1006 11}
 ;expected: 12
 ;actual: 11
-;lein parallel-test :only waiter.websocket-integration-test/test-request-parallel-streaming
+;lein test :only waiter.websocket-integration-test/test-request-parallel-streaming
 ;FAIL in (test-request-parallel-streaming) (websocket_integration_test.clj:477)
 ;test-request-parallel-streaming
 ;Only in a: {:waiting-to-stream 0}
