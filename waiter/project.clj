@@ -112,9 +112,8 @@
                  [try-let "1.3.1"
                   :exclusions [org.clojure/clojure]]]
   :eftest {:report clojure.test/report
-           :thread-count (fn []
-                           (or (some-> (System/getenv "LEIN_TEST_THREADS") Integer/valueOf)
-                             (.availableProcessors (Runtime/getRuntime))))}
+           :thread-count (or (some-> (System/getenv "LEIN_TEST_THREADS") Integer/valueOf)
+                           (.availableProcessors (Runtime/getRuntime)))}
   :resource-paths ["resources"]
   :main waiter.main
   :plugins [[lein-exec "0.3.7"]
