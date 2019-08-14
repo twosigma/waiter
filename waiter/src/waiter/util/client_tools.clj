@@ -14,7 +14,9 @@
 ;; limitations under the License.
 ;;
 (ns waiter.util.client-tools
-  (:require [clj-time.core :as t]
+  (:require [buddy.core.codecs.base64 :as b64]
+            [buddy.sign.jwt :as jwt]
+            [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.java.shell :as shell]
@@ -35,6 +37,8 @@
            (java.io ByteArrayInputStream)
            (java.nio ByteBuffer)
            (java.util.concurrent Callable Future Executors)
+           (net.i2p.crypto.eddsa.spec EdDSANamedCurveTable EdDSAPrivateKeySpec)
+           (net.i2p.crypto.eddsa EdDSAPrivateKey)
            (org.joda.time Period)
            (org.joda.time.format PeriodFormatterBuilder)))
 
@@ -1136,3 +1140,11 @@
             (recur))))
       (async/close! body-ch))
     body-ch))
+
+(defn generate-jwt-access-token
+  "Generates the JWT access token using the provided private key."
+  [private-key payload header]
+  (let [ed25519-curve-spec (EdDSANamedCurveTable/getByName EdDSANamedCurveTable/ED_25519)
+        edsa-private-key (EdDSAPrivateKey. (EdDSAPrivateKeySpec. ^bytes (b64/decode private-key) ed25519-curve-spec))
+        options {:alg :eddsa :header header}]
+    (jwt/sign payload edsa-private-key options)))
