@@ -8,6 +8,7 @@ if 'TEST_METRICS_URL' in os.environ:
     import datetime
     import getpass
     import json
+    import random
     import socket
     from timeit import default_timer as timer
 
@@ -18,6 +19,13 @@ if 'TEST_METRICS_URL' in os.environ:
     #print("xxx initializng failed_tests")
     #failed_tests = []
     #print("xxx done initializng failed_tests")
+    failed_tests_file = os.getenv('TEST_METRICS_FAILED_TESTS_FILE', None)
+    if failed_tests_file is None:
+        try:
+            os.makedirs('.test_metrics')
+        except:
+            pass
+        failed_tests_file = '.test_metrics/last_failed_tests'
 
 
     def pytest_configure():
@@ -28,13 +36,6 @@ if 'TEST_METRICS_URL' in os.environ:
         # Executed before tests
         yield
         # Executed after tests
-        failed_tests_file = os.getenv('TEST_METRICS_FAILED_TESTS_FILE', None)
-        if failed_tests_file is None:
-            try:
-                os.makedirs('.test_metrics')
-            except:
-                pass
-            failed_tests_file = '.test_metrics/last_failed_tests'
         with open(failed_tests_file, 'w') as file_handle:
             json.dump({'failed-tests': pytest.my_failed_tests}, file_handle)
 
@@ -63,6 +64,8 @@ if 'TEST_METRICS_URL' in os.environ:
                 result = 'unknown'
             if result == 'failed':
                 pytest.my_failed_tests.append(request_node._nodeid)
+                with open(failed_tests_file + "__" + str(random.randint(0, 999999999999999999999999999999)), 'w') as file_handle:
+                    file_handle.write(request_node._nodeid + "\n")
             metrics = {
                 'build-id': os.getenv('TEST_METRICS_BUILD_ID', None),
                 'expected-to-fail': xfail_mark is not None and xfail_mark.name == 'xfail',
