@@ -112,13 +112,13 @@
                  [try-let "1.3.1"
                   :exclusions [org.clojure/clojure]]]
   :eftest {:report clojure.test/report
-           :thread-count (or (some-> (System/getenv "LEIN_TEST_THREADS") Integer/valueOf)
+           :thread-count (or (some-> (System/getenv "LEIN_TEST_THREADS") Integer/parseInt)
                            (.availableProcessors (Runtime/getRuntime)))}
   :resource-paths ["resources"]
   :main waiter.main
-  :plugins [[lein-exec "0.3.7"]
-            [test2junit "1.2.2"]
-            [lein-eftest "0.5.8"]]
+  :plugins [[lein-eftest "0.5.8"]
+            [lein-exec "0.3.7"]
+            [test2junit "1.2.2"]]
   ; In case of kerberos problems, export KRB5_KTNAME=/var/spool/keytabs/$(id -un)
   :jvm-opts ["-server"
              "-Dsun.security.jgss.lib=/opt/mitkrb5/lib/libgssapi_krb5.so"
