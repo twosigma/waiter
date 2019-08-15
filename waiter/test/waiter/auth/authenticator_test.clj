@@ -28,6 +28,7 @@
     (let [request-handler (wrap-auth-handler authenticator identity)
           request {}
           expected-request (assoc request
+                             :authorization/method :single-user
                              :authorization/principal username
                              :authorization/user username)
           actual-result (request-handler request)]
@@ -70,7 +71,10 @@
     (testing "valid auth cookie"
       (with-redefs [decode-auth-cookie (constantly [auth-principal (+ (System/currentTimeMillis) 60000)])]
         (let [auth-cookie-handler (wrap-auth-cookie-handler password request-handler)]
-          (is (= {:body {:principal auth-principal :user auth-user}}
+          (is (= {:authorization/method :cookie
+                  :authorization/principal auth-principal
+                  :authorization/user auth-user
+                  :body {:principal auth-principal :user auth-user}}
                  (auth-cookie-handler {:headers {"cookie" "x-waiter-auth=test-auth-cookie"}}))))))
 
     (testing "invalid auth cookie"

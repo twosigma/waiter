@@ -26,7 +26,6 @@
             [ring.util.codec :as codec]
             [ring.util.response :as response]
             [waiter.auth.authentication :as auth]
-            [waiter.middleware :as middleware]
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils]
             [waiter.metrics :as metrics])
@@ -203,7 +202,7 @@
         ; https://docs.microsoft.com/en-us/windows-server/identity/ad-fs/technical-reference/the-role-of-claims
         upn (first (get attrs "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"))
         saml-principal (or upn name-id-value)
-        {:keys [authorization/principal authorization/user]} (auth/auth-params-map saml-principal)
+        {:keys [authorization/principal authorization/user]} (auth/auth-params-map :saml saml-principal)
         saml-principal' (if (and email (= principal user)) email saml-principal)
         saml-auth-data (utils/map->base-64-string
                          {:min-session-not-on-or-after min-session-not-on-or-after
@@ -243,7 +242,7 @@
                                        (t/interval auth-cookie-expiry-date)
                                        t/in-seconds)
           {:keys [authorization/principal authorization/user] :as auth-params-map}
-          (auth/auth-params-map saml-principal)]
+          (auth/auth-params-map :saml saml-principal)]
       (auth/handle-request-auth (constantly {:body ""
                                              :headers {"location" redirect-url}
                                              :status 303})

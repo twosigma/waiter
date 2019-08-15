@@ -15,9 +15,7 @@
 ;;
 (ns waiter.auth.spnego-test
   (:require [clojure.core.async :as async]
-            [clojure.string :as str]
             [clojure.test :refer :all]
-            [waiter.auth.authentication :as auth]
             [waiter.auth.spnego :refer :all]
             [waiter.util.utils :as utils]))
 
@@ -95,6 +93,7 @@
                                  response
                                  (async/<!! response))]
                   (is (= (assoc ideal-response
+                           :authorization/method :spnego
                            :authorization/principal "user@test.com"
                            :authorization/user "user"
                            :headers {"www-authenticate" "test-token"})
@@ -109,6 +108,7 @@
                                  response
                                  (async/<!! response))]
                   (is (= (assoc ideal-response
+                           :authorization/method :spnego
                            :authorization/principal "user@test.com"
                            :authorization/user "user")
                          (utils/dissoc-in response [:headers "set-cookie"]))))))))))))

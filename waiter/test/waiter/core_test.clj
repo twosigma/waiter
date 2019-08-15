@@ -1285,7 +1285,11 @@
       (testing "cookie-authentication"
         (with-redefs [auth/get-and-decode-auth-cookie-value (constantly ["user@test.com" (System/currentTimeMillis)])
                       auth/decoded-auth-valid? (fn [[principal _]] (some? principal))]
-          (is (= {:principal "user@test.com" :source ::standard-handler}
+          (is (= {:authorization/method :cookie,
+                  :authorization/principal "user@test.com",
+                  :authorization/user "user"
+                  :principal "user@test.com"
+                  :source ::standard-handler}
                  (request-handler {:headers {"cookie" "test-cookie"}})))))
 
       (testing "require-authentication"
