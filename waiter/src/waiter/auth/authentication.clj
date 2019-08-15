@@ -56,10 +56,11 @@
 
 (defn auth-params-map
   "Creates a map intended to be merged into requests/responses."
-  ([principal]
-   (auth-params-map principal (first (str/split principal #"@" 2))))
-  ([principal user]
-   {:authorization/principal principal
+  ([method principal]
+   (auth-params-map method principal (first (str/split principal #"@" 2))))
+  ([method principal user]
+   {:authorization/method method
+    :authorization/principal principal
     :authorization/user user}))
 
 (defn request-authenticated?
@@ -70,8 +71,8 @@
 (defn handle-request-auth
   "Invokes the given request-handler on the given request, adding the necessary
   auth headers on the way in, and the x-waiter-auth cookie on the way out."
-  ([handler request principal password]
-   (handle-request-auth handler request principal (auth-params-map principal) password nil))
+  ([handler request method principal password]
+   (handle-request-auth handler request principal (auth-params-map method principal) password nil))
   ([handler request principal auth-params-map password age-in-seconds]
    (let [handler' (middleware/wrap-merge handler auth-params-map)]
      (-> request
@@ -134,7 +135,7 @@
   Authenticator
   (wrap-auth-handler [_ request-handler]
     (fn anonymous-handler [request]
-      (let [auth-params-map (auth-params-map run-as-user run-as-user)]
+      (let [auth-params-map (auth-params-map :single-user run-as-user run-as-user)]
         (handle-request-auth request-handler request run-as-user auth-params-map password nil)))))
 
 (defn one-user-authenticator
@@ -153,4 +154,4 @@
       (handler
         (cond-> request
           (decoded-auth-valid? decoded-auth-cookie)
-          (merge (auth-params-map auth-principal)))))))
+          (merge (auth-params-map :cookie auth-principal)))))))

@@ -106,7 +106,7 @@
   [password process-request-fn {:keys [headers] :as request}]
   (let [auth-cookie (-> headers (get "cookie") str auth/get-auth-cookie-value) ;; auth-cookie is assumed to be valid
         [auth-principal auth-time] (auth/decode-auth-cookie auth-cookie password)
-        auth-params-map (auth/auth-params-map auth-principal)
+        auth-params-map (auth/auth-params-map :cookie auth-principal)
         handler (middleware/wrap-merge process-request-fn auth-params-map)]
     (log/info "processing websocket request" {:user auth-principal})
     (-> request

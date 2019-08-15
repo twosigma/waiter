@@ -186,7 +186,8 @@
             process-request-atom (atom false)
             process-request-fn (fn process-request-fn [in-request]
                                  (is (= in-request
-                                        (assoc request :authorization/principal auth-principal
+                                        (assoc request :authorization/method :cookie
+                                                       :authorization/principal auth-principal
                                                        :authorization/time auth-time
                                                        :authorization/user auth-user)))
                                  (reset! process-request-atom true)

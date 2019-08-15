@@ -113,7 +113,8 @@
         (let [dummy-request' (-> (merge-with merge dummy-request {:headers {"content-type" "application/x-www-form-urlencoded"}})
                                (merge {:request-method :post
                                        :body (StringBufferInputStream. "saml-auth-data=my-saml-auth-data")}))]
-          (is (= {:authorization/principal "my-user@domain"
+          (is (= {:authorization/method :saml
+                  :authorization/principal "my-user@domain"
                   :authorization/user "my-user"
                   :body ""
                   :headers {"location" "redirect-url"
@@ -132,7 +133,8 @@
         (let [dummy-request' (-> (merge-with merge dummy-request {:headers {"content-type" "application/x-www-form-urlencoded"}})
                                (merge {:request-method :post
                                        :body (StringBufferInputStream. "saml-auth-data=my-saml-auth-data")}))]
-          (is (= {:authorization/principal "my-user@domain"
+          (is (= {:authorization/method :saml
+                  :authorization/principal "my-user@domain"
                   :authorization/user "my-user"
                   :body ""
                   :headers {"location" "redirect-url"
@@ -151,7 +153,8 @@
         (let [dummy-request' (-> (merge-with merge dummy-request {:headers {"content-type" "application/x-www-form-urlencoded"}})
                                (merge {:request-method :post
                                        :body (StringBufferInputStream. "saml-auth-data=my-saml-auth-data")}))]
-          (is (= {:authorization/principal "my-user@domain"
+          (is (= {:authorization/method :saml
+                  :authorization/principal "my-user@domain"
                   :authorization/user "my-user"
                   :body ""
                   :headers {"location" "redirect-url"

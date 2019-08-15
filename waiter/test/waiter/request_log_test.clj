@@ -52,7 +52,8 @@
            (request->context request)))))
 
 (deftest test-response->context
-  (let [response {:authorization/principal "principal@DOMAIN.COM"
+  (let [response {:authorization/method :cookie
+                  :authorization/principal "principal@DOMAIN.COM"
                   :backend-response-latency-ns 1000
                   :descriptor {:service-id "service-id"
                                :service-description {"metric-group" "service-metric-group"
@@ -70,7 +71,8 @@
                   :latest-service-id "latest-service-id"
                   :protocol "HTTP/2.0"
                   :status 200}]
-    (is (= {:backend-response-latency-ns 1000
+    (is (= {:authentication-method "cookie"
+            :backend-response-latency-ns 1000
             :backend-protocol "HTTP/2.0"
             :get-instance-latency-ns 500
             :grpc-status "13"

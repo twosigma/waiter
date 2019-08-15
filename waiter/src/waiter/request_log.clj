@@ -49,11 +49,12 @@
 
 (defn response->context
   "Convert a response into a context suitable for logging."
-  [{:keys [authorization/principal backend-response-latency-ns descriptor latest-service-id get-instance-latency-ns
-           handle-request-latency-ns headers instance protocol status] :as response}]
+  [{:keys [authorization/method authorization/principal backend-response-latency-ns descriptor latest-service-id
+           get-instance-latency-ns handle-request-latency-ns headers instance protocol status] :as response}]
   (let [{:keys [service-id service-description]} descriptor
         {:strs [content-length content-type grpc-status server]} headers]
     (cond-> {:status (or status 200)}
+      method (assoc :authentication-method (name method))
       backend-response-latency-ns (assoc :backend-response-latency-ns backend-response-latency-ns)
       content-length (assoc :response-content-length content-length)
       content-type (assoc :response-content-type content-type)

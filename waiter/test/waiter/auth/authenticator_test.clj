@@ -28,6 +28,7 @@
     (let [request-handler (wrap-auth-handler authenticator identity)
           request {}
           expected-request (assoc request
+                             :authorization/method :single-user
                              :authorization/principal username
                              :authorization/user username)
           actual-result (request-handler request)]

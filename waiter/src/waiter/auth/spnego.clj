@@ -152,7 +152,7 @@
               (if-not error
                 (try
                   (if principal
-                    (let [response (auth/handle-request-auth request-handler request principal password)]
+                    (let [response (auth/handle-request-auth request-handler request :spnego principal password)]
                       (log/debug "added cookies to response")
                       (if token
                         (if (map? response)
