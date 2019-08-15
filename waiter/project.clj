@@ -111,13 +111,14 @@
                  [slingshot "0.12.2"]
                  [try-let "1.3.1"
                   :exclusions [org.clojure/clojure]]]
-  :eftest {:report clojure.test/report}
+  :eftest {:report clojure.test/report
+           :thread-count (or (some-> (System/getenv "LEIN_TEST_THREADS") Integer/parseInt)
+                           (.availableProcessors (Runtime/getRuntime)))}
   :resource-paths ["resources"]
   :main waiter.main
-  :plugins [[com.holychao/parallel-test "0.3.2"]
+  :plugins [[lein-eftest "0.5.8"]
             [lein-exec "0.3.7"]
-            [test2junit "1.2.2"]
-            [lein-eftest "0.5.8"]]
+            [test2junit "1.2.2"]]
   ; In case of kerberos problems, export KRB5_KTNAME=/var/spool/keytabs/$(id -un)
   :jvm-opts ["-server"
              "-Dsun.security.jgss.lib=/opt/mitkrb5/lib/libgssapi_krb5.so"
@@ -153,11 +154,7 @@
                           (.getCanonicalPath (clojure.java.io/file "../containers/test-apps/nginx/bin/run-nginx-server.sh"))))
                      ~(str "-Dwaiter.test.sediment.cmd="
                         (or (System/getenv "WAITER_TEST_SEDIMENT_CMD")
-                          (.getCanonicalPath (clojure.java.io/file "../containers/test-apps/sediment/bin/run-sediment-server.sh"))))]
-                    :parallel-test {:pools {:serial (constantly 1)
-                                            :parallel (fn []
-                                                        (or (some-> (System/getenv "LEIN_TEST_THREADS") Long/valueOf)
-                                                            (.availableProcessors (Runtime/getRuntime))))}}}
+                          (.getCanonicalPath (clojure.java.io/file "../containers/test-apps/sediment/bin/run-sediment-server.sh"))))]}
              :test-console {:jvm-opts
                             ["-Dlog4j.configuration=log4j-console.properties"]}
              :test-log {:jvm-opts

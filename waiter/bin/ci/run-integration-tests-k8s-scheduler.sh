@@ -2,16 +2,16 @@
 # Usage: run-integration-tests-k8s-scheduler.sh [TEST_COMMAND] [TEST_SELECTOR]
 #
 # Examples:
-#   run-integration-tests-k8s-scheduler.sh parallel-test integration-heavy
-#   run-integration-tests-k8s-scheduler.sh parallel-test integration-lite
-#   run-integration-tests-k8s-scheduler.sh parallel-test
+#   run-integration-tests-k8s-scheduler.sh eftest integration-heavy
+#   run-integration-tests-k8s-scheduler.sh eftest integration-lite
+#   run-integration-tests-k8s-scheduler.sh eftest
 #   run-integration-tests-k8s-scheduler.sh
 #
 # Runs the Waiter integration tests using the (local) k8s scheduler.
 
 set -e
 
-TEST_COMMAND=${1:-parallel-test}
+TEST_COMMAND=${1:-eftest}
 TEST_SELECTOR=${2:-integration}
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"

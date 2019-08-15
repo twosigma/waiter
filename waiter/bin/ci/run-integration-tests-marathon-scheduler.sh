@@ -2,9 +2,9 @@
 # Usage: run-integration-tests.sh [TEST_COMMAND] [TEST_SELECTOR]
 #
 # Examples:
-#   run-integration-tests.sh parallel-test integration-fast
-#   run-integration-tests.sh parallel-test integration-slow
-#   run-integration-tests.sh parallel-test
+#   run-integration-tests.sh eftest integration-fast
+#   run-integration-tests.sh eftest integration-slow
+#   run-integration-tests.sh eftest
 #   run-integration-tests.sh
 #
 # Runs the Waiter integration tests.
@@ -12,7 +12,7 @@
 set -e
 
 : ${WAITER_PORT:=9091}
-TEST_COMMAND=${1:-parallel-test}
+TEST_COMMAND=${1:-eftest}
 TEST_SELECTOR=${2:-integration}
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"

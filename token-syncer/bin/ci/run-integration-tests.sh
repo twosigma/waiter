@@ -2,15 +2,15 @@
 # Usage: run-integration-tests.sh [TEST_COMMAND] [TEST_SELECTOR]
 #
 # Examples:
-#   run-integration-tests.sh parallel-test integration
-#   run-integration-tests.sh parallel-test
+#   run-integration-tests.sh eftest integration
+#   run-integration-tests.sh eftest
 #   run-integration-tests.sh
 #
 # Runs the Token-Syncer integration tests after launching Waiter instances, and dumps log files if the tests fail.
 
 set -ev
 
-TEST_COMMAND=${1:-parallel-test}
+TEST_COMMAND=${1:-eftest}
 TEST_SELECTOR=${2:-integration}
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
