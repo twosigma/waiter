@@ -15,11 +15,14 @@ if 'TEST_METRICS_URL' in os.environ:
 
     elastic_search_url = os.getenv('TEST_METRICS_URL').rstrip('/')
     logging.info(f'Sending test metrics to {elastic_search_url}')
-    print("xxx initializng failed_tests")
-    failed_tests = []
-    print("xxx done initializng failed_tests")
+    #print("xxx initializng failed_tests")
+    #failed_tests = []
+    #print("xxx done initializng failed_tests")
 
 
+    def pytest_configure():
+        pytest.my_failed_tests = []
+    
     @pytest.fixture(scope='session', autouse=True)
     def session_hook():
         # Executed before tests
@@ -33,7 +36,7 @@ if 'TEST_METRICS_URL' in os.environ:
                 pass
             failed_tests_file = '.test_metrics/last_failed_tests'
         with open(failed_tests_file, 'w') as file_handle:
-            json.dump({'failed-tests': failed_tests}, file_handle)
+            json.dump({'failed-tests': pytest.my_failed_tests}, file_handle)
 
     @pytest.fixture()
     def record_test_metric(request):
@@ -59,7 +62,7 @@ if 'TEST_METRICS_URL' in os.environ:
                 logging.warning('Unable to determine test result')
                 result = 'unknown'
             if result == 'failed':
-                failed_tests.append(request_node._nodeid)
+                pytest.my_failed_tests.append(request_node._nodeid)
             metrics = {
                 'build-id': os.getenv('TEST_METRICS_BUILD_ID', None),
                 'expected-to-fail': xfail_mark is not None and xfail_mark.name == 'xfail',
