@@ -151,7 +151,8 @@
   (fn auth-cookie-handler
     [{:keys [headers] :as request}]
     (let [[auth-principal _ :as decoded-auth-cookie] (get-and-decode-auth-cookie-value headers password)]
-      (handler
-        (cond-> request
-          (decoded-auth-valid? decoded-auth-cookie)
-          (merge (auth-params-map :cookie auth-principal)))))))
+      (if (decoded-auth-valid? decoded-auth-cookie)
+        (let [auth-params-map (auth-params-map :cookie auth-principal)
+              handler' (middleware/wrap-merge handler auth-params-map)]
+          (handler' request))
+        (handler request)))))
