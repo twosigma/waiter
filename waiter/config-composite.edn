@@ -34,7 +34,9 @@
 
  ; ---------- Security ----------
 
- :authenticator-config {:kind :composite
+ :authenticator-config {:jwt {:issuer "test.com"
+                              :jwks-url #config/env "JWKS_SERVER_URL"}
+                        :kind :composite
                         :composite {:factory-fn waiter.auth.composite/composite-authenticator
                                     :authentication-providers {"one-user" {:factory-fn waiter.auth.authentication/one-user-authenticator
                                                                            ;; The user account used to launch services:

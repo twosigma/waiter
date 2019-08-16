@@ -29,6 +29,11 @@ export WAITER_S3_BUCKET=http://$S3SERVER_IP:8000/waiter-service-logs
 # Ensure we have the docker image for the pods
 ${CONTAINERS_DIR}/bin/build-docker-images.sh
 
+# start the JWKS server
+JWKS_PORT=6666
+${WAITER_DIR}/bin/ci/jwks-server-setup.sh ${JWKS_PORT}
+export JWKS_SERVER_URL="http://127.0.0.1:${JWKS_PORT}/jwks.json"
+
 # Start waiter
 : ${WAITER_PORT:=9091}
 ${WAITER_DIR}/bin/run-using-k8s.sh ${WAITER_PORT} &

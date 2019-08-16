@@ -25,7 +25,13 @@
 
 (def settings-schema
   {(s/required-key :authenticator-config) (s/constrained
-                                            {:kind s/Keyword
+                                            {(s/required-key :jwt) {(s/required-key :http-options) {s/Keyword s/Any}
+                                                                    (s/required-key :issuer) schema/non-empty-string
+                                                                    (s/required-key :jwks-url) s/Str
+                                                                    (s/required-key :subject-key) s/Keyword
+                                                                    (s/required-key :token-type) schema/non-empty-string
+                                                                    (s/required-key :update-interval-ms) schema/positive-int}
+                                             :kind s/Keyword
                                              s/Keyword schema/require-symbol-factory-fn}
                                             schema/contains-kind-sub-map?)
    (s/required-key :blacklist-config) {(s/required-key :blacklist-backoff-base-time-ms) schema/positive-int
@@ -244,7 +250,13 @@
       utils/clj->json-response))
 
 (def settings-defaults
-  {:authenticator-config {:kind :one-user
+  {:authenticator-config {:jwt {:http-options {:conn-timeout 10000
+                                               :socket-timeout 10000
+                                               :spnego-auth false}
+                                :subject-key :sub
+                                :token-type "JWT"
+                                :update-interval-ms 60000}
+                          :kind :one-user
                           :kerberos {:factory-fn 'waiter.auth.kerberos/kerberos-authenticator
                                      :concurrency-level 20
                                      :keep-alive-mins 5

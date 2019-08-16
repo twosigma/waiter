@@ -218,6 +218,23 @@
                                     ;; The authentication scheme to use if one is not specified
                                     :default-authentication-provider "kerberos"}
 
+                        ;; Waiter supports JWT access token-based authentication before trying the configured authenticator
+                        :jwt {;; JWT relies on periodically refreshing the list of available keys from a JWKS
+                              :http-options {;; The HTTP options that will be used when accessing the authorization server:
+                                             :conn-timeout 10000
+                                             :socket-timeout 10000
+                                             :spnego-auth false}
+                              ;; The issuer expected on the access token claims
+                              :issuer "test.com"
+                              ;; url of the authorization server where the public keys (JWKS) are available:
+                              :jwks-url "http://127.0.0.1:8040/jwks"
+                              ;; The keyword used to retrieve the subject from the access token claims
+                              :subject-key :sub
+                              ;; The token type expected in the access token header
+                              :token-type "JWT"
+                              ;; The interval at which to refresh the keys from the authorization server:
+                              :update-interval-ms 60000}
+
                         ;; :kind :one-user allows anonymous access to services (for testing purposes only):
                         :one-user {;; Custom implementations should specify a :factory-fn
                                    ;; that returns an instance of waiter.auth.authentication.Authenticator:

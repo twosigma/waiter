@@ -43,6 +43,11 @@ if [[ $TEST_SELECTOR =~ fast$ ]]; then
     ${DIR}/saml-idp-server-setup.sh
 fi
 
+# start the JWKS server
+JWKS_PORT=6666
+${WAITER_DIR}/bin/ci/jwks-server-setup.sh ${JWKS_PORT}
+export JWKS_SERVER_URL="http://127.0.0.1:${JWKS_PORT}/jwks.json"
+
 # Start waiter
 ${WAITER_DIR}/bin/run-using-composite-scheduler.sh ${WAITER_PORT} &
 
