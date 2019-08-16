@@ -785,6 +785,7 @@
                         (update :headers headers/dissoc-hop-by-hop-headers proto-version)
                         (assoc :get-instance-latency-ns instance-elapsed
                                :instance instance
+                               :instance-proto backend-proto
                                :protocol proto-version)
                         (assoc-debug-header "x-waiter-get-available-instance-ns" (str instance-elapsed))))))
               (catch Exception e ; Handle case where we couldn't get an instance

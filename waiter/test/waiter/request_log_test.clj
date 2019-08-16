@@ -68,6 +68,7 @@
                   :instance {:host "instance-host"
                              :id "instance-id"
                              :port 123}
+                  :instance-proto "instance-proto"
                   :latest-service-id "latest-service-id"
                   :protocol "HTTP/2.0"
                   :status 200}]
@@ -80,6 +81,7 @@
             :instance-host "instance-host"
             :instance-id "instance-id"
             :instance-port 123
+            :instance-proto "instance-proto"
             :latest-service-id "latest-service-id"
             :metric-group "service-metric-group"
             :principal "principal@DOMAIN.COM"
