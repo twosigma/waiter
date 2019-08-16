@@ -614,14 +614,28 @@
 (deftest ^:parallel ^:integration-fast basic-waiter-auth-test
   (testing-using-waiter-url
     (log/info "Basic waiter-auth test")
-    (let [{:keys [status body headers]} (make-request waiter-url "/waiter-auth")
+    (let [{:keys [body cookies headers] :as response} (make-request waiter-url "/waiter-auth")
           set-cookie (get headers "set-cookie")]
-      (is (= 200 status))
+      (assert-response-status response 200)
+      (is (contains? headers "x-waiter-auth-method") (str headers))
+      (is (not= "cookie" (get headers "x-waiter-auth-method")) (str headers))
+      (is (contains? headers "x-waiter-auth-principal") (str headers))
+      (is (contains? headers "x-waiter-auth-user") (str headers))
       (is (str/includes? set-cookie "x-waiter-auth="))
       (is (str/includes? set-cookie "Max-Age="))
       (is (str/includes? set-cookie "Path=/"))
       (is (str/includes? set-cookie "HttpOnly=true"))
-      (is (= (System/getProperty "user.name") (str body))))))
+      (is (= (System/getProperty "user.name") (str body)))
+
+      (let [{:keys [body headers] :as response} (make-request waiter-url "/waiter-auth" :cookies cookies)
+            set-cookie (get headers "set-cookie")]
+        (assert-response-status response 200)
+        (is (contains? headers "x-waiter-auth-method") (str headers))
+        (is (= "cookie" (get headers "x-waiter-auth-method")) (str headers))
+        (is (contains? headers "x-waiter-auth-principal") (str headers))
+        (is (contains? headers "x-waiter-auth-user") (str headers))
+        (is (str/blank? set-cookie))
+        (is (= (System/getProperty "user.name") (str body)))))))
 
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-killed-instances
   (testing-using-waiter-url

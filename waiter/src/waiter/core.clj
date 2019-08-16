@@ -1543,9 +1543,13 @@
                                         (auth/process-callback authenticator request)))
    :waiter-auth-handler-fn (pc/fnk [wrap-secure-request-fn]
                              (wrap-secure-request-fn
-                               (fn waiter-auth-handler-fn [request]
+                               (fn waiter-auth-handler-fn
+                                 [{:keys [authorization/method authorization/principal authorization/user]}]
                                  (utils/attach-waiter-source
-                                   {:body (str (:authorization/user request))
+                                   {:body (str user)
+                                    :headers {"x-waiter-auth-method" (some-> method name)
+                                              "x-waiter-auth-principal" (str principal)
+                                              "x-waiter-auth-user" (str user)}
                                     :status 200}))))
    :waiter-request-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template]
                                                [:settings consent-expiry-days]
