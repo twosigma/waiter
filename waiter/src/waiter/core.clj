@@ -108,8 +108,8 @@
                               ["/gc-services" :state-gc-for-services]
                               ["/gc-transient-metrics" :state-gc-for-transient-metrics]
                               ["/interstitial" :state-interstitial-handler-fn]
-                              ["/launch-metrics" :state-launch-metrics-handler-fn]
                               ["/kv-store" :state-kv-store-handler-fn]
+                              ["/launch-metrics" :state-launch-metrics-handler-fn]
                               ["/leader" :state-leader-handler-fn]
                               ["/local-usage" :state-local-usage-handler-fn]
                               ["/maintainer" :state-maintainer-handler-fn]
@@ -188,7 +188,7 @@
         (log/info "request received:"
                   (-> (dissoc request :body :ctrl :in :out :request-time :server-name :server-port :servlet-request
                               :ssl-client-cert :support-info :trailers-fn)
-                      (update :headers headers/truncate-header-values)))
+                    (update :headers headers/truncate-header-values)))
         (let [response (handler request)
               get-request-cid (fn get-request-cid [] request-cid)]
           (if (map? response)
@@ -206,8 +206,8 @@
   [{:keys [headers scheme ^ServletRequest servlet-request]}]
   (if servlet-request
     (or (some-> headers
-                (get "x-forwarded-proto-version")
-                str/upper-case)
+          (get "x-forwarded-proto-version")
+          str/upper-case)
         (.getProtocol servlet-request))
     (when scheme
       (str/upper-case
@@ -221,13 +221,13 @@
   [handler router-id support-info]
   (fn wrap-request-info-fn [{:keys [servlet-request] :as request}]
     (-> request
-        (assoc :client-protocol (request->protocol request)
-               :internal-protocol (some-> servlet-request .getProtocol)
-               :request-id (str (utils/unique-identifier) "-" (-> request utils/request->scheme name))
-               :request-time (t/now)
-               :router-id router-id
-               :support-info support-info)
-        handler)))
+      (assoc :client-protocol (request->protocol request)
+             :internal-protocol (some-> servlet-request .getProtocol)
+             :request-id (str (utils/unique-identifier) "-" (-> request utils/request->scheme name))
+             :request-time (t/now)
+             :router-id router-id
+             :support-info support-info)
+      handler)))
 
 (defn wrap-debug
   "Attaches debugging headers to requests when enabled.
@@ -296,7 +296,7 @@
           :acceptable-router? #(= dest-router-id %)
           :body (utils/clj->json {:instance instance :period-in-ms blacklist-period-ms :reason reason})
           :method :post)
-        (get dest-router-id))
+      (get dest-router-id))
     (catch Exception e
       (log/error e "error in making blacklist request"
                  {:instance instance :period-in-ms blacklist-period-ms :reason reason}))))
@@ -331,7 +331,7 @@
           kill-instance-endpoint
           :acceptable-router? #(= dest-router-id %)
           :method :post)
-        (get dest-router-id))
+      (get dest-router-id))
     (catch Exception e
       (log/error e "error in killing instance of" service-id))))
 
@@ -469,15 +469,15 @@
         request-config (update config :headers
                                (fn prepare-inter-router-requests-headers [headers]
                                  (-> headers
-                                     (assoc "accept" "application/json")
-                                     (update "x-cid"
-                                             (fn attach-inter-router-cid [provided-cid]
-                                               (or provided-cid
-                                                   (let [current-cid (cid/get-correlation-id)
-                                                         cid-prefix (if (or (nil? current-cid) (= cid/default-correlation-id current-cid))
-                                                                      "waiter"
-                                                                      current-cid)]
-                                                     (str cid-prefix "." (utils/unique-identifier)))))))))]
+                                   (assoc "accept" "application/json")
+                                   (update "x-cid"
+                                           (fn attach-inter-router-cid [provided-cid]
+                                             (or provided-cid
+                                                 (let [current-cid (cid/get-correlation-id)
+                                                       cid-prefix (if (or (nil? current-cid) (= cid/default-correlation-id current-cid))
+                                                                    "waiter"
+                                                                    current-cid)]
+                                                   (str cid-prefix "." (utils/unique-identifier)))))))))]
     (when (and (empty? router-id->endpoint-url')
                (not-empty router-id->endpoint-url))
       (log/info "no acceptable routers found to make request!"))
@@ -532,8 +532,8 @@
                    "/waiter-consent" "/waiter-interstitial"])
             (and (or (str/blank? host)
                      (valid-waiter-hostnames (-> host
-                                                 (str/split #":")
-                                                 first)))
+                                               (str/split #":")
+                                               first)))
                  (not-any? #(str/starts-with? (key %) headers/waiter-header-prefix)
                            (remove #(= "x-waiter-debug" (key %)) headers))))))))
 
@@ -806,7 +806,7 @@
                      (fn list-tokens-fn []
                        (let [{:keys [relative-path]} kv-config]
                          (->> (kv/zk-keys curator (str base-path "/" relative-path))
-                              (filter (fn [k] (not (str/starts-with? k "^"))))))))
+                           (filter (fn [k] (not (str/starts-with? k "^"))))))))
    :make-basic-auth-fn (pc/fnk []
                          (fn make-basic-auth-fn [uri username password]
                            (BasicAuthentication$BasicResult. (URI. uri) username password)))
@@ -1204,8 +1204,8 @@
                                                                             instance-request-properties determine-priority-fn ws/process-response!
                                                                             ws/abort-request-callback-factory local-usage-agent request))
                                            handler (-> process-request-fn
-                                                       (ws/wrap-ws-close-on-error)
-                                                       wrap-descriptor-fn)]
+                                                     (ws/wrap-ws-close-on-error)
+                                                     wrap-descriptor-fn)]
                                        (ws/request-handler password handler request))))
    :display-settings-handler-fn (pc/fnk [wrap-secure-request-fn settings]
                                   (wrap-secure-request-fn
@@ -1311,8 +1311,8 @@
                                    wrap-descriptor-fn wrap-secure-request-fn]
                             (-> (fn service-id-handler-fn [request]
                                   (handler/service-id-handler request kv-store store-service-description-fn))
-                                wrap-descriptor-fn
-                                wrap-secure-request-fn))
+                              wrap-descriptor-fn
+                              wrap-secure-request-fn))
    :service-list-handler-fn (pc/fnk [[:daemons router-state-maintainer]
                                      [:routines prepend-waiter-url router-metrics-helpers
                                       service-id->service-description-fn service-id->source-tokens-entries-fn]
@@ -1425,6 +1425,12 @@
                                       (wrap-secure-request-fn
                                         (fn state-interstitial-handler-fn [request]
                                           (handler/get-query-chan-state-handler router-id interstitial-query-chan request)))))
+   :state-kv-store-handler-fn (pc/fnk [[:curator kv-store]
+                                       [:state router-id]
+                                       wrap-secure-request-fn]
+                                (wrap-secure-request-fn
+                                  (fn kv-store-state-handler-fn [request]
+                                    (handler/get-kv-store-state router-id kv-store request))))
    :state-launch-metrics-handler-fn (pc/fnk [[:daemons launch-metrics-maintainer]
                                              [:state router-id]
                                              wrap-secure-request-fn]
@@ -1432,12 +1438,6 @@
                                         (wrap-secure-request-fn
                                           (fn state-launch-metrics-handler-fn [request]
                                             (handler/get-query-chan-state-handler router-id query-chan request)))))
-   :state-kv-store-handler-fn (pc/fnk [[:curator kv-store]
-                                       [:state router-id]
-                                       wrap-secure-request-fn]
-                                (wrap-secure-request-fn
-                                  (fn kv-store-state-handler-fn [request]
-                                    (handler/get-kv-store-state router-id kv-store request))))
    :state-leader-handler-fn (pc/fnk [[:curator leader?-fn leader-id-fn]
                                      [:state router-id]
                                      wrap-secure-request-fn]
