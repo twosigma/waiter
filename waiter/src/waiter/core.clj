@@ -246,7 +246,7 @@
                                                 (cid/cinfo correlation-id "request trailers:" trailers-data)
                                                 trailers-data)))))
             response (handler request)
-            add-headers (fn [{:keys [descriptor instance] :as response}]
+            add-headers (fn [{:keys [authorization/method authorization/principal authorization/user descriptor instance] :as response}]
                           (let [{:strs [backend-proto]} (:service-description descriptor)
                                 backend-directory (:log-directory instance)
                                 backend-log-url (when backend-directory
@@ -256,6 +256,9 @@
                             (update response :headers
                                     (fn [headers]
                                       (cond-> headers
+                                        method (assoc "x-waiter-auth-method" (name method))
+                                        principal (assoc "x-waiter-auth-principal" (str principal))
+                                        user (assoc "x-waiter-auth-user" (str user))
                                         client-protocol (assoc "x-waiter-client-protocol" (name client-protocol))
                                         internal-protocol (assoc "x-waiter-internal-protocol" (name internal-protocol))
                                         request-time (assoc "x-waiter-request-date" request-date)

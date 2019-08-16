@@ -37,8 +37,8 @@
            (java.io ByteArrayInputStream)
            (java.nio ByteBuffer)
            (java.util.concurrent Callable Future Executors)
-           (net.i2p.crypto.eddsa.spec EdDSANamedCurveTable EdDSAPrivateKeySpec)
            (net.i2p.crypto.eddsa EdDSAPrivateKey)
+           (net.i2p.crypto.eddsa.spec EdDSANamedCurveTable EdDSAPrivateKeySpec)
            (org.joda.time Period)
            (org.joda.time.format PeriodFormatterBuilder)))
 
@@ -567,6 +567,11 @@
   "Fetches and returns the interstitial state."
   [waiter-url & {:keys [cookies] :or {cookies {}}}]
   (retrieve-state-helper waiter-url "/state/interstitial" :cookies cookies))
+
+(defn jwt-authenticator-state
+  "Fetches and returns the interstitial state."
+  [waiter-url & {:keys [cookies] :or {cookies {}}}]
+  (retrieve-state-helper waiter-url "/state/jwt-authenticator" :cookies cookies))
 
 (defn kv-store-state
   "Fetches and returns the kv-store state."
