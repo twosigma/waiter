@@ -53,7 +53,7 @@
            get-instance-latency-ns handle-request-latency-ns headers instance instance-proto protocol status] :as response}]
   (let [{:keys [service-id service-description]} descriptor
         {:strs [content-length content-type grpc-status server]} headers
-        {:keys [k8s/pod-name]} instance]
+        {:keys [k8s/node-name k8s/pod-name]} instance]
     (cond-> {:status (or status 200)}
       method (assoc :authentication-method (name method))
       backend-response-latency-ns (assoc :backend-response-latency-ns backend-response-latency-ns)
@@ -70,6 +70,7 @@
                       :get-instance-latency-ns get-instance-latency-ns)
       instance-proto (assoc :instance-proto instance-proto)
       latest-service-id (assoc :latest-service-id latest-service-id)
+      node-name (assoc :k8s-node-name node-name)
       pod-name (assoc :k8s-pod-name pod-name)
       principal (assoc :principal principal)
       protocol (assoc :backend-protocol protocol)

@@ -67,6 +67,7 @@
                             "server" "foo-bar"}
                   :instance {:host "instance-host"
                              :id "instance-id"
+                             :k8s/node-name "test-node-name"
                              :k8s/pod-name "test-pod-name"
                              :port 123}
                   :instance-proto "instance-proto"
@@ -83,6 +84,7 @@
             :instance-id "instance-id"
             :instance-port 123
             :instance-proto "instance-proto"
+            :k8s-node-name "test-node-name"
             :k8s-pod-name "test-pod-name"
             :latest-service-id "latest-service-id"
             :metric-group "service-metric-group"

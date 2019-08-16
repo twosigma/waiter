@@ -395,7 +395,8 @@
                                       :waiter/user "myself"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-1234"}}
-                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
+                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]
+                         :nodeName "node-0.k8s.com"}
                   :status {:phase "Pending"
                            :startTime "2014-09-13T00:24:46Z"
                            :containerStatuses [{:name "test-app-1234"
@@ -428,7 +429,8 @@
                                       :waiter/service-hash "test-app-1234"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-1234"}}
-                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
+                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]
+                         :nodeName "node-2.k8s.com"}
                   :status {:podIP "10.141.141.12"
                            :startTime "2014-09-13T00:24:47Z"
                            :containerStatuses [{:name "test-app-1234"
@@ -492,6 +494,7 @@
                         :host "0.0.0.0"
                         :id "test-app-1234.test-app-1234-abcd0-0"
                         :k8s/container-statuses [{:name "test-app-1234" :ready false :reason "ContainerCreating":state :waiting}]
+                        :k8s/node-name "node-0.k8s.com"
                         :k8s/pod-phase "Pending"
                         :log-directory "/home/myself/r0"
                         :port 8080
@@ -512,6 +515,7 @@
                         :host "10.141.141.12"
                         :id "test-app-1234.test-app-1234-abcd2-0"
                         :k8s/container-statuses [{:name "test-app-1234" :ready true}]
+                        :k8s/node-name "node-2.k8s.com"
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-1234"
@@ -1076,7 +1080,8 @@
                                       :waiter/service-hash "test-app-1234"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-1234"}}
-                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
+                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]
+                         :nodeName "node-1.k8s.com"}
                   :status {:podIP "10.141.141.11"
                            :startTime "2014-09-13T00:24:46Z"
                            :containerStatuses [{:name "test-app-1234"
