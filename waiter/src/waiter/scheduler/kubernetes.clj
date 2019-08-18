@@ -248,6 +248,7 @@
     (let [;; waiter-app is the first container we register
           restart-count (get-in pod [:status :containerStatuses 0 :restartCount] 0)
           instance-id (pod->instance-id pod restart-count)
+          node-name (get-in pod [:spec :nodeName])
           port0 (get-in pod [:spec :containers 0 :ports 0 :containerPort])
           run-as-user (or (get-in pod [:metadata :labels :waiter/user])
                           ;; falling back to namespace for legacy pods missing the waiter/user label
@@ -275,6 +276,7 @@
                  :port port0
                  :service-id (k8s-object->service-id pod)
                  :started-at pod-started-at}
+          node-name (assoc :k8s/node-name node-name)
           phase (assoc :k8s/pod-phase phase)
           (seq container-statuses) (assoc :k8s/container-statuses
                                           (map (fn [{:keys [state] :as status}]
