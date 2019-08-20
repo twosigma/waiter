@@ -809,9 +809,35 @@ class WaiterCliTest(util.WaiterTest):
 
     def test_post_token_json_and_flags(self):
         token_name = self.token_name()
-        cp = cli.update(self.waiter_url, token_name, update_flags='--json foo.json --cpus 0.1')
-        self.assertEqual(1, cp.returncode, cp.stderr)
-        self.assertIn('cannot specify both a token JSON file and token field flags', cli.stderr(cp))
+        update_fields = {'cpus': 0.2, 'mem': 256}
+        with cli.temp_token_file(update_fields) as path:
+            cp = cli.update(self.waiter_url, token_name, update_flags=f'--json {path} --cpus 0.1')
+            self.assertEqual(1, cp.returncode, cp.stderr)
+            self.assertIn('cannot specify the same parameter in both a token JSON file and token field flags at the '
+                          'same time (cpus)', cli.stderr(cp))
+
+            cp = cli.update(self.waiter_url, token_name, update_flags=f'--json {path} --mem 128')
+            self.assertEqual(1, cp.returncode, cp.stderr)
+            self.assertIn('cannot specify the same parameter in both a token JSON file and token field flags at the '
+                          'same time (mem)', cli.stderr(cp))
+
+            cp = cli.update(self.waiter_url, token_name, update_flags=f'--json {path} --cpus 0.1 --mem 128')
+            self.assertEqual(1, cp.returncode, cp.stderr)
+            self.assertIn('cannot specify the same parameter in both a token JSON file and token field flags',
+                          cli.stderr(cp))
+            self.assertIn('cpus', cli.stderr(cp))
+            self.assertIn('mem', cli.stderr(cp))
+
+            try:
+                cp = cli.update(self.waiter_url, token_name, update_flags=f'--json {path} --version foo --image bar')
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                token_data = util.load_token(self.waiter_url, token_name)
+                self.assertEqual(0.2, token_data['cpus'])
+                self.assertEqual(256, token_data['mem'])
+                self.assertEqual('foo', token_data['version'])
+                self.assertEqual('bar', token_data['image'])
+            finally:
+                util.delete_token(self.waiter_url, token_name)
 
     def test_post_token_json_invalid(self):
         token_name = self.token_name()
