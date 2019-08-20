@@ -145,7 +145,7 @@
          assertion-message# ~assertion-message]
      (is status# assertion-message#)
      (when status#
-       (is (contains? #{"UNAVAILABLE" "INTERNAL"} (-> status# .getCode str)) assertion-message#))))
+       (is (contains? #{"CANCELLED" "INTERNAL" "UNAVAILABLE"} (-> status# .getCode str)) assertion-message#))))
 
 (defmacro assert-grpc-unknown-status
   "Asserts that the status represents a grpc OK status."
