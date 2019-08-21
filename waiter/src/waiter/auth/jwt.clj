@@ -257,14 +257,14 @@
         (counters/inc! (metrics/waiter-counter "core" "jwt" "validation" "failed"))
         (utils/exception->response th request)))))
 
-(defrecord JwtAuthenticator [token-type issuer keys-cache password subject-key]
-  auth/Authenticator
-  (wrap-auth-handler [_ request-handler]
-    (fn jwt-auth-handler [request]
-      (if (and (not (auth/request-authenticated? request))
-               (-> request :headers (get "authorization") retrieve-bearer-entry))
-        (authenticate-request request-handler token-type issuer subject-key (:key-id->jwk @keys-cache) password request)
-        (request-handler request)))))
+(defn wrap-auth-handler
+  "Wraps the request handler with a handler to trigger JWT access token authentication."
+  [{:keys [issuer keys-cache password subject-key token-type] :as jwt-authenticator} request-handler]
+  (fn jwt-auth-handler [request]
+    (if (and (not (auth/request-authenticated? request))
+             (-> request :headers (get "authorization") retrieve-bearer-entry))
+      (authenticate-request request-handler token-type issuer subject-key (:key-id->jwk @keys-cache) password request)
+      (request-handler request))))
 
 (defn retrieve-state
   "Returns the state of the JWT authenticator."
@@ -273,6 +273,8 @@
                            (fn [key-id->jwk]
                              (pc/map-vals #(update % ::public-key str) key-id->jwk)))]
     {:cache-data cache-data}))
+
+(defrecord JwtAuthenticator [issuer keys-cache password subject-key token-type])
 
 (defn jwt-authenticator
   "Factory function for creating jwt authenticator middleware"
@@ -291,4 +293,4 @@
                       (utils/assoc-if-absent :user-agent "waiter-jwt")
                       hu/http-client-factory)]
     (start-jwt-cache-maintainer http-client http-options jwks-url update-interval-ms keys-cache)
-    (->JwtAuthenticator token-type issuer keys-cache password subject-key)))
+    (->JwtAuthenticator issuer keys-cache password subject-key token-type)))

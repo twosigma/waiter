@@ -1153,3 +1153,8 @@
         edsa-private-key (EdDSAPrivateKey. (EdDSAPrivateKeySpec. ^bytes (b64/decode private-key) ed25519-curve-spec))
         options {:alg :eddsa :header header}]
     (jwt/sign payload edsa-private-key options)))
+
+(defn jwt-auth-enabled?
+  "Returns true if JWT authentication is enabled."
+  [waiter-url]
+  (not= "disabled" (setting waiter-url [:authenticator-config :jwt])))

@@ -611,9 +611,10 @@
                                               :service-id->interstitial-promise {}}))
    :jwt-authenticator (pc/fnk [[:settings authenticator-config]
                                passwords]
-                        (let [jwt-config (assoc (:jwt authenticator-config)
-                                           :password (first passwords))]
-                          (jwt/jwt-authenticator jwt-config)))
+                        (let [jwt-config (:jwt authenticator-config)]
+                          (when (not= :disabled jwt-config)
+                            (let [jwt-config (assoc jwt-config :password (first passwords))]
+                              (jwt/jwt-authenticator jwt-config)))))
    :local-usage-agent (pc/fnk [] (agent {}))
    :passwords (pc/fnk [[:settings password-store-config]]
                 (let [password-provider (utils/create-component password-store-config)
@@ -812,17 +813,18 @@
                                        (fn authentication-method-wrapper [request-handler]
                                          (let [auth-handler (auth/wrap-auth-handler authenticator request-handler)
                                                password (first passwords)]
-                                           (auth/wrap-auth-cookie-handler
-                                             password
-                                             (auth/wrap-auth-handler
-                                               jwt-authenticator
-                                               (fn authenticate-request [request]
-                                                 (cond
-                                                   (:skip-authentication request) (do
-                                                                                    (log/info "skipping authentication for request")
-                                                                                    (request-handler request))
-                                                   (auth/request-authenticated? request) (request-handler request)
-                                                   :else (auth-handler request))))))))
+                                           (cond->> (fn authenticate-request [request]
+                                                  (cond
+                                                    (:skip-authentication request)
+                                                    (do
+                                                      (log/info "skipping authentication for request")
+                                                      (request-handler request))
+                                                    (auth/request-authenticated? request)
+                                                    (request-handler request)
+                                                    :else
+                                                    (auth-handler request)))
+                                             jwt-authenticator (jwt/wrap-auth-handler jwt-authenticator)
+                                             true (auth/wrap-auth-cookie-handler password)))))
    :can-run-as?-fn (pc/fnk [[:state entitlement-manager]]
                      (fn can-run-as [auth-user run-as-user]
                        (authz/run-as? entitlement-manager auth-user run-as-user)))
@@ -1495,7 +1497,9 @@
                                           (handler/get-query-chan-state-handler router-id interstitial-query-chan request)))))
    :state-jwt-authenticator-handler-fn (pc/fnk [[:state jwt-authenticator router-id]
                                                 wrap-secure-request-fn]
-                                         (let [query-state-fn #(jwt/retrieve-state jwt-authenticator)]
+                                         (let [query-state-fn (if (nil? jwt-authenticator)
+                                                                (constantly :disabled)
+                                                                #(jwt/retrieve-state jwt-authenticator))]
                                            (wrap-secure-request-fn
                                              (fn state-jwt-authenticator-handler-fn [request]
                                                (handler/get-query-fn-state router-id query-state-fn request)))))

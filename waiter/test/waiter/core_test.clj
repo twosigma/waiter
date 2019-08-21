@@ -23,6 +23,7 @@
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [waiter.auth.authentication :as auth]
+            [waiter.auth.jwt :as jwt]
             [waiter.authorization :as authz]
             [waiter.core :refer :all]
             [waiter.curator :as curator]
@@ -1266,65 +1267,65 @@
         (is (= handler-response response))))))
 
 (deftest test-authentication-method-wrapper-fn
-  (let [standard-handler (fn [request]
-                           (assoc request ::standard-handler true))]
-    (let [authenticator (reify auth/Authenticator
-                          (wrap-auth-handler [_ request-handler]
-                            (is (= standard-handler request-handler))
-                            (fn [request]
-                              (-> request
-                                (assoc ::authenticator true)
-                                request-handler))))
-          jwt-authenticator (reify auth/Authenticator
-                              (wrap-auth-handler [_ request-handler]
-                                (is (some? request-handler))
-                                (fn [request]
-                                  (-> request
-                                    (assoc ::jwt-authenticator
-                                           (-> request :headers (get "authorization") str (str/starts-with? "Bearer ")))
-                                    request-handler))))
-          {:keys [authentication-method-wrapper-fn]} routines
-          authenticate-request-handler (authentication-method-wrapper-fn {:state {:authenticator authenticator
-                                                                                  :jwt-authenticator jwt-authenticator
-                                                                                  :passwords ["a" "b" "c"]}})
-          request-handler (authenticate-request-handler standard-handler)]
+  (let [standard-handler (fn [request] (assoc request ::standard-handler true))
+        jwt-authenticator (Object.)]
+    (with-redefs [jwt/wrap-auth-handler (fn [in-authenticator request-handler]
+                                          (is (= jwt-authenticator in-authenticator))
+                                          (is (some? request-handler))
+                                          (fn [request]
+                                            (-> request
+                                              (assoc ::jwt-authenticator
+                                                     (-> request :headers (get "authorization") str (str/starts-with? "Bearer ")))
+                                              request-handler)))]
+      (let [authenticator (reify auth/Authenticator
+                            (wrap-auth-handler [_ request-handler]
+                              (is (= standard-handler request-handler))
+                              (fn [request]
+                                (-> request
+                                  (assoc ::authenticator true)
+                                  request-handler))))
+            {:keys [authentication-method-wrapper-fn]} routines
+            authenticate-request-handler (authentication-method-wrapper-fn {:state {:authenticator authenticator
+                                                                                    :jwt-authenticator jwt-authenticator
+                                                                                    :passwords ["a" "b" "c"]}})
+            request-handler (authenticate-request-handler standard-handler)]
 
-      (testing "skip-authentication"
-        (is (= {:headers {}
-                :skip-authentication true
-                ::jwt-authenticator false
-                ::standard-handler true}
-               (request-handler {:headers {}
-                                 :skip-authentication true}))))
-
-      (testing "JWT authentication"
-        (is (= {:headers {"authorization" "Bearer abcd.efgh.ijkl"}
-                ::authenticator true
-                ::jwt-authenticator true
-                ::standard-handler true}
-               (request-handler {:headers {"authorization" "Bearer abcd.efgh.ijkl"}}))))
-
-      (testing "cookie-authentication"
-        (with-redefs [auth/get-and-decode-auth-cookie-value (constantly ["user@test.com" (System/currentTimeMillis)])
-                      auth/decoded-auth-valid? (fn [[principal _]] (some? principal))]
-          (is (= {:headers {"cookie" "test-cookie"}
-                  :authorization/method :cookie
-                  :authorization/principal "user@test.com"
-                  :authorization/user "user"
+        (testing "skip-authentication"
+          (is (= {:headers {}
+                  :skip-authentication true
                   ::jwt-authenticator false
                   ::standard-handler true}
-                 (request-handler {:headers {"cookie" "test-cookie"}})))))
+                 (request-handler {:headers {}
+                                   :skip-authentication true}))))
 
-      (testing "require-authentication"
-        (is (= {::authenticator true
-                ::jwt-authenticator false
-                ::standard-handler true}
-               (request-handler {})))
-        (is (= {:headers {"cookie" "test-cookie"}
-                ::authenticator true
-                ::jwt-authenticator false
-                ::standard-handler true}
-               (request-handler {:headers {"cookie" "test-cookie"}})))))))
+        (testing "JWT authentication"
+          (is (= {:headers {"authorization" "Bearer abcd.efgh.ijkl"}
+                  ::authenticator true
+                  ::jwt-authenticator true
+                  ::standard-handler true}
+                 (request-handler {:headers {"authorization" "Bearer abcd.efgh.ijkl"}}))))
+
+        (testing "cookie-authentication"
+          (with-redefs [auth/get-and-decode-auth-cookie-value (constantly ["user@test.com" (System/currentTimeMillis)])
+                        auth/decoded-auth-valid? (fn [[principal _]] (some? principal))]
+            (is (= {:headers {"cookie" "test-cookie"}
+                    :authorization/method :cookie
+                    :authorization/principal "user@test.com"
+                    :authorization/user "user"
+                    ::jwt-authenticator false
+                    ::standard-handler true}
+                   (request-handler {:headers {"cookie" "test-cookie"}})))))
+
+        (testing "require-authentication"
+          (is (= {::authenticator true
+                  ::jwt-authenticator false
+                  ::standard-handler true}
+                 (request-handler {})))
+          (is (= {:headers {"cookie" "test-cookie"}
+                  ::authenticator true
+                  ::jwt-authenticator false
+                  ::standard-handler true}
+                 (request-handler {:headers {"cookie" "test-cookie"}}))))))))
 
 (deftest test-waiter-request?-fn
   (testing "string hostname config"

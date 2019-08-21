@@ -327,8 +327,8 @@
 
 (deftest test-jwt-auth-handler
   (let [handler (fn [{:keys [source]}] {:body source})
-        authenticator (->JwtAuthenticator "jwt+type" "issuer" (atom {:key-id->jwk ::jwt-keys}) "password" :sub)
-        jwt-handler (auth/wrap-auth-handler authenticator handler)]
+        authenticator (->JwtAuthenticator "issuer" (atom {:key-id->jwk ::jwt-keys}) "password" :sub "jwt+type")
+        jwt-handler (wrap-auth-handler authenticator handler)]
     (with-redefs [authenticate-request (fn [handler token-type issuer subject-key keys password request]
                                          (is (= "jwt+type" token-type))
                                          (is (= "issuer" issuer))

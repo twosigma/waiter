@@ -25,12 +25,7 @@
 
 (def settings-schema
   {(s/required-key :authenticator-config) (s/constrained
-                                            {(s/required-key :jwt) {(s/required-key :http-options) {s/Keyword s/Any}
-                                                                    (s/required-key :issuer) schema/non-empty-string
-                                                                    (s/required-key :jwks-url) s/Str
-                                                                    (s/required-key :subject-key) s/Keyword
-                                                                    (s/required-key :token-type) schema/non-empty-string
-                                                                    (s/required-key :update-interval-ms) schema/positive-int}
+                                            {(s/required-key :jwt) schema/valid-jwt-authenticator-config
                                              :kind s/Keyword
                                              s/Keyword schema/require-symbol-factory-fn}
                                             schema/contains-kind-sub-map?)
