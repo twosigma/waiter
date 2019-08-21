@@ -37,18 +37,53 @@
 (deftest test-refresh-keys-cache
   (let [http-client (Object.)
         keys-url "https://www.test.com/jwks/keys"
+        retry-limit 3
         http-options {:conn-timeout 10000
-                      :socket-timeout 10000}]
+                      :retry-interval-ms 10
+                      :retry-limit retry-limit
+                      :socket-timeout 10000}
+        jwks-keys (walk/keywordize-keys
+                    {"keys" [{"crv" "P-256", "kty" "OKP", "name" "fee", "use" "sig"}
+                             {"crv" "Ed25519", "kty" "RSA", "name" "fie", "use" "sig", "x" "x1"}
+                             {"crv" "Ed25519", "kid" "k1", "kty" "OKP", "name" "foe", "use" "sig", "x" "x2"}
+                             {"crv" "Ed25519", "kty" "OKP", "name" "fum", "use" "enc", "x" "x3"}
+                             {"crv" "Ed25519", "kty" "OKP", "name" "fum", "use" "sig", "x" "x4"}]})
+        valid-key-entry {"k1" (-> {"crv" "Ed25519", "kid" "k1", "kty" "OKP", "name" "foe", "use" "sig", "x" "x2"}
+                      (walk/keywordize-keys)
+                      (assoc :waiter.auth.jwt/public-key "public-key-x2"))}]
 
-    (testing "http-request throws exception"
-      (with-redefs [hu/http-request (fn [in-http-client in-url & _]
-                                      (is (= http-client in-http-client))
-                                      (is (= keys-url in-url))
-                                      (throw (IllegalStateException. "From test")))]
-        (let [keys-cache (atom {})]
-          (is (thrown-with-msg? IllegalStateException #"From test"
-                                (refresh-keys-cache http-client http-options keys-url keys-cache)))
-          (is (= {} @keys-cache)))))
+    (testing "http-request throws exception always"
+      (let [http-request-counter (atom 0)]
+        (with-redefs [hu/http-request (fn [in-http-client in-url & _]
+                                        (is (= http-client in-http-client))
+                                        (is (= keys-url in-url))
+                                        (swap! http-request-counter inc)
+                                        (throw (IllegalStateException. "From test")))]
+          (let [keys-cache (atom {})]
+            (is (thrown-with-msg? IllegalStateException #"From test"
+                                  (refresh-keys-cache http-client http-options keys-url keys-cache)))
+            (is (= {} @keys-cache))
+            (is (= retry-limit @http-request-counter))))))
+
+    (testing "http-request throws exception once"
+      (let [current-time (t/now)
+            http-request-counter (atom 0)]
+        (with-redefs [hu/http-request (fn [in-http-client in-url & _]
+                                        (is (= http-client in-http-client))
+                                        (is (= keys-url in-url))
+                                        (swap! http-request-counter inc)
+                                        (if (= 1 @http-request-counter)
+                                          (throw (IllegalStateException. "From test"))
+                                          jwks-keys))
+                      t/now (constantly current-time)
+                      retrieve-edsa-public-key (fn [k] (str "public-key-" k))]
+          (let [keys-cache (atom {})]
+            (refresh-keys-cache http-client http-options keys-url keys-cache)
+            (is (= {:key-id->jwk valid-key-entry
+                    :last-update-time current-time
+                    :summary {:num-filtered-keys 1 :num-jwks-keys 5}}
+                   @keys-cache))
+            (is (= 2 @http-request-counter))))))
 
     (testing "http-request returns string"
       (with-redefs [hu/http-request (fn [in-http-client in-url & _]
@@ -75,19 +110,12 @@
         (with-redefs [hu/http-request (fn [in-http-client in-url & _]
                                         (is (= http-client in-http-client))
                                         (is (= keys-url in-url))
-                                        (walk/keywordize-keys
-                                          {"keys" [{"crv" "P-256", "kty" "OKP", "name" "fee", "use" "sig"}
-                                                   {"crv" "Ed25519", "kty" "RSA", "name" "fie", "use" "sig", "x" "x1"}
-                                                   {"crv" "Ed25519", "kid" "k1", "kty" "OKP", "name" "foe", "use" "sig", "x" "x2"}
-                                                   {"crv" "Ed25519", "kty" "OKP", "name" "fum", "use" "enc", "x" "x3"}
-                                                   {"crv" "Ed25519", "kty" "OKP", "name" "fum", "use" "sig", "x" "x4"}]}))
+                                        jwks-keys)
                       t/now (constantly current-time)
                       retrieve-edsa-public-key (fn [k] (str "public-key-" k))]
           (let [keys-cache (atom {})]
             (refresh-keys-cache http-client http-options keys-url keys-cache)
-            (is (= {:key-id->jwk {"k1" (-> {"crv" "Ed25519", "kid" "k1", "kty" "OKP", "name" "foe", "use" "sig", "x" "x2"}
-                                         (walk/keywordize-keys)
-                                         (assoc :waiter.auth.jwt/public-key "public-key-x2"))}
+            (is (= {:key-id->jwk valid-key-entry
                     :last-update-time current-time
                     :summary {:num-filtered-keys 1 :num-jwks-keys 5}}
                    @keys-cache))))))))

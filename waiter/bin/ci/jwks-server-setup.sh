@@ -5,7 +5,7 @@
 #   jwks-server-setup.sh 9040
 #
 # Run a  JSON Web Key Set (JWKS) server that returns a fixed set of keys.
-# SAML authentication request can be routed to: http://localhost:JWKS_PORT/jwks.json
+# JWKS retrieval request can be routed to: http://localhost:JWKS_PORT/jwks.json
 # When the JWKS_PORT is not specified, a default of 8040 is used.
 
 set -e

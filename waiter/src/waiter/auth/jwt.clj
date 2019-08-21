@@ -59,31 +59,50 @@
   [{:keys [x] :as entry}]
   (assoc entry ::public-key (retrieve-edsa-public-key x)))
 
+(defn retrieve-jwks-with-retries
+  "Retrieves the JWKS using the specified url.
+   JWKS retrieval tried retry-limit times at intervals on retry-interval-ms ms when there is an error."
+  [http-client url
+   {:keys [retry-interval-ms retry-limit]
+    :or {retry-interval-ms 100
+         retry-limit 2}
+    :as options}]
+  (let [with-retries (utils/retry-strategy
+                       {:delay-multiplier 1.0, :initial-delay-ms retry-interval-ms, :max-retries retry-limit})
+        http-options (dissoc options :retry-interval-ms :retry-limit)]
+    (with-retries
+      (fn retrieve-jwks-task []
+        (if (str/starts-with? url "file://")
+          (-> url slurp json/read-str walk/keywordize-keys)
+          (pc/mapply hu/http-request http-client url http-options))))))
+
 (defn refresh-keys-cache
   "Update the cache of users with prestashed JWK keys."
   [http-client http-options url keys-cache]
-  (let [response (if (str/starts-with? url "file://")
-                   (-> url slurp json/read-str walk/keywordize-keys)
-                   (pc/mapply hu/http-request http-client url http-options))]
-    (when-not (map? response)
-      (throw (ex-info "Invalid response from the JWKS endpoint"
-                      {:response response :url url})))
-    (let [all-keys (:keys response)
-          keys (filter ed25519-key? all-keys)]
-      (when (empty? keys)
-        (throw (ex-info "No Ed25519 keys found from the JWKS endpoint"
-                        {:response response
-                         :url url})))
-      (log/info "retrieved" (count keys) "from the JWKS endpoint")
-      (reset! keys-cache {:key-id->jwk (->> keys
-                                         (map attach-public-key)
-                                         (pc/map-from-vals :kid))
-                          :last-update-time (t/now)
-                          :summary {:num-filtered-keys (count keys)
-                                    :num-jwks-keys (count all-keys)}}))))
+  (metrics/with-timer!
+    (metrics/waiter-timer "core" "jwt" "refresh-keys-cache")
+    (fn [elapsed-nanos]
+      (log/info "JWKS keys retrieval took" elapsed-nanos "ns"))
+    (let [response (retrieve-jwks-with-retries http-client url http-options)]
+      (when-not (map? response)
+        (throw (ex-info "Invalid response from the JWKS endpoint"
+                        {:response response :url url})))
+      (let [all-keys (:keys response)
+            keys (filter ed25519-key? all-keys)]
+        (when (empty? keys)
+          (throw (ex-info "No Ed25519 keys found from the JWKS endpoint"
+                          {:response response
+                           :url url})))
+        (log/info "retrieved entries from the JWKS endpoint" response)
+        (reset! keys-cache {:key-id->jwk (->> keys
+                                           (map attach-public-key)
+                                           (pc/map-from-vals :kid))
+                            :last-update-time (t/now)
+                            :summary {:num-filtered-keys (count keys)
+                                      :num-jwks-keys (count all-keys)}})))))
 
 (defn start-jwt-cache-maintainer
-  "Starts an async/go-loop to maintain the keys-cache."
+  "Starts a timer task to maintain the keys-cache."
   [http-client http-options jwks-url update-interval-ms keys-cache]
   {:cancel-fn (du/start-timer-task
                 (t/millis update-interval-ms)
