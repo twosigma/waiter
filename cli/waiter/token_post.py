@@ -100,19 +100,23 @@ def create_or_update_token(clusters, args, _, action):
     token_name_from_args = args.pop('token', None)
     json_file = args.pop('json', None)
     if json_file:
-        if len(args) > 0:
-            raise Exception('You cannot specify both a token JSON file and token field flags at the same time.')
-
         if json_file == '-':
             token_json = read_token_from_stdin()
-            token_fields = parse_raw_token_spec(token_json)
+            token_fields_from_json = parse_raw_token_spec(token_json)
         else:
-            token_fields = load_json_file(json_file)
-            if not token_fields:
+            token_fields_from_json = load_json_file(json_file)
+            if not token_fields_from_json:
                 raise Exception(f'Unable to load token JSON from {json_file}.')
     else:
-        token_fields = args
+        token_fields_from_json = {}
 
+    token_fields_from_args = args
+    shared_keys = set(token_fields_from_json).intersection(token_fields_from_args)
+    if shared_keys:
+        raise Exception(f'You cannot specify the same parameter in both a token JSON file and token field flags at '
+                        f'the same time ({", ".join(shared_keys)}).')
+
+    token_fields = {**token_fields_from_json, **token_fields_from_args}
     token_name_from_json = token_fields.pop('token', None)
     if token_name_from_args and token_name_from_json:
         raise Exception('You cannot specify the token name both as an argument and in the token JSON file.')
