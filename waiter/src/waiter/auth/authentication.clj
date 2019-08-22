@@ -123,6 +123,15 @@
   [cookie-string]
   (cookie-support/remove-cookie cookie-string AUTH-COOKIE-NAME))
 
+(defn select-auth-header
+  "Filters and return the first authorization header that passes the predicate."
+  [{:keys [headers]} predicate]
+  (let [{:strs [authorization]} headers
+        auth-headers (if (string? authorization)
+                       (str/split (str authorization) #",")
+                       authorization)]
+    (some #(when (predicate %) %) auth-headers)))
+
 ;; An anonymous request does not contain any authentication information.
 ;; This is equivalent to granting everyone access to the resource.
 ;; The anonymous authenticator attaches the principal of run-as-user to the request.

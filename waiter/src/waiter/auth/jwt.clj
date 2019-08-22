@@ -225,11 +225,12 @@
   []
   (-> (t/now) tc/to-long (/ 1000) long))
 
-(defn- retrieve-bearer-entry
-  "Retrieves the bearer entry from possibly multiple authorization headers."
+(defn- access-token?
+  "Predicate to determine if an authorization header represents an access token."
   [authorization]
-  (some #(when (str/starts-with? % bearer-prefix) %)
-        (str/split (str authorization) #",")))
+  (let [authorization (str authorization)]
+    (and (str/starts-with? authorization bearer-prefix)
+         (= 3 (count (str/split authorization #"\."))))))
 
 (defn authenticate-request
   "Performs authentication and then
@@ -239,10 +240,10 @@
   (let [validation-timer (metrics/waiter-timer "core" "jwt" "validation")
         timer-context (timers/start validation-timer)]
     (try
-      (let [{:strs [authorization host]} headers
+      (let [{:strs [host]} headers
             realm (utils/authority->host (str host))
             request-scheme (utils/request->scheme request)
-            bearer-entry (retrieve-bearer-entry authorization)
+            bearer-entry (auth/select-auth-header request #(str/starts-with? % bearer-prefix))
             access-token (str/trim (subs bearer-entry (count bearer-prefix)))
             {:keys [exp] :as claims} (validate-access-token token-type issuer subject-key key-id->jwk realm request-scheme access-token)
             _ (timers/stop timer-context)
@@ -262,7 +263,7 @@
   [{:keys [issuer keys-cache password subject-key token-type] :as jwt-authenticator} request-handler]
   (fn jwt-auth-handler [request]
     (if (and (not (auth/request-authenticated? request))
-             (-> request :headers (get "authorization") retrieve-bearer-entry))
+             (auth/select-auth-header request #(str/starts-with? % bearer-prefix)))
       (authenticate-request request-handler token-type issuer subject-key (:key-id->jwk @keys-cache) password request)
       (request-handler request))))
 
