@@ -55,7 +55,7 @@
                  [digest "1.4.8"
                   :exclusions [org.clojure/clojure]]
                  [fullcontact/full.async "1.0.0"
-                  :exclusions [org.clojure/clojure org.clojure/core.async]]
+                  :exclusions [org.clojure/clojure org.clojure/clojurescript org.clojure/core.async]]
                  [io.dropwizard.metrics/metrics-graphite "3.1.1"
                   :exclusions [org.slf4j/slf4j-api]]
                  [joda-time "2.10.1"]
