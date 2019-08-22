@@ -14,7 +14,7 @@
 ;; limitations under the License.
 ;;
 (ns waiter.util.client-tools
-  (:require [buddy.core.codecs.base64 :as b64]
+  (:require [buddy.core.keys :as buddy-keys]
             [buddy.sign.jwt :as jwt]
             [clj-time.core :as t]
             [clojure.core.async :as async]
@@ -37,8 +37,6 @@
            (java.io ByteArrayInputStream)
            (java.nio ByteBuffer)
            (java.util.concurrent Callable Future Executors)
-           (net.i2p.crypto.eddsa EdDSAPrivateKey)
-           (net.i2p.crypto.eddsa.spec EdDSANamedCurveTable EdDSAPrivateKeySpec)
            (org.joda.time Period)
            (org.joda.time.format PeriodFormatterBuilder)))
 
@@ -1148,11 +1146,10 @@
 
 (defn generate-jwt-access-token
   "Generates the JWT access token using the provided private key."
-  [private-key payload header]
-  (let [ed25519-curve-spec (EdDSANamedCurveTable/getByName EdDSANamedCurveTable/ED_25519)
-        edsa-private-key (EdDSAPrivateKey. (EdDSAPrivateKeySpec. ^bytes (b64/decode private-key) ed25519-curve-spec))
-        options {:alg :eddsa :header header}]
-    (jwt/sign payload edsa-private-key options)))
+  [alg jwk-entry payload header]
+  (let [private-key (buddy-keys/jwk->private-key (pc/keywordize-map jwk-entry))
+        options {:alg alg :header header}]
+    (jwt/sign payload private-key options)))
 
 (defn jwt-auth-enabled?
   "Returns true if JWT authentication is enabled."

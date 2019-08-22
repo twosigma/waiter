@@ -14,7 +14,7 @@
 ;; limitations under the License.
 ;;
 (ns waiter.auth.jwt
-  (:require [buddy.core.codecs.base64 :as b64]
+  (:require [buddy.core.keys :as buddy-keys]
             [buddy.sign.jwe :as jwe]
             [buddy.sign.jwt :as jwt]
             [clj-time.coerce :as tc]
@@ -31,12 +31,10 @@
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
-  (:import (clojure.lang ExceptionInfo)
-           (net.i2p.crypto.eddsa EdDSAPublicKey)
-           (net.i2p.crypto.eddsa.spec EdDSANamedCurveTable EdDSAPublicKeySpec)))
+  (:import (clojure.lang ExceptionInfo)))
 
-(defn ed25519-key?
-  "Returns true if the JWKS entry repersents an EDSA key."
+(defn eddsa-key?
+  "Returns true if the JWKS entry represents an EDSA key."
   [{:keys [crv kid kty use x]}]
   (and (= "Ed25519" crv)
        (= "OKP" kty)
@@ -44,20 +42,33 @@
        (not (str/blank? kid))
        (not (str/blank? x))))
 
-(defn retrieve-edsa-public-key
+(defn rs256-key?
+  "Returns true if the JWKS entry represents an RSA256 key."
+  [{:keys [e kid kty n use]}]
+  (and (= "AQAB" e)
+       (= "RSA" kty)
+       (= "sig" use)
+       (not (str/blank? kid))
+       (not (str/blank? n))))
+
+(defn supported-key?
+  "Returns true if the JWKS entry represents a supported key."
+  [entry]
+  (or (eddsa-key? entry)
+      (rs256-key? entry)))
+
+(defn retrieve-public-key
   "Returns the EdDSAPublicKey public key from the provided string."
-  [public-key-str]
+  [entry]
   (metrics/with-timer!
     (metrics/waiter-timer "core" "jwt" "key-creation")
     (constantly true)
-    (let [ed25519-curve-spec (EdDSANamedCurveTable/getByName EdDSANamedCurveTable/ED_25519)
-          ^bytes public-key-bytes (b64/decode public-key-str)]
-      (EdDSAPublicKey. (EdDSAPublicKeySpec. public-key-bytes ed25519-curve-spec)))))
+    (buddy-keys/jwk->public-key entry)))
 
 (defn attach-public-key
   "Attaches the EdDSA public key into the provided entries."
-  [{:keys [x] :as entry}]
-  (assoc entry ::public-key (retrieve-edsa-public-key x)))
+  [entry]
+  (assoc entry ::public-key (retrieve-public-key entry)))
 
 (defn retrieve-jwks-with-retries
   "Retrieves the JWKS using the specified url.
@@ -88,9 +99,9 @@
         (throw (ex-info "Invalid response from the JWKS endpoint"
                         {:response response :url url})))
       (let [all-keys (:keys response)
-            keys (filter ed25519-key? all-keys)]
+            keys (filter supported-key? all-keys)]
         (when (empty? keys)
-          (throw (ex-info "No Ed25519 keys found from the JWKS endpoint"
+          (throw (ex-info "No supported keys found from the JWKS endpoint"
                           {:response response
                            :url url})))
         (log/info "retrieved entries from the JWKS endpoint" response)
@@ -153,8 +164,8 @@
                          :log-level :info
                          :message "JWT header is missing"
                          :status 403})))
-      (when (not= alg :eddsa)
-        (throw (ex-info (str "Only eddsa algorithm is supported, header specified algorithm as " alg)
+      (when-not (contains? #{:eddsa :rs256} alg)
+        (throw (ex-info (str "Only eddsa and rs256 algorithms supported, header specified algorithm as " alg)
                         {:headers {"www-authenticate" www-auth-header}
                          :log-level :info
                          :message "JWT header contains unsupported algorithm"

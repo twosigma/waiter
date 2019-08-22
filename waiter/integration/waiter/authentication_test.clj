@@ -144,7 +144,8 @@
           active-keys (-> state-json
                         (get-in ["state" "cache-data" "key-id->jwk"])
                         vals)
-          {:strs [d kid]} (rand-nth active-keys)
+          eddsa-keys (filter (fn [{:strs [crv]}] (= "Ed25519" crv)) active-keys)
+          {:strs [d kid] :as entry} (rand-nth eddsa-keys)
           _ (when (string/blank? d)
               (throw (ex-info "Private key not available from jwt authenticator state"
                               {:jwt-state state-json})))
@@ -155,7 +156,7 @@
           payload (cond-> {:aud realm :exp expiry-time-secs :iss issuer :sub principal}
                     (not= :sub subject-key) (assoc subject-key principal))
           header {:kid kid :typ token-type}]
-      (generate-jwt-access-token d payload header))))
+      (generate-jwt-access-token :eddsa entry payload header))))
 
 (deftest ^:parallel ^:integration-fast test-jwt-authentication-waiter-realm
   (testing-using-waiter-url
