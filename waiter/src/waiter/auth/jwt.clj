@@ -20,6 +20,7 @@
             [clj-time.coerce :as tc]
             [clj-time.core :as t]
             [clojure.data.json :as json]
+            [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
@@ -53,9 +54,9 @@
 
 (defn supported-key?
   "Returns true if the JWKS entry represents a supported key."
-  [entry]
-  (or (eddsa-key? entry)
-      (rs256-key? entry)))
+  [supported-algorithms entry]
+  (or (and (some #(= % :eddsa) supported-algorithms) (eddsa-key? entry))
+      (and (some #(= % :rs256) supported-algorithms) (rs256-key? entry))))
 
 (defn retrieve-public-key
   "Returns the EdDSAPublicKey public key from the provided string."
@@ -89,7 +90,7 @@
 
 (defn refresh-keys-cache
   "Update the cache of users with prestashed JWK keys."
-  [http-client http-options url keys-cache]
+  [http-client http-options url supported-algorithms keys-cache]
   (metrics/with-timer!
     (metrics/waiter-timer "core" "jwt" "refresh-keys-cache")
     (fn [elapsed-nanos]
@@ -99,7 +100,7 @@
         (throw (ex-info "Invalid response from the JWKS endpoint"
                         {:response response :url url})))
       (let [all-keys (:keys response)
-            keys (filter supported-key? all-keys)]
+            keys (filter #(supported-key? supported-algorithms %) all-keys)]
         (when (empty? keys)
           (throw (ex-info "No supported keys found from the JWKS endpoint"
                           {:response response
@@ -114,11 +115,11 @@
 
 (defn start-jwt-cache-maintainer
   "Starts a timer task to maintain the keys-cache."
-  [http-client http-options jwks-url update-interval-ms keys-cache]
+  [http-client http-options jwks-url update-interval-ms supported-algorithms keys-cache]
   {:cancel-fn (du/start-timer-task
                 (t/millis update-interval-ms)
                 (fn refresh-keys-cache-task []
-                  (refresh-keys-cache http-client http-options jwks-url keys-cache)))
+                  (refresh-keys-cache http-client http-options jwks-url supported-algorithms keys-cache)))
    :query-state-fn (fn query-jwt-cache-state []
                      @keys-cache)})
 
@@ -286,16 +287,19 @@
                              (pc/map-vals #(update % ::public-key str) key-id->jwk)))]
     {:cache-data cache-data}))
 
-(defrecord JwtAuthenticator [issuer keys-cache password subject-key token-type])
+(defrecord JwtAuthenticator [issuer keys-cache password subject-key supported-algorithms token-type])
 
 (defn jwt-authenticator
   "Factory function for creating jwt authenticator middleware"
-  [{:keys [http-options issuer jwks-url password subject-key token-type update-interval-ms]}]
+  [{:keys [http-options issuer jwks-url password subject-key supported-algorithms token-type update-interval-ms]}]
   {:pre [(map? http-options)
          (not (str/blank? issuer))
          (some? password)
          (not (str/blank? jwks-url))
          (keyword? subject-key)
+         supported-algorithms
+         (set? supported-algorithms)
+         (empty? (set/difference supported-algorithms #{:eddsa :rs256}))
          (not (str/blank? token-type))
          (and (integer? update-interval-ms)
               (not (neg? update-interval-ms)))]}
@@ -304,5 +308,5 @@
                       (utils/assoc-if-absent :client-name "waiter-jwt")
                       (utils/assoc-if-absent :user-agent "waiter-jwt")
                       hu/http-client-factory)]
-    (start-jwt-cache-maintainer http-client http-options jwks-url update-interval-ms keys-cache)
-    (->JwtAuthenticator issuer keys-cache password subject-key token-type)))
+    (start-jwt-cache-maintainer http-client http-options jwks-url update-interval-ms supported-algorithms keys-cache)
+    (->JwtAuthenticator issuer keys-cache password subject-key supported-algorithms token-type)))

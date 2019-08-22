@@ -249,6 +249,7 @@
                                                :socket-timeout 10000
                                                :spnego-auth false}
                                 :subject-key :sub
+                                :supported-algorithms #{:eddsa :rs256}
                                 :token-type "JWT"
                                 :update-interval-ms 60000}
                           :kind :one-user

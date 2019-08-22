@@ -232,6 +232,8 @@
                               :jwks-url "http://127.0.0.1:8040/jwks"
                               ;; The keyword used to retrieve the subject from the access token claims
                               :subject-key :sub
+                              ;; The supported algorithms while validating access tokens, must be subset of #{:eddsa :rs256}
+                              :supported-algorithms #{:eddsa}
                               ;; The token type expected in the access token header
                               :token-type "JWT"
                               ;; The interval at which to refresh the keys from the authorization server:

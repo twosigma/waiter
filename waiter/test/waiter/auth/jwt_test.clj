@@ -57,6 +57,7 @@
                       :retry-interval-ms 10
                       :retry-limit retry-limit
                       :socket-timeout 10000}
+        supported-algorithms #{:eddsa :rs256}
         jwks-keys (walk/keywordize-keys
                     {"keys" [{"crv" "P-256", "kty" "OKP", "name" "fee", "use" "sig"}
                              {"crv" "Ed25519", "kty" "RSA", "name" "fie", "use" "sig", "x" "x1"}
@@ -81,7 +82,7 @@
                                         (throw (IllegalStateException. "From test")))]
           (let [keys-cache (atom {})]
             (is (thrown-with-msg? IllegalStateException #"From test"
-                                  (refresh-keys-cache http-client http-options keys-url keys-cache)))
+                                  (refresh-keys-cache http-client http-options keys-url supported-algorithms keys-cache)))
             (is (= {} @keys-cache))
             (is (= retry-limit @http-request-counter))))))
 
@@ -98,7 +99,7 @@
                       t/now (constantly current-time)
                       retrieve-public-key (fn [{:keys [kid]}] (str "public-key-" kid))]
           (let [keys-cache (atom {})]
-            (refresh-keys-cache http-client http-options keys-url keys-cache)
+            (refresh-keys-cache http-client http-options keys-url supported-algorithms keys-cache)
             (is (= {:key-id->jwk valid-key-entry
                     :last-update-time current-time
                     :summary {:num-filtered-keys 2 :num-jwks-keys 6}}
@@ -112,7 +113,7 @@
                                       "From test")]
         (let [keys-cache (atom {})]
           (is (thrown-with-msg? ExceptionInfo #"Invalid response from the JWKS endpoint"
-                                (refresh-keys-cache http-client http-options keys-url keys-cache)))
+                                (refresh-keys-cache http-client http-options keys-url supported-algorithms keys-cache)))
           (is (= {} @keys-cache)))))
 
     (testing "http-request returns no keys"
@@ -122,7 +123,7 @@
                                       {"keys" []})]
         (let [keys-cache (atom {})]
           (is (thrown-with-msg? ExceptionInfo #"No supported keys found from the JWKS endpoint"
-                                (refresh-keys-cache http-client http-options keys-url keys-cache)))
+                                (refresh-keys-cache http-client http-options keys-url supported-algorithms keys-cache)))
           (is (= {} @keys-cache)))))
 
     (testing "http-request returns some keys"
@@ -134,7 +135,7 @@
                       t/now (constantly current-time)
                       retrieve-public-key (fn [{:keys [kid]}] (str "public-key-" kid))]
           (let [keys-cache (atom {})]
-            (refresh-keys-cache http-client http-options keys-url keys-cache)
+            (refresh-keys-cache http-client http-options keys-url supported-algorithms keys-cache)
             (is (= {:key-id->jwk valid-key-entry
                     :last-update-time current-time
                     :summary {:num-filtered-keys 2 :num-jwks-keys 6}}
@@ -146,17 +147,20 @@
         http-client (Object.)
         keys-url "https://www.test.com/jwks/keys"
         http-options {:conn-timeout 10000
-                      :socket-timeout 10000}]
-    (with-redefs [refresh-keys-cache (fn [in-http-client in-http-options in-url in-keys-cache]
+                      :socket-timeout 10000}
+        supported-algorithms #{:eddsa :rs256}]
+    (with-redefs [refresh-keys-cache (fn [in-http-client in-http-options in-url in-algorithms in-keys-cache]
                                        (is (= http-client in-http-client))
                                        (is (= http-options in-http-options))
                                        (is (= keys-url in-url))
+                                       (is (= supported-algorithms in-algorithms))
                                        (reset! in-keys-cache {:keys (take @data-counter jwks-data)
                                                               :last-update-time (t/now)}))]
       (let [keys-cache (atom {})
             update-interval-ms 5
             {:keys [cancel-fn query-state-fn]}
-            (start-jwt-cache-maintainer http-client http-options keys-url update-interval-ms keys-cache)]
+            (start-jwt-cache-maintainer
+              http-client http-options keys-url update-interval-ms supported-algorithms keys-cache)]
         (try
           (loop [counter 2]
             (reset! data-counter counter)
@@ -338,9 +342,11 @@
                   :jwks-url "https://www.jwt-test.com/keys"
                   :password "test-password"
                   :subject-key :sub
+                  :supported-algorithms #{:eddsa}
                   :update-interval-ms 1000}]
       (testing "valid configuration"
-        (is (instance? JwtAuthenticator (jwt-authenticator config))))
+        (is (instance? JwtAuthenticator (jwt-authenticator config)))
+        (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :supported-algorithms #{:eddsa :rs256})))))
 
       (testing "invalid configuration"
         (is (thrown? Throwable (jwt-authenticator (dissoc config :http-options))))
@@ -350,11 +356,16 @@
         (is (thrown? Throwable (jwt-authenticator (dissoc config :password))))
         (is (thrown? Throwable (jwt-authenticator (dissoc config :subject-key))))
         (is (thrown? Throwable (jwt-authenticator (assoc config :subject-key "sub"))))
+        (is (thrown? Throwable (jwt-authenticator (dissoc config :supported-algorithms))))
+        (is (thrown? Throwable (jwt-authenticator (assoc config :supported-algorithms [:eddsa :rs256]))))
+        (is (thrown? Throwable (jwt-authenticator (assoc config :supported-algorithms #{:hs256}))))
         (is (thrown? Throwable (jwt-authenticator (dissoc config :update-interval-ms))))))))
 
 (deftest test-jwt-auth-handler
   (let [handler (fn [{:keys [source]}] {:body source})
-        authenticator (->JwtAuthenticator "issuer" (atom {:key-id->jwk ::jwt-keys}) "password" :sub "jwt+type")
+        supported-algorithms #{:eddsa}
+        keys-cache (atom {:key-id->jwk ::jwt-keys})
+        authenticator (->JwtAuthenticator "issuer" keys-cache "password" :sub supported-algorithms "jwt+type")
         jwt-handler (wrap-auth-handler authenticator handler)]
     (with-redefs [authenticate-request (fn [handler token-type issuer subject-key keys password request]
                                          (is (= "jwt+type" token-type))
