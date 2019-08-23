@@ -60,13 +60,34 @@
 
       (testing "kerberos authentication path"
         (with-redefs [too-many-pending-auth-requests? (constantly false)]
-          (let [auth-request (update standard-request :headers assoc "authorization" "foo-bar")
+          (let [auth-request (update standard-request :headers assoc "authorization" "Negotiate foo-bar")
                 error-object (Object.)]
 
             (testing "401 response on failed authentication"
               (with-redefs [populate-gss-credentials (fn [_ _ response-chan]
                                                        (async/>!! response-chan {:foo :bar}))]
                 (let [handler (require-gss request-handler thread-pool max-queue-length password)
+                      response (handler auth-request)
+                      response (if (map? response)
+                                 response
+                                 (async/<!! response))]
+                  (is (= standard-401-response response)))))
+
+            (testing "401 response on missing authorization header"
+              (with-redefs [populate-gss-credentials (fn [_ _ response-chan]
+                                                       (async/>!! response-chan {:foo :bar}))]
+                (let [handler (require-gss request-handler thread-pool max-queue-length password)
+                      response (handler standard-request)
+                      response (if (map? response)
+                                 response
+                                 (async/<!! response))]
+                  (is (= standard-401-response response)))))
+
+            (testing "401 response on invalid authorization header"
+              (with-redefs [populate-gss-credentials (fn [_ _ response-chan]
+                                                       (async/>!! response-chan {:foo :bar}))]
+                (let [handler (require-gss request-handler thread-pool max-queue-length password)
+                      auth-request (update standard-request :headers assoc "authorization" "Bearer foo-bar")
                       response (handler auth-request)
                       response (if (map? response)
                                  response
@@ -88,6 +109,24 @@
                                                        (async/>!! response-chan {:principal auth-principal
                                                                                  :token "test-token"}))]
                 (let [handler (require-gss request-handler thread-pool max-queue-length password)
+                      response (handler auth-request)
+                      response (if (map? response)
+                                 response
+                                 (async/<!! response))]
+                  (is (= (assoc ideal-response
+                           :authorization/method :spnego
+                           :authorization/principal "user@test.com"
+                           :authorization/user "user"
+                           :headers {"www-authenticate" "test-token"})
+                         (utils/dissoc-in response [:headers "set-cookie"]))))))
+
+            (testing "successful authentication - principal and token - multiple authorization header"
+              (with-redefs [populate-gss-credentials (fn [_ _ response-chan]
+                                                       (async/>!! response-chan {:principal auth-principal
+                                                                                 :token "test-token"}))]
+                (let [handler (require-gss request-handler thread-pool max-queue-length password)
+                      auth-request (update standard-request :headers
+                                           assoc "authorization" "Bearer fee-fie,Negotiate foo-bar")
                       response (handler auth-request)
                       response (if (map? response)
                                  response
