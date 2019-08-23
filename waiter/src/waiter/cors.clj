@@ -158,8 +158,6 @@
   "Checks if an allowed CORS rule matches"
   [origin-scheme origin-no-host target-scheme path method
    [_ {:strs [origin-regex origin-schemes target-path-regex target-schemes methods] :as xxx}]]
-  (prn origin-scheme origin-no-host target-scheme path method origin-regex origin-schemes target-path-regex target-schemes methods)
-  (prn xxx)
   (cond
     (and methods (not (.contains methods (str/upper-case (name method))))) false
     (and target-schemes (not (.contains target-schemes target-scheme))) false
@@ -170,8 +168,6 @@
 (defn- allowed-cors-matching-rule
   "Takes a cross origin request. Returns the token's matched allowed CORS rule if any."
   [request]
-  (println request)
-  (prn (get-in request [:waiter-discovery :token-metadata "allowed-cors"]))
   (when-let [allowed-cors (get-in request [:waiter-discovery :token-metadata "allowed-cors"])]
     (let [{:keys [headers request-method uri]} request
           {:strs [origin]} headers

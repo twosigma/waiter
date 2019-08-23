@@ -1740,11 +1740,7 @@
                  :request-method :post})
               {{:strs [details message]} "waiter-error"} (json/read-str body)]
           (is (= 400 status))
-          (is (not (str/includes? body "clojure")))
-          (is (str/includes? (str details) "allowed-cors") body)
-          (is (str/includes? (str details) "origin-regex\\\" (throws? (is-a-valid-regular-expression?") body)
-          (is (str/includes? (str details) "methods\\\" (not (not-empty []") body)
-          (is (str/includes? (str details) "target-schemes\\\" (not (not-empty []") body)
+          (is (str/includes? (str details) "allowed-cors\\\" (not (sequential?") body)
           (is (str/includes? message "User metadata validation failed") body))))))
 
 (deftest test-store-service-description

@@ -102,11 +102,11 @@
    s/Str s/Any})
 
 (def user-metadata-schema
-  {(s/optional-key "allowed-cors") {(s/required-key "origin-regex") schema/regex-pattern
-                                    (s/optional-key "origin-schemes") (s/both (s/pred not-empty) [schema/uri-scheme])
-                                    (s/optional-key "target-path-regex") schema/regex-pattern
-                                    (s/optional-key "target-schemes") (s/both (s/pred not-empty) [schema/uri-scheme])
-                                    (s/optional-key "methods") (s/both (s/pred not-empty) [schema/http-method])}
+  {(s/optional-key "allowed-cors") [{(s/required-key "origin-regex") schema/regex-pattern
+                                     (s/optional-key "origin-schemes") (s/both (s/pred not-empty) [schema/uri-scheme])
+                                     (s/optional-key "target-path-regex") schema/regex-pattern
+                                     (s/optional-key "target-schemes") (s/both (s/pred not-empty) [schema/uri-scheme])
+                                     (s/optional-key "methods") (s/both (s/pred not-empty) [schema/http-method])}]
    (s/optional-key "fallback-period-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/days 1))) 'at-most-1-day))
    (s/optional-key "https-redirect") s/Bool
    (s/optional-key "owner") schema/non-empty-string
