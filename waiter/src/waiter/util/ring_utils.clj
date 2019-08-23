@@ -47,3 +47,15 @@
   (and status
        (>= status 400)
        (<= status 599)))
+
+(defn attach-header
+  "Attaches the specified header into the response."
+  [response header-name header-value]
+  (update-in
+    response
+    [:headers header-name]
+    (fn update-header-value [current-value]
+      (cond
+        (string? current-value) (str current-value "," header-value)
+        (seq? current-value) (conj current-value header-value)
+        :else header-value))))

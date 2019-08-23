@@ -177,6 +177,7 @@
   (let [all-keys (-> "test-files/jwt/jwks.json" slurp json/read-str walk/keywordize-keys :keys)
         issuer "test-issuer"
         subject-key :sub
+        supported-algorithms #{:eddsa :rs256}
         token-type "ty+pe"
         realm "www.test-realm.com"
         request-scheme :https
@@ -193,59 +194,59 @@
                       (pc/map-from-vals :kid))}]]
       (testing (str "algorithm " (name alg))
         (is (thrown-with-msg? ExceptionInfo #"JWT authentication can only be used with host header"
-                              (validate-access-token token-type issuer subject-key jwks nil request-scheme access-token)))
+                              (validate-access-token token-type issuer subject-key supported-algorithms jwks nil request-scheme access-token)))
 
         (is (thrown-with-msg? ExceptionInfo #"JWT authentication can only be used with HTTPS connections"
-                              (validate-access-token token-type issuer subject-key jwks realm :http access-token)))
+                              (validate-access-token token-type issuer subject-key supported-algorithms jwks realm :http access-token)))
 
         (is (thrown-with-msg? ExceptionInfo #"Must provide Bearer token in Authorization header"
-                              (validate-access-token token-type issuer subject-key jwks realm request-scheme " ")))
+                              (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme " ")))
 
         (is (thrown-with-msg? ExceptionInfo #"JWT access token is malformed"
-                              (validate-access-token token-type issuer subject-key jwks realm request-scheme "abcd")))
+                              (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme "abcd")))
 
         (let [jwk-entry (rand-nth (vals jwks))
               access-token (ct/generate-jwt-access-token alg jwk-entry {} {})]
           (is (thrown-with-msg? ExceptionInfo #"JWT header is missing key ID"
-                                (validate-access-token token-type issuer subject-key jwks realm request-scheme access-token))))
+                                (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
 
         (let [jwk-entry (rand-nth (vals jwks))
               access-token (ct/generate-jwt-access-token alg jwk-entry {} {:kid "invalid-key" :typ (str token-type ".err")})]
           (is (thrown-with-msg? ExceptionInfo #"Unsupported type"
-                                (validate-access-token token-type issuer subject-key jwks realm request-scheme access-token))))
+                                (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
 
         (let [jwk-entry (rand-nth (vals jwks))
               access-token (ct/generate-jwt-access-token alg jwk-entry {} {:kid "invalid-key" :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"No matching JWKS key found for key invalid-key"
-                                (validate-access-token token-type issuer subject-key jwks realm request-scheme access-token))))
+                                (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               access-token (ct/generate-jwt-access-token alg jwk-entry {} {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"Issuer does not match test-issuer"
-                                (validate-access-token token-type issuer subject-key jwks realm request-scheme access-token))))
+                                (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               access-token (ct/generate-jwt-access-token alg jwk-entry {:iss issuer} {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"Audience does not match www.test-realm.com"
-                                (validate-access-token token-type issuer subject-key jwks realm request-scheme access-token))))
+                                (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               access-token (ct/generate-jwt-access-token alg jwk-entry {:aud realm :iss issuer} {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"No subject provided in the token payload"
-                                (validate-access-token token-type issuer subject-key jwks realm request-scheme access-token))))
+                                (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               payload {:aud realm :iss issuer :sub "foo@bar.com"}
               access-token (ct/generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"No expiry provided in the token payload"
-                                (validate-access-token token-type issuer subject-key jwks realm request-scheme access-token))))
+                                (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               expiry-time (- (current-time-secs) 1000)
               payload {:aud realm :exp expiry-time :iss issuer :sub "foo@bar.com"}
               access-token (ct/generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"Token is expired"
-                                (validate-access-token token-type issuer subject-key jwks realm request-scheme access-token))))
+                                (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               expiry-time (+ (current-time-secs) 10000)
@@ -253,13 +254,13 @@
               payload {:aud realm :exp expiry-time :iss issuer :sub "foo@bar.com"}
               access-token (ct/generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"No custom-key provided in the token payload"
-                                (validate-access-token token-type issuer subject-key jwks realm request-scheme access-token))))
+                                (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               expiry-time (+ (current-time-secs) 10000)
               payload {:aud realm :exp expiry-time :iss issuer :sub "foo@bar.com"}
               access-token (ct/generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
-          (is (= payload (validate-access-token token-type issuer subject-key jwks realm request-scheme access-token))))
+          (is (= payload (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               expiry-time (+ (current-time-secs) 10000)
@@ -267,25 +268,26 @@
               payload {:aud realm :custom-key "foo@bar.baz" :exp expiry-time :iss issuer}
               access-token (ct/generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"No subject provided in the token payload"
-                                (validate-access-token token-type issuer subject-key jwks realm request-scheme access-token))))
+                                (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               expiry-time (+ (current-time-secs) 10000)
               subject-key :custom-key
               payload {:aud realm :custom-key "foo@bar.baz" :exp expiry-time :iss issuer :sub "foo@bar.com"}
               access-token (ct/generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
-          (is (= payload (validate-access-token token-type issuer subject-key jwks realm request-scheme access-token))))))))
+          (is (= payload (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))))))
 
 (deftest test-authenticate-request
-  (let [request-handler (fn [request] (assoc request :source ::request-handler))
-        issuer "test-issuer"
+  (let [issuer "test-issuer"
         keys (Object.)
         subject-key :sub
+        supported-algorithms #{:eddsa :rs256}
         token-type "jwt+type"
         password "test-password"]
 
-    (testing "error scenario"
-      (let [ex (ex-info (str "Test Exception " (rand-int 10000)) {})
+    (testing "error scenario - non 401"
+      (let [request-handler (fn [request] (assoc request :source ::request-handler))
+            ex (ex-info (str "Test Exception " (rand-int 10000)) {})
             request {:headers {"authorization" "Bearer foo.bar.baz"}
                      :request-id (rand-int 10000)}]
         (with-redefs [validate-access-token (fn [& _] (throw ex))
@@ -294,10 +296,54 @@
                                                   (is (= request in-request))
                                                   (assoc request :source ::exception-handler))]
           (is (= (assoc request :source ::exception-handler)
-                 (authenticate-request request-handler issuer subject-key type keys password request))))))
+                 (authenticate-request request-handler issuer subject-key supported-algorithms type keys password request))))))
 
-    (testing "success scenario"
-      (let [realm "www.test-realm.com"
+    (testing "error scenario 401 - downstream 200 from backend"
+      (let [request-handler (fn [request] (assoc request :source ::request-handler :status 200))
+            ex (ex-info (str "Test Exception " (rand-int 10000)) {:status 401})
+            request {:headers {"authorization" "Bearer foo.bar.baz"}
+                     :request-id (rand-int 10000)}]
+        (with-redefs [validate-access-token (fn [& _] (throw ex))]
+          (is (= (assoc request :source ::request-handler :status 200)
+                 (authenticate-request request-handler issuer subject-key supported-algorithms type keys password request))))))
+
+    (testing "error scenario 401 - downstream 200 from waiter"
+      (let [request-handler (fn [request] (-> request (dissoc :headers) (assoc :source ::request-handler :status 200) utils/attach-waiter-source))
+            ex (ex-info (str "Test Exception " (rand-int 10000)) {:status 401})
+            request {:headers {"authorization" "Bearer foo.bar.baz"}
+                     :request-id (rand-int 10000)}]
+        (with-redefs [validate-access-token (fn [& _] (throw ex))]
+          (is (= (-> request
+                   (dissoc :headers)
+                   (assoc :source ::request-handler :status 200)
+                   utils/attach-waiter-source)
+                 (authenticate-request request-handler issuer subject-key supported-algorithms type keys password request))))))
+
+    (testing "error scenario 401 - downstream 401 from backend"
+      (let [request-handler (fn [request] (assoc request :source ::request-handler :status 401))
+            ex (ex-info (str "Test Exception " (rand-int 10000)) {:status 401})
+            request {:headers {"authorization" "Bearer foo.bar.baz"}
+                     :request-id (rand-int 10000)}]
+        (with-redefs [validate-access-token (fn [& _] (throw ex))]
+          (is (= (assoc request :source ::request-handler :status 401)
+                 (authenticate-request request-handler issuer subject-key supported-algorithms type keys password request))))))
+
+    (testing "error scenario 401 - downstream 401 from waiter"
+      (let [request-handler (fn [request] (-> request (dissoc :headers) (assoc :source ::request-handler :status 401) utils/attach-waiter-source))
+            ex (ex-info (str "Test Exception " (rand-int 10000)) {:status 401})
+            request {:headers {"authorization" "Bearer foo.bar.baz"
+                               "host" "www.test.com"}
+                     :request-id (rand-int 10000)}
+            auth-header (str bearer-prefix "realm=\"www.test.com\"")]
+        (with-redefs [validate-access-token (fn [& _] (throw ex))]
+          (is (= (-> request
+                   (assoc :headers {"www-authenticate" auth-header} :source ::request-handler :status 401)
+                   utils/attach-waiter-source)
+                 (authenticate-request request-handler issuer subject-key supported-algorithms type keys password request))))))
+
+    (testing "success scenario - non 401"
+      (let [request-handler (fn [request] (assoc request :source ::request-handler))
+            realm "www.test-realm.com"
             request {:headers {"authorization" "Bearer foo.bar.baz"
                                "host" realm}
                      :request-id (rand-int 10000)
@@ -307,10 +353,11 @@
             expiry-time (+ current-time expiry-interval-secs)
             principal "foo@bar.com"
             payload {:aud realm :exp expiry-time :iss issuer :sub principal}]
-        (with-redefs [validate-access-token (fn [in-type in-issuer in-sub-key in-keys in-realm in-request-scheme in-access-token]
+        (with-redefs [validate-access-token (fn [in-type in-issuer in-sub-key in-algorithms in-keys in-realm in-request-scheme in-access-token]
                                               (is (= token-type in-type))
                                               (is (= issuer in-issuer))
                                               (is (= subject-key in-sub-key))
+                                              (is (= supported-algorithms in-algorithms))
                                               (is (= keys in-keys))
                                               (is (= realm in-realm))
                                               (is (= :test-scheme in-request-scheme))
@@ -331,7 +378,7 @@
                    :password password
                    :principal principal
                    :source ::request-handler)
-                 (authenticate-request request-handler token-type issuer subject-key keys password request))))))))
+                 (authenticate-request request-handler token-type issuer subject-key supported-algorithms keys password request))))))))
 
 (deftest test-jwt-authenticator
   (with-redefs [start-jwt-cache-maintainer (constantly nil)]
@@ -367,10 +414,11 @@
         keys-cache (atom {:key-id->jwk ::jwt-keys})
         authenticator (->JwtAuthenticator "issuer" keys-cache "password" :sub supported-algorithms "jwt+type")
         jwt-handler (wrap-auth-handler authenticator handler)]
-    (with-redefs [authenticate-request (fn [handler token-type issuer subject-key keys password request]
+    (with-redefs [authenticate-request (fn [handler token-type issuer subject-key in-algorithms keys password request]
                                          (is (= "jwt+type" token-type))
                                          (is (= "issuer" issuer))
                                          (is (= :sub subject-key))
+                                         (is (= supported-algorithms in-algorithms))
                                          (is (= ::jwt-keys keys))
                                          (is (= "password" password))
                                          (handler (assoc request :source ::jwt-auth)))]
@@ -383,17 +431,26 @@
       (is (= {:body ::standard-request}
              (jwt-handler {:headers {"authorization" "Negotiate abcd,Negotiate wxyz"}
                            :source ::standard-request})))
-      (is (= {:body ::jwt-auth}
-             (jwt-handler {:headers {"authorization" "Bearer abcd"}
+      (is (= {:body ::standard-request}
+             (jwt-handler {:headers {"authorization" "Bearer abcdef"}
+                           :source ::standard-request})))
+      (is (= {:body ::standard-request}
+             (jwt-handler {:headers {"authorization" "Bearer abcdef,Bearer wxyz"}
                            :source ::standard-request})))
       (is (= {:body ::jwt-auth}
-             (jwt-handler {:headers {"authorization" "Negotiate abcd,Bearer abcd"}
+             (jwt-handler {:headers {"authorization" "Bearer ab.cd.ef"}
                            :source ::standard-request})))
       (is (= {:body ::jwt-auth}
-             (jwt-handler {:headers {"authorization" "Bearer abcd,Negotiate wxyz"}
+             (jwt-handler {:headers {"authorization" "Bearer wxyz,Bearer ab.cd.ef"}
                            :source ::standard-request})))
       (is (= {:body ::jwt-auth}
-             (jwt-handler {:headers {"authorization" "Negotiate abcd,Bearer abcd,Negotiate wxyz"}
+             (jwt-handler {:headers {"authorization" "Negotiate abcd,Bearer ab.cd.ef"}
+                           :source ::standard-request})))
+      (is (= {:body ::jwt-auth}
+             (jwt-handler {:headers {"authorization" "Bearer ab.cd.ef,Negotiate wxyz"}
+                           :source ::standard-request})))
+      (is (= {:body ::jwt-auth}
+             (jwt-handler {:headers {"authorization" "Negotiate abcd,Bearer ab.cd.ef,Negotiate wxyz"}
                            :source ::standard-request})))
       (is (= {:body ::standard-request}
              (jwt-handler {:authorization/principal "user@test.com"

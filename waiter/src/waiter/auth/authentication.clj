@@ -144,12 +144,13 @@
   Authenticator
   (wrap-auth-handler [_ request-handler]
     (fn anonymous-handler [request]
-      (let [auth-params-map (auth-params-map :single-user run-as-user run-as-user)]
-        (handle-request-auth request-handler request run-as-user auth-params-map password nil)))))
+      (handle-request-auth request-handler request :single-user run-as-user password))))
 
 (defn one-user-authenticator
   "Factory function for creating single-user authenticator"
   [{:keys [password run-as-user]}]
+  {:pre [(some? password)
+         (not (str/blank? run-as-user))]}
   (log/warn "use of single-user authenticator is strongly discouraged for production use:"
             "requests will use principal" run-as-user)
   (->SingleUserAuthenticator run-as-user password))

@@ -508,6 +508,11 @@
   (let [port-index (str/index-of (str authority) ":")]
     (if port-index (subs authority (inc port-index)) (str default))))
 
+(defn request->host
+  "Extracts the realm from the host header in the request."
+  [request]
+  (some-> request :headers (get "host") authority->host))
+
 (defn request->scheme
   "Extracts the scheme from the request, and returns it as a keyword."
   [{:keys [headers scheme]}]
