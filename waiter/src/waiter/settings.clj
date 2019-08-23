@@ -255,7 +255,8 @@
                             :allowed-origins []}
                  :allow-all {:factory-fn 'waiter.cors/allow-all-validator}
                  :exposed-headers ["etag", "x-cid"]
-                 :max-age 3600}
+                 :max-age 3600
+                 :token-parameter {:factory-fn 'waiter.cors/token-parameter-based-validator}}
    :blacklist-config {:blacklist-backoff-base-time-ms 10000
                       :max-blacklist-time-ms 300000}
    ;; To be considered part of the same cluster, routers need to

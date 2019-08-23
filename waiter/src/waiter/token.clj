@@ -399,7 +399,7 @@
     (validate-service-description-fn new-service-parameter-template)
     (when-let [user-metadata-check (s/check sd/user-metadata-schema new-user-metadata)]
       (throw (ex-info "User metadata validation failed"
-                      {:failed-check user-metadata-check :status 400 :token token :log-level :warn})))
+                      {:failed-check (str user-metadata-check) :status 400 :token token :log-level :warn})))
     (let [unknown-keys (-> new-token-data
                            keys
                            set

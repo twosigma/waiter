@@ -75,15 +75,16 @@
    :scheduler core/scheduler
    :settings (pc/fnk dummy-symbol-for-fnk-schema-logic :- settings/settings-schema [] settings)
    :state core/state
-   :http-server (pc/fnk [[:routines generate-log-url-fn waiter-request?-fn websocket-request-acceptor]
-                         [:settings cors-config host port server-options support-info websocket-config]
-                         [:state cors-validator router-id server-name]
+   :http-server (pc/fnk [[:curator kv-store]
+                         [:routines generate-log-url-fn waiter-request?-fn websocket-request-acceptor]
+                         [:settings cors-config host port server-options support-info [:token-config token-defaults] websocket-config]
+                         [:state cors-validator router-id server-name waiter-hostnames]
                          handlers] ; Insist that all systems are running before we start server
                   (let [options (merge (cond-> server-options
                                          (:ssl-port server-options) (assoc :ssl? true))
                                        websocket-config
                                        {:ring-handler (-> (core/ring-handler-factory waiter-request?-fn handlers)
-                                                          (cors/wrap-cors-preflight cors-validator (:max-age cors-config))
+                                                          (cors/wrap-cors-preflight cors-validator (:max-age cors-config) kv-store token-defaults waiter-hostnames)
                                                           core/wrap-error-handling
                                                           (core/wrap-debug generate-log-url-fn)
                                                           (core/attach-server-header-middleware server-name)

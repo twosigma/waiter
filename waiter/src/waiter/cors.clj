@@ -18,7 +18,8 @@
             [metrics.counters :as counters]
             [waiter.metrics :as metrics]
             [waiter.util.ring-utils :as ru]
-            [waiter.util.utils :as utils])
+            [waiter.util.utils :as utils]
+            [waiter.service-description :as sd])
   (:import java.util.regex.Pattern))
 
 (defprotocol CorsValidator
@@ -44,16 +45,16 @@
   "Preflight request handling middleware.
   This middleware needs to precede any authentication middleware since CORS preflight
   requests do not support authentication."
-  [handler cors-validator max-age]
-  (fn wrap-cors-preflight-fn [request]
+  [handler cors-validator max-age kv-store token-defaults waiter-hostnames]
+  (fn wrap-cors-preflight-fn [{:keys [headers] :as request}]
     (if (preflight-request? request)
-      (do
+      (let [discovered-parameters (sd/discover-service-parameters kv-store token-defaults waiter-hostnames headers)]
         (counters/inc! (metrics/waiter-counter "requests" "cors-preflight"))
         (let [{:keys [headers request-method]} request
               {:strs [origin]} headers]
           (when-not origin
             (throw (ex-info "No origin provided" {:status 403})))
-          (let [{:keys [result summary]} (preflight-allowed? cors-validator request)]
+          (let [{:keys [result summary]} (preflight-allowed? cors-validator (assoc request :waiter-discovery discovered-parameters))]
             (when-not result
               (throw (ex-info "Cross-origin request not allowed" {:cors-checks summary
                                                                   :origin origin
@@ -147,3 +148,53 @@
   "Creates a CORS validator that denies all cross-origin requests."
   [_]
   (->DenyAllCorsValidator))
+
+(defrecord TokenParametersCorsValidator [allow-cors?]
+  CorsValidator
+  (preflight-allowed? [_ request] (allow-cors? request))
+  (request-allowed? [_ request] (allow-cors? request)))
+
+(defn- allowed-cors-rule-matches?
+  "Checks if an allowed CORS rule matches"
+  [origin-scheme origin-no-host target-scheme path method
+   [_ {:strs [origin-regex origin-schemes target-path-regex target-schemes methods] :as xxx}]]
+  (prn origin-scheme origin-no-host target-scheme path method origin-regex origin-schemes target-path-regex target-schemes methods)
+  (prn xxx)
+  (cond
+    (and methods (not (.contains methods (str/upper-case (name method))))) false
+    (and target-schemes (not (.contains target-schemes target-scheme))) false
+    (and origin-schemes (not (.contains origin-schemes origin-scheme))) false
+    (and target-path-regex (not (re-matches (re-pattern target-path-regex) path))) false
+    :else (re-matches (re-pattern origin-regex) origin-no-host)))
+
+(defn- allowed-cors-matching-rule
+  "Takes a cross origin request. Returns the token's matched allowed CORS rule if any."
+  [request]
+  (println request)
+  (prn (get-in request [:waiter-discovery :token-metadata "allowed-cors"]))
+  (when-let [allowed-cors (get-in request [:waiter-discovery :token-metadata "allowed-cors"])]
+    (let [{:keys [headers request-method uri]} request
+          {:strs [origin]} headers
+          [origin-scheme origin-no-host] (str/split origin #"://")
+          target-scheme (name (utils/request->scheme request))]
+      (first (filter #(allowed-cors-rule-matches? origin-scheme origin-no-host target-scheme uri request-method %)
+                     (map-indexed vector allowed-cors))))))
+
+(defn token-parameter-based-validator
+  "Factory function for TokenParametersCorsValidator. Validates using token allowed-cors parameter.
+   Same logic for preflight and regular requests"
+  [config]
+  (let [allow-cors?
+        (fn [{:keys [headers] :as request}]
+          (let [{:strs [origin]} headers]
+            (cond
+              (not origin)
+              {:result false :summary [:origin-absent]}
+              (utils/same-origin request)
+              {:result true :summary [:origin-present :origin-same]}
+              :else
+              (if-let [[matching-rule-index] (allowed-cors-matching-rule request)]
+                {:result true :summary [:origin-present :origin-different :rule-matched
+                                        (keyword (str "rule-" matching-rule-index "-matched"))]}
+                {:result false :summary [:origin-present :origin-different :no-rule-matched]}))))]
+    (->TokenParametersCorsValidator allow-cors?)))

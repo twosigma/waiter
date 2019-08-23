@@ -58,6 +58,90 @@
   (is (thrown? Throwable (pattern-based-validator {:allowed-origins [#"foo" #"bar" "baz"]})))
   (is (instance? PatternBasedCorsValidator (pattern-based-validator {:allowed-origins [#"foo" #"bar" #"baz"]}))))
 
+(let [validator (token-parameter-based-validator {})
+      create-request-with-origin (fn [origin path scheme method] {:headers {"origin" origin}
+                                                                  :request-method method
+                                                                  :scheme scheme
+                                                                  :uri path
+                                                                  :waiter-discovery
+                                                                  {:token-metadata
+                                                                   {"allowed-cors"
+                                                                    [; 0
+                                                                     {"origin-regex" "origin-regex0\\.com"}
+                                                                     ; 1
+                                                                     {"origin-regex" "origin-regex1\\.com"
+                                                                      "origin-schemes" ["https"]}
+                                                                     ; 2
+                                                                     {"origin-regex" "origin-regex2\\.com"
+                                                                      "origin-schemes" ["https"]
+                                                                      "target-path-regex" "/target/path"}
+                                                                     ; 3
+                                                                     {"origin-regex" "origin-regex3\\.com"
+                                                                      "origin-schemes" ["https"]
+                                                                      "target-path-regex" "/target/path"
+                                                                      "target-schemes" ["https"]}
+                                                                     ; 4
+                                                                     {"origin-regex" "origin-regex4\\.com"
+                                                                      "origin-schemes" ["https"]
+                                                                      "target-path-regex" "/target/path"
+                                                                      "target-schemes" ["https"]
+                                                                      "methods" ["OPTIONS" "POST"]}]}}})]
+
+  (deftest test-token-parameter-based-validator
+    (is (= {:result true :summary [:origin-present :origin-same]}
+           (preflight-allowed? validator {:headers {"origin" "http://example.com" "host" "example.com"}
+                                          :scheme :http})))
+    (is (= {:result true :summary [:origin-present :origin-same]}
+           (request-allowed? validator {:headers {"origin" "http://example.com" "host" "example.com"}
+                                        :scheme :http})))
+    (is (= {:result false :summary [:origin-present :origin-different :no-rule-matched]}
+           (preflight-allowed? validator {:headers {"origin" "https://example.com" "host" "example.com"}
+                                          :scheme :http})))
+    (is (= {:result false :summary [:origin-present :origin-different :no-rule-matched]}
+           (request-allowed? validator {:headers {"origin" "https://example.com" "host" "example.com"}
+                                        :scheme :http}))))
+
+  (defn- check-cors-match
+    ([origin matched-rule-index]
+     (check-cors-match origin "" :http :get matched-rule-index))
+    ([origin path matched-rule-index]
+     (check-cors-match origin path :http :get matched-rule-index))
+    ([origin path scheme matched-rule-index]
+     (check-cors-match origin path scheme :get matched-rule-index))
+    ([origin path scheme method matched-rule-index]
+     (is (= {:result true :summary [:origin-present :origin-different :rule-matched (keyword (str "rule-" matched-rule-index "-matched"))]}
+            (preflight-allowed? validator (create-request-with-origin origin path scheme method))))
+     (is (= {:result true :summary [:origin-present :origin-different :rule-matched (keyword (str "rule-" matched-rule-index "-matched"))]}
+            (request-allowed? validator (create-request-with-origin origin path scheme method))))))
+
+  (deftest test-token-parameter-based-validator-match
+    (check-cors-match "http://origin-regex0.com" 0)
+    (check-cors-match "https://origin-regex0.com" 0)
+    (check-cors-match "https://origin-regex1.com" 1)
+    (check-cors-match "https://origin-regex2.com" "/target/path" 2)
+    (check-cors-match "https://origin-regex3.com" "/target/path" :https 3)
+    (check-cors-match "https://origin-regex4.com" "/target/path" :https :post 4))
+
+  (defn- check-cors-no-match
+    ([origin]
+     (check-cors-no-match origin "" :http :get))
+    ([origin path]
+     (check-cors-no-match origin path :http :get))
+    ([origin path scheme]
+     (check-cors-no-match origin path scheme :get))
+    ([origin path scheme method]
+     (is (= {:result false :summary [:origin-present :origin-different :no-rule-matched]}
+            (preflight-allowed? validator (create-request-with-origin origin path scheme method))))
+     (is (= {:result false :summary [:origin-present :origin-different :no-rule-matched]}
+            (request-allowed? validator (create-request-with-origin origin path scheme method))))))
+
+  (deftest test-token-parameter-based-validator-no-match
+    (check-cors-no-match "http://origin-regexx.com")
+    (check-cors-no-match "http://origin-regex1.com")
+    (check-cors-no-match "https://origin-regex2.com")
+    (check-cors-no-match "https://origin-regex3.com" "/target/path")
+    (check-cors-no-match "https://origin-regex4.com" "/target/path" :https)))
+
 (deftest test-wrap-cors-request
   (let [waiter-request? (constantly false)
         exposed-headers []]
@@ -124,7 +208,7 @@
           max-age 100
           request {:request-method :options}
           handler (-> (fn [_] {:status 200})
-                    (wrap-cors-preflight deny-all max-age)
+                    (wrap-cors-preflight deny-all max-age nil nil nil)
                     (core/wrap-error-handling))
           {:keys [status]} (handler request)]
       (is (= 403 status))))
@@ -134,7 +218,7 @@
           request {:headers {"origin" "doesnt.matter"
                              "access-control-request-headers" "x-test-header"}
                    :request-method :options}
-          handler (wrap-cors-preflight (fn [_] {:status 200}) allow-all max-age)
+          handler (wrap-cors-preflight (fn [_] {:status 200}) allow-all max-age nil nil nil)
           {:keys [headers status]} (handler request)]
       (is (= 200 status))
       (is (= "doesnt.matter" (get headers "access-control-allow-origin")))

@@ -992,3 +992,99 @@
             (or (using-cook? waiter-url)
                 (using-shell? waiter-url))
             (make-kitchen-request-fn "dummy/image" 500)))))
+
+(deftest ^:parallel ^:integration-fast test-self-service-cors
+  (testing-using-waiter-url
+    ;(testing "CORS not allowed"
+    ;  (let [token (rand-name)
+    ;        response (post-token waiter-url (assoc (kitchen-params)
+    ;                                          :name token
+    ;                                          :token token))]
+    ;    (try
+    ;      (assert-response-status response 200)
+    ;      (let [response (make-request-with-debug-info
+    ;                       {:host "my.host"
+    ;                        :origin "http://notmy.host"
+    ;                        :method :get
+    ;                        :x-waiter-token token}
+    ;                       #(make-kitchen-request waiter-url % :path "/request-info"))]
+    ;        (assert-response-status response 403))
+    ;      (finally
+    ;        (delete-token-and-assert waiter-url token)))))
+    (testing "Invalid cors config - missing origin regex"
+      (let [token (rand-name)
+            response (post-token waiter-url (assoc (kitchen-params)
+                                              :name token
+                                              :token token
+                                              :allowed-cors [{}]))]
+        (assert-response-status response 400)))
+    (testing "Invalid cors config - empty methods"
+      (let [token (rand-name)
+            response (post-token waiter-url (assoc (kitchen-params)
+                                              :name token
+                                              :token token
+                                              :allowed-cors [{:origin-regex "blah"
+                                                              :methods []}]))]
+        (assert-response-status response 400)))
+    (testing "Invalid cors config - not a list"
+      (let [token (rand-name)
+            response (post-token waiter-url (assoc (kitchen-params)
+                                              :name token
+                                              :token token
+                                              :allowed-cors {:origin-regex "blah"
+                                                             :methods []}))]
+        (assert-response-status response 400)))
+    (testing "CORS allowed"
+      (let [token (rand-name)
+            response (post-token waiter-url (assoc (kitchen-params)
+                                              :name token
+                                              :token token
+                                              :allowed-cors [{:origin-regex "notmy\\.host"}]))]
+        (try
+          (assert-response-status response 200)
+          (let [response (make-request-with-debug-info
+                           {:host "my.host"
+                            :origin "http://notmy.host"
+                            :method :get
+                            :x-waiter-token token}
+                           #(make-kitchen-request waiter-url % :path "/request-info"))]
+            (assert-response-status response 200))
+          (finally
+            (delete-token-and-assert waiter-url token)))))
+    ;(testing "CORS not allowed path"
+    ;  (let [token (rand-name)
+    ;        response (post-token waiter-url (assoc (kitchen-params)
+    ;                                          :name token
+    ;                                          :token token
+    ;                                          :allowed-cors {:origin-regex "notmy\\.host"
+    ;                                                         :target-path-regex "/some-path"}))]
+    ;    (try
+    ;      (assert-response-status response 200)
+    ;      (let [response (make-request-with-debug-info
+    ;                       {:host "my.host"
+    ;                        :origin "http://notmy.host"
+    ;                        :method :get
+    ;                        :x-waiter-token token}
+    ;                       #(make-kitchen-request waiter-url % :path "/request-info"))]
+    ;        (assert-response-status response 403))
+    ;      (finally
+    ;        (delete-token-and-assert waiter-url token)))))
+    ;(testing "CORS allowed path"
+    ;  (let [token (rand-name)
+    ;        response (post-token waiter-url (assoc (kitchen-params)
+    ;                                          :name token
+    ;                                          :token token
+    ;                                          :allowed-cors {:origin-regex "notmy\\.host"
+    ;                                                         :target-path-regex "/request-info"}))]
+    ;    (try
+    ;      (assert-response-status response 200)
+    ;      (let [response (make-request-with-debug-info
+    ;                       {:host "my.host"
+    ;                        :origin "http://notmy.host"
+    ;                        :method :get
+    ;                        :x-waiter-token token}
+    ;                       #(make-kitchen-request waiter-url % :path "/request-info"))]
+    ;        (assert-response-status response 200))
+    ;      (finally
+    ;        (delete-token-and-assert waiter-url token)))))
+    ))
