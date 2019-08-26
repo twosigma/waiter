@@ -280,7 +280,7 @@
                ;; The value to use for the access-control-max-age header:
                :max-age 3600
 
-               ;; :kind :token-parameter uses allowed list that's set on the application token
+               ;; :kind :token-parameter uses allowed list that's set on the token
                :token-parameter {:factory-fn waiter.cors/token-parameter-based-validator}}
 
  :entitlement-config {
