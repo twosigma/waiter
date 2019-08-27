@@ -1017,16 +1017,15 @@
                    token-metadata)))
           (is (empty? (sd/fetch-core kv-store service-id-1)))))
 
-      (testing "post:new-service-description-allowed-cors"
-        (let [token (str token "-allowed-cors")
-              allowed-cors [{"origin-regex" "test\\.com"
-                             "methods" ["GET" "POST"]
-                             "target-schemes" ["http"]}]
+      (testing "post:new-service-description-cors-rules"
+        (let [token (str token "-cors-rules")
+              cors-rules [{"origin-regex" "test\\.com"
+                             "methods" ["GET" "POST"]}]
               {:keys [body status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames (public-entitlement-manager) make-peer-requests-fn (constantly true)
                 {:authorization/user auth-user
-                 :body (-> service-description-1 (assoc "allowed-cors" allowed-cors "token" token) utils/clj->json StringBufferInputStream.)
+                 :body (-> service-description-1 (assoc "cors-rules" cors-rules "token" token) utils/clj->json StringBufferInputStream.)
                  :headers {}
                  :request-method :post})]
           (is (= 200 status))
@@ -1038,7 +1037,7 @@
             (is (= {"cluster" (str token-root "-cluster")
                     "last-update-time" (clock-millis)
                     "last-update-user" "tu1"
-                    "allowed-cors" allowed-cors
+                    "cors-rules" cors-rules
                     "owner" "tu1"
                     "previous" {}
                     "root" token-root}
@@ -1675,13 +1674,13 @@
           (is (str/includes? (str details) "query-parameter") body)
           (is (str/includes? message "The token should be provided only as a query parameter or in the json payload") body)))
 
-      (testing "post:new-service-description-allowed-cors"
+      (testing "post:new-service-description-cors-rules"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
-              allowed-cors [{"origin-regex" "test\\.co(m"
+              cors-rules [{"origin-regex" "test\\.co(m"
                              "methods" ["a"]
-                             "target-schemes" ["jpeg"]}]
+                             "target-schemes" ["https"]}]
               service-description (walk/stringify-keys
-                                    {:allowed-cors allowed-cors
+                                    {:cors-rules cors-rules
                                      :token "abcdefgh"})
               {:keys [body status]}
               (run-handle-token-request
@@ -1693,19 +1692,19 @@
               {{:strs [details message]} "waiter-error"} (json/read-str body)]
           (is (= 400 status))
           (is (not (str/includes? body "clojure")))
-          (is (str/includes? (str details) "allowed-cors") body)
+          (is (str/includes? (str details) "cors-rules") body)
           (is (str/includes? (str details) "origin-regex\\\" (throws? (is-a-valid-regular-expression?") body)
           (is (str/includes? (str details) "methods\\\" [(not (is-an-http-method?") body)
-          (is (str/includes? (str details) "target-schemes\\\" [(not (is-a-uri-scheme?") body)
+          (is (str/includes? (str details) "target-schemes\\\" disallowed-key") body)
           (is (str/includes? message "User metadata validation failed") body)))
 
-      (testing "post:new-service-description-allowed-cors-2"
+      (testing "post:new-service-description-cors-rules-2"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
-              allowed-cors [{"origin-regex" "test\\.co(m"
+              cors-rules [{"origin-regex" "test\\.co(m"
                              "methods" []
                              "target-schemes" []}]
               service-description (walk/stringify-keys
-                                    {:allowed-cors allowed-cors
+                                    {:cors-rules cors-rules
                                      :token "abcdefgh"})
               {:keys [body status]}
               (run-handle-token-request
@@ -1717,19 +1716,18 @@
               {{:strs [details message]} "waiter-error"} (json/read-str body)]
           (is (= 400 status))
           (is (not (str/includes? body "clojure")))
-          (is (str/includes? (str details) "allowed-cors") body)
+          (is (str/includes? (str details) "cors-rules") body)
           (is (str/includes? (str details) "origin-regex\\\" (throws? (is-a-valid-regular-expression?") body)
           (is (str/includes? (str details) "methods\\\" (not (not-empty []") body)
-          (is (str/includes? (str details) "target-schemes\\\" (not (not-empty []") body)
+          (is (str/includes? (str details) "target-schemes\\\" disallowed-key") body)
           (is (str/includes? message "User metadata validation failed") body)))
 
-      (testing "post:new-service-description-allowed-cors-2"
+      (testing "post:new-service-description-cors-rules-2"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
-              allowed-cors {"origin-regex" "test\\.com"
-                            "methods" ["GET" "POST"]
-                            "target-schemes" ["http"]}
+              cors-rules {"origin-regex" "test\\.com"
+                            "methods" ["GET" "POST"]}
               service-description (walk/stringify-keys
-                                    {:allowed-cors allowed-cors
+                                    {:cors-rules cors-rules
                                      :token "abcdefgh"})
               {:keys [body status]}
               (run-handle-token-request
@@ -1740,7 +1738,7 @@
                  :request-method :post})
               {{:strs [details message]} "waiter-error"} (json/read-str body)]
           (is (= 400 status))
-          (is (str/includes? (str details) "allowed-cors\\\" (not (sequential?") body)
+          (is (str/includes? (str details) "cors-rules\\\" (not (sequential?") body)
           (is (str/includes? message "User metadata validation failed") body))))))
 
 (deftest test-store-service-description

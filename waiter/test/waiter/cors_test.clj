@@ -14,9 +14,11 @@
 ;; limitations under the License.
 ;;
 (ns waiter.cors-test
-  (:require [clojure.test :refer :all]
+  (:require [clojure.string :as str]
+            [clojure.test :refer :all]
             [waiter.core :as core]
-            [waiter.cors :refer :all])
+            [waiter.cors :refer :all]
+            [waiter.schema :as schema])
   (:import waiter.cors.PatternBasedCorsValidator))
 
 (deftest pattern-validator-test
@@ -65,26 +67,20 @@
                                                                   :uri path
                                                                   :waiter-discovery
                                                                   {:token-metadata
-                                                                   {"allowed-cors"
+                                                                   {"cors-rules"
                                                                     [; 0
-                                                                     {"origin-regex" "origin-regex0\\.com"}
+                                                                     {"origin-regex" ".*origin-regex0\\.com"}
                                                                      ; 1
-                                                                     {"origin-regex" "origin-regex1\\.com"
-                                                                      "origin-schemes" ["https"]}
+                                                                     {"origin-regex" "https://origin-regex1\\.com"}
                                                                      ; 2
-                                                                     {"origin-regex" "origin-regex2\\.com"
-                                                                      "origin-schemes" ["https"]
+                                                                     {"origin-regex" "https://origin-regex2\\.com"
                                                                       "target-path-regex" "/target/path"}
                                                                      ; 3
-                                                                     {"origin-regex" "origin-regex3\\.com"
-                                                                      "origin-schemes" ["https"]
-                                                                      "target-path-regex" "/target/path"
-                                                                      "target-schemes" ["https"]}
+                                                                     {"origin-regex" "https://origin-regex3\\.com"
+                                                                      "target-path-regex" "/target/path"}
                                                                      ; 4
-                                                                     {"origin-regex" "origin-regex4\\.com"
-                                                                      "origin-schemes" ["https"]
+                                                                     {"origin-regex" "https://origin-regex4\\.com"
                                                                       "target-path-regex" "/target/path"
-                                                                      "target-schemes" ["https"]
                                                                       "methods" ["OPTIONS" "POST"]}]}}})]
 
   (deftest test-token-parameter-based-validator
@@ -103,15 +99,15 @@
 
   (defn- check-cors-match
     ([origin matched-rule-index]
-     (check-cors-match origin "" :http :get matched-rule-index))
+     (check-cors-match origin "" :http :get matched-rule-index nil))
     ([origin path matched-rule-index]
-     (check-cors-match origin path :http :get matched-rule-index))
+     (check-cors-match origin path :http :get matched-rule-index nil))
     ([origin path scheme matched-rule-index]
-     (check-cors-match origin path scheme :get matched-rule-index))
-    ([origin path scheme method matched-rule-index]
-     (is (= {:result true :summary [:origin-present :origin-different :rule-matched (keyword (str "rule-" matched-rule-index "-matched"))]}
+     (check-cors-match origin path scheme :get matched-rule-index nil))
+    ([origin path scheme method matched-rule-index allowed-methods]
+     (is (= {:result true :summary [:origin-present :origin-different :rule-matched (keyword (str "rule-" matched-rule-index "-matched"))] :allowed-methods allowed-methods}
             (preflight-allowed? validator (create-request-with-origin origin path scheme method))))
-     (is (= {:result true :summary [:origin-present :origin-different :rule-matched (keyword (str "rule-" matched-rule-index "-matched"))]}
+     (is (= {:result true :summary [:origin-present :origin-different :rule-matched (keyword (str "rule-" matched-rule-index "-matched"))] :allowed-methods allowed-methods}
             (request-allowed? validator (create-request-with-origin origin path scheme method))))))
 
   (deftest test-token-parameter-based-validator-match
@@ -120,7 +116,7 @@
     (check-cors-match "https://origin-regex1.com" 1)
     (check-cors-match "https://origin-regex2.com" "/target/path" 2)
     (check-cors-match "https://origin-regex3.com" "/target/path" :https 3)
-    (check-cors-match "https://origin-regex4.com" "/target/path" :https :post 4))
+    (check-cors-match "https://origin-regex4.com" "/target/path" :https :post 4 ["OPTIONS" "POST"]))
 
   (defn- check-cors-no-match
     ([origin]
@@ -139,8 +135,13 @@
     (check-cors-no-match "http://origin-regexx.com")
     (check-cors-no-match "http://origin-regex1.com")
     (check-cors-no-match "https://origin-regex2.com")
-    (check-cors-no-match "https://origin-regex3.com" "/target/path")
-    (check-cors-no-match "https://origin-regex4.com" "/target/path" :https)))
+    (check-cors-no-match "https://origin-regex4.com" "/target/path" :https))
+
+  (deftest test-token-parameter-access-control-allow-methods
+    (is (= nil
+           (seq (:allowed-methods (preflight-allowed? validator (create-request-with-origin "http://origin-regex0.com" "" :http :get))))))
+    (is (= (seq ["OPTIONS" "POST"])
+           (seq (:allowed-methods (preflight-allowed? validator (create-request-with-origin "https://origin-regex4.com" "/target/path" :https :post))))))))
 
 (deftest test-wrap-cors-request
   (let [waiter-request? (constantly false)
@@ -223,6 +224,6 @@
       (is (= 200 status))
       (is (= "doesnt.matter" (get headers "access-control-allow-origin")))
       (is (= "x-test-header" (get headers "access-control-allow-headers")))
-      (is (= "POST, GET, OPTIONS, DELETE" (get headers "access-control-allow-methods")))
+      (is (= (str/join ", " schema/http-methods) (get headers "access-control-allow-methods")))
       (is (= (str max-age) (get headers "access-control-max-age")))
       (is (= "true" (get headers "access-control-allow-credentials"))))))

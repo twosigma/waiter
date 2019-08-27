@@ -17,9 +17,10 @@
   (:require [clojure.string :as str]
             [metrics.counters :as counters]
             [waiter.metrics :as metrics]
+            [waiter.service-description :as sd]
+            [waiter.schema :as schema]
             [waiter.util.ring-utils :as ru]
-            [waiter.util.utils :as utils]
-            [waiter.service-description :as sd])
+            [waiter.util.utils :as utils])
   (:import java.util.regex.Pattern))
 
 (defprotocol CorsValidator
@@ -54,20 +55,20 @@
               {:strs [origin]} headers]
           (when-not origin
             (throw (ex-info "No origin provided" {:status 403})))
-          (let [{:keys [result summary]} (preflight-allowed? cors-validator (assoc request :waiter-discovery discovered-parameters))]
+          (let [{:keys [result summary allowed-methods]} (preflight-allowed? cors-validator (assoc request :waiter-discovery discovered-parameters))]
             (when-not result
               (throw (ex-info "Cross-origin request not allowed" {:cors-checks summary
                                                                   :origin origin
                                                                   :request-method request-method
                                                                   :status 403
-                                                                  :log-level :warn}))))
-          (let [{:strs [access-control-request-headers]} headers]
-            {:status 200
-             :headers {"access-control-allow-origin" origin
-                       "access-control-allow-headers" access-control-request-headers
-                       "access-control-allow-methods" "POST, GET, OPTIONS, DELETE"
-                       "access-control-allow-credentials" "true"
-                       "access-control-max-age" (str max-age)}})))
+                                                                  :log-level :warn})))
+            (let [{:strs [access-control-request-headers]} headers]
+              {:status 200
+               :headers {"access-control-allow-origin" origin
+                         "access-control-allow-headers" access-control-request-headers
+                         "access-control-allow-methods" (str/join ", " (or allowed-methods schema/http-methods))
+                         "access-control-allow-credentials" "true"
+                         "access-control-max-age" (str max-age)}}))))
       (handler request))))
 
 (defn wrap-cors-request
@@ -84,13 +85,13 @@
                                        (request-allowed? cors-validator request)
                                        {:result false :summary [:origin-absent]})
             bless (fn [response]
-                     (cond-> (update-in response [:headers] assoc
-                                        "access-control-allow-origin" origin
-                                        "access-control-allow-credentials" "true")
-                       (and exposed-headers-str ;; exposed headers are configured
-                            (not (utils/same-origin request)) ;; CORS request
-                            (waiter-request? request)) ;; request made to a waiter router
-                       (update :headers assoc "access-control-expose-headers" exposed-headers-str)))]
+                    (cond-> (update-in response [:headers] assoc
+                                       "access-control-allow-origin" origin
+                                       "access-control-allow-credentials" "true")
+                      (and exposed-headers-str ;; exposed headers are configured
+                           (not (utils/same-origin request)) ;; CORS request
+                           (waiter-request? request)) ;; request made to a waiter router
+                      (update :headers assoc "access-control-expose-headers" exposed-headers-str)))]
         (if (not origin)
           (handler request)
           (do
@@ -154,34 +155,29 @@
   (preflight-allowed? [_ request] (allow-cors? request))
   (request-allowed? [_ request] (allow-cors? request)))
 
-(defn- allowed-cors-rule-matches?
+(defn- cors-rule-matches?
   "Checks if an allowed CORS rule matches"
-  [origin-scheme origin-no-host target-scheme path method
-   [_ {:strs [origin-regex origin-schemes target-path-regex target-schemes methods] :as xxx}]]
+  [origin path method [_ {:strs [origin-regex target-path-regex methods]}]]
   (cond
     (and methods (not (.contains methods (str/upper-case (name method))))) false
-    (and target-schemes (not (.contains target-schemes target-scheme))) false
-    (and origin-schemes (not (.contains origin-schemes origin-scheme))) false
     (and target-path-regex (not (re-matches (re-pattern target-path-regex) path))) false
-    :else (re-matches (re-pattern origin-regex) origin-no-host)))
+    :else (re-matches (re-pattern origin-regex) origin)))
 
-(defn- allowed-cors-matching-rule
+(defn- find-matching-cors-rule
   "Takes a cross origin request. Returns the token's matched allowed CORS rule if any."
   [request]
-  (when-let [allowed-cors (get-in request [:waiter-discovery :token-metadata "allowed-cors"])]
+  (when-let [cors-rules (get-in request [:waiter-discovery :token-metadata "cors-rules"])]
     (let [{:keys [headers request-method uri]} request
-          {:strs [origin]} headers
-          [origin-scheme origin-no-host] (str/split origin #"://")
-          target-scheme (name (utils/request->scheme request))]
-      (first (filter #(allowed-cors-rule-matches? origin-scheme origin-no-host target-scheme uri request-method %)
-                     (map-indexed vector allowed-cors))))))
+          {:strs [origin]} headers]
+      (first (filter #(cors-rule-matches? origin uri request-method %)
+                     (map-indexed vector cors-rules))))))
 
 (defn token-parameter-based-validator
-  "Factory function for TokenParametersCorsValidator. Validates using token allowed-cors parameter.
+  "Factory function for TokenParametersCorsValidator. Validates using token cors-rules parameter.
    Same logic for preflight and regular requests"
   [config]
   (let [allow-cors?
-        (fn [{:keys [headers] :as request}]
+        (fn allow-cors? [{:keys [headers] :as request}]
           (let [{:strs [origin]} headers]
             (cond
               (not origin)
@@ -189,8 +185,10 @@
               (utils/same-origin request)
               {:result true :summary [:origin-present :origin-same]}
               :else
-              (if-let [[matching-rule-index] (allowed-cors-matching-rule request)]
-                {:result true :summary [:origin-present :origin-different :rule-matched
-                                        (keyword (str "rule-" matching-rule-index "-matched"))]}
+              (if-let [[matching-rule-index {:strs [methods]}] (find-matching-cors-rule request)]
+                {:allowed-methods methods
+                 :result true
+                 :summary [:origin-present :origin-different :rule-matched
+                           (keyword (str "rule-" matching-rule-index "-matched"))]}
                 {:result false :summary [:origin-present :origin-different :no-rule-matched]}))))]
     (->TokenParametersCorsValidator allow-cors?)))

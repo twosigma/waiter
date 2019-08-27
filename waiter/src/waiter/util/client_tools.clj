@@ -1022,6 +1022,13 @@
       (and (using-composite-authenticator? waiter-url)
            (get-in (waiter-settings waiter-url) [:authenticator-config :composite :authentication-providers :saml]))))
 
+(defn supports-token-parameter-cors?
+  "Returns true if CORS config supports getting CORS rules from token parameter"
+  [waiter-url]
+  (let [{:keys [cors-config]} (waiter-settings waiter-url)
+        cors-kind (:kind cors-config)]
+    (get-in cors-config [(keyword cors-kind) :supports-token-parameter?])))
+
 ;; TODO: make this work not just for marathon
 (defn can-query-for-grace-period?
   "Returns true if Waiter supports querying for grace period"
