@@ -1041,7 +1041,7 @@
               response (post-token waiter-url (assoc (kitchen-params)
                                                 :name token
                                                 :token token
-                                                :cors-rules [{:origin-regex "notmy\\.host"}]))]
+                                                :cors-rules [{:origin-regex ".*notmy\\.host"}]))]
           (try
             (assert-response-status response 200)
             (let [response (make-request-with-debug-info
@@ -1076,7 +1076,7 @@
               response (post-token waiter-url (assoc (kitchen-params)
                                                 :name token
                                                 :token token
-                                                :cors-rules [{:origin-regex "notmy\\.host"
+                                                :cors-rules [{:origin-regex ".*notmy\\.host"
                                                               :target-path-regex "/request-info"}]))]
           (try
             (assert-response-status response 200)
@@ -1094,7 +1094,7 @@
               response (post-token waiter-url (assoc (kitchen-params)
                                                 :name token
                                                 :token token
-                                                :cors-rules [{:origin-regex "notmy\\.host"}]))]
+                                                :cors-rules [{:origin-regex ".*notmy\\.host"}]))]
           (try
             (assert-response-status response 200)
             (let [{:keys [headers] :as response} (make-request-with-debug-info
@@ -1112,7 +1112,7 @@
               response (post-token waiter-url (assoc (kitchen-params)
                                                 :name token
                                                 :token token
-                                                :cors-rules [{:origin-regex "notmy\\.host" :methods methods}]))]
+                                                :cors-rules [{:origin-regex ".*notmy\\.host" :methods methods}]))]
           (try
             (assert-response-status response 200)
             (let [{:keys [headers] :as response} (make-request-with-debug-info
