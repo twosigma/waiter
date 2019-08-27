@@ -102,6 +102,7 @@
                      "state" [["" :state-all-handler-fn]
                               ["/autoscaler" :state-autoscaler-handler-fn]
                               ["/autoscaling-multiplexer" :state-autoscaling-multiplexer-handler-fn]
+                              ["/autoscaling-tracker" :state-autoscaling-tracker-handler-fn]
                               ["/codahale-reporters" :state-codahale-reporters-handler-fn]
                               ["/fallback" :state-fallback-handler-fn]
                               ["/gc-broken-services" :state-gc-for-broken-services]
@@ -1059,6 +1060,14 @@
                                       scheduler instance-rpc-chan quanta-constraints scaling-timeout-config
                                       scheduler-interactions-thread-pool service-id))
                                   {})))
+   :autoscaling-tracker (pc/fnk [[:settings [:scaling tracker-interval-ms]]
+                                 [:state instance-rpc-chan]
+                                 autoscaler]
+                          (let [{:keys [query-state-fn]} autoscaler
+                                update-service-scale-state! (fn update-service-scale-state! [service-id scaling-mode]
+                                                              (log/info service-id "updating scaling mode to" scaling-mode)
+                                                              (service/notify-scaling-mode-go instance-rpc-chan service-id scaling-mode))]
+                            (scaling/start-scaling-mode-tracker query-state-fn update-service-scale-state! tracker-interval-ms)))
    :codahale-reporters (pc/fnk [[:settings [:metrics-config codahale-reporters]]]
                          (pc/map-vals
                            (fn make-codahale-reporter [{:keys [factory-fn] :as reporter-config}]
@@ -1187,6 +1196,7 @@
                                                           :query-work-stealing [:work-stealing-chan-map :query-chan]
                                                           :release [:maintainer-chan-map :release-instance-chan]
                                                           :reserve [:maintainer-chan-map :reserve-instance-chan-in]
+                                                          :scaling-mode [:maintainer-chan-map :scaling-mode-chan]
                                                           :update-state [:maintainer-chan-map :update-state-chan])]
                                         (get-in channel-map method-chan)))
                                     {{:keys [router-state-push-mult]} :maintainer} router-state-maintainer
@@ -1439,6 +1449,13 @@
                                                  (wrap-secure-request-fn
                                                    (fn state-autoscaling-multiplexer-handler-fn [request]
                                                      (handler/get-query-chan-state-handler router-id query-chan request)))))
+   :state-autoscaling-tracker-handler-fn (pc/fnk [[:daemons autoscaling-tracker]
+                                                  [:state router-id]
+                                                  wrap-secure-request-fn]
+                                           (let [{:keys [query-state-fn]} autoscaling-tracker]
+                                             (wrap-secure-request-fn
+                                               (fn state-autoscaling-tracker-handler-fn [request]
+                                                 (handler/get-query-fn-state router-id query-state-fn request)))))
    :state-codahale-reporters-handler-fn (pc/fnk [[:daemons codahale-reporters]
                                                  [:state router-id]]
                                           (fn codahale-reporter-state-handler-fn [request]

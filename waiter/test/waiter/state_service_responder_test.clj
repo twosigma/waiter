@@ -34,12 +34,13 @@
     (apply conj (PersistentQueue/EMPTY) items))
 
   (defn- retrieve-channel-config []
-    {:exit-chan (async/chan 1)
-     :blacklist-instance-chan (async/chan 1)
+    {:blacklist-instance-chan (async/chan 1)
+     :exit-chan (async/chan 1)
      :kill-instance-chan (async/chan 1)
      :query-state-chan (async/chan 1)
      :release-instance-chan (async/chan 1)
      :reserve-instance-chan (async/chan 1)
+     :scaling-mode-chan (async/chan 1)
      :unblacklist-instance-chan (async/chan 10)
      :update-state-chan (async/chan 1)
      :work-stealing-chan (async/chan 1)})
@@ -78,6 +79,7 @@
         (check-fn :instance-id->state)
         (check-fn :request-id->work-stealer)
         (check-fn :sorted-instance-ids)
+        (check-fn :traffic-distribution-mode)
         (check-fn :work-stealing-queue)
         (let [expected-counter-map (cond-> {}
                                      (:instance-id->blacklist-expiry-time expected-state)
@@ -188,6 +190,7 @@
       ;; start the service-chan-responder
       (start-service-chan-responder service-id trigger-unblacklist-process-fn timeout-config channel-config initial-state)
       (assoc channel-config :trigger-unblacklist-process-atom trigger-unblacklist-process-atom)))
+
   (let [instance-h1 {:id "s1.h1" :started-at (DateTime. 10000)}
         instance-h2 {:id "s1.h2" :started-at (DateTime. 20000)}
         instance-h3 {:id "s1.h3" :started-at (DateTime. 30000)}
@@ -228,7 +231,8 @@
                                                                   (update-slot-state-fn "s1.u2" 0 0 #{:unhealthy})
                                                                   (update-slot-state-fn "s1.u3" 0 0 #{:starting :unhealthy}))
                                           :sorted-instance-ids ["s1.u1" "s1.h2" "s1.u2" "s1.u3"
-                                                                "s1.h3" "s1.h1"]})
+                                                                "s1.h3" "s1.h1"]
+                                          :traffic-distribution-mode :oldest})
         (let [update-state {:healthy-instances [instance-h1 instance-h2 instance-h3 instance-h4 instance-h5]
                             :unhealthy-instances [instance-u1 instance-u3] ; drop s1.u2 from update
                             :starting-instances [] ; remove s1.u3 from starting
@@ -248,6 +252,7 @@
                                           :request-id->work-stealer {}
                                           :sorted-instance-ids ["s1.h1" "s1.u1" "s1.h2" "s1.h3"
                                                                 "s1.u3" "s1.h4" "s1.h5"]
+                                          :traffic-distribution-mode :oldest
                                           :work-stealing-queue (make-queue [])})
         (async/>!! exit-chan :exit)))
 
@@ -273,6 +278,7 @@
                                                                     (update-slot-state-fn "s1.u3" 0 0 #{:unhealthy}))
                                             :request-id->work-stealer {}
                                             :sorted-instance-ids ["s1.u1" "s1.u2" "s1.u3"]
+                                            :traffic-distribution-mode :oldest
                                             :work-stealing-queue (make-queue [])})
           ; attempt to reserve an instances
           (if deployment-error
@@ -287,6 +293,7 @@
                                                                     (update-slot-state-fn "s1.u2" 0 0 #{:unhealthy})
                                                                     (update-slot-state-fn "s1.u3" 0 0 #{:unhealthy}))
                                             :request-id->work-stealer {}
+                                            :traffic-distribution-mode :oldest
                                             :work-stealing-queue (make-queue [])}))
         (async/>!! exit-chan :exit)))
 
@@ -310,6 +317,7 @@
                                                                   (update-slot-state-fn "s1.u2" 0 0 #{:unhealthy}))
                                           :request-id->work-stealer {}
                                           :sorted-instance-ids ["s1.u1" "s1.h2" "s1.u2" "s1.h3" "s1.h1"]
+                                          :traffic-distribution-mode :oldest
                                           :work-stealing-queue (make-queue [])})
         (let [update-state {:healthy-instances [instance-h1 instance-h2 instance-h4 instance-h5]
                             :unhealthy-instances [instance-u1] ; drop s1.u2 from update
@@ -326,6 +334,7 @@
                                                                   (update-slot-state-fn "s1.u1" 0 0 #{:unhealthy}))
                                           :request-id->work-stealer {}
                                           :sorted-instance-ids ["s1.h1" "s1.u1" "s1.h2" "s1.h4" "s1.h5"]
+                                          :traffic-distribution-mode :oldest
                                           :work-stealing-queue (make-queue [])})
         (async/>!! exit-chan :exit)))
 
@@ -351,6 +360,7 @@
                                                                 "s1.u1" ; unhealthy
                                                                 "s1.h1" "s1.h3" ; expired
                                                                 ]
+                                          :traffic-distribution-mode :oldest
                                           :work-stealing-queue (make-queue [])})
         (let [start-time (t/now)
               current-time-atom (atom start-time)]
@@ -516,6 +526,7 @@
                                                                   (update-slot-state-fn "s1.h3" 2 2)
                                                                   (update-slot-state-fn "s1.h4" 2 1))
                                           :request-id->work-stealer {}
+                                          :traffic-distribution-mode :oldest
                                           :work-stealing-queue (make-queue [])})
         (async/>!! exit-chan :exit)))
 
@@ -545,6 +556,7 @@
                                                                   (update-slot-state-fn "s1.h1" 2 2)
                                                                   (update-slot-state-fn "s1.h2" 1 1 #{:expired :healthy}))
                                           :request-id->work-stealer {}
+                                          :traffic-distribution-mode :oldest
                                           :work-stealing-queue (make-queue [])})
         (async/>!! exit-chan :exit)))
 
@@ -603,6 +615,7 @@
                                                  (update-slot-state-fn "s1.u1" 0 0 #{:locked :unhealthy})
                                                  (update-slot-state-fn "s1.u2" 0 0 #{:locked :unhealthy}))
                          :request-id->work-stealer {}
+                         :traffic-distribution-mode :oldest
                          :work-stealing-queue (make-queue [])})
         (async/>!! exit-chan :exit)))
 
@@ -655,6 +668,7 @@
                                                      (update-slot-state-fn "s1.u1" 0 0 #{:locked :unhealthy})
                                                      (update-slot-state-fn "s1.u2" 0 0 #{:blacklisted :killed :unhealthy}))
                              :request-id->work-stealer {}
+                             :traffic-distribution-mode :oldest
                              :work-stealing-queue (make-queue [])})
             (is (= {"s1.u2" max-blacklist-time-ms}
                    @trigger-unblacklist-process-atom))
@@ -709,6 +723,7 @@
                                                      (update-slot-state-fn "s1.u1" 0 0 #{:killed :unhealthy})
                                                      (update-slot-state-fn "s1.u2" 0 0 #{:killed :unhealthy}))
                              :request-id->work-stealer {}
+                             :traffic-distribution-mode :oldest
                              :work-stealing-queue (make-queue [])}))
           (async/>!! exit-chan :exit))))
 
@@ -785,6 +800,7 @@
                                                  (update-slot-state-fn "s1.h3" 8 3)
                                                  (update-slot-state-fn "s1.h4" 0 0 #{:healthy}) ;; since the response was a success
                                                  (update-slot-state-fn "s1.u3" 0 0 #{:unhealthy}))
+                         :traffic-distribution-mode :oldest
                          :work-stealing-queue (make-queue [])})
         (async/>!! exit-chan :exit)))
 
@@ -823,6 +839,7 @@
                                                  (update-slot-state-fn "s1.h3" 0 3 #{:unhealthy})
                                                  (update-slot-state-fn "s1.h4" 0 0 #{:healthy}) ;; since the response was a success
                                                  (update-slot-state-fn "s1.u3" 0 0 #{:unhealthy}))
+                         :traffic-distribution-mode :oldest
                          :work-stealing-queue (make-queue [])})
         ; release requests for s1.h3
         (release-instance-fn release-instance-chan "s1.h3" 5 :success)
@@ -859,6 +876,7 @@
                                                  (update-slot-state-fn "s1.h4" 0 0 #{:healthy :locked}) ;; since the response was a success
                                                  (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))
                          :request-id->work-stealer {}
+                         :traffic-distribution-mode :oldest
                          :work-stealing-queue (make-queue [])})
         (async/>!! exit-chan :exit)))
 
@@ -917,6 +935,7 @@
                                                        (update-slot-state-fn "s1.h4" 0 0)
                                                        (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))
                                :request-id->work-stealer {}
+                               :traffic-distribution-mode :oldest
                                :work-stealing-queue (make-queue [])})
               (release-instance-fn release-instance-chan "s1.u3" 13 :killed)))
           (async/>!! exit-chan :exit))))
@@ -956,6 +975,7 @@
                                                  (update-slot-state-fn "s1.h4" 0 0 #{:healthy :locked})
                                                  (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))
                          :request-id->work-stealer {}
+                         :traffic-distribution-mode :oldest
                          :work-stealing-queue (make-queue [])})
         (async/>!! exit-chan :exit)))
 
@@ -992,6 +1012,7 @@
                                                  (update-slot-state-fn "s1.h3" 8 1)
                                                  (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))
                          :request-id->work-stealer {}
+                         :traffic-distribution-mode :oldest
                          :work-stealing-queue (make-queue [])})
         (async/>!! exit-chan :exit)))
 
@@ -1033,6 +1054,7 @@
                                                  (update-slot-state-fn "s1.u3" 0 0 #{:starting :unhealthy}))
                          :request-id->work-stealer {}
                          :sorted-instance-ids ["s1.h1" "s1.h2" "s1.u2" "s1.u3" "s1.h4" "s1.h3"]
+                         :traffic-distribution-mode :oldest
                          :work-stealing-queue (make-queue [])})
         ; s1.u2 should be killed because it is not starting
         (let [current-time (t/now)]
@@ -1092,6 +1114,7 @@
                                                  (update-slot-state-fn "s1.h3" 8 0)
                                                  (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))
                          :request-id->work-stealer {}
+                         :traffic-distribution-mode :oldest
                          :work-stealing-queue (make-queue [])})
         (async/>!! exit-chan :exit)))
 
@@ -1132,7 +1155,8 @@
                                                                        (update-slot-state-fn "s1.h2" 1 0)
                                                                        (update-slot-state-fn "s1.h3" 8 0)
                                                                        (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))
-                                               :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]})]
+                                               :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]
+                                               :traffic-distribution-mode :oldest})]
         ; try blacklisting an instance successfully
         (let [start-time (t/now)
               current-time-atom (atom start-time)]
@@ -1179,7 +1203,8 @@
                                                                        (update-slot-state-fn "s1.h2" 1 0)
                                                                        (update-slot-state-fn "s1.h3" 8 0)
                                                                        (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))
-                                               :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]})]
+                                               :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]
+                                               :traffic-distribution-mode :oldest})]
         ; try blacklisting an external instance successfully
         (let [start-time (t/now)
               current-time-atom (atom start-time)]
@@ -1220,6 +1245,7 @@
                                                      (update-slot-state-fn "s1.h8" 0 0 #{})
                                                      (update-slot-state-fn "s1.h9" 0 0 #{})
                                                      (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))
+                             :traffic-distribution-mode :oldest
                              :work-stealing-queue (make-queue [])}))
           (async/>!! exit-chan :exit))))
 
@@ -1250,6 +1276,7 @@
                                                  (update-slot-state-fn "s1.h3" 8 0)
                                                  (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))
                          :request-id->work-stealer {}
+                         :traffic-distribution-mode :oldest
                          :work-stealing-queue (make-queue [])})
         (let [update-state {:healthy-instances [instance-h2 instance-h3]
                             :unhealthy-instances []
@@ -1268,6 +1295,7 @@
                                                  (update-slot-state-fn "s1.h3" 8 0)
                                                  (update-slot-state-fn "s1.u3" 0 0 #{:locked}))
                          :request-id->work-stealer {}
+                         :traffic-distribution-mode :oldest
                          :work-stealing-queue (make-queue [])})
         (async/>!! exit-chan :exit)))
 
@@ -1315,6 +1343,7 @@
                                                        (update-slot-state-fn "s1.h3" 8 0)
                                                        (update-slot-state-fn "s1.u3" 0 0 #{:locked}))
                                :request-id->work-stealer {}
+                               :traffic-distribution-mode :oldest
                                :work-stealing-queue (make-queue [])}))
             (async/>!! exit-chan :exit)))))
 
@@ -1349,6 +1378,7 @@
                                                  (update-slot-state-fn "s1.h3" 8 2)
                                                  (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))
                          :request-id->work-stealer {}
+                         :traffic-distribution-mode :oldest
                          :work-stealing-queue (make-queue [])})
         (async/>!! exit-chan :exit)))
 
@@ -1406,6 +1436,7 @@
                                                  (update-slot-state-fn "s1.u2" 0 0 #{:unhealthy})
                                                  (update-slot-state-fn "s1.u3" 0 0 #{:locked}))
                          :request-id->work-stealer {}
+                         :traffic-distribution-mode :oldest
                          :work-stealing-queue (make-queue [])})
         (async/>!! exit-chan :exit)))
 
@@ -1441,6 +1472,7 @@
                                                    (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))
                            :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]
                            :request-id->work-stealer {}
+                           :traffic-distribution-mode :oldest
                            :work-stealing-queue (make-queue [])})
           (is (= :promptly-rejected (async/<!! response-chan-1)))
           (is (= :promptly-rejected (async/<!! response-chan-2)))
@@ -1564,6 +1596,7 @@
                                                  (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))
                          :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]
                          :request-id->work-stealer {}
+                         :traffic-distribution-mode :oldest
                          :work-stealing-queue (make-queue [(make-work-stealing-data "cid-16" "s1.h2" response-chan-2 "test-router-2")
                                                            (make-work-stealing-data "cid-17" "s1.h4" response-chan-3 "test-router-1")])})
         (is (= 2 (counters/value (metrics/service-counter service-id "work-stealing" "received-from" "in-flight"))))
@@ -1599,6 +1632,7 @@
                                                  (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))
                          :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]
                          :request-id->work-stealer {}
+                         :traffic-distribution-mode :oldest
                          :work-stealing-queue (make-queue [])})
         (is (zero? (counters/value (metrics/service-counter service-id "work-stealing" "received-from" "in-flight"))))
         (is (= :rejected (async/<!! response-chan-3)))
@@ -1639,6 +1673,7 @@
                          :instance-id->state test-instance-id->state
                          :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]
                          :request-id->work-stealer {"req-18" (make-work-stealing-data "cid-15" "s1.h1" response-chan-1 "test-router-1")}
+                         :traffic-distribution-mode :oldest
                          :work-stealing-queue (make-queue [(make-work-stealing-data "cid-16" "s1.h2" response-chan-2 "test-router-2")
                                                            (make-work-stealing-data "cid-17" "s1.h4" response-chan-3 "test-router-1")])})
         (check-reserve-request-instance-fn reserve-instance-chan "s1.h2")
@@ -1654,6 +1689,7 @@
                          :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]
                          :request-id->work-stealer {"req-18" (make-work-stealing-data "cid-15" "s1.h1" response-chan-1 "test-router-1")
                                                     "req-19" (make-work-stealing-data "cid-16" "s1.h2" response-chan-2 "test-router-2")}
+                         :traffic-distribution-mode :oldest
                          :work-stealing-queue (make-queue [(make-work-stealing-data "cid-17" "s1.h4" response-chan-3 "test-router-1")])})
         (is (= 3 (counters/value (metrics/service-counter service-id "work-stealing" "received-from" "in-flight"))))
 
@@ -1671,6 +1707,7 @@
                          :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]
                          :request-id->work-stealer {"req-18" (make-work-stealing-data "cid-15" "s1.h1" response-chan-1 "test-router-1")
                                                     "req-19" (make-work-stealing-data "cid-16" "s1.h2" response-chan-2 "test-router-2")}
+                         :traffic-distribution-mode :oldest
                          :work-stealing-queue (make-queue [])})
         (is (= 2 (counters/value (metrics/service-counter service-id "work-stealing" "received-from" "in-flight"))))
         (is (= :rejected (async/<!! response-chan-3)))
@@ -1699,6 +1736,7 @@
                                                :instance-id->state test-instance-id->state
                                                :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]
                                                :request-id->work-stealer {}
+                                               :traffic-distribution-mode :oldest
                                                :work-stealing-queue (make-queue [(make-work-stealing-data "cid-15" "s1.h1" response-chan-1 "test-router-1")
                                                                                  (make-work-stealing-data "cid-16" "s1.h2" response-chan-2 "test-router-2")
                                                                                  (make-work-stealing-data "cid-17" "s1.h4" response-chan-3 "test-router-1")])})]
@@ -1717,6 +1755,7 @@
                          :instance-id->state test-instance-id->state
                          :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]
                          :request-id->work-stealer {"req-18" (make-work-stealing-data "cid-15" "s1.h1" response-chan-1 "test-router-1")}
+                         :traffic-distribution-mode :oldest
                          :work-stealing-queue (make-queue [(make-work-stealing-data "cid-16" "s1.h2" response-chan-2 "test-router-2")
                                                            (make-work-stealing-data "cid-17" "s1.h4" response-chan-3 "test-router-1")])})
         (check-reserve-request-instance-fn reserve-instance-chan "s1.h2")
@@ -1735,6 +1774,7 @@
                          :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]
                          :request-id->work-stealer {"req-18" (make-work-stealing-data "cid-15" "s1.h1" response-chan-1 "test-router-1")
                                                     "req-19" (make-work-stealing-data "cid-16" "s1.h2" response-chan-2 "test-router-2")}
+                         :traffic-distribution-mode :oldest
                          :work-stealing-queue (make-queue [(make-work-stealing-data "cid-17" "s1.h4" response-chan-3 "test-router-1")])})
         (is (= 3 (counters/value (metrics/service-counter service-id "work-stealing" "received-from" "in-flight"))))
 
@@ -1755,6 +1795,7 @@
                          :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]
                          :request-id->work-stealer {"req-18" (make-work-stealing-data "cid-15" "s1.h1" response-chan-1 "test-router-1")
                                                     "req-19" (make-work-stealing-data "cid-16" "s1.h2" response-chan-2 "test-router-2")}
+                         :traffic-distribution-mode :oldest
                          :work-stealing-queue (make-queue [])})
         (is (= 2 (counters/value (metrics/service-counter service-id "work-stealing" "received-from" "in-flight"))))
         (is (= :rejected (async/<!! response-chan-3)))
@@ -1794,6 +1835,7 @@
                          :instance-id->state test-instance-id->state
                          :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]
                          :request-id->work-stealer {"req-18" {:cid "cid-18" :instance instance-h1 :response-chan response-chan-1 :router-id "test-router-1"}}
+                         :traffic-distribution-mode :oldest
                          :work-stealing-queue (make-queue [])})
         (is (= 1 (counters/value (metrics/service-counter service-id "work-stealing" "received-from" "in-flight"))))
         (is (= :success (async/<!! response-chan-2)))
@@ -1807,6 +1849,7 @@
                          :instance-id->state test-instance-id->state
                          :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]
                          :request-id->work-stealer {}
+                         :traffic-distribution-mode :oldest
                          :work-stealing-queue (make-queue [])})
         (is (zero? (counters/value (metrics/service-counter service-id "work-stealing" "received-from" "in-flight"))))
         (is (= :success (async/<!! response-chan-1)))
@@ -1834,6 +1877,7 @@
                                                :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]
                                                :request-id->work-stealer {"req-18" (make-work-stealing-data "cid-15" "s1.h1" response-chan-1 "test-router-1")
                                                                           "req-19" (make-work-stealing-data "cid-16" "s1.h2" response-chan-2 "test-router-2")}
+                                               :traffic-distribution-mode :oldest
                                                :work-stealing-queue (make-queue [])})]
         (let [current-time (t/now)]
           (with-redefs [t/now (fn [] current-time)]
@@ -1848,6 +1892,7 @@
                              :instance-id->state (update-slot-state-fn test-instance-id->state "s1.h2" 1 0 #{:blacklisted :healthy})
                              :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]
                              :request-id->work-stealer {"req-18" (make-work-stealing-data "cid-15" "s1.h1" response-chan-1 "test-router-1")}
+                             :traffic-distribution-mode :oldest
                              :work-stealing-queue (make-queue [])})
             (is (= :instance-error (async/<!! response-chan-2))))
           (with-redefs [t/now (fn [] (t/plus current-time (t/millis (* 8 max-blacklist-time-ms))))]
@@ -1868,7 +1913,8 @@
                                                    (update-slot-state-fn "s1.h3" 8 2)
                                                    (update-slot-state-fn "s1.u1" 0 0 #{:killed :unhealthy})
                                                    (update-slot-state-fn "s1.u2" 0 0 #{:killed :unhealthy}))
-                           :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.h4" "s1.u1" "s1.u2"]}
+                           :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.h4" "s1.u1" "s1.u2"]
+                           :traffic-distribution-mode :oldest}
             {:keys [exit-chan query-state-chan release-instance-chan]}
             (launch-service-chan-responder 10 initial-state)]
         ; release a success async
@@ -2057,7 +2103,8 @@
                                                    (update-slot-state-fn "s1.h2" 0 0 #{:healthy})
                                                    (update-slot-state-fn "s1.h5" 0 0 #{:healthy})
                                                    (update-slot-state-fn "s1.u3" 0 0 #{:locked}))
-                           :request-id->work-stealer {}}
+                           :request-id->work-stealer {}
+                           :traffic-distribution-mode :oldest}
             {:keys [exit-chan kill-instance-chan query-state-chan]}
             (launch-service-chan-responder 16 initial-state)]
 
@@ -2192,7 +2239,8 @@
                                                    (update-slot-state-fn "s1.h2" 1 2 #{:expired :healthy})
                                                    (update-slot-state-fn "s1.h3" 8 1 #{:expired :healthy})
                                                    (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))
-                           :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]}
+                           :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]
+                           :traffic-distribution-mode :oldest}
             {:keys [exit-chan kill-instance-chan query-state-chan]} (launch-service-chan-responder 13 initial-state)]
         ; kill a healthy instance and clear the blacklist buffer
         (with-redefs [t/now (fn [] current-time)]
@@ -2232,7 +2280,8 @@
                                                    (update-slot-state-fn "s1.h2" 1 2 #{:expired :healthy})
                                                    (update-slot-state-fn "s1.h3" 8 1 #{:expired :healthy})
                                                    (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))
-                           :sorted-instance-ids ["s1.h0" "s1.h1" "s1.h2" "s1.h3" "s1.u3"]}
+                           :sorted-instance-ids ["s1.h0" "s1.h1" "s1.h2" "s1.h3" "s1.u3"]
+                           :traffic-distribution-mode :oldest}
             {:keys [exit-chan kill-instance-chan query-state-chan]} (launch-service-chan-responder 13 initial-state)]
         ; kill a healthy instance and clear the blacklist buffer
         (with-redefs [t/now (fn [] current-time)]
@@ -2269,7 +2318,8 @@
                                                    (update-slot-state-fn "s1.h1" 4 2 #{:expired :healthy})
                                                    (update-slot-state-fn "s1.h2" 4 2 #{:expired :healthy})
                                                    (update-slot-state-fn "s1.h3" 8 1 #{:expired :healthy}))
-                           :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3"]}
+                           :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3"]
+                           :traffic-distribution-mode :oldest}
             {:keys [blacklist-instance-chan exit-chan query-state-chan]} (launch-service-chan-responder 13 initial-state)]
         ; try blacklisting an instance
         (with-redefs [t/now (fn [] current-time)]
@@ -2299,7 +2349,8 @@
                                                    (update-slot-state-fn "s1.h1" 3 0 #{:healthy})
                                                    (update-slot-state-fn "s1.h2" 3 0 #{:healthy})
                                                    (update-slot-state-fn "s1.h3" 0 0 #{:blacklisted}))
-                           :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3"]}
+                           :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3"]
+                           :traffic-distribution-mode :oldest}
             {:keys [kill-instance-chan exit-chan query-state-chan]} (launch-service-chan-responder 13 initial-state)]
 
         (with-redefs [t/now (fn [] current-time)]
@@ -2323,7 +2374,8 @@
                                                    (update-slot-state-fn "s1.h1" 3 0 #{:healthy})
                                                    (update-slot-state-fn "s1.h2" 3 0 #{:healthy})
                                                    (update-slot-state-fn "s1.h3" 0 0 #{:blacklisted}))
-                           :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3"]}
+                           :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3"]
+                           :traffic-distribution-mode :oldest}
             {:keys [kill-instance-chan exit-chan query-state-chan]} (launch-service-chan-responder 13 initial-state)]
 
         (with-redefs [t/now (fn [] current-time)]
@@ -2334,5 +2386,105 @@
                           {"s1.h2" {"req-14" {:cid "cid-14" :request-id "req-14" :reason :kill-instance}}})
                    (update-in [:instance-id->state] #(update-slot-state-fn %1 "s1.h2" 3 0 #{:healthy :locked})))
                (check-state-fn query-state-chan))
+
+          (async/>!! exit-chan :exit))))
+
+    (deftest test-start-service-chan-responder-scaling-mode-updates
+      (let [current-time (t/now)
+            initial-state {:id->instance id->instance-data
+                           :instance-id->blacklist-expiry-time {}
+                           :instance-id->request-id->use-reason-map {}
+                           :instance-id->consecutive-failures {}
+                           :instance-id->state (-> {}
+                                                 (update-slot-state-fn "s1.h1" 3 0 #{:healthy})
+                                                 (update-slot-state-fn "s1.h2" 3 0 #{:healthy})
+                                                 (update-slot-state-fn "s1.h3" 0 0 #{:blacklisted}))
+                           :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.h4" "s1.h5" "s1.h6" "s1.u1" "s1.u2" "s1.u3"]
+                           :traffic-distribution-mode :oldest}
+            {:keys [exit-chan query-state-chan scaling-mode-chan]} (launch-service-chan-responder 13 initial-state)]
+
+        (with-redefs [t/now (fn [] current-time)]
+          (async/>!! scaling-mode-chan {:scaling-mode :scale-up})
+          (check-state-fn query-state-chan (assoc initial-state :traffic-distribution-mode :random))
+          (async/>!! scaling-mode-chan {:scaling-mode :stable})
+          (check-state-fn query-state-chan (assoc initial-state :traffic-distribution-mode :random))
+          (async/>!! scaling-mode-chan {:scaling-mode :scale-down})
+          (check-state-fn query-state-chan initial-state)
+          (async/>!! scaling-mode-chan {:scaling-mode :stable})
+          (check-state-fn query-state-chan (assoc initial-state :traffic-distribution-mode :random))
+
+          (async/>!! exit-chan :exit))))
+
+    (deftest test-start-service-chan-responder-traffic-distribution-mode-random
+      (let [current-time (t/now)
+            initial-state {:id->instance id->instance-data
+                           :instance-id->blacklist-expiry-time {}
+                           :instance-id->request-id->use-reason-map {}
+                           :instance-id->consecutive-failures {}
+                           :instance-id->state (-> {}
+                                                 (update-slot-state-fn "s1.h1" 2 0)
+                                                 (update-slot-state-fn "s1.h2" 1 0)
+                                                 (update-slot-state-fn "s1.h3" 2 0)
+                                                 (update-slot-state-fn "s1.h4" 1 0))
+                           :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.h4" "s1.h5" "s1.h6" "s1.u1" "s1.u2" "s1.u3"]
+                           :traffic-distribution-mode :oldest}
+            {:keys [exit-chan query-state-chan reserve-instance-chan scaling-mode-chan]}
+            (launch-service-chan-responder 13 initial-state)]
+
+        (with-redefs [t/now (fn [] current-time)
+                      rand-nth last]
+
+          ;; reserves first (oldest) available instance
+          (check-reserve-request-instance-fn reserve-instance-chan "s1.h1")
+          (check-state-fn query-state-chan
+                          (-> initial-state
+                            (assoc :instance-id->request-id->use-reason-map
+                                   {"s1.h1" {"req-14" {:cid "cid-14" :request-id "req-14" :reason :serve-request}}})
+                            (update-in [:instance-id->state] #(update-slot-state-fn %1 "s1.h1" 2 1))))
+
+          ;; changes traffic distribution mode to random
+          (async/>!! scaling-mode-chan {:scaling-mode :scale-up})
+          (check-state-fn query-state-chan
+                          (-> initial-state
+                            (assoc :instance-id->request-id->use-reason-map
+                                   {"s1.h1" {"req-14" {:cid "cid-14" :request-id "req-14" :reason :serve-request}}}
+                                   :traffic-distribution-mode :random)
+                            (update-in [:instance-id->state] #(update-slot-state-fn %1 "s1.h1" 2 1))))
+
+          ;; reserves last (random) available instance
+          (check-reserve-request-instance-fn reserve-instance-chan "s1.h4")
+          (check-state-fn query-state-chan
+                          (-> initial-state
+                            (assoc :instance-id->request-id->use-reason-map
+                                   {"s1.h1" {"req-14" {:cid "cid-14" :request-id "req-14" :reason :serve-request}}
+                                    "s1.h4" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :serve-request}}}
+                                   :traffic-distribution-mode :random)
+                            (update-in [:instance-id->state] #(update-slot-state-fn %1 "s1.h1" 2 1))
+                            (update-in [:instance-id->state] #(update-slot-state-fn %1 "s1.h4" 1 1))))
+
+
+          ;; keeps traffic distribution mode to random
+          (async/>!! scaling-mode-chan {:scaling-mode :stable})
+          (check-state-fn query-state-chan
+                          (-> initial-state
+                            (assoc :instance-id->request-id->use-reason-map
+                                   {"s1.h1" {"req-14" {:cid "cid-14" :request-id "req-14" :reason :serve-request}}
+                                    "s1.h4" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :serve-request}}}
+                                   :traffic-distribution-mode :random)
+                            (update-in [:instance-id->state] #(update-slot-state-fn %1 "s1.h1" 2 1))
+                            (update-in [:instance-id->state] #(update-slot-state-fn %1 "s1.h4" 1 1))))
+
+          ;; reserves last (random) available instance
+          (check-reserve-request-instance-fn reserve-instance-chan "s1.h3")
+          (check-state-fn query-state-chan
+                          (-> initial-state
+                            (assoc :instance-id->request-id->use-reason-map
+                                   {"s1.h1" {"req-14" {:cid "cid-14" :request-id "req-14" :reason :serve-request}}
+                                    "s1.h3" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}}
+                                    "s1.h4" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :serve-request}}}
+                                   :traffic-distribution-mode :random)
+                            (update-in [:instance-id->state] #(update-slot-state-fn %1 "s1.h1" 2 1))
+                            (update-in [:instance-id->state] #(update-slot-state-fn %1 "s1.h3" 2 1))
+                            (update-in [:instance-id->state] #(update-slot-state-fn %1 "s1.h4" 1 1))))
 
           (async/>!! exit-chan :exit))))))

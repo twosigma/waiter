@@ -318,7 +318,7 @@
                 actual (if (= :kill-instance reason)
                          (find-killable-instance id->instance instance-id->state acceptable-instance-id?
                                                  instance-id->request-id->use-reason-map lingering-request-threshold-ms)
-                         (find-available-instance sorted-instance-ids id->instance instance-id->state acceptable-instance-id?))]
+                         (find-available-instance sorted-instance-ids id->instance instance-id->state acceptable-instance-id? first))]
             (when (or (and (nil? expected) (not (nil? actual)))
                       (and expected (not-any? #(= actual %) expected)))
               (println name)

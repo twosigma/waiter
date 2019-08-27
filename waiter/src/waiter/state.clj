@@ -143,7 +143,7 @@
 (defn find-available-instance
   "For servicing requests, choose the _oldest_ live healthy instance with available slots.
    If such an instance does not exist, choose the _youngest_ expired healthy instance with available slots."
-  [sorted-instance-ids id->instance instance-id->state acceptable-instance-id?]
+  [sorted-instance-ids id->instance instance-id->state acceptable-instance-id? select-fn]
   (->> sorted-instance-ids
        (filter acceptable-instance-id?)
        (filter (fn [instance-id]
@@ -151,7 +151,7 @@
                    (and (not (nil? state))
                         (slots-available? state)
                         (healthy? state)))))
-       first
+       select-fn
        id->instance))
 
 (defn sort-instances-for-processing
@@ -346,7 +346,8 @@
    Work-stealing offers are used with higher priority to enable releasing it quickly when the request is done.
    Instances from the available slots are looked up only when there are no work-stealing offers,
    this is expected to be the common case."
-  [{:keys [deployment-error id->instance instance-id->state request-id->work-stealer sorted-instance-ids work-stealing-queue] :as current-state}
+  [{:keys [deployment-error id->instance instance-id->state request-id->work-stealer sorted-instance-ids
+           traffic-distribution-mode work-stealing-queue] :as current-state}
    service-id update-slot-state-fn [{:keys [cid request-id] :as reason-map} resp-chan exclude-ids-set _]]
   (if deployment-error ; if a deployment error is associated with the state, return the error immediately instead of an instance
     {:current-state' current-state
@@ -364,8 +365,13 @@
          :response-chan resp-chan
          :response instance})
       ; lookup available slots from router's pre-allocated instances
-      (let [{instance-id :id :as instance-to-offer}
-            (find-available-instance sorted-instance-ids id->instance instance-id->state #(not (contains? exclude-ids-set %)))]
+      (let [acceptable-instance-id? #(not (contains? exclude-ids-set %))
+            select-fn (cond
+                        (= traffic-distribution-mode :random) rand-nth
+                        ;; traffic-distribution-mode oldest
+                        :else first)
+            {instance-id :id :as instance-to-offer}
+            (find-available-instance sorted-instance-ids id->instance instance-id->state acceptable-instance-id? select-fn)]
         (if instance-to-offer
           {:current-state' (-> current-state
                                (assoc-in [:instance-id->request-id->use-reason-map instance-id request-id] reason-map)
@@ -542,7 +548,7 @@
   [service-id trigger-unblacklist-process-fn
    {:keys [blacklist-backoff-base-time-ms lingering-request-threshold-ms max-blacklist-time-ms]}
    {:keys [blacklist-instance-chan exit-chan kill-instance-chan query-state-chan release-instance-chan
-           reserve-instance-chan unblacklist-instance-chan update-state-chan work-stealing-chan]}
+           reserve-instance-chan scaling-mode-chan unblacklist-instance-chan update-state-chan work-stealing-chan]}
    initial-state]
   (when (some nil? (vals initial-state))
     (throw (ex-info "Initial state contains nil values!" initial-state)))
@@ -599,17 +605,7 @@
         ; :locked => instance has been locked and cannot be used to satify any other request (e.g. used for a kill request)
         ; :expired => instance has exceeded its age and is being prepared to be replaced
         ; :starting => instance is starting up and has the potential to be healthy
-        (loop [{:keys [deployment-error
-                       id->instance
-                       instability-issue
-                       instance-id->blacklist-expiry-time
-                       instance-id->consecutive-failures
-                       instance-id->request-id->use-reason-map
-                       instance-id->state
-                       request-id->work-stealer
-                       sorted-instance-ids
-                       timer-context
-                       work-stealing-queue]
+        (loop [{:keys [deployment-error instance-id->state timer-context work-stealing-queue]
                 :as current-state}
                (merge {:deployment-error nil
                        :id->instance {}
@@ -621,6 +617,7 @@
                        :request-id->work-stealer {}
                        :sorted-instance-ids []
                        :timer-context (timers/start responder-timer)
+                       :traffic-distribution-mode :oldest
                        :work-stealing-queue (PersistentQueue/EMPTY)}
                       initial-state)]
           (if-let [new-state
@@ -633,7 +630,7 @@
                                        (when (or slots-available? (seq work-stealing-queue) deployment-error)
                                          [reserve-instance-chan])
                                        [release-instance-chan blacklist-instance-chan unblacklist-instance-chan kill-instance-chan
-                                        work-stealing-chan query-state-chan exit-chan])
+                                        work-stealing-chan scaling-mode-chan query-state-chan exit-chan])
                          [data chan-selected] (async/alts! chans :priority true)]
                      (cond->
                        ;; first obtain new state by pre-processing based on selected channel
@@ -674,6 +671,13 @@
                              update-state-by-blacklisting-instance-fn update-instance-id->blacklist-expiry-time-fn
                              work-stealing-received-in-flight-counter max-blacklist-time-ms
                              blacklist-backoff-base-time-ms max-backoff-exponent data))
+
+                         scaling-mode-chan
+                         (let [{:keys [scaling-mode]} data
+                               traffic-distribution-mode (if (= :scale-down scaling-mode) :oldest :random)]
+                           (log/info service-id "traffic distribution mode is now" traffic-distribution-mode
+                                     "as scaling mode is" scaling-mode)
+                           (assoc current-state :traffic-distribution-mode traffic-distribution-mode))
 
                          query-state-chan
                          (let [{:keys [cid response-chan service-id]} data]
@@ -771,6 +775,7 @@
                      :release-instance-chan (async/chan 1024)
                      :blacklist-instance-chan (async/chan 1024)
                      :query-state-chan (async/chan 1024)
+                     :scaling-mode-chan (au/latest-chan)
                      :unblacklist-instance-chan (async/chan 1024)
                      :update-state-chan (au/latest-chan)
                      :work-stealing-chan (async/chan 1024)
@@ -799,7 +804,7 @@
    Requests for service-chan-responder channels is passed into request-chan
       It is expected that messages on the channel have a map with keys
       `:cid`, `:method`, `:response-chan`, and `:service-id`.
-      The `method` should be either `:blacklist`, `:kill`, `:query-state`, `:reserve`, or `release`.
+      The `method` should be either `:blacklist`, `:kill`, `:query-state`, `:reserve`, `:release`, or `:scaling-mode`.
       The `service-id` is the service for the request and
       `response-chan` will have the corresponding channel placed onto it by invoking
       `(retrieve-channel channel-map method)`.
