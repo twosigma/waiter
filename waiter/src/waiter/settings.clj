@@ -94,8 +94,7 @@
                               (s/required-key :inter-kill-request-wait-time-ms) schema/positive-int
                               (s/required-key :max-expired-unhealthy-instances-to-consider) schema/non-negative-int
                               (s/required-key :quanta-constraints) {(s/required-key :cpus) schema/positive-int
-                                                                    (s/required-key :mem) schema/positive-int}
-                              (s/required-key :tracker-interval-ms) schema/positive-int}
+                                                                    (s/required-key :mem) schema/positive-int}}
    (s/required-key :scheduler-config) (s/constrained
                                         {:kind s/Keyword
                                          s/Keyword schema/require-symbol-factory-fn}
@@ -325,8 +324,7 @@
              :inter-kill-request-wait-time-ms 1000
              :max-expired-unhealthy-instances-to-consider 2
              :quanta-constraints {:cpus 64
-                                  :mem (* 512 1024)}
-             :tracker-interval-ms 5000}
+                                  :mem (* 512 1024)}}
    :scheduler-config {:kind :marathon
                       :cook {:factory-fn 'waiter.scheduler.cook/cook-scheduler
                              :authorizer {:kind :default

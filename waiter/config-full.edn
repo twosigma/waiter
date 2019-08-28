@@ -640,10 +640,7 @@
            ;; The number of new instances started per scale-up is the maximum of 1 and the resource consumed
            ;; limit calculated based on the cpus and mem specified in the quanta-constraints.
            :quanta-constraints {:cpus 64
-                                :mem 524288}
-
-           ;; How often (milliseconds) to run the autoscaling scaling mode tracker:
-           :tracker-interval-ms 5000}
+                                :mem 524288}}
 
  ; ---------- Service Descriptions ----------
 

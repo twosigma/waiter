@@ -407,11 +407,20 @@
      :scale-to-instances scale-to-instances'
      :target-instances target-instances'}))
 
+(defn scale-state->scaling-mode
+  "Determines the scale mode from the scaling-amount."
+  [scale-amount]
+  (cond
+    (pos? scale-amount) :scale-up
+    (neg? scale-amount) :scale-down
+    :else :stable))
+
 (defn scale-services
   "Scales a sequence of services given the scale state of each service, and returns a new scale state which
   is fed back in the for the next call to scale-services."
   [service-ids service-id->service-description service-id->outstanding-requests service-id->scale-state apply-scaling-fn
-   scale-ticks scale-service-fn service-id->router-state service-id->scheduler-state max-expired-unhealthy-instances-to-consider]
+   update-service-scale-state! scale-ticks scale-service-fn service-id->router-state service-id->scheduler-state
+   max-expired-unhealthy-instances-to-consider]
   (try
     (log/trace "scaling apps" {:service-ids service-ids
                                :service-id->service-description service-id->service-description
@@ -444,6 +453,10 @@
           (when (< instances (service-description "min-instances"))
             (log/warn "scheduler reported service had fewer instances than min-instances"
                       {:service-id service-id :instances instances :min-instances (service-description "min-instances")}))
+          (let [prev-scaling-mode (some-> service-id service-id->scale-state :scale-amount scale-state->scaling-mode)
+                curr-scaling-mode (scale-state->scaling-mode scale-amount)]
+            (when (not= prev-scaling-mode curr-scaling-mode)
+              (update-service-scale-state! service-id curr-scaling-mode)))
           (when-not (zero? scale-amount)
             (apply-scaling-fn service-id
                               {:outstanding-requests outstanding-requests
@@ -479,7 +492,8 @@
   "Autoscaler encapsulated in goroutine.
    Acquires state of services and passes to scale-services."
   [initial-state leader?-fn service-id->metrics-fn executor-multiplexer-chan scheduler timeout-interval-ms scale-service-fn
-   service-id->service-description-fn state-mult scheduler-interactions-thread-pool max-expired-unhealthy-instances-to-consider]
+   service-id->service-description-fn state-mult scheduler-interactions-thread-pool max-expired-unhealthy-instances-to-consider
+   update-service-scale-state!]
   (let [state-atom (atom (merge {:continue-looping true
                                  :global-state {}
                                  :iter-counter 1
@@ -565,6 +579,7 @@
                                                       (pc/map-from-keys #(get-in global-state' [% "outstanding"] 0) scalable-service-ids)
                                                       service-id->scale-state
                                                       apply-scaling-fn
+                                                      update-service-scale-state!
                                                       scale-ticks
                                                       scale-service-fn
                                                       service-id->router-state
@@ -596,37 +611,3 @@
      :query-state-fn (fn query-autoscaler-state-fn [] @state-atom)
      :query-service-state-fn (fn query-autoscaler-service-state-fn [query-params]
                                (query-autoscaler-service-state @state-atom query-params))}))
-
-(defn start-scaling-mode-tracker
-  "Launches a task that queries the autoscaler state that tracks the scaling mode of each service.
-   The task runs every refresh-interval-ms ms and can be canceled by invoking the returned cancel-fn.
-   Invokes (update-service-scale-state! service-id scaling-mode) whenever a change in scaling mode is observed."
-  [query-autoscaler-state update-service-scale-state! refresh-interval-ms]
-  (let [state-atom (atom {:last-update-time (t/now)
-                          :service-id->scaling-mode {}})]
-    {:cancel-fn (du/start-timer-task
-                  (t/millis refresh-interval-ms)
-                  (fn scaling-mode-tracker-task []
-                    (metrics/with-timer!
-                      (metrics/waiter-timer "autoscaler" "tracker")
-                      (fn [elapsed-ns]
-                        (log/info "scaling mode tracker iteration took" (-> elapsed-ns (/ 1e6) int) "ms")
-                      (let [{:keys [service-id->scaling-mode] :as current-state} @state-atom
-                            {:keys [service-id->scale-state]} (query-autoscaler-state)
-                            service-id->scaling-mode' (pc/map-vals
-                                                        (fn scale-state->scaling-mode
-                                                          [{:keys [scale-amount]}]
-                                                          (cond
-                                                            (pos? scale-amount) :scale-up
-                                                            (neg? scale-amount) :scale-down
-                                                            :else :stable))
-                                                        service-id->scale-state)]
-                        (log/info "scaling mode tracker observing" (count service-id->scaling-mode') "services")
-                        (doseq [[service-id scaling-mode] service-id->scaling-mode']
-                          (when (not= scaling-mode (get service-id->scaling-mode service-id))
-                            (update-service-scale-state! service-id scaling-mode)))
-                        (->> (assoc current-state
-                               :last-update-time (t/now)
-                               :service-id->scaling-mode service-id->scaling-mode')
-                          (reset! state-atom)))))))
-     :query-state-fn (fn query-scaling-mode-tracker-state-fn [] @state-atom)}))
