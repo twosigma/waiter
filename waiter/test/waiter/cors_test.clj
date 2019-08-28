@@ -25,32 +25,32 @@
   (let [validator (pattern-based-validator {:allowed-origins [#"^http://[^\.]+\.example\.org(:80)?$"
                                                               #"^https://anotherapp.example.org:12345$"]})
         create-request-with-origin (fn [origin] {:headers {"origin" origin}})]
-    (is (= {:result true :summary [:origin-present :origin-different :pattern-matched]}
-           (preflight-allowed? validator (create-request-with-origin "http://myapp.example.org"))))
-    (is (= {:result true :summary [:origin-present :origin-different :pattern-matched]}
-           (preflight-allowed? validator (create-request-with-origin "http://myapp.example.org:80"))))
-    (is (= {:result true :summary [:origin-present :origin-different :pattern-matched]}
-           (preflight-allowed? validator (create-request-with-origin "https://anotherapp.example.org:12345"))))
-    (is (= {:result false :summary [:origin-present :origin-different :pattern-not-matched]}
-           (preflight-allowed? validator (create-request-with-origin "http://anotherapp.example.org:12345"))))
-    (is (= {:result false :summary [:origin-present :origin-different :pattern-not-matched]}
-           (preflight-allowed? validator (create-request-with-origin "http://anotherapp.example.org:12346"))))
-    (is (= {:result false :summary [:origin-present :origin-different :pattern-not-matched]}
-           (preflight-allowed? validator (create-request-with-origin "http://myapp.baddomain.com"))))
-    (is (= {:result false :summary [:origin-present :origin-different :pattern-not-matched]}
-           (preflight-allowed? validator (create-request-with-origin "http://myapp.baddomain.com:8080"))))
-    (is (= {:result true :summary [:origin-present :origin-same]}
-           (request-allowed? validator {:headers {"origin" "http://example.com"
-                                                  "host" "example.com"}
-                                        :scheme :http})))
-    (is (= {:result false :summary [:origin-present :origin-different :pattern-not-matched]}
-           (request-allowed? validator {:headers {"origin" "http://bad.example.com"
-                                                  "host" "bad.example.com"}
-                                        :scheme :https})))
-    (is (= {:result false :summary [:origin-present :origin-different :pattern-not-matched]}
-           (request-allowed? validator {:headers {"origin" "http://bad.example.com"
-                                                  "host" "good.example.com"}
-                                        :scheme :http})))))
+    (is (= {:allowed? true :summary {:pattern-based-validator [:origin-present :origin-different :pattern-matched]}}
+           (preflight-check validator (create-request-with-origin "http://myapp.example.org"))))
+    (is (= {:allowed? true :summary {:pattern-based-validator [:origin-present :origin-different :pattern-matched]}}
+           (preflight-check validator (create-request-with-origin "http://myapp.example.org:80"))))
+    (is (= {:allowed? true :summary {:pattern-based-validator [:origin-present :origin-different :pattern-matched]}}
+           (preflight-check validator (create-request-with-origin "https://anotherapp.example.org:12345"))))
+    (is (= {:allowed? false :summary {:pattern-based-validator [:origin-present :origin-different :pattern-not-matched]}}
+           (preflight-check validator (create-request-with-origin "http://anotherapp.example.org:12345"))))
+    (is (= {:allowed? false :summary {:pattern-based-validator [:origin-present :origin-different :pattern-not-matched]}}
+           (preflight-check validator (create-request-with-origin "http://anotherapp.example.org:12346"))))
+    (is (= {:allowed? false :summary {:pattern-based-validator [:origin-present :origin-different :pattern-not-matched]}}
+           (preflight-check validator (create-request-with-origin "http://myapp.baddomain.com"))))
+    (is (= {:allowed? false :summary {:pattern-based-validator [:origin-present :origin-different :pattern-not-matched]}}
+           (preflight-check validator (create-request-with-origin "http://myapp.baddomain.com:8080"))))
+    (is (= {:allowed? true :summary {:pattern-based-validator [:origin-present :origin-same]}}
+           (request-check validator {:headers {"origin" "http://example.com"
+                                               "host" "example.com"}
+                                     :scheme :http})))
+    (is (= {:allowed? false :summary {:pattern-based-validator [:origin-present :origin-different :pattern-not-matched]}}
+           (request-check validator {:headers {"origin" "http://bad.example.com"
+                                               "host" "bad.example.com"}
+                                     :scheme :https})))
+    (is (= {:allowed? false :summary {:pattern-based-validator [:origin-present :origin-different :pattern-not-matched]}}
+           (request-check validator {:headers {"origin" "http://bad.example.com"
+                                               "host" "good.example.com"}
+                                     :scheme :http})))))
 
 (deftest test-pattern-based-validator
   (is (thrown? Throwable (pattern-based-validator {})))
@@ -84,18 +84,18 @@
                                                                       "methods" ["OPTIONS" "POST"]}]}}})]
 
   (deftest test-token-parameter-based-validator
-    (is (= {:result true :summary [:origin-present :origin-same]}
-           (preflight-allowed? validator {:headers {"origin" "http://example.com" "host" "example.com"}
-                                          :scheme :http})))
-    (is (= {:result true :summary [:origin-present :origin-same]}
-           (request-allowed? validator {:headers {"origin" "http://example.com" "host" "example.com"}
-                                        :scheme :http})))
-    (is (= {:result false :summary [:origin-present :origin-different :no-rule-matched]}
-           (preflight-allowed? validator {:headers {"origin" "https://example.com" "host" "example.com"}
-                                          :scheme :http})))
-    (is (= {:result false :summary [:origin-present :origin-different :no-rule-matched]}
-           (request-allowed? validator {:headers {"origin" "https://example.com" "host" "example.com"}
-                                        :scheme :http}))))
+    (is (= {:allowed? true :summary {:token-parameter-based-validator [:origin-present :origin-same]}}
+           (preflight-check validator {:headers {"origin" "http://example.com" "host" "example.com"}
+                                       :scheme :http})))
+    (is (= {:allowed? true :summary {:token-parameter-based-validator [:origin-present :origin-same]}}
+           (request-check validator {:headers {"origin" "http://example.com" "host" "example.com"}
+                                     :scheme :http})))
+    (is (= {:allowed? false :summary {:token-parameter-based-validator [:origin-present :origin-different :no-rule-matched]}}
+           (preflight-check validator {:headers {"origin" "https://example.com" "host" "example.com"}
+                                       :scheme :http})))
+    (is (= {:allowed? false :summary {:token-parameter-based-validator [:origin-present :origin-different :no-rule-matched]}}
+           (request-check validator {:headers {"origin" "https://example.com" "host" "example.com"}
+                                     :scheme :http}))))
 
   (defn- check-cors-match
     ([origin matched-rule-index]
@@ -105,10 +105,10 @@
     ([origin path scheme matched-rule-index]
      (check-cors-match origin path scheme :get matched-rule-index nil))
     ([origin path scheme method matched-rule-index allowed-methods]
-     (is (= {:result true :summary [:origin-present :origin-different :rule-matched (keyword (str "rule-" matched-rule-index "-matched"))] :allowed-methods allowed-methods}
-            (preflight-allowed? validator (create-request-with-origin origin path scheme method))))
-     (is (= {:result true :summary [:origin-present :origin-different :rule-matched (keyword (str "rule-" matched-rule-index "-matched"))] :allowed-methods allowed-methods}
-            (request-allowed? validator (create-request-with-origin origin path scheme method))))))
+     (is (= {:allowed? true :summary {:token-parameter-based-validator [:origin-present :origin-different :rule-matched (keyword (str "rule-" matched-rule-index "-matched"))]} :allowed-methods allowed-methods}
+            (preflight-check validator (create-request-with-origin origin path scheme method))))
+     (is (= {:allowed? true :summary {:token-parameter-based-validator [:origin-present :origin-different :rule-matched (keyword (str "rule-" matched-rule-index "-matched"))]} :allowed-methods allowed-methods}
+            (request-check validator (create-request-with-origin origin path scheme method))))))
 
   (deftest test-token-parameter-based-validator-match
     (check-cors-match "http://origin-regex0.com" 0)
@@ -126,10 +126,10 @@
     ([origin path scheme]
      (check-cors-no-match origin path scheme :get))
     ([origin path scheme method]
-     (is (= {:result false :summary [:origin-present :origin-different :no-rule-matched]}
-            (preflight-allowed? validator (create-request-with-origin origin path scheme method))))
-     (is (= {:result false :summary [:origin-present :origin-different :no-rule-matched]}
-            (request-allowed? validator (create-request-with-origin origin path scheme method))))))
+     (is (= {:allowed? false :summary {:token-parameter-based-validator [:origin-present :origin-different :no-rule-matched]}}
+            (preflight-check validator (create-request-with-origin origin path scheme method))))
+     (is (= {:allowed? false :summary {:token-parameter-based-validator [:origin-present :origin-different :no-rule-matched]}}
+            (request-check validator (create-request-with-origin origin path scheme method))))))
 
   (deftest test-token-parameter-based-validator-no-match
     (check-cors-no-match "http://origin-regexx.com")
@@ -139,9 +139,9 @@
 
   (deftest test-token-parameter-access-control-allow-methods
     (is (= nil
-           (seq (:allowed-methods (preflight-allowed? validator (create-request-with-origin "http://origin-regex0.com" "" :http :get))))))
+           (seq (:allowed-methods (preflight-check validator (create-request-with-origin "http://origin-regex0.com" "" :http :get))))))
     (is (= (seq ["OPTIONS" "POST"])
-           (seq (:allowed-methods (preflight-allowed? validator (create-request-with-origin "https://origin-regex4.com" "/target/path" :https :post))))))))
+           (seq (:allowed-methods (preflight-check validator (create-request-with-origin "https://origin-regex4.com" "/target/path" :https :post))))))))
 
 (deftest test-wrap-cors-request
   (let [waiter-request? (constantly false)
