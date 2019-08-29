@@ -154,6 +154,59 @@
         (finally
           (delete-token-and-assert waiter-url token))))))
 
+(deftest ^:parallel ^:integration-fast test-request-authentication-and-on-the-fly-headers
+  (testing-using-waiter-url
+    (let [token (str "token-" (rand-name))
+          token-description (assoc (kitchen-request-headers :prefix "")
+                              :authentication "disabled"
+                              :metric-group "waiter_ws_test"
+                              :name (rand-name)
+                              :permitted-user "*"
+                              :run-as-user (retrieve-username)
+                              :token token)
+          ]
+      (try
+        (let [token-response (post-token waiter-url token-description)]
+          (assert-response-status token-response 200)
+
+          (let [connect-success-promise (promise)
+                waiter-headers {"x-waiter-concurrency-level" 300
+                                "x-waiter-token" token}
+                connection (ws-client/connect!
+                             (websocket-client-factory)
+                             (ws-url waiter-url "/websocket-unauth")
+                             (fn [{:keys [out]}]
+                               (deliver connect-success-promise :success)
+                               (async/close! out))
+                             {:middleware (fn [_ ^UpgradeRequest request]
+                                            (websocket/add-headers-to-upgrade-request! request waiter-headers))})
+                [close-code error] (connection->ctrl-data connection)]
+            (is (= :qbits.jet.websocket/error close-code))
+            (is (instance? UpgradeException error))
+            (is (str/includes? (.getMessage error)
+                               "400 An authentication disabled token may not be combined with on-the-fly headers"))
+            (is (not (realized? connect-success-promise))))
+
+          (let [connect-success-promise (promise)
+                waiter-headers {"x-waiter-authentication" "standard"
+                                "x-waiter-token" token}
+                connection (ws-client/connect!
+                             (websocket-client-factory)
+                             (ws-url waiter-url "/websocket-unauth")
+                             (fn [{:keys [out]}]
+                               (deliver connect-success-promise :success)
+                               (async/close! out))
+                             {:middleware (fn [_ ^UpgradeRequest request]
+                                            (websocket/add-headers-to-upgrade-request! request waiter-headers))})
+                [close-code error] (connection->ctrl-data connection)]
+            (is (= :qbits.jet.websocket/error close-code))
+            (is (instance? UpgradeException error))
+            (is (str/includes? (.getMessage error)
+                               "400 An authentication parameter is not supported for on-the-fly headers"))
+            (is (not (realized? connect-success-promise)))))
+        (finally
+          (delete-token-and-assert waiter-url token))))))
+
 (deftest ^:parallel ^:integration-fast test-request-auth-success-single-subprotocol
   (testing-using-waiter-url
     (let [auth-cookie-value (auth-cookie waiter-url)

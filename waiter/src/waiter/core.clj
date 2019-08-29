@@ -548,6 +548,37 @@
             (log/info router-id "relinquishing leadership as there are too few routers in cluster:" num-routers))
           (>= num-routers min-cluster-routers))))
 
+(defn process-authentication-parameter
+  "Processes the authentication parameter and invokes the provided callbacks:
+   - (on-error status message) when any error is detected
+   - (on-disabled) when the authentication is disabled
+   - (on-auth-required) when authentication is enabled."
+  [waiter-discovery on-error on-disabled on-auth-required]
+  (let [{:keys [service-parameter-template token waiter-headers]} waiter-discovery
+        {:strs [authentication] :as service-description} service-parameter-template
+        authentication-disabled? (= authentication "disabled")]
+    (cond
+      (contains? waiter-headers "x-waiter-authentication")
+      (do
+        (log/info "x-waiter-authentication is not supported as an on-the-fly header"
+                  {:service-description service-description, :token token})
+        (on-error 400 "An authentication parameter is not supported for on-the-fly headers"))
+
+      ;; ensure service description formed comes entirely from the token by ensuring absence of on-the-fly headers
+      (and authentication-disabled? (some sd/service-parameter-keys (-> waiter-headers headers/drop-waiter-header-prefix keys)))
+      (do
+        (log/info "request cannot proceed as it is mixing an authentication disabled token with on-the-fly headers"
+                  {:service-description service-description, :token token})
+        (on-error 400 "An authentication disabled token may not be combined with on-the-fly headers"))
+
+      authentication-disabled?
+      (do
+        (log/info "request configured to skip authentication")
+        (on-disabled))
+
+      :else
+      (on-auth-required))))
+
 ;; PRIVATE API
 (def state
   {:async-request-store-atom (pc/fnk [] (atom {}))
@@ -987,13 +1018,17 @@
                                                   :uri (some-> request .getRequestURI .getPath)})
                                        (.setHeader response "server" server-name)
                                        (.setHeader response "x-cid" correlation-id)
-                                       (let [{:keys [service-parameter-template waiter-headers]}
-                                             (sd/discover-service-parameters kv-store token-defaults waiter-hostnames request-headers)]
-                                         ;; authentication can be skipped if it is disabled and there are no on-the-fly headers
-                                         (and (or (and (= "disabled" (get service-parameter-template "authentication"))
-                                                       (not-any? sd/service-parameter-keys (-> waiter-headers headers/drop-waiter-header-prefix keys)))
-                                                  (ws/request-authenticator password request response))
-                                              (ws/request-subprotocol-acceptor request response)))))))})
+                                       (let [waiter-discovery (sd/discover-service-parameters kv-store token-defaults waiter-hostnames request-headers)]
+                                         (process-authentication-parameter
+                                           waiter-discovery
+                                           (fn [status message]
+                                             (.sendError response status message)
+                                             false)
+                                           (fn []
+                                             (ws/request-subprotocol-acceptor request response))
+                                           (fn []
+                                             (and (ws/request-authenticator password request response)
+                                                  (ws/request-subprotocol-acceptor request response)))))))))})
 
 (def daemons
   {:autoscaler (pc/fnk [[:curator leader?-fn]
@@ -1595,31 +1630,13 @@
                           (fn wrap-auth-bypass-fn
                             [handler]
                             (fn [{:keys [waiter-discovery] :as request}]
-                              (let [{:keys [service-parameter-template token waiter-headers]} waiter-discovery
-                                    {:strs [authentication] :as service-description} service-parameter-template
-                                    authentication-disabled? (= authentication "disabled")]
-                                (cond
-                                  (contains? waiter-headers "x-waiter-authentication")
-                                  (do
-                                    (log/info "x-waiter-authentication is not supported as an on-the-fly header"
-                                              {:service-description service-description, :token token})
-                                    (utils/clj->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
-                                                              :status 400))
-
-                                  ;; ensure service description formed comes entirely from the token by ensuring absence of on-the-fly headers
-                                  (and authentication-disabled? (some sd/service-parameter-keys (-> waiter-headers headers/drop-waiter-header-prefix keys)))
-                                  (do
-                                    (log/info "request cannot proceed as it is mixing an authentication disabled token with on-the-fly headers"
-                                              {:service-description service-description, :token token})
-                                    (utils/clj->json-response {:error "An authentication disabled token may not be combined with on-the-fly headers"}
-                                                              :status 400))
-
-                                  authentication-disabled?
-                                  (do
-                                    (log/info "request configured to skip authentication")
-                                    (handler (assoc request :skip-authentication true)))
-
-                                  :else
+                              (process-authentication-parameter
+                                waiter-discovery
+                                (fn [status message]
+                                  (utils/clj->json-response {:error message} :status status))
+                                (fn []
+                                  (handler (assoc request :skip-authentication true)))
+                                (fn []
                                   (handler request))))))
    :wrap-descriptor-fn (pc/fnk [[:routines request->descriptor-fn start-new-service-fn]
                                 [:state fallback-state-atom]]
