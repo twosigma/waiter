@@ -27,7 +27,6 @@
             [waiter.scheduler :as scheduler]
             [waiter.service :as service]
             [waiter.util.async-utils :as au]
-            [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
   (:import (org.joda.time DateTime)))
 
@@ -407,14 +406,6 @@
      :scale-to-instances scale-to-instances'
      :target-instances target-instances'}))
 
-(defn scale-state->scaling-state
-  "Determines the scale mode from the scaling-amount."
-  [scale-amount]
-  (cond
-    (pos? scale-amount) :scale-up
-    (neg? scale-amount) :scale-down
-    :else :stable))
-
 (defn scale-services
   "Scales a sequence of services given the scale state of each service, and returns a new scale state which
   is fed back in the for the next call to scale-services."
@@ -453,8 +444,8 @@
           (when (< instances (service-description "min-instances"))
             (log/warn "scheduler reported service had fewer instances than min-instances"
                       {:service-id service-id :instances instances :min-instances (service-description "min-instances")}))
-          (let [prev-scaling-state (some-> service-id service-id->scale-state :scale-amount scale-state->scaling-state)
-                curr-scaling-state (scale-state->scaling-state scale-amount)]
+          (let [prev-scaling-state (some-> service-id service-id->scale-state :scale-amount utils/scale-state->scaling-state)
+                curr-scaling-state (utils/scale-state->scaling-state scale-amount)]
             (when (not= prev-scaling-state curr-scaling-state)
               (update-service-scale-state! service-id curr-scaling-state)))
           (when-not (zero? scale-amount)

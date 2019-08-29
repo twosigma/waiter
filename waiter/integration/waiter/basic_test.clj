@@ -462,6 +462,7 @@
             (is service)
             (is (contains? #{"Running" "Starting"} (get service "status")))
             (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
+            (is (get service "scaling-state") (str service))
             (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
         (testing "with star run-as-user parameter"
@@ -470,6 +471,7 @@
             (is service)
             (is (contains? #{"Running" "Starting"} (get service "status")))
             (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
+            (is (get service "scaling-state") (str service))
             (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
         (testing "waiter user disabled" ;; see my app as myself
@@ -477,6 +479,7 @@
             (is service)
             (is (contains? #{"Running" "Starting"} (get service "status")))
             (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
+            (is (get service "scaling-state") (str service))
             (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
         (testing "waiter user disabled and same user" ;; see my app as myself
@@ -484,6 +487,7 @@
             (is service)
             (is (contains? #{"Running" "Starting"} (get service "status")))
             (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
+            (is (get service "scaling-state") (str service))
             (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
         (testing "different run-as-user" ;; no such app
@@ -515,6 +519,7 @@
             (is service)
             (is (contains? #{"Running" "Starting"} (get service "status")))
             (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
+            (is (get service "scaling-state") (str service))
             (is (pos? (get-in service ["service-description" "cpus"])) service)))
         (delete-service waiter-url service-id)))))
 

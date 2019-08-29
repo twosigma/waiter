@@ -411,7 +411,8 @@
         scheduler-interactions-thread-pool (Executors/newFixedThreadPool 1)
         delete-service-result-atom (atom nil) ;; with-redefs fails as we are executing inside different threads
         configuration {:curator {:kv-store nil}
-                       :daemons {:router-state-maintainer {:maintainer {:query-state-fn (constantly {})}}}
+                       :daemons {:autoscaler {:query-state-fn (constantly {})}
+                                 :router-state-maintainer {:maintainer {:query-state-fn (constantly {})}}}
                        :routines {:allowed-to-manage-service?-fn allowed-to-manage-service?
                                   :generate-log-url-fn nil
                                   :make-inter-router-requests-sync-fn nil
@@ -506,7 +507,8 @@
         service-id->metrics {service-id {"last-request-time" last-request-time}}
         scheduler-interactions-thread-pool (Executors/newFixedThreadPool 1)
         configuration {:curator {:kv-store nil}
-                       :daemons {:router-state-maintainer {:maintainer {:query-state-fn (fn [] @router-state-atom)}}}
+                       :daemons {:autoscaler {:query-state-fn (constantly {})}
+                                 :router-state-maintainer {:maintainer {:query-state-fn (fn [] @router-state-atom)}}}
                        :routines {:allowed-to-manage-service?-fn (constantly true)
                                   :generate-log-url-fn (partial handler/generate-log-url #(str "http://www.example.com" %))
                                   :make-inter-router-requests-sync-fn nil
