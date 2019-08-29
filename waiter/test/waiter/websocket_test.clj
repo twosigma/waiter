@@ -188,8 +188,8 @@
                                  (is (= in-request
                                         (assoc request :authorization/method :cookie
                                                        :authorization/principal auth-principal
-                                                       :authorization/time auth-time
-                                                       :authorization/user auth-user)))
+                                                       :authorization/user auth-user
+                                                       :waiter/auth-expiry-time auth-time)))
                                  (reset! process-request-atom true)
                                  {})]
         (with-redefs [auth/get-auth-cookie-value identity
@@ -197,6 +197,18 @@
                                                 (is (= cookie-value in-cookie))
                                                 (is (= password in-password))
                                                 [auth-principal auth-time])]
+          (request-handler password process-request-fn request))
+        (is @process-request-atom)))
+
+    (testing "auth cookie missing"
+      (let [output-channel (async/promise-chan)
+            request {:headers headers, :out output-channel}
+            process-request-atom (atom false)
+            process-request-fn (fn process-request-fn [in-request]
+                                 (is (= in-request request))
+                                 (reset! process-request-atom true)
+                                 {})]
+        (with-redefs [auth/get-auth-cookie-value (constantly nil)]
           (request-handler password process-request-fn request))
         (is @process-request-atom)))))
 

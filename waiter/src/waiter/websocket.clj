@@ -102,17 +102,18 @@
 
 (defn request-handler
   "Handler for websocket requests.
-   If cookies are available, it populates the user credentials into the request.
+   When auth cookie is available, the user credentials are populated into the request.
    It then goes ahead and invokes the process-request-fn handler."
   [password process-request-fn {:keys [headers] :as request}]
-  (let [auth-cookie (-> headers (get "cookie") str auth/get-auth-cookie-value) ;; auth-cookie is assumed to be valid
-        [auth-principal auth-time] (auth/decode-auth-cookie auth-cookie password)
-        auth-params-map (auth/auth-params-map :cookie auth-principal)
-        handler (middleware/wrap-merge process-request-fn auth-params-map)]
-    (log/info "processing websocket request" {:user auth-principal})
-    (-> request
-        (assoc :authorization/time auth-time)
-        handler)))
+  ;; auth-cookie is assumed to be valid when it is present
+  (if-let [auth-cookie (-> headers (get "cookie") str auth/get-auth-cookie-value)]
+    (let [[auth-principal auth-time] (auth/decode-auth-cookie auth-cookie password)
+          auth-params-map (auth/auth-params-map :cookie auth-principal)
+          handler (middleware/wrap-merge process-request-fn auth-params-map)
+          request' (assoc request :waiter/auth-expiry-time auth-time)]
+      (log/info "processing websocket request" {:user auth-principal})
+      (handler request'))
+    (process-request-fn request)))
 
 (defn make-request-handler
   "Returns the handler for websocket requests."
@@ -391,10 +392,12 @@
       (stream-response request response descriptor instance-request-properties reservation-status-promise
                        request-close-promise-chan local-usage-agent metrics-map)
 
-      ;; force close connection when cookie expires
-      (let [auth-time (:authorization/time request)
+      ;; force close connection
+      ;; - a day after the auth cookie expires if it is available, or
+      ;; - a day after the unauthenticated request is made
+      (let [expiry-start-time (:waiter/auth-expiry-time request 0)
             one-day-in-millis (-> 1 t/days t/in-millis)
-            expiry-time-ms (+ auth-time one-day-in-millis)
+            expiry-time-ms (+ expiry-start-time one-day-in-millis)
             time-left-ms (max (- expiry-time-ms (System/currentTimeMillis)) 0)]
         (async/go
           (let [timeout-ch (async/timeout time-left-ms)
