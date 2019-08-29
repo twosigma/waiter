@@ -572,7 +572,7 @@
                     (Thread/sleep 1500) ;; sleep to allow cancellation propagation to backend
                     (assert-request-state grpc-client request-headers service-id correlation-id ::client-cancel)))))))))))
 
-(deftest ^:parallel ^:integration-slow test-grpc-bidi-streaming-server-exit
+(deftest ^:parallel ^:integration-slow ^:explicit test-grpc-bidi-streaming-server-exit
   (testing-using-waiter-url
     (let [num-messages 120
           num-iterations 3
