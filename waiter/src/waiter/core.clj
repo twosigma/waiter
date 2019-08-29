@@ -814,15 +814,15 @@
                                          (let [auth-handler (auth/wrap-auth-handler authenticator request-handler)
                                                password (first passwords)]
                                            (cond->> (fn authenticate-request [request]
-                                                  (cond
-                                                    (:skip-authentication request)
-                                                    (do
-                                                      (log/info "skipping authentication for request")
-                                                      (request-handler request))
-                                                    (auth/request-authenticated? request)
-                                                    (request-handler request)
-                                                    :else
-                                                    (auth-handler request)))
+                                                      (cond
+                                                        (:skip-authentication request)
+                                                        (do
+                                                          (log/info "skipping authentication for request")
+                                                          (request-handler request))
+                                                        (auth/request-authenticated? request)
+                                                        (request-handler request)
+                                                        :else
+                                                        (auth-handler request)))
                                              jwt-authenticator (jwt/wrap-auth-handler jwt-authenticator)
                                              true (auth/wrap-auth-cookie-handler password)))))
    :can-run-as?-fn (pc/fnk [[:state entitlement-manager]]
