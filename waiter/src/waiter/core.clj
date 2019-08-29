@@ -966,15 +966,24 @@
    :websocket-request-auth-cookie-attacher (pc/fnk [[:state passwords router-id]]
                                              (fn websocket-request-auth-cookie-attacher [request]
                                                (ws/inter-router-request-middleware router-id (first passwords) request)))
-   :websocket-request-acceptor (pc/fnk [[:state passwords server-name]]
+   :websocket-request-acceptor (pc/fnk [[:curator kv-store]
+                                        [:settings [:token-config token-defaults]]
+                                        [:state passwords server-name waiter-hostnames]]
                                  (fn websocket-request-acceptor [^ServletUpgradeRequest request ^ServletUpgradeResponse response]
-                                   (cid/with-correlation-id
-                                     (str "ws-" (utils/unique-identifier))
-                                     (.setHeader response "server" server-name)
-                                     (.setHeader response "x-cid" (cid/get-correlation-id))
-                                     (if (ws/request-authenticator (first passwords) request response)
-                                       (ws/request-subprotocol-acceptor request response)
-                                       false))))})
+                                   (.setHeader response "server" server-name)
+                                   (when-let [correlation-id (.getHeader request "x-cid")]
+                                     (.setHeader response "x-cid" correlation-id))
+                                   (let [password (first passwords)
+                                         request-headers (pc/map-vals #(str/join "," %) (.getHeaders request))
+                                         {:keys [service-parameter-template token]}
+                                         (sd/discover-service-parameters kv-store token-defaults waiter-hostnames request-headers)]
+                                     (if (= "disabled" (get service-parameter-template "authentication"))
+                                       (do
+                                         (log/info "authentication is disabled for websocket request using token" token)
+                                         true)
+                                       (if (ws/request-authenticator password request response)
+                                         (ws/request-subprotocol-acceptor request response)
+                                         false)))))})
 
 (def daemons
   {:autoscaler (pc/fnk [[:curator leader?-fn]
