@@ -978,7 +978,7 @@
                                          password (first passwords)]
                                      (cid/with-correlation-id
                                        correlation-id
-                                       (log/info "request received websocket upgrade"
+                                       (log/info "request received (websocket upgrade)"
                                                  {:headers (headers/truncate-header-values request-headers)
                                                   :http-version (.getHttpVersion request)
                                                   :method (some-> request .getMethod str/lower-case)
