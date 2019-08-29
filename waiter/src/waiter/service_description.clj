@@ -91,6 +91,7 @@
    (s/optional-key "expired-instance-restart-rate") schema/positive-fraction-less-than-or-equal-to-1
    (s/optional-key "instance-expiry-mins") (s/constrained s/Int #(<= 0 %))
    (s/optional-key "jitter-threshold") schema/greater-than-or-equal-to-0-less-than-1
+   (s/optional-key "load-balancing") schema/valid-load-balancing
    (s/optional-key "max-instances") (s/both s/Int (s/pred #(<= 1 % 1000) 'between-one-and-1000))
    (s/optional-key "min-instances") (s/both s/Int (s/pred #(<= 1 % 4) 'between-one-and-four))
    (s/optional-key "scale-factor") schema/positive-fraction-less-than-or-equal-to-2
@@ -119,8 +120,9 @@
 (def ^:const service-override-keys
   #{"authentication" "blacklist-on-503" "concurrency-level" "distribution-scheme" "expired-instance-restart-rate"
     "grace-period-secs" "health-check-interval-secs" "health-check-max-consecutive-failures"
-    "idle-timeout-mins" "instance-expiry-mins" "interstitial-secs" "jitter-threshold" "max-queue-length" "min-instances"
-    "max-instances" "restart-backoff-factor" "scale-down-factor" "scale-factor" "scale-up-factor"})
+    "idle-timeout-mins" "instance-expiry-mins" "interstitial-secs" "jitter-threshold"
+    "load-balancing" "max-queue-length" "min-instances" "max-instances" "restart-backoff-factor"
+    "scale-down-factor" "scale-factor" "scale-up-factor"})
 
 (def ^:const service-non-override-keys
   #{"allowed-params" "backend-proto" "cmd" "cmd-type" "cpus" "env" "health-check-port-index" "health-check-proto"
@@ -434,6 +436,9 @@
                                            (attach-error-message-for-parameter
                                              parameter->issues :idle-timeout-mins
                                              "idle-timeout-mins must be an integer in the range [1, 43200].")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :load-balancing
+                                             (str "load-balancing must be one of 'oldest', 'youngest' or 'random'."))
                                            (attach-error-message-for-parameter
                                              parameter->issues :max-instances "max-instances must be between 1 and 1000.")
                                            (attach-error-message-for-parameter

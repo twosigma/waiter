@@ -1166,14 +1166,15 @@
                               (scheduler/scheduler-services-gc
                                 scheduler query-state-fn service-id->metrics-fn scheduler-gc-config service-gc-go-routine
                                 service-id->idle-timeout)))
-   :service-chan-maintainer (pc/fnk [[:routines start-work-stealing-balancer-fn stop-work-stealing-balancer-fn]
+   :service-chan-maintainer (pc/fnk [[:routines service-id->service-description-fn start-work-stealing-balancer-fn stop-work-stealing-balancer-fn]
                                      [:settings blacklist-config instance-request-properties]
                                      [:state instance-rpc-chan query-service-maintainer-chan]
                                      router-state-maintainer]
                               (let [start-service
                                     (fn start-service [service-id]
-                                      (let [maintainer-chan-map (state/prepare-and-start-service-chan-responder
-                                                                  service-id instance-request-properties blacklist-config)
+                                      (let [service-description (service-id->service-description-fn service-id)
+                                            maintainer-chan-map (state/prepare-and-start-service-chan-responder
+                                                                  service-id service-description instance-request-properties blacklist-config)
                                             workstealing-chan-map (start-work-stealing-balancer-fn service-id)]
                                         {:maintainer-chan-map maintainer-chan-map
                                          :work-stealing-chan-map workstealing-chan-map}))

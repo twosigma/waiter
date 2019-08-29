@@ -19,7 +19,9 @@
             [clojure.set :as set]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
-            [waiter.util.client-tools :refer :all])
+            [waiter.state :as state]
+            [waiter.util.client-tools :refer :all]
+            [waiter.util.date-utils :as du])
   (:import (java.util.concurrent CountDownLatch)))
 
 (deftest ^:parallel ^:integration-slow test-instance-reservation
@@ -133,3 +135,85 @@
                             (vals (:instance-id->state responder-state))))))
       (delete-service waiter-url service-id)
       (log/info (str "Instance reservation test for concurrent service completed.")))))
+
+(defn run-load-balancing-test
+  [waiter-url load-balancing num-threads num-iterations assertion-fn]
+  (log/info "testing load balancing" load-balancing)
+  (let [instance-count 2
+        extra-headers {:x-waiter-concurrency-level 300
+                       :x-waiter-load-balancing load-balancing
+                       :x-waiter-max-instances instance-count
+                       :x-waiter-min-instances instance-count
+                       :x-waiter-name (rand-name)
+                       :x-waiter-scale-down-factor 0.001
+                       :x-waiter-scale-up-factor 0.99}
+        request-fn (fn [router-url time & {:keys [cookies] :or {cookies {}}}]
+                     (make-request-with-debug-info
+                       (merge extra-headers {:x-kitchen-delay-ms time})
+                       #(make-kitchen-request router-url % :cookies cookies)))
+        _ (log/info "making canary request...")
+        {:keys [cookies service-id] :as canary-response} (request-fn waiter-url 2)]
+    (assert-response-status canary-response 200)
+    (with-service-cleanup
+      service-id
+      (let [[_ router-url] (first (routers waiter-url))]
+        (is (wait-for #(->> (active-instances router-url service-id :cookies cookies)
+                         (filter :healthy?)
+                         count
+                         (= instance-count)))
+            (str instance-count " healthy instances not found"))
+        (log/info "sending additional requests.")
+        (let [instance-id->request-count-atom (atom {})
+              response-atom (atom [])]
+          (parallelize-requests num-threads num-iterations
+                                (fn []
+                                  (let [{:keys [instance-id] :as response} (request-fn router-url 2 :cookies cookies)]
+                                    (swap! response-atom conj response)
+                                    (swap! instance-id->request-count-atom update instance-id (fnil inc 0)))))
+          (doseq [response @response-atom]
+            (assert-response-status response 200))
+          (let [sorted-instance-ids (->> (active-instances router-url service-id :cookies cookies)
+                                      (map (fn [instance] (update instance :started-at du/str-to-date)))
+                                      (state/sort-instances-for-processing #{})
+                                      (map :id))
+                instance-id->request-count @instance-id->request-count-atom]
+            (assertion-fn sorted-instance-ids instance-id->request-count)))))))
+
+(deftest ^:parallel ^:integration-fast ^:resource-heavy test-load-balancing-random
+  (testing-using-waiter-url
+    (let [num-threads 4
+          num-iterations 50
+          total-requests (* num-threads num-iterations)]
+      (run-load-balancing-test
+        waiter-url "random" num-threads num-iterations
+        (fn assert-load-balancing-random
+          [_ instance-id->request-count]
+          (let [assert-message (str instance-id->request-count)]
+            (is (= (count instance-id->request-count) 2) assert-message)
+            (is (every? #(>= % (* 0.3 total-requests)) (vals instance-id->request-count)) assert-message)))))))
+
+(deftest ^:parallel ^:integration-fast ^:resource-heavy test-load-balancing-oldest
+  (testing-using-waiter-url
+    (let [num-threads 4
+          num-iterations 25
+          total-requests (* num-threads num-iterations)]
+      (run-load-balancing-test
+        waiter-url "oldest" num-threads num-iterations
+        (fn assert-load-balancing-oldest
+          [sorted-instance-ids instance-id->request-count]
+          (let [first-instance-id (first sorted-instance-ids)
+                assert-message (str instance-id->request-count)]
+            (is (some-> instance-id->request-count (get first-instance-id) (= total-requests)) assert-message)))))))
+
+(deftest ^:parallel ^:integration-fast ^:resource-heavy test-load-balancing-youngest
+  (testing-using-waiter-url
+    (let [num-threads 4
+          num-iterations 25
+          total-requests (* num-threads num-iterations)]
+      (run-load-balancing-test
+        waiter-url "youngest" num-threads num-iterations
+        (fn assert-load-balancing-youngest
+          [sorted-instance-ids instance-id->request-count]
+          (let [last-instance-id (last sorted-instance-ids)
+                assert-message (str instance-id->request-count)]
+            (is (some-> instance-id->request-count (get last-instance-id) (= total-requests)) assert-message)))))))

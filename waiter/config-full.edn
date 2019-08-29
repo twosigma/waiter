@@ -688,6 +688,7 @@
                                 "instance-expiry-mins" 7200
                                 "interstitial-secs" 0
                                 "jitter-threshold" 0.5
+                                "load-balancing" "oldest"
                                 "max-instances" 500
                                 "max-queue-length" 1000000
                                 "metadata" {}
