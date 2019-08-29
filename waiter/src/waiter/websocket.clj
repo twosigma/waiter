@@ -42,7 +42,7 @@
            (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse)))
 
 ;; https://tools.ietf.org/html/rfc6455#section-7.4
-(def ^:const server-termination-on-unexpected-condition 1011)
+(def ^:const server-termination-on-unexpected-condition StatusCode/SERVER_ERROR)
 
 (defn request-authenticator
   "Authenticates the request using the x-waiter-auth cookie.
@@ -102,7 +102,8 @@
 
 (defn request-handler
   "Handler for websocket requests.
-   It populates the kerberos credentials and invokes process-request-fn."
+   If cookies are available, it populates the user credentials into the request.
+   It then goes ahead and invokes the process-request-fn handler."
   [password process-request-fn {:keys [headers] :as request}]
   (let [auth-cookie (-> headers (get "cookie") str auth/get-auth-cookie-value) ;; auth-cookie is assumed to be valid
         [auth-principal auth-time] (auth/decode-auth-cookie auth-cookie password)
@@ -112,6 +113,12 @@
     (-> request
         (assoc :authorization/time auth-time)
         handler)))
+
+(defn make-request-handler
+  "Returns the handler for websocket requests."
+  [password process-request-fn]
+  (fn websocket-request-handler [request]
+    (request-handler password process-request-fn request)))
 
 (defn abort-request-callback-factory
   "Creates a callback to abort the http request."
@@ -409,7 +416,7 @@
 (defn wrap-ws-close-on-error
   "Closes the out chan when the handler returns an error."
   [handler]
-  (fn [{:keys [out] :as request}]
+  (fn wrap-ws-close-on-error-handler [{:keys [out] :as request}]
     (let [response (handler request)]
       (ru/update-response response
                           (fn [response]

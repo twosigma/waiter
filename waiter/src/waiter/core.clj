@@ -1192,21 +1192,20 @@
                                           [:settings instance-request-properties]
                                           [:state instance-rpc-chan local-usage-agent passwords websocket-client]
                                           wrap-descriptor-fn]
-                                   (fn default-websocket-handler-fn [request]
-                                     (let [password (first passwords)
-                                           make-request-fn (fn make-ws-request
-                                                             [instance request request-properties passthrough-headers end-route metric-group
-                                                              backend-proto proto-version]
-                                                             (ws/make-request websocket-client service-id->password-fn instance request request-properties
-                                                                              passthrough-headers end-route metric-group backend-proto proto-version))
-                                           process-request-fn (fn process-request-fn [request]
-                                                                (pr/process make-request-fn instance-rpc-chan start-new-service-fn
-                                                                            instance-request-properties determine-priority-fn ws/process-response!
-                                                                            ws/abort-request-callback-factory local-usage-agent request))
-                                           handler (-> process-request-fn
-                                                     (ws/wrap-ws-close-on-error)
-                                                     wrap-descriptor-fn)]
-                                       (ws/request-handler password handler request))))
+                                   (let [password (first passwords)
+                                         make-request-fn (fn make-ws-request
+                                                           [instance request request-properties passthrough-headers end-route metric-group
+                                                            backend-proto proto-version]
+                                                           (ws/make-request websocket-client service-id->password-fn instance request request-properties
+                                                                            passthrough-headers end-route metric-group backend-proto proto-version))
+                                         process-request-fn (fn process-request-fn [request]
+                                                              (pr/process make-request-fn instance-rpc-chan start-new-service-fn
+                                                                          instance-request-properties determine-priority-fn ws/process-response!
+                                                                          ws/abort-request-callback-factory local-usage-agent request))]
+                                     (->> process-request-fn
+                                       ws/wrap-ws-close-on-error
+                                       wrap-descriptor-fn
+                                       (ws/make-request-handler password))))
    :display-settings-handler-fn (pc/fnk [wrap-secure-request-fn settings]
                                   (wrap-secure-request-fn
                                     (fn display-settings-handler-fn [_]
