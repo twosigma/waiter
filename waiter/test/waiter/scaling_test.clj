@@ -650,14 +650,14 @@
 (deftest scale-services-test
   (let [config {"min-instances" 1
                 "max-instances" 10}
-        service-id->scaling-modes-atom (atom {})
-        update-service-scale-state! (fn [service-id scaling-mode]
-                                      (swap! service-id->scaling-modes-atom
-                                             (fn [service-id->scaling-modes]
-                                               (if (contains? service-id->scaling-modes service-id)
+        service-id->scaling-states-atom (atom {})
+        update-service-scale-state! (fn [service-id scaling-state]
+                                      (swap! service-id->scaling-states-atom
+                                             (fn [service-id->scaling-states]
+                                               (if (contains? service-id->scaling-states service-id)
                                                  (update
-                                                   service-id->scaling-modes service-id conj scaling-mode)
-                                                 (assoc service-id->scaling-modes service-id [scaling-mode])))))
+                                                   service-id->scaling-states service-id conj scaling-state)
+                                                 (assoc service-id->scaling-states service-id [scaling-state])))))
         ; assert that we are applying scaling
         apply-scaling (fn [service-id {:keys [scale-to-instances scale-amount]}]
                         (case service-id
@@ -747,7 +747,7 @@
     (is (nil? (get result "app6")))
     (is (= {:target-instances 10, :scale-to-instances 10, :scale-amount 0} (get result "app7")))
     (is (= {"app3" [:scale-up] "app4" [:scale-down] "app5" [:scale-up] "app7" [:stable]}
-           @service-id->scaling-modes-atom))))
+           @service-id->scaling-states-atom))))
 
 (deftest normalize-factor-test
   (is (= 0. (normalize-factor 0.5 0)))

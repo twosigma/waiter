@@ -548,7 +548,7 @@
   [service-id trigger-unblacklist-process-fn
    {:keys [blacklist-backoff-base-time-ms lingering-request-threshold-ms max-blacklist-time-ms]}
    {:keys [blacklist-instance-chan exit-chan kill-instance-chan query-state-chan release-instance-chan
-           reserve-instance-chan scaling-mode-chan unblacklist-instance-chan update-state-chan work-stealing-chan]}
+           reserve-instance-chan scaling-state-chan unblacklist-instance-chan update-state-chan work-stealing-chan]}
    initial-state]
   (when (some nil? (vals initial-state))
     (throw (ex-info "Initial state contains nil values!" initial-state)))
@@ -630,7 +630,7 @@
                                        (when (or slots-available? (seq work-stealing-queue) deployment-error)
                                          [reserve-instance-chan])
                                        [release-instance-chan blacklist-instance-chan unblacklist-instance-chan kill-instance-chan
-                                        work-stealing-chan scaling-mode-chan query-state-chan exit-chan])
+                                        work-stealing-chan scaling-state-chan query-state-chan exit-chan])
                          [data chan-selected] (async/alts! chans :priority true)]
                      (cond->
                        ;; first obtain new state by pre-processing based on selected channel
@@ -672,11 +672,11 @@
                              work-stealing-received-in-flight-counter max-blacklist-time-ms
                              blacklist-backoff-base-time-ms max-backoff-exponent data))
 
-                         scaling-mode-chan
-                         (let [{:keys [scaling-mode]} data
-                               traffic-distribution-mode (if (= :scale-down scaling-mode) :oldest :random)]
+                         scaling-state-chan
+                         (let [{:keys [scaling-state]} data
+                               traffic-distribution-mode (if (= :scale-down scaling-state) :oldest :random)]
                            (log/info service-id "traffic distribution mode is now" traffic-distribution-mode
-                                     "as scaling mode is" scaling-mode)
+                                     "as scaling mode is" scaling-state)
                            (assoc current-state :traffic-distribution-mode traffic-distribution-mode))
 
                          query-state-chan
@@ -775,7 +775,7 @@
                      :release-instance-chan (async/chan 1024)
                      :blacklist-instance-chan (async/chan 1024)
                      :query-state-chan (async/chan 1024)
-                     :scaling-mode-chan (au/latest-chan)
+                     :scaling-state-chan (au/latest-chan)
                      :unblacklist-instance-chan (async/chan 1024)
                      :update-state-chan (au/latest-chan)
                      :work-stealing-chan (async/chan 1024)
@@ -804,7 +804,7 @@
    Requests for service-chan-responder channels is passed into request-chan
       It is expected that messages on the channel have a map with keys
       `:cid`, `:method`, `:response-chan`, and `:service-id`.
-      The `method` should be either `:blacklist`, `:kill`, `:query-state`, `:reserve`, `:release`, or `:scaling-mode`.
+      The `method` should be either `:blacklist`, `:kill`, `:query-state`, `:reserve`, `:release`, or `:scaling-state`.
       The `service-id` is the service for the request and
       `response-chan` will have the corresponding channel placed onto it by invoking
       `(retrieve-channel channel-map method)`.

@@ -176,34 +176,34 @@
       (catch Exception e
         (log/error e "Error while releasing instance" instance)))))
 
-(defmacro notify-scaling-mode!
+(defmacro notify-scaling-state!
   "Sends a rpc to the router state to notify the scaling mode of a service.
    Throws an exception if a release channel cannot be found for the specified service."
-  [instance-rpc-chan service-id scaling-mode]
+  [instance-rpc-chan service-id scaling-state]
   `(let [response-chan# (async/promise-chan)
          service-id# ~service-id
-         scaling-mode# ~scaling-mode]
+         scaling-state# ~scaling-state]
      (->> {:cid (cid/get-correlation-id)
-           :method :scaling-mode
+           :method :scaling-state
            :response-chan response-chan#
            :service-id service-id#}
        (async/put! ~instance-rpc-chan))
      (if-let [release-chan# (async/<! response-chan#)]
-       (when-not (au/offer! release-chan# {:scaling-mode scaling-mode#})
-         (throw (ex-info "Unable to put scaling-mode on release-chan."
-                         {:scaling-mode scaling-mode# :service-id service-id#})))
+       (when-not (au/offer! release-chan# {:scaling-state scaling-state#})
+         (throw (ex-info "Unable to put scaling-state on release-chan."
+                         {:scaling-state scaling-state# :service-id service-id#})))
        (do
          (throw (ex-info "Unable to find release-chan."
-                         {:scaling-mode scaling-mode# :service-id service-id#}))))))
+                         {:scaling-state scaling-state# :service-id service-id#}))))))
 
-(defn notify-scaling-mode-go
+(defn notify-scaling-state-go
   "Sends a rpc to the router state to notify the scaling mode of a service."
-  [instance-rpc-chan service-id scaling-mode]
+  [instance-rpc-chan service-id scaling-state]
   (async/go
     (try
-      (notify-scaling-mode! instance-rpc-chan service-id scaling-mode)
+      (notify-scaling-state! instance-rpc-chan service-id scaling-state)
       (catch Exception e
-        (log/error e "Error while notifying scaling mode" service-id scaling-mode)))))
+        (log/error e "Error while notifying scaling mode" service-id scaling-state)))))
 
 (defmacro get-rand-inst
   "Requests a random instance from the service-chan-responder.

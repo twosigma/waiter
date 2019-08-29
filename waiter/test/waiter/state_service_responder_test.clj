@@ -40,7 +40,7 @@
      :query-state-chan (async/chan 1)
      :release-instance-chan (async/chan 1)
      :reserve-instance-chan (async/chan 1)
-     :scaling-mode-chan (async/chan 1)
+     :scaling-state-chan (async/chan 1)
      :unblacklist-instance-chan (async/chan 10)
      :update-state-chan (async/chan 1)
      :work-stealing-chan (async/chan 1)})
@@ -2389,7 +2389,7 @@
 
           (async/>!! exit-chan :exit))))
 
-    (deftest test-start-service-chan-responder-scaling-mode-updates
+    (deftest test-start-service-chan-responder-scaling-state-updates
       (let [current-time (t/now)
             initial-state {:id->instance id->instance-data
                            :instance-id->blacklist-expiry-time {}
@@ -2401,16 +2401,16 @@
                                                  (update-slot-state-fn "s1.h3" 0 0 #{:blacklisted}))
                            :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.h4" "s1.h5" "s1.h6" "s1.u1" "s1.u2" "s1.u3"]
                            :traffic-distribution-mode :oldest}
-            {:keys [exit-chan query-state-chan scaling-mode-chan]} (launch-service-chan-responder 13 initial-state)]
+            {:keys [exit-chan query-state-chan scaling-state-chan]} (launch-service-chan-responder 13 initial-state)]
 
         (with-redefs [t/now (fn [] current-time)]
-          (async/>!! scaling-mode-chan {:scaling-mode :scale-up})
+          (async/>!! scaling-state-chan {:scaling-state :scale-up})
           (check-state-fn query-state-chan (assoc initial-state :traffic-distribution-mode :random))
-          (async/>!! scaling-mode-chan {:scaling-mode :stable})
+          (async/>!! scaling-state-chan {:scaling-state :stable})
           (check-state-fn query-state-chan (assoc initial-state :traffic-distribution-mode :random))
-          (async/>!! scaling-mode-chan {:scaling-mode :scale-down})
+          (async/>!! scaling-state-chan {:scaling-state :scale-down})
           (check-state-fn query-state-chan initial-state)
-          (async/>!! scaling-mode-chan {:scaling-mode :stable})
+          (async/>!! scaling-state-chan {:scaling-state :stable})
           (check-state-fn query-state-chan (assoc initial-state :traffic-distribution-mode :random))
 
           (async/>!! exit-chan :exit))))
@@ -2428,7 +2428,7 @@
                                                  (update-slot-state-fn "s1.h4" 1 0))
                            :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.h4" "s1.h5" "s1.h6" "s1.u1" "s1.u2" "s1.u3"]
                            :traffic-distribution-mode :oldest}
-            {:keys [exit-chan query-state-chan reserve-instance-chan scaling-mode-chan]}
+            {:keys [exit-chan query-state-chan reserve-instance-chan scaling-state-chan]}
             (launch-service-chan-responder 13 initial-state)]
 
         (with-redefs [t/now (fn [] current-time)
@@ -2443,7 +2443,7 @@
                             (update-in [:instance-id->state] #(update-slot-state-fn %1 "s1.h1" 2 1))))
 
           ;; changes traffic distribution mode to random
-          (async/>!! scaling-mode-chan {:scaling-mode :scale-up})
+          (async/>!! scaling-state-chan {:scaling-state :scale-up})
           (check-state-fn query-state-chan
                           (-> initial-state
                             (assoc :instance-id->request-id->use-reason-map
@@ -2464,7 +2464,7 @@
 
 
           ;; keeps traffic distribution mode to random
-          (async/>!! scaling-mode-chan {:scaling-mode :stable})
+          (async/>!! scaling-state-chan {:scaling-state :stable})
           (check-state-fn query-state-chan
                           (-> initial-state
                             (assoc :instance-id->request-id->use-reason-map

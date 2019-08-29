@@ -1040,9 +1040,9 @@
                  (let [service-id->metrics-fn (:service-id->metrics-fn router-metrics-helpers)
                        {{:keys [router-state-push-mult]} :maintainer} router-state-maintainer
                        {:keys [executor-multiplexer-chan]} autoscaling-multiplexer
-                       update-service-scale-state! (fn update-service-scale-state! [service-id scaling-mode]
-                                                     (log/info service-id "updating scaling mode to" scaling-mode)
-                                                     (service/notify-scaling-mode-go instance-rpc-chan service-id scaling-mode))]
+                       update-service-scale-state! (fn update-service-scale-state! [service-id scaling-state]
+                                                     (log/info service-id "updating scaling state to" scaling-state)
+                                                     (service/notify-scaling-state-go instance-rpc-chan service-id scaling-state))]
                    (scaling/autoscaler-goroutine
                      {} leader?-fn service-id->metrics-fn executor-multiplexer-chan scheduler autoscaler-interval-ms
                      scaling/scale-service service-id->service-description-fn router-state-push-mult
@@ -1191,7 +1191,7 @@
                                                           :query-work-stealing [:work-stealing-chan-map :query-chan]
                                                           :release [:maintainer-chan-map :release-instance-chan]
                                                           :reserve [:maintainer-chan-map :reserve-instance-chan-in]
-                                                          :scaling-mode [:maintainer-chan-map :scaling-mode-chan]
+                                                          :scaling-state [:maintainer-chan-map :scaling-state-chan]
                                                           :update-state [:maintainer-chan-map :update-state-chan])]
                                         (get-in channel-map method-chan)))
                                     {{:keys [router-state-push-mult]} :maintainer} router-state-maintainer

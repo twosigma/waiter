@@ -407,7 +407,7 @@
      :scale-to-instances scale-to-instances'
      :target-instances target-instances'}))
 
-(defn scale-state->scaling-mode
+(defn scale-state->scaling-state
   "Determines the scale mode from the scaling-amount."
   [scale-amount]
   (cond
@@ -453,10 +453,10 @@
           (when (< instances (service-description "min-instances"))
             (log/warn "scheduler reported service had fewer instances than min-instances"
                       {:service-id service-id :instances instances :min-instances (service-description "min-instances")}))
-          (let [prev-scaling-mode (some-> service-id service-id->scale-state :scale-amount scale-state->scaling-mode)
-                curr-scaling-mode (scale-state->scaling-mode scale-amount)]
-            (when (not= prev-scaling-mode curr-scaling-mode)
-              (update-service-scale-state! service-id curr-scaling-mode)))
+          (let [prev-scaling-state (some-> service-id service-id->scale-state :scale-amount scale-state->scaling-state)
+                curr-scaling-state (scale-state->scaling-state scale-amount)]
+            (when (not= prev-scaling-state curr-scaling-state)
+              (update-service-scale-state! service-id curr-scaling-state)))
           (when-not (zero? scale-amount)
             (apply-scaling-fn service-id
                               {:outstanding-requests outstanding-requests
