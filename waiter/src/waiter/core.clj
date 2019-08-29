@@ -970,20 +970,32 @@
                                         [:settings [:token-config token-defaults]]
                                         [:state passwords server-name waiter-hostnames]]
                                  (fn websocket-request-acceptor [^ServletUpgradeRequest request ^ServletUpgradeResponse response]
-                                   (.setHeader response "server" server-name)
-                                   (when-let [correlation-id (.getHeader request "x-cid")]
-                                     (.setHeader response "x-cid" correlation-id))
-                                   (let [password (first passwords)
-                                         request-headers (pc/map-vals #(str/join "," %) (.getHeaders request))
-                                         {:keys [service-parameter-template token]}
-                                         (sd/discover-service-parameters kv-store token-defaults waiter-hostnames request-headers)]
-                                     (if (= "disabled" (get service-parameter-template "authentication"))
-                                       (do
-                                         (log/info "authentication is disabled for websocket request using token" token)
-                                         true)
-                                       (if (ws/request-authenticator password request response)
-                                         (ws/request-subprotocol-acceptor request response)
-                                         false)))))})
+                                   (let [request-headers (->> (.getHeaders request)
+                                                           (pc/map-vals #(str/join "," %))
+                                                           (pc/map-keys str/lower-case))
+                                         correlation-id (or (get request-headers "x-cid")
+                                                            (str "ws-" (utils/unique-identifier)))
+                                         password (first passwords)]
+                                     (cid/with-correlation-id
+                                       correlation-id
+                                       (log/info "request received websocket upgrade"
+                                                 {:headers (headers/truncate-header-values request-headers)
+                                                  :http-version (.getHttpVersion request)
+                                                  :method (some-> request .getMethod str/lower-case)
+                                                  :protocol-version (.getProtocolVersion request)
+                                                  :sub-protocols (some-> request .getSubProtocols seq)
+                                                  :uri (some-> request .getRequestURI .getPath)})
+                                       (.setHeader response "server" server-name)
+                                       (.setHeader response "x-cid" correlation-id)
+                                       (let [{:keys [service-parameter-template token]}
+                                             (sd/discover-service-parameters kv-store token-defaults waiter-hostnames request-headers)]
+                                         (if (= "disabled" (get service-parameter-template "authentication"))
+                                           (do
+                                             (log/info "authentication is disabled for websocket request using token" token)
+                                             true)
+                                           (if (ws/request-authenticator password request response)
+                                             (ws/request-subprotocol-acceptor request response)
+                                             false)))))))})
 
 (def daemons
   {:autoscaler (pc/fnk [[:curator leader?-fn]

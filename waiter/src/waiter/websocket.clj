@@ -76,7 +76,9 @@
   (try
     (let [sec-websocket-protocols (vec (.getHeaders request "sec-websocket-protocol"))]
       (condp = (count sec-websocket-protocols)
-        0 true
+        0 (do
+            (log/info "no subprotocols provided, accepting upgrade request")
+            true)
         1 (let [accepted-subprotocol (first sec-websocket-protocols)]
             (log/info "accepting websocket subprotocol" accepted-subprotocol)
             (.setAcceptedSubProtocol response accepted-subprotocol)

@@ -72,7 +72,8 @@
     (str/trim (:out shell-output))))
 
 (defn retrieve-username []
-  (execute-command "id" "-un"))
+  (or (System/getProperty "user.name")
+      (execute-command "id" "-un")))
 
 (defn retrieve-hostname []
   (if use-spnego
