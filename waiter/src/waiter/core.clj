@@ -987,9 +987,11 @@
                                                   :uri (some-> request .getRequestURI .getPath)})
                                        (.setHeader response "server" server-name)
                                        (.setHeader response "x-cid" correlation-id)
-                                       (let [{:keys [service-parameter-template]}
+                                       (let [{:keys [service-parameter-template waiter-headers]}
                                              (sd/discover-service-parameters kv-store token-defaults waiter-hostnames request-headers)]
-                                         (and (or (= "disabled" (get service-parameter-template "authentication"))
+                                         ;; authentication can be skipped if it is disabled and there are no on-the-fly headers
+                                         (and (or (and (= "disabled" (get service-parameter-template "authentication"))
+                                                       (not-any? sd/service-parameter-keys (-> waiter-headers headers/drop-waiter-header-prefix keys)))
                                                   (ws/request-authenticator password request response))
                                               (ws/request-subprotocol-acceptor request response)))))))})
 

@@ -122,35 +122,36 @@
                               :token token)
           waiter-headers {"x-waiter-token" token}]
       (try
-        (let [token-response (post-token waiter-url token-description)
-              _ (assert-response-status token-response 200)
-              response-promise (promise)
-              connection (ws-client/connect!
-                           (websocket-client-factory)
-                           (ws-url waiter-url "/websocket-auth")
-                           (fn [{:keys [in out]}]
-                             (async/go
-                               (async/>! out "request-info")
-                               (swap! ws-response-atom conj (async/<! in))
-                               (swap! ws-response-atom conj (async/<! in))
-                               (deliver response-promise :done)
-                               (async/close! out)))
-                           {:middleware (fn [_ ^UpgradeRequest request]
-                                          (websocket/add-headers-to-upgrade-request! request waiter-headers))})
-              [close-code error] (connection->ctrl-data connection)]
-          (is (= :qbits.jet.websocket/close close-code))
-          (is (= StatusCode/NORMAL error))
-          (is (= :done (deref response-promise default-timeout-period :timed-out))))
-        (log/info "websocket responses:" @ws-response-atom)
-        (is (= "Connected to kitchen" (first @ws-response-atom)) (str @ws-response-atom))
-        (let [{:keys [headers]} (-> @ws-response-atom second str json/read-str walk/keywordize-keys)
-              {:keys [upgrade x-cid x-waiter-auth-principal]} headers]
-          (println headers)
-          (is x-cid)
-          (is (= upgrade "websocket"))
-          (is (nil? x-waiter-auth-principal)))
+        (let [token-response (post-token waiter-url token-description)]
+          (assert-response-status token-response 200)
+          (try
+            (let [response-promise (promise)
+                  connection (ws-client/connect!
+                               (websocket-client-factory)
+                               (ws-url waiter-url "/websocket-auth")
+                               (fn [{:keys [in out]}]
+                                 (async/go
+                                   (async/>! out "request-info")
+                                   (swap! ws-response-atom conj (async/<! in))
+                                   (swap! ws-response-atom conj (async/<! in))
+                                   (deliver response-promise :done)
+                                   (async/close! out)))
+                               {:middleware (fn [_ ^UpgradeRequest request]
+                                              (websocket/add-headers-to-upgrade-request! request waiter-headers))})
+                  [close-code error] (connection->ctrl-data connection)]
+              (is (= :qbits.jet.websocket/close close-code))
+              (is (= StatusCode/NORMAL error))
+              (is (= :done (deref response-promise default-timeout-period :timed-out))))
+            (log/info "websocket responses:" @ws-response-atom)
+            (is (= "Connected to kitchen" (first @ws-response-atom)) (str @ws-response-atom))
+            (let [{:keys [headers]} (-> @ws-response-atom second str json/read-str walk/keywordize-keys)
+                  {:keys [upgrade x-cid x-waiter-auth-principal]} headers]
+              (is x-cid)
+              (is (= upgrade "websocket"))
+              (is (nil? x-waiter-auth-principal)))
+            (finally
+              (delete-service waiter-url waiter-headers))))
         (finally
-          (delete-service waiter-url waiter-headers)
           (delete-token-and-assert waiter-url token))))))
 
 (deftest ^:parallel ^:integration-fast test-request-auth-success-single-subprotocol
