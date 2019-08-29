@@ -987,15 +987,11 @@
                                                   :uri (some-> request .getRequestURI .getPath)})
                                        (.setHeader response "server" server-name)
                                        (.setHeader response "x-cid" correlation-id)
-                                       (let [{:keys [service-parameter-template token]}
+                                       (let [{:keys [service-parameter-template]}
                                              (sd/discover-service-parameters kv-store token-defaults waiter-hostnames request-headers)]
-                                         (if (= "disabled" (get service-parameter-template "authentication"))
-                                           (do
-                                             (log/info "authentication is disabled for websocket request using token" token)
-                                             true)
-                                           (if (ws/request-authenticator password request response)
-                                             (ws/request-subprotocol-acceptor request response)
-                                             false)))))))})
+                                         (and (or (= "disabled" (get service-parameter-template "authentication"))
+                                                  (ws/request-authenticator password request response))
+                                              (ws/request-subprotocol-acceptor request response)))))))})
 
 (def daemons
   {:autoscaler (pc/fnk [[:curator leader?-fn]
