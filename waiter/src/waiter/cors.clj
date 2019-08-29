@@ -160,10 +160,10 @@
 (defn- cors-rule-matches?
   "Checks if an allowed CORS rule matches"
   [origin path method [_ {:strs [origin-regex target-path-regex methods]}]]
-  (cond
-    (and methods (not (.contains methods (str/upper-case (name method))))) false
-    (and target-path-regex (not (re-matches (re-pattern target-path-regex) path))) false
-    :else (re-matches (re-pattern origin-regex) origin)))
+  (and
+    (or (nil? methods) (.contains methods (str/upper-case (name method))))
+    (or (nil? target-path-regex) (re-matches (re-pattern target-path-regex) path))
+    (re-matches (re-pattern origin-regex) origin)))
 
 (defn- find-matching-cors-rule
   "Takes a cross origin request. Returns the token's matched allowed CORS rule if any."
