@@ -966,12 +966,15 @@
    :websocket-request-auth-cookie-attacher (pc/fnk [[:state passwords router-id]]
                                              (fn websocket-request-auth-cookie-attacher [request]
                                                (ws/inter-router-request-middleware router-id (first passwords) request)))
-   :websocket-request-acceptor (pc/fnk [[:state passwords]]
+   :websocket-request-acceptor (pc/fnk [[:state passwords server-name]]
                                  (fn websocket-request-acceptor [^ServletUpgradeRequest request ^ServletUpgradeResponse response]
-                                   (.setHeader response "x-cid" (cid/get-correlation-id))
-                                   (if (ws/request-authenticator (first passwords) request response)
-                                     (ws/request-subprotocol-acceptor request response)
-                                     false)))})
+                                   (cid/with-correlation-id
+                                     (str "ws-" (utils/unique-identifier))
+                                     (.setHeader response "server" server-name)
+                                     (.setHeader response "x-cid" (cid/get-correlation-id))
+                                     (if (ws/request-authenticator (first passwords) request response)
+                                       (ws/request-subprotocol-acceptor request response)
+                                       false))))})
 
 (def daemons
   {:autoscaler (pc/fnk [[:curator leader?-fn]
