@@ -1819,6 +1819,44 @@
                                                   :hard-delete true :version-hash (- current-time 5000))))
       (is (= token-description (kv/fetch kv-store token))))))
 
+(deftest test-deleted-token-with-new-owner-index
+  (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+        token "test-token"
+        service-parameter-template {"cpus" 1}
+        owner-1 "foo"
+        token-metadata {"owner" owner-1}
+        token-data (merge service-parameter-template token-metadata)]
+    (store-service-description-for-token
+      synchronize-fn kv-store history-length limit-per-owner token service-parameter-template token-metadata)
+
+    (is (= token-data (kv/fetch kv-store token)))
+    (is (= {token {:deleted false :etag (sd/token-data->token-hash token-data) :last-update-time nil}}
+           (list-index-entries-for-owner kv-store owner-1)))
+
+    (delete-service-description-for-token
+      clock synchronize-fn kv-store history-length token owner-1 owner-1)
+
+    (let [deleted-token-data (assoc token-data
+                               "deleted" true
+                               "last-update-time" (clock-millis)
+                               "last-update-user" owner-1
+                               "previous" token-data)]
+      (is (= deleted-token-data (kv/fetch kv-store token)))
+      (is (= {token {:deleted true :etag (sd/token-data->token-hash deleted-token-data) :last-update-time nil}}
+             (list-index-entries-for-owner kv-store owner-1))))
+
+    (let [service-parameter-template {"cpus" 2}
+          owner-2 "bar"
+          token-metadata {"owner" owner-2}
+          token-data (merge service-parameter-template token-metadata)]
+      (store-service-description-for-token
+        synchronize-fn kv-store history-length limit-per-owner token service-parameter-template token-metadata)
+
+      (is (= token-data (kv/fetch kv-store token)))
+      (is (= {token {:deleted false :etag (sd/token-data->token-hash token-data) :last-update-time nil}}
+             (list-index-entries-for-owner kv-store owner-2)))
+      (is (empty? (list-index-entries-for-owner kv-store owner-1))))))
+
 (deftest test-soft-delete-loses-history
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
         token "test-token"
