@@ -100,10 +100,9 @@
               (-> (merge service-parameter-template token-metadata)
                   (select-keys sd/token-data-keys)
                   (sd/sanitize-service-description sd/token-data-keys))
-              existing-token-data (kv/fetch kv-store token :refresh true)
-              existing-token-data (if-not (get existing-token-data "deleted") existing-token-data {})
+              raw-token-data (kv/fetch kv-store token :refresh true)
+              existing-token-data (if-not (get raw-token-data "deleted") raw-token-data {})
               existing-token-description (sd/token-data->token-description existing-token-data)
-              existing-owner (get existing-token-data "owner")
               owner->owner-key (kv/fetch kv-store token-owners-key)]
           ; Validate the token modification for concurrency races
           (validate-token-modification-based-on-hash existing-token-description version-hash)
@@ -128,10 +127,11 @@
                                        (ensure-history existing-token-data)
                                        (sanitize-history history-length)))
           ; Remove token from previous owner
-          (when (and existing-owner (not= owner existing-owner))
-            (let [previous-owner-key (ensure-owner-key kv-store owner->owner-key existing-owner)]
-              (log/info "removing" token "from index of" existing-owner)
-              (update-kv! kv-store previous-owner-key (fn [index] (dissoc index token)))))
+          (let [existing-owner (get raw-token-data "owner")]
+            (when (and existing-owner (not= owner existing-owner))
+              (let [previous-owner-key (ensure-owner-key kv-store owner->owner-key existing-owner)]
+                (log/info "removing" token "from index of" existing-owner)
+                (update-kv! kv-store previous-owner-key (fn [index] (dissoc index token))))))
           ; Add token to new owner
           (when owner
             (let [owner-key (ensure-owner-key kv-store owner->owner-key owner)
