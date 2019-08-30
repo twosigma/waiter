@@ -163,8 +163,7 @@
                               :name (rand-name)
                               :permitted-user "*"
                               :run-as-user (retrieve-username)
-                              :token token)
-          ]
+                              :token token)]
       (try
         (let [token-response (post-token waiter-url token-description)]
           (assert-response-status token-response 200)
