@@ -33,6 +33,10 @@
                                                        'positive-fraction-less-than-or-equal-to-2))
 (def greater-than-or-equal-to-0-less-than-1 (s/pred #(and (<= 0 %) (< % 1))
                                                     'greater-than-or-equal-to-0-less-than-1))
+(def regex-pattern (s/both non-empty-string (s/pred #(re-pattern %) 'is-a-valid-regular-expression?)))
+
+(def http-methods #{"CONNECT" "DELETE" "GET" "HEAD" "OPTIONS" "PATCH" "POST" "PUT" "TRACE"})
+(def http-method (s/pred #(contains? http-methods %) 'is-an-http-method?))
 
 (let [valid-backend-protos #{"h2" "h2c" "http" "https"}
       valid-health-check-protos (conj valid-backend-protos nil)]

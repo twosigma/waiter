@@ -1015,6 +1015,33 @@
                     "previous" {}
                     "root" token-root}
                    token-metadata)))
+          (is (empty? (sd/fetch-core kv-store service-id-1)))))
+
+      (testing "post:new-service-description-cors-rules"
+        (let [token (str token "-cors-rules")
+              cors-rules [{"origin-regex" "test\\.com"
+                             "methods" ["GET" "POST"]}]
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames (public-entitlement-manager) make-peer-requests-fn (constantly true)
+                {:authorization/user auth-user
+                 :body (-> service-description-1 (assoc "cors-rules" cors-rules "token" token) utils/clj->json StringBufferInputStream.)
+                 :headers {}
+                 :request-method :post})]
+          (is (= 200 status))
+          (is (str/includes? body (str "Successfully created " token)))
+          (is (= (select-keys service-description-1 sd/token-data-keys)
+                 (sd/token->service-parameter-template kv-store token)))
+          (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]
+            (is (= (dissoc service-description-1 "token") service-parameter-template))
+            (is (= {"cluster" (str token-root "-cluster")
+                    "last-update-time" (clock-millis)
+                    "last-update-user" "tu1"
+                    "cors-rules" cors-rules
+                    "owner" "tu1"
+                    "previous" {}
+                    "root" token-root}
+                   token-metadata)))
           (is (empty? (sd/fetch-core kv-store service-id-1))))))))
 
 (deftest test-post-failure-in-handle-token-request
@@ -1645,7 +1672,74 @@
           (is (not (str/includes? body "clojure")))
           (is (str/includes? (str details) "json-payload") body)
           (is (str/includes? (str details) "query-parameter") body)
-          (is (str/includes? message "The token should be provided only as a query parameter or in the json payload") body))))))
+          (is (str/includes? message "The token should be provided only as a query parameter or in the json payload") body)))
+
+      (testing "post:new-service-description-cors-rules"
+        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+              cors-rules [{"origin-regex" "test\\.co(m"
+                             "methods" ["a"]
+                             "target-schemes" ["https"]}]
+              service-description (walk/stringify-keys
+                                    {:cors-rules cors-rules
+                                     :token "abcdefgh"})
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
+                {:authorization/user auth-user
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :headers {"accept" "application/json"}
+                 :request-method :post})
+              {{:strs [details message]} "waiter-error"} (json/read-str body)]
+          (is (= 400 status))
+          (is (not (str/includes? body "clojure")))
+          (is (str/includes? (str details) "cors-rules") body)
+          (is (str/includes? (str details) "origin-regex\\\" (throws? (is-a-valid-regular-expression?") body)
+          (is (str/includes? (str details) "methods\\\" [(not (is-an-http-method?") body)
+          (is (str/includes? (str details) "target-schemes\\\" disallowed-key") body)
+          (is (str/includes? message "User metadata validation failed") body)))
+
+      (testing "post:new-service-description-cors-rules-2"
+        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+              cors-rules [{"origin-regex" "test\\.co(m"
+                             "methods" []
+                             "target-schemes" []}]
+              service-description (walk/stringify-keys
+                                    {:cors-rules cors-rules
+                                     :token "abcdefgh"})
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
+                {:authorization/user auth-user
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :headers {"accept" "application/json"}
+                 :request-method :post})
+              {{:strs [details message]} "waiter-error"} (json/read-str body)]
+          (is (= 400 status))
+          (is (not (str/includes? body "clojure")))
+          (is (str/includes? (str details) "cors-rules") body)
+          (is (str/includes? (str details) "origin-regex\\\" (throws? (is-a-valid-regular-expression?") body)
+          (is (str/includes? (str details) "methods\\\" (not (not-empty []") body)
+          (is (str/includes? (str details) "target-schemes\\\" disallowed-key") body)
+          (is (str/includes? message "User metadata validation failed") body)))
+
+      (testing "post:new-service-description-cors-rules-2"
+        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+              cors-rules {"origin-regex" "test\\.com"
+                            "methods" ["GET" "POST"]}
+              service-description (walk/stringify-keys
+                                    {:cors-rules cors-rules
+                                     :token "abcdefgh"})
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
+                {:authorization/user auth-user
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :headers {"accept" "application/json"}
+                 :request-method :post})
+              {{:strs [details message]} "waiter-error"} (json/read-str body)]
+          (is (= 400 status))
+          (is (str/includes? (str details) "cors-rules\\\" (not (sequential?") body)
+          (is (str/includes? message "User metadata validation failed") body))))))
 
 (deftest test-store-service-description
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))

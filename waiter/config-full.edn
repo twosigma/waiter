@@ -278,7 +278,11 @@
                :exposed-headers ["etag"]
 
                ;; The value to use for the access-control-max-age header:
-               :max-age 3600}
+               :max-age 3600
+
+               ;; :kind :token-parameter uses allowed list that's set on the token
+               :token-parameter {:factory-fn waiter.cors/token-parameter-based-validator
+                                 :supports-token-parameter? true}}
 
  :entitlement-config {
                       ;; :kind :simple requires that the requesting user be the same as the run-as-user:
