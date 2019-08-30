@@ -42,7 +42,7 @@
            (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse)))
 
 ;; https://tools.ietf.org/html/rfc6455#section-7.4
-(def ^:const server-termination-on-unexpected-condition 1011)
+(def ^:const server-termination-on-unexpected-condition StatusCode/SERVER_ERROR)
 
 (defn request-authenticator
   "Authenticates the request using the x-waiter-auth cookie.
@@ -76,7 +76,9 @@
   (try
     (let [sec-websocket-protocols (vec (.getHeaders request "sec-websocket-protocol"))]
       (condp = (count sec-websocket-protocols)
-        0 true
+        0 (do
+            (log/info "no subprotocols provided, accepting upgrade request")
+            true)
         1 (let [accepted-subprotocol (first sec-websocket-protocols)]
             (log/info "accepting websocket subprotocol" accepted-subprotocol)
             (.setAcceptedSubProtocol response accepted-subprotocol)
@@ -102,16 +104,24 @@
 
 (defn request-handler
   "Handler for websocket requests.
-   It populates the kerberos credentials and invokes process-request-fn."
+   When auth cookie is available, the user credentials are populated into the request.
+   It then goes ahead and invokes the process-request-fn handler."
   [password process-request-fn {:keys [headers] :as request}]
-  (let [auth-cookie (-> headers (get "cookie") str auth/get-auth-cookie-value) ;; auth-cookie is assumed to be valid
-        [auth-principal auth-time] (auth/decode-auth-cookie auth-cookie password)
-        auth-params-map (auth/auth-params-map :cookie auth-principal)
-        handler (middleware/wrap-merge process-request-fn auth-params-map)]
-    (log/info "processing websocket request" {:user auth-principal})
-    (-> request
-        (assoc :authorization/time auth-time)
-        handler)))
+  ;; auth-cookie is assumed to be valid when it is present
+  (if-let [auth-cookie (-> headers (get "cookie") str auth/get-auth-cookie-value)]
+    (let [[auth-principal auth-time] (auth/decode-auth-cookie auth-cookie password)
+          auth-params-map (auth/auth-params-map :cookie auth-principal)
+          handler (middleware/wrap-merge process-request-fn auth-params-map)
+          request' (assoc request :waiter/auth-expiry-time auth-time)]
+      (log/info "processing websocket request" {:user auth-principal})
+      (handler request'))
+    (process-request-fn request)))
+
+(defn make-request-handler
+  "Returns the handler for websocket requests."
+  [password process-request-fn]
+  (fn websocket-request-handler [request]
+    (request-handler password process-request-fn request)))
 
 (defn abort-request-callback-factory
   "Creates a callback to abort the http request."
@@ -384,10 +394,12 @@
       (stream-response request response descriptor instance-request-properties reservation-status-promise
                        request-close-promise-chan local-usage-agent metrics-map)
 
-      ;; force close connection when cookie expires
-      (let [auth-time (:authorization/time request)
+      ;; force close connection
+      ;; - a day after the auth cookie expires if it is available, or
+      ;; - a day after the unauthenticated request is made
+      (let [expiry-start-time (:waiter/auth-expiry-time request 0)
             one-day-in-millis (-> 1 t/days t/in-millis)
-            expiry-time-ms (+ auth-time one-day-in-millis)
+            expiry-time-ms (+ expiry-start-time one-day-in-millis)
             time-left-ms (max (- expiry-time-ms (System/currentTimeMillis)) 0)]
         (async/go
           (let [timeout-ch (async/timeout time-left-ms)
@@ -409,7 +421,7 @@
 (defn wrap-ws-close-on-error
   "Closes the out chan when the handler returns an error."
   [handler]
-  (fn [{:keys [out] :as request}]
+  (fn wrap-ws-close-on-error-handler [{:keys [out] :as request}]
     (let [response (handler request)]
       (ru/update-response response
                           (fn [response]

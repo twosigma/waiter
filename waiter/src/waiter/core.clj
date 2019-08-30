@@ -548,6 +548,37 @@
             (log/info router-id "relinquishing leadership as there are too few routers in cluster:" num-routers))
           (>= num-routers min-cluster-routers))))
 
+(defn process-authentication-parameter
+  "Processes the authentication parameter and invokes the provided callbacks:
+   - (on-error status message) when any error is detected
+   - (on-disabled) when the authentication is disabled
+   - (on-auth-required) when authentication is enabled."
+  [waiter-discovery on-error on-disabled on-auth-required]
+  (let [{:keys [service-parameter-template token waiter-headers]} waiter-discovery
+        {:strs [authentication] :as service-description} service-parameter-template
+        authentication-disabled? (= authentication "disabled")]
+    (cond
+      (contains? waiter-headers "x-waiter-authentication")
+      (do
+        (log/info "x-waiter-authentication is not supported as an on-the-fly header"
+                  {:service-description service-description, :token token})
+        (on-error 400 "An authentication parameter is not supported for on-the-fly headers"))
+
+      ;; ensure service description formed comes entirely from the token by ensuring absence of on-the-fly headers
+      (and authentication-disabled? (some sd/service-parameter-keys (-> waiter-headers headers/drop-waiter-header-prefix keys)))
+      (do
+        (log/info "request cannot proceed as it is mixing an authentication disabled token with on-the-fly headers"
+                  {:service-description service-description, :token token})
+        (on-error 400 "An authentication disabled token may not be combined with on-the-fly headers"))
+
+      authentication-disabled?
+      (do
+        (log/info "request configured to skip authentication")
+        (on-disabled))
+
+      :else
+      (on-auth-required))))
+
 ;; PRIVATE API
 (def state
   {:async-request-store-atom (pc/fnk [] (atom {}))
@@ -966,12 +997,38 @@
    :websocket-request-auth-cookie-attacher (pc/fnk [[:state passwords router-id]]
                                              (fn websocket-request-auth-cookie-attacher [request]
                                                (ws/inter-router-request-middleware router-id (first passwords) request)))
-   :websocket-request-acceptor (pc/fnk [[:state passwords]]
+   :websocket-request-acceptor (pc/fnk [[:curator kv-store]
+                                        [:settings [:token-config token-defaults]]
+                                        [:state passwords server-name waiter-hostnames]]
                                  (fn websocket-request-acceptor [^ServletUpgradeRequest request ^ServletUpgradeResponse response]
-                                   (.setHeader response "x-cid" (cid/get-correlation-id))
-                                   (if (ws/request-authenticator (first passwords) request response)
-                                     (ws/request-subprotocol-acceptor request response)
-                                     false)))})
+                                   (let [request-headers (->> (.getHeaders request)
+                                                           (pc/map-vals #(str/join "," %))
+                                                           (pc/map-keys str/lower-case))
+                                         correlation-id (or (get request-headers "x-cid")
+                                                            (str "ws-" (utils/unique-identifier)))
+                                         password (first passwords)]
+                                     (cid/with-correlation-id
+                                       correlation-id
+                                       (log/info "request received (websocket upgrade)"
+                                                 {:headers (headers/truncate-header-values request-headers)
+                                                  :http-version (.getHttpVersion request)
+                                                  :method (some-> request .getMethod str/lower-case)
+                                                  :protocol-version (.getProtocolVersion request)
+                                                  :sub-protocols (some-> request .getSubProtocols seq)
+                                                  :uri (some-> request .getRequestURI .getPath)})
+                                       (.setHeader response "server" server-name)
+                                       (.setHeader response "x-cid" correlation-id)
+                                       (let [waiter-discovery (sd/discover-service-parameters kv-store token-defaults waiter-hostnames request-headers)]
+                                         (process-authentication-parameter
+                                           waiter-discovery
+                                           (fn [status message]
+                                             (.sendError response status message)
+                                             false)
+                                           (fn []
+                                             (ws/request-subprotocol-acceptor request response))
+                                           (fn []
+                                             (and (ws/request-authenticator password request response)
+                                                  (ws/request-subprotocol-acceptor request response)))))))))})
 
 (def daemons
   {:autoscaler (pc/fnk [[:curator leader?-fn]
@@ -1192,21 +1249,20 @@
                                           [:settings instance-request-properties]
                                           [:state instance-rpc-chan local-usage-agent passwords websocket-client]
                                           wrap-descriptor-fn]
-                                   (fn default-websocket-handler-fn [request]
-                                     (let [password (first passwords)
-                                           make-request-fn (fn make-ws-request
-                                                             [instance request request-properties passthrough-headers end-route metric-group
-                                                              backend-proto proto-version]
-                                                             (ws/make-request websocket-client service-id->password-fn instance request request-properties
-                                                                              passthrough-headers end-route metric-group backend-proto proto-version))
-                                           process-request-fn (fn process-request-fn [request]
-                                                                (pr/process make-request-fn instance-rpc-chan start-new-service-fn
-                                                                            instance-request-properties determine-priority-fn ws/process-response!
-                                                                            ws/abort-request-callback-factory local-usage-agent request))
-                                           handler (-> process-request-fn
-                                                     (ws/wrap-ws-close-on-error)
-                                                     wrap-descriptor-fn)]
-                                       (ws/request-handler password handler request))))
+                                   (let [password (first passwords)
+                                         make-request-fn (fn make-ws-request
+                                                           [instance request request-properties passthrough-headers end-route metric-group
+                                                            backend-proto proto-version]
+                                                           (ws/make-request websocket-client service-id->password-fn instance request request-properties
+                                                                            passthrough-headers end-route metric-group backend-proto proto-version))
+                                         process-request-fn (fn process-request-fn [request]
+                                                              (pr/process make-request-fn instance-rpc-chan start-new-service-fn
+                                                                          instance-request-properties determine-priority-fn ws/process-response!
+                                                                          ws/abort-request-callback-factory local-usage-agent request))]
+                                     (->> process-request-fn
+                                       ws/wrap-ws-close-on-error
+                                       wrap-descriptor-fn
+                                       (ws/make-request-handler password))))
    :display-settings-handler-fn (pc/fnk [wrap-secure-request-fn settings]
                                   (wrap-secure-request-fn
                                     (fn display-settings-handler-fn [_]
@@ -1574,31 +1630,13 @@
                           (fn wrap-auth-bypass-fn
                             [handler]
                             (fn [{:keys [waiter-discovery] :as request}]
-                              (let [{:keys [service-parameter-template token waiter-headers]} waiter-discovery
-                                    {:strs [authentication] :as service-description} service-parameter-template
-                                    authentication-disabled? (= authentication "disabled")]
-                                (cond
-                                  (contains? waiter-headers "x-waiter-authentication")
-                                  (do
-                                    (log/info "x-waiter-authentication is not supported as an on-the-fly header"
-                                              {:service-description service-description, :token token})
-                                    (utils/clj->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
-                                                              :status 400))
-
-                                  ;; ensure service description formed comes entirely from the token by ensuring absence of on-the-fly headers
-                                  (and authentication-disabled? (some sd/service-parameter-keys (-> waiter-headers headers/drop-waiter-header-prefix keys)))
-                                  (do
-                                    (log/info "request cannot proceed as it is mixing an authentication disabled token with on-the-fly headers"
-                                              {:service-description service-description, :token token})
-                                    (utils/clj->json-response {:error "An authentication disabled token may not be combined with on-the-fly headers"}
-                                                              :status 400))
-
-                                  authentication-disabled?
-                                  (do
-                                    (log/info "request configured to skip authentication")
-                                    (handler (assoc request :skip-authentication true)))
-
-                                  :else
+                              (process-authentication-parameter
+                                waiter-discovery
+                                (fn [status message]
+                                  (utils/clj->json-response {:error message} :status status))
+                                (fn []
+                                  (handler (assoc request :skip-authentication true)))
+                                (fn []
                                   (handler request))))))
    :wrap-descriptor-fn (pc/fnk [[:routines request->descriptor-fn start-new-service-fn]
                                 [:state fallback-state-atom]]
