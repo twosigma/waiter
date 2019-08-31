@@ -245,13 +245,7 @@
       utils/clj->json-response))
 
 (def settings-defaults
-  {:authenticator-config {:jwt {:http-options {:conn-timeout 10000
-                                               :socket-timeout 10000
-                                               :spnego-auth false}
-                                :subject-key :sub
-                                :supported-algorithms #{:eddsa :rs256}
-                                :token-type "JWT"
-                                :update-interval-ms 60000}
+  {:authenticator-config {:jwt :disabled
                           :kind :one-user
                           :kerberos {:factory-fn 'waiter.auth.kerberos/kerberos-authenticator
                                      :concurrency-level 20

@@ -299,6 +299,7 @@
           cluster-name "bar"]
       (with-redefs [env (fn [name _]
                           (case name
+                            "JWKS_SERVER_URL" "http://127.0.0.1:8040/jwks.json"
                             "WAITER_PORT" (str port)
                             "WAITER_AUTH_RUN_AS_USER" run-as-user
                             "WAITER_CLUSTER_NAME" cluster-name
