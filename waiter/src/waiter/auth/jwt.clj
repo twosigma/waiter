@@ -229,6 +229,11 @@
   []
   (-> (t/now) tc/to-long (/ 1000) long))
 
+(defn request->realm
+  "Extracts the realm from the host header in the request."
+  [request]
+  (some-> request :headers (get "host") utils/authority->host))
+
 (defn- access-token?
   "Predicate to determine if an authorization header represents an access token."
   [authorization]
@@ -243,7 +248,7 @@
   (let [validation-timer (metrics/waiter-timer "core" "jwt" "validation")
         timer-context (timers/start validation-timer)]
     (try
-      (let [realm (utils/request->host request)
+      (let [realm (request->realm request)
             request-scheme (utils/request->scheme request)
             bearer-entry (auth/select-auth-header request access-token?)
             access-token (str/trim (subs bearer-entry (count bearer-prefix)))
@@ -272,11 +277,11 @@
           (fn [{:keys [status] :as response}]
             (if (and (= status status-unauthorized) (utils/waiter-generated-response? response))
               ;; add to challenge initiated by Waiter
-              (let [realm (utils/request->host request)
+              (let [realm (request->realm request)
                     www-auth-header (if (str/blank? realm)
                                       (str/trim bearer-prefix)
                                       (str bearer-prefix "realm=\"" realm "\""))]
-                (log/info "attaching www-authenticate header to response")
+                (log/debug "attaching www-authenticate header to response")
                 (ru/attach-header response "www-authenticate" www-auth-header))
               ;; non-401 response, avoid authentication challenge
               response)))
