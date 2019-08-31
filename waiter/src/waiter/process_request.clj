@@ -574,9 +574,8 @@
 
 (defn- forward-grpc-status-headers-in-trailers
   "Adds logging for tracking response trailers for requests.
-   Since we always send some trailers, we need to repeat the grpc status headers in the trailers
-   to ensure client evaluates the request to the same grpc error.
-   Please see https://github.com/eclipse/jetty.project/issues/3829 for details."
+   When only headers are provided jetty terminates the request with an empty data frame,
+   we work around that limitation by sending trailers that carry the same grpc error message."
   [{:keys [headers trailers] :as response}]
   (if trailers
     (let [correlation-id (cid/get-correlation-id)

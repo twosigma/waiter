@@ -63,10 +63,7 @@
                   (-> response :headers str)))
             (is (= {} (get body-json "trailers"))
                 (-> response :headers str))
-            ;; TODO remove when https://github.com/eclipse/jetty.project/issues/3829 is fixed and empty trailer frames are not sent.
-            (is (= (when (hu/http2? http-version)
-                     {"x-waiter-trailer-reason" "ensures-non-empty-trailers"})
-                   (some-> response :trailers))
+            (is (nil? (some-> response :trailers))
                 (-> response :headers str))))
 
         (let [request-trailer-delay-ms 100
