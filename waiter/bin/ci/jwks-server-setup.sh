@@ -14,10 +14,10 @@ JWKS_PORT=${1:-8040}
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WAITER_DIR=${DIR}/../..
-JWT_DIR=${WAITER_DIR}/test-files/jwt
+JWT_DIR=${WAITER_DIR}/../containers/test-apps/jwks-server
 
 echo "Starting JWKS server on port ${JWKS_PORT}"
-( pushd ${JWT_DIR} && python3 -m http.server ${JWKS_PORT} && popd ) &
+( pushd ${JWT_DIR} && lein run ${JWKS_PORT} resources/jwks.json resources/settings.edn && popd ) &
 
 echo "Waiting for JWKS server..."
 while ! curl -k http://127.0.0.1:${JWKS_PORT}/jwks.json &>/dev/null; do
