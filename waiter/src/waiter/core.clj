@@ -63,6 +63,7 @@
             [waiter.util.cache-utils :as cu]
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
+            [waiter.util.moving-average :as ma]
             [waiter.util.ring-utils :as ru]
             [waiter.util.semaphore :as semaphore]
             [waiter.util.utils :as utils]
@@ -966,14 +967,19 @@
                              (scheduler/validate-service scheduler service-id)
                              (service/start-new-service
                                scheduler descriptor start-service-cache scheduler-interactions-thread-pool)))
-   :start-work-stealing-balancer-fn (pc/fnk [[:settings [:work-stealing offer-help-interval-ms reserve-timeout-ms]]
+   :start-work-stealing-balancer-fn (pc/fnk [[:settings [:work-stealing
+                                                         [:moving-average initial-value maximum-value minimum-value window-size]
+                                                         offer-help-interval-ms reserve-timeout-ms]]
                                              [:state instance-rpc-chan offers-allowed-semaphore router-id]
                                              make-inter-router-requests-async-fn router-metrics-helpers]
                                       (fn start-work-stealing-balancer [service-id]
-                                        (let [{:keys [service-id->router-id->metrics]} router-metrics-helpers]
+                                        (let [{:keys [service-id->router-id->metrics]} router-metrics-helpers
+                                              moving-average (ma/bounded-moving-average
+                                                               (ma/sliding-window-moving-average window-size initial-value)
+                                                               maximum-value minimum-value)]
                                           (work-stealing/start-work-stealing-balancer
                                             instance-rpc-chan reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
-                                            service-id->router-id->metrics make-inter-router-requests-async-fn
+                                            service-id->router-id->metrics make-inter-router-requests-async-fn moving-average
                                             router-id service-id))))
    :stop-work-stealing-balancer-fn (pc/fnk []
                                      (fn stop-work-stealing-balancer [service-id work-stealing-chan-map]

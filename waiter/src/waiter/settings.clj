@@ -179,6 +179,10 @@
    (s/required-key :websocket-config) {(s/required-key :ws-max-binary-message-size) schema/positive-int
                                        (s/required-key :ws-max-text-message-size) schema/positive-int}
    (s/required-key :work-stealing) {(s/required-key :max-in-flight-offers) schema/non-negative-int
+                                    (s/required-key :moving-average) {(s/required-key :initial-value) schema/positive-num
+                                                                      (s/required-key :maximum-value) schema/positive-num
+                                                                      (s/required-key :minimum-value) schema/positive-num
+                                                                      (s/required-key :window-size) schema/positive-int}
                                     (s/required-key :offer-help-interval-ms) schema/positive-int
                                     (s/required-key :reserve-timeout-ms) schema/positive-int}
    (s/required-key :zookeeper) {(s/required-key :base-path) schema/non-empty-string
@@ -459,6 +463,10 @@
    :websocket-config {:ws-max-binary-message-size (* 1024 1024 40)
                       :ws-max-text-message-size (* 1024 1024 40)}
    :work-stealing {:max-in-flight-offers 4000
+                   :moving-average {:initial-value 1.00
+                                    :maximum-value 1.00
+                                    :minimum-value 0.05
+                                    :window-size 100}
                    :offer-help-interval-ms 100
                    :reserve-timeout-ms 1000}
    :zookeeper {:base-path "/waiter"

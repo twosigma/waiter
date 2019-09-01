@@ -19,6 +19,7 @@
             [clojure.test :refer :all]
             [clojure.walk :as walk]
             [waiter.test-helpers]
+            [waiter.util.moving-average :as ma]
             [waiter.util.semaphore :as semaphore]
             [waiter.util.utils :as utils]
             [waiter.work-stealing :refer :all]))
@@ -101,12 +102,13 @@
   `(let [response-chan# (async/chan 1)
          _# (async/>!! ~query-chan {:response-chan response-chan#})
          raw-result# (async/<!! response-chan#)
-         query-result# (select-keys raw-result# (keys ~expected-result))]
-     (when (not= ~expected-result query-result#)
+         expected-result# (merge {:moving-average 1.0} ~expected-result)
+         query-result# (select-keys raw-result# (keys expected-result#))]
+     (when (not= expected-result# query-result#)
        (println (first *testing-vars*))
-       (println "Expected: " (utils/deep-sort-map ~expected-result))
+       (println "Expected: " (utils/deep-sort-map expected-result#))
        (println "Actual:   " (utils/deep-sort-map query-result#)))
-     (is (= ~expected-result query-result#))))
+     (is (= expected-result# query-result#))))
 
 (let [router-id "test-router-id"
       service-id "test-service-id"
@@ -316,7 +318,8 @@
 
   (deftest test-work-stealing-balancer-multiple-instances-available-reservation-and-release
     (let [available-slots 7
-          initial-state {:iteration 10 :request-id->work-stealer {}}
+          moving-average (ma/bounded-moving-average (ma/sliding-window-moving-average 10 1) 1.0 0.8)
+          initial-state {:iteration 10 :moving-average moving-average :request-id->work-stealer {}}
           request-id->cleanup-chan-atom (atom {})
           offer-help-fn (fn [{:keys [request-id]} cleanup-chan]
                           (swap! request-id->cleanup-chan-atom assoc request-id cleanup-chan))
@@ -364,11 +367,12 @@
       (is (contains? @request-id->cleanup-chan-atom (make-request-id 10 4)))
 
       (response-callback (make-request-id 10 0) :success)
-      (response-callback (make-request-id 10 2) :success)
+      (response-callback (make-request-id 10 2) :failure)
       (check-work-stealing-balancer-query-state
         query-chan
         {:global-offers {:allowed max-permits :available (- max-permits 3)}
          :iteration 14
+         :moving-average 0.9
          :request-id->work-stealer (-> {}
                                      (populate-request-id->workstealer 10 1 "router-2" "test-instance-id-2")
                                      (populate-request-id->workstealer 10 3 "router-2" "test-instance-id-4")
@@ -391,6 +395,7 @@
         query-chan
         {:global-offers {:allowed max-permits :available (- max-permits 5)}
          :iteration 16
+         :moving-average 0.9
          :request-id->work-stealer (-> {}
                                      (populate-request-id->workstealer 10 1 "router-2" "test-instance-id-2")
                                      (populate-request-id->workstealer 10 3 "router-2" "test-instance-id-4")
@@ -400,12 +405,13 @@
          :slots {:offerable 5 :offered 5}})
 
       (response-callback (make-request-id 10 1) :success)
-      (response-callback (make-request-id 10 3) :success)
-      (response-callback (make-request-id 15 1) :success)
+      (response-callback (make-request-id 10 3) :failure)
+      (response-callback (make-request-id 15 1) :failure)
       (check-work-stealing-balancer-query-state
         query-chan
         {:global-offers {:allowed max-permits :available (- max-permits 2)}
          :iteration 20
+         :moving-average 0.8
          :request-id->work-stealer (-> {}
                                      (populate-request-id->workstealer 10 4 "router-1" "test-instance-id-5")
                                      (populate-request-id->workstealer 15 0 "router-4" "test-instance-id-6"))
@@ -416,6 +422,7 @@
         query-chan
         {:global-offers {:allowed max-permits :available (- max-permits 2)}
          :iteration 22
+         :moving-average 0.8
          :request-id->work-stealer (-> {}
                                      (populate-request-id->workstealer 10 4 "router-1" "test-instance-id-5")
                                      (populate-request-id->workstealer 15 0 "router-4" "test-instance-id-6"))
@@ -554,6 +561,7 @@
         reserve-timeout-ms 1000
         offer-help-interval-ms 1000
         service-id->router-id->metrics {}
+        moving-average (ma/bounded-moving-average (ma/sliding-window-moving-average 200 1) 1.0 0.1)
         make-inter-router-requests-fn-factory (fn [status response-map]
                                                 (fn [endpoint & {:keys [acceptable-router? body method]}]
                                                   (is (= "work-stealing" endpoint))
@@ -579,7 +587,7 @@
         (let [offers-allowed-semaphore (semaphore/create-semaphore 10)
               make-inter-router-requests-fn (make-inter-router-requests-fn-factory 200 {})]
           (start-work-stealing-balancer instance-rpc-chan reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
-                                        service-id->router-id->metrics make-inter-router-requests-fn router-id service-id)
+                                        service-id->router-id->metrics make-inter-router-requests-fn moving-average router-id service-id)
           (is @offer-help-fn-atom)
           (let [offer-help-fn @offer-help-fn-atom
                 reservation-parameters {:request-id request-id :target-router-id target-router-id}
@@ -591,7 +599,7 @@
         (let [offers-allowed-semaphore (semaphore/create-semaphore 10)
               make-inter-router-requests-fn (make-inter-router-requests-fn-factory 200 {:response-status "successful"})]
           (start-work-stealing-balancer instance-rpc-chan reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
-                                        service-id->router-id->metrics make-inter-router-requests-fn router-id service-id)
+                                        service-id->router-id->metrics make-inter-router-requests-fn moving-average router-id service-id)
           (is @offer-help-fn-atom)
           (let [offer-help-fn @offer-help-fn-atom
                 reservation-parameters {:request-id request-id :target-router-id target-router-id}
@@ -603,7 +611,7 @@
         (let [offers-allowed-semaphore (semaphore/create-semaphore 10)
               make-inter-router-requests-fn (make-inter-router-requests-fn-factory 200 {:response-status "failure"})]
           (start-work-stealing-balancer instance-rpc-chan reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
-                                        service-id->router-id->metrics make-inter-router-requests-fn router-id service-id)
+                                        service-id->router-id->metrics make-inter-router-requests-fn moving-average router-id service-id)
           (is @offer-help-fn-atom)
           (let [offer-help-fn @offer-help-fn-atom
                 reservation-parameters {:request-id request-id :target-router-id target-router-id}
@@ -615,7 +623,7 @@
         (let [offers-allowed-semaphore (semaphore/create-semaphore 10)
               make-inter-router-requests-fn (make-inter-router-requests-fn-factory 400 {:response-status "failure"})]
           (start-work-stealing-balancer instance-rpc-chan reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
-                                        service-id->router-id->metrics make-inter-router-requests-fn router-id service-id)
+                                        service-id->router-id->metrics make-inter-router-requests-fn moving-average router-id service-id)
           (is @offer-help-fn-atom)
           (let [offer-help-fn @offer-help-fn-atom
                 reservation-parameters {:request-id request-id :target-router-id target-router-id}

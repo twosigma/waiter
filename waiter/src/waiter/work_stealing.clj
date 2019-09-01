@@ -25,6 +25,7 @@
             [waiter.metrics :as metrics]
             [waiter.service :as service]
             [waiter.util.async-utils :as au]
+            [waiter.util.moving-average :as ma]
             [waiter.util.semaphore :as semaphore]
             [waiter.util.utils :as utils]))
 
@@ -72,51 +73,63 @@
 (defn- make-work-stealing-offers
   "Makes work-stealing offers to victim routers when the current router has idle slots.
    Routers which are more heavily loaded preferentially receive help offers."
-  [label offer-help-fn reserve-instance-fn {:keys [iteration] :as current-state} offerable-slots
+  [label offer-help-fn reserve-instance-fn {:keys [iteration moving-average] :as current-state} offerable-slots
    router-id->help-required cleanup-chan offers-allowed-semaphore router-id service-id]
-  (async/go
-    (loop [counter 0
-           iteration-state current-state
-           router-id->help-required router-id->help-required]
-      (let [iter-label (str label ".iter" iteration)]
-        (if (and (< counter offerable-slots)
-                 (seq router-id->help-required)
-                 ;; acquiring the semaphore must be the last operation
-                 (semaphore/try-acquire! offers-allowed-semaphore))
-          (let [request-id (str service-id "." router-id ".ws" iteration ".offer" counter)
-                reservation-parameters {:cid request-id, :request-id request-id}
-                response-chan (async/promise-chan)
-                _ (reserve-instance-fn reservation-parameters response-chan)
-                {instance-id :id :as instance} (async/<! response-chan)]
-            (if instance-id
-              (let [target-router-id (-> (juxt val key)
-                                         (sort-by router-id->help-required)
-                                         last
-                                         key)
-                    help-required (get router-id->help-required target-router-id)
-                    offer-parameters (assoc reservation-parameters
-                                       :instance instance
-                                       :target-router-id target-router-id)]
-                (log/info iter-label (str "item" counter) "offering" instance-id "to" target-router-id)
-                (counters/inc! (metrics/service-counter service-id "work-stealing" "sent-to" target-router-id "offers"))
-                (counters/inc! (metrics/service-counter service-id "work-stealing" "sent-to" "total"))
-                (counters/inc! (metrics/service-counter service-id "work-stealing" "sent-to" "in-flight"))
-                (offer-help-fn offer-parameters cleanup-chan)
-                (recur (inc counter)
-                       (assoc-in iteration-state [:request-id->work-stealer request-id] offer-parameters)
-                       (if (= 1 help-required)
-                         (dissoc router-id->help-required target-router-id)
-                         (update-in router-id->help-required [target-router-id] dec))))
-              (do
-                (when (pos? counter)
-                  (log/info iter-label "no more instances to offer, offered" counter "of" offerable-slots "slots"))
-                ;; release the semaphore, no instances were available
-                (semaphore/release! offers-allowed-semaphore)
-                iteration-state)))
-          (do
-            (if (pos? counter)
-              (log/info iter-label "exhausted help offers, offered" counter "of" offerable-slots "slots"))
-            iteration-state))))))
+  (let [offer-ratio (ma/get-average moving-average)]
+    (async/go
+      (loop [offered 0
+             skipped 0
+             iteration-state current-state
+             router-id->help-required router-id->help-required]
+        (let [counter (+ offered skipped)
+              iter-label (str label ".iter" iteration)]
+          (if (and (< counter offerable-slots)
+                   (seq router-id->help-required))
+            (if (<= (rand) offer-ratio)
+              ;; acquiring the semaphore must be the last operation
+              (if (semaphore/try-acquire! offers-allowed-semaphore)
+                (let [request-id (str service-id "." router-id ".ws" iteration ".offer" counter)
+                      reservation-parameters {:cid request-id, :request-id request-id}
+                      response-chan (async/promise-chan)
+                      _ (reserve-instance-fn reservation-parameters response-chan)
+                      {instance-id :id :as instance} (async/<! response-chan)]
+                  (if instance-id
+                    (let [target-router-id (-> (juxt val key)
+                                             (sort-by router-id->help-required)
+                                             last
+                                             key)
+                          help-required (get router-id->help-required target-router-id)
+                          offer-parameters (assoc reservation-parameters
+                                             :instance instance
+                                             :target-router-id target-router-id)]
+                      (log/info iter-label (str "item" counter) "offering" instance-id "to" target-router-id)
+                      (counters/inc! (metrics/service-counter service-id "work-stealing" "sent-to" target-router-id "offers"))
+                      (counters/inc! (metrics/service-counter service-id "work-stealing" "sent-to" "total"))
+                      (counters/inc! (metrics/service-counter service-id "work-stealing" "sent-to" "in-flight"))
+                      (offer-help-fn offer-parameters cleanup-chan)
+                      (recur (inc offered)
+                             skipped
+                             (assoc-in iteration-state [:request-id->work-stealer request-id] offer-parameters)
+                             (if (= 1 help-required)
+                               (dissoc router-id->help-required target-router-id)
+                               (update-in router-id->help-required [target-router-id] dec))))
+                    (do
+                      (when (pos? counter)
+                        (log/info iter-label "no more instances to offer"
+                                  {:offerable-slots offerable-slots :offered offered :skipped skipped}))
+                      ;; release the semaphore, no instances were available
+                      (semaphore/release! offers-allowed-semaphore)
+                      iteration-state)))
+                iteration-state)
+              (recur offered
+                     (inc skipped)
+                     iteration-state
+                     router-id->help-required))
+            (do
+              (if (pos? counter)
+                (log/info iter-label "exhausted help offers for this iteration"
+                          {:offerable-slots offerable-slots :offered offered :skipped skipped}))
+              iteration-state)))))))
 
 (defn work-stealing-balancer
   "go block to execute the work-stealing load balancer for a given service.
@@ -138,14 +151,19 @@
   (let [exit-chan (au/latest-chan)
         query-chan (async/chan 16)
         cleanup-chan (async/chan 1024)
-        label (str "work-stealing-balancer-" service-id)]
+        label (str "work-stealing-balancer-" service-id)
+        moving-average-atom (atom nil)]
+    (metrics/service-gauge #(if-let [moving-average @moving-average-atom] (ma/get-average moving-average) 0.0)
+                           service-id "work-stealing" "success" "moving-average")
     (async/go
       (try
-        (loop [{:keys [iteration request-id->work-stealer timeout-chan] :as current-state}
+        (loop [{:keys [iteration moving-average request-id->work-stealer timeout-chan] :as current-state}
                (merge {:iteration 0
+                       :moving-average (ma/bounded-moving-average (ma/sliding-window-moving-average 100 1) 1.0 0.1)
                        :request-id->work-stealer {}
                        :timeout-chan (timeout-chan-factory)}
                       initial-state)]
+          (reset! moving-average-atom moving-average)
           (when current-state
             (when-let [new-state
                        (async/alt!
@@ -157,16 +175,20 @@
 
                          cleanup-chan
                          ([data]
-                           (let [{:keys [request-id status]} data]
+                           (let [{:keys [request-id status]} data
+                                 successful? (contains? #{:success :success-async} status)
+                                 moving-average' (ma/insert-value moving-average (if successful? 1 0))]
                              (if-let [{:keys [target-router-id] :as work-stealer} (get request-id->work-stealer request-id)]
                                (do
-                                 (log/info label "releasing instance reserved for request" request-id)
+                                 (log/info label "releasing instance reserved for request" request-id "with status" status)
                                  (release-instance-fn (assoc work-stealer :status status))
                                  (semaphore/release! offers-allowed-semaphore)
                                  (counters/inc! (metrics/service-counter service-id "work-stealing" "sent-to" target-router-id "releases"))
                                  (counters/dec! (metrics/service-counter service-id "work-stealing" "sent-to" "in-flight"))
-                                 (assoc current-state :request-id->work-stealer (dissoc request-id->work-stealer request-id)))
-                               current-state)))
+                                 (assoc current-state
+                                   :moving-average moving-average'
+                                   :request-id->work-stealer (dissoc request-id->work-stealer request-id)))
+                               (assoc current-state :moving-average moving-average'))))
 
                          timeout-chan
                          ([_]
@@ -207,6 +229,7 @@
                              (log/info label "state has been queried")
                              (async/put! response-chan (-> current-state
                                                            (dissoc :timeout-chan)
+                                                           (update :moving-average ma/get-average)
                                                            (assoc :global-offers (semaphore/state offers-allowed-semaphore)
                                                                   :router-id->help-required router-id->help-required
                                                                   :router-id->metrics router-id->metrics
@@ -225,7 +248,7 @@
 (defn start-work-stealing-balancer
   "Starts the work-stealing balancer for all services."
   [instance-rpc-chan reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore service-id->router-id->metrics
-   make-inter-router-requests-fn router-id service-id]
+   make-inter-router-requests-fn moving-average router-id service-id]
   (log/info "starting work-stealing balancer for" service-id)
   (letfn [(reserve-instance-fn
             [reservation-parameters response-chan]
@@ -296,5 +319,7 @@
           (timeout-chan-factory
             []
             (async/timeout offer-help-interval-ms))]
-    (work-stealing-balancer {} timeout-chan-factory service-id->router-id->metrics reserve-instance-fn release-instance-fn
-                            offer-help-fn offers-allowed-semaphore router-id service-id)))
+    (let [initial-state {:moving-average moving-average}]
+      (work-stealing-balancer
+        initial-state timeout-chan-factory service-id->router-id->metrics reserve-instance-fn release-instance-fn
+        offer-help-fn offers-allowed-semaphore router-id service-id))))

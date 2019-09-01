@@ -777,6 +777,17 @@
                  ;; The maximum number of outstanding work-stealing offers per router:
                  :max-in-flight-offers 4000
 
+                 ;; Work-stealing maintains a simple moving average of successful offers which is
+                 ;; used as feedback to determine the probability of making subsequent offers.
+                 :moving-average {;; the initial value of the moving average
+                                  :initial-value 1.00
+                                  ;; the maximum value of the moving average
+                                  :maximum-value 1.00
+                                  ;; the minimum value of the moving average
+                                  :minimum-value 0.05
+                                  ;; the window size to control the sensitivity making offers
+                                  :window-size 100}
+
                  ;; The interval (milliseconds) on which Waiter makes work-stealing offers:
                  :offer-help-interval-ms 100
 

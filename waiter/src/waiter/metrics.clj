@@ -74,6 +74,11 @@
   [service-id & nested-path]
   `(counters/counter ~(metric-name (concat ["services" service-id "counters"] nested-path))))
 
+(defmacro service-gauge
+  "Creates a gauge with service-specific naming scheme"
+  [f service-id & nested-path]
+  `(gauges/gauge-fn ~(metric-name (concat ["services" service-id "counters"] nested-path)) ~f))
+
 (defmacro service-histogram
   "Creates a histogram with service-specific naming scheme"
   [service-id & nested-path]
