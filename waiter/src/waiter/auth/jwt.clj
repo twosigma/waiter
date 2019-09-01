@@ -87,7 +87,10 @@
       (fn retrieve-jwks-task []
         (if (str/starts-with? url "file://")
           (-> url slurp json/read-str walk/keywordize-keys)
-          (pc/mapply hu/http-request http-client url http-options))))))
+          (let [correlation-id (utils/unique-identifier)
+                http-options (update http-options :headers assoc "x-cid" correlation-id)]
+            (log/info "updating jwks entries from server, cid is" correlation-id)
+            (pc/mapply hu/http-request http-client url http-options)))))))
 
 (defn refresh-keys-cache
   "Update the cache of users with prestashed JWK keys."

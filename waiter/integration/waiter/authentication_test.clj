@@ -129,7 +129,7 @@
             (delete-token-and-assert waiter-url token)))))))
 
 (defn- retrieve-access-token
-  [waiter-url realm]
+  [realm]
   (if-let [access-token-url-env (System/getenv "INTEGRATION_TEST_JWT_ACCESS_TOKEN_URL")]
     (let [access-token-url (string/replace access-token-url-env "{HOST}" realm)
           access-token-uri (URI. access-token-url)
@@ -140,23 +140,7 @@
           _ (assert-response-status access-token-response 200)
           access-token-response-json (-> access-token-response :body str json/read-str)]
       (get access-token-response-json "access_token"))
-    (let [state-json (jwt-authenticator-state waiter-url)
-          active-keys (-> state-json
-                        (get-in ["state" "cache-data" "key-id->jwk"])
-                        vals)
-          eddsa-keys (filter (fn [{:strs [crv]}] (= "Ed25519" crv)) active-keys)
-          {:strs [d kid] :as entry} (rand-nth eddsa-keys)
-          _ (when (string/blank? d)
-              (throw (ex-info "Private key not available from jwt authenticator state"
-                              {:jwt-state state-json})))
-          {:keys [issuer subject-key token-type]} (setting waiter-url [:authenticator-config :jwt])
-          subject-key (keyword subject-key)
-          principal (retrieve-username)
-          expiry-time-secs (+ (long (/ (System/currentTimeMillis) 1000)) 120)
-          payload (cond-> {:aud realm :exp expiry-time-secs :iss issuer :sub principal}
-                    (not= :sub subject-key) (assoc subject-key principal))
-          header {:kid kid :typ token-type}]
-      (generate-jwt-access-token :eddsa entry payload header))))
+    (throw (ex-info "INTEGRATION_TEST_JWT_ACCESS_TOKEN_URL environment variable has not been provided" {}))))
 
 (defmacro assert-auth-cookie
   "Helper macro to assert the value of the set-cookie header."
@@ -172,7 +156,7 @@
   (testing-using-waiter-url
     (if (jwt-auth-enabled? waiter-url)
       (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)
-            access-token (retrieve-access-token waiter-url waiter-host)
+            access-token (retrieve-access-token waiter-host)
             request-headers {"authorization" (str "Bearer " access-token)
                              "host" waiter-host
                              "x-forwarded-proto" "https"}
@@ -195,7 +179,7 @@
   (testing-using-waiter-url
     (if (jwt-auth-enabled? waiter-url)
       (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)
-            access-token (str (retrieve-access-token waiter-url waiter-host) "invalid")
+            access-token (str (retrieve-access-token waiter-host) "invalid")
             request-headers {"authorization" (str "Bearer " access-token)
                              "host" waiter-host
                              "x-forwarded-proto" "https"}
@@ -230,7 +214,7 @@
                                                     :run-as-user (retrieve-username)
                                                     "token" host))
             _ (assert-response-status token-response 200)
-            access-token (retrieve-access-token waiter-url host)
+            access-token (retrieve-access-token host)
             request-headers {"authorization" (str "Bearer " access-token)
                              "host" host
                              "x-forwarded-proto" "https"}
@@ -266,7 +250,7 @@
                                                     :run-as-user (retrieve-username)
                                                     "token" host))
             _ (assert-response-status token-response 200)
-            access-token (str (retrieve-access-token waiter-url host) "invalid")
+            access-token (str (retrieve-access-token host) "invalid")
             request-headers {"authorization" (str "Bearer " access-token)
                              "host" host
                              "x-forwarded-proto" "https"}
