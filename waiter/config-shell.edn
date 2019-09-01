@@ -17,15 +17,7 @@
 
  ; ---------- Security ----------
 
- :authenticator-config {:jwt {:http-options {:conn-timeout 10000
-                                             :socket-timeout 10000
-                                             :spnego-auth false}
-                              :issuer "test.com"
-                              :jwks-url #config/env "JWKS_SERVER_URL"
-                              :subject-key :sub
-                              :supported-algorithms #{:eddsa :rs256}
-                              :token-type "JWT"
-                              :update-interval-ms 60000}
+ :authenticator-config {:jwt :disabled
                         :kind :one-user
                         :one-user {;; The user account used to launch services:
                                    :run-as-user #config/env "WAITER_AUTH_RUN_AS_USER"}}

@@ -130,7 +130,7 @@
 
 (defn- retrieve-access-token
   [realm]
-  (if-let [access-token-url-env (System/getenv "INTEGRATION_TEST_JWT_ACCESS_TOKEN_URL")]
+  (if-let [access-token-url-env (System/getenv "WAITER_TEST_JWT_ACCESS_TOKEN_URL")]
     (let [access-token-url (string/replace access-token-url-env "{HOST}" realm)
           access-token-uri (URI. access-token-url)
           protocol (.getScheme access-token-uri)
@@ -140,7 +140,7 @@
           _ (assert-response-status access-token-response 200)
           access-token-response-json (-> access-token-response :body str json/read-str)]
       (get access-token-response-json "access_token"))
-    (throw (ex-info "INTEGRATION_TEST_JWT_ACCESS_TOKEN_URL environment variable has not been provided" {}))))
+    (throw (ex-info "WAITER_TEST_JWT_ACCESS_TOKEN_URL environment variable has not been provided" {}))))
 
 (defmacro assert-auth-cookie
   "Helper macro to assert the value of the set-cookie header."

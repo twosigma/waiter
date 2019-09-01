@@ -5,7 +5,7 @@
 #   jwks-server-setup.sh 9040
 #
 # Run a  JSON Web Key Set (JWKS) server that returns a fixed set of keys.
-# JWKS retrieval request can be routed to: http://localhost:JWKS_PORT/jwks.json
+# JWKS retrieval request can be routed to: http://localhost:JWKS_PORT/keys
 # When the JWKS_PORT is not specified, a default of 8040 is used.
 
 set -e
@@ -20,7 +20,7 @@ echo "Starting JWKS server on port ${JWKS_PORT}"
 ( pushd ${JWT_DIR} && lein run ${JWKS_PORT} resources/jwks.json resources/settings.edn && popd ) &
 
 echo "Waiting for JWKS server..."
-while ! curl -k http://127.0.0.1:${JWKS_PORT}/jwks.json &>/dev/null; do
+while ! curl -k http://127.0.0.1:${JWKS_PORT}/keys &>/dev/null; do
     echo -n .
     sleep 3
 done
