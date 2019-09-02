@@ -20,7 +20,9 @@
             [clojure.tools.logging :as log]
             [clojure.string :as str]
             [jwks-server.config :as config]
-            [plumbing.core :as pc]))
+            [plumbing.core :as pc]
+            [ring.middleware.params :as ring-params]
+            [ring.util.request :as ring-request]))
 
 (defn prepare-response
   "Prepares and returns a standard response"
@@ -44,17 +46,18 @@
         options {:alg alg :header header}]
     (jwt/sign payload private-key options)))
 
+(defn- request->query-params
+  "Like Ring's params-request, but doesn't try to pull params from the body."
+  [request]
+  (->> (or (ring-request/character-encoding request) "UTF-8")
+    (ring-params/assoc-query-params request)
+    :query-params))
+
 (defn process-get-token-request
   "Retrieves an JWT access token generated using a random EdDSA key."
-  [{:keys [query-string]}]
+  [{:keys [query-string] :as request}]
   (log/info "query string:" query-string)
-  (let [{:strs [host]} (try
-                         (when-not (str/blank? query-string)
-                           (->> (str/split query-string #"&")
-                             (map #(str/split % #"="))
-                             (into {})))
-                         (catch Throwable th
-                           (throw (ex-info "unable to parse query string" {:status 400} th))))
+  (let [{:strs [host]} (request->query-params request)
         _ (when (str/blank? host)
             (throw (ex-info "host query parameter not provided" {:status 400})))
         {:keys [keys]} (config/retrieve-jwks)

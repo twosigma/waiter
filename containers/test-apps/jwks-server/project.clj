@@ -22,6 +22,8 @@
                  [org.clojure/tools.logging "0.5.0"]
                  [org.slf4j/slf4j-log4j12 "1.7.28"]
                  [prismatic/plumbing "0.5.5"]
+                 [ring/ring-core "1.7.1"
+                  :exclusions [org.clojure/tools.reader]]
                  [twosigma/jet "0.7.10-20190831_055713-gf193d34"
                   :exclusions [org.eclipse.jetty/jetty-client
                                org.eclipse.jetty.alpn/alpn-api

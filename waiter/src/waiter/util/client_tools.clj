@@ -14,9 +14,7 @@
 ;; limitations under the License.
 ;;
 (ns waiter.util.client-tools
-  (:require [buddy.core.keys :as buddy-keys]
-            [buddy.sign.jwt :as jwt]
-            [clj-time.core :as t]
+  (:require [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.java.shell :as shell]
@@ -1143,13 +1141,6 @@
             (recur))))
       (async/close! body-ch))
     body-ch))
-
-(defn generate-jwt-access-token
-  "Generates the JWT access token using the provided private key."
-  [alg jwk-entry payload header]
-  (let [private-key (buddy-keys/jwk->private-key (pc/keywordize-map jwk-entry))
-        options {:alg alg :header header}]
-    (jwt/sign payload private-key options)))
 
 (defn jwt-auth-enabled?
   "Returns true if JWT authentication is enabled."

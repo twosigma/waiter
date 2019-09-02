@@ -175,7 +175,7 @@
         (assert-auth-cookie set-cookie assertion-message))
       (log/info "JWT authentication is disabled"))))
 
-(deftest ^:parallel ^:integration-fast test-bypass-jwt-authentication-waiter-realm
+(deftest ^:parallel ^:integration-fast test-fallback-to-alternate-auth-on-invalid-jwt-token-waiter-realm
   (testing-using-waiter-url
     (if (jwt-auth-enabled? waiter-url)
       (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)
@@ -240,7 +240,7 @@
             (delete-token-and-assert waiter-url host))))
       (log/info "JWT authentication is disabled"))))
 
-(deftest ^:parallel ^:integration-fast test-bypass-jwt-authentication-token-realm
+(deftest ^:parallel ^:integration-fast test-fallback-to-alternate-auth-on-invalid-jwt-token-token-realm
   (testing-using-waiter-url
     (if (jwt-auth-enabled? waiter-url)
       (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)

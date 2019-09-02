@@ -14,7 +14,9 @@
 ;; limitations under the License.
 ;;
 (ns waiter.auth.jwt-test
-  (:require [clj-time.coerce :as tc]
+  (:require [buddy.core.keys :as buddy-keys]
+            [buddy.sign.jwt :as jwt]
+            [clj-time.coerce :as tc]
             [clj-time.core :as t]
             [clojure.data.json :as json]
             [clojure.test :refer :all]
@@ -173,6 +175,13 @@
             (cancel-fn)))
         (is (= jwks-data (:keys @keys-cache)))))))
 
+(defn- generate-jwt-access-token
+  "Generates the JWT access token using the provided private key."
+  [alg jwk-entry payload header]
+  (let [private-key (buddy-keys/jwk->private-key (pc/keywordize-map jwk-entry))
+        options {:alg alg :header header}]
+    (jwt/sign payload private-key options)))
+
 (deftest test-validate-access-token
   (let [all-keys (-> "test-files/jwt/jwks.json" slurp json/read-str walk/keywordize-keys :keys)
         issuer "test-issuer"
@@ -206,45 +215,45 @@
                               (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme "abcd")))
 
         (let [jwk-entry (rand-nth (vals jwks))
-              access-token (ct/generate-jwt-access-token alg jwk-entry {} {})]
+              access-token (generate-jwt-access-token alg jwk-entry {} {})]
           (is (thrown-with-msg? ExceptionInfo #"JWT header is missing key ID"
                                 (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
 
         (let [jwk-entry (rand-nth (vals jwks))
-              access-token (ct/generate-jwt-access-token alg jwk-entry {} {:kid "invalid-key" :typ (str token-type ".err")})]
+              access-token (generate-jwt-access-token alg jwk-entry {} {:kid "invalid-key" :typ (str token-type ".err")})]
           (is (thrown-with-msg? ExceptionInfo #"Unsupported type"
                                 (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
 
         (let [jwk-entry (rand-nth (vals jwks))
-              access-token (ct/generate-jwt-access-token alg jwk-entry {} {:kid "invalid-key" :typ token-type})]
+              access-token (generate-jwt-access-token alg jwk-entry {} {:kid "invalid-key" :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"No matching JWKS key found for key invalid-key"
                                 (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
-              access-token (ct/generate-jwt-access-token alg jwk-entry {} {:kid kid :typ token-type})]
+              access-token (generate-jwt-access-token alg jwk-entry {} {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"Issuer does not match test-issuer"
                                 (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
-              access-token (ct/generate-jwt-access-token alg jwk-entry {:iss issuer} {:kid kid :typ token-type})]
+              access-token (generate-jwt-access-token alg jwk-entry {:iss issuer} {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"Audience does not match www.test-realm.com"
                                 (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
-              access-token (ct/generate-jwt-access-token alg jwk-entry {:aud realm :iss issuer} {:kid kid :typ token-type})]
+              access-token (generate-jwt-access-token alg jwk-entry {:aud realm :iss issuer} {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"No subject provided in the token payload"
                                 (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               payload {:aud realm :iss issuer :sub "foo@bar.com"}
-              access-token (ct/generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
+              access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"No expiry provided in the token payload"
                                 (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               expiry-time (- (current-time-secs) 1000)
               payload {:aud realm :exp expiry-time :iss issuer :sub "foo@bar.com"}
-              access-token (ct/generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
+              access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"Token is expired"
                                 (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
 
@@ -252,21 +261,21 @@
               expiry-time (+ (current-time-secs) 10000)
               subject-key :custom-key
               payload {:aud realm :exp expiry-time :iss issuer :sub "foo@bar.com"}
-              access-token (ct/generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
+              access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"No custom-key provided in the token payload"
                                 (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               expiry-time (+ (current-time-secs) 10000)
               payload {:aud realm :exp expiry-time :iss issuer :sub "foo@bar.com"}
-              access-token (ct/generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
+              access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
           (is (= payload (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               expiry-time (+ (current-time-secs) 10000)
               subject-key :custom-key
               payload {:aud realm :custom-key "foo@bar.baz" :exp expiry-time :iss issuer}
-              access-token (ct/generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
+              access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"No subject provided in the token payload"
                                 (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
 
@@ -274,7 +283,7 @@
               expiry-time (+ (current-time-secs) 10000)
               subject-key :custom-key
               payload {:aud realm :custom-key "foo@bar.baz" :exp expiry-time :iss issuer :sub "foo@bar.com"}
-              access-token (ct/generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
+              access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
           (is (= payload (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))))))
 
 (deftest test-authenticate-request
