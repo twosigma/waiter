@@ -752,6 +752,9 @@
  ; ---------- Load Balancing ----------
 
  :work-stealing {
+                 ;; The maximum number of outstanding work-stealing offers per service per router:
+                 :max-work-stealing-offers-per-service 50
+
                  ;; The interval (milliseconds) on which Waiter makes work-stealing offers:
                  :offer-help-interval-ms 100
 

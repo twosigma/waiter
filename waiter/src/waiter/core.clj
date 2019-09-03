@@ -941,14 +941,16 @@
                              (scheduler/validate-service scheduler service-id)
                              (service/start-new-service
                                scheduler descriptor start-service-cache scheduler-interactions-thread-pool)))
-   :start-work-stealing-balancer-fn (pc/fnk [[:settings [:work-stealing offer-help-interval-ms reserve-timeout-ms]]
+   :start-work-stealing-balancer-fn (pc/fnk [[:settings [:work-stealing max-work-stealing-offers-per-service
+                                                         offer-help-interval-ms reserve-timeout-ms]]
                                              [:state instance-rpc-chan router-id]
                                              make-inter-router-requests-async-fn router-metrics-helpers]
                                       (fn start-work-stealing-balancer [service-id]
                                         (let [{:keys [service-id->router-id->metrics]} router-metrics-helpers]
                                           (work-stealing/start-work-stealing-balancer
-                                            instance-rpc-chan reserve-timeout-ms offer-help-interval-ms service-id->router-id->metrics
-                                            make-inter-router-requests-async-fn router-id service-id))))
+                                            instance-rpc-chan reserve-timeout-ms offer-help-interval-ms max-work-stealing-offers-per-service
+                                            service-id->router-id->metrics make-inter-router-requests-async-fn
+                                            router-id service-id))))
    :stop-work-stealing-balancer-fn (pc/fnk []
                                      (fn stop-work-stealing-balancer [service-id work-stealing-chan-map]
                                        (log/info "stopping work-stealing balancer for" service-id)

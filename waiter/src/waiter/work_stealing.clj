@@ -126,7 +126,8 @@
    Returns a map containing the query-chan and exit-chan:
    `query-chan` returns the current state of the load-balancer.
    `exit-chan` triggers the go-block to exit."
-  [initial-state timeout-chan-factory service-id->router-id->metrics reserve-instance-fn release-instance-fn offer-help-fn router-id service-id]
+  [initial-state timeout-chan-factory service-id->router-id->metrics reserve-instance-fn release-instance-fn offer-help-fn
+   max-work-stealing-offers router-id service-id]
   (let [exit-chan (au/latest-chan)
         query-chan (async/chan 16)
         cleanup-chan (async/chan 1024)
@@ -171,15 +172,20 @@
                                                               (router-id->metrics->router-id->help-required))]
                              (log/trace label "can make up to" offerable-slots "work-stealing offers this iteration")
                              (-> (if (and (pos? offerable-slots)
-                                          (seq router-id->help-required))
-                                   (async/<!
-                                     (make-work-stealing-offers
-                                       label offer-help-fn reserve-instance-fn current-state offerable-slots
-                                       router-id->help-required cleanup-chan router-id service-id))
+                                          (seq router-id->help-required)
+                                          (< (count request-id->work-stealer) max-work-stealing-offers))
+                                   (let [constrained-slots (min offerable-slots
+                                                                (- max-work-stealing-offers (count request-id->work-stealer)))]
+                                     (async/<!
+                                       (make-work-stealing-offers
+                                         label offer-help-fn reserve-instance-fn current-state constrained-slots
+                                         router-id->help-required cleanup-chan router-id service-id)))
                                    (do
                                      (log/debug label "no work-stealing offers this iteration"
-                                                {:metrics (router-id->metrics router-id)
-                                                 :slots {:offerable offerable-slots
+                                                {:max-work-stealing-offers max-work-stealing-offers
+                                                 :metrics (router-id->metrics router-id)
+                                                 :slots {:allowed max-work-stealing-offers
+                                                         :offerable offerable-slots
                                                          :offered (count request-id->work-stealer)}})
                                      current-state))
                                  (assoc :timeout-chan (timeout-chan-factory)))))
@@ -213,7 +219,7 @@
 
 (defn start-work-stealing-balancer
   "Starts the work-stealing balancer for all services."
-  [instance-rpc-chan reserve-timeout-ms offer-help-interval-ms service-id->router-id->metrics
+  [instance-rpc-chan reserve-timeout-ms offer-help-interval-ms max-work-stealing-offers service-id->router-id->metrics
    make-inter-router-requests-fn router-id service-id]
   (log/info "starting work-stealing balancer for" service-id)
   (letfn [(reserve-instance-fn
@@ -282,4 +288,4 @@
             []
             (async/timeout offer-help-interval-ms))]
     (work-stealing-balancer {} timeout-chan-factory service-id->router-id->metrics reserve-instance-fn release-instance-fn
-                            offer-help-fn router-id service-id)))
+                            offer-help-fn max-work-stealing-offers router-id service-id)))
