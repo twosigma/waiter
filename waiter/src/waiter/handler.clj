@@ -41,6 +41,7 @@
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
             [waiter.util.ring-utils :as ru]
+            [waiter.util.semaphore :as semaphore]
             [waiter.util.utils :as utils])
   (:import (java.io InputStream)))
 
@@ -705,11 +706,12 @@
 
 (defn get-work-stealing-state
   "Outputs the global work-stealing state."
-  [router-id request]
+  [offers-allowed-semaphore router-id request]
   (get-function-state
     (fn compute-work-stealing-state []
       (let [request-params (-> request ru/query-params-request :query-params)]
-        {:metrics (cond-> (metrics/get-metrics (metrics/conjunctive-metrics-filter
+        {:global-offers (semaphore/state offers-allowed-semaphore)
+         :metrics (cond-> (metrics/get-metrics (metrics/conjunctive-metrics-filter
                                                  (metrics/prefix-metrics-filter "waiter")
                                                  (metrics/contains-metrics-filter "work-stealing")))
                     (utils/param-contains? request-params "include" "services")

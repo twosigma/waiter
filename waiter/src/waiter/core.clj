@@ -64,6 +64,7 @@
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
             [waiter.util.ring-utils :as ru]
+            [waiter.util.semaphore :as semaphore]
             [waiter.util.utils :as utils]
             [waiter.websocket :as ws]
             [waiter.work-stealing :as work-stealing])
@@ -623,6 +624,8 @@
                             (let [jwt-config (assoc jwt-config :password (first passwords))]
                               (jwt/jwt-authenticator jwt-config)))))
    :local-usage-agent (pc/fnk [] (agent {}))
+   :offers-allowed-semaphore (pc/fnk [[:settings [:work-stealing max-work-stealing-in-flight-offers]]]
+                               (semaphore/create-semaphore max-work-stealing-in-flight-offers))
    :passwords (pc/fnk [[:settings password-store-config]]
                 (let [password-provider (utils/create-component password-store-config)
                       passwords (password-store/retrieve-passwords password-provider)
@@ -964,13 +967,14 @@
                              (service/start-new-service
                                scheduler descriptor start-service-cache scheduler-interactions-thread-pool)))
    :start-work-stealing-balancer-fn (pc/fnk [[:settings [:work-stealing offer-help-interval-ms reserve-timeout-ms]]
-                                             [:state instance-rpc-chan router-id]
+                                             [:state instance-rpc-chan offers-allowed-semaphore router-id]
                                              make-inter-router-requests-async-fn router-metrics-helpers]
                                       (fn start-work-stealing-balancer [service-id]
                                         (let [{:keys [service-id->router-id->metrics]} router-metrics-helpers]
                                           (work-stealing/start-work-stealing-balancer
-                                            instance-rpc-chan reserve-timeout-ms offer-help-interval-ms service-id->router-id->metrics
-                                            make-inter-router-requests-async-fn router-id service-id))))
+                                            instance-rpc-chan reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
+                                            service-id->router-id->metrics make-inter-router-requests-async-fn
+                                            router-id service-id))))
    :stop-work-stealing-balancer-fn (pc/fnk []
                                      (fn stop-work-stealing-balancer [service-id work-stealing-chan-map]
                                        (log/info "stopping work-stealing balancer for" service-id)
@@ -1582,11 +1586,11 @@
                               (wrap-secure-request-fn
                                 (fn state-statsd-handler-fn [request]
                                   (handler/get-statsd-state router-id request))))
-   :state-work-stealing-handler-fn (pc/fnk [[:state router-id]
+   :state-work-stealing-handler-fn (pc/fnk [[:state offers-allowed-semaphore router-id]
                                             wrap-secure-request-fn]
                                      (wrap-secure-request-fn
                                        (fn state-work-stealing-handler-fn [request]
-                                         (handler/get-work-stealing-state router-id request))))
+                                         (handler/get-work-stealing-state offers-allowed-semaphore router-id request))))
    :status-handler-fn (pc/fnk [] handler/status-handler)
    :token-handler-fn (pc/fnk [[:curator kv-store]
                               [:routines make-inter-router-requests-sync-fn synchronize-fn validate-service-description-fn]
