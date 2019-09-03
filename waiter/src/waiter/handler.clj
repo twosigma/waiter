@@ -623,7 +623,7 @@
                                                           "gc-broken-services" "gc-services" "gc-transient-metrics" "interstitial"
                                                           "jwt-authenticator" "kv-store" "launch-metrics" "leader" "local-usage"
                                                           "maintainer" "router-metrics" "scheduler" "service-description-builder"
-                                                          "statsd"]
+                                                          "statsd" "work-stealing"]
                                                          (pc/map-from-keys make-url))
                                            :router-id router-id
                                            :routers routers}))
@@ -702,6 +702,21 @@
   "Outputs the statsd state."
   [router-id request]
   (get-function-state statsd/state router-id request))
+
+(defn get-work-stealing-state
+  "Outputs the global work-stealing state."
+  [router-id request]
+  (get-function-state
+    (fn compute-work-stealing-state []
+      (let [request-params (-> request ru/query-params-request :query-params)]
+        {:metrics (cond-> (metrics/get-metrics (metrics/conjunctive-metrics-filter
+                                                 (metrics/prefix-metrics-filter "waiter")
+                                                 (metrics/contains-metrics-filter "work-stealing")))
+                    (utils/param-contains? request-params "include" "services")
+                    (merge (metrics/get-metrics (metrics/conjunctive-metrics-filter
+                                                  (metrics/prefix-metrics-filter "services")
+                                                  (metrics/contains-metrics-filter "work-stealing")))))}))
+    router-id request))
 
 (defn get-service-state
   "Retrieves the state for a particular service on the router."

@@ -20,6 +20,7 @@
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
             [metrics.counters :as counters]
+            [metrics.meters :as meters]
             [plumbing.core :as pc]
             [waiter.metrics :as metrics]
             [waiter.service :as service]
@@ -126,7 +127,8 @@
    Returns a map containing the query-chan and exit-chan:
    `query-chan` returns the current state of the load-balancer.
    `exit-chan` triggers the go-block to exit."
-  [initial-state timeout-chan-factory service-id->router-id->metrics reserve-instance-fn release-instance-fn offer-help-fn router-id service-id]
+  [initial-state timeout-chan-factory service-id->router-id->metrics reserve-instance-fn release-instance-fn offer-help-fn
+   router-id service-id]
   (let [exit-chan (au/latest-chan)
         query-chan (async/chan 16)
         cleanup-chan (async/chan 1024)
@@ -234,7 +236,9 @@
                   (log/error e "Error in reserving instance")
                   (async/>! response-chan :no-matching-instance-found)))))
           (release-instance-fn
-            [{:keys [instance] :as reservation-summary}]
+            [{:keys [instance status] :as reservation-summary}]
+            (counters/inc! (metrics/waiter-counter "work-stealing" "offer" (str "response-" status)))
+            (meters/mark! (metrics/waiter-meter "work-stealing" "offer" "response-rate"))
             (service/release-instance-go
               instance-rpc-chan
               instance
@@ -245,6 +249,8 @@
               (let [response-result-promise (promise)
                     default-response-result "work-stealing-error"]
                 (try
+                  (counters/inc! (metrics/waiter-counter "work-stealing" "offer" "request"))
+                  (meters/mark! (metrics/waiter-meter "work-stealing" "offer" "send-rate"))
                   (let [{:keys [body error headers status] :as inter-router-response}
                         (-> (make-inter-router-requests-fn "work-stealing"
                                                            :acceptable-router? #(= target-router-id %)

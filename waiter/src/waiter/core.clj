@@ -119,6 +119,7 @@
                               ["/scheduler" :state-scheduler-handler-fn]
                               ["/service-description-builder" :state-service-description-builder-handler-fn]
                               ["/statsd" :state-statsd-handler-fn]
+                              ["/work-stealing" :state-work-stealing-handler-fn]
                               [["/" :service-id] :state-service-handler-fn]]
                      "status" :status-handler-fn
                      "token" :token-handler-fn
@@ -1581,6 +1582,11 @@
                               (wrap-secure-request-fn
                                 (fn state-statsd-handler-fn [request]
                                   (handler/get-statsd-state router-id request))))
+   :state-work-stealing-handler-fn (pc/fnk [[:state router-id]
+                                            wrap-secure-request-fn]
+                                     (wrap-secure-request-fn
+                                       (fn state-work-stealing-handler-fn [request]
+                                         (handler/get-work-stealing-state router-id request))))
    :status-handler-fn (pc/fnk [] handler/status-handler)
    :token-handler-fn (pc/fnk [[:curator kv-store]
                               [:routines make-inter-router-requests-sync-fn synchronize-fn validate-service-description-fn]
