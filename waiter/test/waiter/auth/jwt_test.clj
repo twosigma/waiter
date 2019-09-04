@@ -25,7 +25,6 @@
             [waiter.auth.authentication :as auth]
             [waiter.auth.jwt :refer :all]
             [waiter.test-helpers :refer :all]
-            [waiter.util.client-tools :as ct]
             [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
   (:import (clojure.lang ExceptionInfo)
@@ -240,7 +239,8 @@
                                 (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
-              access-token (generate-jwt-access-token alg jwk-entry {:aud realm :iss issuer} {:kid kid :typ token-type})]
+              expiry-time (+ (current-time-secs) 10000)
+              access-token (generate-jwt-access-token alg jwk-entry {:aud realm :exp expiry-time :iss issuer} {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"No subject provided in the token payload"
                                 (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
 

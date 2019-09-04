@@ -129,12 +129,56 @@
 
 (def ^:const bearer-prefix "Bearer ")
 
-;; access the private function for validating claims
-(def ^:const validate-claims #'jwt/validate-claims)
-
 (def ^:const status-unauthorized 401)
 
 (def ^:const status-forbidden 403)
+
+(defn- validate-claims
+  "Checks the issuer in the `:iss` claim against one of the allowed issuers in the passed `:iss`.
+   Passed `:iss` must be a string.
+   If no `:iss` is passed, this check is not performed.
+
+   Checks the `:aud` claim against the single valid audience in the passed `:aud`.
+   If no `:aud` is passed, this check is not performed.
+
+   Checks the `:exp` claim is not less than now.
+   If no `:exp` claim exists, this check is not performed.
+
+   Checks the `:sub` and subject-key claims are present.
+
+   A check that fails raises an exception."
+  [{:keys [exp sub] :as claims} {:keys [aud iss subject-key]}]
+  ;; Check the `:iss` claim.
+  (when (and iss (not= (:iss claims) iss))
+    (throw (ex-info (str "Issuer does not match " iss)
+                    {:log-level :info
+                     :status status-unauthorized})))
+  ;; Check the `:aud` claim.
+  (when (and aud (not= aud (:aud claims)))
+    (throw (ex-info (str "Audience does not match " aud)
+                    {:log-level :info
+                     :status status-unauthorized})))
+  ;; Check the `:exp` claim.
+  (when (nil? exp)
+    (throw (ex-info "No expiry provided in the token payload"
+                    {:log-level :info
+                     :status status-unauthorized})))
+  (let [now-epoch (tc/to-epoch (t/now))]
+    (when (and (:exp claims) (<= (:exp claims) now-epoch))
+      (throw (ex-info (format "Token is expired (%s)" (:exp claims))
+                      {:log-level :info
+                       :status status-unauthorized}))))
+  ;; Check the `:sub` claim.
+  (when (str/blank? sub)
+    (throw (ex-info "No subject provided in the token payload"
+                    {:log-level :info
+                     :status status-unauthorized})))
+  (when-not (= subject-key :sub)
+    (when (str/blank? (subject-key claims))
+      (throw (ex-info (str "No " (name subject-key) " provided in the token payload")
+                      {:log-level :info
+                       :status status-unauthorized}))))
+  claims)
 
 (defn validate-access-token
   "Validates the JWT access token using the provided keys, realm and issuer."
@@ -195,36 +239,15 @@
                        :aud realm
                        :iss issuer
                        :skip-validation true}
-              {:keys [exp sub] :as claims} (try
-                                             (jwt/unsign access-token public-key options)
-                                             (catch ExceptionInfo ex
-                                               (let [data (assoc (ex-data ex)
-                                                            :log-level :info
-                                                            :status status-unauthorized)]
-                                                 (throw (ex-info (.getMessage ex) data ex)))))]
+              claims (try
+                       (jwt/unsign access-token public-key options)
+                       (catch ExceptionInfo ex
+                         (let [data (assoc (ex-data ex)
+                                      :log-level :info
+                                      :status status-unauthorized)]
+                           (throw (ex-info (.getMessage ex) data ex)))))]
           (log/info "access token claims:" claims)
-          (try
-            (validate-claims claims options)
-            (catch ExceptionInfo ex
-              (let [data (assoc (ex-data ex)
-                           :log-level :info
-                           :status status-unauthorized)]
-                (throw (ex-info (.getMessage ex) data ex)))))
-          (when (str/blank? sub)
-            (throw (ex-info "No subject provided in the token payload"
-                            {:log-level :info
-                             :message "No subject provided in the token payload"
-                             :status status-unauthorized})))
-          (when (str/blank? (subject-key claims))
-            (throw (ex-info (str "No " (name subject-key) " provided in the token payload")
-                            {:log-level :info
-                             :message (str "No " (name subject-key) " provided in the token payload")
-                             :status status-unauthorized})))
-          (when (nil? exp)
-            (throw (ex-info "No expiry provided in the token payload"
-                            {:log-level :info
-                             :message "No expiry provided in the token payload"
-                             :status status-unauthorized})))
+          (validate-claims claims (assoc options :subject-key subject-key))
           claims)))))
 
 (defn current-time-secs
