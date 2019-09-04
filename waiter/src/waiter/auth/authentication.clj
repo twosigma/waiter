@@ -157,7 +157,7 @@
               {:headers {"www-authenticate" "SingleUser"} :status 401})
             (= "forbidden" auth-path)
             (utils/attach-waiter-source
-              {:headers {"www-authenticate" "SingleUser"} :status 403})
+              {:headers {} :status 403})
             :else
             (utils/attach-waiter-source
               {:headers {"x-waiter-single-user" (str "unknown operation: " auth-path)} :status 400})))))))

@@ -212,12 +212,8 @@
             set-cookie (str (get headers "set-cookie"))
             assertion-message (str (select-keys response [:body :error :headers :status]))]
         (assert-response-status response 403)
-        (is (string/blank? set-cookie) assertion-message)
-        (if-let [challenge (get headers "www-authenticate")]
-          (do
-            (is (not (string/includes? (str challenge) "Bearer realm")))
-            (is (= (count (string/split challenge #",")) 1) assertion-message))
-          (is false (str "www-authenticate header missing: " assertion-message))))
+        (is (string/blank? (get headers "www-authenticate")) assertion-message)
+        (is (string/blank? set-cookie) assertion-message))
       (log/info "JWT authentication is disabled"))))
 
 (deftest ^:parallel ^:integration-fast test-unauthorized-jwt-authentication-waiter-realm
