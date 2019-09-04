@@ -30,3 +30,9 @@ $ lein uberjar
 Created /path-to-waiter-jwks-server/target/uberjar/jwks-server-0.1.0-SNAPSHOT.jar
 Created /path-to-waiter-jwks-server/target/uberjar/jwks-server-0.1.0-SNAPSHOT-standalone.jar
 ```
+
+# JWKS keys
+
+The keys stored in [jwks.json](resources/jwks.json) were obtained as follows:
+- EdDSA keys were generated [uisng nimbus library's OctetKeyPair](https://connect2id.com/blog/nimbus-jose-jwt-6).
+- The RS256 key was obtained from [buddy tests](https://github.com/funcool/buddy-sign/blob/master/test/buddy/sign/jwk_tests.clj).
