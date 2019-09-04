@@ -1149,3 +1149,14 @@
                 (assert-response-status response 403))
               (finally
                 (delete-token-and-assert waiter-url token)))))))))
+
+(deftest ^:parallel ^:integration-fast test-multiple-ports
+  (testing-using-waiter-url
+    (let [{:keys [ports]} (waiter-settings waiter-url)]
+      (when (not (empty? ports))
+        (doseq [port ports]
+          (let [waiter-url-for-port (str (first (str/split waiter-url #":"))
+                                         ":"
+                                         port)
+                response (make-request waiter-url-for-port "/")]
+            (assert-response-status response 200)))))))

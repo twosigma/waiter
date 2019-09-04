@@ -601,6 +601,13 @@
                      {:client-name "waiter-client"
                       :conn-timeout connection-timeout-ms
                       :follow-redirects? false}))
+   :http-ports (pc/fnk [[:settings {port nil} ports]]
+                 (let [http-ports (cond-> ports
+                                    port
+                                    (conj port))]
+                   (when (empty? http-ports)
+                     (throw (IllegalArgumentException. "Must specify either :port or :ports")))
+                   http-ports))
    :instance-rpc-chan (pc/fnk [] (async/chan 1024)) ; TODO move to service-chan-maintainer
    :interstitial-state-atom (pc/fnk [] (atom {:initialized? false
                                               :service-id->interstitial-promise {}}))
@@ -679,10 +686,11 @@
                 curator))
    :curator-base-init (pc/fnk [curator [:settings [:zookeeper base-path]]]
                         (curator/create-path curator base-path :create-parent-zknodes? true))
-   :discovery (pc/fnk [[:settings [:cluster-config name] [:zookeeper base-path discovery-relative-path] host port]
-                       [:state router-id]
+   :discovery (pc/fnk [[:settings [:cluster-config name] [:zookeeper base-path discovery-relative-path] host]
+                       [:state http-ports router-id]
                        curator]
-                (discovery/register router-id curator name (str base-path "/" discovery-relative-path) {:host host :port port}))
+                (discovery/register router-id curator name (str base-path "/" discovery-relative-path)
+                                    {:host host :port (first http-ports)}))
    :gc-base-path (pc/fnk [[:settings [:zookeeper base-path gc-relative-path]]]
                    (str base-path "/" gc-relative-path))
    :gc-state-reader-fn (pc/fnk [curator gc-base-path]
@@ -885,12 +893,13 @@
                                                  router-id async-request-store-atom make-http-request-fn instance-rpc-chan response
                                                  service-id metric-group backend-proto instance reason-map request-properties
                                                  location query-string)))
-   :prepend-waiter-url (pc/fnk [[:settings port hostname]]
+   :prepend-waiter-url (pc/fnk [[:settings hostname]
+                                [:state http-ports]]
                          (let [hostname (if (sequential? hostname) (first hostname) hostname)]
                            (fn [endpoint-url]
                              (if (str/blank? endpoint-url)
                                endpoint-url
-                               (str "http://" hostname ":" port endpoint-url)))))
+                               (str "http://" hostname ":" (first http-ports) endpoint-url)))))
    :refresh-service-descriptions-fn (pc/fnk [[:curator kv-store]]
                                       (fn refresh-service-descriptions-fn [service-ids]
                                         (sd/refresh-service-descriptions kv-store service-ids)))
@@ -1628,8 +1637,9 @@
                                              (wrap-secure-request-fn
                                                (fn waiter-request-interstitial-handler-fn [request]
                                                  (interstitial/display-interstitial-handler request))))
-   :welcome-handler-fn (pc/fnk [settings]
-                         (partial handler/welcome-handler settings))
+   :welcome-handler-fn (pc/fnk [settings
+                                [:state http-ports]]
+                         (partial handler/welcome-handler (assoc settings :http-ports http-ports)))
    :work-stealing-handler-fn (pc/fnk [[:state instance-rpc-chan]
                                       wrap-router-auth-fn]
                                (wrap-router-auth-fn

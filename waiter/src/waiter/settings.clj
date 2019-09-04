@@ -86,7 +86,8 @@
                                               s/Keyword schema/require-symbol-factory-fn}
                                              schema/contains-kind-sub-map?)
    ;; TODO port belongs in server-options?
-   (s/required-key :port) schema/positive-int
+   (s/optional-key :port) schema/positive-int
+   (s/required-key :ports) [schema/positive-int]
    (s/required-key :router-id-prefix) s/Str
    (s/required-key :router-syncer) {(s/required-key :delay-ms) schema/positive-int
                                     (s/required-key :interval-ms) schema/positive-int}
@@ -316,7 +317,7 @@
    :password-store-config {:kind :configured
                            :configured {:factory-fn 'waiter.password-store/configured-provider
                                         :passwords ["open-sesame"]}}
-   :port 9091
+   :ports []
    :router-id-prefix ""
    :router-syncer {:delay-ms 750
                    :interval-ms 1500}
