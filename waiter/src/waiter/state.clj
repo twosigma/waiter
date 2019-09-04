@@ -104,7 +104,8 @@
    - choose amongst the idle unhealthy instances
    - choose amongst the idle blacklisted instances
    - choose amongst the idle youngest healthy instances."
-  [id->instance instance-id->state acceptable-instance-id? instance-id->request-id->use-reason-map lingering-request-threshold-ms]
+  [id->instance instance-id->state acceptable-instance-id? instance-id->request-id->use-reason-map
+   load-balancing lingering-request-threshold-ms]
   (let [earliest-request-threshold-time (t/minus (t/now) (t/millis lingering-request-threshold-ms))
         instance-id-state-pair->categorizer-vec (fn [[instance-id {:keys [slots-used status-tags] :as state}]]
                                                   ; most important goes first
@@ -118,8 +119,9 @@
                                                                         :started-at
                                                                         tc/to-long)
                                                                 0)
-                                                      ; invert sorting for expired instances
-                                                      (expired? state) (unchecked-negate))))
+                                                      ; invert sorting for expired instances or youngest load balancing
+                                                      (or (expired? state)
+                                                          (= :youngest load-balancing)) (unchecked-negate))))
         instance-id-comparator #(let [category-comparison (compare
                                                             (instance-id-state-pair->categorizer-vec %1)
                                                             (instance-id-state-pair->categorizer-vec %2))]
@@ -143,7 +145,7 @@
 (defn find-available-instance
   "For servicing requests, choose the _oldest_ live healthy instance with available slots.
    If such an instance does not exist, choose the _youngest_ expired healthy instance with available slots."
-  [sorted-instance-ids id->instance instance-id->state acceptable-instance-id?]
+  [sorted-instance-ids id->instance instance-id->state acceptable-instance-id? select-fn]
   (->> sorted-instance-ids
        (filter acceptable-instance-id?)
        (filter (fn [instance-id]
@@ -151,7 +153,7 @@
                    (and (not (nil? state))
                         (slots-available? state)
                         (healthy? state)))))
-       first
+       select-fn
        id->instance))
 
 (defn sort-instances-for-processing
@@ -346,7 +348,8 @@
    Work-stealing offers are used with higher priority to enable releasing it quickly when the request is done.
    Instances from the available slots are looked up only when there are no work-stealing offers,
    this is expected to be the common case."
-  [{:keys [deployment-error id->instance instance-id->state request-id->work-stealer sorted-instance-ids work-stealing-queue] :as current-state}
+  [{:keys [deployment-error id->instance instance-id->state load-balancing request-id->work-stealer
+           sorted-instance-ids work-stealing-queue] :as current-state}
    service-id update-slot-state-fn [{:keys [cid request-id] :as reason-map} resp-chan exclude-ids-set _]]
   (if deployment-error ; if a deployment error is associated with the state, return the error immediately instead of an instance
     {:current-state' current-state
@@ -364,8 +367,13 @@
          :response-chan resp-chan
          :response instance})
       ; lookup available slots from router's pre-allocated instances
-      (let [{instance-id :id :as instance-to-offer}
-            (find-available-instance sorted-instance-ids id->instance instance-id->state #(not (contains? exclude-ids-set %)))]
+      (let [acceptable-instance-id? #(not (contains? exclude-ids-set %))
+            select-fn (cond
+                        (= :oldest load-balancing) first
+                        (= :random load-balancing) rand-nth
+                        (= :youngest load-balancing) last)
+            {instance-id :id :as instance-to-offer}
+            (find-available-instance sorted-instance-ids id->instance instance-id->state acceptable-instance-id? select-fn)]
         (if instance-to-offer
           {:current-state' (-> current-state
                                (assoc-in [:instance-id->request-id->use-reason-map instance-id request-id] reason-map)
@@ -378,11 +386,12 @@
 
 (defn handle-kill-instance-request
   "Handles a kill request."
-  [{:keys [id->instance instance-id->request-id->use-reason-map instance-id->state] :as current-state}
+  [{:keys [id->instance instance-id->request-id->use-reason-map instance-id->state load-balancing] :as current-state}
    update-status-tag-fn lingering-request-threshold-ms [{:keys [request-id] :as reason-map} resp-chan exclude-ids-set _]]
   (let [acceptable-instance-id? #(not (contains? exclude-ids-set %))
         instance (find-killable-instance id->instance instance-id->state acceptable-instance-id?
-                                         instance-id->request-id->use-reason-map lingering-request-threshold-ms)]
+                                         instance-id->request-id->use-reason-map load-balancing
+                                         lingering-request-threshold-ms)]
     (if instance
       (let [instance-id (:id instance)]
         {:current-state' (-> current-state
@@ -513,6 +522,17 @@
         (reduce unblacklist-instance-fn current-state expired-instance-id->expiry-time))
       current-state)))
 
+(defn- handle-scaling-state-request
+  "Handle scaling-state update."
+  [current-state service-id default-load-balancing scaling-state]
+  (let [load-balancing (if (and (= :scale-down scaling-state)
+                                (= :random default-load-balancing))
+                         :youngest
+                         default-load-balancing)]
+    (log/info service-id "traffic distribution mode is now" load-balancing
+              "as scaling mode is" scaling-state)
+    (assoc current-state :load-balancing load-balancing)))
+
 (defn release-unneeded-work-stealing-offers!
   "Releases the head of the work-stealing queue if no help is required."
   [current-state service-id slots-in-use-counter slots-available-counter work-stealing-received-in-flight-counter
@@ -542,8 +562,9 @@
   [service-id trigger-unblacklist-process-fn
    {:keys [blacklist-backoff-base-time-ms lingering-request-threshold-ms max-blacklist-time-ms]}
    {:keys [blacklist-instance-chan exit-chan kill-instance-chan query-state-chan release-instance-chan
-           reserve-instance-chan unblacklist-instance-chan update-state-chan work-stealing-chan]}
+           reserve-instance-chan scaling-state-chan unblacklist-instance-chan update-state-chan work-stealing-chan]}
    initial-state]
+  {:pre [(some? (:load-balancing initial-state))]}
   (when (some nil? (vals initial-state))
     (throw (ex-info "Initial state contains nil values!" initial-state)))
   (let [max-backoff-exponent (->> (/ (Math/log max-blacklist-time-ms) (Math/log blacklist-backoff-base-time-ms))
@@ -581,7 +602,8 @@
           (let [actual-expiry-time (t/plus (t/now) (t/millis expiry-time-ms))]
             (cid/cinfo correlation-id "blacklisting instance" instance-id "for" expiry-time-ms "ms.")
             (trigger-unblacklist-process-fn correlation-id instance-id expiry-time-ms unblacklist-instance-chan)
-            (update-instance-id->blacklist-expiry-time-fn current-state #(assoc % instance-id actual-expiry-time))))]
+            (update-instance-id->blacklist-expiry-time-fn current-state #(assoc % instance-id actual-expiry-time))))
+        default-load-balancing (:load-balancing initial-state)]
     (async/go
       (try
         (log/info "service-chan-responder started for" service-id "with initial state:" initial-state)
@@ -599,17 +621,7 @@
         ; :locked => instance has been locked and cannot be used to satify any other request (e.g. used for a kill request)
         ; :expired => instance has exceeded its age and is being prepared to be replaced
         ; :starting => instance is starting up and has the potential to be healthy
-        (loop [{:keys [deployment-error
-                       id->instance
-                       instability-issue
-                       instance-id->blacklist-expiry-time
-                       instance-id->consecutive-failures
-                       instance-id->request-id->use-reason-map
-                       instance-id->state
-                       request-id->work-stealer
-                       sorted-instance-ids
-                       timer-context
-                       work-stealing-queue]
+        (loop [{:keys [deployment-error instance-id->state timer-context work-stealing-queue]
                 :as current-state}
                (merge {:deployment-error nil
                        :id->instance {}
@@ -618,6 +630,7 @@
                        :instance-id->consecutive-failures {}
                        :instance-id->request-id->use-reason-map {}
                        :instance-id->state {}
+                       :load-balancing default-load-balancing
                        :request-id->work-stealer {}
                        :sorted-instance-ids []
                        :timer-context (timers/start responder-timer)
@@ -629,7 +642,7 @@
                          ; to be handled before release calls. This allows instances from work-stealing offers
                          ; to be used preferentially. `exit-chan` and `query-state-chan` must be lowest priority
                          ; to facilitate unit testing.
-                         chans (concat [update-state-chan]
+                         chans (concat [update-state-chan scaling-state-chan]
                                        (when (or slots-available? (seq work-stealing-queue) deployment-error)
                                          [reserve-instance-chan])
                                        [release-instance-chan blacklist-instance-chan unblacklist-instance-chan kill-instance-chan
@@ -674,6 +687,10 @@
                              update-state-by-blacklisting-instance-fn update-instance-id->blacklist-expiry-time-fn
                              work-stealing-received-in-flight-counter max-blacklist-time-ms
                              blacklist-backoff-base-time-ms max-backoff-exponent data))
+
+                         scaling-state-chan
+                         (let [{:keys [scaling-state]} data]
+                           (handle-scaling-state-request current-state service-id default-load-balancing scaling-state))
 
                          query-state-chan
                          (let [{:keys [cid response-chan service-id]} data]
@@ -738,7 +755,7 @@
 
 (defn prepare-and-start-service-chan-responder
   "Starts the service channel responder."
-  [service-id instance-request-properties blacklist-config]
+  [service-id service-description instance-request-properties blacklist-config]
   (log/debug "[prepare-and-start-service-chan-responder] starting" service-id)
   (let [{:keys [lingering-request-threshold-ms queue-timeout-ms]} instance-request-properties
         timeout-request-fn (fn [service-id c [reason-map resp-chan _ request-queue-timeout-ms]]
@@ -771,13 +788,17 @@
                      :release-instance-chan (async/chan 1024)
                      :blacklist-instance-chan (async/chan 1024)
                      :query-state-chan (async/chan 1024)
+                     :scaling-state-chan (au/latest-chan)
                      :unblacklist-instance-chan (async/chan 1024)
                      :update-state-chan (au/latest-chan)
                      :work-stealing-chan (async/chan 1024)
                      :exit-chan (async/chan 1)}]
     (let [timeout-config (-> (select-keys blacklist-config [:blacklist-backoff-base-time-ms :max-blacklist-time-ms])
-                             (assoc :lingering-request-threshold-ms lingering-request-threshold-ms))]
-      (start-service-chan-responder service-id trigger-unblacklist-process timeout-config channel-map {}))
+                           (assoc :lingering-request-threshold-ms lingering-request-threshold-ms))
+          {:strs [load-balancing]} service-description
+          load-balancing (keyword load-balancing)
+          initial-state {:load-balancing load-balancing}]
+      (start-service-chan-responder service-id trigger-unblacklist-process timeout-config channel-map initial-state))
     channel-map))
 
 (defn close-update-state-channel
@@ -799,7 +820,7 @@
    Requests for service-chan-responder channels is passed into request-chan
       It is expected that messages on the channel have a map with keys
       `:cid`, `:method`, `:response-chan`, and `:service-id`.
-      The `method` should be either `:blacklist`, `:kill`, `:query-state`, `:reserve`, or `release`.
+      The `method` should be either `:blacklist`, `:kill`, `:query-state`, `:reserve`, `:release`, or `:scaling-state`.
       The `service-id` is the service for the request and
       `response-chan` will have the corresponding channel placed onto it by invoking
       `(retrieve-channel channel-map method)`.

@@ -130,12 +130,24 @@
                       :reason :kill-instance
                       :id->instance {}
                       :instance-id->state (instance-id->state-fn [] [])}
-                     {:name "find-instance-to-offer:killing-healthy-instance-with-no-unhealthy-instances"
+                     {:name "find-instance-to-offer:killing-youngest-healthy-instance-with-no-unhealthy-instances"
                       :expected [instance-8]
                       :reason :kill-instance
                       :instance-id->state (instance-id->state-fn healthy-instance-ids [])}
-                     {:name "find-instance-to-offer:killing-healthy-instance-with-no-unhealthy-but-excluded-instances"
+                     {:name "find-instance-to-offer:killing-oldest-healthy-instance-with-no-unhealthy-instances"
+                      :expected [instance-2]
+                      :load-balancing :youngest
+                      :reason :kill-instance
+                      :instance-id->state (instance-id->state-fn healthy-instance-ids [])}
+                     {:name "find-instance-to-offer:killing-oldest-healthy-instance-with-no-unhealthy-but-excluded-instances"
                       :expected [instance-6]
+                      :reason :kill-instance
+                      :instance-id->state (instance-id->state-fn healthy-instance-ids [])
+                      :exclude-ids-set #{"inst-1" "inst-2" "inst-7" "inst-8"}
+                      }
+                     {:name "find-instance-to-offer:killing-youngest-healthy-instance-with-no-unhealthy-but-excluded-instances"
+                      :expected [instance-3]
+                      :load-balancing :youngest
                       :reason :kill-instance
                       :instance-id->state (instance-id->state-fn healthy-instance-ids [])
                       :exclude-ids-set #{"inst-1" "inst-2" "inst-7" "inst-8"}
@@ -199,10 +211,16 @@
                                               (update-in ["inst-2" :status-tags] conj :expired)
                                               (update-in ["inst-5" :status-tags] conj :expired))}
                      {:expected [instance-2]
-                      :name "find-instance-to-offer:select-idle-expired-instance"
+                      :name "find-instance-to-offer:select-idle-expired-instance-with-oldest-load-balancing"
                       :reason :kill-instance
                       :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
-                                              (update-in ["inst-2" :status-tags] conj :expired))}
+                                            (update-in ["inst-2" :status-tags] conj :expired))}
+                     {:expected [instance-2]
+                      :load-balancing :youngest
+                      :name "find-instance-to-offer:select-idle-expired-instance-with-youngest-load-balancing"
+                      :reason :kill-instance
+                      :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
+                                            (update-in ["inst-2" :status-tags] conj :expired))}
                      {:expected [instance-6]
                       :name "find-instance-to-offer:oldest-idle-expired-instance"
                       :reason :kill-instance
@@ -299,11 +317,12 @@
                                               (update-in ["inst-5"] assoc :slots-assigned 0))}
                      )]
     (doseq [{:keys [exclude-ids-set expected id->instance instance-id->request-id->use-reason-map
-                    instance-id->state name reason sorted-instance-ids]} test-cases]
+                    instance-id->state load-balancing name reason sorted-instance-ids]} test-cases]
       (testing (str "Test " name)
         (with-redefs [t/now (constantly current-time)]
           (let [exclude-ids-set (or exclude-ids-set #{})
                 id->instance (or id->instance all-id->instance)
+                load-balancing (or load-balancing :oldest)
                 sorted-instance-ids (or sorted-instance-ids
                                         (let [expired-instance-ids (->> instance-id->state
                                                                         (filter (fn [[_ state]] (expired? state)))
@@ -317,8 +336,9 @@
                 instance-id->request-id->use-reason-map (or instance-id->request-id->use-reason-map {})
                 actual (if (= :kill-instance reason)
                          (find-killable-instance id->instance instance-id->state acceptable-instance-id?
-                                                 instance-id->request-id->use-reason-map lingering-request-threshold-ms)
-                         (find-available-instance sorted-instance-ids id->instance instance-id->state acceptable-instance-id?))]
+                                                 instance-id->request-id->use-reason-map load-balancing
+                                                 lingering-request-threshold-ms)
+                         (find-available-instance sorted-instance-ids id->instance instance-id->state acceptable-instance-id? first))]
             (when (or (and (nil? expected) (not (nil? actual)))
                       (and expected (not-any? #(= actual %) expected)))
               (println name)

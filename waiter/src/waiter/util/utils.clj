@@ -598,3 +598,11 @@
   (if (instance? ExceptionInfo e)
     (ex-info (.getMessage e) (update-fn (ex-data e)) (or (.getCause e) e))
     (ex-info (.getMessage e) (update-fn {}) e)))
+
+(defn scale-amount->scaling-state
+  "Determines the scale mode from the scaling-amount."
+  [scale-amount]
+  (cond
+    (pos? scale-amount) :scale-up
+    (neg? scale-amount) :scale-down
+    :else :stable))

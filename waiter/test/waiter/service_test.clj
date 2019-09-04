@@ -169,6 +169,18 @@
       (is (= instance
              (fa/<?? (async/go (get-rand-inst instance-rpc-chan service-id {:reason :serve-request} nil 100))))))))
 
+(deftest test-notify-scaling-state
+  (testing "basic release"
+    (let [instance-rpc-chan (async/chan 1)
+          service-id "test-id"
+          scaling-state :scaling-state]
+      (mock-reservation-system instance-rpc-chan
+                               [(fn [{:keys [scaling-state]}]
+                                  (is (= :scaling-state scaling-state)))])
+      (notify-scaling-state-go instance-rpc-chan service-id scaling-state)
+      ; Let mock propogate
+      (async/<!! (async/timeout 10)))))
+
 (deftest test-start-new-service
   (let [make-cache-fn (fn [threshold ttl]
                         (cu/cache-factory {:threshold threshold :ttl ttl}))

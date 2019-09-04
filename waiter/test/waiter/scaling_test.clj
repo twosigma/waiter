@@ -650,6 +650,10 @@
 (deftest scale-services-test
   (let [config {"min-instances" 1
                 "max-instances" 10}
+        service-id->scaling-states-atom (atom {})
+        update-service-scale-state! (fn [service-id scaling-state]
+                                      (swap! service-id->scaling-states-atom
+                                             update service-id (fnil conj []) scaling-state))
         ; assert that we are applying scaling
         apply-scaling (fn [service-id {:keys [scale-to-instances scale-amount]}]
                         (case service-id
@@ -680,56 +684,66 @@
                                    scale-to-instances (+ target-instances expired-instances)]
                                {:scale-to-instances scale-to-instances
                                 :target-instances target-instances
-                                :scale-amount (- scale-to-instances total-instances)}))]
-    (let [max-expired-unhealthy-instances-to-consider 2
-          result (scale-services ;; service-ids
-                                 ["app1" "app2" "app3" "app4" "app5"]
-                                 ;; service-id->service-description
-                                 {"app1" (merge config {})
-                                  "app2" (merge config {})
-                                  "app3" (merge config {"min-instances" 5})
-                                  "app4" (merge config {"max-instances" 10})
-                                  "app5" (merge config {"max-instances" 20}) ;; scale past max instances to replace expired
-                                  "app6" (merge config {})}
-                                 ;; service-id->outstanding-requests
-                                 {"app1" 10
-                                  "app2" 5
-                                  "app3" 0
-                                  "app4" 15
-                                  "app5" 12
-                                  "app6" 10}
-                                 ;; service-id->scale-state
-                                 {"app1" {:target-instances 5}
-                                  "app2" {:target-instances 5}
-                                  "app3" {:target-instances 0}
-                                  "app4" {:target-instances 10}
-                                  "app5" {:target-instances 12}
-                                  "app6" {:target-instances 10}}
-                                 apply-scaling
-                                 5
-                                 test-scale-service
-                                 ;; service-id->router-state
-                                 {"app1" {:healthy-instances 5 :task-count 5 :expired-healthy-instances 0 :expired-unhealthy-instances 0}
-                                  "app2" {:healthy-instances 5 :task-count 5 :expired-healthy-instances 0 :expired-unhealthy-instances 0}
-                                  "app3" {:healthy-instances 0 :task-count 0 :expired-healthy-instances 0 :expired-unhealthy-instances 0}
-                                  "app4" {:healthy-instances 15 :task-count 15 :expired-healthy-instances 0 :expired-unhealthy-instances 0}
-                                  ;; scale past the max instances of 20 to replace 9 (7 + 2) of the expired instances
-                                  "app5" {:healthy-instances 10 :task-count 14 :expired-healthy-instances 7 :expired-unhealthy-instances 4}
-                                  "app6" {:healthy-instances 5 :task-count 5 :expired-healthy-instances 0 :expired-unhealthy-instances 0}}
-                                 ;; service-id->scheduler-state
-                                 {"app1" {:instances 5 :task-count 5}
-                                  "app2" {:instances 5 :task-count 5}
-                                  "app3" {:instances 0 :task-count 0}
-                                  "app4" {:instances 15 :task-count 15}
-                                  "app5" {:instances 14 :task-count 14}
-                                  "app6" {:instances 5 :task-count 5}}
-                                 max-expired-unhealthy-instances-to-consider)]
-      (is (= {:target-instances 10, :scale-to-instances 10, :scale-amount 5} (get result "app1")))
-      (is (= {:target-instances 5, :scale-to-instances 5, :scale-amount 0} (get result "app2")))
-      (is (= {:target-instances 5, :scale-to-instances 5, :scale-amount 5} (get result "app3")))
-      (is (= {:target-instances 10, :scale-to-instances 10, :scale-amount -5} (get result "app4")))
-      (is (= {:target-instances 12, :scale-to-instances 21, :scale-amount 7} (get result "app5")))
-      (is (nil? (get result "app6"))))))
+                                :scale-amount (- scale-to-instances total-instances)}))
+        max-expired-unhealthy-instances-to-consider 2
+        result (scale-services
+                 ;; service-ids
+                 ["app1" "app2" "app3" "app4" "app5" "app7"]
+                 ;; service-id->service-description
+                 {"app1" (merge config {})
+                  "app2" (merge config {})
+                  "app3" (merge config {"min-instances" 5})
+                  "app4" (merge config {"max-instances" 10})
+                  "app5" (merge config {"max-instances" 20}) ;; scale past max instances to replace expired
+                  "app6" (merge config {})
+                  "app7" (merge config {})}
+                 ;; service-id->outstanding-requests
+                 {"app1" 10
+                  "app2" 5
+                  "app3" 0
+                  "app4" 15
+                  "app5" 12
+                  "app6" 10
+                  "app7" 10}
+                 ;; service-id->scale-state
+                 {"app1" {:scale-amount 1 :target-instances 5}
+                  "app2" {:scale-amount 0 :target-instances 5}
+                  "app3" {:scale-amount 0 :target-instances 0}
+                  "app4" {:scale-amount 0 :target-instances 10}
+                  "app5" {:scale-amount 0 :target-instances 12}
+                  "app6" {:scale-amount 0 :target-instances 10}
+                  "app7" {:target-instances 10}}
+                 apply-scaling
+                 update-service-scale-state!
+                 5
+                 test-scale-service
+                 ;; service-id->router-state
+                 {"app1" {:healthy-instances 5 :task-count 5 :expired-healthy-instances 0 :expired-unhealthy-instances 0}
+                  "app2" {:healthy-instances 5 :task-count 5 :expired-healthy-instances 0 :expired-unhealthy-instances 0}
+                  "app3" {:healthy-instances 0 :task-count 0 :expired-healthy-instances 0 :expired-unhealthy-instances 0}
+                  "app4" {:healthy-instances 15 :task-count 15 :expired-healthy-instances 0 :expired-unhealthy-instances 0}
+                  ;; scale past the max instances of 20 to replace 9 (7 + 2) of the expired instances
+                  "app5" {:healthy-instances 10 :task-count 14 :expired-healthy-instances 7 :expired-unhealthy-instances 4}
+                  "app6" {:healthy-instances 5 :task-count 5 :expired-healthy-instances 0 :expired-unhealthy-instances 0}
+                  "app7" {:healthy-instances 10 :task-count 10 :expired-healthy-instances 0 :expired-unhealthy-instances 0}}
+                 ;; service-id->scheduler-state
+                 {"app1" {:instances 5 :task-count 5}
+                  "app2" {:instances 5 :task-count 5}
+                  "app3" {:instances 0 :task-count 0}
+                  "app4" {:instances 15 :task-count 15}
+                  "app5" {:instances 14 :task-count 14}
+                  "app6" {:instances 5 :task-count 5}
+                  "app7" {:instances 10 :task-count 10}}
+                 max-expired-unhealthy-instances-to-consider)]
+    (is (= {:target-instances 10, :scale-to-instances 10, :scale-amount 5} (get result "app1")))
+    (is (= {:target-instances 5, :scale-to-instances 5, :scale-amount 0} (get result "app2")))
+    (is (= {:target-instances 5, :scale-to-instances 5, :scale-amount 5} (get result "app3")))
+    (is (= {:target-instances 10, :scale-to-instances 10, :scale-amount -5} (get result "app4")))
+    (is (= {:target-instances 12, :scale-to-instances 21, :scale-amount 7} (get result "app5")))
+    (is (nil? (get result "app6")))
+    (is (= {:target-instances 10, :scale-to-instances 10, :scale-amount 0} (get result "app7")))
+    (is (= {"app3" [:scale-up] "app4" [:scale-down] "app5" [:scale-up] "app7" [:stable]}
+           @service-id->scaling-states-atom))))
 
 (deftest normalize-factor-test
   (is (= 0. (normalize-factor 0.5 0)))
@@ -868,13 +882,15 @@
                                          scheduler (reify scheduler/ServiceScheduler
                                                      (get-services [_] scheduler-data)
                                                      (scale-service [_ _ _ _] {}))
+                                         update-service-scale-state! (constantly true)
                                          autoscaler-chans-map
                                          (autoscaler-goroutine (assoc initial-state
                                                                  :previous-cycle-start-time (t/minus (t/now) (t/seconds 10))
                                                                  :timeout-chan initial-timeout-chan)
                                                                leader?-fn service-id->metrics-fn instance-killer-multiplexer-fn scheduler
                                                                timeout-interval-ms scale-service-fn service-id->service-description state-mult
-                                                               scheduler-interactions-thread-pool max-expired-unhealthy-instances-to-consider)]
+                                                               scheduler-interactions-thread-pool max-expired-unhealthy-instances-to-consider
+                                                               update-service-scale-state!)]
                                      (async/tap state-mult state-chan-reader)
                                      (merge autoscaler-chans-map
                                             {:initial-timeout-chan initial-timeout-chan

@@ -142,6 +142,7 @@
                                                    (s/required-key "instance-expiry-mins") schema/non-negative-int
                                                    (s/required-key "interstitial-secs") schema/non-negative-int
                                                    (s/required-key "jitter-threshold") schema/greater-than-or-equal-to-0-less-than-1
+                                                   (s/required-key "load-balancing") schema/valid-load-balancing
                                                    (s/required-key "max-instances") schema/positive-int
                                                    (s/required-key "max-queue-length") schema/positive-int
                                                    (s/required-key "metadata") {s/Str s/Str}
@@ -428,6 +429,7 @@
                                   "instance-expiry-mins" 7200 ; 5 days
                                   "interstitial-secs" 0
                                   "jitter-threshold" 0.5
+                                  "load-balancing" "oldest"
                                   "max-instances" 500
                                   "max-queue-length" 1000000
                                   "metadata" {}

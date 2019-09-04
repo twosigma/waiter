@@ -1035,15 +1035,19 @@
                         [:routines router-metrics-helpers service-id->service-description-fn]
                         [:scheduler scheduler]
                         [:settings [:scaling autoscaler-interval-ms max-expired-unhealthy-instances-to-consider]]
-                        [:state scheduler-interactions-thread-pool]
+                        [:state instance-rpc-chan scheduler-interactions-thread-pool]
                         autoscaling-multiplexer router-state-maintainer]
                  (let [service-id->metrics-fn (:service-id->metrics-fn router-metrics-helpers)
                        {{:keys [router-state-push-mult]} :maintainer} router-state-maintainer
-                       {:keys [executor-multiplexer-chan]} autoscaling-multiplexer]
+                       {:keys [executor-multiplexer-chan]} autoscaling-multiplexer
+                       update-service-scale-state! (fn update-service-scale-state! [service-id scaling-state]
+                                                     (log/info service-id "updating scaling state to" scaling-state)
+                                                     (service/notify-scaling-state-go instance-rpc-chan service-id scaling-state))]
                    (scaling/autoscaler-goroutine
                      {} leader?-fn service-id->metrics-fn executor-multiplexer-chan scheduler autoscaler-interval-ms
                      scaling/scale-service service-id->service-description-fn router-state-push-mult
-                     scheduler-interactions-thread-pool max-expired-unhealthy-instances-to-consider)))
+                     scheduler-interactions-thread-pool max-expired-unhealthy-instances-to-consider
+                     update-service-scale-state!)))
    :autoscaling-multiplexer (pc/fnk [[:routines delegate-instance-kill-request-fn peers-acknowledged-blacklist-requests-fn
                                       service-id->service-description-fn]
                                      [:scheduler scheduler]
@@ -1162,14 +1166,15 @@
                               (scheduler/scheduler-services-gc
                                 scheduler query-state-fn service-id->metrics-fn scheduler-gc-config service-gc-go-routine
                                 service-id->idle-timeout)))
-   :service-chan-maintainer (pc/fnk [[:routines start-work-stealing-balancer-fn stop-work-stealing-balancer-fn]
+   :service-chan-maintainer (pc/fnk [[:routines service-id->service-description-fn start-work-stealing-balancer-fn stop-work-stealing-balancer-fn]
                                      [:settings blacklist-config instance-request-properties]
                                      [:state instance-rpc-chan query-service-maintainer-chan]
                                      router-state-maintainer]
                               (let [start-service
                                     (fn start-service [service-id]
-                                      (let [maintainer-chan-map (state/prepare-and-start-service-chan-responder
-                                                                  service-id instance-request-properties blacklist-config)
+                                      (let [service-description (service-id->service-description-fn service-id)
+                                            maintainer-chan-map (state/prepare-and-start-service-chan-responder
+                                                                  service-id service-description instance-request-properties blacklist-config)
                                             workstealing-chan-map (start-work-stealing-balancer-fn service-id)]
                                         {:maintainer-chan-map maintainer-chan-map
                                          :work-stealing-chan-map workstealing-chan-map}))
@@ -1187,6 +1192,7 @@
                                                           :query-work-stealing [:work-stealing-chan-map :query-chan]
                                                           :release [:maintainer-chan-map :release-instance-chan]
                                                           :reserve [:maintainer-chan-map :reserve-instance-chan-in]
+                                                          :scaling-state [:maintainer-chan-map :scaling-state-chan]
                                                           :update-state [:maintainer-chan-map :update-state-chan])]
                                         (get-in channel-map method-chan)))
                                     {{:keys [router-state-push-mult]} :maintainer} router-state-maintainer
@@ -1346,22 +1352,23 @@
                                     (metrics-sync/incoming-router-metrics-handler
                                       router-metrics-agent metrics-sync-interval-ms bytes-encryptor bytes-decryptor request))))
    :service-handler-fn (pc/fnk [[:curator kv-store]
-                                [:daemons router-state-maintainer]
+                                [:daemons autoscaler router-state-maintainer]
                                 [:routines allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-sync-fn
                                  router-metrics-helpers service-id->service-description-fn service-id->source-tokens-entries-fn
                                  token->token-hash]
                                 [:scheduler scheduler]
                                 [:state router-id scheduler-interactions-thread-pool]
                                 wrap-secure-request-fn]
-                         (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
+                         (let [query-autoscaler-state-fn (:query-state-fn autoscaler)
+                               {{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                {:keys [service-id->metrics-fn]} router-metrics-helpers]
                            (wrap-secure-request-fn
                              (fn service-handler-fn [{:as request {:keys [service-id]} :route-params}]
                                (handler/service-handler router-id service-id scheduler kv-store allowed-to-manage-service?-fn
                                                         generate-log-url-fn make-inter-router-requests-sync-fn
                                                         service-id->service-description-fn service-id->source-tokens-entries-fn
-                                                        query-state-fn service-id->metrics-fn scheduler-interactions-thread-pool
-                                                        token->token-hash request)))))
+                                                        query-state-fn query-autoscaler-state-fn service-id->metrics-fn
+                                                        scheduler-interactions-thread-pool token->token-hash request)))))
    :service-id-handler-fn (pc/fnk [[:curator kv-store]
                                    [:routines store-service-description-fn]
                                    wrap-descriptor-fn wrap-secure-request-fn]
@@ -1369,18 +1376,20 @@
                                   (handler/service-id-handler request kv-store store-service-description-fn))
                               wrap-descriptor-fn
                               wrap-secure-request-fn))
-   :service-list-handler-fn (pc/fnk [[:daemons router-state-maintainer]
+   :service-list-handler-fn (pc/fnk [[:daemons autoscaler router-state-maintainer]
                                      [:routines prepend-waiter-url router-metrics-helpers
                                       service-id->service-description-fn service-id->source-tokens-entries-fn]
                                      [:state entitlement-manager]
                                      wrap-secure-request-fn]
-                              (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
+                              (let [query-autoscaler-state-fn (:query-state-fn autoscaler)
+                                    {{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                     {:keys [service-id->metrics-fn]} router-metrics-helpers]
                                 (wrap-secure-request-fn
                                   (fn service-list-handler-fn [request]
-                                    (handler/list-services-handler entitlement-manager query-state-fn prepend-waiter-url
-                                                                   service-id->service-description-fn service-id->metrics-fn
-                                                                   service-id->source-tokens-entries-fn request)))))
+                                    (handler/list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn
+                                                                   prepend-waiter-url service-id->service-description-fn
+                                                                   service-id->metrics-fn service-id->source-tokens-entries-fn
+                                                                   request)))))
    :service-override-handler-fn (pc/fnk [[:curator kv-store]
                                          [:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn]
                                          wrap-secure-request-fn]

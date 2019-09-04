@@ -51,6 +51,11 @@
      Valid non-nil values are 'h2', 'h2c', 'http', or 'https'."
     (s/pred #(contains? valid-health-check-protos %) 'invalid-health-check-proto)))
 
+(def valid-load-balancing
+  "Validator for the load-balancing parameter.
+   Valid values are 'oldest', 'youngest' or 'random'."
+  (s/pred #(contains? #{"oldest" "random" "youngest"} %) 'invalid-backend-proto))
+
 (def valid-metric-group
   "Validator for metric group names. Valid names must:
    - be between 2 and 32 characters long (inclusive)

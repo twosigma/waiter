@@ -431,6 +431,10 @@
         query-state-fn (constantly {:all-available-service-ids all-services
                                     :service-id->healthy-instances (pc/map-from-keys (constantly []) healthy-services)
                                     :service-id->unhealthy-instances (pc/map-from-keys (constantly []) unhealthy-services)})
+        query-autoscaler-state-fn (constantly
+                                    (pc/map-from-keys
+                                      (fn [_] {:scale-amount (rand-nth [-1 0 1])})
+                                      test-user-services))
         request {:authorization/user test-user}
         instance-counts-present (fn [body]
                                   (let [parsed-body (-> body (str) (json/read-str) (walk/keywordize-keys))]
@@ -461,7 +465,7 @@
 
       (testing "list-services-handler:success-regular-user"
         (let [{:keys [body] :as response}
-              (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
+              (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
                                      service-id->service-description-fn service-id->metrics-fn
                                      service-id->source-tokens-entries-fn request)]
           (assert-successful-json-response response)
@@ -470,7 +474,7 @@
       (testing "list-services-handler:success-regular-user-with-filter-for-another-user"
         (let [request (assoc request :query-string "run-as-user=another-user")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->source-tokens-entries-fn request)]
             (assert-successful-json-response response)
@@ -483,7 +487,7 @@
                                       true))
               request (assoc request :authorization/user "another-user" :query-string "run-as-user=another-user")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->source-tokens-entries-fn request)]
             (assert-successful-json-response response)
@@ -496,7 +500,7 @@
                                       true))
               request (assoc request :authorization/user "another-user" :query-string "run-as-user=*")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->source-tokens-entries-fn request)]
             (assert-successful-json-response response)
@@ -509,7 +513,7 @@
                                       true))
               request (assoc request :authorization/user "another-user" :query-string "run-as-user=*user")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->source-tokens-entries-fn request)]
             (assert-successful-json-response response)
@@ -522,7 +526,7 @@
                                       true))
               request (assoc request :authorization/user "another-user" :query-string "run-as-user=another*")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->source-tokens-entries-fn request)]
             (assert-successful-json-response response)
@@ -535,7 +539,7 @@
                                       true))
               request (assoc request :authorization/user test-user :query-string "run-as-user=another*")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->source-tokens-entries-fn request)]
             (assert-successful-json-response response)
@@ -548,7 +552,7 @@
               exception-message "Custom message from test case"
               prepend-waiter-url (fn [_] (throw (ex-info exception-message {:status 400})))
               list-services-handler (core/wrap-error-handling
-                                      #(list-services-handler entitlement-manager query-state-fn prepend-waiter-url
+                                      #(list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
                                                               service-id->service-description-fn service-id->metrics-fn
                                                               service-id->source-tokens-entries-fn %))
               {:keys [body headers status]} (list-services-handler request)]
@@ -564,7 +568,7 @@
                                            (contains? all-services service-id))))
               {:keys [body] :as response}
               ; without a run-as-user, should return all apps
-              (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
+              (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
                                      service-id->service-description-fn service-id->metrics-fn
                                      service-id->source-tokens-entries-fn request)]
           (assert-successful-json-response response)
@@ -583,7 +587,7 @@
           (let [request (assoc request :query-string (str "token=" query-param))
                 {:keys [body] :as response}
                 ; without a run-as-user, should return all apps
-                (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->source-tokens-entries-fn request)]
             (assert-successful-json-response response)
@@ -607,7 +611,7 @@
           (let [request (assoc request :query-string (str "token-version=" query-param))
                 {:keys [body] :as response}
                 ; without a run-as-user, should return all apps
-                (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->source-tokens-entries-fn request)]
             (assert-successful-json-response response)
@@ -623,7 +627,7 @@
         (let [request (assoc request :query-string "token=t1&token-version=v1")
               {:keys [body] :as response}
               ; without a run-as-user, should return all apps
-              (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
+              (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
                                      service-id->service-description-fn service-id->metrics-fn
                                      service-id->source-tokens-entries-fn request)]
           (assert-successful-json-response response)
@@ -799,7 +803,8 @@
       (testing "display router state"
         (let [{:keys [status body]} (test-fn router-id query-state-fn {})]
           (is (every? #(str/includes? (str body) %1)
-                      ["codahale-reporters" "fallback" "interstitial" "kv-store" "leader" "local-usage"
+                      ["autoscaler" "autoscaling-multiplexer"
+                       "codahale-reporters" "fallback" "interstitial" "kv-store" "leader" "local-usage"
                        "maintainer" "router-metrics" "scheduler" "statsd"])
               (str "Body did not include necessary JSON keys:\n" body))
           (is (= 200 status)))))))
