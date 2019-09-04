@@ -19,7 +19,8 @@
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [waiter.cookie-support :as cookie-support]
-            [waiter.middleware :as middleware]))
+            [waiter.middleware :as middleware]
+            [waiter.util.utils :as utils]))
 
 (def ^:const AUTH-COOKIE-NAME "x-waiter-auth")
 
@@ -143,8 +144,23 @@
 (defrecord SingleUserAuthenticator [run-as-user password]
   Authenticator
   (wrap-auth-handler [_ request-handler]
-    (fn anonymous-handler [request]
-      (handle-request-auth request-handler request :single-user run-as-user password))))
+    (let [single-user-prefix "SingleUser "]
+      (fn anonymous-handler [request]
+        (let [auth-header (select-auth-header request #(str/starts-with? % single-user-prefix))
+              auth-path (when auth-header
+                          (str/trim (subs auth-header (count single-user-prefix))))]
+          (cond
+            (str/blank? auth-path)
+            (handle-request-auth request-handler request :single-user run-as-user password)
+            (= "unauthorized" auth-path)
+            (utils/attach-waiter-source
+              {:headers {"www-authenticate" "SingleUser"} :status 401})
+            (= "forbidden" auth-path)
+            (utils/attach-waiter-source
+              {:headers {"www-authenticate" "SingleUser"} :status 403})
+            :else
+            (utils/attach-waiter-source
+              {:headers {"x-waiter-single-user" (str "unknown operation: " auth-path)} :status 400})))))))
 
 (defn one-user-authenticator
   "Factory function for creating single-user authenticator"

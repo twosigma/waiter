@@ -152,7 +152,7 @@
      (is (string/includes? set-cookie# "Path=/") assertion-message#)
      (is (string/includes? set-cookie# "HttpOnly=true") assertion-message#)))
 
-(deftest ^:parallel ^:integration-fast test-jwt-authentication-waiter-realm
+(deftest ^:parallel ^:integration-fast test-successful-jwt-authentication-waiter-realm
   (testing-using-waiter-url
     (if (jwt-auth-enabled? waiter-url)
       (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)
@@ -173,6 +173,76 @@
         (is (= "jwt" (get headers "x-waiter-auth-method")) assertion-message)
         (is (= (retrieve-username) (get headers "x-waiter-auth-user")) assertion-message)
         (assert-auth-cookie set-cookie assertion-message))
+      (log/info "JWT authentication is disabled"))))
+
+(deftest ^:parallel ^:integration-fast test-forbidden-jwt-authentication-waiter-realm
+  (testing-using-waiter-url
+    (if (jwt-auth-enabled? waiter-url)
+      (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)
+            access-token (retrieve-access-token waiter-host)
+            request-headers {"authorization" (str "Bearer " access-token)
+                             "host" waiter-host
+                             "x-forwarded-proto" "http"}
+            {:keys [port]} (waiter-settings waiter-url)
+            target-url (str waiter-host ":" port)
+            {:keys [body headers] :as response}
+            (make-request target-url "/waiter-auth" :disable-auth true :headers request-headers :method :get)
+            set-cookie (str (get headers "set-cookie"))
+            assertion-message (str {:headers headers
+                                    :target-url target-url})]
+        (assert-response-status response 403)
+        (is (string/includes? (str body) "Must use HTTPS connection") assertion-message)
+        (is (string/blank? set-cookie) assertion-message))
+      (log/info "JWT authentication is disabled"))))
+
+(deftest ^:parallel ^:integration-fast test-forbidden-authentication-with-bad-jwt-token-waiter-realm
+  (testing-using-waiter-url
+    (if (jwt-auth-enabled? waiter-url)
+      (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)
+            access-token (str (retrieve-access-token waiter-host) "invalid")
+            request-headers {"authorization" [(str "Bearer " access-token)
+                                              (str "Negotiate bad-token")
+                                              (str "SingleUser forbidden")]
+                             "host" waiter-host
+                             "x-forwarded-proto" "https"}
+            {:keys [port]} (waiter-settings waiter-url)
+            target-url (str waiter-host ":" port)
+            {:keys [headers] :as response}
+            (make-request target-url "/waiter-auth" :disable-auth true :headers request-headers :method :get)
+            set-cookie (str (get headers "set-cookie"))
+            assertion-message (str (select-keys response [:body :error :headers :status]))]
+        (assert-response-status response 403)
+        (is (string/blank? set-cookie) assertion-message)
+        (if-let [challenge (get headers "www-authenticate")]
+          (do
+            (is (not (string/includes? (str challenge) "Bearer realm")))
+            (is (= (count (string/split challenge #",")) 1) assertion-message))
+          (is false (str "www-authenticate header missing: " assertion-message))))
+      (log/info "JWT authentication is disabled"))))
+
+(deftest ^:parallel ^:integration-fast test-unauthorized-jwt-authentication-waiter-realm
+  (testing-using-waiter-url
+    (if (jwt-auth-enabled? waiter-url)
+      (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)
+            access-token (str (retrieve-access-token waiter-host) "invalid")
+            request-headers {"authorization" [(str "Bearer " access-token)
+                                              ;; absence of Negotiate header also trigger an unauthorized response
+                                              (str "SingleUser unauthorized")]
+                             "host" waiter-host
+                             "x-forwarded-proto" "https"}
+            {:keys [port]} (waiter-settings waiter-url)
+            target-url (str waiter-host ":" port)
+            {:keys [headers] :as response}
+            (make-request target-url "/waiter-auth" :disable-auth true :headers request-headers :method :get)
+            set-cookie (str (get headers "set-cookie"))
+            assertion-message (str (select-keys response [:body :error :headers :status]))]
+        (assert-response-status response 401)
+        (is (string/blank? set-cookie) assertion-message)
+        (if-let [challenge (get headers "www-authenticate")]
+          (do
+            (is (string/includes? (str challenge) "Bearer realm"))
+            (is (> (count (string/split challenge #",")) 1) assertion-message))
+          (is false (str "www-authenticate header missing: " assertion-message))))
       (log/info "JWT authentication is disabled"))))
 
 (deftest ^:parallel ^:integration-fast test-fallback-to-alternate-auth-on-invalid-jwt-token-waiter-realm
