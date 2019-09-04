@@ -676,7 +676,12 @@
                           "app5" (do
                                    (is (= 7 scale-amount))
                                    (is (= 21 scale-to-instances))
-                                   18)))
+                                   18)
+                          ; min instances is 1
+                          "app8" (do
+                                   (is (= -1 scale-amount))
+                                   (is (= 1 scale-to-instances))
+                                   1)))
         ; simple scaling function that targets outstanding-requests
         test-scale-service (fn [{:strs [min-instances max-instances]}
                                 {:keys [expired-instances total-instances outstanding-requests]}]
@@ -688,7 +693,7 @@
         max-expired-unhealthy-instances-to-consider 2
         result (scale-services
                  ;; service-ids
-                 ["app1" "app2" "app3" "app4" "app5" "app7"]
+                 ["app1" "app2" "app3" "app4" "app5" "app7" "app8"]
                  ;; service-id->service-description
                  {"app1" (merge config {})
                   "app2" (merge config {})
@@ -696,7 +701,8 @@
                   "app4" (merge config {"max-instances" 10})
                   "app5" (merge config {"max-instances" 20}) ;; scale past max instances to replace expired
                   "app6" (merge config {})
-                  "app7" (merge config {})}
+                  "app7" (merge config {})
+                  "app8" (merge config {})}
                  ;; service-id->outstanding-requests
                  {"app1" 10
                   "app2" 5
@@ -704,7 +710,8 @@
                   "app4" 15
                   "app5" 12
                   "app6" 10
-                  "app7" 10}
+                  "app7" 10
+                  "app8" 0}
                  ;; service-id->scale-state
                  {"app1" {:scale-amount 1 :target-instances 5}
                   "app2" {:scale-amount 0 :target-instances 5}
@@ -712,7 +719,8 @@
                   "app4" {:scale-amount 0 :target-instances 10}
                   "app5" {:scale-amount 0 :target-instances 12}
                   "app6" {:scale-amount 0 :target-instances 10}
-                  "app7" {:target-instances 10}}
+                  "app7" {:target-instances 10}
+                  "app8" {:scale-amount 0 :target-instances 2}}
                  apply-scaling
                  update-service-scale-state!
                  5
@@ -723,9 +731,10 @@
                   "app3" {:healthy-instances 0 :task-count 0 :expired-healthy-instances 0 :expired-unhealthy-instances 0}
                   "app4" {:healthy-instances 15 :task-count 15 :expired-healthy-instances 0 :expired-unhealthy-instances 0}
                   ;; scale past the max instances of 20 to replace 9 (7 + 2) of the expired instances
-                  "app5" {:healthy-instances 10 :task-count 14 :expired-healthy-instances 7 :expired-unhealthy-instances 4}
+                  "app5" {:healthy-instances 10 :task-count 16 :expired-healthy-instances 7 :expired-unhealthy-instances 6}
                   "app6" {:healthy-instances 5 :task-count 5 :expired-healthy-instances 0 :expired-unhealthy-instances 0}
-                  "app7" {:healthy-instances 10 :task-count 10 :expired-healthy-instances 0 :expired-unhealthy-instances 0}}
+                  "app7" {:healthy-instances 10 :task-count 10 :expired-healthy-instances 0 :expired-unhealthy-instances 0}
+                  "app8" {:healthy-instances 1 :task-count 2 :expired-healthy-instances 0 :expired-unhealthy-instances 1}}
                  ;; service-id->scheduler-state
                  {"app1" {:instances 5 :task-count 5}
                   "app2" {:instances 5 :task-count 5}
@@ -733,7 +742,8 @@
                   "app4" {:instances 15 :task-count 15}
                   "app5" {:instances 14 :task-count 14}
                   "app6" {:instances 5 :task-count 5}
-                  "app7" {:instances 10 :task-count 10}}
+                  "app7" {:instances 10 :task-count 10}
+                  "app8" {:instances 2 :task-count 2}}
                  max-expired-unhealthy-instances-to-consider)]
     (is (= {:target-instances 10, :scale-to-instances 10, :scale-amount 5} (get result "app1")))
     (is (= {:target-instances 5, :scale-to-instances 5, :scale-amount 0} (get result "app2")))
@@ -742,7 +752,8 @@
     (is (= {:target-instances 12, :scale-to-instances 21, :scale-amount 7} (get result "app5")))
     (is (nil? (get result "app6")))
     (is (= {:target-instances 10, :scale-to-instances 10, :scale-amount 0} (get result "app7")))
-    (is (= {"app3" [:scale-up] "app4" [:scale-down] "app5" [:scale-up] "app7" [:stable]}
+    (is (= {:target-instances 1, :scale-to-instances 1, :scale-amount -1} (get result "app8")))
+    (is (= {"app3" [:scale-up] "app4" [:scale-down] "app5" [:scale-up] "app7" [:stable] "app8" [:scale-down]}
            @service-id->scaling-states-atom))))
 
 (deftest normalize-factor-test

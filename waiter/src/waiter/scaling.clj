@@ -424,7 +424,12 @@
       (fn [service-id]
         (let [outstanding-requests (or (service-id->outstanding-requests service-id) 0)
               {:keys [healthy-instances expired-healthy-instances expired-unhealthy-instances]} (service-id->router-state service-id)
-              expired-instances (+ expired-healthy-instances (min max-expired-unhealthy-instances-to-consider expired-unhealthy-instances))
+              ; we want to eagerly scale down expired-unhealthy instances when we have healthy instances available
+              unexpired-healthy-instances (- healthy-instances expired-healthy-instances)
+              expired-unhealthy-instances' (-> (- expired-unhealthy-instances unexpired-healthy-instances)
+                                               (min max-expired-unhealthy-instances-to-consider)
+                                               (max 0))
+              expired-instances (+ expired-healthy-instances expired-unhealthy-instances')
               {:keys [instances task-count] :as scheduler-state} (service-id->scheduler-state service-id)
               ; if we don't have a target instance count, default to the number of tasks
               target-instances (get-in service-id->scale-state [service-id :target-instances] task-count)
