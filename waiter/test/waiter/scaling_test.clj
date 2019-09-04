@@ -653,11 +653,7 @@
         service-id->scaling-states-atom (atom {})
         update-service-scale-state! (fn [service-id scaling-state]
                                       (swap! service-id->scaling-states-atom
-                                             (fn [service-id->scaling-states]
-                                               (if (contains? service-id->scaling-states service-id)
-                                                 (update
-                                                   service-id->scaling-states service-id conj scaling-state)
-                                                 (assoc service-id->scaling-states service-id [scaling-state])))))
+                                             update service-id (fnil conj []) scaling-state))
         ; assert that we are applying scaling
         apply-scaling (fn [service-id {:keys [scale-to-instances scale-amount]}]
                         (case service-id

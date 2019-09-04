@@ -444,8 +444,8 @@
           (when (< instances (service-description "min-instances"))
             (log/warn "scheduler reported service had fewer instances than min-instances"
                       {:service-id service-id :instances instances :min-instances (service-description "min-instances")}))
-          (let [prev-scaling-state (some-> service-id service-id->scale-state :scale-amount utils/scale-state->scaling-state)
-                curr-scaling-state (utils/scale-state->scaling-state scale-amount)]
+          (let [prev-scaling-state (some-> service-id service-id->scale-state :scale-amount utils/scale-amount->scaling-state)
+                curr-scaling-state (utils/scale-amount->scaling-state scale-amount)]
             (when (not= prev-scaling-state curr-scaling-state)
               (update-service-scale-state! service-id curr-scaling-state)))
           (when-not (zero? scale-amount)

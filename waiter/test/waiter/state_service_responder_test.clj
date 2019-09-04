@@ -172,7 +172,8 @@
 
   (defn- launch-service-chan-responder [id-counter-value initial-state]
     (reset! id-counter id-counter-value)
-    (let [channel-config (retrieve-channel-config)
+    (let [initial-state (utils/assoc-if-absent initial-state :load-balancing :oldest)
+          channel-config (retrieve-channel-config)
           trigger-unblacklist-process-atom (atom {})
           trigger-unblacklist-process-fn (fn [_ instance-id blacklist-period-ms _]
                                            (swap! trigger-unblacklist-process-atom assoc instance-id blacklist-period-ms))]

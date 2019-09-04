@@ -599,7 +599,7 @@
     (ex-info (.getMessage e) (update-fn (ex-data e)) (or (.getCause e) e))
     (ex-info (.getMessage e) (update-fn {}) e)))
 
-(defn scale-state->scaling-state
+(defn scale-amount->scaling-state
   "Determines the scale mode from the scaling-amount."
   [scale-amount]
   (cond

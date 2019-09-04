@@ -564,6 +564,7 @@
    {:keys [blacklist-instance-chan exit-chan kill-instance-chan query-state-chan release-instance-chan
            reserve-instance-chan scaling-state-chan unblacklist-instance-chan update-state-chan work-stealing-chan]}
    initial-state]
+  {:pre [(some? (:load-balancing initial-state))]}
   (when (some nil? (vals initial-state))
     (throw (ex-info "Initial state contains nil values!" initial-state)))
   (let [max-backoff-exponent (->> (/ (Math/log max-blacklist-time-ms) (Math/log blacklist-backoff-base-time-ms))
@@ -602,7 +603,7 @@
             (cid/cinfo correlation-id "blacklisting instance" instance-id "for" expiry-time-ms "ms.")
             (trigger-unblacklist-process-fn correlation-id instance-id expiry-time-ms unblacklist-instance-chan)
             (update-instance-id->blacklist-expiry-time-fn current-state #(assoc % instance-id actual-expiry-time))))
-        default-load-balancing (:load-balancing initial-state :oldest)]
+        default-load-balancing (:load-balancing initial-state)]
     (async/go
       (try
         (log/info "service-chan-responder started for" service-id "with initial state:" initial-state)
@@ -641,11 +642,11 @@
                          ; to be handled before release calls. This allows instances from work-stealing offers
                          ; to be used preferentially. `exit-chan` and `query-state-chan` must be lowest priority
                          ; to facilitate unit testing.
-                         chans (concat [update-state-chan]
+                         chans (concat [update-state-chan scaling-state-chan]
                                        (when (or slots-available? (seq work-stealing-queue) deployment-error)
                                          [reserve-instance-chan])
                                        [release-instance-chan blacklist-instance-chan unblacklist-instance-chan kill-instance-chan
-                                        work-stealing-chan scaling-state-chan query-state-chan exit-chan])
+                                        work-stealing-chan query-state-chan exit-chan])
                          [data chan-selected] (async/alts! chans :priority true)]
                      (cond->
                        ;; first obtain new state by pre-processing based on selected channel

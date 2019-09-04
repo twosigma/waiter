@@ -251,7 +251,7 @@
     :service-id->scale-state
     (get service-id)
     :scale-amount
-    utils/scale-state->scaling-state))
+    utils/scale-amount->scaling-state))
 
 (defn list-services-handler
   "Retrieves the list of services viewable by the currently logged in user.

@@ -190,7 +190,7 @@
           [_ instance-id->request-count]
           (let [assert-message (str instance-id->request-count)]
             (is (= (count instance-id->request-count) 2) assert-message)
-            (is (every? #(>= % (* 0.3 total-requests)) (vals instance-id->request-count)) assert-message)))))))
+            (is (every? #(>= % (* 0.2 total-requests)) (vals instance-id->request-count)) assert-message)))))))
 
 (deftest ^:parallel ^:integration-fast ^:resource-heavy test-load-balancing-oldest
   (testing-using-waiter-url
