@@ -317,7 +317,7 @@
    :password-store-config {:kind :configured
                            :configured {:factory-fn 'waiter.password-store/configured-provider
                                         :passwords ["open-sesame"]}}
-   :ports []
+   :port 9091
    :router-id-prefix ""
    :router-syncer {:delay-ms 750
                    :interval-ms 1500}
