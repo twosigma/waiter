@@ -143,7 +143,7 @@
                       (is (wait-for
                             #(let [{:keys [body] :as logs-response} (make-request-fn log-url)]
                                (string/includes? body log-bucket-url))
-                            :interval 1 :timeout 60)
+                            :interval 5 :timeout 300)
                           (str "Log URL never pointed to S3 bucket " log-bucket-url)))
                   _ (log/debug "Log Url Killed:" log-url)
                   {:keys [body] :as logs-response} (make-request-fn log-url)
