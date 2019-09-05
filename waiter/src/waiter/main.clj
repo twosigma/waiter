@@ -77,9 +77,9 @@
    :state core/state
    :http-server (pc/fnk [[:curator kv-store]
                          [:routines generate-log-url-fn waiter-request?-fn websocket-request-acceptor]
-                         [:settings cors-config host server-options support-info
+                         [:settings cors-config host port server-options support-info
                           [:token-config token-defaults] websocket-config]
-                         [:state cors-validator http-ports router-id server-name waiter-hostnames]
+                         [:state cors-validator router-id server-name waiter-hostnames]
                          handlers] ; Insist that all systems are running before we start server
                   (let [options (merge (cond-> server-options
                                          (:ssl-port server-options) (assoc :ssl? true))
@@ -100,7 +100,7 @@
                                                                (core/wrap-request-info router-id support-info))
                                         :host host
                                         :join? false
-                                        :ports http-ports
+                                        :port port
                                         :send-server-version? false})]
                     (server/run-jetty options)))})
 

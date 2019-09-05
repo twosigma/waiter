@@ -855,14 +855,14 @@
       (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "form-error"))
       (utils/exception->response ex request))))
 
-(let [html-fn (template/fn [{:keys [cid host hostname message ports support-info timestamp]}]
+(let [html-fn (template/fn [{:keys [cid host hostname message port support-info timestamp]}]
                            (slurp (io/resource "web/welcome.html")))]
   (defn- render-welcome-html
     "Renders welcome html"
     [context]
     (html-fn context)))
 
-(let [text-fn (template/fn [{:keys [cid host hostname message ports support-info timestamp]}]
+(let [text-fn (template/fn [{:keys [cid host hostname message port support-info timestamp]}]
                            (slurp (io/resource "web/welcome.txt")))]
   (defn- render-welcome-text
     "Renders welcome text"
@@ -871,12 +871,12 @@
 
 (defn welcome-handler
   "Response with a welcome page."
-  [{:keys [host hostname http-ports support-info]} {:keys [request-method request-time] :as request}]
+  [{:keys [host hostname port support-info]} {:keys [request-method request-time] :as request}]
   (let [welcome-info {:cid (cid/get-correlation-id)
                       :host host
                       :hostname hostname
                       :message "Welcome to Waiter"
-                      :ports http-ports
+                      :port port
                       :support-info support-info
                       :timestamp (du/date-to-str request-time)}
         content-type (utils/request->content-type request)]

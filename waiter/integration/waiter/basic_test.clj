@@ -1152,11 +1152,11 @@
 
 (deftest ^:parallel ^:integration-fast test-multiple-ports
   (testing-using-waiter-url
-    (let [{:keys [ports]} (waiter-settings waiter-url)]
-      (when (not (empty? ports))
-        (doseq [port ports]
+    (let [{:keys [port]} (waiter-settings waiter-url)]
+      (when (coll? port)
+        (doseq [p port]
           (let [waiter-url-for-port (str (first (str/split waiter-url #":"))
                                          ":"
-                                         port)
+                                         p)
                 response (make-request waiter-url-for-port "/")]
             (assert-response-status response 200)))))))

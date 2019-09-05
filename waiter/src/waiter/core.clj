@@ -140,6 +140,12 @@
     (or (bidi/match-route routes uri)
         {:handler :not-found-handler-fn})))
 
+(defn primary-port
+  [config-port]
+  (if (number? config-port)
+    config-port
+    (first config-port)))
+
 (defn ring-handler-factory
   "Creates the handler for processing http requests."
   [waiter-request?-fn {:keys [process-request-fn] :as handlers}]
@@ -601,13 +607,6 @@
                      {:client-name "waiter-client"
                       :conn-timeout connection-timeout-ms
                       :follow-redirects? false}))
-   :http-ports (pc/fnk [[:settings {port nil} ports]]
-                 (let [http-ports (cond-> ports
-                                    port
-                                    (conj port))]
-                   (when (empty? http-ports)
-                     (throw (IllegalArgumentException. "Must specify either :port or :ports")))
-                   http-ports))
    :instance-rpc-chan (pc/fnk [] (async/chan 1024)) ; TODO move to service-chan-maintainer
    :interstitial-state-atom (pc/fnk [] (atom {:initialized? false
                                               :service-id->interstitial-promise {}}))
@@ -686,11 +685,11 @@
                 curator))
    :curator-base-init (pc/fnk [curator [:settings [:zookeeper base-path]]]
                         (curator/create-path curator base-path :create-parent-zknodes? true))
-   :discovery (pc/fnk [[:settings [:cluster-config name] [:zookeeper base-path discovery-relative-path] host]
-                       [:state http-ports router-id]
+   :discovery (pc/fnk [[:settings [:cluster-config name] [:zookeeper base-path discovery-relative-path] host port]
+                       [:state router-id]
                        curator]
                 (discovery/register router-id curator name (str base-path "/" discovery-relative-path)
-                                    {:host host :port (first http-ports)}))
+                                    {:host host :port (primary-port port)}))
    :gc-base-path (pc/fnk [[:settings [:zookeeper base-path gc-relative-path]]]
                    (str base-path "/" gc-relative-path))
    :gc-state-reader-fn (pc/fnk [curator gc-base-path]
@@ -893,13 +892,12 @@
                                                  router-id async-request-store-atom make-http-request-fn instance-rpc-chan response
                                                  service-id metric-group backend-proto instance reason-map request-properties
                                                  location query-string)))
-   :prepend-waiter-url (pc/fnk [[:settings hostname]
-                                [:state http-ports]]
+   :prepend-waiter-url (pc/fnk [[:settings hostname port]]
                          (let [hostname (if (sequential? hostname) (first hostname) hostname)]
                            (fn [endpoint-url]
                              (if (str/blank? endpoint-url)
                                endpoint-url
-                               (str "http://" hostname ":" (first http-ports) endpoint-url)))))
+                               (str "http://" hostname ":" (primary-port port) endpoint-url)))))
    :refresh-service-descriptions-fn (pc/fnk [[:curator kv-store]]
                                       (fn refresh-service-descriptions-fn [service-ids]
                                         (sd/refresh-service-descriptions kv-store service-ids)))
@@ -1275,9 +1273,9 @@
                                                                           instance-request-properties determine-priority-fn ws/process-response!
                                                                           ws/abort-request-callback-factory local-usage-agent request))]
                                      (->> process-request-fn
-                                       ws/wrap-ws-close-on-error
-                                       wrap-descriptor-fn
-                                       (ws/make-request-handler password))))
+                                          ws/wrap-ws-close-on-error
+                                          wrap-descriptor-fn
+                                          (ws/make-request-handler password))))
    :display-settings-handler-fn (pc/fnk [wrap-secure-request-fn settings]
                                   (wrap-secure-request-fn
                                     (fn display-settings-handler-fn [_]
@@ -1320,8 +1318,8 @@
                              (wrap-secure-request-fn
                                (fn ping-service-handler [request]
                                  (-> request
-                                   (update :headers assoc "x-waiter-fallback-period-secs" "0")
-                                   (handler))))))
+                                     (update :headers assoc "x-waiter-fallback-period-secs" "0")
+                                     (handler))))))
    :process-request-fn (pc/fnk [process-request-handler-fn process-request-wrapper-fn]
                          (process-request-wrapper-fn process-request-handler-fn))
    :process-request-handler-fn (pc/fnk [[:routines determine-priority-fn make-basic-auth-fn post-process-async-request-response-fn
@@ -1344,15 +1342,15 @@
                                         wrap-secure-request-fn wrap-service-discovery-fn]
                                  (fn process-handler-wrapper-fn [handler]
                                    (-> handler
-                                     pr/wrap-too-many-requests
-                                     pr/wrap-suspended-service
-                                     pr/wrap-response-status-metrics
-                                     (interstitial/wrap-interstitial interstitial-state-atom)
-                                     wrap-descriptor-fn
-                                     wrap-secure-request-fn
-                                     wrap-auth-bypass-fn
-                                     wrap-https-redirect-fn
-                                     wrap-service-discovery-fn)))
+                                       pr/wrap-too-many-requests
+                                       pr/wrap-suspended-service
+                                       pr/wrap-response-status-metrics
+                                       (interstitial/wrap-interstitial interstitial-state-atom)
+                                       wrap-descriptor-fn
+                                       wrap-secure-request-fn
+                                       wrap-auth-bypass-fn
+                                       wrap-https-redirect-fn
+                                       wrap-service-discovery-fn)))
    :router-metrics-handler-fn (pc/fnk [[:routines crypt-helpers]
                                        [:settings [:metrics-config metrics-sync-interval-ms]]
                                        [:state router-metrics-agent]]
@@ -1637,9 +1635,8 @@
                                              (wrap-secure-request-fn
                                                (fn waiter-request-interstitial-handler-fn [request]
                                                  (interstitial/display-interstitial-handler request))))
-   :welcome-handler-fn (pc/fnk [settings
-                                [:state http-ports]]
-                         (partial handler/welcome-handler (assoc settings :http-ports http-ports)))
+   :welcome-handler-fn (pc/fnk [settings]
+                         (partial handler/welcome-handler settings))
    :work-stealing-handler-fn (pc/fnk [[:state instance-rpc-chan]
                                       wrap-router-auth-fn]
                                (wrap-router-auth-fn
@@ -1672,7 +1669,7 @@
                                    (do
                                      (log/info "triggering ssl redirect")
                                      (-> (ssl/ssl-redirect-response request {})
-                                       (utils/attach-waiter-source)))
+                                         (utils/attach-waiter-source)))
 
                                    :else
                                    (handler request)))))
@@ -1697,9 +1694,9 @@
                                (fn wrap-secure-request-fn
                                  [handler]
                                  (let [handler (-> handler
-                                                 (cors/wrap-cors-request
-                                                   cors-validator waiter-request?-fn exposed-headers)
-                                                 authentication-method-wrapper-fn)]
+                                                   (cors/wrap-cors-request
+                                                     cors-validator waiter-request?-fn exposed-headers)
+                                                   authentication-method-wrapper-fn)]
                                    (fn inner-wrap-secure-request-fn [{:keys [uri] :as request}]
                                      (log/debug "secure request received at" uri)
                                      (handler request))))))
