@@ -145,10 +145,8 @@
                                (string/includes? body log-bucket-url))
                             :interval 5 :timeout 300)
                           (str "Log URL never pointed to S3 bucket " log-bucket-url)))
-                  _ (log/debug "Log Url Killed:" log-url)
                   {:keys [body] :as logs-response} (make-request-fn log-url)
                   _ (assert-response-status logs-response 200)
-                  _ (log/debug "Response body:" body)
                   log-files-list (walk/keywordize-keys (json/read-str body))
                   stdout-file-link (:url (first (filter #(= (:name %) "stdout") log-files-list)))
                   stderr-file-link (:url (first (filter #(= (:name %) "stderr") log-files-list)))]
