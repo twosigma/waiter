@@ -222,6 +222,42 @@
       (= ":any" (str permitted-user)) ; support ":any" for backwards compatibility
       (and (not (nil? permitted-user)) (= user permitted-user))))
 
+(defn- compute-token-source-previous-descriptor
+  "Computes the previous descriptor using token sources."
+  [kv-store service-id-prefix username metric-group-mappings token-defaults service-description-builder
+   assoc-run-as-user-approved? {:keys [sources] :as descriptor}]
+  (when-let [token-sequence (-> sources :token-sequence seq)]
+    (let [{:keys [token->token-data]} sources
+          previous-token (->> token->token-data
+                           (pc/map-vals (fn [token-data] (get token-data "previous")))
+                           sd/retrieve-most-recently-modified-token)
+          previous-token-data (get-in token->token-data [previous-token "previous"])]
+      (when (seq previous-token-data)
+        (let [new-sources (->> (assoc token->token-data previous-token previous-token-data)
+                            (sd/compute-service-description-template-from-tokens token-defaults token-sequence)
+                            (merge sources))]
+          (-> (select-keys descriptor [:component->previous-descriptor-fns :passthrough-headers :waiter-headers])
+            (assoc :sources new-sources)
+            (sd/merge-service-description-and-id
+              kv-store service-id-prefix username metric-group-mappings service-description-builder 
+              assoc-run-as-user-approved?)
+            (sd/merge-suspended kv-store)))))))
+
+(defn attach-token-fallback-source
+  "Attaches the helper functions map to retrieve previous descriptor using tokens into the
+   [:component->previous-descriptor-fns :token] key in the provided descriptor.
+   The map contains the following keys: :retrieve-last-update-time and :retrieve-previous-descriptor"
+  [descriptor kv-store service-id-prefix username metric-group-mappings token-defaults service-description-builder
+   assoc-run-as-user-approved?]
+  (cond-> descriptor
+    (-> descriptor :sources :token-sequence seq)
+    (assoc-in [:component->previous-descriptor-fns :token]
+              {:retrieve-last-update-time sd/retrieve-most-recently-modified-token-update-time
+               :retrieve-previous-descriptor (fn retrieve-most-recent-token-update-descriptor [descriptor]
+                                               (compute-token-source-previous-descriptor
+                                                 kv-store service-id-prefix username metric-group-mappings token-defaults 
+                                                 service-description-builder assoc-run-as-user-approved? descriptor))})))
+
 (defn compute-descriptor
   "Creates the service descriptor from the request.
    The result map contains the following elements:
@@ -234,7 +270,9 @@
             (sd/merge-service-description-sources kv-store waiter-hostnames service-description-defaults token-defaults)
             (sd/merge-service-description-and-id kv-store service-id-prefix current-request-user metric-group-mappings
                                                  service-description-builder assoc-run-as-user-approved?)
-            (sd/merge-suspended kv-store))]
+            (sd/merge-suspended kv-store)
+            (attach-token-fallback-source kv-store service-id-prefix current-request-user metric-group-mappings 
+                                          token-defaults service-description-builder assoc-run-as-user-approved?))]
     (when-let [throwable (sd/validate-service-description kv-store service-description-builder descriptor)]
       (throw throwable))
     descriptor))
@@ -242,30 +280,26 @@
 (defn descriptor->previous-descriptor
   "Creates a valid previous version of the descriptor from the provided descriptor.
    The result map contains the following elements:
-   {:keys [core-service-description passthrough-headers service-id service-description
-           sources suspended-state waiter-headers]}"
-  [kv-store service-id-prefix token-defaults metric-group-mappings service-description-builder
-   service-approved? username descriptor]
-  (loop [{:keys [sources]} descriptor]
-    (when-let [token-sequence (-> sources :token-sequence seq)]
-      (let [{:keys [token->token-data]} sources
-            previous-token (->> token->token-data
-                                (pc/map-vals (fn [token-data] (get token-data "previous")))
-                                sd/retrieve-most-recently-modified-token)
-            previous-token-data (get-in token->token-data [previous-token "previous"])]
-        (when (seq previous-token-data)
-          (let [new-sources (->> (assoc token->token-data previous-token previous-token-data)
-                                 (sd/compute-service-description-template-from-tokens token-defaults token-sequence)
-                                 (merge sources))
-                previous-descriptor
-                (-> (select-keys descriptor [:passthrough-headers :waiter-headers])
-                    (assoc :sources new-sources)
-                    (sd/merge-service-description-and-id
-                      kv-store service-id-prefix username metric-group-mappings service-description-builder service-approved?)
-                    (sd/merge-suspended kv-store))]
-            (if (sd/validate-service-description kv-store service-description-builder previous-descriptor)
-              (recur previous-descriptor)
-              previous-descriptor)))))))
+   {:keys [component->previous-descriptor-fns core-service-description passthrough-headers
+           service-id service-description sources suspended-state waiter-headers]}"
+  [kv-store service-description-builder descriptor]
+  (loop [{:keys [component->previous-descriptor-fns] :as descriptor} descriptor]
+    (when-let [component-entry (and (seq component->previous-descriptor-fns)
+                                    (apply
+                                      max-key
+                                      (fn [[_ {:keys [retrieve-last-update-time]}]]
+                                        (retrieve-last-update-time descriptor))
+                                      (seq component->previous-descriptor-fns)))]
+      (let [component (key component-entry)
+            {:keys [retrieve-previous-descriptor]} (val component-entry)]
+        (if-let [previous-descriptor (retrieve-previous-descriptor descriptor)]
+          (if (sd/validate-service-description kv-store service-description-builder previous-descriptor)
+            (recur previous-descriptor)
+            (do
+              (log/info (:service-id descriptor) "has previous descriptor with service-id"
+                        (:service-id previous-descriptor) "computed using" component)
+              previous-descriptor))
+          (recur (utils/dissoc-in descriptor [:component->previous-descriptor-fns component])))))))
 
 (let [request->descriptor-timer (metrics/waiter-timer "core" "request->descriptor")]
   (defn request->descriptor
@@ -284,9 +318,7 @@
             descriptor->previous-descriptor
             (fn descriptor->previous-descriptor-fn
               [descriptor]
-              (descriptor->previous-descriptor
-                kv-store service-id-prefix token-defaults metric-group-mappings service-description-builder
-                service-approved? auth-user descriptor))
+              (descriptor->previous-descriptor kv-store service-description-builder descriptor))
             fallback-state @fallback-state-atom
             descriptor (resolve-descriptor
                          descriptor->previous-descriptor search-history-length request-time fallback-state latest-descriptor)

@@ -1001,6 +1001,18 @@
        (apply max-key (fn [[_ {:strs [last-update-time]}]] (or last-update-time 0)))
        first))
 
+(defn retrieve-most-recently-modified-token-update-time
+  "Computes the last-update-time of the most recently modified token from the descriptor."
+  [descriptor]
+  (or
+    (some->> descriptor
+      :sources
+      :token->token-data
+      (pc/map-vals (fn [[_ {:strs [last-update-time]}]] (or last-update-time 0)))
+      vals
+      (apply max))
+    0))
+
 (defn service-id->service-description
   "Loads the service description for the specified service-id including any overrides."
   [kv-store service-id service-description-defaults metric-group-mappings & {:keys [effective?] :or {effective? true}}]
