@@ -655,23 +655,24 @@
                                       (swap! service-id->scaling-states-atom
                                              update service-id (fnil conj []) scaling-state))
         ; assert that we are applying scaling
-        apply-scaling (fn [service-id {:keys [scale-to-instances scale-amount]}]
-                        (case service-id
-                          ; outstanding requests
-                          "app1" (do (is (= 5 scale-amount)) (is (= 10 scale-to-instances)))
-                          ; min instances is 5
-                          "app3" (do (is (= 5 scale-amount)) (is (= 5 scale-to-instances)))
-                          ; max instances is 10
-                          "app4" (do (is (= -5 scale-amount)) (is (= 10 scale-to-instances)))
-                          ; max instances is 20
-                          "app5a" (do (is (= 7 scale-amount)) (is (= 21 scale-to-instances)))
-                          "app5b" (do (is (= 7 scale-amount)) (is (= 21 scale-to-instances)))
-                          ; min instances is 1
-                          "app8a" (do (is (= -1 scale-amount)) (is (= 1 scale-to-instances)))
-                          "app8b" (do (is (= -2 scale-amount)) (is (= 1 scale-to-instances)))
-                          "app8c" (do (is (= -3 scale-amount)) (is (= 1 scale-to-instances)))
-                          "app8d" (do (is (= -3 scale-amount)) (is (= 1 scale-to-instances)))
-                          "app8e" (do (is (= 1 scale-amount)) (is (= 2 scale-to-instances)))))
+        apply-scaling (fn [service-id scaling-details]
+                        (let [scaling-details (select-keys scaling-details [:scale-to-instances :scale-amount])]
+                          (case service-id
+                            ; outstanding requests
+                            "app1" (do (is (= scaling-details {:scale-amount 5 :scale-to-instances 10})))
+                            ; min instances is 5
+                            "app3" (do (is (= scaling-details {:scale-amount 5 :scale-to-instances 5})))
+                            ; max instances is 10
+                            "app4" (do (is (= scaling-details {:scale-amount -5 :scale-to-instances 10})))
+                            ; max instances is 20
+                            "app5a" (do (is (= scaling-details {:scale-amount 6 :scale-to-instances 20})))
+                            "app5b" (do (is (= scaling-details {:scale-amount 7 :scale-to-instances 21})))
+                            ; min instances is 1
+                            "app8a" (do (is (= scaling-details {:scale-amount -1 :scale-to-instances 1})))
+                            "app8b" (do (is (= scaling-details {:scale-amount -1 :scale-to-instances 2})))
+                            "app8c" (do (is (= scaling-details {:scale-amount -3 :scale-to-instances 1})))
+                            "app8d" (do (is (= scaling-details {:scale-amount -3 :scale-to-instances 1})))
+                            "app8e" (do (is (= scaling-details {:scale-amount 1 :scale-to-instances 2}))))))
         ; simple scaling function that targets outstanding-requests
         test-scale-service (fn [{:strs [min-instances max-instances]}
                                 {:keys [expired-instances total-instances outstanding-requests]}]
