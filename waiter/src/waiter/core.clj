@@ -1273,9 +1273,9 @@
                                                                           instance-request-properties determine-priority-fn ws/process-response!
                                                                           ws/abort-request-callback-factory local-usage-agent request))]
                                      (->> process-request-fn
-                                        ws/wrap-ws-close-on-error
-                                        wrap-descriptor-fn
-                                        (ws/make-request-handler password))))
+                                       ws/wrap-ws-close-on-error
+                                       wrap-descriptor-fn
+                                       (ws/make-request-handler password))))
    :display-settings-handler-fn (pc/fnk [wrap-secure-request-fn settings]
                                   (wrap-secure-request-fn
                                     (fn display-settings-handler-fn [_]
@@ -1381,8 +1381,8 @@
                                    wrap-descriptor-fn wrap-secure-request-fn]
                             (-> (fn service-id-handler-fn [request]
                                   (handler/service-id-handler request kv-store store-service-description-fn))
-                                wrap-descriptor-fn
-                                wrap-secure-request-fn))
+                              wrap-descriptor-fn
+                              wrap-secure-request-fn))
    :service-list-handler-fn (pc/fnk [[:daemons autoscaler router-state-maintainer]
                                      [:routines prepend-waiter-url router-metrics-helpers
                                       service-id->service-description-fn service-id->source-tokens-entries-fn]
@@ -1669,7 +1669,7 @@
                                    (do
                                      (log/info "triggering ssl redirect")
                                      (-> (ssl/ssl-redirect-response request {})
-                                         (utils/attach-waiter-source)))
+                                       (utils/attach-waiter-source)))
 
                                    :else
                                    (handler request)))))
