@@ -140,6 +140,12 @@
     (or (bidi/match-route routes uri)
         {:handler :not-found-handler-fn})))
 
+(defn primary-port
+  [config-port]
+  (if (number? config-port)
+    config-port
+    (first config-port)))
+
 (defn ring-handler-factory
   "Creates the handler for processing http requests."
   [waiter-request?-fn {:keys [process-request-fn] :as handlers}]
@@ -682,7 +688,8 @@
    :discovery (pc/fnk [[:settings [:cluster-config name] [:zookeeper base-path discovery-relative-path] host port]
                        [:state router-id]
                        curator]
-                (discovery/register router-id curator name (str base-path "/" discovery-relative-path) {:host host :port port}))
+                (discovery/register router-id curator name (str base-path "/" discovery-relative-path)
+                                    {:host host :port (primary-port port)}))
    :gc-base-path (pc/fnk [[:settings [:zookeeper base-path gc-relative-path]]]
                    (str base-path "/" gc-relative-path))
    :gc-state-reader-fn (pc/fnk [curator gc-base-path]
@@ -885,12 +892,12 @@
                                                  router-id async-request-store-atom make-http-request-fn instance-rpc-chan response
                                                  service-id metric-group backend-proto instance reason-map request-properties
                                                  location query-string)))
-   :prepend-waiter-url (pc/fnk [[:settings port hostname]]
+   :prepend-waiter-url (pc/fnk [[:settings hostname port]]
                          (let [hostname (if (sequential? hostname) (first hostname) hostname)]
                            (fn [endpoint-url]
                              (if (str/blank? endpoint-url)
                                endpoint-url
-                               (str "http://" hostname ":" port endpoint-url)))))
+                               (str "http://" hostname ":" (primary-port port) endpoint-url)))))
    :refresh-service-descriptions-fn (pc/fnk [[:curator kv-store]]
                                       (fn refresh-service-descriptions-fn [service-ids]
                                         (sd/refresh-service-descriptions kv-store service-ids)))
