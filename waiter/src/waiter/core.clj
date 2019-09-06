@@ -1273,9 +1273,9 @@
                                                                           instance-request-properties determine-priority-fn ws/process-response!
                                                                           ws/abort-request-callback-factory local-usage-agent request))]
                                      (->> process-request-fn
-                                          ws/wrap-ws-close-on-error
-                                          wrap-descriptor-fn
-                                          (ws/make-request-handler password))))
+                                        ws/wrap-ws-close-on-error
+                                        wrap-descriptor-fn
+                                        (ws/make-request-handler password))))
    :display-settings-handler-fn (pc/fnk [wrap-secure-request-fn settings]
                                   (wrap-secure-request-fn
                                     (fn display-settings-handler-fn [_]
@@ -1318,8 +1318,8 @@
                              (wrap-secure-request-fn
                                (fn ping-service-handler [request]
                                  (-> request
-                                     (update :headers assoc "x-waiter-fallback-period-secs" "0")
-                                     (handler))))))
+                                   (update :headers assoc "x-waiter-fallback-period-secs" "0")
+                                   (handler))))))
    :process-request-fn (pc/fnk [process-request-handler-fn process-request-wrapper-fn]
                          (process-request-wrapper-fn process-request-handler-fn))
    :process-request-handler-fn (pc/fnk [[:routines determine-priority-fn make-basic-auth-fn post-process-async-request-response-fn
@@ -1342,15 +1342,15 @@
                                         wrap-secure-request-fn wrap-service-discovery-fn]
                                  (fn process-handler-wrapper-fn [handler]
                                    (-> handler
-                                       pr/wrap-too-many-requests
-                                       pr/wrap-suspended-service
-                                       pr/wrap-response-status-metrics
-                                       (interstitial/wrap-interstitial interstitial-state-atom)
-                                       wrap-descriptor-fn
-                                       wrap-secure-request-fn
-                                       wrap-auth-bypass-fn
-                                       wrap-https-redirect-fn
-                                       wrap-service-discovery-fn)))
+                                     pr/wrap-too-many-requests
+                                     pr/wrap-suspended-service
+                                     pr/wrap-response-status-metrics
+                                     (interstitial/wrap-interstitial interstitial-state-atom)
+                                     wrap-descriptor-fn
+                                     wrap-secure-request-fn
+                                     wrap-auth-bypass-fn
+                                     wrap-https-redirect-fn
+                                     wrap-service-discovery-fn)))
    :router-metrics-handler-fn (pc/fnk [[:routines crypt-helpers]
                                        [:settings [:metrics-config metrics-sync-interval-ms]]
                                        [:state router-metrics-agent]]
@@ -1381,8 +1381,8 @@
                                    wrap-descriptor-fn wrap-secure-request-fn]
                             (-> (fn service-id-handler-fn [request]
                                   (handler/service-id-handler request kv-store store-service-description-fn))
-                              wrap-descriptor-fn
-                              wrap-secure-request-fn))
+                                wrap-descriptor-fn
+                                wrap-secure-request-fn))
    :service-list-handler-fn (pc/fnk [[:daemons autoscaler router-state-maintainer]
                                      [:routines prepend-waiter-url router-metrics-helpers
                                       service-id->service-description-fn service-id->source-tokens-entries-fn]
@@ -1694,9 +1694,9 @@
                                (fn wrap-secure-request-fn
                                  [handler]
                                  (let [handler (-> handler
-                                                   (cors/wrap-cors-request
-                                                     cors-validator waiter-request?-fn exposed-headers)
-                                                   authentication-method-wrapper-fn)]
+                                                 (cors/wrap-cors-request
+                                                   cors-validator waiter-request?-fn exposed-headers)
+                                                 authentication-method-wrapper-fn)]
                                    (fn inner-wrap-secure-request-fn [{:keys [uri] :as request}]
                                      (log/debug "secure request received at" uri)
                                      (handler request))))))

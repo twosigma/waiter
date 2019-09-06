@@ -86,8 +86,8 @@
                                               s/Keyword schema/require-symbol-factory-fn}
                                              schema/contains-kind-sub-map?)
    ;; TODO port belongs in server-options?
-   (s/required-key :port)  (s/either schema/positive-int
-                                     [schema/positive-int])
+   (s/required-key :port) (s/either schema/positive-int
+                                    [schema/positive-int])
    (s/required-key :router-id-prefix) s/Str
    (s/required-key :router-syncer) {(s/required-key :delay-ms) schema/positive-int
                                     (s/required-key :interval-ms) schema/positive-int}
