@@ -99,3 +99,16 @@
   [{:keys [kind] :as config}]
   (nil? (s/check {(s/required-key :factory-fn) s/Symbol, s/Keyword s/Any} (get config kind))))
 
+(def valid-jwt-authenticator-config
+  "Validator for the Zookeeper connection configuration. We allow either
+  a non-empty string (representing a connection string), or the keyword
+  :in-process, indicating that ZK should be started in-process"
+  (s/either
+    {(s/required-key :http-options) {s/Keyword s/Any}
+     (s/required-key :issuer) non-empty-string
+     (s/required-key :jwks-url) s/Str
+     (s/required-key :subject-key) s/Keyword
+     (s/required-key :supported-algorithms) #{s/Keyword}
+     (s/required-key :token-type) non-empty-string
+     (s/required-key :update-interval-ms) positive-int}
+    (s/constrained s/Keyword #(= :disabled %))))

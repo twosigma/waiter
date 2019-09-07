@@ -1,0 +1,19 @@
+/target
+/classes
+/checkouts
+pom.xml
+pom.xml.asc
+lib/
+*.class
+/.lein-*
+/.nrepl-port
+log/
+
+# Intellij specific files
+.idea
+*.iml
+*.ipr
+
+# test2junit output files
+build.xml
+test2junit/

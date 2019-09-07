@@ -19,7 +19,8 @@
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [waiter.cookie-support :as cookie-support]
-            [waiter.middleware :as middleware]))
+            [waiter.middleware :as middleware]
+            [waiter.util.utils :as utils]))
 
 (def ^:const AUTH-COOKIE-NAME "x-waiter-auth")
 
@@ -123,6 +124,15 @@
   [cookie-string]
   (cookie-support/remove-cookie cookie-string AUTH-COOKIE-NAME))
 
+(defn select-auth-header
+  "Filters and return the first authorization header that passes the predicate."
+  [{:keys [headers]} predicate]
+  (let [{:strs [authorization]} headers
+        auth-headers (if (string? authorization)
+                       (str/split (str authorization) #",")
+                       authorization)]
+    (some #(when (predicate %) %) auth-headers)))
+
 ;; An anonymous request does not contain any authentication information.
 ;; This is equivalent to granting everyone access to the resource.
 ;; The anonymous authenticator attaches the principal of run-as-user to the request.
@@ -134,13 +144,29 @@
 (defrecord SingleUserAuthenticator [run-as-user password]
   Authenticator
   (wrap-auth-handler [_ request-handler]
-    (fn anonymous-handler [request]
-      (let [auth-params-map (auth-params-map :single-user run-as-user run-as-user)]
-        (handle-request-auth request-handler request run-as-user auth-params-map password nil)))))
+    (let [single-user-prefix "SingleUser "]
+      (fn anonymous-handler [request]
+        (let [auth-header (select-auth-header request #(str/starts-with? % single-user-prefix))
+              auth-path (when auth-header
+                          (str/trim (subs auth-header (count single-user-prefix))))]
+          (cond
+            (str/blank? auth-path)
+            (handle-request-auth request-handler request :single-user run-as-user password)
+            (= "unauthorized" auth-path)
+            (utils/attach-waiter-source
+              {:headers {"www-authenticate" "SingleUser"} :status 401})
+            (= "forbidden" auth-path)
+            (utils/attach-waiter-source
+              {:headers {} :status 403})
+            :else
+            (utils/attach-waiter-source
+              {:headers {"x-waiter-single-user" (str "unknown operation: " auth-path)} :status 400})))))))
 
 (defn one-user-authenticator
   "Factory function for creating single-user authenticator"
   [{:keys [password run-as-user]}]
+  {:pre [(some? password)
+         (not (str/blank? run-as-user))]}
   (log/warn "use of single-user authenticator is strongly discouraged for production use:"
             "requests will use principal" run-as-user)
   (->SingleUserAuthenticator run-as-user password))

@@ -25,7 +25,8 @@
 
 (def settings-schema
   {(s/required-key :authenticator-config) (s/constrained
-                                            {:kind s/Keyword
+                                            {(s/required-key :jwt) schema/valid-jwt-authenticator-config
+                                             :kind s/Keyword
                                              s/Keyword schema/require-symbol-factory-fn}
                                             schema/contains-kind-sub-map?)
    (s/required-key :blacklist-config) {(s/required-key :blacklist-backoff-base-time-ms) schema/positive-int
@@ -246,7 +247,8 @@
       utils/clj->json-response))
 
 (def settings-defaults
-  {:authenticator-config {:kind :one-user
+  {:authenticator-config {:jwt :disabled
+                          :kind :one-user
                           :kerberos {:factory-fn 'waiter.auth.kerberos/kerberos-authenticator
                                      :concurrency-level 20
                                      :keep-alive-mins 5

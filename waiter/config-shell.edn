@@ -17,7 +17,8 @@
 
  ; ---------- Security ----------
 
- :authenticator-config {:kind :one-user
+ :authenticator-config {:jwt :disabled
+                        :kind :one-user
                         :one-user {;; The user account used to launch services:
                                    :run-as-user #config/env "WAITER_AUTH_RUN_AS_USER"}}
 

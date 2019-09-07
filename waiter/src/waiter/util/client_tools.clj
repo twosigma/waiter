@@ -564,6 +564,11 @@
   [waiter-url & {:keys [cookies] :or {cookies {}}}]
   (retrieve-state-helper waiter-url "/state/interstitial" :cookies cookies))
 
+(defn jwt-authenticator-state
+  "Fetches and returns the interstitial state."
+  [waiter-url & {:keys [cookies] :or {cookies {}}}]
+  (retrieve-state-helper waiter-url "/state/jwt-authenticator" :cookies cookies))
+
 (defn kv-store-state
   "Fetches and returns the kv-store state."
   [waiter-url & {:keys [cookies] :or {cookies {}}}]
@@ -1136,3 +1141,8 @@
             (recur))))
       (async/close! body-ch))
     body-ch))
+
+(defn jwt-auth-enabled?
+  "Returns true if JWT authentication is enabled."
+  [waiter-url]
+  (not= "disabled" (setting waiter-url [:authenticator-config :jwt])))

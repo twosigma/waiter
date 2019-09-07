@@ -25,30 +25,33 @@
             [ring.util.response :as rr]
             [waiter.auth.authentication :as auth]
             [waiter.correlation-id :as cid]
-            [waiter.middleware :as middleware]
             [waiter.metrics :as metrics]
             [waiter.util.utils :as utils])
-  (:import (org.ietf.jgss GSSManager GSSCredential GSSContext GSSException)
-           (java.util.concurrent ThreadPoolExecutor)))
+  (:import (java.util.concurrent ThreadPoolExecutor)
+           (org.ietf.jgss GSSManager GSSCredential GSSContext GSSException)))
+
+(def ^:const negotiate-prefix "Negotiate ")
+
+(defn- negotiate-token?
+  "Predicate to determine if an authorization header represents a spnego negotiate token."
+  [authorization]
+  (str/starts-with? (str authorization) negotiate-prefix))
 
 (defn decode-input-token
   "Decode the input token from the negotiate line, expects the authorization token to exist"
-  ^bytes
-  [req]
-  (let [enc_tok (get-in req [:headers "authorization"])
-        token-fields (str/split enc_tok #" ")]
-    (when (= "negotiate" (str/lower-case (first token-fields)))
-      (b64/decode (.getBytes ^String (last token-fields))))))
+  ^bytes [request]
+  (when-let [negotiate-token (auth/select-auth-header request negotiate-token?)]
+    (some-> negotiate-token (str/split #" " 2) last str .getBytes b64/decode)))
 
 (defn encode-output-token
   "Take a token from a gss accept context call and encode it for use in a -authenticate header"
   [token]
-  (str "Negotiate " (String. ^bytes (b64/encode token))))
+  (str negotiate-prefix (String. ^bytes (b64/encode token))))
 
 (defn do-gss-auth-check
-  [^GSSContext gss_context req]
+  [^GSSContext gss-context req]
   (when-let [intok (decode-input-token req)]
-    (when-let [ntok (.acceptSecContext gss_context intok 0 (alength intok))]
+    (when-let [ntok (.acceptSecContext gss-context intok 0 (alength intok))]
       (encode-output-token ntok))))
 
 (defn response-401-negotiate
@@ -57,7 +60,7 @@
   (log/info "triggering 401 negotiate for spnego authentication")
   (counters/inc! (metrics/waiter-counter "core" "response-status" "401"))
   (meters/mark! (metrics/waiter-meter "core" "response-status-rate" "401"))
-  (-> {:headers {"www-authenticate" "Negotiate"}
+  (-> {:headers {"www-authenticate" (str/trim negotiate-prefix)}
        :message "Unauthorized"
        :status 401}
     (utils/data->error-response request)
@@ -134,13 +137,13 @@
    returned instead.  This middleware doesn't handle cookies for
    authentication, but that should be stacked before this handler."
   [request-handler ^ThreadPoolExecutor thread-pool-executor max-queue-length password]
-  (fn require-gss-handler [{:keys [headers] :as request}]
+  (fn require-gss-handler [request]
     (cond
       ;; Ensure we are not already queued with lots of Kerberos auth requests
       (too-many-pending-auth-requests? thread-pool-executor max-queue-length)
       (response-503-temporarily-unavailable request)
       ;; Try and authenticate using kerberos and add cookie in response when valid
-      (get-in request [:headers "authorization"])
+      (auth/select-auth-header request negotiate-token?)
       (let [current-correlation-id (cid/get-correlation-id)
             gss-response-chan (async/promise-chan)]
         ;; launch task that will populate the response in response-chan

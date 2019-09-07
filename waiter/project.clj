@@ -32,6 +32,10 @@
 
   :dependencies [[bidi "2.1.5"
                   :exclusions [prismatic/schema ring/ring-core]]
+                 [buddy/buddy-sign "3.1.0"
+                  :exclusions [[commons-codec]]]
+                 ;; resolve the cheshire dependency used by buddy and jet
+                 [cheshire "5.8.1"]
                  [twosigma/courier "1.5.14"
                   :exclusions [com.google.guava/guava io.grpc/grpc-core]
                   :scope "test"]

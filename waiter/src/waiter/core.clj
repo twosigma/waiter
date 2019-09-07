@@ -33,6 +33,7 @@
             [ring.util.response :as rr]
             [waiter.async-request :as async-req]
             [waiter.auth.authentication :as auth]
+            [waiter.auth.jwt :as jwt]
             [waiter.authorization :as authz]
             [waiter.cookie-support :as cookie-support]
             [waiter.correlation-id :as cid]
@@ -108,6 +109,7 @@
                               ["/gc-services" :state-gc-for-services]
                               ["/gc-transient-metrics" :state-gc-for-transient-metrics]
                               ["/interstitial" :state-interstitial-handler-fn]
+                              ["/jwt-authenticator" :state-jwt-authenticator-handler-fn]
                               ["/kv-store" :state-kv-store-handler-fn]
                               ["/launch-metrics" :state-launch-metrics-handler-fn]
                               ["/leader" :state-leader-handler-fn]
@@ -250,7 +252,7 @@
                                                 (cid/cinfo correlation-id "request trailers:" trailers-data)
                                                 trailers-data)))))
             response (handler request)
-            add-headers (fn [{:keys [descriptor instance] :as response}]
+            add-headers (fn [{:keys [authorization/method authorization/principal authorization/user descriptor instance] :as response}]
                           (let [{:strs [backend-proto]} (:service-description descriptor)
                                 backend-directory (:log-directory instance)
                                 backend-log-url (when backend-directory
@@ -260,6 +262,9 @@
                             (update response :headers
                                     (fn [headers]
                                       (cond-> headers
+                                        method (assoc "x-waiter-auth-method" (name method))
+                                        principal (assoc "x-waiter-auth-principal" (str principal))
+                                        user (assoc "x-waiter-auth-user" (str user))
                                         client-protocol (assoc "x-waiter-client-protocol" (name client-protocol))
                                         internal-protocol (assoc "x-waiter-internal-protocol" (name internal-protocol))
                                         request-time (assoc "x-waiter-request-date" request-date)
@@ -610,6 +615,12 @@
    :instance-rpc-chan (pc/fnk [] (async/chan 1024)) ; TODO move to service-chan-maintainer
    :interstitial-state-atom (pc/fnk [] (atom {:initialized? false
                                               :service-id->interstitial-promise {}}))
+   :jwt-authenticator (pc/fnk [[:settings authenticator-config]
+                               passwords]
+                        (let [jwt-config (:jwt authenticator-config)]
+                          (when (not= :disabled jwt-config)
+                            (let [jwt-config (assoc jwt-config :password (first passwords))]
+                              (jwt/jwt-authenticator jwt-config)))))
    :local-usage-agent (pc/fnk [] (agent {}))
    :passwords (pc/fnk [[:settings password-store-config]]
                 (let [password-provider (utils/create-component password-store-config)
@@ -805,19 +816,22 @@
                                  (fn async-trigger-terminate-fn [target-router-id service-id request-id]
                                    (async-req/async-trigger-terminate
                                      async-request-terminate-fn make-inter-router-requests-sync-fn router-id target-router-id service-id request-id)))
-   :authentication-method-wrapper-fn (pc/fnk [[:state authenticator passwords]]
+   :authentication-method-wrapper-fn (pc/fnk [[:state authenticator jwt-authenticator passwords]]
                                        (fn authentication-method-wrapper [request-handler]
                                          (let [auth-handler (auth/wrap-auth-handler authenticator request-handler)
                                                password (first passwords)]
-                                           (auth/wrap-auth-cookie-handler
-                                             password
-                                             (fn authenticate-request [request]
-                                               (cond
-                                                 (:skip-authentication request) (do
-                                                                                  (log/info "skipping authentication for request")
-                                                                                  (request-handler request))
-                                                 (auth/request-authenticated? request) (request-handler request)
-                                                 :else (auth-handler request)))))))
+                                           (cond->> (fn authenticate-request [request]
+                                                      (cond
+                                                        (:skip-authentication request)
+                                                        (do
+                                                          (log/info "skipping authentication for request")
+                                                          (request-handler request))
+                                                        (auth/request-authenticated? request)
+                                                        (request-handler request)
+                                                        :else
+                                                        (auth-handler request)))
+                                             jwt-authenticator (jwt/wrap-auth-handler jwt-authenticator)
+                                             true (auth/wrap-auth-cookie-handler password)))))
    :can-run-as?-fn (pc/fnk [[:state entitlement-manager]]
                      (fn can-run-as [auth-user run-as-user]
                        (authz/run-as? entitlement-manager auth-user run-as-user)))
@@ -1497,6 +1511,14 @@
                                       (wrap-secure-request-fn
                                         (fn state-interstitial-handler-fn [request]
                                           (handler/get-query-chan-state-handler router-id interstitial-query-chan request)))))
+   :state-jwt-authenticator-handler-fn (pc/fnk [[:state jwt-authenticator router-id]
+                                                wrap-secure-request-fn]
+                                         (let [query-state-fn (if (nil? jwt-authenticator)
+                                                                (constantly :disabled)
+                                                                #(jwt/retrieve-state jwt-authenticator))]
+                                           (wrap-secure-request-fn
+                                             (fn state-jwt-authenticator-handler-fn [request]
+                                               (handler/get-query-fn-state router-id query-state-fn request)))))
    :state-kv-store-handler-fn (pc/fnk [[:curator kv-store]
                                        [:state router-id]
                                        wrap-secure-request-fn]

@@ -29,6 +29,12 @@ if [ -n "$CONTINUOUS_INTEGRATION" ]; then
     ${MINIMESOS_CMD} up
     popd
 
+    # start the JWKS server
+    JWKS_PORT=6666
+    ${WAITER_DIR}/bin/ci/jwks-server-setup.sh ${JWKS_PORT}
+    export JWKS_SERVER_URL="http://127.0.0.1:${JWKS_PORT}/keys"
+    export WAITER_TEST_JWT_ACCESS_TOKEN_URL="http://127.0.0.1:${JWKS_PORT}/get-token?host={HOST}"
+
     # Start waiter
     ${WAITER_DIR}/bin/run-using-minimesos.sh ${WAITER_PORT} &
 fi
