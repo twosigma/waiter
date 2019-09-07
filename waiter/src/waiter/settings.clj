@@ -178,7 +178,7 @@
                                                                      (s/required-key "stale-timeout-mins") schema/non-negative-int}}
    (s/required-key :websocket-config) {(s/required-key :ws-max-binary-message-size) schema/positive-int
                                        (s/required-key :ws-max-text-message-size) schema/positive-int}
-   (s/required-key :work-stealing) {(s/required-key :max-work-stealing-in-flight-offers) schema/non-negative-int
+   (s/required-key :work-stealing) {(s/required-key :max-in-flight-offers) schema/non-negative-int
                                     (s/required-key :offer-help-interval-ms) schema/positive-int
                                     (s/required-key :reserve-timeout-ms) schema/positive-int}
    (s/required-key :zookeeper) {(s/required-key :base-path) schema/non-empty-string
@@ -458,7 +458,7 @@
                                    "stale-timeout-mins" 15}}
    :websocket-config {:ws-max-binary-message-size (* 1024 1024 40)
                       :ws-max-text-message-size (* 1024 1024 40)}
-   :work-stealing {:max-work-stealing-in-flight-offers 4000
+   :work-stealing {:max-in-flight-offers 4000
                    :offer-help-interval-ms 100
                    :reserve-timeout-ms 1000}
    :zookeeper {:base-path "/waiter"

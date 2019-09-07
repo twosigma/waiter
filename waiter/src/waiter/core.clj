@@ -624,8 +624,8 @@
                             (let [jwt-config (assoc jwt-config :password (first passwords))]
                               (jwt/jwt-authenticator jwt-config)))))
    :local-usage-agent (pc/fnk [] (agent {}))
-   :offers-allowed-semaphore (pc/fnk [[:settings [:work-stealing max-work-stealing-in-flight-offers]]]
-                               (semaphore/create-semaphore max-work-stealing-in-flight-offers))
+   :offers-allowed-semaphore (pc/fnk [[:settings [:work-stealing max-in-flight-offers]]]
+                               (semaphore/create-semaphore max-in-flight-offers))
    :passwords (pc/fnk [[:settings password-store-config]]
                 (let [password-provider (utils/create-component password-store-config)
                       passwords (password-store/retrieve-passwords password-provider)

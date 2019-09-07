@@ -775,7 +775,7 @@
 
  :work-stealing {
                  ;; The maximum number of outstanding work-stealing offers per router:
-                 :max-work-stealing-in-flight-offers 4000
+                 :max-in-flight-offers 4000
 
                  ;; The interval (milliseconds) on which Waiter makes work-stealing offers:
                  :offer-help-interval-ms 100
