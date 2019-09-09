@@ -258,7 +258,7 @@
   "Retrieves the list of services viewable by the currently logged in user.
    A service is viewable by the run-as-user or a waiter super-user."
   [entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url service-id->service-description-fn
-   service-id->metrics-fn service-id->source-tokens-entries-fn request]
+   service-id->metrics-fn service-id->references-fn service-id->source-tokens-entries-fn request]
   (let [{:keys [all-available-service-ids service-id->healthy-instances service-id->unhealthy-instances] :as global-state} (query-state-fn)]
     (let [{:strs [run-as-user token token-version] :as request-params} (-> request ru/query-params-request :query-params)
           auth-user (get request :authorization/user)
@@ -286,7 +286,9 @@
                                      {:healthy-instances (-> service-id->healthy-instances (get service-id) count)
                                       :unhealthy-instances (-> service-id->unhealthy-instances (get service-id) count)})
           service-id->metrics (service-id->metrics-fn)
-          include-effective-parameters? (utils/request-flag request-params "effective-parameters")
+          include-effective-parameters? (or (utils/request-flag request-params "effective-parameters")
+                                            (utils/param-contains? request-params "include" "request-info"))
+          include-references? (utils/param-contains? request-params "include" "references")
           response-data (map
                           (fn service-id->service-info [service-id]
                             (let [scaling-state (retrieve-scaling-state query-autoscaler-state-fn service-id)
@@ -302,6 +304,8 @@
                                 include-effective-parameters?
                                 (assoc :effective-parameters
                                        (service-id->service-description-fn service-id :effective? true))
+                                include-references?
+                                (assoc :references (seq (service-id->references-fn service-id)))
                                 scaling-state
                                 (assoc :scaling-state scaling-state)
                                 (seq source-tokens-entries)
@@ -382,8 +386,8 @@
 (defn- get-service-handler
   "Returns details about the service such as the service description, metrics, instances, etc."
   [router-id service-id core-service-description kv-store generate-log-url-fn make-inter-router-requests-fn
-   service-id->service-description-fn service-id->source-tokens-entries-fn query-state-fn query-autoscaler-state-fn
-   service-id->metrics-fn token->token-hash request]
+   service-id->service-description-fn service-id->source-tokens-entries-fn service-id->references-fn
+   query-state-fn query-autoscaler-state-fn service-id->metrics-fn token->token-hash request]
   (let [global-state (query-state-fn)
         service-instance-maps (try
                                 (let [assoc-log-url-to-instances
@@ -424,7 +428,9 @@
         source-tokens-entries (service-id->source-tokens-entries-fn service-id)
         current-for-tokens (get-current-for-tokens source-tokens-entries token->token-hash)
         request-params (-> request ru/query-params-request :query-params)
-        include-effective-parameters? (utils/request-flag request-params "effective-parameters")
+        include-effective-parameters? (or (utils/request-flag request-params "effective-parameters")
+                                          (utils/param-contains? request-params "include" "request-info"))
+        include-references? (utils/param-contains? request-params "include" "references")
         last-request-time (get-in (service-id->metrics-fn) [service-id "last-request-time"])
         scaling-state (retrieve-scaling-state query-autoscaler-state-fn service-id)
         result-map (cond-> {:num-routers (count router->metrics)
@@ -441,6 +447,8 @@
                      (assoc-in [:metrics :aggregate] aggregate-metrics-map)
                      (not-empty router->metrics)
                      (assoc-in [:metrics :routers] router->metrics)
+                     include-references?
+                     (assoc :references (seq (service-id->references-fn service-id)))
                      scaling-state
                      (assoc :scaling-state scaling-state)
                      (not-empty core-service-description)
@@ -461,8 +469,8 @@
      :delete deletes the service from the scheduler (after authorization checks).
      :get returns details about the service such as the service description, metrics, instances, etc."
   [router-id service-id scheduler kv-store allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-fn
-   service-id->service-description-fn service-id->source-tokens-entries-fn query-state-fn query-autoscaler-state-fn
-   service-id->metrics-fn scheduler-interactions-thread-pool token->token-hash request]
+   service-id->service-description-fn service-id->source-tokens-entries-fn service-id->references-fn query-state-fn
+   query-autoscaler-state-fn service-id->metrics-fn scheduler-interactions-thread-pool token->token-hash request]
   (try
     (when-not service-id
       (throw (ex-info "Missing service-id" {:log-level :info :status 400})))
@@ -474,7 +482,8 @@
                                           scheduler-interactions-thread-pool request)
           :get (get-service-handler router-id service-id core-service-description kv-store generate-log-url-fn
                                     make-inter-router-requests-fn service-id->service-description-fn
-                                    service-id->source-tokens-entries-fn query-state-fn query-autoscaler-state-fn
+                                    service-id->source-tokens-entries-fn service-id->references-fn
+                                    query-state-fn query-autoscaler-state-fn
                                     service-id->metrics-fn token->token-hash request))))
     (catch Exception ex
       (utils/exception->response ex request))))

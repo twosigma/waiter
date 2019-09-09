@@ -417,6 +417,7 @@
                                   :generate-log-url-fn nil
                                   :make-inter-router-requests-sync-fn nil
                                   :router-metrics-helpers {:service-id->metrics-fn (constantly {})}
+                                  :service-id->references-fn (constantly {})
                                   :service-id->service-description-fn (constantly {})
                                   :service-id->source-tokens-entries-fn (constantly #{})
                                   :token->token-hash identity}
@@ -513,6 +514,7 @@
                                   :generate-log-url-fn (partial handler/generate-log-url #(str "http://www.example.com" %))
                                   :make-inter-router-requests-sync-fn nil
                                   :router-metrics-helpers {:service-id->metrics-fn (constantly service-id->metrics)}
+                                  :service-id->references-fn (constantly {})
                                   :service-id->service-description-fn (constantly {})
                                   :service-id->source-tokens-entries-fn (constantly #{})
                                   :token->token-hash identity}
