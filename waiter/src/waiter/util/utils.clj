@@ -610,5 +610,5 @@
 (defn sanitize-history
   "Limits the history length stored in the nested map."
   [data history-length history-key]
-  (dissoc-in token-data (repeat history-length history-key)))
+  (dissoc-in data (repeat history-length history-key)))
 
