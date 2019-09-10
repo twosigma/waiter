@@ -385,6 +385,9 @@
         (is (= (* (count all-tokens) (count all-version-suffixes)) (count @service-ids-atom))
             (str {:service-ids @service-ids-atom}))
 
+        (doseq [service-id @service-ids-atom]
+          (assert-service-on-all-routers waiter-url service-id cookies))
+
         (testing "star in token filter"
           (doseq [[_ router-url] (routers waiter-url)]
             (let [query-params {"token" (str "www." service-name ".t*")}
