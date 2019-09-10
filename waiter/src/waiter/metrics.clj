@@ -214,6 +214,14 @@
     (matches [_ name _]
       (str/includes? name candidate-substring))))
 
+(defn conjunctive-metrics-filter
+  "Creates a MetricFilter that filters by the provided substring on metric names."
+  [^MetricFilter metrics-filter-left ^MetricFilter metrics-filter-right]
+  (reify MetricFilter
+    (matches [_ name metric]
+      (and (.matches metrics-filter-left name metric)
+           (.matches metrics-filter-right name metric)))))
+
 (defn get-service-metrics
   "Retrieves the metrics for a sepcific service-id available at this router."
   [service-id]
