@@ -606,3 +606,9 @@
     (pos? scale-amount) :scale-up
     (neg? scale-amount) :scale-down
     :else :stable))
+
+(defn sanitize-history
+  "Limits the history length stored in the nested map."
+  [token-data history-length history-key]
+  (dissoc-in token-data (repeat history-length history-key)))
+

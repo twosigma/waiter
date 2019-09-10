@@ -29,11 +29,6 @@
 
 (def ^:const ANY-USER "*")
 
-(defn sanitize-history
-  "Limits the history length stored in the token-data."
-  [token-data history-length]
-  (utils/dissoc-in token-data (repeat history-length "previous")))
-
 (defn ensure-history
   "Ensures a non-nil previous entry exists in `token-data`.
    If one already was present when this function was called, returns `token-data` unmodified.
@@ -125,7 +120,7 @@
           ; Store the service description
           (kv/store kv-store token (-> new-token-data
                                        (ensure-history existing-token-data)
-                                       (sanitize-history history-length)))
+                                       (utils/sanitize-history history-length "previous")))
           ; Remove token from previous owner
           (let [existing-owner (get raw-token-data "owner")]
             (when (and existing-owner (not= owner existing-owner))
@@ -163,7 +158,7 @@
                                      "last-update-user" authenticated-user)]
                 (kv/store kv-store token (-> new-token-data
                                              (assoc "previous" existing-token-data)
-                                             (sanitize-history history-length)))))))
+                                             (utils/sanitize-history history-length "previous")))))))
         ; Remove token from owner (hard-delete) or set the deleted flag (soft-delete)
         (when owner
           (let [owner->owner-key (kv/fetch kv-store token-owners-key)
