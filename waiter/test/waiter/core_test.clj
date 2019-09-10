@@ -180,10 +180,10 @@
         allowed-to-manage-service? (fn [service-id auth-user]
                                      (sd/can-manage-service? kv-store entitlement-manager service-id auth-user))
         make-inter-router-requests-sync-fn (fn [path _ _] (is (str/includes? path "service-id-")))
-        configuration {:curator {:kv-store kv-store}
-                       :routines {:allowed-to-manage-service?-fn allowed-to-manage-service?
+        configuration {:routines {:allowed-to-manage-service?-fn allowed-to-manage-service?
                                   :make-inter-router-requests-sync-fn make-inter-router-requests-sync-fn
                                   :service-description-defaults service-description-defaults}
+                       :state {:kv-store kv-store}
                        :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-resume-handler-fn ((:service-resume-handler-fn request-handlers) configuration)
                   :service-suspend-handler-fn ((:service-suspend-handler-fn request-handlers) configuration)}
@@ -224,10 +224,10 @@
         allowed-to-manage-service? (fn [service-id auth-user]
                                      (sd/can-manage-service? kv-store entitlement-manager service-id auth-user))
         make-inter-router-requests-sync-fn (fn [path _ _] (is (str/includes? path "service-id-")))
-        configuration {:curator {:kv-store kv-store}
-                       :routines {:allowed-to-manage-service?-fn allowed-to-manage-service?
+        configuration {:routines {:allowed-to-manage-service?-fn allowed-to-manage-service?
                                   :make-inter-router-requests-sync-fn make-inter-router-requests-sync-fn
                                   :service-description-defaults service-description-defaults}
+                       :state {:kv-store kv-store}
                        :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-override-handler-fn ((:service-override-handler-fn request-handlers) configuration)}
         request-handler (wrap-error-handling (ring-handler-factory waiter-request?-fn handlers))
@@ -411,8 +411,7 @@
                                      (sd/can-manage-service? kv-store entitlement-manager service-id auth-user))
         scheduler-interactions-thread-pool (Executors/newFixedThreadPool 1)
         delete-service-result-atom (atom nil) ;; with-redefs fails as we are executing inside different threads
-        configuration {:curator {:kv-store nil}
-                       :daemons {:autoscaler {:query-state-fn (constantly {})}
+        configuration {:daemons {:autoscaler {:query-state-fn (constantly {})}
                                  :router-state-maintainer {:maintainer {:query-state-fn (constantly {})}}}
                        :routines {:allowed-to-manage-service?-fn allowed-to-manage-service?
                                   :generate-log-url-fn nil
@@ -427,7 +426,8 @@
                                                     (if (instance? Throwable result)
                                                       (throw result)
                                                       result))))}
-                       :state {:router-id "router-id"
+                       :state {:kv-store nil
+                               :router-id "router-id"
                                :scheduler-interactions-thread-pool scheduler-interactions-thread-pool}
                        :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-handler-fn ((:service-handler-fn request-handlers) configuration)}]
@@ -507,8 +507,7 @@
         last-request-time (str service-id ".last-request-time")
         service-id->metrics {service-id {"last-request-time" last-request-time}}
         scheduler-interactions-thread-pool (Executors/newFixedThreadPool 1)
-        configuration {:curator {:kv-store nil}
-                       :daemons {:autoscaler {:query-state-fn (constantly {})}
+        configuration {:daemons {:autoscaler {:query-state-fn (constantly {})}
                                  :router-state-maintainer {:maintainer {:query-state-fn (fn [] @router-state-atom)}}}
                        :routines {:allowed-to-manage-service?-fn (constantly true)
                                   :generate-log-url-fn (partial handler/generate-log-url #(str "http://www.example.com" %))
@@ -518,7 +517,8 @@
                                   :service-id->source-tokens-entries-fn (constantly #{})
                                   :token->token-hash identity}
                        :scheduler {:scheduler (Object.)}
-                       :state {:router-id "router-id"
+                       :state {:kv-store nil
+                               :router-id "router-id"
                                :scheduler-interactions-thread-pool scheduler-interactions-thread-pool}
                        :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-handler-fn ((:service-handler-fn request-handlers) configuration)}
@@ -1055,9 +1055,9 @@
         service-id "service-id"
         discovery (Object.)
         make-inter-router-requests-sync-fn (Object.)
-        configuration {:curator {:discovery discovery}
-                       :make-inter-router-requests-sync-fn make-inter-router-requests-sync-fn
-                       :state {:router-id my-router-id}}
+        configuration {:make-inter-router-requests-sync-fn make-inter-router-requests-sync-fn
+                       :state {:discovery discovery
+                               :router-id my-router-id}}
         delegate-instance-kill-request-fn ((:delegate-instance-kill-request-fn routines) configuration)
         router-ids #{"peer-1" "peer-2" "peer-3"}
         make-kill-instance-peer-ids-atom (atom #{})]
