@@ -224,8 +224,7 @@
 
 (defn- compute-token-source-previous-descriptor
   "Computes the previous descriptor using token sources."
-  [kv-store service-id-prefix username metric-group-mappings token-defaults service-description-builder
-   assoc-run-as-user-approved? {:keys [sources] :as descriptor}]
+  [token-defaults build-service-description-and-id {:keys [component->previous-descriptor-fns sources] :as descriptor}]
   (when-let [token-sequence (-> sources :token-sequence seq)]
     (let [{:keys [token->token-data]} sources
           previous-token (->> token->token-data
@@ -235,28 +234,25 @@
       (when (seq previous-token-data)
         (let [new-sources (->> (assoc token->token-data previous-token previous-token-data)
                             (sd/compute-service-description-template-from-tokens token-defaults token-sequence)
-                            (merge sources))]
-          (-> (select-keys descriptor [:component->previous-descriptor-fns :passthrough-headers :waiter-headers])
-            (assoc :sources new-sources)
-            (sd/merge-service-description-and-id
-              kv-store service-id-prefix username metric-group-mappings service-description-builder 
-              assoc-run-as-user-approved?)
-            (sd/merge-suspended kv-store)))))))
+                            (merge sources))
+              token-previous-descriptor-fns (get component->previous-descriptor-fns :token)]
+          (-> (select-keys descriptor [:passthrough-headers :waiter-headers])
+            (assoc :component->previous-descriptor-fns {:token token-previous-descriptor-fns}
+                   :sources new-sources)
+            (build-service-description-and-id)))))))
 
 (defn attach-token-fallback-source
   "Attaches the helper functions map to retrieve previous descriptor using tokens into the
    [:component->previous-descriptor-fns :token] key in the provided descriptor.
    The map contains the following keys: :retrieve-last-update-time and :retrieve-previous-descriptor"
-  [descriptor kv-store service-id-prefix username metric-group-mappings token-defaults service-description-builder
-   assoc-run-as-user-approved?]
+  [descriptor token-defaults build-service-description-and-id]
   (cond-> descriptor
     (-> descriptor :sources :token-sequence seq)
     (assoc-in [:component->previous-descriptor-fns :token]
               {:retrieve-last-update-time sd/retrieve-most-recently-modified-token-update-time
                :retrieve-previous-descriptor (fn retrieve-most-recent-token-update-descriptor [descriptor]
                                                (compute-token-source-previous-descriptor
-                                                 kv-store service-id-prefix username metric-group-mappings token-defaults 
-                                                 service-description-builder assoc-run-as-user-approved? descriptor))})))
+                                                 token-defaults build-service-description-and-id descriptor))})))
 
 (defn compute-descriptor
   "Creates the service descriptor from the request.
@@ -265,14 +261,14 @@
   [service-description-defaults token-defaults service-id-prefix kv-store waiter-hostnames request metric-group-mappings
    service-description-builder assoc-run-as-user-approved?]
   (let [current-request-user (get request :authorization/user)
+        build-service-description-and-id-helper (sd/make-build-service-description-and-id-helper
+                                                  kv-store service-id-prefix current-request-user metric-group-mappings
+                                                  service-description-builder assoc-run-as-user-approved?)
         descriptor
         (-> (headers/split-headers (:headers request))
-            (sd/merge-service-description-sources kv-store waiter-hostnames service-description-defaults token-defaults)
-            (sd/merge-service-description-and-id kv-store service-id-prefix current-request-user metric-group-mappings
-                                                 service-description-builder assoc-run-as-user-approved?)
-            (sd/merge-suspended kv-store)
-            (attach-token-fallback-source kv-store service-id-prefix current-request-user metric-group-mappings 
-                                          token-defaults service-description-builder assoc-run-as-user-approved?))]
+          (sd/merge-service-description-sources kv-store waiter-hostnames service-description-defaults token-defaults)
+          (attach-token-fallback-source token-defaults build-service-description-and-id-helper)
+          (build-service-description-and-id-helper))]
     (when-let [throwable (sd/validate-service-description kv-store service-description-builder descriptor)]
       (throw throwable))
     descriptor))

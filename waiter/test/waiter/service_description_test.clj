@@ -780,14 +780,21 @@
             (is (= expected actual))))))))
 
 (defn- compute-service-description-helper
-  ([sources & {:keys [assoc-run-as-user-approved? kv-store waiter-headers]}]
+  ([sources & {:keys [assoc-run-as-user-approved? component->previous-descriptor-fns kv-store waiter-headers]}]
    (with-redefs [metric-group-filter (fn [sd _] sd)
                  service-description-schema {s/Str s/Any}]
      (let [assoc-run-as-user-approved? (or assoc-run-as-user-approved? (constantly false))
+           component->previous-descriptor-fns (or component->previous-descriptor-fns {})
            kv-store (or kv-store (kv/->LocalKeyValueStore (atom {})))
-           waiter-headers (or waiter-headers {})]
-       (compute-service-description sources waiter-headers {} kv-store "test-service-" "current-request-user"
-                                    [] (create-default-service-description-builder {}) assoc-run-as-user-approved?)))))
+           waiter-headers (or waiter-headers {})
+           passthrough-headers {}
+           metric-group-mappings []
+           service-id-prefix "test-service-"
+           current-user "current-request-user"
+           service-description-builder (create-default-service-description-builder {})]
+       (compute-service-description
+         sources waiter-headers passthrough-headers component->previous-descriptor-fns kv-store service-id-prefix
+         current-user metric-group-mappings assoc-run-as-user-approved? service-description-builder)))))
 
 (defn- service-description
   ([sources & {:keys [assoc-run-as-user-approved? kv-store waiter-headers]}]
@@ -1375,6 +1382,7 @@
         test-user "test-header-user"
         waiter-headers {}
         passthrough-headers {}
+        component->previous-descriptor-fns {}
         metric-group-mappings []
         assoc-run-as-user-approved? (constantly false)
         service-description-builder (create-default-service-description-builder {})
@@ -1382,8 +1390,8 @@
         (fn run-compute-service-description [descriptor]
           (let [result-descriptor
                 (compute-service-description
-                  descriptor waiter-headers passthrough-headers kv-store service-id-prefix test-user
-                  metric-group-mappings service-description-builder assoc-run-as-user-approved?)
+                  descriptor waiter-headers passthrough-headers component->previous-descriptor-fns kv-store service-id-prefix
+                  test-user metric-group-mappings assoc-run-as-user-approved? service-description-builder)
                 result-errors (validate-service-description kv-store service-description-builder result-descriptor)]
             (when result-errors
               (throw result-errors))
