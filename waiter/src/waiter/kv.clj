@@ -144,7 +144,7 @@
     (validate-zk-key key)
     (meters/mark! (metrics/waiter-meter "core" "kv-zk" "store"))
     (timers/start-stop-time!
-      (metrics/waiter-timer "core" "kv-zk" "write")
+      (metrics/waiter-timer "core" "kv-zk" "store")
       (let [path (key->zk-path base-path key)]
         (log/debug "(zk) STORE" path "=>" (hashcode value))
         (curator/write-path curator-client path value
