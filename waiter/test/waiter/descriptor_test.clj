@@ -469,7 +469,10 @@
       metric-group-mappings []
       constraints {"cpus" {:max 100} "mem" {:max 1024}}
       builder (sd/create-default-service-description-builder {:constraints constraints})
-      assoc-run-as-user-approved? (constantly false)]
+      assoc-run-as-user-approved? (constantly false)
+      build-service-description-and-id-helper (sd/make-build-service-description-and-id-helper
+                                                kv-store service-id-prefix username metric-group-mappings builder
+                                                assoc-run-as-user-approved?)]
 
   (deftest test-descriptor->previous-descriptor-no-token
     (let [sources {:defaults {"permitted-user" "*"}
@@ -503,8 +506,7 @@
                   (-> {:passthrough-headers passthrough-headers
                        :sources sources
                        :waiter-headers waiter-headers}
-                    (attach-token-fallback-source kv-store service-id-prefix username metric-group-mappings
-                                                  token-defaults builder assoc-run-as-user-approved?)))))))
+                    (attach-token-fallback-source token-defaults build-service-description-and-id-helper)))))))
 
   (deftest test-descriptor->previous-descriptor-multiple-sources
     (let [service-description-1 {"cmd" "ls1" "cpus" 1 "mem" 32 "run-as-user" "ru" "version" "foo"}
@@ -640,8 +642,7 @@
           current-descriptor (-> {:passthrough-headers passthrough-headers
                                   :sources sources
                                   :waiter-headers waiter-headers}
-                               (attach-token-fallback-source kv-store service-id-prefix username metric-group-mappings
-                                                             token-defaults builder assoc-run-as-user-approved?))
+                               (attach-token-fallback-source token-defaults build-service-description-and-id-helper))
           previous-descriptor (descriptor->previous-descriptor kv-store builder current-descriptor)]
       (is (= {:component->previous-descriptor-fns (:component->previous-descriptor-fns current-descriptor)
               :core-service-description service-description-1
@@ -680,8 +681,7 @@
           current-descriptor (-> {:passthrough-headers passthrough-headers
                                   :sources sources
                                   :waiter-headers waiter-headers}
-                               (attach-token-fallback-source kv-store service-id-prefix username metric-group-mappings
-                                                             token-defaults builder assoc-run-as-user-approved?))
+                               (attach-token-fallback-source token-defaults build-service-description-and-id-helper))
           previous-descriptor (descriptor->previous-descriptor kv-store builder current-descriptor)]
       (is (= {:component->previous-descriptor-fns (:component->previous-descriptor-fns current-descriptor)
               :core-service-description service-description-1
@@ -720,8 +720,7 @@
           current-descriptor (-> {:passthrough-headers passthrough-headers
                                   :sources sources
                                   :waiter-headers waiter-headers}
-                               (attach-token-fallback-source kv-store service-id-prefix username metric-group-mappings
-                                                             token-defaults builder assoc-run-as-user-approved?))
+                               (attach-token-fallback-source token-defaults build-service-description-and-id-helper))
           previous-descriptor (descriptor->previous-descriptor kv-store builder current-descriptor)]
       (let [expected-core-service-description (assoc service-description-1 "cpus" 20 "permitted-user" username "run-as-user" username)]
         (is (= {:component->previous-descriptor-fns (:component->previous-descriptor-fns current-descriptor)
@@ -758,8 +757,7 @@
           current-descriptor (-> {:passthrough-headers passthrough-headers
                                   :sources sources
                                   :waiter-headers waiter-headers}
-                               (attach-token-fallback-source kv-store service-id-prefix username metric-group-mappings
-                                                             token-defaults builder assoc-run-as-user-approved?))]
+                               (attach-token-fallback-source token-defaults build-service-description-and-id-helper))]
       (is (nil? (descriptor->previous-descriptor kv-store builder current-descriptor)))))
 
   (deftest test-descriptor->previous-descriptor-multiple-tokens-with-previous
@@ -787,8 +785,7 @@
           current-descriptor (-> {:passthrough-headers passthrough-headers
                                   :sources sources
                                   :waiter-headers waiter-headers}
-                               (attach-token-fallback-source kv-store service-id-prefix username metric-group-mappings
-                                                             token-defaults builder assoc-run-as-user-approved?))
+                               (attach-token-fallback-source token-defaults build-service-description-and-id-helper))
           previous-descriptor (descriptor->previous-descriptor kv-store builder current-descriptor)]
       (let [expected-core-service-description (-> (merge service-description-1 service-description-2p)
                                                 (select-keys sd/service-parameter-keys))]

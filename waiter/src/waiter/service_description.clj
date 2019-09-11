@@ -549,7 +549,8 @@
   ServiceDescriptionBuilder
 
   (build [_ user-service-description
-          {:keys [assoc-run-as-user-approved? defaults kv-store metric-group-mappings service-id-prefix username]}]
+          {:keys [assoc-run-as-user-approved? component->previous-descriptor-fns defaults kv-store
+                  metric-group-mappings service-id-prefix username]}]
     (let [core-service-description (if (get user-service-description "run-as-user")
                                      user-service-description
                                      (let [candidate-service-description (assoc-run-as-requester-fields user-service-description username)
@@ -562,7 +563,8 @@
           service-id (service-description->service-id service-id-prefix core-service-description)
           service-description (default-and-override core-service-description metric-group-mappings
                                                     kv-store defaults service-id)]
-      {:core-service-description core-service-description
+      {:component->previous-descriptor-fns component->previous-descriptor-fns
+       :core-service-description core-service-description
        :service-description service-description
        :service-id service-id}))
 
@@ -893,8 +895,8 @@
      If after the merge a run-as-user is not available, then `username` becomes the run-as-user.
      If after the merge a permitted-user is not available, then `username` becomes the permitted-user."
     [{:keys [defaults headers service-description-template source-tokens token-authentication-disabled token-preauthorized]}
-     waiter-headers passthrough-headers kv-store service-id-prefix username metric-group-mappings
-     service-description-builder assoc-run-as-user-approved?]
+     waiter-headers passthrough-headers component->previous-descriptor-fns kv-store service-id-prefix username
+     metric-group-mappings assoc-run-as-user-approved? service-description-builder]
     (let [headers-without-params (dissoc headers "param")
           header-params (get headers "param")
           ; any change with the on-the-fly must change the run-as-user if it doesn't already exist
@@ -944,9 +946,10 @@
         (throw (ex-info "Cannot use run-as-requester with a specific namespace"
                         {:namespace raw-namespace :run-as-user raw-run-as-user :status 400 :log-level :warn})))
       (sling/try+
-        (let [{:keys [core-service-description service-description service-id]}
+        (let [{:keys [component->previous-descriptor-fns core-service-description service-description service-id]}
               (build service-description-builder user-service-description
                      {:assoc-run-as-user-approved? assoc-run-as-user-approved?
+                      :component->previous-descriptor-fns component->previous-descriptor-fns
                       :defaults defaults
                       :kv-store kv-store
                       :metric-group-mappings metric-group-mappings
@@ -954,7 +957,8 @@
                       :username username})
               service-preauthorized (and token-preauthorized (empty? service-description-based-on-headers))
               service-authentication-disabled (and token-authentication-disabled (empty? service-description-based-on-headers))]
-          {:core-service-description core-service-description
+          {:component->previous-descriptor-fns component->previous-descriptor-fns
+           :core-service-description core-service-description
            :on-the-fly? on-the-fly?
            :service-authentication-disabled service-authentication-disabled
            :service-description service-description
@@ -988,11 +992,22 @@
 
 (defn merge-service-description-and-id
   "Populates the descriptor with the service-description and service-id."
-  [{:keys [passthrough-headers sources waiter-headers] :as descriptor} kv-store service-id-prefix username
-   metric-group-mappings service-description-builder assoc-run-as-user-approved?]
-  (->> (compute-service-description sources waiter-headers passthrough-headers kv-store service-id-prefix username
-                                    metric-group-mappings service-description-builder assoc-run-as-user-approved?)
+  [{:keys [component->previous-descriptor-fns passthrough-headers sources waiter-headers] :as descriptor}
+   kv-store service-id-prefix username metric-group-mappings service-description-builder assoc-run-as-user-approved?]
+  (->> (compute-service-description
+         sources waiter-headers passthrough-headers component->previous-descriptor-fns kv-store service-id-prefix
+         username metric-group-mappings assoc-run-as-user-approved? service-description-builder)
        (merge descriptor)))
+
+(defn make-build-service-description-and-id-helper
+  "Factory function to return the function used to complete creating a descriptor using the builder."
+  [kv-store service-id-prefix current-request-user metric-group-mappings service-description-builder
+   assoc-run-as-user-approved?]
+  (fn build-service-description-and-id-helper [descriptor]
+    (-> descriptor
+      (merge-service-description-and-id kv-store service-id-prefix current-request-user metric-group-mappings
+                                        service-description-builder assoc-run-as-user-approved?)
+      (merge-suspended kv-store))))
 
 (defn retrieve-most-recently-modified-token
   "Computes the most recently modified token from the token->token-data map."
