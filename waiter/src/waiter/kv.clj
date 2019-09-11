@@ -19,6 +19,7 @@
             [clojure.tools.logging :as log]
             [digest]
             [metrics.meters :as meters]
+            [metrics.timers :as timers]
             [taoensso.nippy :as nippy]
             [taoensso.nippy.compression :as compression]
             [waiter.curator :as curator]
@@ -124,32 +125,40 @@
     (meters/mark! (metrics/waiter-meter "core" "kv-zk" "retrieve"))
     (let [path (key->zk-path base-path key)]
       (when refresh
-        (let [response-promise (promise)]
-          (log/debug "(zk) SYNC" path)
-          (.sync curator-client path response-promise)
-          (log/debug "awaiting response from sync call")
-          (let [response (deref response-promise sync-timeout-ms :unrealized)]
-            (log/info "proceeding past sync() call with" response))))
-      (let [{:keys [data]} (curator/read-path curator-client path
-                                              :nil-on-missing? true
-                                              :serializer :nippy)]
-        (log/debug "(zk) FETCH" path "=>" (hashcode data))
-        data)))
+        (timers/start-stop-time!
+          (metrics/waiter-timer "core" "kv-zk" "refresh")
+          (let [response-promise (promise)]
+            (log/debug "(zk) SYNC" path)
+            (.sync curator-client path response-promise)
+            (log/debug "awaiting response from sync call")
+            (let [response (deref response-promise sync-timeout-ms :unrealized)]
+              (log/info "proceeding past sync() call with" response)))))
+      (timers/start-stop-time!
+        (metrics/waiter-timer "core" "kv-zk" "retrieve")
+        (let [{:keys [data]} (curator/read-path curator-client path
+                                                :nil-on-missing? true
+                                                :serializer :nippy)]
+          (log/debug "(zk) FETCH" path "=>" (hashcode data))
+          data))))
   (store [_ key value]
     (validate-zk-key key)
     (meters/mark! (metrics/waiter-meter "core" "kv-zk" "store"))
-    (let [path (key->zk-path base-path key)]
-      (log/debug "(zk) STORE" path "=>" (hashcode value))
-      (curator/write-path curator-client path value
-                          :serializer :nippy
-                          :mode :persistent
-                          :create-parent-zknodes? true)))
+    (timers/start-stop-time!
+      (metrics/waiter-timer "core" "kv-zk" "retrieve")
+      (let [path (key->zk-path base-path key)]
+        (log/debug "(zk) STORE" path "=>" (hashcode value))
+        (curator/write-path curator-client path value
+                            :serializer :nippy
+                            :mode :persistent
+                            :create-parent-zknodes? true))))
   (delete [_ key]
     (validate-zk-key key)
     (meters/mark! (metrics/waiter-meter "core" "kv-zk" "delete"))
-    (let [path (key->zk-path base-path key)]
-      (log/debug "(zk) DELETE" path)
-      (curator/delete-path curator-client path :ignore-does-not-exist true)))
+    (timers/start-stop-time!
+      (metrics/waiter-timer "core" "kv-zk" "delete")
+      (let [path (key->zk-path base-path key)]
+        (log/debug "(zk) DELETE" path)
+        (curator/delete-path curator-client path :ignore-does-not-exist true))))
   (state [_]
     {:base-path base-path, :variant "zookeeper"}))
 
