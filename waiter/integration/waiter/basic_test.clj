@@ -64,7 +64,8 @@
       (testing "empty-body"
         (log/info "Basic test for empty body in request")
         (let [request-headers (assoc request-headers :accept "text/plain")
-              {:keys [body headers]} (make-kitchen-request waiter-url request-headers :path "/request-info")
+              {:keys [body headers] :as response} (make-kitchen-request waiter-url request-headers :path "/request-info")
+              _ (assert-response-status response 200)
               body-json (json/read-str (str body))]
           (is (= (some-> http1-client .getUserAgentField .getValue) (get-in body-json ["headers" "user-agent"])) (str body))
           (is (= "application/json" (get headers "content-type")) (str headers))
@@ -295,9 +296,10 @@
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
                    :x-waiter-cmd (kitchen-cmd "-p $PORT0")}
-          {:keys [service-id] :as response} (make-request-with-debug-info headers #(make-shell-request waiter-url %))]
+          {:keys [cookies service-id] :as response} (make-request-with-debug-info headers #(make-shell-request waiter-url %))]
       (is (not (nil? service-id)))
       (assert-response-status response 200)
+      (assert-service-on-all-routers waiter-url service-id cookies)
 
       (let [service-settings (service-settings waiter-url service-id)]
         (is (= (:x-waiter-cmd headers) (get-in service-settings [:service-description :cmd])))
@@ -454,9 +456,13 @@
 (deftest ^:parallel ^:integration-fast test-list-apps
   (let [current-user (retrieve-username)]
     (testing-using-waiter-url
-      (let [service-id (:service-id (make-request-with-debug-info
-                                      {:x-waiter-name (rand-name)}
-                                      #(make-kitchen-request waiter-url %)))]
+      (let [{:keys [cookies service-id]} (make-request-with-debug-info
+                                           {:x-waiter-name (rand-name)}
+                                           #(make-kitchen-request waiter-url %))]
+        (assert-service-on-all-routers waiter-url service-id cookies)
+        ;; wait for scaling state to become available on the service endpoint
+        (is (wait-for (fn [] (get (service waiter-url service-id {}) "scaling-state"))))
+
         (testing "without parameters"
           (let [service (service waiter-url service-id {})] ;; see my app as myself
             (is service)
