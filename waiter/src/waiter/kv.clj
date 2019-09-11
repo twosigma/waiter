@@ -16,6 +16,7 @@
 (ns waiter.kv
   (:require [clj-time.core :as t]
             [clojure.java.io :as io]
+            [clojure.string :as str]
             [clojure.tools.logging :as log]
             [digest]
             [metrics.meters :as meters]
@@ -25,8 +26,7 @@
             [waiter.curator :as curator]
             [waiter.metrics :as metrics]
             [waiter.util.cache-utils :as cu]
-            [waiter.util.utils :as utils]
-            [clojure.string :as str])
+            [waiter.util.utils :as utils])
   (:import java.util.Arrays
            org.apache.curator.framework.CuratorFramework))
 
