@@ -21,6 +21,7 @@
             [clojure.tools.logging :as log]
             [schema.core :as s]
             [waiter.authorization :as authz]
+            [waiter.config :as config]
             [waiter.kv :as kv]
             [waiter.service-description :refer :all]
             [waiter.util.cache-utils :as cu])
@@ -1900,6 +1901,11 @@
         constraints-schema config "min-instances (3) must be less than or equal to max-instances (2)"))
 
     (testing (str "testing invalid health check port index")
+      (with-redefs [config/retrieve-service-description-default-ports (constantly 1)]
+        (run-validate-schema-test
+          (assoc valid-description "health-check-port-index" 1)
+          constraints-schema config
+          "The health check port index (1) must be smaller than ports (1)"))
       (run-validate-schema-test
         (assoc valid-description "health-check-port-index" 1 "ports" 1)
         constraints-schema config

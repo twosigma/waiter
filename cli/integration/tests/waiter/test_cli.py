@@ -167,6 +167,7 @@ class WaiterCliTest(util.WaiterTest):
                                                                    '--max-instances 100 '
                                                                    '--restart-backoff-factor 1.1 '
                                                                    '--health-check-port-index 1 '
+                                                                   '--ports 3 '
                                                                    '--concurrency-level 1000 '
                                                                    '--health-check-max-consecutive-failures 10 '
                                                                    '--max-queue-length 1000000 '
@@ -181,6 +182,7 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(100, token['max-instances'])
             self.assertEqual(1.1, token['restart-backoff-factor'])
             self.assertEqual(1, token['health-check-port-index'])
+            self.assertEqual(3, token['ports'])
             self.assertEqual(1000, token['concurrency-level'])
             self.assertEqual(10, token['health-check-max-consecutive-failures'])
             self.assertEqual(1000000, token['max-queue-length'])
@@ -193,6 +195,7 @@ class WaiterCliTest(util.WaiterTest):
                                                                        '--max-instances 200 '
                                                                        '--restart-backoff-factor 2.2 '
                                                                        '--health-check-port-index 2 '
+                                                                       '--ports 3 '
                                                                        '--concurrency-level 2000 '
                                                                        '--health-check-max-consecutive-failures 2 '
                                                                        '--max-queue-length 2000000 '
@@ -206,6 +209,7 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(200, token['max-instances'])
             self.assertEqual(2.2, token['restart-backoff-factor'])
             self.assertEqual(2, token['health-check-port-index'])
+            self.assertEqual(3, token['ports'])
             self.assertEqual(2000, token['concurrency-level'])
             self.assertEqual(2, token['health-check-max-consecutive-failures'])
             self.assertEqual(2000000, token['max-queue-length'])

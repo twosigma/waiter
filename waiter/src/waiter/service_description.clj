@@ -24,6 +24,7 @@
             [schema.core :as s]
             [slingshot.slingshot :as sling]
             [waiter.authorization :as authz]
+            [waiter.config :as config]
             [waiter.headers :as headers]
             [waiter.kv :as kv]
             [waiter.metrics :as metrics]
@@ -510,12 +511,14 @@
 
     ; validate the health-check-port-index
     (let [{:strs [health-check-port-index ports]} service-description-to-use]
-      (when (and health-check-port-index ports (>= health-check-port-index ports))
-        (sling/throw+ {:type :service-description-error
-                       :friendly-error-message (str "The health check port index (" health-check-port-index ") "
-                                                    "must be smaller than ports (" ports ")")
-                       :status 400
-                       :log-level :warn})))
+      (when health-check-port-index
+        (let [ports (or ports (config/retrieve-service-description-default-ports))]
+          (when (>= health-check-port-index ports)
+            (sling/throw+ {:type :service-description-error
+                           :friendly-error-message (str "The health check port index (" health-check-port-index ") "
+                                                        "must be smaller than ports (" ports ")")
+                           :status 400
+                           :log-level :warn})))))
 
     ;; currently, if manually specified, the namespace *must* match the run-as-user
     ;; (but we expect the common case to be falling back to the default)

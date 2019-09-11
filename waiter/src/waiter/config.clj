@@ -30,3 +30,9 @@
   []
   {:pre [(realized? config-promise)]}
   (get-in @config-promise [:cluster-config :name]))
+
+(defn retrieve-service-description-default-ports
+  "Retrieves the configured service description default ports."
+  []
+  {:pre [(realized? config-promise)]}
+  (get-in @config-promise [:service-description-defaults "ports"]))
