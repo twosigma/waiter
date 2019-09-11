@@ -605,6 +605,11 @@
    :clock (pc/fnk [] t/now)
    :cors-validator (pc/fnk [[:settings cors-config]]
                      (utils/create-component cors-config))
+   :discovery (pc/fnk [[:curator curator]
+                       [:settings [:cluster-config name] [:zookeeper base-path discovery-relative-path] host port]
+                       router-id]
+                (discovery/register router-id curator name (str base-path "/" discovery-relative-path)
+                                    {:host host :port (primary-port port)}))
    :entitlement-manager (pc/fnk [[:settings entitlement-config]]
                           (utils/create-component entitlement-config))
    :fallback-state-atom (pc/fnk [] (atom {:available-service-ids #{}
@@ -623,6 +628,27 @@
                           (when (not= :disabled jwt-config)
                             (let [jwt-config (assoc jwt-config :password (first passwords))]
                               (jwt/jwt-authenticator jwt-config)))))
+   :kv-store (pc/fnk [[:curator curator]
+                      [:settings [:zookeeper base-path] kv-config]
+                      passwords]
+               (kv/new-kv-store kv-config curator base-path passwords))
+   :leader?-fn (pc/fnk [[:settings [:cluster-config min-routers]]
+                        router-id
+                        discovery leader-latch]
+                 (let [has-leadership? #(.hasLeadership leader-latch)]
+                   (leader-fn-factory router-id has-leadership? discovery min-routers)))
+   :leader-id-fn (pc/fnk [leader-latch]
+                   #(try
+                      (-> leader-latch .getLeader .getId)
+                      (catch Exception ex
+                        (log/error ex "unable to retrieve leader id"))))
+   :leader-latch (pc/fnk [[:curator curator]
+                          [:settings [:zookeeper base-path leader-latch-relative-path]]
+                          router-id]
+                   (let [leader-latch-path (str base-path "/" leader-latch-relative-path)
+                         latch (LeaderLatch. curator leader-latch-path router-id)]
+                     (.start latch)
+                     latch))
    :local-usage-agent (pc/fnk [] (agent {}))
    :offers-allowed-semaphore (pc/fnk [[:settings [:work-stealing max-in-flight-offers]]]
                                (semaphore/create-semaphore max-in-flight-offers))
@@ -700,11 +726,6 @@
                 curator))
    :curator-base-init (pc/fnk [curator [:settings [:zookeeper base-path]]]
                         (curator/create-path curator base-path :create-parent-zknodes? true))
-   :discovery (pc/fnk [[:settings [:cluster-config name] [:zookeeper base-path discovery-relative-path] host port]
-                       [:state router-id]
-                       curator]
-                (discovery/register router-id curator name (str base-path "/" discovery-relative-path)
-                                    {:host host :port (primary-port port)}))
    :gc-base-path (pc/fnk [[:settings [:zookeeper base-path gc-relative-path]]]
                    (str base-path "/" gc-relative-path))
    :gc-state-reader-fn (pc/fnk [curator gc-base-path]
@@ -715,33 +736,15 @@
                          (fn write-gc-state [name state]
                            (curator/write-path curator (str gc-base-path "/" name) state
                                                :serializer :nippy :create-parent-zknodes? true)))
-   :kv-store (pc/fnk [[:settings [:zookeeper base-path] kv-config]
-                      [:state passwords]
-                      curator]
-               (kv/new-kv-store kv-config curator base-path passwords))
-   :leader?-fn (pc/fnk [[:settings [:cluster-config min-routers]]
-                        [:state router-id]
-                        discovery
-                        leader-latch]
-                 (let [has-leadership? #(.hasLeadership leader-latch)]
-                   (leader-fn-factory router-id has-leadership? discovery min-routers)))
-   :leader-id-fn (pc/fnk [leader-latch]
-                   #(try
-                      (-> leader-latch .getLeader .getId)
-                      (catch Exception ex
-                        (log/error ex "unable to retrieve leader id"))))
-   :leader-latch (pc/fnk [[:settings [:zookeeper base-path leader-latch-relative-path]]
-                          [:state router-id]
-                          curator]
-                   (let [leader-latch-path (str base-path "/" leader-latch-relative-path)
-                         latch (LeaderLatch. curator leader-latch-path router-id)]
-                     (.start latch)
-                     latch))})
+   :synchronize-fn (pc/fnk [[:settings [:zookeeper base-path mutex-timeout-ms]]
+                            curator]
+                     (fn synchronize-fn [path f]
+                       (let [lock-path (str base-path "/" path)]
+                         (curator/synchronize curator lock-path mutex-timeout-ms f))))})
 
 (def scheduler
-  {:scheduler (pc/fnk [[:curator leader?-fn]
-                       [:settings scheduler-config scheduler-syncer-interval-secs]
-                       [:state scheduler-state-chan service-id-prefix]
+  {:scheduler (pc/fnk [[:settings scheduler-config scheduler-syncer-interval-secs]
+                       [:state leader?-fn scheduler-state-chan service-id-prefix]
                        service-id->password-fn*
                        service-id->service-description-fn*
                        start-scheduler-syncer-fn]
@@ -765,8 +768,8 @@
                                  (digest/md5 (str service-id (first passwords)))))
    ; This function is only included here for initializing the scheduler above.
    ; Prefer accessing the non-starred version of this function through the routines map.
-   :service-id->service-description-fn* (pc/fnk [[:curator kv-store]
-                                                 [:settings service-description-defaults metric-group-mappings]]
+   :service-id->service-description-fn* (pc/fnk [[:settings service-description-defaults metric-group-mappings]
+                                                 [:state kv-store]]
                                           (fn service-id->service-description
                                             [service-id & {:keys [effective?] :or {effective? true}}]
                                             (sd/service-id->service-description
@@ -792,8 +795,7 @@
                                         failed-check-threshold scheduler-name get-service->instances-fn scheduler-state-chan)))))})
 
 (def routines
-  {:allowed-to-manage-service?-fn (pc/fnk [[:curator kv-store]
-                                           [:state entitlement-manager]]
+  {:allowed-to-manage-service?-fn (pc/fnk [[:state entitlement-manager kv-store]]
                                     (fn allowed-to-manage-service? [service-id auth-user]
                                       ; Returns whether the authenticated user is allowed to manage the service.
                                       ; Either she can run as the waiter user or the run-as-user of the service description."
@@ -843,8 +845,7 @@
                     (let [password (first passwords)]
                       {:bytes-decryptor (fn bytes-decryptor [data] (utils/compressed-bytes->map data password))
                        :bytes-encryptor (fn bytes-encryptor [data] (utils/map->compressed-bytes data password))}))
-   :delegate-instance-kill-request-fn (pc/fnk [[:curator discovery]
-                                               [:state router-id]
+   :delegate-instance-kill-request-fn (pc/fnk [[:state discovery router-id]
                                                make-inter-router-requests-sync-fn]
                                         (fn delegate-instance-kill-request-fn
                                           [service-id]
@@ -873,26 +874,23 @@
                              (handler/async-make-request-helper
                                http-clients instance-request-properties make-basic-auth-fn service-id->password-fn
                                pr/prepare-request-properties make-request-fn)))
-   :make-inter-router-requests-async-fn (pc/fnk [[:curator discovery]
-                                                 [:settings [:instance-request-properties initial-socket-timeout-ms]]
-                                                 [:state http-clients passwords router-id]
+   :make-inter-router-requests-async-fn (pc/fnk [[:settings [:instance-request-properties initial-socket-timeout-ms]]
+                                                 [:state discovery http-clients passwords router-id]
                                                  make-basic-auth-fn]
                                           (let [http-client (hu/select-http-client "http" http-clients)
                                                 make-request-async-fn (fn make-request-async-fn [method endpoint-url auth body config]
                                                                         (make-request-async http-client initial-socket-timeout-ms method endpoint-url auth body config))]
                                             (fn make-inter-router-requests-async-fn [endpoint & args]
                                               (apply make-inter-router-requests make-request-async-fn make-basic-auth-fn router-id discovery passwords endpoint args))))
-   :make-inter-router-requests-sync-fn (pc/fnk [[:curator discovery]
-                                                [:settings [:instance-request-properties initial-socket-timeout-ms]]
-                                                [:state http-clients passwords router-id]
+   :make-inter-router-requests-sync-fn (pc/fnk [[:settings [:instance-request-properties initial-socket-timeout-ms]]
+                                                [:state discovery http-clients passwords router-id]
                                                 make-basic-auth-fn]
                                          (let [http-client (hu/select-http-client "http" http-clients)
                                                make-request-sync-fn (fn make-request-sync-fn [method endpoint-url auth body config]
                                                                       (make-request-sync http-client initial-socket-timeout-ms method endpoint-url auth body config))]
                                            (fn make-inter-router-requests-sync-fn [endpoint & args]
                                              (apply make-inter-router-requests make-request-sync-fn make-basic-auth-fn router-id discovery passwords endpoint args))))
-   :peers-acknowledged-blacklist-requests-fn (pc/fnk [[:curator discovery]
-                                                      [:state router-id]
+   :peers-acknowledged-blacklist-requests-fn (pc/fnk [[:state discovery router-id]
                                                       make-inter-router-requests-sync-fn]
                                                (fn peers-acknowledged-blacklist-requests
                                                  [instance short-circuit? blacklist-period-ms reason]
@@ -916,12 +914,11 @@
                              (if (str/blank? endpoint-url)
                                endpoint-url
                                (str "http://" hostname ":" (primary-port port) endpoint-url)))))
-   :refresh-service-descriptions-fn (pc/fnk [[:curator kv-store]]
+   :refresh-service-descriptions-fn (pc/fnk [[:state kv-store]]
                                       (fn refresh-service-descriptions-fn [service-ids]
                                         (sd/refresh-service-descriptions kv-store service-ids)))
-   :request->descriptor-fn (pc/fnk [[:curator kv-store]
-                                    [:settings [:token-config history-length token-defaults] metric-group-mappings service-description-defaults]
-                                    [:state fallback-state-atom service-description-builder service-id-prefix waiter-hostnames]
+   :request->descriptor-fn (pc/fnk [[:settings [:token-config history-length token-defaults] metric-group-mappings service-description-defaults]
+                                    [:state fallback-state-atom kv-store service-description-builder service-id-prefix waiter-hostnames]
                                     assoc-run-as-user-approved? can-run-as?-fn store-source-tokens-fn]
                              (fn request->descriptor-fn [request]
                                (let [{:keys [latest-descriptor] :as result}
@@ -954,7 +951,7 @@
                               service-id->password-fn*)
    :service-id->service-description-fn (pc/fnk [[:scheduler service-id->service-description-fn*]]
                                          service-id->service-description-fn*)
-   :service-id->source-tokens-entries-fn (pc/fnk [[:curator kv-store]]
+   :service-id->source-tokens-entries-fn (pc/fnk [[:state kv-store]]
                                            (partial sd/service-id->source-tokens-entries kv-store))
    :start-new-service-fn (pc/fnk [[:scheduler scheduler]
                                   [:state start-service-cache scheduler-interactions-thread-pool]
@@ -981,26 +978,21 @@
                                        (async/go
                                          (when-let [exit-chan (get work-stealing-chan-map [:exit-chan])]
                                            (async/>! exit-chan :exit)))))
-   :store-service-description-fn (pc/fnk [[:curator kv-store]
+   :store-service-description-fn (pc/fnk [[:state kv-store]
                                           validate-service-description-fn]
                                    (fn store-service-description [{:keys [core-service-description service-id]}]
                                      (sd/store-core kv-store service-id core-service-description validate-service-description-fn)))
-   :store-source-tokens-fn (pc/fnk [[:curator kv-store]
-                                    synchronize-fn]
+   :store-source-tokens-fn (pc/fnk [[:curator synchronize-fn]
+                                    [:state kv-store]]
                              (fn store-source-tokens-fn [service-id source-tokens]
                                (sd/store-source-tokens! synchronize-fn kv-store service-id source-tokens)))
-   :synchronize-fn (pc/fnk [[:curator curator]
-                            [:settings [:zookeeper base-path mutex-timeout-ms]]]
-                     (fn synchronize-fn [path f]
-                       (let [lock-path (str base-path "/" path)]
-                         (curator/synchronize curator lock-path mutex-timeout-ms f))))
-   :token->service-description-template (pc/fnk [[:curator kv-store]]
+   :token->service-description-template (pc/fnk [[:state kv-store]]
                                           (fn token->service-description-template [token]
                                             (sd/token->service-description-template kv-store token :error-on-missing false)))
-   :token->token-hash (pc/fnk [[:curator kv-store]]
+   :token->token-hash (pc/fnk [[:state kv-store]]
                         (fn token->token-hash [token]
                           (sd/token->token-hash kv-store token)))
-   :token->token-metadata (pc/fnk [[:curator kv-store]]
+   :token->token-metadata (pc/fnk [[:state kv-store]]
                             (fn token->token-metadata [token]
                               (sd/token->token-metadata kv-store token :error-on-missing false)))
    :validate-service-description-fn (pc/fnk [[:settings service-description-defaults]
@@ -1023,9 +1015,8 @@
    :websocket-request-auth-cookie-attacher (pc/fnk [[:state passwords router-id]]
                                              (fn websocket-request-auth-cookie-attacher [request]
                                                (ws/inter-router-request-middleware router-id (first passwords) request)))
-   :websocket-request-acceptor (pc/fnk [[:curator kv-store]
-                                        [:settings [:token-config token-defaults]]
-                                        [:state passwords server-name waiter-hostnames]]
+   :websocket-request-acceptor (pc/fnk [[:settings [:token-config token-defaults]]
+                                        [:state kv-store passwords server-name waiter-hostnames]]
                                  (fn websocket-request-acceptor [^ServletUpgradeRequest request ^ServletUpgradeResponse response]
                                    (let [request-headers (->> (.getHeaders request)
                                                            (pc/map-vals #(str/join "," %))
@@ -1057,11 +1048,10 @@
                                                   (ws/request-subprotocol-acceptor request response)))))))))})
 
 (def daemons
-  {:autoscaler (pc/fnk [[:curator leader?-fn]
-                        [:routines router-metrics-helpers service-id->service-description-fn]
+  {:autoscaler (pc/fnk [[:routines router-metrics-helpers service-id->service-description-fn]
                         [:scheduler scheduler]
                         [:settings [:scaling autoscaler-interval-ms max-expired-unhealthy-instances-to-consider]]
-                        [:state instance-rpc-chan scheduler-interactions-thread-pool]
+                        [:state instance-rpc-chan leader?-fn scheduler-interactions-thread-pool]
                         autoscaling-multiplexer router-state-maintainer]
                  (let [service-id->metrics-fn (:service-id->metrics-fn router-metrics-helpers)
                        {{:keys [router-state-push-mult]} :maintainer} router-state-maintainer
@@ -1129,8 +1119,8 @@
                                     initial-state {}]
                                 (interstitial/interstitial-maintainer
                                   service-id->service-description-fn router-state-chan interstitial-state-atom initial-state)))
-   :launch-metrics-maintainer (pc/fnk [[:curator leader?-fn]
-                                       [:routines service-id->service-description-fn]
+   :launch-metrics-maintainer (pc/fnk [[:routines service-id->service-description-fn]
+                                       [:state leader?-fn]
                                        router-state-maintainer]
                                 (let [{{:keys [router-state-push-mult]} :maintainer} router-state-maintainer]
                                   (scheduler/start-launch-metrics-maintainer
@@ -1140,8 +1130,8 @@
    :messages (pc/fnk [[:settings {messages nil}]]
                (when messages
                  (utils/load-messages messages)))
-   :router-list-maintainer (pc/fnk [[:curator discovery]
-                                    [:settings router-syncer]]
+   :router-list-maintainer (pc/fnk [[:settings router-syncer]
+                                    [:state discovery]]
                              (let [{:keys [delay-ms interval-ms]} router-syncer
                                    router-chan (au/latest-chan)
                                    router-mult-chan (async/mult router-chan)]
@@ -1172,19 +1162,19 @@
                                                  deployment-error-config)]
                                 {:exit-chan exit-chan
                                  :maintainer maintainer}))
-   :scheduler-broken-services-gc (pc/fnk [[:curator gc-state-reader-fn gc-state-writer-fn leader?-fn]
+   :scheduler-broken-services-gc (pc/fnk [[:curator gc-state-reader-fn gc-state-writer-fn]
                                           [:scheduler scheduler]
                                           [:settings scheduler-gc-config]
-                                          [:state clock]
+                                          [:state clock leader?-fn]
                                           router-state-maintainer]
                                    (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                          service-gc-go-routine (partial service-gc-go-routine gc-state-reader-fn gc-state-writer-fn leader?-fn clock)]
                                      (scheduler/scheduler-broken-services-gc service-gc-go-routine query-state-fn scheduler scheduler-gc-config)))
-   :scheduler-services-gc (pc/fnk [[:curator gc-state-reader-fn gc-state-writer-fn leader?-fn]
+   :scheduler-services-gc (pc/fnk [[:curator gc-state-reader-fn gc-state-writer-fn]
                                    [:routines router-metrics-helpers service-id->idle-timeout]
                                    [:scheduler scheduler]
                                    [:settings scheduler-gc-config]
-                                   [:state clock]
+                                   [:state clock leader?-fn]
                                    router-state-maintainer]
                             (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                   {:keys [service-id->metrics-fn]} router-metrics-helpers
@@ -1377,13 +1367,12 @@
                                   (fn router-metrics-handler-fn [request]
                                     (metrics-sync/incoming-router-metrics-handler
                                       router-metrics-agent metrics-sync-interval-ms bytes-encryptor bytes-decryptor request))))
-   :service-handler-fn (pc/fnk [[:curator kv-store]
-                                [:daemons autoscaler router-state-maintainer]
+   :service-handler-fn (pc/fnk [[:daemons autoscaler router-state-maintainer]
                                 [:routines allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-sync-fn
                                  router-metrics-helpers service-id->service-description-fn service-id->source-tokens-entries-fn
                                  token->token-hash]
                                 [:scheduler scheduler]
-                                [:state router-id scheduler-interactions-thread-pool]
+                                [:state kv-store router-id scheduler-interactions-thread-pool]
                                 wrap-secure-request-fn]
                          (let [query-autoscaler-state-fn (:query-state-fn autoscaler)
                                {{:keys [query-state-fn]} :maintainer} router-state-maintainer
@@ -1395,8 +1384,8 @@
                                                         service-id->service-description-fn service-id->source-tokens-entries-fn
                                                         query-state-fn query-autoscaler-state-fn service-id->metrics-fn
                                                         scheduler-interactions-thread-pool token->token-hash request)))))
-   :service-id-handler-fn (pc/fnk [[:curator kv-store]
-                                   [:routines store-service-description-fn]
+   :service-id-handler-fn (pc/fnk [[:routines store-service-description-fn]
+                                   [:state kv-store]
                                    wrap-descriptor-fn wrap-secure-request-fn]
                             (-> (fn service-id-handler-fn [request]
                                   (handler/service-id-handler request kv-store store-service-description-fn))
@@ -1416,14 +1405,14 @@
                                                                    prepend-waiter-url service-id->service-description-fn
                                                                    service-id->metrics-fn service-id->source-tokens-entries-fn
                                                                    request)))))
-   :service-override-handler-fn (pc/fnk [[:curator kv-store]
-                                         [:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn]
+   :service-override-handler-fn (pc/fnk [[:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn]
+                                         [:state kv-store]
                                          wrap-secure-request-fn]
                                   (wrap-secure-request-fn
                                     (fn service-override-handler-fn [{:as request {:keys [service-id]} :route-params}]
                                       (handler/override-service-handler kv-store allowed-to-manage-service?-fn
                                                                         make-inter-router-requests-sync-fn service-id request))))
-   :service-refresh-handler-fn (pc/fnk [[:curator kv-store]
+   :service-refresh-handler-fn (pc/fnk [[:state kv-store]
                                         wrap-router-auth-fn]
                                  (wrap-router-auth-fn
                                    (fn service-refresh-handler [{{:keys [service-id]} :route-params
@@ -1432,15 +1421,15 @@
                                      (sd/fetch-core kv-store service-id :refresh true)
                                      (sd/service-id->suspended-state kv-store service-id :refresh true)
                                      (sd/service-id->overrides kv-store service-id :refresh true))))
-   :service-resume-handler-fn (pc/fnk [[:curator kv-store]
-                                       [:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn]
+   :service-resume-handler-fn (pc/fnk [[:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn]
+                                       [:state kv-store]
                                        wrap-secure-request-fn]
                                 (wrap-secure-request-fn
                                   (fn service-resume-handler-fn [{:as request {:keys [service-id]} :route-params}]
                                     (handler/suspend-or-resume-service-handler
                                       kv-store allowed-to-manage-service?-fn make-inter-router-requests-sync-fn service-id :resume request))))
-   :service-suspend-handler-fn (pc/fnk [[:curator kv-store]
-                                        [:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn]
+   :service-suspend-handler-fn (pc/fnk [[:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn]
+                                        [:state kv-store]
                                         wrap-secure-request-fn]
                                  (wrap-secure-request-fn
                                    (fn service-suspend-handler-fn [{:as request {:keys [service-id]} :route-params}]
@@ -1524,8 +1513,7 @@
                                            (wrap-secure-request-fn
                                              (fn state-jwt-authenticator-handler-fn [request]
                                                (handler/get-query-fn-state router-id query-state-fn request)))))
-   :state-kv-store-handler-fn (pc/fnk [[:curator kv-store]
-                                       [:state router-id]
+   :state-kv-store-handler-fn (pc/fnk [[:state kv-store router-id]
                                        wrap-secure-request-fn]
                                 (wrap-secure-request-fn
                                   (fn kv-store-state-handler-fn [request]
@@ -1537,8 +1525,7 @@
                                         (wrap-secure-request-fn
                                           (fn state-launch-metrics-handler-fn [request]
                                             (handler/get-query-chan-state-handler router-id query-chan request)))))
-   :state-leader-handler-fn (pc/fnk [[:curator leader?-fn leader-id-fn]
-                                     [:state router-id]
+   :state-leader-handler-fn (pc/fnk [[:state leader?-fn leader-id-fn router-id]
                                      wrap-secure-request-fn]
                               (wrap-secure-request-fn
                                 (fn leader-state-handler-fn [request]
@@ -1592,10 +1579,10 @@
                                        (fn state-work-stealing-handler-fn [request]
                                          (handler/get-work-stealing-state offers-allowed-semaphore router-id request))))
    :status-handler-fn (pc/fnk [] handler/status-handler)
-   :token-handler-fn (pc/fnk [[:curator kv-store]
-                              [:routines make-inter-router-requests-sync-fn synchronize-fn validate-service-description-fn]
+   :token-handler-fn (pc/fnk [[:curator synchronize-fn]
+                              [:routines make-inter-router-requests-sync-fn validate-service-description-fn]
                               [:settings [:token-config history-length limit-per-owner]]
-                              [:state clock entitlement-manager token-cluster-calculator token-root waiter-hostnames]
+                              [:state clock entitlement-manager kv-store token-cluster-calculator token-root waiter-hostnames]
                               wrap-secure-request-fn]
                        (wrap-secure-request-fn
                          (fn token-handler-fn [request]
@@ -1603,24 +1590,24 @@
                              clock synchronize-fn kv-store token-cluster-calculator token-root history-length limit-per-owner
                              waiter-hostnames entitlement-manager make-inter-router-requests-sync-fn validate-service-description-fn
                              request))))
-   :token-list-handler-fn (pc/fnk [[:curator kv-store]
-                                   [:state entitlement-manager]
+   :token-list-handler-fn (pc/fnk [[:state entitlement-manager kv-store]
                                    wrap-secure-request-fn]
                             (wrap-secure-request-fn
                               (fn token-handler-fn [request]
                                 (token/handle-list-tokens-request kv-store entitlement-manager request))))
-   :token-owners-handler-fn (pc/fnk [[:curator kv-store]
+   :token-owners-handler-fn (pc/fnk [[:state kv-store]
                                      wrap-secure-request-fn]
                               (wrap-secure-request-fn
                                 (fn token-owners-handler-fn [request]
                                   (token/handle-list-token-owners-request kv-store request))))
-   :token-refresh-handler-fn (pc/fnk [[:curator kv-store]
+   :token-refresh-handler-fn (pc/fnk [[:state kv-store]
                                       wrap-router-auth-fn]
                                (wrap-router-auth-fn
                                  (fn token-refresh-handler-fn [request]
                                    (token/handle-refresh-token-request kv-store request))))
-   :token-reindex-handler-fn (pc/fnk [[:curator kv-store]
-                                      [:routines list-tokens-fn make-inter-router-requests-sync-fn synchronize-fn]
+   :token-reindex-handler-fn (pc/fnk [[:curator synchronize-fn]
+                                      [:routines list-tokens-fn make-inter-router-requests-sync-fn]
+                                      [:state kv-store]
                                       wrap-secure-request-fn]
                                (wrap-secure-request-fn
                                  (fn token-handler-fn [request]
@@ -1732,9 +1719,8 @@
                                    (fn inner-wrap-secure-request-fn [{:keys [uri] :as request}]
                                      (log/debug "secure request received at" uri)
                                      (handler request))))))
-   :wrap-service-discovery-fn (pc/fnk [[:curator kv-store]
-                                       [:settings [:token-config token-defaults]]
-                                       [:state waiter-hostnames]]
+   :wrap-service-discovery-fn (pc/fnk [[:settings [:token-config token-defaults]]
+                                       [:state kv-store waiter-hostnames]]
                                 (fn wrap-service-discovery-fn
                                   [handler]
                                   (fn [{:keys [headers] :as request}]

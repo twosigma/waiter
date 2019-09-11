@@ -16,6 +16,7 @@
 (ns waiter.kv
   (:require [clj-time.core :as t]
             [clojure.java.io :as io]
+            [clojure.string :as str]
             [clojure.tools.logging :as log]
             [digest]
             [metrics.meters :as meters]
@@ -227,7 +228,9 @@
   (state [_]
     {:inner-state (state inner-kv-store), :variant "encrypted"}))
 
-(defn new-encrypted-kv-store [passwords kv-store]
+(defn new-encrypted-kv-store
+  "Returns a new key/value store that decorates the provided kv-store with encryption/decryption of values."
+  [passwords kv-store]
   (if (or (empty? passwords) (some empty? passwords))
     (throw (.IllegalArgumentException "Passwords should not be empty!"))
     (EncryptedKeyValueStore. kv-store passwords)))
@@ -256,7 +259,11 @@
      :inner-state (state inner-kv-store)
      :variant "cache"}))
 
-(defn new-cached-kv-store [{:keys [threshold ttl]} kv-store]
+(defn new-cached-kv-store
+  "Returns a new key/value store that decorates the provided kv-store with a cache."
+  [{:keys [threshold ttl]} kv-store]
+  {:pre [(pos? threshold)
+         (pos? ttl)]}
   (->> {:threshold threshold
         :ttl (-> ttl t/seconds t/in-millis)}
        cu/cache-factory
@@ -274,6 +281,8 @@
 (defn new-kv-store
   "Returns a new key/value store using the given configuration"
   [{:keys [cache encrypt relative-path] :as config} curator base-path passwords]
+  {:pre [(not (str/blank? base-path))
+         (not (str/blank? relative-path))]}
   (let [kv-base-path (str base-path "/" relative-path)
         kv-context {:base-path kv-base-path, :curator curator}
         kv-impl (utils/create-component config :context kv-context)]
