@@ -3,8 +3,8 @@ Waiter's behavior is customized through parameters specified by the HTTP client.
 
 ### Table of Contents
 [Basic Parameters](#basicparameters)  
-[Optional Parameters](#optionalparameters)
-[Token Parameters](#tokenparameters)
+[Optional Parameters](#optionalparameters)  
+[Token Parameters](#tokenparameters)  
 
 
 ### Basic Parameters
