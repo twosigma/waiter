@@ -1,5 +1,14 @@
 Waiter's behavior is customized through parameters specified by the HTTP client.
 
+
+### Table of Contents
+[Basic Parameters](#basicparameters)  
+[Optional Parameters](#optionalparameters)  
+[Token Parameters](#tokenparameters)  
+
+
+### Basic Parameters
+<a name="basicparameters"/>
 The basic parameters that Waiter supports are:
 
 |Parameter|Required?|Default Value|Description|
@@ -12,6 +21,9 @@ The basic parameters that Waiter supports are:
 |`x-waiter-run-as-user`|No|user who is making the request|The user that the service should be run as.|
 |`x-waiter-version`|**Yes**|n/a|Specify a version to associate with your service (e.g. "a0b1c2d3e4f5" or "my-version-name").|
 
+
+### Optional Parameters
+<a name="optionalparameters"/>
 Additional (optional) parameters that can be set:
 
 |Parameter|Default Value|Valid Values|Description|Guidance|
@@ -55,3 +67,12 @@ Additional (optional) parameters that can be set:
 |`x-waiter-scale-up-factor`|0.01|(0-1]|The percentage amount, per second, to increase the current number of instances toward the target number of instances. See [How Waiter Autoscaling Works](autoscaling.md).|Don't change it unless you have a good reason to do so.|
 |`x-waiter-scheduler`|empty|<a supported scheduler id in the composite scheduler>|The id of the scheduler to use while creating this service. For composite schedulers, when provided, it must match the name of the component scheduler.|Don't configure it unless you are using composite scheduler and you know which specific component scheduler you want to use as default.|
 |`x-waiter-timeout`|900000 (15 mins)|>0|The socket timeout, in milliesconds, of the connection between Waiter and a service backend.|Don't change it unless you have a good reason to do so.|
+
+
+### Token Parameters
+<a name="tokenparameters"/>
+Token Parameters are optional parameters that can only be set on the token, and not passed in a header:
+
+|Parameter|Default Value|Valid Values|Description|Guidance|
+|---------|-------------|------------|-----------|--------|
+|`cors-rules`|empty|array of CORS rule objects|List of rules to allow CORS. CORS is allowed if a request matches any of the rules.<br>A rule is a JSON object with 3 fields:<br>`origin-regex`: Required. A valid regular expression that must match the entire origin (origin starts with scheme e.g. "https://")<br>`target-path-regex`: Optional. A valid regular expression that must match the entire path (path starts with "/")<br>`methods`: Optional. A list of uppercase HTTP methods to allow (all methods allowed if this field is not set)||
