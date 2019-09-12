@@ -466,7 +466,8 @@
           service-id
           (assert-service-on-all-routers waiter-url service-id cookies)
           ;; wait for scaling state to become available on the service endpoint
-          (is (wait-for (fn [] (get (service waiter-url service-id {}) "scaling-state"))))
+          (doseq [[_ router-url] (routers waiter-url)]
+            (is (wait-for (fn [] (get (service router-url service-id {} :cookies cookies) "scaling-state")))))
 
           (testing "without parameters"
             (let [service (service waiter-url service-id {})] ;; see my app as myself
@@ -526,7 +527,8 @@
         (with-service-cleanup
           (assert-service-on-all-routers waiter-url service-id cookies)
           ;; wait for scaling state to become available on the service endpoint
-          (is (wait-for (fn [] (get (service waiter-url service-id {}) "scaling-state"))))
+          (doseq [[_ router-url] (routers waiter-url)]
+            (is (wait-for (fn [] (get (service router-url service-id {} :cookies cookies) "scaling-state")))))
           (testing "list-apps-with-waiter-user-disabled-and-see-another-app" ;; can see another user's app
             (let [service (service waiter-url service-id {"force" "false", "run-as-user" current-user})]
               (is service)
