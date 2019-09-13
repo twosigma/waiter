@@ -52,28 +52,28 @@
 
 (def service-description-schema
   {;; Required
-   (s/required-key "cmd") schema/non-empty-string
+   (s/required-key "cmd") (s/constrained s/Str #(<= 1 (count %) 2048))
    (s/required-key "cpus") schema/positive-num
    (s/required-key "mem") schema/positive-num
-   (s/required-key "run-as-user") schema/non-empty-string
-   (s/required-key "version") schema/non-empty-string
+   (s/required-key "run-as-user") (s/constrained s/Str #(<= 1 (count %) 128))
+   (s/required-key "version") (s/constrained s/Str #(<= 1 (count %) 256))
    ;; Optional
    (s/optional-key "allowed-params") #{environment-variable-schema}
    (s/optional-key "authentication") schema/non-empty-string
    (s/optional-key "backend-proto") schema/valid-backend-proto
-   (s/optional-key "cmd-type") schema/non-empty-string
+   (s/optional-key "cmd-type") (s/constrained s/Str #(<= 1 (count %) 64))
    (s/optional-key "distribution-scheme") (s/enum "balanced" "simple")
    ; Marathon imposes a 512 character limit on environment variable keys and values
    (s/optional-key "env") (s/constrained {environment-variable-schema (s/constrained s/Str #(<= 1 (count %) 512))}
                                          #(< (count %) 100))
-   (s/optional-key "image") schema/non-empty-string
+   (s/optional-key "image") (s/constrained s/Str #(<= 1 (count %) 128))
    (s/optional-key "metadata") (s/constrained {(s/both schema/valid-string-length #"^[a-z][a-z0-9\\-]*$")
                                                schema/valid-string-length}
                                               #(< (count %) 100))
    (s/optional-key "metric-group") schema/valid-metric-group
    (s/optional-key "name") schema/non-empty-string
-   (s/optional-key "namespace") schema/non-empty-string
-   (s/optional-key "permitted-user") schema/non-empty-string
+   (s/optional-key "namespace") (s/constrained s/Str #(<= 1 (count %) 128))
+   (s/optional-key "permitted-user") (s/constrained s/Str #(<= 1 (count %) 128))
    (s/optional-key "ports") schema/valid-number-of-ports
    ; start-up related
    (s/optional-key "grace-period-secs") (s/both s/Int (s/pred #(<= 1 % (t/in-seconds (t/minutes 60))) 'at-most-60-minutes))
@@ -81,11 +81,11 @@
    (s/optional-key "health-check-max-consecutive-failures") (s/both s/Int (s/pred #(<= 1 % 15) 'at-most-fifteen))
    (s/optional-key "health-check-port-index") schema/valid-health-check-port-index
    (s/optional-key "health-check-proto") schema/valid-health-check-proto
-   (s/optional-key "health-check-url") schema/non-empty-string
+   (s/optional-key "health-check-url") (s/constrained s/Str #(<= 1 (count %) 256))
    (s/optional-key "idle-timeout-mins") (s/both s/Int (s/pred #(<= 1 % (t/in-minutes (t/days 30))) 'between-1-minute-and-30-days))
    (s/optional-key "interstitial-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/minutes 60))) 'at-most-60-minutes))
    (s/optional-key "restart-backoff-factor") schema/positive-number-greater-than-or-equal-to-1
-   (s/optional-key "scheduler") schema/non-empty-string
+   (s/optional-key "scheduler") (s/constrained s/Str #(<= 1 (count %) 64))
    ; auto-scaling related
    (s/optional-key "concurrency-level") (s/both s/Int (s/pred #(<= 1 % 10000) 'between-one-and-10000))
    (s/optional-key "expired-instance-restart-rate") schema/positive-fraction-less-than-or-equal-to-1
@@ -108,7 +108,7 @@
                                    (s/optional-key "methods") (s/both (s/pred not-empty) [schema/http-method])}]
    (s/optional-key "fallback-period-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/days 1))) 'at-most-1-day))
    (s/optional-key "https-redirect") s/Bool
-   (s/optional-key "owner") schema/non-empty-string
+   (s/optional-key "owner") (s/constrained s/Str #(<= 1 (count %) 128))
    (s/optional-key "stale-timeout-mins") (s/both s/Int (s/pred #(<= 0 % (t/in-minutes (t/hours 4))) 'at-most-4-hours))
    s/Str s/Any})
 
@@ -403,13 +403,17 @@
                                              :allowed-params
                                              (generate-friendly-allowed-params-error-message parameter->issues))
                                            (attach-error-message-for-parameter
-                                             parameter->issues :cmd "cmd must be a non-empty string.")
-                                           (attach-error-message-for-parameter
                                              parameter->issues :authentication
                                              (str "authentication must be 'disabled', 'standard', "
                                                   "or the specific authentication scheme if supported by the configured authenticator, e.g. 'saml'."))
                                            (attach-error-message-for-parameter
                                              parameter->issues :backend-proto "backend-proto must be one of h2, h2c, http, or https.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :cmd
+                                             "cmd must be a non-empty string no larger than 2048 characters.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :cmd-type
+                                             "cmd-type must be a non-empty string no larger than 64 characters.")
                                            (attach-error-message-for-parameter
                                              parameter->issues :concurrency-level
                                              "concurrency-level must be an integer in the range [1, 10000].")
@@ -432,10 +436,14 @@
                                              parameter->issues :health-check-proto
                                              "health-check-proto, when provided, must be one of h2, h2c, http, or https.")
                                            (attach-error-message-for-parameter
-                                             parameter->issues :health-check-url "health-check-url must be a non-empty string.")
+                                             parameter->issues :health-check-url
+                                             "health-check-url must be a non-empty string no larger than 256 characters.")
                                            (attach-error-message-for-parameter
                                              parameter->issues :idle-timeout-mins
                                              "idle-timeout-mins must be an integer in the range [1, 43200].")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :image
+                                             "image must be a non-empty string no larger than 128 characters.")
                                            (attach-error-message-for-parameter
                                              parameter->issues :load-balancing
                                              (str "load-balancing must be one of 'oldest', 'youngest' or 'random'."))
@@ -459,9 +467,20 @@
                                            (attach-error-message-for-parameter
                                              parameter->issues :name "name must be a non-empty string.")
                                            (attach-error-message-for-parameter
+                                             parameter->issues :namespace
+                                             "namespace must be a non-empty string no larger than 128 characters.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :permitted-user
+                                             "permitted-user must be a non-empty string no larger than 128 characters.")
+                                           (attach-error-message-for-parameter
                                              parameter->issues :ports "ports must be an integer in the range [1, 10].")
                                            (attach-error-message-for-parameter
-                                             parameter->issues :version "version must be a non-empty string."))
+                                             parameter->issues :run-as-user "run-as-user must be a non-empty string no larger than 128 characters.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :scheduler
+                                             "scheduler must be a non-empty string no larger than 64 characters.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :version "version must be a non-empty string no larger than 256 characters."))
               unresolved-parameters (set/difference (-> parameter->issues keys set)
                                                     (->> parameter->error-message keys (map name) set))
               friendly-error-message (str/join (str \newline) (vals parameter->error-message))]

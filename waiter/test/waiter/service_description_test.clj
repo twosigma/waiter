@@ -1867,20 +1867,41 @@
                            "cmd" "default-cmd"
                            "version" "default-version"
                            "run-as-user" "default-run-as-user"}
-        constraints-schema {(s/optional-key "cmd") (s/pred #(<= (count %) 100) (symbol "limit-100"))
+        constraints-schema {(s/optional-key "name") (s/pred #(<= (count %) 100) (symbol "limit-100"))
                             s/Str s/Any}
         config {:allow-missing-required-fields? false}]
     (is (nil? (validate-schema valid-description constraints-schema config)))
 
-    (testing (str "testing empty cmd")
-      (run-validate-schema-test
-        (assoc valid-description "cmd" "")
-        constraints-schema config "cmd must be a non-empty string"))
+    (doseq [{:keys [limit parameter]}
+            [{:limit 2048 :parameter "cmd"}
+             {:limit 64 :parameter "cmd-type"}
+             {:limit 256 :parameter "health-check-url"}
+             {:limit 128 :parameter "image"}
+             {:limit 128 :parameter "namespace"}
+             {:limit 128 :parameter "permitted-user"}
+             {:limit 128 :parameter "run-as-user"}
+             {:limit 64 :parameter "scheduler"}
+             {:limit 256 :parameter "version"}]]
 
-    (testing (str "testing long cmd")
+      (testing (str "testing " parameter " parameter")
+        (let [message (str parameter " must be a non-empty string no larger than "
+                           limit " characters")]
+          (run-validate-schema-test
+            (assoc valid-description parameter "")
+            constraints-schema config message)
+          (run-validate-schema-test
+            (assoc valid-description parameter (str/join "" (repeat (inc limit) "x")))
+            constraints-schema config message))))
+
+    (testing (str "testing empty name")
       (run-validate-schema-test
-        (assoc valid-description "cmd" (str/join "" (repeat 150 "c")))
-        constraints-schema config "cmd must be at most 100 characters"))
+        (assoc valid-description "name" "")
+        constraints-schema config "name must be a non-empty string"))
+
+    (testing (str "testing long name")
+      (run-validate-schema-test
+        (assoc valid-description "name" (str/join "" (repeat 150 "c")))
+        constraints-schema config "name must be at most 100 characters"))
 
     (testing (str "testing instance counts")
       (run-validate-schema-test
