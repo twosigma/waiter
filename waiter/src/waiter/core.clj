@@ -747,8 +747,13 @@
    :synchronize-fn (pc/fnk [[:settings [:zookeeper base-path mutex-timeout-ms]]
                             curator]
                      (fn synchronize-fn [path f]
-                       (let [lock-path (str base-path "/" path)]
-                         (curator/synchronize curator lock-path mutex-timeout-ms f))))})
+                       (let [lock-path (str base-path "/" path)
+                             lock-name (apply str (filter #(Character/isLetterOrDigit ^char %) (str path)))]
+                         (timers/start-stop-time!
+                           (metrics/waiter-timer "core" "synchronize" "all")
+                           (timers/start-stop-time!
+                             (metrics/waiter-timer "core" "synchronize" (str "cs-" lock-name))
+                             (curator/synchronize curator lock-path mutex-timeout-ms f))))))})
 
 (def scheduler
   {:scheduler (pc/fnk [[:settings scheduler-config scheduler-syncer-interval-secs]
