@@ -1142,7 +1142,10 @@
   (defn store-references!
     "Stores the reference entries in the key-value store against a service."
     [synchronize-fn kv-store service-id references]
-    (when (seq references)
+    (when (and (seq references)
+               ;; guard to avoid relatively expensive synchronize-fn invocation
+               (let [stored-references (or (service-id->references kv-store service-id) #{})]
+                 (some #(not (contains? stored-references %)) references)))
       (let [reference-lock-prefix "REFERENCES-LOCK-"
             bucket (-> service-id hash int (Math/abs) (mod 16))
             reference-lock (str reference-lock-prefix bucket)]
@@ -1188,6 +1191,7 @@
     "Stores a source-tokens entry in the key-value store against a service."
     [synchronize-fn kv-store service-id source-tokens]
     (when (and (seq source-tokens)
+               ;; guard to avoid relatively expensive synchronize-fn invocation
                (not (has-source-tokens? kv-store service-id source-tokens)))
       (let [source-tokens-lock-prefix "SOURCE-TOKENS-LOCK-"
             bucket (-> service-id hash int (Math/abs) (mod 16))
