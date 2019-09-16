@@ -583,7 +583,7 @@
           references (cond-> references
                        (seq source-tokens) (conj {:sources source-tokens :type :token})
                        ;; if no references were used to create the service, it is directly accessible
-                       (and (empty? references) (empty? source-tokens)) (conj {:type :direct-access}))]
+                       (and (empty? references) (empty? source-tokens)) (conj {:type :direct}))]
       {:component->previous-descriptor-fns component->previous-descriptor-fns
        :core-service-description core-service-description
        :references references
@@ -591,7 +591,7 @@
        :service-id service-id}))
 
   (retrieve-reference-type->stale-fn [_ {:keys [token->token-hash]}]
-    {:direct-access (constantly false)
+    {:direct (constantly false)
      :token (fn [token] (service-token-references-stale? token->token-hash token))})
 
   (state [_]

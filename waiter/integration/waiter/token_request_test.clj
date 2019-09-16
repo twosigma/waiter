@@ -846,7 +846,7 @@
         (is (nil? (service-id->source-tokens-entries waiter-url service-id-1)))
 
         (let [service-settings (service-settings waiter-url service-id-1 :query-params {"include" "references"})]
-          (is (= [{:type "direct-access"}] (get service-settings :references)) (str service-settings)))
+          (is (= [{:type "direct"}] (get service-settings :references)) (str service-settings)))
 
         (let [token (str "^SERVICE-ID#" service-id-1)
               response (make-request-with-debug-info {:x-waiter-token token} #(make-request waiter-url "" :headers %))
@@ -861,7 +861,7 @@
                    (service-id->source-tokens-entries waiter-url service-id-2)))
             (let [service-settings (service-settings waiter-url service-id-2 :query-params {"include" "references"})
                   references (set (get service-settings :references))]
-              (is (contains? references {:type "direct-access"}) (str service-settings))
+              (is (contains? references {:type "direct"}) (str service-settings))
               (is (contains? references {:sources [{:token token :version (token->etag waiter-url token)}] :type "token"})
                   (str service-settings)))))))))
 
@@ -1418,7 +1418,7 @@
 
           (let [service-settings (service-settings waiter-url service-id-a :query-params {"include" "references"})
                 references (set (get service-settings :references))]
-            (is (not (contains? references {:type "direct-access"})) (str service-settings))
+            (is (not (contains? references {:type "direct"})) (str service-settings))
             (is (contains? references {:sources [{:token token-name-a :version (token->etag waiter-url token-name-a)}
                                                  {:token token-name-b :version (token->etag waiter-url token-name-b)}]
                                        :type "token"})))
@@ -1430,7 +1430,7 @@
 
             (let [service-settings (service-settings waiter-url service-id-b :query-params {"include" "references"})
                   references (set (get service-settings :references))]
-              (is (not (contains? references {:type "direct-access"})) (str service-settings))
+              (is (not (contains? references {:type "direct"})) (str service-settings))
               (is (contains? references {:sources [{:token token-name-a :version (token->etag waiter-url token-name-a)}
                                                    {:token token-name-b :version (token->etag waiter-url token-name-b)}]
                                          :type "token"})))
@@ -1442,7 +1442,7 @@
 
               (let [service-settings (service-settings waiter-url service-id-c :query-params {"include" "references"})
                     references (set (get service-settings :references))]
-                (is (not (contains? references {:type "direct-access"})) (str service-settings))
+                (is (not (contains? references {:type "direct"})) (str service-settings))
                 (is (contains? references {:sources [{:token token-name-a :version (token->etag waiter-url token-name-a)}
                                                      {:token token-name-b :version (token->etag waiter-url token-name-b)}]
                                            :type "token"})))

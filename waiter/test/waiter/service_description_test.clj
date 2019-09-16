@@ -2165,7 +2165,7 @@
                                              (is (= service-id in-service-id))
                                              {"idle-timeout-mins" idle-timeout-mins})
         token->token-hash (fn [in-token] (str in-token ".hash1"))
-        reference-type->stale-fn {:direct-access (constantly false)
+        reference-type->stale-fn {:direct (constantly false)
                                   :token (partial service-token-references-stale? token->token-hash)}
         token->token-metadata-factory (fn [token->token-data]
                                         (fn [in-token]
@@ -2187,7 +2187,7 @@
       (let [token->token-data {"t1" {"cpus" 1}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= service-id in-service-id))
-                                        #{{:type :direct-access}})
+                                        #{{:type :direct}})
             token->token-metadata (token->token-metadata-factory token->token-data)]
         (is (= idle-timeout-mins
                (service-id->idle-timeout
@@ -2230,7 +2230,7 @@
                                         (is (= service-id in-service-id))
                                         #{{:sources [{"token" "t1" "version" "t1.hash0"}]
                                            :type :token}
-                                          {:type :direct-access}})
+                                          {:type :direct}})
             token->token-metadata (token->token-metadata-factory token->token-data)]
         (is (= idle-timeout-mins
                (service-id->idle-timeout
