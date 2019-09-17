@@ -908,6 +908,7 @@
         (merge
           (dissoc ping-response [:body :error-chan :headers :request :result :status :trailers])
           (utils/clj->json-response
-            {:ping-response (select-keys ping-response [:body :headers :result :status])
+            {:descriptor descriptor
+             :ping-response (select-keys ping-response [:body :headers :result :status])
              :service-description core-service-description
              :service-state (service-state-fn service-id)}))))))

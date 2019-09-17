@@ -142,6 +142,7 @@
     (instance? ManyToManyChannel v) (str v)
     (instance? Process v) (str v)
     (instance? ValidationError v) (str v)
+    (fn? v) (str v)
     (symbol? v) (str v)
     :else v))
 
