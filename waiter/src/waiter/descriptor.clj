@@ -280,6 +280,7 @@
            service-id service-description sources suspended-state waiter-headers]}"
   [kv-store service-description-builder descriptor]
   (loop [{:keys [component->previous-descriptor-fns] :as descriptor} descriptor]
+    (log/info "fallback contributors:" (keys component->previous-descriptor-fns)) ;; TODO shams delete
     (when-let [component-entry (and (seq component->previous-descriptor-fns)
                                     (apply
                                       max-key
@@ -287,15 +288,20 @@
                                         (retrieve-last-update-time descriptor))
                                       (seq component->previous-descriptor-fns)))]
       (let [component (key component-entry)
+            _ (log/info "fallback contributor item resolved to" component) ;; TODO shams delete
             {:keys [retrieve-previous-descriptor]} (val component-entry)]
         (if-let [previous-descriptor (retrieve-previous-descriptor descriptor)]
           (if (sd/validate-service-description kv-store service-description-builder previous-descriptor)
-            (recur previous-descriptor)
+            (do
+              (log/info "fallback descriptor candidate invalid:" previous-descriptor) ;; TODO shams delete
+              (recur previous-descriptor))
             (do
               (log/info (:service-id descriptor) "has previous descriptor with service-id"
                         (:service-id previous-descriptor) "computed using" component)
               previous-descriptor))
-          (recur (utils/dissoc-in descriptor [:component->previous-descriptor-fns component])))))))
+          (do
+            (log/info "previous descriptor missing, removing component" component) ;; TODO shams delete
+            (recur (utils/dissoc-in descriptor [:component->previous-descriptor-fns component]))))))))
 
 (let [request->descriptor-timer (metrics/waiter-timer "core" "request->descriptor")]
   (defn request->descriptor
@@ -311,6 +317,7 @@
             latest-descriptor (compute-descriptor
                                 service-description-defaults token-defaults service-id-prefix kv-store waiter-hostnames
                                 request metric-group-mappings service-description-builder service-approved?)
+            _ (log/info "request latest descriptor:" latest-descriptor) ;; TODO shams delete
             descriptor->previous-descriptor
             (fn descriptor->previous-descriptor-fn
               [descriptor]
@@ -334,5 +341,6 @@
                            :service-description service-description
                            :status 403
                            :log-level :warn})))
+        (log/info "request resolved descriptor:" descriptor) ;; TODO shams delete
         {:descriptor descriptor
          :latest-descriptor latest-descriptor}))))
