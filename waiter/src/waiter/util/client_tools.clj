@@ -530,6 +530,14 @@
         settings-json (try-parse-json (:body settings-result))]
     (walk/keywordize-keys settings-json)))
 
+(defn waiter-settings-port
+  "Retrieves a Waiter port from the settings."
+  [waiter-url & {:keys [cookies] :or {cookies []}}]
+  (let [{:keys [port]} (waiter-settings waiter-url :cookies cookies)]
+    (cond-> port
+      (coll? port)
+      first)))
+
 (defn service-settings
   "Fetches and returns the service data at the /apps/<service-id> endpoint."
   [waiter-url service-id & {:keys [cookies keywordize-keys query-params]
