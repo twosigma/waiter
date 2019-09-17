@@ -160,7 +160,7 @@
             request-headers {"authorization" (str "Bearer " access-token)
                              "host" waiter-host
                              "x-forwarded-proto" "https"}
-            {:keys [port]} (waiter-settings waiter-url)
+            port (waiter-settings-port waiter-url)
             target-url (str waiter-host ":" port)
             {:keys [body headers] :as response}
             (make-request target-url "/waiter-auth" :disable-auth true :headers request-headers :method :get)
@@ -183,7 +183,7 @@
             request-headers {"authorization" (str "Bearer " access-token)
                              "host" waiter-host
                              "x-forwarded-proto" "http"}
-            {:keys [port]} (waiter-settings waiter-url)
+            port (waiter-settings-port waiter-url)
             target-url (str waiter-host ":" port)
             {:keys [body headers] :as response}
             (make-request target-url "/waiter-auth" :disable-auth true :headers request-headers :method :get)
@@ -205,7 +205,7 @@
                                               (str "SingleUser forbidden")]
                              "host" waiter-host
                              "x-forwarded-proto" "https"}
-            {:keys [port]} (waiter-settings waiter-url)
+            port (waiter-settings-port waiter-url)
             target-url (str waiter-host ":" port)
             {:keys [headers] :as response}
             (make-request target-url "/waiter-auth" :disable-auth true :headers request-headers :method :get)
@@ -226,7 +226,7 @@
                                               (str "SingleUser unauthorized")]
                              "host" waiter-host
                              "x-forwarded-proto" "https"}
-            {:keys [port]} (waiter-settings waiter-url)
+            port (waiter-settings-port waiter-url)
             target-url (str waiter-host ":" port)
             {:keys [headers] :as response}
             (make-request target-url "/waiter-auth" :disable-auth true :headers request-headers :method :get)
@@ -249,7 +249,7 @@
             request-headers {"authorization" (str "Bearer " access-token)
                              "host" waiter-host
                              "x-forwarded-proto" "https"}
-            {:keys [port]} (waiter-settings waiter-url)
+            port (waiter-settings-port waiter-url)
             target-url (str waiter-host ":" port)
             {:keys [body headers] :as response}
             (make-request target-url "/waiter-auth" :headers request-headers :method :get)
@@ -284,7 +284,7 @@
             request-headers {"authorization" (str "Bearer " access-token)
                              "host" host
                              "x-forwarded-proto" "https"}
-            {:keys [port]} (waiter-settings waiter-url)
+            port (waiter-settings-port waiter-url)
             target-url (str waiter-host ":" port)
             {:keys [headers service-id] :as response}
             (make-request-with-debug-info
@@ -320,7 +320,7 @@
             request-headers {"authorization" (str "Bearer " access-token)
                              "host" host
                              "x-forwarded-proto" "https"}
-            {:keys [port]} (waiter-settings waiter-url)
+            port (waiter-settings-port waiter-url)
             target-url (str waiter-host ":" port)
             {:keys [headers service-id] :as response}
             (make-request-with-debug-info
