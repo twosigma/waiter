@@ -1023,7 +1023,7 @@
     (some->> descriptor
       :sources
       :token->token-data
-      (pc/map-vals (fn [[_ {:strs [last-update-time]}]] (or last-update-time 0)))
+      (pc/map-vals (fn [{:strs [last-update-time]}] (or last-update-time 0)))
       vals
       (apply max))
     0))
