@@ -318,6 +318,10 @@
                                 service-description-defaults token-defaults service-id-prefix kv-store waiter-hostnames
                                 request metric-group-mappings service-description-builder service-approved?)
             _ (log/info "request latest descriptor:" latest-descriptor) ;; TODO shams delete
+            _ (log/info "descriptor fallback components:"
+                        (pc/map-vals
+                          (fn [{:keys [retrieve-last-update-time]}] (retrieve-last-update-time latest-descriptor))
+                          (:component->previous-descriptor-fns latest-descriptor))) ;; TODO shams delete
             descriptor->previous-descriptor
             (fn descriptor->previous-descriptor-fn
               [descriptor]
