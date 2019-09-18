@@ -2386,3 +2386,21 @@
 
 (deftest test-service-description-builder-state
   (is {} (state (create-default-service-description-builder {}))))
+
+(deftest test-retrieve-most-recently-modified-token-update-time
+  (let [descriptor {:sources {:token->token-data {}}}]
+    (is (= 0 (retrieve-most-recently-modified-token-update-time descriptor))))
+  (let [descriptor {:sources {:token->token-data {"t1" {}}}}]
+    (is (= 0 (retrieve-most-recently-modified-token-update-time descriptor))))
+  (let [descriptor {:sources {:token->token-data {"t1" {"last-update-time" 100}}}}]
+    (is (= 100 (retrieve-most-recently-modified-token-update-time descriptor))))
+  (let [descriptor {:sources {:token->token-data {"t1" {"last-update-time" 200}
+                                                  "t2" {}}}}]
+    (is (= 200 (retrieve-most-recently-modified-token-update-time descriptor))))
+  (let [descriptor {:sources {:token->token-data {"t1" {"last-update-time" 200}
+                                                  "t2" {"last-update-time" 150}}}}]
+    (is (= 200 (retrieve-most-recently-modified-token-update-time descriptor))))
+  (let [descriptor {:sources {:token->token-data {"t1" {"last-update-time" 200}
+                                                  "t2" {"last-update-time" 150}
+                                                  "t3" {"last-update-time" 250}}}}]
+    (is (= 250 (retrieve-most-recently-modified-token-update-time descriptor)))))
