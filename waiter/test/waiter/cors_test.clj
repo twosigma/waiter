@@ -21,10 +21,18 @@
             [waiter.schema :as schema])
   (:import waiter.cors.PatternBasedCorsValidator))
 
+(defn create-request-with-origin
+  ([origin] (create-request-with-origin origin nil))
+  ([origin access-control-request-method] (create-request-with-origin origin access-control-request-method nil))
+  ([origin access-control-request-method access-control-request-headers]
+   {:headers (cond-> {}
+               origin (assoc "origin" origin)
+               access-control-request-method (assoc "access-control-request-method" access-control-request-method)
+               access-control-request-headers (assoc "access-control-request-headers" access-control-request-headers))}))
+
 (deftest pattern-validator-test
   (let [validator (pattern-based-validator {:allowed-origins [#"^http://[^\.]+\.example\.org(:80)?$"
-                                                              #"^https://anotherapp.example.org:12345$"]})
-        create-request-with-origin (fn [origin] {:headers {"origin" origin}})]
+                                                              #"^https://anotherapp.example.org:12345$"]})]
     (is (= {:allowed? true :summary {:pattern-based-validator [:origin-present :origin-different :pattern-matched]}}
            (preflight-check validator (create-request-with-origin "http://myapp.example.org"))))
     (is (= {:allowed? true :summary {:pattern-based-validator [:origin-present :origin-different :pattern-matched]}}
@@ -203,22 +211,42 @@
         (is (= "true" (get headers "access-control-allow-credentials")))
         (is (nil? (get headers "access-control-expose-headers")))))))
 
+(deftest test-preflight-request?
+  (is (preflight-request? {:headers {"access-control-request-headers" "x-test-header"
+                                     "access-control-request-method" "DELETE"
+                                     "origin" "doesnt.matter"}
+                           :request-method :options}))
+  (is (not (preflight-request? {:headers {"access-control-request-headers" "x-test-header"
+                                          "access-control-request-method" "DELETE"
+                                          "origin" "doesnt.matter"}
+                                :request-method :get})))
+  (is (not (preflight-request? {:headers {"access-control-request-method" "DELETE"
+                                          "origin" "doesnt.matter"}
+                                :request-method :options})))
+  (is (not (preflight-request? {:headers {"access-control-request-headers" "x-test-header"
+                                          "origin" "doesnt.matter"}
+                                :request-method :options})))
+  (is (not (preflight-request? {:headers {"access-control-request-headers" "x-test-header"
+                                          "access-control-request-method" "DELETE"}
+                                :request-method :options}))))
+
 (deftest test-wrap-cors-preflight
   (testing "cors preflight request denied"
     (let [deny-all (deny-all-validator {})
           max-age 100
-          request {:request-method :options}
+          request (assoc (create-request-with-origin "doesnt.matter" "DELETE" "x-test-header")
+                    :request-method :options)
           handler (-> (fn [_] {:status 200})
                     (wrap-cors-preflight deny-all max-age nil nil nil)
                     (core/wrap-error-handling))
           {:keys [status]} (handler request)]
       (is (= 403 status))))
+
   (testing "cors preflight request allowed"
     (let [allow-all (allow-all-validator {})
           max-age 100
-          request {:headers {"origin" "doesnt.matter"
-                             "access-control-request-headers" "x-test-header"}
-                   :request-method :options}
+          request (assoc (create-request-with-origin "doesnt.matter" "DELETE" "x-test-header")
+                    :request-method :options)
           handler (wrap-cors-preflight (fn [_] {:status 200}) allow-all max-age nil nil nil)
           {:keys [headers status]} (handler request)]
       (is (= 200 status))

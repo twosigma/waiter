@@ -39,9 +39,16 @@
      :summary is a map that contains a summary of all the checks that were performed."))
 
 (defn preflight-request?
-  "Determines if a request is a CORS preflight request."
-  [request]
-  (= :options (:request-method request)))
+  "Determines if a request is a CORS preflight request.
+   A CORS preflight request is a CORS request that checks to see if the CORS protocol is understood.
+   It is an OPTIONS request, using three HTTP request headers:
+   Access-Control-Request-Method, Access-Control-Request-Headers, and the Origin header.
+   Source: https://developer.mozilla.org/en-US/docs/Glossary/Preflight_request"
+  [{:keys [headers request-method] :as request}]
+  (and (= :options request-method)
+       (contains? headers "origin")
+       (contains? headers "access-control-request-method")
+       (contains? headers "access-control-request-headers")))
 
 (defn wrap-cors-preflight
   "Preflight request handling middleware.
