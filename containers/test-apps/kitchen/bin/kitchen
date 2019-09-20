@@ -367,8 +367,17 @@ class Kitchen(HTTPWebSocketsHandler):
     def do_HEAD(self):
         self.do_http_action('head')
 
+    def do_LOCK(self):
+        self.do_http_action('lock')
+
+    def do_MKCOL(self):
+        self.do_http_action('mkcol')
+
     def do_MOVE(self):
         self.do_http_action('move')
+
+    def do_OPTIONS(self):
+        self.do_http_action('options')
 
     def do_PATCH(self):
         self.do_http_action('patch')
@@ -376,8 +385,17 @@ class Kitchen(HTTPWebSocketsHandler):
     def do_POST(self):
         self.do_http_action('post')
 
+    def do_PROPFIND(self):
+        self.do_http_action('propfind')
+
+    def do_PROPPATCH(self):
+        self.do_http_action('proppatch')
+
     def do_PUT(self):
         self.do_http_action('put')
+
+    def do_UNLOCK(self):
+        self.do_http_action('unlock')
 
     def do_http_action(self, method):
         self.__logger = kitchen_logger
