@@ -132,13 +132,16 @@
           (let [response (make-kitchen-request waiter-url request-headers :method :head :path "/request-info")]
             (assert-response-status response 200)
             (is (str/blank? (:body response)))))
-        (doseq [request-method [:delete :copy :get :move :patch :post :put]]
+        (doseq [request-method [:delete :copy :get :move :options :patch :post :put
+                                ;; additional webdav verbs
+                                :lock :mkcol :propfind :proppatch :unlock]]
           (testing (str "http method: " (-> request-method name str/upper-case))
-            (let [{:keys [body] :as response}
+            (let [{:keys [body headers] :as response}
                   (make-kitchen-request waiter-url request-headers :method request-method :path "/request-info")
                   body-json (json/read-str (str body))]
               (assert-response-status response 200)
-              (is (= (name request-method) (get body-json "request-method")))))))
+              (is (= (name request-method) (get body-json "request-method")))
+              (is (str/includes? (str (get headers "server")) "Python"))))))
 
       (testing "content headers"
         (let [request-length 100000
