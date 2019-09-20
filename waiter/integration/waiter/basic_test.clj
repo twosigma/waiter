@@ -1106,7 +1106,7 @@
                 (assert-response-status response 200))
               (finally
                 (delete-token-and-assert waiter-url token)))))
-        (testing "CORS prefilght allowed no methods"
+        (testing "CORS preflight allowed no methods"
           (let [token (rand-name)
                 response (post-token waiter-url (assoc (kitchen-params)
                                                   :name token
@@ -1115,7 +1115,9 @@
             (try
               (assert-response-status response 200)
               (let [{:keys [headers] :as response} (make-request-with-debug-info
-                                                     {:host test-host
+                                                     {:access-control-request-method "PUT"
+                                                      :access-control-request-headers "origin"
+                                                      :host test-host
                                                       :origin test-origin
                                                       :x-waiter-token token}
                                                      #(make-kitchen-request waiter-url % :method :options :path ""))]
@@ -1123,7 +1125,7 @@
                 (is (= (str/join ", " schema/http-methods) (get headers "access-control-allow-methods"))))
               (finally
                 (delete-token-and-assert waiter-url token)))))
-        (testing "CORS prefilght allowed methods"
+        (testing "CORS preflight allowed methods"
           (let [token (rand-name)
                 methods ["GET", "PUT", "OPTIONS"]
                 response (post-token waiter-url (assoc (kitchen-params)
@@ -1133,7 +1135,9 @@
             (try
               (assert-response-status response 200)
               (let [{:keys [headers] :as response} (make-request-with-debug-info
-                                                     {:host test-host
+                                                     {:access-control-request-method "PUT"
+                                                      :access-control-request-headers "origin"
+                                                      :host test-host
                                                       :origin test-origin
                                                       :x-waiter-token token}
                                                      #(make-kitchen-request waiter-url % :method :options :path ""))]
@@ -1141,7 +1145,7 @@
                 (is (= (str/join ", " methods) (get headers "access-control-allow-methods"))))
               (finally
                 (delete-token-and-assert waiter-url token)))))
-        (testing "CORS prefilght allowed methods - can't do preflight"
+        (testing "CORS preflight allowed methods - can't do preflight"
           (let [token (rand-name)
                 methods ["GET", "PUT"]
                 response (post-token waiter-url (assoc (kitchen-params)
@@ -1151,7 +1155,9 @@
             (try
               (assert-response-status response 200)
               (let [response (make-request-with-debug-info
-                               {:host test-host
+                               {:access-control-request-method "OPTIONS"
+                                :access-control-request-headers "origin"
+                                :host test-host
                                 :origin test-origin
                                 :x-waiter-token token}
                                #(make-kitchen-request waiter-url % :method :options :path ""))]
