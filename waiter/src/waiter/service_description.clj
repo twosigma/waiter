@@ -535,7 +535,7 @@
 
   (retrieve-reference-type->stale-fn [this context]
     "Returns a map of reference type to stale function for references of the specified type.
-     The values are functions that have the following signature (fn references)")
+     The values are functions that have the following signature (fn reference-entry)")
 
   (state [this]
     "Returns the global (i.e. non-service-specific) state the service description builder is maintaining")
@@ -551,23 +551,19 @@
 
 (defn service-token-references-stale?
   "Returns true if every token used to access a service has been updated."
-  [token->token-hash token-references]
-  (let [source-tokens (map :sources token-references)]
-    (and (seq source-tokens)
-         ;; safe assumption mark a service stale when every token used to access it is stale
-         (every? (fn [source-tokens]
-                   (and (seq source-tokens)
-                        (every? (fn [{:strs [token version]}]
-                                  (not= (token->token-hash token) version))
-                                source-tokens)))
-                 source-tokens))))
+  [token->token-hash source-tokens]
+  (and (seq source-tokens)
+       ;; safe assumption mark a service stale when every token used to access it is stale
+       (every? (fn [{:strs [token version]}]
+                 (not= (token->token-hash token) version))
+               source-tokens)))
 
 (defrecord DefaultServiceDescriptionBuilder [max-constraints-schema]
   ServiceDescriptionBuilder
 
   (build [_ user-service-description
           {:keys [assoc-run-as-user-approved? component->previous-descriptor-fns defaults kv-store
-                  metric-group-mappings references service-id-prefix source-tokens username]}]
+                  metric-group-mappings reference service-id-prefix source-tokens username]}]
     (let [core-service-description (if (get user-service-description "run-as-user")
                                      user-service-description
                                      (let [candidate-service-description (assoc-run-as-requester-fields user-service-description username)
@@ -580,19 +576,16 @@
           service-id (service-description->service-id service-id-prefix core-service-description)
           service-description (default-and-override core-service-description metric-group-mappings
                                                     kv-store defaults service-id)
-          references (cond-> references
-                       (seq source-tokens) (conj {:sources source-tokens :type :token})
-                       ;; if no references were used to create the service, it is directly accessible
-                       (and (empty? references) (empty? source-tokens)) (conj {:type :direct}))]
+          reference (cond-> (or reference {})
+                       (seq source-tokens) (assoc :token {:sources source-tokens}))]
       {:component->previous-descriptor-fns component->previous-descriptor-fns
        :core-service-description core-service-description
-       :references references
+       :reference reference
        :service-description service-description
        :service-id service-id}))
 
   (retrieve-reference-type->stale-fn [_ {:keys [token->token-hash]}]
-    {:direct (constantly false)
-     :token (fn [token] (service-token-references-stale? token->token-hash token))})
+    {:token (fn [{:keys [sources]}] (service-token-references-stale? token->token-hash sources))})
 
   (state [_]
     {})
@@ -978,14 +971,15 @@
                                 :defaults defaults
                                 :kv-store kv-store
                                 :metric-group-mappings metric-group-mappings
-                                :references []
+                                :reference {}
                                 :service-id-prefix service-id-prefix
                                 :source-tokens source-tokens
                                 :username username})
               service-preauthorized (and token-preauthorized (empty? service-description-based-on-headers))
               service-authentication-disabled (and token-authentication-disabled (empty? service-description-based-on-headers))]
           (-> build-map
-            (select-keys [:component->previous-descriptor-fns :core-service-description :references :service-description :service-id])
+            (select-keys [:component->previous-descriptor-fns :core-service-description :reference
+                          :service-description :service-id])
             (assoc :on-the-fly? on-the-fly?
                    :service-authentication-disabled service-authentication-disabled
                    :service-preauthorized service-preauthorized
@@ -1095,8 +1089,8 @@
 
 (defn source-tokens->idle-timeout
   "Computes the idle timeout of the service using token parameters and defaults."
-  [token->token-metadata token-defaults source-tokens]
-  (->> source-tokens
+  [token->token-metadata token-defaults source-tokens-seq]
+  (->> source-tokens-seq
     (map (fn source-tokens->idle-timeout [source-tokens]
            (let [{:strs [fallback-period-secs stale-timeout-mins]}
                  (->> source-tokens
@@ -1108,6 +1102,20 @@
                 stale-timeout-mins))))
     (reduce max)))
 
+(defn stale-reference?
+  "Returns true if the any entry in the reference has gone stale.
+   An empty, i.e. directly accessible, reference is never stale."
+  [reference-type->stale-fn reference]
+  (some (fn [[type entry]]
+          (when-let [stale-fn (reference-type->stale-fn type)]
+            (stale-fn entry)))
+        (seq reference)))
+
+(defn service-references-stale?
+  "Returns true if every entry in the references has gone stale."
+  [reference-type->stale-fn references]
+  (every? (fn [reference] (stale-reference? reference-type->stale-fn reference)) references))
+
 (defn service-id->idle-timeout
   "Computes the idle timeout, in minutes, for a given service.
    If the service is active or was created by on-the-fly, the idle timeout is retrieved from the service description.
@@ -1115,17 +1123,11 @@
   [service-id->service-description-fn service-id->references-fn token->token-metadata reference-type->stale-fn
    token-defaults service-id]
   (let [{:strs [idle-timeout-mins]} (service-id->service-description-fn service-id)
-        type->references (->> service-id service-id->references-fn (group-by :type))]
-    (if (every? (fn [[type references]]
-                  (if-let [stale-fn (reference-type->stale-fn type)]
-                    (stale-fn references)
-                    (do
-                      (log/warn service-id "is being marked fresh, no stale function for type" type)
-                      false)))
-                type->references)
+        references (service-id->references-fn service-id)]
+    (if (service-references-stale? reference-type->stale-fn references)
       (let [{:strs [stale-timeout-mins]} token-defaults]
         (log/info service-id "that uses tokens is stale")
-        (if-let [source-tokens (->> type->references :token (map :sources) seq)]
+        (if-let [source-tokens (->> references (map :token) (remove nil?) (map :sources) seq)]
           (source-tokens->idle-timeout token->token-metadata token-defaults source-tokens)
           ;; use the default token stale timeout for a stale service built without tokens
           stale-timeout-mins))
@@ -1139,13 +1141,13 @@
     (let [keys (service-id->key service-id)]
       (kv/fetch kv-store keys :refresh refresh)))
 
-  (defn store-references!
+  (defn store-reference!
     "Stores the reference entries in the key-value store against a service."
-    [synchronize-fn kv-store service-id references]
-    (when (and (seq references)
-               ;; guard to avoid relatively expensive synchronize-fn invocation
-               (let [stored-references (or (service-id->references kv-store service-id) #{})]
-                 (some #(not (contains? stored-references %)) references)))
+    [synchronize-fn kv-store service-id reference]
+    (when (-> (service-id->references kv-store service-id)
+            (or #{})
+            (contains? reference)
+            (not))
       (let [reference-lock-prefix "REFERENCES-LOCK-"
             bucket (-> service-id hash int (Math/abs) (mod 16))
             reference-lock (str reference-lock-prefix bucket)]
@@ -1155,22 +1157,14 @@
           reference-lock
           (fn inner-store-reference! []
             (let [existing-entries (or (service-id->references kv-store service-id :refresh true) #{})]
-              (loop [[reference & remaining-references] (seq references)
-                     new-entries #{}]
-                (if (nil? reference)
-                  (when (seq new-entries)
-                    (log/info "storing new reference(s) for" service-id new-entries)
-                    (kv/store kv-store (service-id->key service-id) (into existing-entries new-entries))
-                    ;; refresh the entry
-                    (service-id->references kv-store service-id :refresh true))
-                  (if-not (contains? existing-entries reference)
-                    (do
-                      (log/info "found new reference for" service-id reference)
-                      (recur remaining-references (conj new-entries reference)))
-                    (do
-                      (meters/mark! (metrics/waiter-meter "core" "reference" "store" "no-op"))
-                      (log/info "reference already associated with" service-id reference)
-                      (recur remaining-references new-entries))))))))))))
+              (if-not (contains? existing-entries reference)
+                (do
+                  (meters/mark! (metrics/waiter-meter "core" "reference" "store" "new-entry"))
+                  (log/info "storing new reference for" service-id reference)
+                  (kv/store kv-store (service-id->key service-id) (conj existing-entries reference))
+                  ;; refresh the entry
+                  (service-id->references kv-store service-id :refresh true))
+                (log/debug "reference already associated with" service-id reference)))))))))
 
 (let [service-id->key #(str "^SOURCE-TOKENS#" %)]
 

@@ -932,17 +932,17 @@
                                         (sd/refresh-service-descriptions kv-store service-ids)))
    :request->descriptor-fn (pc/fnk [[:settings [:token-config history-length token-defaults] metric-group-mappings service-description-defaults]
                                     [:state fallback-state-atom kv-store service-description-builder service-id-prefix waiter-hostnames]
-                                    assoc-run-as-user-approved? can-run-as?-fn store-references-fn store-source-tokens-fn]
+                                    assoc-run-as-user-approved? can-run-as?-fn store-reference-fn store-source-tokens-fn]
                              (fn request->descriptor-fn [request]
                                (let [{:keys [latest-descriptor] :as result}
                                      (descriptor/request->descriptor
                                        assoc-run-as-user-approved? can-run-as?-fn fallback-state-atom kv-store metric-group-mappings
                                        history-length service-description-builder service-description-defaults service-id-prefix
                                        token-defaults waiter-hostnames request)
-                                     {:keys [references service-id source-tokens]} latest-descriptor]
+                                     {:keys [reference service-id source-tokens]} latest-descriptor]
                                  (when (seq source-tokens)
                                    (store-source-tokens-fn service-id source-tokens))
-                                 (store-references-fn service-id references)
+                                 (store-reference-fn service-id reference)
                                  result)))
    :router-metrics-helpers (pc/fnk [[:state passwords router-metrics-agent]]
                              (let [password (first passwords)]
@@ -998,10 +998,10 @@
                                        (async/go
                                          (when-let [exit-chan (get work-stealing-chan-map [:exit-chan])]
                                            (async/>! exit-chan :exit)))))
-   :store-references-fn (pc/fnk [[:curator synchronize-fn]
-                                 [:state kv-store]]
-                          (fn store-references-fn [service-id references]
-                            (sd/store-references! synchronize-fn kv-store service-id references)))
+   :store-reference-fn (pc/fnk [[:curator synchronize-fn]
+                                [:state kv-store]]
+                         (fn store-reference-fn [service-id reference]
+                           (sd/store-reference! synchronize-fn kv-store service-id reference)))
    :store-service-description-fn (pc/fnk [[:state kv-store]
                                           validate-service-description-fn]
                                    (fn store-service-description [{:keys [core-service-description service-id]}]

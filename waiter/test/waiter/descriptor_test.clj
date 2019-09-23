@@ -519,11 +519,10 @@
                                                     (let [template-basic (dissoc template "last-update-time" "previous")]
                                                       (-> descriptor
                                                         (update :core-service-description merge template-basic)
-                                                        (update :references (fn [references]
-                                                                              (cond-> (vec (remove #(= component (:type %)) references))
-                                                                                (get-in template ["previous" "last-update-time"])
-                                                                                (conj {:type component
-                                                                                       :version (str "v" (get-in template ["previous" "last-update-time"]))}))))
+                                                        (update :reference (fn [reference]
+                                                                             (cond-> (dissoc reference component)
+                                                                               (get-in template ["previous" "last-update-time"])
+                                                                               (assoc component {:version (str "v" (get-in template ["previous" "last-update-time"]))}))))
                                                         (update :service-description merge template-basic)
                                                         (assoc-in [:sources component] (get template "previous")))))))
           sources {:cmd-source {"cmd" "ls2"
@@ -543,8 +542,7 @@
                                                                  [:cmd-source :cpu-source])
                            :core-service-description service-description-1
                            :passthrough-headers passthrough-headers
-                           :references [{:type :cmd-source :version "v8"}
-                                        {:type :cpu-source :version "v10"}]
+                           :reference {:cmd-source {:version "v8"} :cpu-source {:version "v10"}}
                            :service-description service-description-1
                            :sources sources
                            :waiter-headers waiter-headers}]
@@ -553,8 +551,7 @@
             template-basic-1 (dissoc template-1 "last-update-time" "previous")]
         (is (= (-> curr-descriptor
                  (update :core-service-description merge template-basic-1)
-                 (assoc :references [{:type :cmd-source :version "v8"}
-                                     {:type :cpu-source :version "v4"}])
+                 (assoc :reference {:cmd-source {:version "v8"} :cpu-source {:version "v4"}})
                  (update :service-description merge template-basic-1)
                  (assoc-in [:sources :cpu-source] (get template-1 "previous")))
                prev-descriptor-1))
@@ -564,8 +561,7 @@
               template-basic-2 (dissoc template-2 "last-update-time" "previous")]
           (is (= (-> prev-descriptor-1
                    (update :core-service-description merge template-basic-2)
-                   (assoc :references [{:type :cpu-source, :version "v4"}
-                                       {:type :cmd-source, :version "v6"}])
+                   (assoc :reference {:cmd-source {:version "v6"} :cpu-source {:version "v4"}})
                    (update :service-description merge template-basic-2)
                    (assoc-in [:sources :cmd-source] (get template-2 "previous")))
                  prev-descriptor-2))
@@ -575,7 +571,7 @@
                 template-basic-3 (dissoc template-3 "last-update-time" "previous")]
             (is (= (-> prev-descriptor-3
                      (update :core-service-description merge template-basic-3)
-                     (assoc :references [{:type :cpu-source, :version "v4"}])
+                     (assoc-in [:reference :cpu-source :version] "v4")
                      (update :service-description merge template-basic-3)
                      (assoc-in [:sources :cmd-source] (get template-3 "previous")))
                    prev-descriptor-3))
@@ -585,7 +581,7 @@
                   template-basic-4 (dissoc template-4 "last-update-time" "previous")]
               (is (= (-> prev-descriptor-3
                        (update :core-service-description merge template-basic-4)
-                       (assoc :references [])
+                       (assoc :reference {})
                        (update :service-description merge template-basic-4)
                        (assoc-in [:sources :cpu-source] (get template-4 "previous")))
                      prev-descriptor-4))
@@ -653,8 +649,7 @@
           passthrough-headers {}
           waiter-headers {}
           current-descriptor (-> {:passthrough-headers passthrough-headers
-                                  :references [{:sources [(sd/source-tokens-entry test-token token-data-2)]
-                                                :type :token}]
+                                  :reference {:token {:sources [(sd/source-tokens-entry test-token token-data-2)]}}
                                   :sources sources
                                   :waiter-headers waiter-headers}
                                (attach-token-fallback-source token-defaults build-service-description-and-id-helper))
@@ -663,8 +658,7 @@
               :core-service-description service-description-1
               :on-the-fly? nil
               :passthrough-headers passthrough-headers
-              :references [{:sources [(sd/source-tokens-entry test-token token-data-1)]
-                            :type :token}]
+              :reference {:token {:sources [(sd/source-tokens-entry test-token token-data-1)]}}
               :service-authentication-disabled false
               :service-description (merge (:defaults sources) service-description-1)
               :service-id (sd/service-description->service-id service-id-prefix service-description-1)
@@ -696,8 +690,7 @@
           passthrough-headers {}
           waiter-headers {}
           current-descriptor (-> {:passthrough-headers passthrough-headers
-                                  :references [{:sources [(sd/source-tokens-entry test-token token-data-3)]
-                                                :type :token}]
+                                  :reference {:token {:sources [(sd/source-tokens-entry test-token token-data-3)]}}
                                   :sources sources
                                   :waiter-headers waiter-headers}
                                (attach-token-fallback-source token-defaults build-service-description-and-id-helper))
@@ -706,8 +699,7 @@
               :core-service-description service-description-1
               :on-the-fly? nil
               :passthrough-headers passthrough-headers
-              :references [{:sources [(sd/source-tokens-entry test-token token-data-1)]
-                            :type :token}]
+              :reference {:token {:sources [(sd/source-tokens-entry test-token token-data-1)]}}
               :service-authentication-disabled false
               :service-description (merge (:defaults sources) service-description-1)
               :service-id (sd/service-description->service-id service-id-prefix service-description-1)
@@ -739,8 +731,7 @@
           passthrough-headers {}
           waiter-headers {"x-waiter-cpus" 20}
           current-descriptor (-> {:passthrough-headers passthrough-headers
-                                  :references [{:sources [(sd/source-tokens-entry test-token token-data-2)]
-                                                :type :token}]
+                                  :reference {:token {:sources [(sd/source-tokens-entry test-token token-data-2)]}}
                                   :sources sources
                                   :waiter-headers waiter-headers}
                                (attach-token-fallback-source token-defaults build-service-description-and-id-helper))
@@ -750,8 +741,7 @@
                 :core-service-description expected-core-service-description
                 :on-the-fly? true
                 :passthrough-headers passthrough-headers
-                :references [{:sources [(sd/source-tokens-entry test-token token-data-1)]
-                              :type :token}]
+                :reference {:token {:sources [(sd/source-tokens-entry test-token token-data-1)]}}
                 :service-authentication-disabled false
                 :service-description (merge (:defaults sources) expected-core-service-description)
                 :service-id (sd/service-description->service-id service-id-prefix expected-core-service-description)
@@ -808,7 +798,7 @@
           passthrough-headers {}
           waiter-headers {}
           current-descriptor (-> {:passthrough-headers passthrough-headers
-                                  :references [{:sources (:source-tokens sources) :type :token}]
+                                  :reference {:token {:sources (:source-tokens sources)}}
                                   :sources sources
                                   :waiter-headers waiter-headers}
                                (attach-token-fallback-source token-defaults build-service-description-and-id-helper))
@@ -819,9 +809,8 @@
                 :core-service-description expected-core-service-description
                 :on-the-fly? nil
                 :passthrough-headers passthrough-headers
-                :references [{:sources [(sd/source-tokens-entry test-token-1 token-data-1)
-                                         (sd/source-tokens-entry test-token-2 token-data-2p)]
-                              :type :token}]
+                :reference {:token {:sources [(sd/source-tokens-entry test-token-1 token-data-1)
+                                              (sd/source-tokens-entry test-token-2 token-data-2p)]}}
                 :service-authentication-disabled false
                 :service-description (merge (:defaults sources) expected-core-service-description)
                 :service-id (sd/service-description->service-id service-id-prefix expected-core-service-description)
@@ -846,9 +835,8 @@
                   :core-service-description expected-core-service-description
                   :on-the-fly? nil
                   :passthrough-headers passthrough-headers
-                  :references [{:sources [(sd/source-tokens-entry test-token-1 token-data-1p)
-                                           (sd/source-tokens-entry test-token-2 token-data-2p)]
-                                :type :token}]
+                  :reference {:token {:sources [(sd/source-tokens-entry test-token-1 token-data-1p)
+                                                (sd/source-tokens-entry test-token-2 token-data-2p)]}}
                   :service-authentication-disabled false
                   :service-description (merge (:defaults sources) expected-core-service-description)
                   :service-id (sd/service-description->service-id service-id-prefix expected-core-service-description)

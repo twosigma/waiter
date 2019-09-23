@@ -317,7 +317,7 @@
 
       (let [service-settings (service-settings waiter-url service-id
                                                :query-params {"include" "references"})]
-        (is (= [{:type "direct"}] (get service-settings :references)) (str service-settings)))
+        (is (= [{}] (get service-settings :references)) (str service-settings)))
 
       (testing "metric group should be other"
         (is (= "other" (service-id->metric-group waiter-url service-id))

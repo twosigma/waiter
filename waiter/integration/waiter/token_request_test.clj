@@ -846,7 +846,7 @@
         (is (nil? (service-id->source-tokens-entries waiter-url service-id-1)))
 
         (let [service-settings (service-settings waiter-url service-id-1 :query-params {"include" "references"})]
-          (is (= [{:type "direct"}] (get service-settings :references)) (str service-settings)))
+          (is (= [{}] (get service-settings :references)) (str service-settings)))
 
         (let [token (str "^SERVICE-ID#" service-id-1)
               response (make-request-with-debug-info {:x-waiter-token token} #(make-request waiter-url "" :headers %))
@@ -861,8 +861,8 @@
                    (service-id->source-tokens-entries waiter-url service-id-2)))
             (let [service-settings (service-settings waiter-url service-id-2 :query-params {"include" "references"})
                   references (set (get service-settings :references))]
-              (is (contains? references {:type "direct"}) (str service-settings))
-              (is (contains? references {:sources [{:token token :version (token->etag waiter-url token)}] :type "token"})
+              (is (contains? references {}) (str service-settings))
+              (is (contains? references {:token {:sources [{:token token :version (token->etag waiter-url token)}]}})
                   (str service-settings)))))))))
 
 (deftest ^:parallel ^:integration-fast test-namespace-token
@@ -1418,10 +1418,9 @@
 
           (let [service-settings (service-settings waiter-url service-id-a :query-params {"include" "references"})
                 references (set (get service-settings :references))]
-            (is (not (contains? references {:type "direct"})) (str service-settings))
-            (is (contains? references {:sources [{:token token-name-a :version (token->etag waiter-url token-name-a)}
-                                                 {:token token-name-b :version (token->etag waiter-url token-name-b)}]
-                                       :type "token"})))
+            (is (not (contains? references {})) (str service-settings))
+            (is (contains? references {:token {:sources [{:token token-name-a :version (token->etag waiter-url token-name-a)}
+                                                         {:token token-name-b :version (token->etag waiter-url token-name-b)}]}})))
 
           (let [response (post-token waiter-url (assoc new-service-description :token token-name-a))]
             (assert-response-status response 200))
@@ -1430,10 +1429,9 @@
 
             (let [service-settings (service-settings waiter-url service-id-b :query-params {"include" "references"})
                   references (set (get service-settings :references))]
-              (is (not (contains? references {:type "direct"})) (str service-settings))
-              (is (contains? references {:sources [{:token token-name-a :version (token->etag waiter-url token-name-a)}
-                                                   {:token token-name-b :version (token->etag waiter-url token-name-b)}]
-                                         :type "token"})))
+              (is (not (contains? references {})) (str service-settings))
+              (is (contains? references {:token {:sources [{:token token-name-a :version (token->etag waiter-url token-name-a)}
+                                                           {:token token-name-b :version (token->etag waiter-url token-name-b)}]}})))
 
             (let [response (post-token waiter-url (assoc new-service-description :token token-name-b))]
               (assert-response-status response 200))
@@ -1442,10 +1440,9 @@
 
               (let [service-settings (service-settings waiter-url service-id-c :query-params {"include" "references"})
                     references (set (get service-settings :references))]
-                (is (not (contains? references {:type "direct"})) (str service-settings))
-                (is (contains? references {:sources [{:token token-name-a :version (token->etag waiter-url token-name-a)}
-                                                     {:token token-name-b :version (token->etag waiter-url token-name-b)}]
-                                           :type "token"})))
+                (is (not (contains? references {})) (str service-settings))
+                (is (contains? references {:token {:sources [{:token token-name-a :version (token->etag waiter-url token-name-a)}
+                                                             {:token token-name-b :version (token->etag waiter-url token-name-b)}]}})))
 
               (let [service-a-details (service-settings waiter-url service-id-a)
                     service-b-details (service-settings waiter-url service-id-b)

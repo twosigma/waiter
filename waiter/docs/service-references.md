@@ -15,14 +15,17 @@ By default, Waiter relies on the service idle timeout to GC services after perio
 However, service reachable only via references, e.g. tokens, can be GC-ed eagerly if the reference has been updated.
 
 When a service description is constructed from a request, the service references are also updated.
-These references are available as the `:references` key in the descriptor and are annotated by a `:type` parameter.
-The service GC process checks these references by type and marks a service as a candidate for eager GC
+These references are available as the `:reference` key in the descriptor.
+The :refrence enrty is a map where the keys represent a `:type` parameter.
+The service GC process checks individual references by type and marks a service as a candidate for eager GC
   if _all_ references used to access the service are stale.
-This staleness check is performed using the functions returned from `retrieve-reference-type->stale-fn` of the builder.
+An individual reference is stale if any of its value entries is stale.
+This staleness check on the value is performed using the functions returned from
+  `retrieve-reference-type->stale-fn` of the builder and invoking the corresponding 'type' function on the value.
 
 The default implementation of the `ServiceDescriptionBuilder` returns
   the following functions for the different reference types:
-  1. all services that can be directly accessed never go stale;
+  1. any services that can be directly accessed never goes stale;
   1. services accessed via tokens go stale if all tokens used to access the service have been updated.
 
 Custom builder implementations can add additional references to services and
