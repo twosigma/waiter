@@ -915,11 +915,12 @@
 
 (defn service
   "Retrieves the service (from /apps) corresponding to the provided service-id"
-  [waiter-url service-id query-params & {:keys [interval timeout] :or {interval 2, timeout 30}}]
+  [waiter-url service-id query-params & {:keys [cookies interval timeout]
+                                         :or {cookies [] interval 2 timeout 30}}]
   ; allow time for router to receive updates from marathon
   (wait-for
     (fn []
-      (let [{:keys [body]} (make-request waiter-url "/apps" :query-params query-params)
+      (let [{:keys [body]} (make-request waiter-url "/apps" :cookies cookies :query-params query-params)
             _ (log/debug "Response body:" body)
             parsed-body (try-parse-json body)
             service (first (filter #(= service-id (get % "service-id")) parsed-body))]
