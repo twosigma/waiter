@@ -55,38 +55,37 @@
   (testing-using-waiter-url
     (let [service-id-prefix (rand-name "testhostname")
           token (rand-name)
-          update-token-fn (fn [version]
-                            (let [{:keys [status]} (post-token waiter-url {:name service-id-prefix
-                                                                           :cpus 1
-                                                                           :mem 1250
-                                                                           :version version
-                                                                           :cmd "test command"
-                                                                           :health-check-url "/ping"
-                                                                           :permitted-user "*"
-                                                                           :run-as-user (retrieve-username)
-                                                                           :token token})]
-                              (is (= 200 status))))
-          validate-token-fn (fn [version num-threads num-iter]
+          update-token-fn (fn [cmd]
+                            (let [response (post-token waiter-url {:cmd cmd
+                                                                   :cpus 1
+                                                                   :health-check-url "/ping"
+                                                                   :mem 1250
+                                                                   :name service-id-prefix
+                                                                   :permitted-user "*"
+                                                                   :run-as-user (retrieve-username)
+                                                                   :token token})]
+                              (assert-response-status response 200)))
+          validate-token-fn (fn [cmd num-threads num-iter]
                               (parallelize-requests
                                 num-threads
                                 num-iter
                                 (fn []
-                                  (let [{:keys [body status]} (get-token waiter-url token)]
-                                    (is (= 200 status))
-                                    (is (every? #(str/includes? (str body) (str %)) [service-id-prefix "1250" version "test command"]))
+                                  (let [{:keys [body] :as response} (get-token waiter-url token)]
+                                    (assert-response-status response 200)
+                                    (is (every? #(str/includes? (str body) (str %)) [service-id-prefix "1250" cmd "/ping"]))
                                     (is (not-any? #(str/includes? (str body) (str %)) ["invalid"]))))))
-          update-and-validate-token-fn (fn [version]
-                                         (log/info "creating configuration using token" token "with version" version)
-                                         (update-token-fn version)
+          update-and-validate-token-fn (fn [cmd]
+                                         (log/info "creating configuration using token" token "with cmd" cmd)
+                                         (update-token-fn cmd)
                                          (log/info "asserting configuration for token" token "from routers (best-effort)")
-                                         (validate-token-fn version 10 10))
-          version1 "123987132937213712"
-          version2 "656760465406467480"
-          version3 "678219671796032121"]
+                                         (validate-token-fn cmd 10 10))
+          cmd1 "123987132937213712"
+          cmd2 "656760465406467480"
+          cmd3 "678219671796032121"]
       (try
-        (update-and-validate-token-fn version1)
-        (update-and-validate-token-fn version2)
-        (update-and-validate-token-fn version3)
+        (update-and-validate-token-fn cmd1)
+        (update-and-validate-token-fn cmd2)
+        (update-and-validate-token-fn cmd3)
         (finally
           (delete-token-and-assert waiter-url token))))))
 
@@ -884,7 +883,7 @@
               (log/info response-body))
             (assert-response-status token-response 200)
             (is (str/includes? response-body service-id-prefix))
-            (let [{:strs [namespace run-as-user] :as token-json} (try-parse-json response-body)]
+            (let [{:strs [namespace run-as-user]} (try-parse-json response-body)]
               (is (= target-user run-as-user))
               (is (= target-user namespace))))
           (log/info "asserted retrieval of configuration for token" token)
