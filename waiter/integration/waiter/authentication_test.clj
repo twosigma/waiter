@@ -170,12 +170,13 @@
                                     :target-url target-url})]
         (assert-response-status response 200)
         (is (= (retrieve-username) (str body)))
-        (is (= "jwt" (get headers "x-waiter-auth-method")) assertion-message)
+        (is (not= "jwt" (get headers "x-waiter-auth-method")) assertion-message)
         (is (= (retrieve-username) (get headers "x-waiter-auth-user")) assertion-message)
         (assert-auth-cookie set-cookie assertion-message))
       (log/info "JWT authentication is disabled"))))
 
-(deftest ^:parallel ^:integration-fast test-forbidden-jwt-authentication-waiter-realm
+;; Test disabled because JWT support is, currently, only for tokens
+(deftest ^:parallel ^:integration-fast ^:explicit test-forbidden-jwt-authentication-waiter-realm
   (testing-using-waiter-url
     (if (jwt-auth-enabled? waiter-url)
       (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)
@@ -216,7 +217,8 @@
         (is (string/blank? set-cookie) assertion-message))
       (log/info "JWT authentication is disabled"))))
 
-(deftest ^:parallel ^:integration-fast test-unauthorized-jwt-authentication-waiter-realm
+;; Test disabled because JWT support is, currently, only for tokens
+(deftest ^:parallel ^:integration-fast ^:explicit test-unauthorized-jwt-authentication-waiter-realm
   (testing-using-waiter-url
     (if (jwt-auth-enabled? waiter-url)
       (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)
@@ -275,7 +277,9 @@
     (if (jwt-auth-enabled? waiter-url)
       (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)
             host (create-token-name waiter-url (rand-name))
-            service-parameters (assoc (kitchen-params) :name (rand-name))
+            service-parameters (assoc (kitchen-params)
+                                 :env {"USE_BEARER_AUTH" "true"}
+                                 :name (rand-name))
             token-response (post-token waiter-url (assoc service-parameters
                                                     :run-as-user (retrieve-username)
                                                     "token" host))
@@ -311,7 +315,9 @@
     (if (jwt-auth-enabled? waiter-url)
       (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)
             host (create-token-name waiter-url (rand-name))
-            service-parameters (assoc (kitchen-params) :name (rand-name))
+            service-parameters (assoc (kitchen-params)
+                                 :env {"USE_BEARER_AUTH" "true"}
+                                 :name (rand-name))
             token-response (post-token waiter-url (assoc service-parameters
                                                     :run-as-user (retrieve-username)
                                                     "token" host))

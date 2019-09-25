@@ -325,6 +325,7 @@
   [{:keys [issuer keys-cache password subject-key supported-algorithms token-type]} request-handler]
   (fn jwt-auth-handler [request]
     (if (and (not (auth/request-authenticated? request))
+             (= "true" (get-in request [:waiter-discovery :service-parameter-template "env" "USE_BEARER_AUTH"]))
              (auth/select-auth-header request access-token?))
       (authenticate-request request-handler token-type issuer subject-key supported-algorithms
                             (:key-id->jwk @keys-cache) password request)
