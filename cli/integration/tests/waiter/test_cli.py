@@ -829,12 +829,12 @@ class WaiterCliTest(util.WaiterTest):
             self.assertIn('mem', cli.stderr(cp))
 
             try:
-                cp = cli.update(self.waiter_url, token_name, update_flags=f'--json {path} --version foo --image bar')
+                cp = cli.update(self.waiter_url, token_name, update_flags=f'--json {path} --name foo --image bar')
                 self.assertEqual(0, cp.returncode, cp.stderr)
                 token_data = util.load_token(self.waiter_url, token_name)
                 self.assertEqual(0.2, token_data['cpus'])
                 self.assertEqual(256, token_data['mem'])
-                self.assertEqual('foo', token_data['version'])
+                self.assertEqual('foo', token_data['name'])
                 self.assertEqual('bar', token_data['image'])
             finally:
                 util.delete_token(self.waiter_url, token_name)
@@ -931,6 +931,7 @@ class WaiterCliTest(util.WaiterTest):
         token_name = self.token_name()
         with tempfile.NamedTemporaryFile(delete=True) as file:
             init_flags = (
+                '--cmd-type shell '
                 '--https-redirect true '
                 '--cpus 0.1 '
                 '--fallback-period-secs 10 '
@@ -947,6 +948,7 @@ class WaiterCliTest(util.WaiterTest):
             try:
                 token = util.load_token(self.waiter_url, token_name)
                 self.assertEqual('your command', token['cmd'])
+                self.assertEqual('shell', token['cmd-type'])
                 self.assertEqual('your version', token['version'])
                 self.assertEqual(0.1, token['cpus'])
                 self.assertEqual(2048, token['mem'])
