@@ -14,7 +14,7 @@
 ;; limitations under the License.
 ;;
 (ns waiter.auth.composite
-  (:require [clojure.string :as string]
+  (:require [clojure.string :as str]
             [plumbing.core :as pc]
             [waiter.auth.authentication :as auth]
             [waiter.util.utils :as utils]))
@@ -63,8 +63,8 @@
   "Factory function for creating composite authenticator middleware"
   [{:keys [authentication-providers default-authentication default-authentication-provider] :as context}]
   {:pre [(not-empty authentication-providers)
-         (not (string/blank? default-authentication))
-         (not (string/blank? default-authentication-provider))
+         (not (str/blank? default-authentication))
+         (not (str/blank? default-authentication-provider))
          (contains? authentication-providers default-authentication-provider)]}
   (let [provider-name->authenticator (as-> (pc/map-vals
                                              #(make-authenticator % context)

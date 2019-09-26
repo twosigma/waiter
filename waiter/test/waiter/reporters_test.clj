@@ -15,8 +15,8 @@
 ;;
 (ns waiter.reporters-test
   (:require [clj-time.core :as t]
+            [clojure.string :as str]
             [clojure.test :refer [deftest is]] ;; not using :refer :all because clojure.test has "report" that conflicts with waiter.reporter/report
-            [metrics.core :as mc]
             [metrics.counters :as counters]
             [waiter.metrics :as metrics]
             [waiter.test-helpers :refer :all]
@@ -72,9 +72,9 @@ services.service-id.counters.foo
 services.service-id.counters.foo.bar
              count = 100"
              (->> (out)
-                  (clojure.string/split-lines)
+                  (str/split-lines)
                   (drop 1)
-                  (clojure.string/join "\n"))))
+                  (str/join "\n"))))
       (is (= {:run-state :created} @state)))))
 
 (deftest console-reporter-filter
@@ -92,9 +92,9 @@ services.service-id.counters.foo.bar
 services.service-id.counters.fee.fie
              count = 0"
              (->> (out)
-                  (clojure.string/split-lines)
+                  (str/split-lines)
                   (drop 1)
-                  (clojure.string/join "\n"))))
+                  (str/join "\n"))))
       (is (= {:run-state :created} @state)))))
 
 ;; maximum expected test duration. used for fuzzy timestamp comparison

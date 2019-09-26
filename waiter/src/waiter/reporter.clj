@@ -15,6 +15,7 @@
 ;;
 (ns waiter.reporter
   (:require [clj-time.core :as t]
+            [clojure.string :as str]
             [clojure.tools.logging :as log]
             [metrics.core :as mc]
             [schema.core :as s]
@@ -121,7 +122,7 @@
   [^MetricRegistry registry prefix ^MetricFilter filter ^GraphiteSender graphite]
   (let [timestamp (/ (.getTime (Clock/defaultClock)) 1000) ;; Graphite expects timestamp in seconds
         map (metrics/metric-registry->metric-filter->metric-map
-              registry filter :map-keys-fn #(clojure.string/replace (str %) "." "_"))]
+              registry filter :map-keys-fn #(str/replace (str %) "." "_"))]
     (try
       (when-not (.isConnected graphite)
         (log/info "Connecting to graphite server")

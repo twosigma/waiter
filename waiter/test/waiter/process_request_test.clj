@@ -16,11 +16,9 @@
 (ns waiter.process-request-test
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
-            [clojure.core.async.impl.protocols :as async-protocols]
             [clojure.string :as str]
             [clojure.test :refer :all]
             [metrics.counters :as counters]
-            [metrics.histograms :as histograms]
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [waiter.core :refer :all]
@@ -30,10 +28,7 @@
             [waiter.process-request :refer :all]
             [waiter.statsd :as statsd]
             [waiter.test-helpers :refer :all])
-  (:import (java.io ByteArrayOutputStream InputStream IOException)
-           (java.nio ByteBuffer)
-           (java.util Arrays)
-           (java.util.concurrent CountDownLatch LinkedBlockingQueue ThreadLocalRandom ThreadPoolExecutor TimeUnit)
+  (:import (java.io ByteArrayOutputStream)
            (org.eclipse.jetty.client HttpClient)))
 
 (deftest test-prepare-request-properties

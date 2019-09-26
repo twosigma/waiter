@@ -61,7 +61,7 @@
    => {\"this\" {\"is\" {\"an\" {\"example\" 1 \"example2\" 2}}}}"
   [original-map key-split]
   (reduce-kv (fn [m k v]
-               (assoc-in m (clojure.string/split k key-split) v))
+               (assoc-in m (str/split k key-split) v))
              {} original-map))
 
 (defmacro filterm

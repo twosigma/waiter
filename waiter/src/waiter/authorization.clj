@@ -14,7 +14,7 @@
 ;; limitations under the License.
 ;;
 (ns waiter.authorization
-  (:require [clojure.string :as string]))
+  (:require [clojure.string :as str]))
 
 (defprotocol EntitlementManager
   "Security related methods"
@@ -88,8 +88,8 @@
 (defrecord SanityCheckAuthorizer []
   Authorizer
   (check-user [_ user service-id]
-    (assert (not (string/blank? user)))
-    (assert (not (string/blank? service-id)))
+    (assert (not (str/blank? user)))
+    (assert (not (str/blank? service-id)))
     (comment "ok"))
   (state [_]
     {:type :sanity-check}))

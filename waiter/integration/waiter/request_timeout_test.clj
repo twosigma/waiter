@@ -70,7 +70,7 @@
   (testing-using-waiter-url
     (let [service-name (rand-name)
           headers {:x-waiter-name service-name}
-          {:keys [headers request-headers service-id] :as first-response}
+          {:keys [service-id] :as first-response}
           (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :method :get))]
       (assert-response-status first-response 200)
       (with-service-cleanup

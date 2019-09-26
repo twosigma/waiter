@@ -1,7 +1,7 @@
 (ns waiter.authentication-test
   (:require [clj-time.core :as t]
             [clojure.data.json :as json]
-            [clojure.string :as string]
+            [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [reaver :as reaver]
@@ -40,7 +40,7 @@
                                        keys
                                        (->> (map name)))
             error-message (str "authentication must be one of: '"
-                               (string/join "', '" (sort (into #{"disabled" "standard"} authentication-providers)))
+                               (str/join "', '" (sort (into #{"disabled" "standard"} authentication-providers)))
                                "'")]
         (let [token (rand-name)
               {:keys [body] :as response} (post-token waiter-url (assoc (kitchen-params)
@@ -50,7 +50,7 @@
                                                                    :run-as-user (retrieve-username)
                                                                    :token token))]
           (assert-response-status response 400)
-          (is (string/includes? body error-message)))
+          (is (str/includes? body error-message)))
         (let [token (rand-name)
               {:keys [body] :as response} (post-token waiter-url (assoc (kitchen-params)
                                                                    :authentication ""
@@ -59,7 +59,7 @@
                                                                    :run-as-user (retrieve-username)
                                                                    :token token))]
           (assert-response-status response 400)
-          (is (string/includes? body error-message)))))))
+          (is (str/includes? body error-message)))))))
 
 (defn- perform-saml-authentication
   "Perform authentication wtih an identity provider service.
@@ -131,7 +131,7 @@
 (defn- retrieve-access-token
   [realm]
   (if-let [access-token-url-env (System/getenv "WAITER_TEST_JWT_ACCESS_TOKEN_URL")]
-    (let [access-token-url (string/replace access-token-url-env "{HOST}" realm)
+    (let [access-token-url (str/replace access-token-url-env "{HOST}" realm)
           access-token-uri (URI. access-token-url)
           protocol (.getScheme access-token-uri)
           authority (.getAuthority access-token-uri)
@@ -147,10 +147,10 @@
   [set-cookie assertion-message]
   `(let [set-cookie# ~set-cookie
          assertion-message# ~assertion-message]
-     (is (string/includes? set-cookie# "x-waiter-auth=") assertion-message#)
-     (is (string/includes? set-cookie# "Max-Age=") assertion-message#)
-     (is (string/includes? set-cookie# "Path=/") assertion-message#)
-     (is (string/includes? set-cookie# "HttpOnly=true") assertion-message#)))
+     (is (str/includes? set-cookie# "x-waiter-auth=") assertion-message#)
+     (is (str/includes? set-cookie# "Max-Age=") assertion-message#)
+     (is (str/includes? set-cookie# "Path=/") assertion-message#)
+     (is (str/includes? set-cookie# "HttpOnly=true") assertion-message#)))
 
 (deftest ^:parallel ^:integration-fast test-successful-jwt-authentication-waiter-realm
   (testing-using-waiter-url
@@ -191,8 +191,8 @@
             assertion-message (str {:headers headers
                                     :target-url target-url})]
         (assert-response-status response 403)
-        (is (string/includes? (str body) "Must use HTTPS connection") assertion-message)
-        (is (string/blank? set-cookie) assertion-message))
+        (is (str/includes? (str body) "Must use HTTPS connection") assertion-message)
+        (is (str/blank? set-cookie) assertion-message))
       (log/info "JWT authentication is disabled"))))
 
 (deftest ^:parallel ^:integration-fast test-forbidden-authentication-with-bad-jwt-token-waiter-realm
@@ -212,8 +212,8 @@
             set-cookie (str (get headers "set-cookie"))
             assertion-message (str (select-keys response [:body :error :headers :status]))]
         (assert-response-status response 403)
-        (is (string/blank? (get headers "www-authenticate")) assertion-message)
-        (is (string/blank? set-cookie) assertion-message))
+        (is (str/blank? (get headers "www-authenticate")) assertion-message)
+        (is (str/blank? set-cookie) assertion-message))
       (log/info "JWT authentication is disabled"))))
 
 (deftest ^:parallel ^:integration-fast test-unauthorized-jwt-authentication-waiter-realm
@@ -233,11 +233,11 @@
             set-cookie (str (get headers "set-cookie"))
             assertion-message (str (select-keys response [:body :error :headers :status]))]
         (assert-response-status response 401)
-        (is (string/blank? set-cookie) assertion-message)
+        (is (str/blank? set-cookie) assertion-message)
         (if-let [challenge (get headers "www-authenticate")]
           (do
-            (is (string/includes? (str challenge) "Bearer realm"))
-            (is (> (count (string/split challenge #",")) 1) assertion-message))
+            (is (str/includes? (str challenge) "Bearer realm"))
+            (is (> (count (str/split challenge #",")) 1) assertion-message))
           (is false (str "www-authenticate header missing: " assertion-message))))
       (log/info "JWT authentication is disabled"))))
 
@@ -261,14 +261,14 @@
         (is (= (retrieve-username) (str body)))
         (let [{:strs [x-waiter-auth-method]} headers]
           (is (not= "jwt" x-waiter-auth-method) assertion-message)
-          (is (not (string/blank? x-waiter-auth-method)) assertion-message))
+          (is (not (str/blank? x-waiter-auth-method)) assertion-message))
         (is (= (retrieve-username) (get headers "x-waiter-auth-user")) assertion-message)
         (assert-auth-cookie set-cookie assertion-message))
       (log/info "JWT authentication is disabled"))))
 
 (defn- create-token-name
   [waiter-url service-id-prefix]
-  (str service-id-prefix "." (subs waiter-url 0 (string/index-of waiter-url ":"))))
+  (str service-id-prefix "." (subs waiter-url 0 (str/index-of waiter-url ":"))))
 
 (deftest ^:parallel ^:integration-fast test-jwt-authentication-token-realm
   (testing-using-waiter-url
@@ -337,7 +337,7 @@
             (assert-response-status response 200)
             (let [{:strs [x-waiter-auth-method]} headers]
               (is (not= "jwt" x-waiter-auth-method) assertion-message)
-              (is (not (string/blank? x-waiter-auth-method)) assertion-message))
+              (is (not (str/blank? x-waiter-auth-method)) assertion-message))
             (is (= (retrieve-username) (get headers "x-waiter-auth-user")) assertion-message)
             (assert-auth-cookie set-cookie assertion-message))
           (finally

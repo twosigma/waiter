@@ -18,7 +18,7 @@
             [clj-time.format :as f]
             [clojure.data.codec.base64 :as b64]
             [clojure.java.io :as io]
-            [clojure.string :as string]
+            [clojure.string :as str]
             [comb.template :as template]
             [metrics.counters :as counters]
             [plumbing.core :as pc]
@@ -253,7 +253,7 @@
 (defn- escape-xml-string
   "Escape a string for use in an XML document."
   [str]
-  (string/escape str {\' "&apos;"
+  (str/escape str {\' "&apos;"
                       \" "&quot;"
                       \& "&amp;"
                       \< "&lt;"
@@ -308,9 +308,9 @@
 (defn saml-authenticator
   "Factory function for creating SAML authenticator middleware"
   [{:keys [idp-cert-resource-path idp-cert-uri idp-uri hostname password]}]
-  {:pre [(or (not (string/blank? idp-cert-resource-path)) (not (string/blank? idp-cert-uri)))
-         (not (string/blank? idp-uri))
-         (not (string/blank? hostname))
+  {:pre [(or (not (str/blank? idp-cert-resource-path)) (not (str/blank? idp-cert-uri)))
+         (not (str/blank? idp-uri))
+         (not (str/blank? hostname))
          (not-empty password)]}
   (let [acs-uri (str "https://" hostname "/waiter-auth/saml/acs")
         auth-redirect-endpoint "/waiter-auth/saml/auth-redirect"

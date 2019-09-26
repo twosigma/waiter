@@ -20,7 +20,7 @@
             [clojure.data :as data]
             [clojure.data.zip.xml :as zx]
             [clojure.java.io :as io]
-            [clojure.string :as string]
+            [clojure.string :as str]
             [clojure.tools.logging :as log]
             [clojure.xml :as xml]
             [clojure.zip :as zip]
@@ -426,7 +426,7 @@
 (defn- build-replicaset-url
   "Build the URL for the given Waiter Service's ReplicaSet."
   [{:keys [api-server-url replicaset-api-version]} {:keys [k8s/app-name k8s/namespace]}]
-  (when (not-any? string/blank? [namespace app-name])
+  (when (not-any? str/blank? [namespace app-name])
     (str api-server-url "/apis/" replicaset-api-version
          "/namespaces/" namespace "/replicasets/" app-name)))
 
@@ -677,12 +677,12 @@
      service-id instance-id host browse-path]
     (let [{:keys [_ pod-name restart-number]} (unpack-instance-id instance-id)
           instance-base-dir (str "r" restart-number)
-          browse-path (if (string/blank? browse-path) "/" browse-path)
+          browse-path (if (str/blank? browse-path) "/" browse-path)
           browse-path (cond->
                         browse-path
-                        (not (string/ends-with? browse-path "/"))
+                        (not (str/ends-with? browse-path "/"))
                         (str "/")
-                        (not (string/starts-with? browse-path "/"))
+                        (not (str/starts-with? browse-path "/"))
                         (->> (str "/")))
           {:strs [run-as-user]} (retrieve-service-description scheduler service-id)
           pod (get-in @watch-state [:service-id->pod-id->pod service-id pod-name])]
@@ -722,7 +722,7 @@
                     (for [d (zx/xml-> xml-listing :CommonPrefixes)]
                       (let [path (zx/xml1-> d :Prefix zx/text)
                             subdir-path (subs path (count prefix))
-                            dirname-length (clojure.string/index-of subdir-path "/")
+                            dirname-length (str/index-of subdir-path "/")
                             dirname (subs subdir-path 0 dirname-length)]
                         {:name dirname :path (str "/" prefix dirname) :type "directory"}))))))))
         (catch [:client http-client] response
@@ -794,7 +794,7 @@
                     (for [i (range ports)]
                       {:name (str "PORT" i) :value (str (+ port0 i))})))
         k8s-name (service-id->k8s-app-name scheduler service-id)
-        health-check-scheme (-> (or health-check-proto backend-proto) hu/backend-proto->scheme string/upper-case)
+        health-check-scheme (-> (or health-check-proto backend-proto) hu/backend-proto->scheme str/upper-case)
         health-check-url (sd/service-description->health-check-url service-description)
         memory (str mem "Mi")
         service-hash (service-id->service-hash service-id)]
@@ -1093,17 +1093,17 @@
          (or (nil? log-bucket-url) (some? (io/as-url log-bucket-url)))
          (utils/non-neg-int? max-patch-retries)
          (pos-int? max-name-length)
-         (not (string/blank? cluster-name))
+         (not (str/blank? cluster-name))
          (integer? pod-base-port)
          (< 0 pod-base-port 65527) ; max port is 65535, and we need to reserve up to 10 ports
          (integer? pod-sigkill-delay-secs)
          (<= 0 pod-sigkill-delay-secs 300)
          (pos-int? pod-suffix-length)
-         (not (string/blank? replicaset-api-version))
+         (not (str/blank? replicaset-api-version))
          (symbol? (:factory-fn replicaset-spec-builder))
          (pos-int? restart-expiry-threshold)
          (some? (io/as-url url))
-         (not (string/blank? scheduler-name))
+         (not (str/blank? scheduler-name))
          (au/chan? scheduler-state-chan)
          (pos-int? scheduler-syncer-interval-secs)
          (fn? service-id->password-fn)
