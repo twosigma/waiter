@@ -152,7 +152,8 @@
      (is (string/includes? set-cookie# "Path=/") assertion-message#)
      (is (string/includes? set-cookie# "HttpOnly=true") assertion-message#)))
 
-(deftest ^:parallel ^:integration-fast test-successful-jwt-authentication-waiter-realm
+;; Test disabled because JWT support is, currently, only for tokens
+(deftest ^:parallel ^:integration-fast ^:explicit test-successful-jwt-authentication-waiter-realm
   (testing-using-waiter-url
     (if (jwt-auth-enabled? waiter-url)
       (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)
@@ -170,7 +171,7 @@
                                     :target-url target-url})]
         (assert-response-status response 200)
         (is (= (retrieve-username) (str body)))
-        (is (not= "jwt" (get headers "x-waiter-auth-method")) assertion-message)
+        (is (= "jwt" (get headers "x-waiter-auth-method")) assertion-message)
         (is (= (retrieve-username) (get headers "x-waiter-auth-user")) assertion-message)
         (assert-auth-cookie set-cookie assertion-message))
       (log/info "JWT authentication is disabled"))))
