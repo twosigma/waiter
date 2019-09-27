@@ -86,6 +86,7 @@
                                                           (cors/wrap-cors-preflight cors-validator (:max-age cors-config) kv-store token-defaults waiter-hostnames)
                                                           core/wrap-error-handling
                                                           (core/wrap-debug generate-log-url-fn)
+                                                          (core/attach-waiter-api-middleware waiter-request?-fn)
                                                           (core/attach-server-header-middleware server-name)
                                                           rlog/wrap-log
                                                           core/correlation-id-middleware

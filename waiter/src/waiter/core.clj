@@ -187,6 +187,15 @@
                                 (rr/header "server" server-name)))]
       (ru/update-response response add-server-header))))
 
+(defn attach-waiter-api-middleware
+  "Attaches a boolean value for :waiter-api-call? to the response."
+  [handler waiter-request?-fn]
+  (fn attach-waiter-api-middleware-fn [request]
+    (ru/update-response
+      (handler request)
+      (fn add-waiter-api-call-fn [response]
+        (assoc response :waiter-api-call? (waiter-request?-fn request))))))
+
 (defn correlation-id-middleware
   "Attaches an x-cid header to the request and response if one is not already provided."
   [handler]
