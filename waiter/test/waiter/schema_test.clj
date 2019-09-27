@@ -15,7 +15,7 @@
 ;;
 (ns waiter.schema-test
   (:use [clojure.test])
-  (:require [clojure.string :as string]
+  (:require [clojure.string :as str]
             [schema.core :as s]
             [waiter.schema :refer :all]))
 
@@ -39,7 +39,7 @@
   (s/validate valid-string-length "abc")
   (is (thrown? Exception (s/validate valid-string-length 12)))
   (is (thrown? Exception (s/validate valid-string-length "")))
-  (is (thrown? Exception (s/validate valid-string-length (string/join (take 2000 (repeat "A")))))))
+  (is (thrown? Exception (s/validate valid-string-length (str/join (take 2000 (repeat "A")))))))
 
 (deftest positive-fraction-less-than-or-equal-to-1-test
   (s/validate positive-fraction-less-than-or-equal-to-1 0.1)

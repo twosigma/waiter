@@ -370,10 +370,10 @@
   errored. Call this from the REPL in a dotimes if you want to try
   and reproduce flakes:
 
-    (require '[waiter.test-helpers :as th])
+    (require '[waiter.test-helpers :as test-helpers])
     (dotimes [i 10]
       (println i)
-      (th/run-all-unit-tests-and-throw))
+      (test-helpers/run-all-unit-tests-and-throw))
   "
   []
   (let [{:keys [test pass fail error] :as m} (run-all-unit-tests)]

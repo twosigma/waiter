@@ -15,7 +15,6 @@
 ;;
 (ns waiter.cookie-support-integration-test
   (:require [clojure.data.json :as json]
-            [clojure.string :as str]
             [clojure.test :refer :all]
             [waiter.util.client-tools :refer :all]))
 

@@ -1,11 +1,9 @@
 (ns waiter.kubernetes-scheduler-integration-test
-  (:require [clojure.core.async :as async]
-            [clojure.data.json :as json]
-            [clojure.string :as string]
+  (:require [clojure.data.json :as json]
+            [clojure.string :as str]
             [clojure.walk :as walk]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
-            [plumbing.core :as pc]
             [waiter.util.client-tools :refer :all]))
 
 (defn- get-watch-state [state-json]
@@ -25,9 +23,9 @@
             initial-pods-watch-version (get-in watch-state-json ["pods-metadata" "version" "watch"])
             initial-rs-snapshot-version (get-in watch-state-json ["rs-metadata" "version" "snapshot"])
             initial-rs-watch-version (get-in watch-state-json ["rs-metadata" "version" "watch"])
-            {:keys [service-id request-headers]} (make-request-with-debug-info
-                                                   {:x-waiter-name (rand-name)}
-                                                   #(make-kitchen-request waiter-url % :path "/hello"))]
+            {:keys [service-id]} (make-request-with-debug-info
+                                   {:x-waiter-name (rand-name)}
+                                   #(make-kitchen-request waiter-url % :path "/hello"))]
         (with-service-cleanup
           service-id
           (let [{:keys [body] :as response} (make-request router-url "/state/scheduler" :method :get :cookies cookies)
@@ -63,14 +61,14 @@
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
       (let [custom-image (System/getenv "INTEGRATION_TEST_CUSTOM_IMAGE")
-            _ (is (not (string/blank? custom-image)) "You must provide a custom image in the INTEGRATION_TEST_CUSTOM_IMAGE environment variable")]
+            _ (is (not (str/blank? custom-image)) "You must provide a custom image in the INTEGRATION_TEST_CUSTOM_IMAGE environment variable")]
         (validate-kubernetes-custom-image waiter-url custom-image)))))
 
 (deftest ^:parallel ^:integration-slow test-kubernetes-image-alias
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
       (let [custom-image (System/getenv "INTEGRATION_TEST_CUSTOM_IMAGE_ALIAS")
-            _ (is (not (string/blank? custom-image)) "You must provide a custom image in the INTEGRATION_TEST_CUSTOM_IMAGE_ALIAS environment variable")]
+            _ (is (not (str/blank? custom-image)) "You must provide a custom image in the INTEGRATION_TEST_CUSTOM_IMAGE_ALIAS environment variable")]
         (validate-kubernetes-custom-image waiter-url custom-image)))))
 
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-s3-logs
@@ -85,7 +83,7 @@
                        :x-waiter-scale-down-factor 0.99
                        :x-waiter-scale-up-factor 0.99}
               _ (log/info "making canary request...")
-              {:keys [cookies instance-id service-id]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
+              {:keys [cookies service-id]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
               make-request-fn (fn [url] (make-request url "" :verbose true :cookies cookies))]
 
           (with-service-cleanup
@@ -105,10 +103,10 @@
                   log-files-list (walk/keywordize-keys (json/read-str body))
                   stdout-file-link (:url (first (filter #(= (:name %) "stdout") log-files-list)))
                   stderr-file-link (:url (first (filter #(= (:name %) "stderr") log-files-list)))]
-              (is (every? #(string/includes? body %) ["stderr" "stdout"])
+              (is (every? #(str/includes? body %) ["stderr" "stdout"])
                   (str "Live directory listing is missing entries: stderr and stdout, got response: " logs-response))
               (doseq [file-link [stderr-file-link stdout-file-link]]
-                (if (string/starts-with? (str file-link) "http")
+                (if (str/starts-with? (str file-link) "http")
                   (assert-response-status (make-request-fn file-link) 200)
                   (log/warn "test-s3-logs did not verify file link:" file-link))))
 
@@ -141,8 +139,8 @@
                   _ (do
                       (log/info "waiting s3 logs to appear")
                       (is (wait-for
-                            #(let [{:keys [body] :as logs-response} (make-request-fn log-url)]
-                               (string/includes? body log-bucket-url))
+                            #(let [{:keys [body]} (make-request-fn log-url)]
+                               (str/includes? body log-bucket-url))
                             :interval 5 :timeout 300)
                           (str "Log URL never pointed to S3 bucket " log-bucket-url)))
                   {:keys [body] :as logs-response} (make-request-fn log-url)
@@ -151,11 +149,11 @@
                   stdout-file-link (:url (first (filter #(= (:name %) "stdout") log-files-list)))
                   stderr-file-link (:url (first (filter #(= (:name %) "stderr") log-files-list)))]
               (is (wait-for
-                    #(every? (partial string/includes? body) ["stderr" "stdout"])
+                    #(every? (partial str/includes? body) ["stderr" "stdout"])
                     :interval 1 :timeout 30)
                   (str "Killed directory listing is missing entries: stderr and stdout, got response: " logs-response))
               (doseq [file-link [stderr-file-link stdout-file-link]]
-                (if (string/starts-with? (str file-link) "http")
+                (if (str/starts-with? (str file-link) "http")
                   (assert-response-status (make-request file-link "" :verbose true) 200)
                   (log/warn "test-s3-logs did not verify file link:" file-link))))))))))
 
@@ -227,7 +225,7 @@
                        (check-pod-namespace waiter-url (assoc star-user-header :x-waiter-namespace not-current-user) current-user))))))))
 
 (defn- get-pod-service-account
-  [waiter-url namespace-arg user]
+  [waiter-url namespace-arg]
   (let [{:keys [body error service-id status]}
         (make-request-with-debug-info
           (cond->
@@ -251,10 +249,10 @@
     (when (using-k8s? waiter-url)
       (let [current-user (retrieve-username)]
         (testing "No service account with default namespace"
-          (let [service-account (get-pod-service-account waiter-url nil current-user)]
-            (is (string/blank? service-account))))
+          (let [service-account (get-pod-service-account waiter-url nil)]
+            (is (str/blank? service-account))))
         (testing "Has service account with custom namespace"
-          (let [service-account (get-pod-service-account waiter-url current-user current-user)]
+          (let [service-account (get-pod-service-account waiter-url current-user)]
             (is (= current-user service-account))))))))
 
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-kubernetes-pod-expiry-failing-instance

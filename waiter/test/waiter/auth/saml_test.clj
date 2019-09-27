@@ -16,7 +16,7 @@
 (ns waiter.auth.saml-test
   (:require [clj-time.core :as t]
             [clojure.data.codec.base64 :as b64]
-            [clojure.string :as string]
+            [clojure.string :as str]
             [clojure.test :refer :all]
             [taoensso.nippy :as nippy]
             [waiter.auth.authentication :as auth]
@@ -165,7 +165,7 @@
 (defn- saml-response-from-xml
   [change-user?]
   (-> (slurp "test-files/saml/saml-response.xml")
-    (string/replace "user1@example.com" (str (if change-user? "root" "user1") "@example.com"))
+    (str/replace "user1@example.com" (str (if change-user? "root" "user1") "@example.com"))
     .getBytes
     b64/encode
     String.))
