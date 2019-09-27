@@ -26,6 +26,7 @@
             [waiter.auth.authentication :as auth]
             [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics]
+            [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils])
   (:import (java.util.concurrent ThreadPoolExecutor)
            (org.ietf.jgss GSSManager GSSCredential GSSContext GSSException)))
@@ -109,26 +110,30 @@
       (fn process-gss-task []
         (cid/with-correlation-id
           current-correlation-id
-          (try
-            (timers/stop timer-context)
-            (let [^GSSContext gss-context (gss-context-init)
-                  token (do-gss-auth-check gss-context request)
-                  principal (when (.isEstablished gss-context)
-                              (gss-get-principal gss-context))]
-              (async/>!! response-chan {:principal principal
-                                        :token token}))
-            (catch GSSException ex
-              (log/error ex "gss exception during kerberos auth")
-              (async/>!! response-chan
-                         {:error (ex-info "Error during Kerberos authentication"
-                                          {:details (.getMessage ex)
-                                           :status 403}
-                                          ex)}))
-            (catch Throwable th
-              (log/error th "error while performing kerberos auth")
-              (async/>!! response-chan {:error th}))
-            (finally
-              (async/close! response-chan))))))))
+          (timers/stop timer-context)
+          (let [auth-timer-context (timers/start (metrics/waiter-timer "core" "kerberos" "processing"))]
+            (try
+              (let [^GSSContext gss-context (gss-context-init)
+                    token (do-gss-auth-check gss-context request)
+                    principal (when (.isEstablished gss-context)
+                                (gss-get-principal gss-context))]
+                (async/>!! response-chan {:auth-time {:auth-spnego-success-time-ns (timers/stop auth-timer-context)}
+                                          :principal principal
+                                          :token token}))
+              (catch GSSException ex
+                (log/error ex "gss exception during kerberos auth")
+                (async/>!! response-chan
+                           {:auth-time {:auth-spnego-failure-time-ns (timers/stop auth-timer-context)}
+                            :error (ex-info "Error during Kerberos authentication"
+                                            {:details (.getMessage ex)
+                                             :status 403}
+                                            ex)}))
+              (catch Throwable th
+                (log/error th "error while performing kerberos auth")
+                (async/>!! response-chan {:auth-time {:auth-spnego-failure-time-ns (timers/stop auth-timer-context)}
+                                          :error th}))
+              (finally
+                (async/close! response-chan)))))))))
 
 (defn require-gss
   "This middleware enables the application to require a SPNEGO
@@ -151,22 +156,25 @@
         (async/go
           (cid/with-correlation-id
             current-correlation-id
-            (let [{:keys [error principal token]} (async/<! gss-response-chan)]
+            (let [{:keys [auth-time error principal token]} (async/<! gss-response-chan)]
               (if-not error
-                (try
-                  (if principal
-                    (let [response (auth/handle-request-auth request-handler request :spnego principal password)]
-                      (log/debug "added cookies to response")
-                      (if token
-                        (if (map? response)
-                          (rr/header response "www-authenticate" token)
-                          (let [actual-response (async/<! response)]
-                            (rr/header actual-response "www-authenticate" token)))
-                        response))
-                    (response-401-negotiate request))
-                  (catch Throwable th
-                    (log/error th "error while processing response")
-                    th))
+                (ru/update-response
+                  (try
+                    (if principal
+                      (let [response (auth/handle-request-auth request-handler request :spnego principal password)]
+                        (log/debug "added cookies to response")
+                        (if token
+                          (if (map? response)
+                            (rr/header response "www-authenticate" token)
+                            (let [actual-response (async/<! response)]
+                              (rr/header actual-response "www-authenticate" token)))
+                          response))
+                      (response-401-negotiate request))
+                    (catch Throwable th
+                      (log/error th "error while processing response")
+                      th))
+                  (fn update-spnego-auth-time [response]
+                    (update response :authentication-time merge auth-time)))
                 error)))))
       ;; Default to unauthorized
       :else

@@ -65,13 +65,14 @@
 
             (testing "401 response on failed authentication"
               (with-redefs [populate-gss-credentials (fn [_ _ response-chan]
-                                                       (async/>!! response-chan {:foo :bar}))]
+                                                       (async/>!! response-chan {:auth-time {:exec-ns 12345}
+                                                                                 :foo :bar}))]
                 (let [handler (require-gss request-handler thread-pool max-queue-length password)
                       response (handler auth-request)
                       response (if (map? response)
                                  response
                                  (async/<!! response))]
-                  (is (= standard-401-response response)))))
+                  (is (= (assoc standard-401-response :authentication-time {:exec-ns 12345}) response)))))
 
             (testing "401 response on missing authorization header"
               (with-redefs [populate-gss-credentials (fn [_ _ response-chan]
@@ -106,7 +107,8 @@
 
             (testing "successful authentication - principal and token"
               (with-redefs [populate-gss-credentials (fn [_ _ response-chan]
-                                                       (async/>!! response-chan {:principal auth-principal
+                                                       (async/>!! response-chan {:auth-time {:exec-ns 12345}
+                                                                                 :principal auth-principal
                                                                                  :token "test-token"}))]
                 (let [handler (require-gss request-handler thread-pool max-queue-length password)
                       response (handler auth-request)
@@ -114,6 +116,7 @@
                                  response
                                  (async/<!! response))]
                   (is (= (assoc ideal-response
+                           :authentication-time {:exec-ns 12345}
                            :authorization/method :spnego
                            :authorization/principal "user@test.com"
                            :authorization/user "user"
@@ -122,7 +125,8 @@
 
             (testing "successful authentication - principal and token - multiple authorization header"
               (with-redefs [populate-gss-credentials (fn [_ _ response-chan]
-                                                       (async/>!! response-chan {:principal auth-principal
+                                                       (async/>!! response-chan {:auth-time {:exec-ns 12345}
+                                                                                 :principal auth-principal
                                                                                  :token "test-token"}))]
                 (let [handler (require-gss request-handler thread-pool max-queue-length password)
                       auth-request (update standard-request :headers
@@ -132,6 +136,7 @@
                                  response
                                  (async/<!! response))]
                   (is (= (assoc ideal-response
+                           :authentication-time {:exec-ns 12345}
                            :authorization/method :spnego
                            :authorization/principal "user@test.com"
                            :authorization/user "user"
@@ -140,13 +145,15 @@
 
             (testing "successful authentication - principal only"
               (with-redefs [populate-gss-credentials (fn [_ _ response-chan]
-                                                       (async/>!! response-chan {:principal auth-principal}))]
+                                                       (async/>!! response-chan {:auth-time {:exec-ns 12345}
+                                                                                 :principal auth-principal}))]
                 (let [handler (require-gss request-handler thread-pool max-queue-length password)
                       response (handler auth-request)
                       response (if (map? response)
                                  response
                                  (async/<!! response))]
                   (is (= (assoc ideal-response
+                           :authentication-time {:exec-ns 12345}
                            :authorization/method :spnego
                            :authorization/principal "user@test.com"
                            :authorization/user "user")

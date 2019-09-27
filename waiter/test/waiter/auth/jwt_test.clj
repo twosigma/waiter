@@ -21,6 +21,7 @@
             [clojure.data.json :as json]
             [clojure.test :refer :all]
             [clojure.walk :as walk]
+            [metrics.timers :as timers]
             [plumbing.core :as pc]
             [waiter.auth.authentication :as auth]
             [waiter.auth.jwt :refer :all]
@@ -287,107 +288,117 @@
           (is (= payload (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))))))
 
 (deftest test-authenticate-request
-  (let [issuer "test-issuer"
-        keys (Object.)
-        subject-key :sub
-        supported-algorithms #{:eddsa :rs256}
-        token-type "jwt+type"
-        password "test-password"]
+  (with-redefs [timers/stop (constantly 123456)]
+    (let [issuer "test-issuer"
+          keys (Object.)
+          subject-key :sub
+          supported-algorithms #{:eddsa :rs256}
+          token-type "jwt+type"
+          password "test-password"]
 
-    (testing "error scenario - non 401"
-      (let [request-handler (fn [request] (assoc request :source ::request-handler))
-            ex (ex-info (str "Test Exception " (rand-int 10000)) {})
-            request {:headers {"authorization" "Bearer foo.bar.baz"}
-                     :request-id (rand-int 10000)}]
-        (with-redefs [validate-access-token (fn [& _] (throw ex))
-                      utils/exception->response (fn [in-exception in-request]
-                                                  (is (= (.getMessage ex) (.getMessage in-exception)))
-                                                  (is (= request in-request))
-                                                  (assoc request :source ::exception-handler))]
-          (is (= (assoc request :source ::exception-handler)
-                 (authenticate-request request-handler issuer subject-key supported-algorithms type keys password request))))))
+      (testing "error scenario - non 401"
+        (let [request-handler (fn [request] (assoc request :source ::request-handler))
+              ex (ex-info (str "Test Exception " (rand-int 10000)) {})
+              request {:headers {"authorization" "Bearer foo.bar.baz"}
+                       :request-id (rand-int 10000)}]
+          (with-redefs [validate-access-token (fn [& _] (throw ex))
+                        utils/exception->response (fn [in-exception in-request]
+                                                    (is (= (.getMessage ex) (.getMessage in-exception)))
+                                                    (is (= request in-request))
+                                                    (assoc request :source ::exception-handler))]
+            (is (= (assoc request
+                     :authentication-time {:auth-jwt-failure-time-ns 123456}
+                     :source ::exception-handler)
+                   (authenticate-request request-handler issuer subject-key supported-algorithms type keys password request))))))
 
-    (testing "error scenario 401 - downstream 200 from backend"
-      (let [request-handler (fn [request] (assoc request :source ::request-handler :status 200))
-            ex (ex-info (str "Test Exception " (rand-int 10000)) {:status 401})
-            request {:headers {"authorization" "Bearer foo.bar.baz"}
-                     :request-id (rand-int 10000)}]
-        (with-redefs [validate-access-token (fn [& _] (throw ex))]
-          (is (= (assoc request :source ::request-handler :status 200)
-                 (authenticate-request request-handler issuer subject-key supported-algorithms type keys password request))))))
+      (testing "error scenario 401 - downstream 200 from backend"
+        (let [request-handler (fn [request] (assoc request :source ::request-handler :status 200))
+              ex (ex-info (str "Test Exception " (rand-int 10000)) {:status 401})
+              request {:headers {"authorization" "Bearer foo.bar.baz"}
+                       :request-id (rand-int 10000)}]
+          (with-redefs [validate-access-token (fn [& _] (throw ex))]
+            (is (= (assoc request
+                     :authentication-time {:auth-jwt-failure-time-ns 123456}
+                     :source ::request-handler :status 200)
+                   (authenticate-request request-handler issuer subject-key supported-algorithms type keys password request))))))
 
-    (testing "error scenario 401 - downstream 200 from waiter"
-      (let [request-handler (fn [request] (-> request (dissoc :headers) (assoc :source ::request-handler :status 200) utils/attach-waiter-source))
-            ex (ex-info (str "Test Exception " (rand-int 10000)) {:status 401})
-            request {:headers {"authorization" "Bearer foo.bar.baz"}
-                     :request-id (rand-int 10000)}]
-        (with-redefs [validate-access-token (fn [& _] (throw ex))]
-          (is (= (-> request
-                   (dissoc :headers)
-                   (assoc :source ::request-handler :status 200)
-                   utils/attach-waiter-source)
-                 (authenticate-request request-handler issuer subject-key supported-algorithms type keys password request))))))
+      (testing "error scenario 401 - downstream 200 from waiter"
+        (let [request-handler (fn [request] (-> request (dissoc :headers) (assoc :source ::request-handler :status 200) utils/attach-waiter-source))
+              ex (ex-info (str "Test Exception " (rand-int 10000)) {:status 401})
+              request {:headers {"authorization" "Bearer foo.bar.baz"}
+                       :request-id (rand-int 10000)}]
+          (with-redefs [validate-access-token (fn [& _] (throw ex))]
+            (is (= (-> request
+                     (dissoc :headers)
+                     (assoc :authentication-time {:auth-jwt-failure-time-ns 123456}
+                            :source ::request-handler :status 200)
+                     utils/attach-waiter-source)
+                   (authenticate-request request-handler issuer subject-key supported-algorithms type keys password request))))))
 
-    (testing "error scenario 401 - downstream 401 from backend"
-      (let [request-handler (fn [request] (assoc request :source ::request-handler :status 401))
-            ex (ex-info (str "Test Exception " (rand-int 10000)) {:status 401})
-            request {:headers {"authorization" "Bearer foo.bar.baz"}
-                     :request-id (rand-int 10000)}]
-        (with-redefs [validate-access-token (fn [& _] (throw ex))]
-          (is (= (assoc request :source ::request-handler :status 401)
-                 (authenticate-request request-handler issuer subject-key supported-algorithms type keys password request))))))
+      (testing "error scenario 401 - downstream 401 from backend"
+        (let [request-handler (fn [request] (assoc request :source ::request-handler :status 401))
+              ex (ex-info (str "Test Exception " (rand-int 10000)) {:status 401})
+              request {:headers {"authorization" "Bearer foo.bar.baz"}
+                       :request-id (rand-int 10000)}]
+          (with-redefs [validate-access-token (fn [& _] (throw ex))]
+            (is (= (assoc request
+                     :authentication-time {:auth-jwt-failure-time-ns 123456}
+                     :source ::request-handler :status 401)
+                   (authenticate-request request-handler issuer subject-key supported-algorithms type keys password request))))))
 
-    (testing "error scenario 401 - downstream 401 from waiter"
-      (let [request-handler (fn [request] (-> request (dissoc :headers) (assoc :source ::request-handler :status 401) utils/attach-waiter-source))
-            ex (ex-info (str "Test Exception " (rand-int 10000)) {:status 401})
-            request {:headers {"authorization" "Bearer foo.bar.baz"
-                               "host" "www.test.com"}
-                     :request-id (rand-int 10000)}
-            auth-header (str bearer-prefix "realm=\"www.test.com\"")]
-        (with-redefs [validate-access-token (fn [& _] (throw ex))]
-          (is (= (-> request
-                   (assoc :headers {"www-authenticate" auth-header} :source ::request-handler :status 401)
-                   utils/attach-waiter-source)
-                 (authenticate-request request-handler issuer subject-key supported-algorithms type keys password request))))))
+      (testing "error scenario 401 - downstream 401 from waiter"
+        (let [request-handler (fn [request] (-> request (dissoc :headers) (assoc :source ::request-handler :status 401) utils/attach-waiter-source))
+              ex (ex-info (str "Test Exception " (rand-int 10000)) {:status 401})
+              request {:headers {"authorization" "Bearer foo.bar.baz"
+                                 "host" "www.test.com"}
+                       :request-id (rand-int 10000)}
+              auth-header (str bearer-prefix "realm=\"www.test.com\"")]
+          (with-redefs [validate-access-token (fn [& _] (throw ex))]
+            (is (= (-> request
+                     (assoc :authentication-time {:auth-jwt-failure-time-ns 123456}
+                            :headers {"www-authenticate" auth-header} :source ::request-handler :status 401)
+                     utils/attach-waiter-source)
+                   (authenticate-request request-handler issuer subject-key supported-algorithms type keys password request))))))
 
-    (testing "success scenario - non 401"
-      (let [request-handler (fn [request] (assoc request :source ::request-handler))
-            realm "www.test-realm.com"
-            request {:headers {"authorization" "Bearer foo.bar.baz"
-                               "host" realm}
-                     :request-id (rand-int 10000)
-                     :scheme :test-scheme}
-            current-time (current-time-secs)
-            expiry-interval-secs 10000
-            expiry-time (+ current-time expiry-interval-secs)
-            principal "foo@bar.com"
-            payload {:aud realm :exp expiry-time :iss issuer :sub principal}]
-        (with-redefs [validate-access-token (fn [in-type in-issuer in-sub-key in-algorithms in-keys in-realm in-request-scheme in-access-token]
-                                              (is (= token-type in-type))
-                                              (is (= issuer in-issuer))
-                                              (is (= subject-key in-sub-key))
-                                              (is (= supported-algorithms in-algorithms))
-                                              (is (= keys in-keys))
-                                              (is (= realm in-realm))
-                                              (is (= :test-scheme in-request-scheme))
-                                              (is (= "foo.bar.baz" in-access-token))
-                                              (is (= keys in-keys))
-                                              payload)
-                      auth/handle-request-auth (fn [request-handler request principal auth-params-map password auth-cookie-age-in-seconds]
-                                                 (-> request
-                                                   (assoc :auth-cookie-age-in-seconds auth-cookie-age-in-seconds
-                                                          :auth-params-map auth-params-map
-                                                          :password password
-                                                          :principal principal)
-                                                   request-handler))
-                      t/now (constantly (tc/from-long (* current-time 1000)))]
-          (is (= (assoc request
-                   :auth-cookie-age-in-seconds expiry-interval-secs
-                   :auth-params-map (auth/auth-params-map :jwt principal)
-                   :password password
-                   :principal principal
-                   :source ::request-handler)
-                 (authenticate-request request-handler token-type issuer subject-key supported-algorithms keys password request))))))))
+      (testing "success scenario - non 401"
+        (let [request-handler (fn [request] (assoc request :source ::request-handler))
+              realm "www.test-realm.com"
+              request {:headers {"authorization" "Bearer foo.bar.baz"
+                                 "host" realm}
+                       :request-id (rand-int 10000)
+                       :scheme :test-scheme}
+              current-time (current-time-secs)
+              expiry-interval-secs 10000
+              expiry-time (+ current-time expiry-interval-secs)
+              principal "foo@bar.com"
+              payload {:aud realm :exp expiry-time :iss issuer :sub principal}]
+          (with-redefs [validate-access-token (fn [in-type in-issuer in-sub-key in-algorithms in-keys in-realm in-request-scheme in-access-token]
+                                                (is (= token-type in-type))
+                                                (is (= issuer in-issuer))
+                                                (is (= subject-key in-sub-key))
+                                                (is (= supported-algorithms in-algorithms))
+                                                (is (= keys in-keys))
+                                                (is (= realm in-realm))
+                                                (is (= :test-scheme in-request-scheme))
+                                                (is (= "foo.bar.baz" in-access-token))
+                                                (is (= keys in-keys))
+                                                payload)
+                        auth/handle-request-auth (fn [request-handler request principal auth-params-map password auth-cookie-age-in-seconds]
+                                                   (-> request
+                                                     (assoc :auth-cookie-age-in-seconds auth-cookie-age-in-seconds
+                                                            :auth-params-map auth-params-map
+                                                            :password password
+                                                            :principal principal)
+                                                     request-handler))
+                        t/now (constantly (tc/from-long (* current-time 1000)))]
+            (is (= (assoc request
+                     :auth-cookie-age-in-seconds expiry-interval-secs
+                     :auth-params-map (auth/auth-params-map :jwt principal)
+                     :authentication-time {:auth-jwt-success-time-ns 123456}
+                     :password password
+                     :principal principal
+                     :source ::request-handler)
+                   (authenticate-request request-handler token-type issuer subject-key supported-algorithms keys password request)))))))))
 
 (deftest test-jwt-authenticator
   (with-redefs [start-jwt-cache-maintainer (constantly nil)]

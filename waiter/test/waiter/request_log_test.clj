@@ -52,7 +52,9 @@
            (request->context request)))))
 
 (deftest test-response->context
-  (let [response {:authorization/method :cookie
+  (let [response {:authentication-time {:auth-jwt-failure-time-ns 3000
+                                        :auth-spnego-success-time-ns 5000}
+                  :authorization/method :cookie
                   :authorization/principal "principal@DOMAIN.COM"
                   :backend-response-latency-ns 1000
                   :descriptor {:service-id "service-id"
@@ -74,7 +76,10 @@
                   :latest-service-id "latest-service-id"
                   :protocol "HTTP/2.0"
                   :status 200}]
-    (is (= {:authentication-method "cookie"
+    (is (= {:auth-jwt-failure-time-ns 3000
+            :auth-spnego-success-time-ns 5000
+            :auth-total-exec-time-ns 8000
+            :authentication-method "cookie"
             :backend-response-latency-ns 1000
             :backend-protocol "HTTP/2.0"
             :get-instance-latency-ns 500

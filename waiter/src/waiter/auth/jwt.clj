@@ -282,43 +282,48 @@
                                           request-scheme access-token)]
         (timers/stop timer-context)
         (counters/inc! (metrics/waiter-counter "core" "jwt" "validation" "success"))
-        claims)
+        {:auth-time {:auth-jwt-success-time-ns (timers/stop timer-context)}
+         :result claims})
       (catch Throwable throwable
-        (timers/stop timer-context)
         (counters/inc! (metrics/waiter-counter "core" "jwt" "validation" "failed"))
         (log/info throwable "error in access token validation")
-        throwable))))
+        {:auth-time {:auth-jwt-failure-time-ns (timers/stop timer-context)}
+         :error throwable}))))
 
 (defn authenticate-request
   "Performs authentication and then
    - responds with an error response when authentication fails, or
    - invokes the downstream request handler using the authenticated credentials in the request."
   [request-handler token-type issuer subject-key supported-algorithms key-id->jwk password request]
-  (let [claims-or-throwable (extract-claims token-type issuer subject-key supported-algorithms key-id->jwk request)]
-    (if (instance? Throwable claims-or-throwable)
-      (if (-> claims-or-throwable ex-data :status (= status-unauthorized))
-        ;; allow downstream processing before deciding on authentication challenge in response
-        (ru/update-response
-          (request-handler request)
-          (fn [{:keys [status] :as response}]
-            (if (and (= status status-unauthorized) (utils/waiter-generated-response? response))
-              ;; add to challenge initiated by Waiter
-              (let [realm (request->realm request)
-                    www-auth-header (if (str/blank? realm)
-                                      (str/trim bearer-prefix)
-                                      (str bearer-prefix "realm=\"" realm "\""))]
-                (log/debug "attaching www-authenticate header to response")
-                (ru/attach-header response "www-authenticate" www-auth-header))
-              ;; non-401 response, avoid authentication challenge
-              response)))
-        ;; non-401 response avoids further downstream handler processing
-        (utils/exception->response claims-or-throwable request))
-      (let [{:keys [exp] :as claims} claims-or-throwable
-            subject (subject-key claims)
-            auth-params-map (auth/auth-params-map :jwt subject)
-            auth-cookie-age-in-seconds (- exp (current-time-secs))]
-        (auth/handle-request-auth
-          request-handler request subject auth-params-map password auth-cookie-age-in-seconds)))))
+  (let [{:keys [auth-time error result]}
+        (extract-claims token-type issuer subject-key supported-algorithms key-id->jwk request)]
+    (ru/update-response
+      (if (instance? Throwable error)
+        (if (-> error ex-data :status (= status-unauthorized))
+          ;; allow downstream processing before deciding on authentication challenge in response
+          (ru/update-response
+            (request-handler request)
+            (fn [{:keys [status] :as response}]
+              (if (and (= status status-unauthorized) (utils/waiter-generated-response? response))
+                ;; add to challenge initiated by Waiter
+                (let [realm (request->realm request)
+                      www-auth-header (if (str/blank? realm)
+                                        (str/trim bearer-prefix)
+                                        (str bearer-prefix "realm=\"" realm "\""))]
+                  (log/debug "attaching www-authenticate header to response")
+                  (ru/attach-header response "www-authenticate" www-auth-header))
+                ;; non-401 response, avoid authentication challenge
+                response)))
+          ;; non-401 response avoids further downstream handler processing
+          (utils/exception->response error request))
+        (let [{:keys [exp] :as claims} result
+              subject (subject-key claims)
+              auth-params-map (auth/auth-params-map :jwt subject)
+              auth-cookie-age-in-seconds (- exp (current-time-secs))]
+          (auth/handle-request-auth
+            request-handler request subject auth-params-map password auth-cookie-age-in-seconds)))
+      (fn update-jwt-auth-time [response]
+        (update response :authentication-time merge auth-time)))))
 
 (defn wrap-auth-handler
   "Wraps the request handler with a handler to trigger JWT access token authentication."
