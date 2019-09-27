@@ -106,7 +106,8 @@
                                           (s/required-key :scheduler-gc-broken-service-interval-ms) schema/positive-int
                                           (s/required-key :scheduler-gc-interval-ms) schema/positive-int}
    (s/required-key :scheduler-syncer-interval-secs) schema/positive-int
-   (s/required-key :server-options) {(s/optional-key :blocking-timeout) schema/non-negative-int
+   (s/required-key :server-options) {(s/optional-key :accept-queue-size) schema/non-negative-int
+                                     (s/optional-key :blocking-timeout) schema/non-negative-int
                                      (s/optional-key :http2?) s/Bool
                                      (s/optional-key :http2c?) s/Bool
                                      (s/optional-key :keystore) schema/non-empty-string
