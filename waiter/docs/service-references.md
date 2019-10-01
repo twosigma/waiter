@@ -12,21 +12,35 @@ It is possible for the service to be reachable from various combinations of head
 ## Service GC
 
 By default, Waiter relies on the service idle timeout to GC services after periods of inactivity (not receiving requests).
-However, service reachable only via references, e.g. tokens, can be GC-ed eagerly if the reference has been updated.
+However, services reachable only via references, e.g. tokens, can be GC-ed eagerly if the reference has been updated.
 
 When a service description is constructed from a request, the service references are also updated.
-These references are available as the `:reference` key in the descriptor.
-The :refrence enrty is a map where the keys represent a `:type` parameter.
+These references are available as the `:reference-type->entry` key in the descriptor.
+The `reference-type->entry` is a map where the keys represent a `:type` parameter, e.g.
+a service created with `x-waiter-token: foo` header on a request will have the value:
+```
+  {:token {:sources [{"token" "foo" "version" "v1"}]}}
+```
+
+If the same service can be accessed by another token, we end up building multiple
+  `reference-type->entry` maps as references that refer to the service.
 The service GC process checks individual references by type and marks a service as a candidate for eager GC
   if _all_ references used to access the service are stale.
-An individual reference is stale if any of its value entries is stale.
+An individual reference, i.e. the `reference-type->entry` map, is stale if any of its value entries is stale.
 This staleness check on the value is performed using the functions returned from
   `retrieve-reference-type->stale-fn` of the builder and invoking the corresponding 'type' function on the value.
 
-The default implementation of the `ServiceDescriptionBuilder` returns
-  the following functions for the different reference types:
-  1. any services that can be directly accessed never goes stale;
-  1. services accessed via tokens go stale if all tokens used to access the service have been updated.
+The default implementation of the `ServiceDescriptionBuilder` returns a map with a single entry for `:token`.
+The provided `:token` staleness function deems services accessed via tokens to be stale if all tokens
+  used to access the service have been updated.
 
-Custom builder implementations can add additional references to services and
+Custom builder implementations can add additional reference types to services and
   need to provide appropriate staleness check functions for each reference type.
+E.g. a hypothetical implementation which treats the image parameter as docker images can
+  have the following entry for a service:
+```
+  {:image {:name "twosigma/kitchen" :build "20191001"}
+   :token {:sources [{"token" "foo" "version" "v1"}]}}
+```
+The `retrieve-reference-type->stale-fn` must then provide an implementation for a function that
+  can check staleness of `:image` reference types.

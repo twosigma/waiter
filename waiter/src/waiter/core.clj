@@ -747,12 +747,11 @@
    :synchronize-fn (pc/fnk [[:settings [:zookeeper base-path mutex-timeout-ms]]
                             curator]
                      (fn synchronize-fn [path f]
-                       (let [lock-path (str base-path "/" path)
-                             lock-name (apply str (filter #(Character/isLetterOrDigit ^char %) (str path)))]
+                       (let [lock-path (str base-path "/" path)]
                          (timers/start-stop-time!
                            (metrics/waiter-timer "core" "synchronize" "all")
                            (timers/start-stop-time!
-                             (metrics/waiter-timer "core" "synchronize" (str "cs-" lock-name))
+                             (metrics/waiter-timer "core" "synchronize" (str "cs-" path))
                              (curator/synchronize curator lock-path mutex-timeout-ms f))))))})
 
 (def scheduler
@@ -939,10 +938,10 @@
                                        assoc-run-as-user-approved? can-run-as?-fn fallback-state-atom kv-store metric-group-mappings
                                        history-length service-description-builder service-description-defaults service-id-prefix
                                        token-defaults waiter-hostnames request)
-                                     {:keys [reference service-id source-tokens]} latest-descriptor]
+                                     {:keys [reference-type->entry service-id source-tokens]} latest-descriptor]
                                  (when (seq source-tokens)
                                    (store-source-tokens-fn service-id source-tokens))
-                                 (store-reference-fn service-id reference)
+                                 (store-reference-fn service-id reference-type->entry)
                                  result)))
    :router-metrics-helpers (pc/fnk [[:state passwords router-metrics-agent]]
                              (let [password (first passwords)]

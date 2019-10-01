@@ -563,7 +563,7 @@
 
   (build [_ user-service-description
           {:keys [assoc-run-as-user-approved? component->previous-descriptor-fns defaults kv-store
-                  metric-group-mappings reference service-id-prefix source-tokens username]}]
+                  metric-group-mappings reference-type->entry service-id-prefix source-tokens username]}]
     (let [core-service-description (if (get user-service-description "run-as-user")
                                      user-service-description
                                      (let [candidate-service-description (assoc-run-as-requester-fields user-service-description username)
@@ -576,11 +576,11 @@
           service-id (service-description->service-id service-id-prefix core-service-description)
           service-description (default-and-override core-service-description metric-group-mappings
                                                     kv-store defaults service-id)
-          reference (cond-> (or reference {})
-                       (seq source-tokens) (assoc :token {:sources source-tokens}))]
+          reference-type->entry (cond-> (or reference-type->entry {})
+                                  (seq source-tokens) (assoc :token {:sources source-tokens}))]
       {:component->previous-descriptor-fns component->previous-descriptor-fns
        :core-service-description core-service-description
-       :reference reference
+       :reference-type->entry reference-type->entry
        :service-description service-description
        :service-id service-id}))
 
@@ -971,14 +971,14 @@
                                 :defaults defaults
                                 :kv-store kv-store
                                 :metric-group-mappings metric-group-mappings
-                                :reference {}
+                                :reference-type->entry {}
                                 :service-id-prefix service-id-prefix
                                 :source-tokens source-tokens
                                 :username username})
               service-preauthorized (and token-preauthorized (empty? service-description-based-on-headers))
               service-authentication-disabled (and token-authentication-disabled (empty? service-description-based-on-headers))]
           (-> build-map
-            (select-keys [:component->previous-descriptor-fns :core-service-description :reference
+            (select-keys [:component->previous-descriptor-fns :core-service-description :reference-type->entry
                           :service-description :service-id])
             (assoc :on-the-fly? on-the-fly?
                    :service-authentication-disabled service-authentication-disabled
@@ -1144,10 +1144,9 @@
   (defn store-reference!
     "Stores the reference entries in the key-value store against a service."
     [synchronize-fn kv-store service-id reference]
-    (when (-> (service-id->references kv-store service-id)
-            (or #{})
-            (contains? reference)
-            (not))
+    (when-not (-> (service-id->references kv-store service-id)
+                (or #{})
+                (contains? reference))
       (let [reference-lock-prefix "REFERENCES-LOCK-"
             bucket (-> service-id hash int (Math/abs) (mod 16))
             reference-lock (str reference-lock-prefix bucket)]
