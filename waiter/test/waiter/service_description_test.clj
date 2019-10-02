@@ -2174,7 +2174,7 @@
       (let [token->token-data {"t1" {"cpus" 1}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s1")))
-                                        #{{:token {:sources [{"token" "t1" "version" "t1.hash1"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"}]}}})
             token->token-metadata (token->token-metadata-factory token->token-data)]
         (is (= idle-timeout-mins
                (service-id->idle-timeout
@@ -2197,7 +2197,7 @@
                                "t2" {"mem" 2048}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s3")))
-                                        #{{:token {:sources [{"token" "t1" "version" "t1.hash1"} {"token" "t2" "version" "t2.hash1"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"} {:token "t2" :version "t2.hash1"}]}}})
             token->token-metadata (token->token-metadata-factory token->token-data)]
         (is (= idle-timeout-mins
                (service-id->idle-timeout
@@ -2209,7 +2209,7 @@
                                "t2" {"mem" 2048}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s4")))
-                                        #{{:token {:sources [{"token" "t1" "version" "t1.hash0"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.hash0"}]}}})
             token->token-metadata (token->token-metadata-factory token->token-data)]
         (is (= (-> (+ fallback-period-secs (dec (-> 1 t/minutes t/in-seconds)))
                  t/seconds
@@ -2224,7 +2224,7 @@
                                "t2" {"mem" 2048}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s5")))
-                                        #{{:token {:sources [{"token" "t1" "version" "t1.hash0"}]}}
+                                        #{{:token {:sources [{:token "t1" :version "t1.hash0"}]}}
                                           {}})
             token->token-metadata (token->token-metadata-factory token->token-data)]
         (is (= idle-timeout-mins
@@ -2237,7 +2237,7 @@
                                "t2" {"mem" 2048}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s6")))
-                                        #{{:token {:sources [{"token" "t1" "version" "t1.hash1"} {"token" "t2" "version" "t2.hash0"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"} {:token "t2" :version "t2.hash0"}]}}})
             token->token-metadata (token->token-metadata-factory token->token-data)]
         (is (= idle-timeout-mins
                (service-id->idle-timeout
@@ -2251,9 +2251,9 @@
                                "t3" {"cmd" "tc" "fallback-period-secs" 900}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s7")))
-                                        #{{:token {:sources [{"token" "t1" "version" "t1.hash1"}
-                                                             {"token" "t2" "version" "t2.hash0"}
-                                                             {"token" "t3" "version" "t3.hash0"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"}
+                                                             {:token "t2" :version "t2.hash0"}
+                                                             {:token "t3" :version "t3.hash0"}]}}})
             token->token-metadata (token->token-metadata-factory token->token-data)]
         (is (= idle-timeout-mins
                (service-id->idle-timeout
@@ -2267,9 +2267,9 @@
                                "t3" {"cmd" "tc" "fallback-period-secs" 900}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s8")))
-                                        #{{:token {:sources [{"token" "t1" "version" "t1.hash0"}
-                                                             {"token" "t2" "version" "t2.hash0"}
-                                                             {"token" "t3" "version" "t3.hash0"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.hash0"}
+                                                             {:token "t2" :version "t2.hash0"}
+                                                             {:token "t3" :version "t3.hash0"}]}}})
             token->token-metadata (token->token-metadata-factory token->token-data)]
         (is (= (-> 900 t/seconds t/in-minutes (+ stale-timeout-mins))
                (service-id->idle-timeout
@@ -2284,8 +2284,8 @@
                                "t4" {"fallback-period-secs" 1200 "stale-timeout-mins" (+ stale-timeout-mins 15)}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s9")))
-                                        #{{:token {:sources [{"token" "t1" "version" "t1.hash1"} {"token" "t2" "version" "t2.hash0"}]}}
-                                          {:token {:sources [{"token" "t3" "version" "t3.hash0"} {"token" "t4" "version" "t4.hash0"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"} {:token "t2" :version "t2.hash0"}]}}
+                                          {:token {:sources [{:token "t3" :version "t3.hash0"} {:token "t4" :version "t4.hash0"}]}}})
             token->token-metadata (token->token-metadata-factory token->token-data)]
         (is (= idle-timeout-mins
                (service-id->idle-timeout
@@ -2300,8 +2300,8 @@
                                "t4" {"fallback-period-secs" 1200 "stale-timeout-mins" (+ stale-timeout-mins 15)}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s10")))
-                                        #{{:token {:sources [{"token" "t1" "version" "t1.hash1"} {"token" "t2" "version" "t2.hash1"}]}}
-                                          {:token {:sources [{"token" "t3" "version" "t3.hash1"} {"token" "t4" "version" "t4.hash1"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"} {:token "t2" :version "t2.hash1"}]}}
+                                          {:token {:sources [{:token "t3" :version "t3.hash1"} {:token "t4" :version "t4.hash1"}]}}})
             token->token-metadata (token->token-metadata-factory token->token-data)]
         (is (= idle-timeout-mins
                (service-id->idle-timeout
@@ -2316,8 +2316,8 @@
                                "t4" {"fallback-period-secs" 1200 "stale-timeout-mins" (+ stale-timeout-mins 15)}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s11")))
-                                        #{{:token {:sources [{"token" "t1" "version" "t1.hash1"} {"token" "t2" "version" "t2.hash1"}]}}
-                                          {:token {:sources [{"token" "t3" "version" "t3.hash0"} {"token" "t4" "version" "t4.hash0"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"} {:token "t2" :version "t2.hash1"}]}}
+                                          {:token {:sources [{:token "t3" :version "t3.hash0"} {:token "t4" :version "t4.hash0"}]}}})
             token->token-metadata (token->token-metadata-factory token->token-data)]
         (is (= idle-timeout-mins
                (service-id->idle-timeout
@@ -2332,8 +2332,8 @@
                                "t4" {"fallback-period-secs" 1200 "stale-timeout-mins" (+ stale-timeout-mins 15)}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s12")))
-                                        #{{:token {:sources [{"token" "t1" "version" "t1.hash0"} {"token" "t2" "version" "t2.hash0"}]}}
-                                          {:token {:sources [{"token" "t3" "version" "t3.hash0"} {"token" "t4" "version" "t4.hash0"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.hash0"} {:token "t2" :version "t2.hash0"}]}}
+                                          {:token {:sources [{:token "t3" :version "t3.hash0"} {:token "t4" :version "t4.hash0"}]}}})
             token->token-metadata (token->token-metadata-factory token->token-data)]
         (is (= (max (-> 900 t/seconds t/in-minutes (+ stale-timeout-mins))
                     (-> 1200 t/seconds t/in-minutes (+ stale-timeout-mins 15)))
@@ -2384,17 +2384,17 @@
 (deftest test-store-reference!
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
         service-id "test-service-id"
-        references-1 {:token {:sources [{"token" "token-1" "version" "v1"}]}}
-        references-1-copy {:sources [{"token" "token-1" "version" "v1"}]
+        references-1 {:token {:sources [{:token "token-1" :version "v1"}]}}
+        references-1-copy {:sources [{:token "token-1" :version "v1"}]
                            :type :token}
-        references-2 {:token {:sources [{"token" "token-1" "version" "v1"}
-                                        {"token" "token-2" "version" "v2"}]}}
-        references-3 {:token {:sources [{"token" "token-3" "version" "v3"}
-                                        {"token" "token-2" "version" "v2"}]}}
-        references-3-copy {:token {:sources [{"token" "token-3" "version" "v3"}
-                                             {"token" "token-2" "version" "v2"}]}}
-        references-4 {:token {:sources [{"token" "token-2" "version" "v2"}
-                                        {"token" "token-3" "version" "v3"}]}}]
+        references-2 {:token {:sources [{:token "token-1" :version "v1"}
+                                        {:token "token-2" :version "v2"}]}}
+        references-3 {:token {:sources [{:token "token-3" :version "v3"}
+                                        {:token "token-2" :version "v2"}]}}
+        references-3-copy {:token {:sources [{:token "token-3" :version "v3"}
+                                             {:token "token-2" :version "v2"}]}}
+        references-4 {:token {:sources [{:token "token-2" :version "v2"}
+                                        {:token "token-3" :version "v3"}]}}]
 
     (store-reference! synchronize-fn kv-store service-id references-1)
     (is (contains? (service-id->references kv-store service-id) references-1))

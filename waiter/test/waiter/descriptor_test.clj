@@ -18,6 +18,7 @@
             [clojure.core.async :as async]
             [clojure.set :as set]
             [clojure.test :refer :all]
+            [clojure.walk :as walk]
             [plumbing.core :as pc]
             [waiter.descriptor :refer :all]
             [waiter.kv :as kv]
@@ -634,6 +635,12 @@
                prev-descriptor))
         (is (nil? (descriptor->previous-descriptor kv-store builder prev-descriptor))))))
 
+  (defn reference-tokens-entry
+    "Creates an entry for the source-tokens field"
+    [token token-data]
+    (walk/keywordize-keys
+      (sd/source-tokens-entry token token-data)))
+
   (deftest test-descriptor->previous-descriptor-single-token-with-previous
     (let [test-token "test-token"
           token-data-1 {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru" "version" "foo1"}
@@ -650,7 +657,7 @@
           passthrough-headers {}
           waiter-headers {}
           current-descriptor (-> {:passthrough-headers passthrough-headers
-                                  :reference-type->entry {:token {:sources [(sd/source-tokens-entry test-token token-data-2)]}}
+                                  :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-2)]}}
                                   :sources sources
                                   :waiter-headers waiter-headers}
                                (attach-token-fallback-source token-defaults build-service-description-and-id-helper))
@@ -659,7 +666,7 @@
               :core-service-description service-description-1
               :on-the-fly? nil
               :passthrough-headers passthrough-headers
-              :reference-type->entry {:token {:sources [(sd/source-tokens-entry test-token token-data-1)]}}
+              :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-1)]}}
               :service-authentication-disabled false
               :service-description (merge (:defaults sources) service-description-1)
               :service-id (sd/service-description->service-id service-id-prefix service-description-1)
@@ -691,7 +698,7 @@
           passthrough-headers {}
           waiter-headers {}
           current-descriptor (-> {:passthrough-headers passthrough-headers
-                                  :reference-type->entry {:token {:sources [(sd/source-tokens-entry test-token token-data-3)]}}
+                                  :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-3)]}}
                                   :sources sources
                                   :waiter-headers waiter-headers}
                                (attach-token-fallback-source token-defaults build-service-description-and-id-helper))
@@ -700,7 +707,7 @@
               :core-service-description service-description-1
               :on-the-fly? nil
               :passthrough-headers passthrough-headers
-              :reference-type->entry {:token {:sources [(sd/source-tokens-entry test-token token-data-1)]}}
+              :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-1)]}}
               :service-authentication-disabled false
               :service-description (merge (:defaults sources) service-description-1)
               :service-id (sd/service-description->service-id service-id-prefix service-description-1)
@@ -732,7 +739,7 @@
           passthrough-headers {}
           waiter-headers {"x-waiter-cpus" 20}
           current-descriptor (-> {:passthrough-headers passthrough-headers
-                                  :reference-type->entry {:token {:sources [(sd/source-tokens-entry test-token token-data-2)]}}
+                                  :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-2)]}}
                                   :sources sources
                                   :waiter-headers waiter-headers}
                                (attach-token-fallback-source token-defaults build-service-description-and-id-helper))
@@ -742,7 +749,7 @@
                 :core-service-description expected-core-service-description
                 :on-the-fly? true
                 :passthrough-headers passthrough-headers
-                :reference-type->entry {:token {:sources [(sd/source-tokens-entry test-token token-data-1)]}}
+                :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-1)]}}
                 :service-authentication-disabled false
                 :service-description (merge (:defaults sources) expected-core-service-description)
                 :service-id (sd/service-description->service-id service-id-prefix expected-core-service-description)
@@ -810,8 +817,8 @@
                 :core-service-description expected-core-service-description
                 :on-the-fly? nil
                 :passthrough-headers passthrough-headers
-                :reference-type->entry {:token {:sources [(sd/source-tokens-entry test-token-1 token-data-1)
-                                                          (sd/source-tokens-entry test-token-2 token-data-2p)]}}
+                :reference-type->entry {:token {:sources [(reference-tokens-entry test-token-1 token-data-1)
+                                                          (reference-tokens-entry test-token-2 token-data-2p)]}}
                 :service-authentication-disabled false
                 :service-description (merge (:defaults sources) expected-core-service-description)
                 :service-id (sd/service-description->service-id service-id-prefix expected-core-service-description)
@@ -836,8 +843,8 @@
                   :core-service-description expected-core-service-description
                   :on-the-fly? nil
                   :passthrough-headers passthrough-headers
-                  :reference-type->entry {:token {:sources [(sd/source-tokens-entry test-token-1 token-data-1p)
-                                                            (sd/source-tokens-entry test-token-2 token-data-2p)]}}
+                  :reference-type->entry {:token {:sources [(reference-tokens-entry test-token-1 token-data-1p)
+                                                            (reference-tokens-entry test-token-2 token-data-2p)]}}
                   :service-authentication-disabled false
                   :service-description (merge (:defaults sources) expected-core-service-description)
                   :service-id (sd/service-description->service-id service-id-prefix expected-core-service-description)

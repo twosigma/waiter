@@ -18,6 +18,7 @@
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
+            [clojure.walk :as walk]
             [digest]
             [metrics.meters :as meters]
             [plumbing.core :as pc]
@@ -554,7 +555,7 @@
   [token->token-hash source-tokens]
   (and (seq source-tokens)
        ;; safe assumption mark a service stale when every token used to access it is stale
-       (every? (fn [{:strs [token version]}]
+       (every? (fn [{:keys [token version]}]
                  (not= (token->token-hash token) version))
                source-tokens)))
 
@@ -577,7 +578,8 @@
           service-description (default-and-override core-service-description metric-group-mappings
                                                     kv-store defaults service-id)
           reference-type->entry (cond-> (or reference-type->entry {})
-                                  (seq source-tokens) (assoc :token {:sources source-tokens}))]
+                                  (seq source-tokens)
+                                  (assoc :token {:sources (map walk/keywordize-keys source-tokens)}))]
       {:component->previous-descriptor-fns component->previous-descriptor-fns
        :core-service-description core-service-description
        :reference-type->entry reference-type->entry
@@ -1094,7 +1096,7 @@
     (map (fn source-tokens->idle-timeout [source-tokens]
            (let [{:strs [fallback-period-secs stale-timeout-mins]}
                  (->> source-tokens
-                   (map #(token->token-metadata (get % "token")))
+                   (map #(some-> % :token token->token-metadata))
                    (reduce merge token-defaults))]
              (+ (-> (+ fallback-period-secs (dec (-> 1 t/minutes t/in-seconds))) ;; ceiling
                   t/seconds
