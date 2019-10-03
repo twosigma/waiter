@@ -50,7 +50,8 @@
 (defn response->context
   "Convert a response into a context suitable for logging."
   [{:keys [authorization/method authorization/principal backend-response-latency-ns descriptor latest-service-id
-           get-instance-latency-ns handle-request-latency-ns headers instance instance-proto protocol status] :as response}]
+           get-instance-latency-ns handle-request-latency-ns headers instance instance-proto protocol status
+           waiter-api-call?] :as response}]
   (let [{:keys [service-id service-description]} descriptor
         {:strs [content-length content-type grpc-status server]} headers
         {:keys [k8s/node-name k8s/pod-name]} instance]
@@ -75,7 +76,8 @@
       principal (assoc :principal principal)
       protocol (assoc :backend-protocol protocol)
       server (assoc :server server)
-      handle-request-latency-ns (assoc :handle-request-latency-ns handle-request-latency-ns))))
+      handle-request-latency-ns (assoc :handle-request-latency-ns handle-request-latency-ns)
+      (some? waiter-api-call?) (assoc :waiter-api waiter-api-call?))))
 
 (defn log-request!
   "Log a request"

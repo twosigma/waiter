@@ -153,19 +153,22 @@
 (defn ring-handler-factory
   "Creates the handler for processing http requests."
   [waiter-request?-fn {:keys [process-request-fn] :as handlers}]
-  (fn http-handler [{:keys [uri] :as request}]
-    (if-not (waiter-request?-fn request)
-      (do
-        (counters/inc! (metrics/waiter-counter "requests" "service-request"))
-        (process-request-fn request))
-      (let [{:keys [handler route-params]} (routes-mapper request)
-            request (assoc request :route-params (or route-params {}))
-            handler-fn (get handlers handler process-request-fn)]
-        (when (and (not= handler :process-request-fn) (= handler-fn process-request-fn))
-          (log/warn "using default handler as no mapping found for" handler "at uri" uri))
-        (when handler
-          (counters/inc! (metrics/waiter-counter "requests" (name handler))))
-        (handler-fn request)))))
+  (fn http-handler [{:keys [uri waiter-api-call?] :as request}]
+    (let [waiter-api-call? (if (some? waiter-api-call?)
+                             waiter-api-call?
+                             (waiter-request?-fn request))]
+      (if-not waiter-api-call?
+        (do
+          (counters/inc! (metrics/waiter-counter "requests" "service-request"))
+          (process-request-fn request))
+        (let [{:keys [handler route-params]} (routes-mapper request)
+              request (assoc request :route-params (or route-params {}))
+              handler-fn (get handlers handler process-request-fn)]
+          (when (and (not= handler :process-request-fn) (= handler-fn process-request-fn))
+            (log/warn "using default handler as no mapping found for" handler "at uri" uri))
+          (when handler
+            (counters/inc! (metrics/waiter-counter "requests" (name handler))))
+          (handler-fn request))))))
 
 (defn websocket-handler-factory
   "Creates the handler for processing websocket requests.
@@ -186,6 +189,18 @@
                                 (utils/waiter-generated-response? response)
                                 (rr/header "server" server-name)))]
       (ru/update-response response add-server-header))))
+
+(defn attach-waiter-api-middleware
+  "Attaches a boolean value for :waiter-api-call? to the response."
+  [handler waiter-request?-fn]
+  (fn attach-waiter-api-middleware-fn [request]
+    (let [waiter-api-call? (boolean (waiter-request?-fn request))
+          add-waiter-api-call-fn (fn add-waiter-api-call-fn [http-obj]
+                                   (assoc http-obj :waiter-api-call? waiter-api-call?))]
+      (-> request
+        (add-waiter-api-call-fn)
+        (handler)
+        (ru/update-response add-waiter-api-call-fn)))))
 
 (defn correlation-id-middleware
   "Attaches an x-cid header to the request and response if one is not already provided."

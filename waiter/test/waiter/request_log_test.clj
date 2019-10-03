@@ -73,7 +73,8 @@
                   :instance-proto "instance-proto"
                   :latest-service-id "latest-service-id"
                   :protocol "HTTP/2.0"
-                  :status 200}]
+                  :status 200
+                  :waiter-api-call? false}]
     (is (= {:authentication-method "cookie"
             :backend-response-latency-ns 1000
             :backend-protocol "HTTP/2.0"
@@ -95,7 +96,8 @@
             :service-id "service-id"
             :service-name "service-name"
             :service-version "service-version"
-            :status 200}
+            :status 200
+            :waiter-api false}
            (response->context response)))))
 
 (deftest test-wrap-log
