@@ -844,6 +844,10 @@
         (is (str/includes? service-id-1 name-string) (str "ERROR: App-name is missing " name-string))
         (assert-service-on-all-routers waiter-url service-id-1 cookies)
         (is (nil? (service-id->source-tokens-entries waiter-url service-id-1)))
+
+        (let [service-settings (service-settings waiter-url service-id-1 :query-params {"include" "references"})]
+          (is (= [{}] (get service-settings :references)) (str service-settings)))
+
         (let [token (str "^SERVICE-ID#" service-id-1)
               response (make-request-with-debug-info {:x-waiter-token token} #(make-request waiter-url "" :headers %))
               service-id-2 (:service-id response)]
@@ -854,7 +858,12 @@
             (is (= service-id-1 service-id-2) "The on-the-fly and token-based service ids do not match")
             (assert-service-on-all-routers waiter-url service-id-1 cookies)
             (is (= #{(make-source-tokens-entries waiter-url token)}
-                   (service-id->source-tokens-entries waiter-url service-id-2)))))))))
+                   (service-id->source-tokens-entries waiter-url service-id-2)))
+            (let [service-settings (service-settings waiter-url service-id-2 :query-params {"include" "references"})
+                  references (set (get service-settings :references))]
+              (is (contains? references {}) (str service-settings))
+              (is (contains? references {:token {:sources [{:token token :version (token->etag waiter-url token)}]}})
+                  (str service-settings)))))))))
 
 (deftest ^:parallel ^:integration-fast test-namespace-token
   (testing-using-waiter-url
@@ -1406,21 +1415,42 @@
 
         (let [service-id-a (retrieve-service-id waiter-url {:x-waiter-token combined-token-header})
               new-service-description (update first-service-description :cpus #(+ % 0.1))]
+
+          (let [service-settings (service-settings waiter-url service-id-a :query-params {"include" "references"})
+                references (set (get service-settings :references))]
+            (is (not (contains? references {})) (str service-settings))
+            (is (contains? references {:token {:sources [{:token token-name-a :version (token->etag waiter-url token-name-a)}
+                                                         {:token token-name-b :version (token->etag waiter-url token-name-b)}]}})))
+
           (let [response (post-token waiter-url (assoc new-service-description :token token-name-a))]
             (assert-response-status response 200))
 
           (let [service-id-b (retrieve-service-id waiter-url {:x-waiter-token combined-token-header})]
+
+            (let [service-settings (service-settings waiter-url service-id-b :query-params {"include" "references"})
+                  references (set (get service-settings :references))]
+              (is (not (contains? references {})) (str service-settings))
+              (is (contains? references {:token {:sources [{:token token-name-a :version (token->etag waiter-url token-name-a)}
+                                                           {:token token-name-b :version (token->etag waiter-url token-name-b)}]}})))
+
             (let [response (post-token waiter-url (assoc new-service-description :token token-name-b))]
               (assert-response-status response 200))
 
-            (let [service-id-c (retrieve-service-id waiter-url {:x-waiter-token combined-token-header})
-                  service-a-details (service-settings waiter-url service-id-a)
-                  service-b-details (service-settings waiter-url service-id-b)
-                  service-c-details (service-settings waiter-url service-id-c)]
-              (is (nil? (:current-for-tokens service-a-details)))
-              (is (nil? (:current-for-tokens service-b-details)))
-              (is (= [token-name-a token-name-b]
-                     (:current-for-tokens service-c-details))))))
+            (let [service-id-c (retrieve-service-id waiter-url {:x-waiter-token combined-token-header})]
+
+              (let [service-settings (service-settings waiter-url service-id-c :query-params {"include" "references"})
+                    references (set (get service-settings :references))]
+                (is (not (contains? references {})) (str service-settings))
+                (is (contains? references {:token {:sources [{:token token-name-a :version (token->etag waiter-url token-name-a)}
+                                                             {:token token-name-b :version (token->etag waiter-url token-name-b)}]}})))
+
+              (let [service-a-details (service-settings waiter-url service-id-a)
+                    service-b-details (service-settings waiter-url service-id-b)
+                    service-c-details (service-settings waiter-url service-id-c)]
+                (is (nil? (:current-for-tokens service-a-details)))
+                (is (nil? (:current-for-tokens service-b-details)))
+                (is (= [token-name-a token-name-b]
+                       (:current-for-tokens service-c-details)))))))
         (finally
           (delete-token-and-assert waiter-url token-name-a)
           (delete-token-and-assert waiter-url token-name-b))))))

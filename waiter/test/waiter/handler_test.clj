@@ -421,6 +421,18 @@
         other-user-services #{"service4" "service5" "service6"}
         healthy-services #{"service1" "service2" "service4" "service6" "service7" "service8" "service9"}
         unhealthy-services #{"service2" "service3" "service5"}
+        service-id->references {"service1" {:sources [{:token "t1.org" :version "v1"} {:token "t2.com" :version "v2"}]
+                                            :type :token }
+                                "service3" {:sources [{:token "t2.com" :version "v2"} {:token "t3.edu" :version "v3"}]
+                                            :type :token }
+                                "service4" {:sources [{:token "t1.org" :version "v1"} {:token "t2.com" :version "v2"}]
+                                            :type :token }
+                                "service5" {:sources [{:token "t1.org" :version "v1"} {:token "t3.edu" :version "v3"}]
+                                            :type :token }
+                                "service7" {:sources [{:token "t1.org" :version "v2"} {:token "t2.com" :version "v1"}]
+                                            :type :token }
+                                "service9" {:sources [{:token "t2.com" :version "v3"}]
+                                            :type :token }}
         service-id->source-tokens {"service1" [{:token "t1.org" :version "v1"} {:token "t2.com" :version "v2"}]
                                    "service3" [{:token "t2.com" :version "v2"} {:token "t3.edu" :version "v3"}]
                                    "service4" [{:token "t1.org" :version "v1"} {:token "t2.com" :version "v2"}]
@@ -456,6 +468,8 @@
                                           (is (instance-counts-present body)))]
     (letfn [(service-id->metrics-fn []
               {})
+            (service-id->references-fn [service-id]
+              (get service-id->references service-id))
             (service-id->service-description-fn [service-id & _]
               {"run-as-user" (if (contains? test-user-services service-id) test-user "another-user")})
             (service-id->source-tokens-entries-fn [service-id]
@@ -467,7 +481,7 @@
         (let [{:keys [body] :as response}
               (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
                                      service-id->service-description-fn service-id->metrics-fn
-                                     service-id->source-tokens-entries-fn request)]
+                                     service-id->references-fn service-id->source-tokens-entries-fn request)]
           (assert-successful-json-response response)
           (is (= test-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set)))))
 
@@ -476,7 +490,7 @@
           (let [{:keys [body] :as response}
                 (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
                                        service-id->service-description-fn service-id->metrics-fn
-                                       service-id->source-tokens-entries-fn request)]
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
             (assert-successful-json-response response)
             (is (= other-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
 
@@ -489,7 +503,7 @@
           (let [{:keys [body] :as response}
                 (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
                                        service-id->service-description-fn service-id->metrics-fn
-                                       service-id->source-tokens-entries-fn request)]
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
             (assert-successful-json-response response)
             (is (= other-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
 
@@ -502,7 +516,7 @@
           (let [{:keys [body] :as response}
                 (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
                                        service-id->service-description-fn service-id->metrics-fn
-                                       service-id->source-tokens-entries-fn request)]
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
             (assert-successful-json-response response)
             (is (= all-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
 
@@ -515,7 +529,7 @@
           (let [{:keys [body] :as response}
                 (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
                                        service-id->service-description-fn service-id->metrics-fn
-                                       service-id->source-tokens-entries-fn request)]
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
             (assert-successful-json-response response)
             (is (= all-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
 
@@ -528,7 +542,7 @@
           (let [{:keys [body] :as response}
                 (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
                                        service-id->service-description-fn service-id->metrics-fn
-                                       service-id->source-tokens-entries-fn request)]
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
             (assert-successful-json-response response)
             (is (= other-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
 
@@ -541,7 +555,7 @@
           (let [{:keys [body] :as response}
                 (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
                                        service-id->service-description-fn service-id->metrics-fn
-                                       service-id->source-tokens-entries-fn request)]
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
             (assert-successful-json-response response)
             (is (= other-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
 
@@ -554,7 +568,7 @@
               list-services-handler (core/wrap-error-handling
                                       #(list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
                                                               service-id->service-description-fn service-id->metrics-fn
-                                                              service-id->source-tokens-entries-fn %))
+                                                              service-id->references-fn service-id->source-tokens-entries-fn %))
               {:keys [body headers status]} (list-services-handler request)]
           (is (= 400 status))
           (is (= "text/plain" (get headers "content-type")))
@@ -570,7 +584,7 @@
               ; without a run-as-user, should return all apps
               (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
                                      service-id->service-description-fn service-id->metrics-fn
-                                     service-id->source-tokens-entries-fn request)]
+                                     service-id->references-fn service-id->source-tokens-entries-fn request)]
           (assert-successful-json-response response)
           (is (= all-services (->> body json/read-str walk/keywordize-keys (map :service-id) set)))))
 
@@ -589,7 +603,7 @@
                 ; without a run-as-user, should return all apps
                 (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
                                        service-id->service-description-fn service-id->metrics-fn
-                                       service-id->source-tokens-entries-fn request)]
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
             (assert-successful-json-response response)
             (is (= (->> service-id->source-tokens
                         (filter (fn [[_ source-tokens]]
@@ -613,7 +627,7 @@
                 ; without a run-as-user, should return all apps
                 (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
                                        service-id->service-description-fn service-id->metrics-fn
-                                       service-id->source-tokens-entries-fn request)]
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
             (assert-successful-json-response response)
             (is (= (->> service-id->source-tokens
                         (filter (fn [[_ source-tokens]]
@@ -629,7 +643,7 @@
               ; without a run-as-user, should return all apps
               (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
                                      service-id->service-description-fn service-id->metrics-fn
-                                     service-id->source-tokens-entries-fn request)]
+                                     service-id->references-fn service-id->source-tokens-entries-fn request)]
           (assert-successful-json-response response)
           (is (= (->> service-id->source-tokens
                       (filter (fn [[_ source-tokens]]

@@ -315,6 +315,10 @@
         (is (= (:x-waiter-cmd headers) (get-in service-settings [:effective-parameters :cmd])))
         (is (= "other" (get-in service-settings [:effective-parameters :metric-group])) service-id))
 
+      (let [service-settings (service-settings waiter-url service-id
+                                               :query-params {"include" "references"})]
+        (is (= [{}] (get service-settings :references)) (str service-settings)))
+
       (testing "metric group should be other"
         (is (= "other" (service-id->metric-group waiter-url service-id))
             (str "Invalid metric group for " service-id)))

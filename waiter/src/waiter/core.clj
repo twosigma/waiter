@@ -763,7 +763,11 @@
                             curator]
                      (fn synchronize-fn [path f]
                        (let [lock-path (str base-path "/" path)]
-                         (curator/synchronize curator lock-path mutex-timeout-ms f))))})
+                         (timers/start-stop-time!
+                           (metrics/waiter-timer "core" "synchronize" "all")
+                           (timers/start-stop-time!
+                             (metrics/waiter-timer "core" "synchronize" (str "cs-" path))
+                             (curator/synchronize curator lock-path mutex-timeout-ms f))))))})
 
 (def scheduler
   {:scheduler (pc/fnk [[:settings scheduler-config scheduler-syncer-interval-secs]
@@ -942,15 +946,17 @@
                                         (sd/refresh-service-descriptions kv-store service-ids)))
    :request->descriptor-fn (pc/fnk [[:settings [:token-config history-length token-defaults] metric-group-mappings service-description-defaults]
                                     [:state fallback-state-atom kv-store service-description-builder service-id-prefix waiter-hostnames]
-                                    assoc-run-as-user-approved? can-run-as?-fn store-source-tokens-fn]
+                                    assoc-run-as-user-approved? can-run-as?-fn store-reference-fn store-source-tokens-fn]
                              (fn request->descriptor-fn [request]
                                (let [{:keys [latest-descriptor] :as result}
                                      (descriptor/request->descriptor
                                        assoc-run-as-user-approved? can-run-as?-fn fallback-state-atom kv-store metric-group-mappings
                                        history-length service-description-builder service-description-defaults service-id-prefix
-                                       token-defaults waiter-hostnames request)]
-                                 (when-let [source-tokens (-> latest-descriptor :source-tokens seq)]
-                                   (store-source-tokens-fn (:service-id latest-descriptor) source-tokens))
+                                       token-defaults waiter-hostnames request)
+                                     {:keys [reference-type->entry service-id source-tokens]} latest-descriptor]
+                                 (when (seq source-tokens)
+                                   (store-source-tokens-fn service-id source-tokens))
+                                 (store-reference-fn service-id reference-type->entry)
                                  result)))
    :router-metrics-helpers (pc/fnk [[:state passwords router-metrics-agent]]
                              (let [password (first passwords)]
@@ -964,14 +970,19 @@
                                       (fn service-description->service-id [service-description]
                                         (sd/service-description->service-id service-id-prefix service-description)))
    :service-id->idle-timeout (pc/fnk [[:settings [:token-config token-defaults]]
-                                      service-id->service-description-fn service-id->source-tokens-entries-fn
+                                      [:state service-description-builder]
+                                      service-id->service-description-fn service-id->references-fn
                                       token->token-hash token->token-metadata]
-                               (fn service-id->idle-timeout [service-id]
-                                 (sd/service-id->idle-timeout
-                                   service-id->service-description-fn service-id->source-tokens-entries-fn
-                                   token->token-hash token->token-metadata token-defaults service-id)))
+                               (let [context {:token->token-hash token->token-hash}
+                                     reference-type->stale-fn (sd/retrieve-reference-type->stale-fn service-description-builder context)]
+                                 (fn service-id->idle-timeout [service-id]
+                                   (sd/service-id->idle-timeout
+                                     service-id->service-description-fn service-id->references-fn token->token-metadata
+                                     reference-type->stale-fn token-defaults service-id))))
    :service-id->password-fn (pc/fnk [[:scheduler service-id->password-fn*]]
                               service-id->password-fn*)
+   :service-id->references-fn (pc/fnk [[:state kv-store]]
+                                (partial sd/service-id->references kv-store))
    :service-id->service-description-fn (pc/fnk [[:scheduler service-id->service-description-fn*]]
                                          service-id->service-description-fn*)
    :service-id->source-tokens-entries-fn (pc/fnk [[:state kv-store]]
@@ -1001,6 +1012,10 @@
                                        (async/go
                                          (when-let [exit-chan (get work-stealing-chan-map [:exit-chan])]
                                            (async/>! exit-chan :exit)))))
+   :store-reference-fn (pc/fnk [[:curator synchronize-fn]
+                                [:state kv-store]]
+                         (fn store-reference-fn [service-id reference]
+                           (sd/store-reference! synchronize-fn kv-store service-id reference)))
    :store-service-description-fn (pc/fnk [[:state kv-store]
                                           validate-service-description-fn]
                                    (fn store-service-description [{:keys [core-service-description service-id]}]
@@ -1392,8 +1407,8 @@
                                       router-metrics-agent metrics-sync-interval-ms bytes-encryptor bytes-decryptor request))))
    :service-handler-fn (pc/fnk [[:daemons autoscaler router-state-maintainer]
                                 [:routines allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-sync-fn
-                                 router-metrics-helpers service-id->service-description-fn service-id->source-tokens-entries-fn
-                                 token->token-hash]
+                                 router-metrics-helpers service-id->references-fn service-id->service-description-fn
+                                 service-id->source-tokens-entries-fn token->token-hash]
                                 [:scheduler scheduler]
                                 [:state kv-store router-id scheduler-interactions-thread-pool]
                                 wrap-secure-request-fn]
@@ -1405,8 +1420,9 @@
                                (handler/service-handler router-id service-id scheduler kv-store allowed-to-manage-service?-fn
                                                         generate-log-url-fn make-inter-router-requests-sync-fn
                                                         service-id->service-description-fn service-id->source-tokens-entries-fn
-                                                        query-state-fn query-autoscaler-state-fn service-id->metrics-fn
-                                                        scheduler-interactions-thread-pool token->token-hash request)))))
+                                                        service-id->references-fn query-state-fn query-autoscaler-state-fn
+                                                        service-id->metrics-fn scheduler-interactions-thread-pool token->token-hash
+                                                        request)))))
    :service-id-handler-fn (pc/fnk [[:routines store-service-description-fn]
                                    [:state kv-store]
                                    wrap-descriptor-fn wrap-secure-request-fn]
@@ -1415,7 +1431,7 @@
                               wrap-descriptor-fn
                               wrap-secure-request-fn))
    :service-list-handler-fn (pc/fnk [[:daemons autoscaler router-state-maintainer]
-                                     [:routines prepend-waiter-url router-metrics-helpers
+                                     [:routines prepend-waiter-url router-metrics-helpers service-id->references-fn
                                       service-id->service-description-fn service-id->source-tokens-entries-fn]
                                      [:state entitlement-manager]
                                      wrap-secure-request-fn]
@@ -1426,8 +1442,8 @@
                                   (fn service-list-handler-fn [request]
                                     (handler/list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn
                                                                    prepend-waiter-url service-id->service-description-fn
-                                                                   service-id->metrics-fn service-id->source-tokens-entries-fn
-                                                                   request)))))
+                                                                   service-id->metrics-fn service-id->references-fn
+                                                                   service-id->source-tokens-entries-fn request)))))
    :service-override-handler-fn (pc/fnk [[:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn]
                                          [:state kv-store]
                                          wrap-secure-request-fn]
