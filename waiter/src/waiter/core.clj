@@ -105,6 +105,7 @@
                               ["/autoscaler" :state-autoscaler-handler-fn]
                               ["/autoscaling-multiplexer" :state-autoscaling-multiplexer-handler-fn]
                               ["/codahale-reporters" :state-codahale-reporters-handler-fn]
+                              ["/dns-cache" :state-dns-cache-handler-fn]
                               ["/fallback" :state-fallback-handler-fn]
                               ["/gc-broken-services" :state-gc-for-broken-services]
                               ["/gc-services" :state-gc-for-services]
@@ -1509,6 +1510,12 @@
                                               router-id
                                               #(pc/map-vals reporter/state codahale-reporters)
                                               request)))
+   :state-dns-cache-handler-fn (pc/fnk [[:state router-id]]
+                                 (fn state-dns-cache-handler-fn [request]
+                                   (handler/get-query-fn-state
+                                     router-id
+                                     #(hu/retrieve-dns-cache)
+                                     request)))
    :state-fallback-handler-fn (pc/fnk [[:daemons fallback-maintainer]
                                        [:state router-id]
                                        wrap-secure-request-fn]

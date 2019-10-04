@@ -35,6 +35,7 @@
             [waiter.util.utils :as utils])
   (:import clojure.core.async.impl.channels.ManyToManyChannel
            java.io.IOException
+           java.security.Security
            javax.servlet.ServletInputStream)
   (:gen-class))
 
@@ -107,6 +108,9 @@
   (try
     (cid/replace-pattern-layout-in-log4j-appenders)
     (log/info "starting waiter...")
+    (when-let [dns-ttl-secs (System/getProperty "networkaddress.cache.ttl")]
+      (log/info "DNS name lookups will be cached for" dns-ttl-secs "seconds")
+      (Security/setProperty "networkaddress.cache.ttl" dns-ttl-secs))
     (let [async-threads (System/getProperty "clojure.core.async.pool-size")
           settings (assoc (settings/load-settings config-file (retrieve-git-version))
                      :async-threads async-threads

@@ -14,15 +14,17 @@
 ;; limitations under the License.
 ;;
 (ns waiter.util.http-utils
-  (:require [clojure.core.async :as async]
+  (:require [clj-time.coerce :as tc]
+            [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
+            [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [slingshot.slingshot :as ss])
   (:import (java.net URI)
-           (java.net URI)
+           (java.net InetAddress URI)
            (java.util ArrayList)
            (org.apache.commons.codec.binary Base64)
            (org.eclipse.jetty.client HttpClient)
@@ -177,3 +179,32 @@
   (or (= 503 (:status response))
       (and (grpc? (:headers request) (:client-protocol request))
            (= "14" (get-in response [:headers "grpc-status"])))))
+
+(defn- class->field->value
+  [class static-field-name]
+  (let [field (-> class (.getDeclaredField static-field-name))]
+    (.setAccessible field true)
+    (.get field nil)))
+
+(defn- object->field->value
+  [object field-name]
+  (let [field (-> object .getClass (.getDeclaredField field-name))]
+    (.setAccessible field true)
+    (.get field object)))
+
+(defn retrieve-dns-cache
+  ([]
+   (pc/map-from-keys retrieve-dns-cache ["addressCache" "negativeCache"]))
+  ([cache-name]
+   (let [address-cache (class->field->value InetAddress cache-name)
+         cache (object->field->value address-cache "cache")]
+     (map
+       (fn [hi]
+         (let [cache-entry (.getValue hi)
+               ^long expires (object->field->value cache-entry "expiration")
+               addresses (object->field->value cache-entry "addresses")]
+           {:expires (tc/from-long expires)
+            :addresses (map (fn [address]
+                              {:host-address (.getHostAddress address)
+                               :host-name (.getHostName address)}) addresses)}))
+       (seq cache)))))

@@ -629,7 +629,7 @@
           scheme (some-> request utils/request->scheme name)
           make-url (fn make-url [path]
                      (str (when scheme (str scheme "://")) host "/state/" path))]
-      (utils/clj->streaming-json-response {:details (->> ["autoscaler" "autoscaling-multiplexer" "codahale-reporters" "fallback"
+      (utils/clj->streaming-json-response {:details (->> ["autoscaler" "autoscaling-multiplexer" "codahale-reporters" "dns-cache" "fallback"
                                                           "gc-broken-services" "gc-services" "gc-transient-metrics" "interstitial"
                                                           "jwt-authenticator" "kv-store" "launch-metrics" "leader" "local-usage"
                                                           "maintainer" "router-metrics" "scheduler" "service-description-builder"
