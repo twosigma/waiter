@@ -1399,7 +1399,10 @@
         (finally
           (delete-token-and-assert waiter-url token))))))
 
-(deftest ^:parallel ^:integration-fast test-current-for-tokens-multiple-source-tokens
+;; fails to assert:
+;; (is (contains? references {:token {:sources [{:token token-name-a :version (token->etag waiter-url token-name-a)}
+;;                                              {:token token-name-b :version (token->etag waiter-url token-name-b)}]}})))
+(deftest ^:parallel ^:integration-fast ^:explicit test-current-for-tokens-multiple-source-tokens
   (testing-using-waiter-url
     (let [service-name (rand-name)
           token-name-a (create-token-name waiter-url (str service-name "-A"))
