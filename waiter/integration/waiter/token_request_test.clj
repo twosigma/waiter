@@ -98,11 +98,6 @@
           walk/stringify-keys
           set))
 
-(defn- token->etag [waiter-url token]
-  (-> (get-token waiter-url token :query-params {"token" token})
-      :headers
-      (get "etag")))
-
 (defn- make-source-tokens-entries [waiter-url & tokens]
   (mapv (fn [token] {"token" token "version" (token->etag waiter-url token)}) tokens))
 
@@ -1399,61 +1394,84 @@
         (finally
           (delete-token-and-assert waiter-url token))))))
 
-;; fails to assert:
-;; (is (contains? references {:token {:sources [{:token token-name-a :version (token->etag waiter-url token-name-a)}
-;;                                              {:token token-name-b :version (token->etag waiter-url token-name-b)}]}})))
-(deftest ^:parallel ^:integration-fast ^:explicit test-current-for-tokens-multiple-source-tokens
+(defn- response->etag
+  "Retrieves the etag header from a response."
+  [response]
+  (-> response
+    :headers
+    (get "etag")))
+
+(defn update-token
+  "Updates the token and returns the etag."
+  [waiter-url token-name service-description]
+  (let [response (post-token waiter-url (assoc service-description :token token-name))
+        etag (response->etag response)]
+    (assert-response-status response 200)
+    (is (not (str/blank? etag)))
+    etag))
+
+(deftest ^:parallel ^:integration-fast test-current-for-tokens-multiple-source-tokens
   (testing-using-waiter-url
     (let [service-name (rand-name)
           token-name-a (create-token-name waiter-url (str service-name "-A"))
           token-name-b (create-token-name waiter-url (str service-name "-B"))
-          first-service-description (assoc (kitchen-request-headers :prefix "")
-                                      :name service-name)
-          combined-token-header (str token-name-a "," token-name-b)]
+          base-service-description (assoc (kitchen-request-headers :prefix "") :name service-name)
+          service-description-a1 (dissoc base-service-description :cpus)
+          service-description-b1 (dissoc base-service-description :mem)
+          build-reference (fn [etag-a etag-b]
+                            {:token {:sources [{:token token-name-a :version etag-a}
+                                               {:token token-name-b :version etag-b}]}})
+          combined-token-header (str token-name-a "," token-name-b)
+          {:keys [cookies]} (make-request waiter-url "/waiter-auth")]
       (try
-        (let [response (post-token waiter-url (assoc first-service-description :token token-name-a))]
-            (assert-response-status response 200))
-          (let [response (post-token waiter-url (assoc first-service-description :token token-name-b))]
-            (assert-response-status response 200))
-
-        (let [service-id-a (retrieve-service-id waiter-url {:x-waiter-token combined-token-header})
-              new-service-description (update first-service-description :cpus #(+ % 0.1))]
+        (let [etag-a1 (update-token waiter-url token-name-a service-description-a1)
+              _ (assert-token-on-all-routers waiter-url token-name-a etag-a1 cookies)
+              etag-b1 (update-token waiter-url token-name-b service-description-b1)
+              _ (assert-token-on-all-routers waiter-url token-name-b etag-b1 cookies)
+              service-id-a (retrieve-service-id waiter-url {:x-waiter-token combined-token-header})]
 
           (let [service-settings (service-settings waiter-url service-id-a :query-params {"include" "references"})
-                references (set (get service-settings :references))]
-            (is (not (contains? references {})) (str service-settings))
-            (is (contains? references {:token {:sources [{:token token-name-a :version (token->etag waiter-url token-name-a)}
-                                                         {:token token-name-b :version (token->etag waiter-url token-name-b)}]}})))
+                references-a (get service-settings :references)]
+            (is (= references-a [(build-reference etag-a1 etag-b1)])))
 
-          (let [response (post-token waiter-url (assoc new-service-description :token token-name-a))]
-            (assert-response-status response 200))
+          (let [service-description-a2 (update service-description-a1 :mem #(+ % 8))
+                etag-a2 (update-token waiter-url token-name-a service-description-a2)
+                _ (assert-token-on-all-routers waiter-url token-name-a etag-a2 cookies)
+                _ (is (not= etag-a1 etag-a2))
+                service-id-b (retrieve-service-id waiter-url {:x-waiter-token combined-token-header})]
 
-          (let [service-id-b (retrieve-service-id waiter-url {:x-waiter-token combined-token-header})]
-
+            (is (not= service-id-a service-id-b))
             (let [service-settings (service-settings waiter-url service-id-b :query-params {"include" "references"})
-                  references (set (get service-settings :references))]
-              (is (not (contains? references {})) (str service-settings))
-              (is (contains? references {:token {:sources [{:token token-name-a :version (token->etag waiter-url token-name-a)}
-                                                           {:token token-name-b :version (token->etag waiter-url token-name-b)}]}})))
+                  references-b (get service-settings :references)]
+              (is (= references-b [(build-reference etag-a2 etag-b1)])))
 
-            (let [response (post-token waiter-url (assoc new-service-description :token token-name-b))]
-              (assert-response-status response 200))
+            (let [service-description-b2 (update service-description-b1 :cpus #(+ % 0.1))
+                  etag-b2 (update-token waiter-url token-name-b service-description-b2)
+                  _ (assert-token-on-all-routers waiter-url token-name-b etag-b2 cookies)
+                  _ (is (not= etag-b1 etag-b2))
+                  service-id-c (retrieve-service-id waiter-url {:x-waiter-token combined-token-header})]
 
-            (let [service-id-c (retrieve-service-id waiter-url {:x-waiter-token combined-token-header})]
-
+              (is (not= service-id-a service-id-c))
+              (is (not= service-id-b service-id-c))
               (let [service-settings (service-settings waiter-url service-id-c :query-params {"include" "references"})
-                    references (set (get service-settings :references))]
-                (is (not (contains? references {})) (str service-settings))
-                (is (contains? references {:token {:sources [{:token token-name-a :version (token->etag waiter-url token-name-a)}
-                                                             {:token token-name-b :version (token->etag waiter-url token-name-b)}]}})))
+                    references-c (get service-settings :references)]
+                (is (= references-c [(build-reference etag-a2 etag-b2)])))
 
-              (let [service-a-details (service-settings waiter-url service-id-a)
-                    service-b-details (service-settings waiter-url service-id-b)
-                    service-c-details (service-settings waiter-url service-id-c)]
+              (let [service-a-details (service-settings waiter-url service-id-a :query-params {"include" "references"})
+                    references-a (get service-a-details :references)
+                    service-b-details (service-settings waiter-url service-id-b :query-params {"include" "references"})
+                    references-b (get service-b-details :references)
+                    service-c-details (service-settings waiter-url service-id-c :query-params {"include" "references"})
+                    references-c (get service-c-details :references)]
                 (is (nil? (:current-for-tokens service-a-details)))
                 (is (nil? (:current-for-tokens service-b-details)))
-                (is (= [token-name-a token-name-b]
-                       (:current-for-tokens service-c-details)))))))
+                (is (= [token-name-a token-name-b] (:current-for-tokens service-c-details)))
+                (is (= 1 (count references-a)))
+                (is (= 1 (count references-b)))
+                (is (= 1 (count references-c)))
+                (is (not= references-a references-b))
+                (is (not= references-a references-c))
+                (is (not= references-b references-c))))))
         (finally
           (delete-token-and-assert waiter-url token-name-a)
           (delete-token-and-assert waiter-url token-name-b))))))
