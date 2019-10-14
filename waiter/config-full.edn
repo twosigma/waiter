@@ -749,6 +749,9 @@
                                ;; service description:
                                :async-request-timeout-ms 60000
 
+                               ;; The max time (milliseconds) a connection can be idle in the client connection pool:
+                               :client-connection-idle-timeout-ms 10000
+
                                ;; The HTTP connect timeout (milliseconds) for instance requests:
                                :connection-timeout-ms 5000
 

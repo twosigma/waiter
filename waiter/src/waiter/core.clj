@@ -629,11 +629,12 @@
                           (utils/create-component entitlement-config))
    :fallback-state-atom (pc/fnk [] (atom {:available-service-ids #{}
                                           :healthy-service-ids #{}}))
-   :http-clients (pc/fnk [[:settings [:instance-request-properties connection-timeout-ms]]]
+   :http-clients (pc/fnk [[:settings [:instance-request-properties client-connection-idle-timeout-ms connection-timeout-ms]]]
                    (hu/prepare-http-clients
                      {:client-name "waiter-client"
                       :conn-timeout connection-timeout-ms
-                      :follow-redirects? false}))
+                      :follow-redirects? false
+                      :socket-timeout client-connection-idle-timeout-ms}))
    :instance-rpc-chan (pc/fnk [] (async/chan 1024)) ; TODO move to service-chan-maintainer
    :interstitial-state-atom (pc/fnk [] (atom {:initialized? false
                                               :service-id->interstitial-promise {}}))
