@@ -515,8 +515,9 @@
     :protocol protocol
     :query-params query-params))
 
-(defn retrieve-service-id [waiter-url waiter-headers & {:keys [verbose] :or {verbose false}}]
-  (let [service-id-result (make-request waiter-url "/service-id" :headers waiter-headers)
+(defn retrieve-service-id [waiter-url waiter-headers &
+                           {:keys [cookies verbose] :or {cookies [] verbose false}}]
+  (let [service-id-result (make-request waiter-url "/service-id" :cookies cookies :headers waiter-headers)
         service-id (str (:body service-id-result))]
     (when verbose
       (log/info "service id: " service-id))
@@ -1053,9 +1054,10 @@
 (defn post-token
   "Sends a POST request with the given token definition"
   [waiter-url {:keys [token] :as token-map} &
-   {:keys [headers query-params] :or {headers {}, query-params {}}}]
+   {:keys [cookies headers query-params] :or {cookies [] headers {} query-params {}}}]
   (make-request waiter-url "/token"
                 :body (utils/clj->json token-map)
+                :cookies cookies
                 :headers (assoc headers "host" token)
                 :method :post
                 :query-params query-params))
@@ -1133,6 +1135,22 @@
          cookies# ~cookies]
      (doseq [[_# router-url#] (routers ~waiter-url)]
        (is (wait-for #(seq (active-instances router-url# service-id# :cookies cookies#)))))))
+
+(defn token->etag
+  "Retrieves the etag for a token"
+  [waiter-url token & {:keys [cookies] :or {cookies {}}}]
+  (-> (get-token waiter-url token :cookies cookies :query-params {"token" token})
+    :headers
+    (get "etag")))
+
+(defmacro assert-token-on-all-routers
+  [waiter-url token etag cookies]
+  `(let [waiter-url# ~waiter-url
+         token# ~token
+         etag# ~etag
+         cookies# ~cookies]
+     (doseq [[_# router-url#] (routers waiter-url#)]
+       (is (wait-for #(= etag# (token->etag router-url# token# :cookies cookies#)))))))
 
 (defn make-chunked-body
   "Returns a channel that receives chunks from the input body string.
