@@ -102,6 +102,11 @@
                       :input {:request-properties {:fie "foe", :async-check-interval-ms 100, :async-request-timeout-ms 200}
                               :waiter-headers {"async-check-interval" 50, "async-request-timeout" 250}}
                       :expected {:fie "foe", :async-check-interval-ms 50, :async-request-timeout-ms 250, :initial-socket-timeout-ms nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      }
+                     {:name "test-prepare-request-properties:too-large-async-request-timeout-header"
+                      :input {:request-properties {:fie "foe", :async-check-interval-ms 100, :async-request-timeout-ms 200}
+                              :waiter-headers {"async-request-timeout" (+ one-hour-in-millis 1000)}}
+                      :expected {:fie "foe", :async-check-interval-ms 100, :async-request-timeout-ms one-hour-in-millis, :initial-socket-timeout-ms nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
                       })]
     (doseq [{:keys [name input expected]} test-cases]
       (testing (str "Test " name)
