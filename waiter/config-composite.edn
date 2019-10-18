@@ -77,6 +77,9 @@
                                                          :work-directory "scheduler/shell-low"}}
                                 :default-scheduler :shell-high}}
 
+ ; ---------- Service Descriptions ----------
+ :service-description-defaults {"min-instances" 2}
+
  ; ---------- CORS ----------
  :cors-config {:kind :allow-all}
 
