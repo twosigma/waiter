@@ -82,6 +82,7 @@
             total-requests 100000
             name (rand-name)
             extra-headers {:x-waiter-max-instances max-instances
+                           :x-waiter-min-instances 1
                            :x-waiter-name name
                            :x-waiter-scale-down-factor 0.001
                            :x-waiter-scale-up-factor 0.999

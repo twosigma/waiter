@@ -195,6 +195,7 @@
              :x-waiter-concurrency-level 128
              :x-waiter-health-check-interval-secs 5
              :x-waiter-health-check-max-consecutive-failures 10
+             :x-waiter-min-instances 1
              :x-waiter-name (rand-name)}
             #(make-kitchen-request waiter-url % :path "/hello"))
           check-filtered-instances (fn [target-url healthy-filter-fn]

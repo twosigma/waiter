@@ -42,6 +42,7 @@
     (let [concurrency-level 3
           custom-headers {:x-kitchen-delay-ms 5000
                           :x-waiter-concurrency-level concurrency-level
+                          :x-waiter-min-instances 1
                           :x-waiter-scale-up-factor 0.9
                           :x-waiter-scale-down-factor 0.9
                           :x-waiter-name (rand-name)}]
@@ -55,6 +56,7 @@
                           :x-waiter-scale-up-factor 0.9
                           :x-waiter-scale-down-factor 0.9
                           :x-waiter-grace-period-secs 600
+                          :x-waiter-min-instances 1
                           :x-waiter-name (rand-name)
                           :x-waiter-cmd "sleep 600"
                           :x-waiter-queue-timeout 5000}]
@@ -96,6 +98,7 @@
           expected-instances (int (* num-threads scale-factor)) ;; all requests to the same router
           extra-headers {:x-kitchen-delay-ms (-> delay-secs t/seconds t/in-millis)
                          :x-waiter-max-instances (inc expected-instances)
+                         :x-waiter-min-instances 1
                          :x-waiter-name (rand-name)
                          :x-waiter-scale-down-factor 0.001
                          :x-waiter-scale-factor scale-factor
@@ -120,6 +123,7 @@
           extra-headers {:x-kitchen-delay-ms (-> delay-secs t/seconds t/in-millis)
                          :x-waiter-concurrency-level concurrency-level
                          :x-waiter-max-instances 5
+                         :x-waiter-min-instances 1
                          :x-waiter-name (rand-name)
                          :x-waiter-scale-down-factor 0.25
                          :x-waiter-scale-up-factor 0.99}
@@ -195,8 +199,8 @@
           requests-per-thread 20
           request-delay-ms 2000
           custom-headers {:x-kitchen-delay-ms request-delay-ms
-                          :x-waiter-min-instances 2
                           :x-waiter-max-instances 5
+                          :x-waiter-min-instances 2
                           :x-waiter-name (rand-name)
                           :x-waiter-scale-up-factor 0.99}
           request-fn (fn [& {:keys [cookies] :or {cookies {}}}]

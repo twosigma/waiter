@@ -107,8 +107,9 @@
     (log/info (str "Testing instance allocation for concurrent service for each request (will take "
                    (colored-time (str "~3 minutes"))
                    " to complete)."))
-    (let [extra-headers {:x-waiter-name (rand-name)
-                         :x-waiter-concurrency-level 100
+    (let [extra-headers {:x-waiter-concurrency-level 100
+                         :x-waiter-min-instances 1
+                         :x-waiter-name (rand-name)
                          :x-waiter-scale-up-factor 0.99}
           request-fn (fn [time & {:keys [cookies] :or {cookies {}}}]
                        (make-request-with-debug-info

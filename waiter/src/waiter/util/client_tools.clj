@@ -445,6 +445,7 @@
    :idle-timeout-mins 10
    :mem 256
    :metric-group "waiter_test"
+   :min-instances 1
    :version "version-does-not-matter"})
 
 (defn kitchen-request-headers

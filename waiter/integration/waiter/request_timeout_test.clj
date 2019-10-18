@@ -162,6 +162,7 @@
           extra-headers {:x-waiter-cmd (kitchen-cmd "-p $PORT0")
                          :x-waiter-concurrency-level num-routers
                          :x-waiter-max-instances 1
+                         :x-waiter-min-instances 1
                          :x-waiter-name (rand-name)}
           {:keys [cookies instance-id service-id] :as response} (make-request-fn waiter-url extra-headers nil)]
       (assert-response-status response 200)

@@ -29,6 +29,7 @@
           extra-headers (merge (kitchen-request-headers)
                                {:x-waiter-name (rand-name)
                                 :x-waiter-max-instances max-instances
+                                :x-waiter-min-instances 1
                                 :x-waiter-scale-up-factor 0.999
                                 :x-waiter-scale-down-factor 0.001
                                 :x-waiter-work-stealing true})

@@ -79,6 +79,7 @@
               headers {:x-waiter-concurrency-level 1
                        :x-waiter-distribution-scheme "simple"
                        :x-waiter-max-instances 2
+                       :x-waiter-min-instances 1
                        :x-waiter-name (rand-name)
                        :x-waiter-scale-down-factor 0.99
                        :x-waiter-scale-up-factor 0.99}
