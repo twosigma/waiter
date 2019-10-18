@@ -25,6 +25,7 @@
             [full.async :refer (<?? <? go-try)]
             [metrics.core]
             [metrics.counters :as counters]
+            [metrics.meters :as meters]
             [metrics.timers :as timers]
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
@@ -764,11 +765,19 @@
                             curator]
                      (fn synchronize-fn [path f]
                        (let [lock-path (str base-path "/" path)]
+                         (meters/mark! (metrics/waiter-meter "core" "synchronize" "invocation-rate"))
                          (timers/start-stop-time!
                            (metrics/waiter-timer "core" "synchronize" "all")
                            (timers/start-stop-time!
-                             (metrics/waiter-timer "core" "synchronize" (str "cs-" path))
-                             (curator/synchronize curator lock-path mutex-timeout-ms f))))))})
+                             (metrics/waiter-timer "core" "synchronize" (str "all-" path))
+                             (curator/synchronize
+                               curator lock-path mutex-timeout-ms
+                               (fn []
+                                 (timers/start-stop-time!
+                                   (metrics/waiter-timer "core" "synchronize" "cs")
+                                   (timers/start-stop-time!
+                                     (metrics/waiter-timer "core" "synchronize" (str "cs-" path))
+                                     (f))))))))))})
 
 (def scheduler
   {:scheduler (pc/fnk [[:settings scheduler-config scheduler-syncer-interval-secs]
