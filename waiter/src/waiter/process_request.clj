@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.process-request
-  (:require [clojure.core.async :as async]
+  (:require [clj-time.core :as t]
+            [clojure.core.async :as async]
             [clojure.core.async.impl.protocols :as protocols]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
@@ -151,29 +152,43 @@
       (catch Exception e
         (cid/cdebug correlation-id "gobbling expected error while passing poison pill" (.getMessage e))))))
 
+(defn- lookup-configured-timeout
+  "Parses the header value to an integer and return it if it is inside the allowed maximum value.
+   Else it returns the old value."
+  ([old-value header-value display-name]
+   (lookup-configured-timeout old-value header-value display-name nil))
+  ([old-value header-value display-name allowed-max-value]
+   (let [parsed-value (when header-value
+                        (try
+                          (log/info "request wants to configure" display-name "to" header-value)
+                          (Integer/parseInt (str header-value))
+                          (catch Exception _
+                            (log/warn "cannot convert header for" display-name "to an int:" header-value)
+                            nil)))]
+     (if (and parsed-value (pos? parsed-value))
+       (if (and (integer? allowed-max-value)
+                (> parsed-value allowed-max-value))
+         (do
+           (log/warn "limiting" display-name "to" allowed-max-value)
+           allowed-max-value)
+         parsed-value)
+       old-value))))
+
+(def ^:const one-hour-in-millis (-> 1 t/hours t/in-millis))
+
 (defn prepare-request-properties
   [instance-request-properties waiter-headers]
-  (let [service-configured-timeout-lookup
-        (fn [old-value header-value display-name]
-          (let [parsed-value (when header-value
-                               (try
-                                 (log/info "request wants to configure" display-name "to" header-value)
-                                 (Integer/parseInt (str header-value))
-                                 (catch Exception _
-                                   (log/warn "cannot convert header for" display-name "to an int:" header-value)
-                                   nil)))]
-            (if (and parsed-value (pos? parsed-value)) parsed-value old-value)))]
-    (-> instance-request-properties
-        (update :async-check-interval-ms service-configured-timeout-lookup
-                (headers/get-waiter-header waiter-headers "async-check-interval") "async request check interval")
-        (update :async-request-timeout-ms service-configured-timeout-lookup
-                (headers/get-waiter-header waiter-headers "async-request-timeout") "async request timeout")
-        (update :initial-socket-timeout-ms service-configured-timeout-lookup
-                (headers/get-waiter-header waiter-headers "timeout") "socket timeout")
-        (update :queue-timeout-ms service-configured-timeout-lookup
-                (headers/get-waiter-header waiter-headers "queue-timeout") "instance timeout")
-        (update :streaming-timeout-ms service-configured-timeout-lookup
-                (headers/get-waiter-header waiter-headers "streaming-timeout") "streaming timeout"))))
+  (-> instance-request-properties
+    (update :async-check-interval-ms lookup-configured-timeout
+            (headers/get-waiter-header waiter-headers "async-check-interval") "async request check interval")
+    (update :async-request-timeout-ms lookup-configured-timeout
+            (headers/get-waiter-header waiter-headers "async-request-timeout") "async request timeout" one-hour-in-millis)
+    (update :initial-socket-timeout-ms lookup-configured-timeout
+            (headers/get-waiter-header waiter-headers "timeout") "socket timeout")
+    (update :queue-timeout-ms lookup-configured-timeout
+            (headers/get-waiter-header waiter-headers "queue-timeout") "instance timeout")
+    (update :streaming-timeout-ms lookup-configured-timeout
+            (headers/get-waiter-header waiter-headers "streaming-timeout") "streaming timeout")))
 
 (defn- prepare-instance
   "Tries to acquire an instance and set up a mechanism to release the instance when
