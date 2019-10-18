@@ -46,9 +46,10 @@
 
 (defn- make-async-request
   [waiter-url processing-time-ms]
-  (let [headers {:x-waiter-name (rand-name)
+  (let [headers {:x-waiter-concurrency-level 100
                  :x-waiter-max-instances 1
-                 :x-waiter-concurrency-level 100}
+                 :x-waiter-min-instances 1
+                 :x-waiter-name (rand-name)}
         {:keys [request-headers service-id cookies]}
         (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
         async-request-headers (-> request-headers

@@ -71,6 +71,7 @@
           stagger-ms 100
           headers {:x-waiter-name (rand-name)
                    :x-waiter-max-instances 1
+                   :x-waiter-min-instances 1
                    :x-waiter-max-queue-length max-queue-length
                    ;; disallow work-stealing interference from balanced
                    :x-waiter-distribution-scheme "simple"

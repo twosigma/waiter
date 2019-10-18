@@ -382,6 +382,7 @@
                            "x-waiter-metric-group" "waiter_ws_test"
                            "x-waiter-name" (rand-name)
                            "x-waiter-max-instances" "1"
+                           "x-waiter-min-instances" "1"
                            "x-waiter-concurrency-level" "20")]
       (is auth-cookie-value)
       (try

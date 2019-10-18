@@ -665,6 +665,7 @@
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
                    :x-waiter-max-instances 5
+                   :x-waiter-min-instances 1
                    :x-waiter-scale-up-factor 0.99
                    :x-waiter-scale-down-factor 0.99
                    :x-kitchen-delay-ms 5000}
@@ -698,7 +699,8 @@
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
                    :x-waiter-distribution-scheme "simple" ;; disallow work-stealing interference from balanced
-                   :x-waiter-max-instances 1}
+                   :x-waiter-max-instances 1
+                   :x-waiter-min-instances 1}
           {:keys [cookies service-id]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
           router-url (some-router-url-with-assigned-slots waiter-url service-id)
           response-priorities-atom (atom [])

@@ -23,6 +23,7 @@
   (testing-using-waiter-url
     (let [headers {:x-kitchen-delay-ms 10000 ;; allow Waiter router state to sync
                    :x-kitchen-echo "true"
+                   :x-waiter-min-instances 1
                    :x-waiter-name (rand-name)}
           lorem-ipsum "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
           {:keys [body cookies router-id service-id] :as response}
