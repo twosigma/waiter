@@ -111,11 +111,12 @@
 
 (defn set-idle-timeout!
   "Configures the idle timeout in the response output stream (HttpOutput) to `idle-timeout-ms` ms."
-  [output-stream idle-timeout-ms]
+  [output-stream idle-timeout-ms reason]
   (if (instance? HttpOutput output-stream)
     (try
-      (log/debug "executing pill to adjust idle timeout to" idle-timeout-ms "ms.")
       (let [^HttpChannel http-channel (.getHttpChannel ^HttpOutput output-stream)]
+        (log/info "executing pill to adjust idle timeout to" idle-timeout-ms "ms from"
+                  (.getIdleTimeout http-channel) "ms due to" reason "on" http-channel)
         (.setIdleTimeout http-channel idle-timeout-ms))
       (catch Exception e
         (log/error e "gobbling unexpected error while setting idle timeout")))
@@ -123,11 +124,11 @@
 
 (defn- configure-idle-timeout-pill-fn
   "Creates a function that configures the idle timeout in the response output stream (HttpOutput) to `streaming-timeout-ms` ms."
-  [correlation-id streaming-timeout-ms]
+  [correlation-id streaming-timeout-ms reason]
   (fn configure-idle-timeout-pill [output-stream]
     (cid/with-correlation-id
       correlation-id
-      (set-idle-timeout! output-stream streaming-timeout-ms))))
+      (set-idle-timeout! output-stream streaming-timeout-ms reason))))
 
 (defn- poison-pill-fn
   "Sends a faulty InputStream directly into Jetty's response output stream (HttpOutput) to trigger a failure path.
@@ -140,7 +141,7 @@
     (try
       (cid/with-correlation-id
         correlation-id
-        (set-idle-timeout! output-stream 1)
+        (set-idle-timeout! output-stream 1 "poison pill after error")
         (let [input-stream (proxy [InputStream] []
                              (available [] true) ; claim data is available to enable trigger exception on read()
                              (close [])
@@ -371,6 +372,7 @@
         body' (cond->> body
                 (instance? ServletInputStream body)
                 (servlet-input-stream->channel service-id metric-group streaming-timeout-ms abort-ch ctrl-ch))]
+    (log/info "client idle timeout:" (.getIdleTimeout http-client))
     (http/request
       http-client
       (cond-> {:abort-ch abort-ch
@@ -445,7 +447,7 @@
    buffers bytes, and push byte input streams onto the channel until the body input
    stream is exhausted."
   [{:keys [body error-chan]} confirm-live-connection request-abort-callback resp-chan
-   {:keys [streaming-timeout-ms]}
+   {:keys [client-connection-idle-timeout-ms streaming-timeout-ms]}
    reservation-status-promise request-state-chan metric-group waiter-debug-enabled?
    {:keys [throughput-meter requests-streaming requests-waiting-to-stream
            stream-request-rate stream-complete-rate
@@ -456,7 +458,7 @@
       (try
         (counters/dec! requests-waiting-to-stream)
         ; configure the idle timeout to the value specified by streaming-timeout-ms
-        (async/>! resp-chan (configure-idle-timeout-pill-fn (cid/get-correlation-id) streaming-timeout-ms))
+        (async/>! resp-chan (configure-idle-timeout-pill-fn (cid/get-correlation-id) streaming-timeout-ms "streaming timeout"))
         (async/>! resp-chan (fn [output-stream] (reset! output-stream-atom output-stream)))
         (metrics/with-meter
           stream-request-rate
@@ -537,6 +539,10 @@
                     (log/info "invoking poison pill directly on output stream")
                     (poison-pill-function output-stream)))))))
         (finally
+          (comment
+            (async/>! resp-chan
+                      (configure-idle-timeout-pill-fn
+                        (cid/get-correlation-id) client-connection-idle-timeout-ms "reset timeout")))
           (async/close! resp-chan)
           (async/close! body)
           (async/close! request-state-chan))))))
