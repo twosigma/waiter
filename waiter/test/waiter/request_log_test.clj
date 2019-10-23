@@ -33,6 +33,7 @@
                  :request-method :post
                  :request-time (t/date-time 2018 4 11)
                  :scheme "http"
+                 :server-port 9090
                  :uri "/"}]
     (is (= {:cid "123"
             :client-protocol "HTTP/2.0"
@@ -48,6 +49,7 @@
             :request-id "abc"
             :request-time "2018-04-11T00:00:00.000Z"
             :scheme "http"
+            :server-port 9090
             :user-agent "test-user-agent"}
            (request->context request)))))
 
@@ -58,12 +60,16 @@
                   :descriptor {:service-id "service-id"
                                :service-description {"metric-group" "service-metric-group"
                                                      "name" "service-name"
-                                                     "version" "service-version"}}
+                                                     "run-as-user" "john.doe"
+                                                     "version" "service-version"}
+                               :source-tokens [{"token" "test-token1" "version" "E-1234"}
+                                               {"token" "test-token2" "version" "E-4321"}]}
                   :get-instance-latency-ns 500
                   :handle-request-latency-ns 2000
                   :headers {"content-length" "40"
                             "content-type" "application/xml"
                             "grpc-status" "13"
+                            "location" "/foo/bar"
                             "server" "foo-bar"}
                   :instance {:host "instance-host"
                              :id "instance-id"
@@ -92,11 +98,14 @@
             :principal "principal@DOMAIN.COM"
             :response-content-length "40"
             :response-content-type "application/xml"
+            :response-location "/foo/bar"
+            :run-as-user "john.doe"
             :server "foo-bar"
             :service-id "service-id"
             :service-name "service-name"
             :service-version "service-version"
             :status 200
+            :token "test-token1,test-token2"
             :waiter-api false}
            (response->context response)))))
 

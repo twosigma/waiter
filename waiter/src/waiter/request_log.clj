@@ -29,7 +29,8 @@
 
 (defn request->context
   "Convert a request into a context suitable for logging."
-  [{:keys [client-protocol headers internal-protocol query-string remote-addr request-id request-method request-time uri] :as request}]
+  [{:keys [client-protocol headers internal-protocol query-string remote-addr request-id
+           request-method request-time server-port uri] :as request}]
   (let [{:strs [content-length content-type host origin user-agent x-cid x-forwarded-for]} headers]
     (cond-> {:cid x-cid
              :host host
@@ -45,6 +46,7 @@
       content-length (assoc :request-content-length content-length)
       content-type (assoc :request-content-type content-type)
       request-time (assoc :request-time (du/date-to-str request-time))
+      server-port (assoc :server-port server-port)
       user-agent (assoc :user-agent user-agent))))
 
 (defn response->context
@@ -52,18 +54,21 @@
   [{:keys [authorization/method authorization/principal backend-response-latency-ns descriptor latest-service-id
            get-instance-latency-ns handle-request-latency-ns headers instance instance-proto protocol status
            waiter-api-call?] :as response}]
-  (let [{:keys [service-id service-description]} descriptor
-        {:strs [content-length content-type grpc-status server]} headers
+  (let [{:keys [service-id service-description source-tokens]} descriptor
+        token (some->> source-tokens (map #(get % "token")) seq (str/join ","))
+        {:strs [metric-group run-as-user version]} service-description
+        {:strs [content-length content-type grpc-status location server]} headers
         {:keys [k8s/node-name k8s/pod-name]} instance]
     (cond-> {:status (or status 200)}
       method (assoc :authentication-method (name method))
       backend-response-latency-ns (assoc :backend-response-latency-ns backend-response-latency-ns)
       content-length (assoc :response-content-length content-length)
       content-type (assoc :response-content-type content-type)
-      descriptor (assoc :metric-group (get service-description "metric-group")
+      descriptor (assoc :metric-group metric-group
+                        :run-as-user run-as-user
                         :service-id service-id
                         :service-name (get service-description "name")
-                        :service-version (get service-description "version"))
+                        :service-version version)
       grpc-status (assoc :grpc-status grpc-status)
       instance (assoc :instance-host (:host instance)
                       :instance-id (:id instance)
@@ -77,6 +82,8 @@
       protocol (assoc :backend-protocol protocol)
       server (assoc :server server)
       handle-request-latency-ns (assoc :handle-request-latency-ns handle-request-latency-ns)
+      location (assoc :response-location location)
+      token (assoc :token token)
       (some? waiter-api-call?) (assoc :waiter-api waiter-api-call?))))
 
 (defn log-request!
