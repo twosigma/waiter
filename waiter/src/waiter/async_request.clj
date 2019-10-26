@@ -22,7 +22,8 @@
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.service :as service]
-            [waiter.statsd :as statsd])
+            [waiter.statsd :as statsd]
+            [metrics.timers :as timers])
   (:import [java.net ConnectException SocketTimeoutException URI URLEncoder]
            java.util.concurrent.TimeoutException))
 
@@ -65,7 +66,9 @@
                 (log/info "request has been cleared from store, exiting monitoring loop")
                 (complete-async-request :success)
                 (if (= trigger-chan exit-chan) :request-terminated :request-no-longer-active))
-              (let [{:keys [body headers error status]} (async/<! (make-http-request))]
+              (let [{:keys [body headers error status]} (timers/start-stop-time!
+                                                          (metrics/waiter-timer "async" "monitor")
+                                                          (async/<! (make-http-request)))]
                 (when body
                   (async/close! body))
                 (if error
