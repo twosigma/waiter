@@ -326,6 +326,50 @@
           (complete-async-request-fn :success)
           (is (nil? (get @async-request-store-atom request-id))))))))
 
+(deftest test-post-process-async-request-response-sanitized-check-interval
+  (let [{:keys [host port] :as instance} {:host "www.example.com", :port 1234}
+        router-id "my-router-id"
+        service-id "test-service-id"
+        metric-group "test-metric-group"
+        backend-proto "http"
+        async-request-store-atom (atom {})
+        request-id "request-2394613984619"
+        reason-map {:request-id request-id}
+        request-properties {:async-check-interval-ms 100, :async-request-timeout-ms 6000}
+        location (str "/location/" request-id)
+        query-string "a=b&c=d|e"
+        make-http-request-fn (fn [in-instance in-request end-route metric-group backend-proto]
+                               (is (= instance in-instance))
+                               (is (= {:body nil :headers {} :query-string "a=b&c=d|e" :request-method :get} in-request))
+                               (is (= "/location/request-2394613984619" end-route))
+                               (is (= "test-metric-group" metric-group))
+                               (is (= "http" backend-proto)))
+        instance-rpc-chan (async/chan 1)
+        complete-async-request-atom (atom nil)
+        response {}]
+    (with-redefs [service/release-instance-go (constantly nil)
+                  monitor-async-request
+                  (fn [make-get-request-fn complete-async-request-fn request-still-active? _
+                       async-check-interval-ms async-request-timeout-ms correlation-id exit-chan]
+                    (is (request-still-active?))
+                    (is (= 120 async-check-interval-ms))
+                    (is (= 6000 async-request-timeout-ms))
+                    (is correlation-id)
+                    (is exit-chan)
+                    (make-get-request-fn)
+                    (reset! complete-async-request-atom complete-async-request-fn))]
+      (let [{:keys [headers]} (post-process-async-request-response
+                                router-id async-request-store-atom make-http-request-fn instance-rpc-chan response
+                                service-id metric-group backend-proto instance reason-map request-properties
+                                location query-string)]
+        (is (get @async-request-store-atom request-id))
+        (is (= (str "/waiter-async/status/" request-id "/" router-id "/" service-id "/" host "/" port location "?" query-string)
+               (get headers "location")))
+        (let [complete-async-request-fn @complete-async-request-atom]
+          (is complete-async-request-fn)
+          (complete-async-request-fn :success)
+          (is (nil? (get @async-request-store-atom request-id))))))))
+
 (deftest test-route-params-and-uri-generation
   (let [uri->route-params (fn [prefix uri]
                             (when (str/starts-with? (str uri) prefix)
