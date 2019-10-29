@@ -129,11 +129,13 @@
         (is (= {:exit-code 1
                 :message "test-command: expected 2 arguments FILE URL, provided 3: [\"some-file.txt\" \"http://cluster-1.com\" \"http://cluster-2.com\"]"}
                (cli/process-command test-command-config context args))))
-      (let [args ["some-file.txt" "http://cluster-1.com"]]
+      (let [args ["some-file.txt" "http://cluster-1.com"]
+            invocation-promise (promise)]
         (with-redefs [backup-tokens (fn [in-waiter-api in-file-operations-api cluster-url file accrete]
                                       (is (= waiter-api in-waiter-api))
                                       (is (= file-operations-api in-file-operations-api))
-                                      (println "backup-tokens:" cluster-url file accrete))]
+                                      (deliver invocation-promise ::invoked))]
           (is (= {:exit-code 0
                   :message "test-command: exiting with code 0"}
-                 (cli/process-command test-command-config context args))))))))
+                 (cli/process-command test-command-config context args)))
+          (is (= ::invoked (deref invocation-promise 0 ::un-initialized))))))))
