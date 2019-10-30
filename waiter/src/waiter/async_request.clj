@@ -160,6 +160,18 @@
   (let [encode #(if %1 (URLEncoder/encode %1 "UTF-8") (str %1))]
     (str prefix (encode request-id) "/" (encode router-id) "/" service-id "/" (str host) "/" (str port) location)))
 
+(defn sanitize-check-interval
+  "Computes the async-check-interval to use by restricting the total number of checks to be performed
+   to max-status-checks-per-async-request."
+  [async-request-timeout-ms async-check-interval-ms]
+  (let [sanitized-check-interval-ms (int (/ async-request-timeout-ms max-status-checks-per-async-request))]
+    (if (>= async-check-interval-ms sanitized-check-interval-ms)
+      async-check-interval-ms
+      (do
+        (log/info "increasing async check interval to" sanitized-check-interval-ms
+                  "from" async-check-interval-ms)
+        sanitized-check-interval-ms))))
+
 (defn post-process-async-request-response
   "Triggers execution of monitoring system for an async request.
    The function assumes location begins with a slash.
@@ -193,13 +205,7 @@
               (complete-async-request-locally async-request-store-atom release-instance-fn request-id status))
             (request-still-active? []
               (contains? @async-request-store-atom request-id))]
-      (let [sanitized-check-interval-ms (int (/ async-request-timeout-ms max-status-checks-per-async-request))
-            check-interval-ms (if (>= async-check-interval-ms sanitized-check-interval-ms)
-                                async-check-interval-ms
-                                (do
-                                  (log/info "increasing async check interval to" sanitized-check-interval-ms
-                                            "from" async-check-interval-ms)
-                                  sanitized-check-interval-ms))]
+      (let [check-interval-ms (sanitize-check-interval async-request-timeout-ms async-check-interval-ms)]
         (monitor-async-request make-get-request-fn complete-async-request-fn request-still-active? status-endpoint
                                check-interval-ms async-request-timeout-ms correlation-id exit-chan)))
     ;; modify the location header in the response

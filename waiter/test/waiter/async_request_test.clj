@@ -335,7 +335,9 @@
         async-request-store-atom (atom {})
         request-id "request-2394613984619"
         reason-map {:request-id request-id}
-        request-properties {:async-check-interval-ms 100, :async-request-timeout-ms 6000}
+        async-check-interval-ms 200
+        async-request-timeout-ms 100000
+        expected-check-interval-ms (sanitize-check-interval async-request-timeout-ms async-check-interval-ms)
         location (str "/location/" request-id)
         query-string "a=b&c=d|e"
         make-http-request-fn (fn [in-instance in-request end-route metric-group backend-proto]
@@ -350,15 +352,17 @@
     (with-redefs [service/release-instance-go (constantly nil)
                   monitor-async-request
                   (fn [make-get-request-fn complete-async-request-fn request-still-active? _
-                       async-check-interval-ms async-request-timeout-ms correlation-id exit-chan]
+                       in-async-check-interval-ms in-async-request-timeout-ms correlation-id exit-chan]
                     (is (request-still-active?))
-                    (is (= 120 async-check-interval-ms))
-                    (is (= 6000 async-request-timeout-ms))
+                    (is (= expected-check-interval-ms in-async-check-interval-ms))
+                    (is (= async-request-timeout-ms in-async-request-timeout-ms))
                     (is correlation-id)
                     (is exit-chan)
                     (make-get-request-fn)
                     (reset! complete-async-request-atom complete-async-request-fn))]
-      (let [{:keys [headers]} (post-process-async-request-response
+      (let [request-properties {:async-check-interval-ms async-check-interval-ms
+                                :async-request-timeout-ms async-request-timeout-ms}
+            {:keys [headers]} (post-process-async-request-response
                                 router-id async-request-store-atom make-http-request-fn instance-rpc-chan response
                                 service-id metric-group backend-proto instance reason-map request-properties
                                 location query-string)]
