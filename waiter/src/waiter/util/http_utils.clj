@@ -105,6 +105,13 @@
     (when user-agent
       (let [new-user-agent-field (HttpField. HttpHeader/USER_AGENT (str user-agent))]
         (.setUserAgentField client new-user-agent-field)))
+    (log/info "creating http client"
+              (.getIdleTimeout client)
+              {:client client
+               :client-name (:client-name config)
+               :connect-timeout conn-timeout
+               :idle-timeout socket-timeout
+               :user-agent user-agent})
     client))
 
 (defn- prepare-http2-transport
@@ -115,6 +122,7 @@
     (when connection-timeout-ms
       (.setConnectTimeout http2-client connection-timeout-ms))
     (when socket-timeout-ms
+      (log/info "http2 client idle timeout:" socket-timeout-ms)
       (.setIdleTimeout http2-client socket-timeout-ms))
     (.setProtocols http2-client http2-protocols)
     (HttpClientTransportOverHTTP2. http2-client)))
