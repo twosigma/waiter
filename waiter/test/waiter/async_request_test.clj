@@ -291,7 +291,7 @@
         async-request-store-atom (atom {})
         request-id "request-2394613984619"
         reason-map {:request-id request-id}
-        request-properties {:async-check-interval-ms 100, :async-request-timeout-ms 200}
+        request-properties {:async-check-interval-ms 100 :async-request-max-status-checks 50 :async-request-timeout-ms 200}
         location (str "/location/" request-id)
         query-string "a=b&c=d|e"
         make-http-request-fn (fn [in-instance in-request end-route metric-group backend-proto]
@@ -336,8 +336,9 @@
         request-id "request-2394613984619"
         reason-map {:request-id request-id}
         async-check-interval-ms 200
+        async-request-max-status-checks 50
         async-request-timeout-ms 100000
-        expected-check-interval-ms (sanitize-check-interval async-request-timeout-ms async-check-interval-ms)
+        sanitized-check-interval-ms (sanitize-check-interval async-request-timeout-ms async-check-interval-ms async-request-max-status-checks)
         location (str "/location/" request-id)
         query-string "a=b&c=d|e"
         make-http-request-fn (fn [in-instance in-request end-route metric-group backend-proto]
@@ -354,13 +355,14 @@
                   (fn [make-get-request-fn complete-async-request-fn request-still-active? _
                        in-async-check-interval-ms in-async-request-timeout-ms correlation-id exit-chan]
                     (is (request-still-active?))
-                    (is (= expected-check-interval-ms in-async-check-interval-ms))
+                    (is (= sanitized-check-interval-ms in-async-check-interval-ms))
                     (is (= async-request-timeout-ms in-async-request-timeout-ms))
                     (is correlation-id)
                     (is exit-chan)
                     (make-get-request-fn)
                     (reset! complete-async-request-atom complete-async-request-fn))]
       (let [request-properties {:async-check-interval-ms async-check-interval-ms
+                                :async-request-max-status-checks async-request-max-status-checks
                                 :async-request-timeout-ms async-request-timeout-ms}
             {:keys [headers]} (post-process-async-request-response
                                 router-id async-request-store-atom make-http-request-fn instance-rpc-chan response

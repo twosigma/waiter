@@ -739,9 +739,15 @@
                                ;; It makes calls to the backend instance and inspects the responses to
                                ;; decide when to treat the request as complete. A request is not
                                ;; considered complete as long as the backend keeps returning a 200
-                               ;; response. This dictates the interval (milliseconds) at which Waiter
-                               ;; will poll the backend instance:
+                               ;; response. This dictates the default value of the interval (milliseconds)
+                               ;; at which Waiter will poll the backend instance:
                                :async-check-interval-ms 3000
+
+                               ;; Waiter monitors the state of an async request at specified intervals.
+                               ;; However, using too low an async-check-interval-ms can lead to many requests
+                               ;; in short durations. We can restrict the maximum number of such status check
+                               ;; requests per async request using the following value:
+                               :async-request-max-status-checks 50
 
                                ;; After this amount of time (milliseconds) the async request will be
                                ;; considered timed out, and Waiter will release the allocated

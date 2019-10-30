@@ -59,6 +59,7 @@
    (s/required-key :hostname) (s/if string? schema/non-empty-string (s/constrained [schema/non-empty-string]
                                                                                    not-empty))
    (s/required-key :instance-request-properties) {(s/required-key :async-check-interval-ms) schema/positive-int
+                                                  (s/required-key :async-request-max-status-checks) schema/positive-int
                                                   (s/required-key :async-request-timeout-ms) schema/positive-int
                                                   (s/required-key :client-connection-idle-timeout-ms) schema/positive-int
                                                   (s/required-key :connection-timeout-ms) schema/positive-int
@@ -282,6 +283,7 @@
    :host "0.0.0.0"
    :hostname "localhost"
    :instance-request-properties {:async-check-interval-ms 3000
+                                 :async-request-max-status-checks 50
                                  :async-request-timeout-ms 60000
                                  :client-connection-idle-timeout-ms 10000 ; 10 seconds
                                  :connection-timeout-ms 5000 ; 5 seconds

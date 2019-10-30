@@ -27,8 +27,6 @@
   (:import (java.net ConnectException SocketTimeoutException URI URLEncoder)
            (java.util.concurrent TimeoutException)))
 
-(def ^:const ^:private max-status-checks-per-async-request 50)
-
 (def daemon-counter (metrics/waiter-counter "async" "monitor" "daemon"))
 
 (def in-flight-requests-counter (metrics/waiter-counter "async" "monitor" "request"))
@@ -162,9 +160,9 @@
 
 (defn sanitize-check-interval
   "Computes the async-check-interval to use by restricting the total number of checks to be performed
-   to max-status-checks-per-async-request."
-  [async-request-timeout-ms async-check-interval-ms]
-  (let [sanitized-check-interval-ms (int (/ async-request-timeout-ms max-status-checks-per-async-request))]
+   to async-request-max-status-checks."
+  [async-request-timeout-ms async-check-interval-ms async-request-max-status-checks]
+  (let [sanitized-check-interval-ms (int (/ async-request-timeout-ms async-request-max-status-checks))]
     (if (>= async-check-interval-ms sanitized-check-interval-ms)
       async-check-interval-ms
       (do
@@ -183,7 +181,7 @@
   (let [correlation-id (cid/get-correlation-id)
         status-endpoint (scheduler/end-point-url backend-proto host port location)
         _ (log/info "status endpoint for async request is" status-endpoint query-string)
-        {:keys [async-check-interval-ms async-request-timeout-ms]} request-properties
+        {:keys [async-check-interval-ms async-request-max-status-checks async-request-timeout-ms]} request-properties
         exit-chan (async/chan 1)]
     ;; register async request
     (swap! async-request-store-atom assoc request-id (assoc reason-map :exit-chan exit-chan))
@@ -205,7 +203,7 @@
               (complete-async-request-locally async-request-store-atom release-instance-fn request-id status))
             (request-still-active? []
               (contains? @async-request-store-atom request-id))]
-      (let [check-interval-ms (sanitize-check-interval async-request-timeout-ms async-check-interval-ms)]
+      (let [check-interval-ms (sanitize-check-interval async-request-timeout-ms async-check-interval-ms async-request-max-status-checks)]
         (monitor-async-request make-get-request-fn complete-async-request-fn request-still-active? status-endpoint
                                check-interval-ms async-request-timeout-ms correlation-id exit-chan)))
     ;; modify the location header in the response
