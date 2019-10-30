@@ -50,8 +50,9 @@
   (testing-using-waiter-url
     (let [idle-timeout-in-mins 1
           {:keys [service-id]} (make-request-with-debug-info
-                                 {:x-waiter-name (rand-name)
-                                  :x-waiter-idle-timeout-mins idle-timeout-in-mins}
+                                 {:x-waiter-idle-timeout-mins idle-timeout-in-mins
+                                  :x-waiter-min-instances 1
+                                  :x-waiter-name (rand-name)}
                                  #(make-kitchen-request waiter-url %))]
       (log/debug "Waiting for" service-id "to show up...")
       (is (wait-for #(= 1 (num-instances waiter-url service-id)) :interval 1))
