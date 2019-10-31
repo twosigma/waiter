@@ -630,12 +630,13 @@
                           (utils/create-component entitlement-config))
    :fallback-state-atom (pc/fnk [] (atom {:available-service-ids #{}
                                           :healthy-service-ids #{}}))
-   :http-clients (pc/fnk [[:settings [:instance-request-properties client-connection-idle-timeout-ms connection-timeout-ms]]]
-                   (hu/prepare-http-clients
-                     {:client-name "waiter-client"
-                      :conn-timeout connection-timeout-ms
-                      :follow-redirects? false
-                      :socket-timeout client-connection-idle-timeout-ms}))
+   :http-client-properties (pc/fnk [[:settings [:instance-request-properties client-connection-idle-timeout-ms connection-timeout-ms]]]
+                             {:client-name "waiter-client"
+                              :conn-timeout connection-timeout-ms
+                              :follow-redirects? false
+                              :socket-timeout client-connection-idle-timeout-ms})
+   :http-clients (pc/fnk [http-client-properties]
+                   (hu/prepare-http-clients http-client-properties))
    :instance-rpc-chan (pc/fnk [] (async/chan 1024)) ; TODO move to service-chan-maintainer
    :interstitial-state-atom (pc/fnk [] (atom {:initialized? false
                                               :service-id->interstitial-promise {}}))
@@ -722,8 +723,14 @@
                               hostname
                               [hostname])))
    :websocket-client (pc/fnk [[:settings [:websocket-config ws-max-binary-message-size ws-max-text-message-size]]
-                              http-clients]
-                       (let [http-client (hu/select-http-client "http" http-clients)
+                              http-client-properties]
+                       ;; do not share HttpClient instance as WebSocketClient modifies HttpClient properties
+                       ;; https://github.com/eclipse/jetty.project/issues/4262
+                       (let [{:keys [client-name user-agent]} http-client-properties
+                             http-client-config (cond-> http-client-properties
+                                                  client-name (update :client-name str "-ws")
+                                                  user-agent (update :user-agent str ".ws"))
+                             http-client (hu/http-client-factory http-client-config)
                              websocket-client (WebSocketClient. ^HttpClient http-client)]
                          (doto (.getPolicy websocket-client)
                            (.setMaxBinaryMessageSize ws-max-binary-message-size)
