@@ -871,7 +871,24 @@
                       (assert-grpc-server-exit-status status assertion-message)
                       (is (nil? message-summary) assertion-message))))))))))))
 
-(deftest ^:parallel ^:integration-slow test-grpc-client-streaming-server-cancellation
+;; FAIL in (test-grpc-client-streaming-server-cancellation) (grpc_test.clj:239)
+;; waiter.grpc-test/test-grpc-client-streaming-server-cancellation 1000 messages server error
+;; {:correlation-id "wgttgcssc796969990733.SEND_ERROR.40-120.1000",
+;;  :mode "server-cancel",
+;;  :reply {:cid "wgttgcssc796969990733.SEND_ERROR.40-120.1000",
+;;  :state ("INIT" "READY" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE"
+;;          "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE"
+;;          "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE"
+;;          "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE"
+;;          "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE"
+;;          "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE"
+;;          "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE"
+;;          "CLOSE" "HALF_CLOSE")},
+;; :service-id "waiter-service-wgttgcssc800602673571-78ab76f80b2ab2c810a3a73b1d505ec4",
+;; :status {:code "OK", :description nil}}
+;; expected: 1
+;;   actual: 0
+(deftest ^:parallel ^:integration-slow ^:explicit test-grpc-client-streaming-server-cancellation
   (testing-using-waiter-url
     (let [num-messages 120
           num-iterations 3
