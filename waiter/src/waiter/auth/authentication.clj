@@ -85,7 +85,7 @@
    Returns a sequence containing [auth-principal auth-time]."
   [waiter-cookie password]
   (try
-    (log/debug "decoding cookie:" waiter-cookie)
+    (log/info "decoding cookie:" waiter-cookie)
     (when waiter-cookie
       (let [decoded-cookie (cookie-support/decode-cookie-cached waiter-cookie password)]
         (if (seq decoded-cookie)
@@ -110,9 +110,11 @@
 (defn get-auth-cookie-value
   "Retrieves the auth cookie."
   [cookie-string]
-  (some-> (cookie-support/cookie-value cookie-string AUTH-COOKIE-NAME)
-    (str/split #"," 2)
-    first))
+  (let [auth-cookie (some-> (cookie-support/cookie-value cookie-string AUTH-COOKIE-NAME)
+                      (str/split #"," 2)
+                      first)]
+    (log/info "extracted auth cookie" auth-cookie "from" cookie-string)
+    auth-cookie))
 
 (defn get-and-decode-auth-cookie-value
   "Retrieves the auth cookie and decodes it using the provided password."
