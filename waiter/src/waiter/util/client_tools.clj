@@ -322,7 +322,7 @@
 
 (defn make-request
   ([waiter-url path &
-    {:keys [body client cookies content-type disable-auth form-params headers
+    {:keys [body client cookies content-type disable-auth form-params headers idle-timeout
             method multipart protocol query-params scheme trailers-fn verbose]
      :or {body nil
           cookies []
@@ -360,6 +360,7 @@
                                    :method method
                                    :query-string query-params
                                    :url request-url}
+                            idle-timeout (assoc :idle-timeout idle-timeout)
                             multipart (assoc :multipart multipart)
                             add-spnego-auth (assoc :auth (hu/spnego-authentication (URI. request-url)))
                             form-params (assoc :form-params form-params)
@@ -518,7 +519,7 @@
 
 (defn retrieve-service-id [waiter-url waiter-headers &
                            {:keys [cookies verbose] :or {cookies [] verbose false}}]
-  (let [service-id-result (make-request waiter-url "/service-id" :cookies cookies :headers waiter-headers)
+  (let [service-id-result (make-request waiter-url "/service-id" :cookies cookies :headers waiter-headers :idle-timeout 10000)
         service-id (str (:body service-id-result))]
     (when verbose
       (log/info "service id: " service-id))
@@ -528,7 +529,7 @@
   (pc/mapply retrieve-service-id waiter-url (merge (kitchen-request-headers) waiter-headers) options))
 
 (defn waiter-settings [waiter-url & {:keys [cookies] :or {cookies []}}]
-  (let [settings-result (make-request waiter-url "/settings" :verbose true :cookies cookies)
+  (let [settings-result (make-request waiter-url "/settings" :verbose true :cookies cookies :idle-timeout 10000)
         settings-json (try-parse-json (:body settings-result))]
     (walk/keywordize-keys settings-json)))
 
@@ -551,7 +552,7 @@
       keywordize-keys walk/keywordize-keys)))
 
 (defn service-state [waiter-url service-id & {:keys [cookies] :or {cookies {}}}]
-  (let [state-result (make-request waiter-url (str "/state/" service-id) :cookies cookies)
+  (let [state-result (make-request waiter-url (str "/state/" service-id) :cookies cookies :idle-timeout 10000)
         state-body (:body state-result)
         _ (log/debug "service" service-id "state:" state-body)
         state-json (try-parse-json state-body)]
@@ -560,7 +561,7 @@
 (defn- retrieve-state-helper
   "Fetches and returns the state at the specified endpoint."
   [waiter-url endpoint & {:keys [cookies] :or {cookies {}}}]
-  (let [state-body (:body (make-request waiter-url endpoint :verbose true :cookies cookies))]
+  (let [state-body (:body (make-request waiter-url endpoint :cookies cookies :idle-timeout 10000 :verbose true))]
     (log/debug endpoint "body:" state-body)
     (try-parse-json state-body)))
 
@@ -911,7 +912,7 @@
 (defn router-service-state
   "Fetches and returns the service state from a particular router url"
   [router-url service-id cookies]
-  (let [state-json (:body (make-request router-url (str "/state/" service-id) :cookies cookies))]
+  (let [state-json (:body (make-request router-url (str "/state/" service-id) :cookies cookies :idle-timeout 10000))]
     (log/debug "State received from" router-url ":" state-json)
     (try-parse-json state-json)))
 
