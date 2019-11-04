@@ -39,7 +39,8 @@
 (deftest test-get-auth-cookie-value
   (is (= "abc123" (get-auth-cookie-value "x-waiter-auth=abc123")))
   (is (= "abc123" (get-auth-cookie-value "x-waiter-auth=\"abc123\"")))
-  (is (= "abc123" (get-auth-cookie-value "blah=blah;x-waiter-auth=abc123"))))
+  (is (= "abc123" (get-auth-cookie-value "blah=blah;x-waiter-auth=abc123")))
+  (is (= "abc123" (get-auth-cookie-value "x-waiter-auth=abc123,def456"))))
 
 (deftest test-decode-auth-cookie
   (let [password [:cached "test-password"]
