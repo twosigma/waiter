@@ -83,8 +83,8 @@
             cluster-result
             (try
               (let [{:keys [description error status] :as token-data} (get cluster-url->token-data cluster-url)
-                    latest-root (get latest-token-description "root")
-                    cluster-root (get description "root")]
+                    {latest-root "root" latest-update-user "last-update-user"} latest-token-description
+                    {cluster-root "root" cluster-update-user "last-update-user"} description]
                 (cond
                   error
                   {:code :error/token-read
@@ -117,9 +117,10 @@
                           (apply dissoc description system-metadata-keys)))
                   {:code :skip/token-sync}
 
-                  ;; token user-specified content different, and roots also different
+                  ;; token user-specified content, last update user, and root different
                   (and (seq description)
                        (not= latest-root cluster-root)
+                       (not= latest-update-user cluster-update-user)
                        (not= (apply dissoc description ignored-root-mismatch-equality-comparison-keys)
                              (apply dissoc latest-token-description ignored-root-mismatch-equality-comparison-keys)))
                   {:code :error/root-mismatch

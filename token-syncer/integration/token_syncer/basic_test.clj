@@ -447,12 +447,105 @@
         (finally
           (cleanup-token waiter-api waiter-urls token-name))))))
 
-(deftest ^:integration test-token-different-roots
+(deftest ^:integration test-token-different-roots-and-last-update-user
   (testing "token sync update with different roots"
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
           limit 10
-          token-name (str "test-token-different-roots-" (UUID/randomUUID))]
+          token-name (str "test-token-diff-root-diff-user" (UUID/randomUUID))]
+      (try
+        ;; ARRANGE
+        (let [current-time-ms (System/currentTimeMillis)
+              last-update-time-ms (- current-time-ms 10000)]
+
+          (doall
+            (map-indexed
+              (fn [index waiter-url]
+                (store-token waiter-url token-name nil
+                             (assoc basic-description
+                               "cluster" (waiter-url->cluster waiter-url)
+                               "cpus" (inc index)
+                               "last-update-time" (- last-update-time-ms index)
+                               "last-update-user" (str "auth-user-" index)
+                               "owner" "test-user"
+                               "previous" {"last-update-time" (- current-time-ms 30000)
+                                           "last-update-user" "foo-user"}
+                               "root" waiter-url)))
+              waiter-urls))
+
+          (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
+
+            ;; ACT
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit)]
+
+              ;; ASSERT
+              (let [latest-description (assoc basic-description
+                                         "cluster" (waiter-url->cluster (first waiter-urls))
+                                         "cpus" 1
+                                         "last-update-time" last-update-time-ms
+                                         "last-update-user" "auth-user-0"
+                                         "owner" "test-user"
+                                         "previous" {"last-update-time" (- current-time-ms 30000)
+                                                     "last-update-user" "foo-user"}
+                                         "root" (first waiter-urls))
+                    sync-result (->> (rest waiter-urls)
+                                     (map-indexed
+                                       (fn [index waiter-url]
+                                         [waiter-url
+                                          {:code :error/root-mismatch
+                                           :details {:cluster (assoc basic-description
+                                                                "cluster" (waiter-url->cluster waiter-url)
+                                                                "cpus" (+ index 2)
+                                                                "last-update-time" (- last-update-time-ms index 1)
+                                                                "last-update-user" (str "auth-user-" (inc index))
+                                                                "owner" "test-user"
+                                                                "previous" {"last-update-time" (- current-time-ms 30000)
+                                                                            "last-update-user" "foo-user"}
+                                                                "root" waiter-url)
+                                                     :latest latest-description}}]))
+                                     (into {}))
+                    expected-result {:details {token-name {:latest {:cluster-url (first waiter-urls)
+                                                                    :description latest-description
+                                                                    :token-etag token-etag}
+                                                           :sync-result sync-result}}
+                                     :summary {:sync {:failed #{token-name}
+                                                      :unmodified #{}
+                                                      :updated #{}}
+                                               :tokens {:pending {:count 1 :value #{token-name}}
+                                                        :previously-synced {:count 0 :value #{}}
+                                                        :processed {:count 1 :value #{token-name}}
+                                                        :selected {:count 1 :value #{token-name}}
+                                                        :total {:count 1 :value #{token-name}}}}}]
+                (is (= expected-result actual-result))
+                (doall
+                  (map-indexed
+                    (fn [index waiter-url]
+                      (let [token-last-modified-time (- last-update-time-ms index)
+                            token-etag (token->etag waiter-api waiter-url token-name)]
+                        (is (= {:description (assoc basic-description
+                                               "cluster" (waiter-url->cluster waiter-url)
+                                               "cpus" (inc index)
+                                               "last-update-time" token-last-modified-time
+                                               "last-update-user" (str "auth-user-" index)
+                                               "owner" "test-user"
+                                               "previous" {"last-update-time" (- current-time-ms 30000)
+                                                           "last-update-user" "foo-user"}
+                                               "root" waiter-url)
+                                :headers {"content-type" "application/json"
+                                          "etag" token-etag}
+                                :status 200
+                                :token-etag token-etag}
+                               (load-token waiter-url token-name)))))
+                    waiter-urls))))))
+        (finally
+          (cleanup-token waiter-api waiter-urls token-name))))))
+
+(deftest ^:integration test-token-different-roots-but-same-last-update-user
+  (testing "token sync update with different roots"
+    (let [waiter-urls (waiter-urls)
+          {:keys [load-token store-token] :as waiter-api} (waiter-api)
+          limit 10
+          token-name (str "diff-root-same-user" (UUID/randomUUID))]
       (try
         ;; ARRANGE
         (let [current-time-ms (System/currentTimeMillis)
@@ -489,28 +582,20 @@
                                                      "last-update-user" "foo-user"}
                                          "root" (first waiter-urls))
                     sync-result (->> (rest waiter-urls)
-                                     (map-indexed
-                                       (fn [index waiter-url]
-                                         [waiter-url
-                                          {:code :error/root-mismatch
-                                           :details {:cluster (assoc basic-description
-                                                                "cluster" (waiter-url->cluster waiter-url)
-                                                                "cpus" (+ index 2)
-                                                                "last-update-time" (- last-update-time-ms index 1)
-                                                                "last-update-user" "auth-user"
-                                                                "owner" "test-user"
-                                                                "previous" {"last-update-time" (- current-time-ms 30000)
-                                                                            "last-update-user" "foo-user"}
-                                                                "root" waiter-url)
-                                                     :latest latest-description}}]))
-                                     (into {}))
+                                  (map
+                                    (fn [waiter-url]
+                                      [waiter-url
+                                       {:code :success/sync-update
+                                        :details {:etag token-etag
+                                                  :status 200}}]))
+                                  (into {}))
                     expected-result {:details {token-name {:latest {:cluster-url (first waiter-urls)
                                                                     :description latest-description
                                                                     :token-etag token-etag}
                                                            :sync-result sync-result}}
-                                     :summary {:sync {:failed #{token-name}
+                                     :summary {:sync {:failed #{}
                                                       :unmodified #{}
-                                                      :updated #{}}
+                                                      :updated #{token-name}}
                                                :tokens {:pending {:count 1 :value #{token-name}}
                                                         :previously-synced {:count 0 :value #{}}
                                                         :processed {:count 1 :value #{token-name}}
@@ -518,19 +603,10 @@
                                                         :total {:count 1 :value #{token-name}}}}}]
                 (is (= expected-result actual-result))
                 (doall
-                  (map-indexed
-                    (fn [index waiter-url]
-                      (let [token-last-modified-time (- last-update-time-ms index)
-                            token-etag (token->etag waiter-api waiter-url token-name)]
-                        (is (= {:description (assoc basic-description
-                                               "cluster" (waiter-url->cluster waiter-url)
-                                               "cpus" (inc index)
-                                               "last-update-time" token-last-modified-time
-                                               "last-update-user" "auth-user"
-                                               "owner" "test-user"
-                                               "previous" {"last-update-time" (- current-time-ms 30000)
-                                                           "last-update-user" "foo-user"}
-                                               "root" waiter-url)
+                  (map
+                    (fn [waiter-url]
+                      (let [token-etag (token->etag waiter-api waiter-url token-name)]
+                        (is (= {:description latest-description
                                 :headers {"content-type" "application/json"
                                           "etag" token-etag}
                                 :status 200
@@ -692,75 +768,75 @@
           (cleanup-token waiter-api waiter-urls token-name))))))
 
 (deftest ^:integration test-ping-tokens
-         (testing "token ping on clusters"
-           (let [waiter-urls (waiter-urls)
-                 queue-timeout-ms 120000
-                 {:keys [store-token] :as waiter-api} (waiter-api)]
+  (testing "token ping on clusters"
+    (let [waiter-urls (waiter-urls)
+          queue-timeout-ms 120000
+          {:keys [store-token] :as waiter-api} (waiter-api)]
 
-             (testing "successful health check"
-               (let [token-name (str "test-ping-tokens-" (UUID/randomUUID))]
-                 (try
-                   ;; ARRANGE
-                   (doall
-                     (map (fn [waiter-url]
-                            (->> (assoc basic-description
-                                   "health-check-url" "/status"
-                                   "idle-timeout-mins" 2
-                                   "run-as-user" "*"
-                                   "version" "lorem-ipsum")
-                                 (store-token waiter-url token-name nil)))
-                          waiter-urls))
+      (testing "successful health check"
+        (let [token-name (str "test-ping-tokens-" (UUID/randomUUID))]
+          (try
+            ;; ARRANGE
+            (doall
+              (map (fn [waiter-url]
+                     (->> (assoc basic-description
+                            "health-check-url" "/status"
+                            "idle-timeout-mins" 2
+                            "run-as-user" "*"
+                            "version" "lorem-ipsum")
+                       (store-token waiter-url token-name nil)))
+                   waiter-urls))
 
-                   ;; ACT
-                   (let [actual-result (ping/ping-token waiter-api waiter-urls token-name queue-timeout-ms)]
+            ;; ACT
+            (let [actual-result (ping/ping-token waiter-api waiter-urls token-name queue-timeout-ms)]
 
-                     ;; ASSERT
-                     (let [expected-result {:details
-                                            (pc/map-from-keys
-                                              (fn [cluster-url]
-                                                {:exit-code 0
-                                                 :message (str "successfully pinged token " token-name " on " cluster-url
-                                                               ", reason: health check returned status code 200")})
-                                              waiter-urls)
-                                            :exit-code 0
-                                            :message (str "pinging token " token-name " on "
-                                                          (-> waiter-urls vec println with-out-str str/trim)
-                                                          " was successful")
-                                            :token token-name}]
-                       (is (= expected-result actual-result))))
-                   (finally
-                     (cleanup-token waiter-api waiter-urls token-name)))))
+              ;; ASSERT
+              (let [expected-result {:details
+                                     (pc/map-from-keys
+                                       (fn [cluster-url]
+                                         {:exit-code 0
+                                          :message (str "successfully pinged token " token-name " on " cluster-url
+                                                        ", reason: health check returned status code 200")})
+                                       waiter-urls)
+                                     :exit-code 0
+                                     :message (str "pinging token " token-name " on "
+                                                   (-> waiter-urls vec println with-out-str str/trim)
+                                                   " was successful")
+                                     :token token-name}]
+                (is (= expected-result actual-result))))
+            (finally
+              (cleanup-token waiter-api waiter-urls token-name)))))
 
-             (testing "unsuccessful health check"
-               (let [token-name (str "test-ping-tokens-" (UUID/randomUUID))]
-                 (try
-                   ;; ARRANGE
-                   (doall
-                     (map (fn [waiter-url]
-                            (->> (assoc basic-description
-                                   "health-check-url" "/bad-status"
-                                   "idle-timeout-mins" 2
-                                   "run-as-user" "*"
-                                   "version" "lorem-ipsum")
-                                 (store-token waiter-url token-name nil)))
-                          waiter-urls))
+      (testing "unsuccessful health check"
+        (let [token-name (str "test-ping-tokens-" (UUID/randomUUID))]
+          (try
+            ;; ARRANGE
+            (doall
+              (map (fn [waiter-url]
+                     (->> (assoc basic-description
+                            "health-check-url" "/bad-status"
+                            "idle-timeout-mins" 2
+                            "run-as-user" "*"
+                            "version" "lorem-ipsum")
+                       (store-token waiter-url token-name nil)))
+                   waiter-urls))
 
-                   ;; ACT
-                   (let [actual-result (ping/ping-token waiter-api waiter-urls token-name queue-timeout-ms)]
+            ;; ACT
+            (let [actual-result (ping/ping-token waiter-api waiter-urls token-name queue-timeout-ms)]
 
-                     ;; ASSERT
-                     (let [expected-result {:details
-                                            (pc/map-from-keys
-                                              (fn [cluster-url]
-                                                {:exit-code 1
-                                                 :message (str "unable to ping token " token-name " on " cluster-url
-                                                               ", reason: health check returned status code 503")})
-                                              waiter-urls)
-                                            :exit-code (count waiter-urls)
-                                            :message (str "pinging token " token-name " on "
-                                                          (-> waiter-urls vec println with-out-str str/trim)
-                                                          " failed")
-                                            :token token-name}]
-                       (is (= expected-result actual-result))))
-                   (finally
-                     (cleanup-token waiter-api waiter-urls token-name))))))))
+              ;; ASSERT
+              (let [expected-result {:details
+                                     (pc/map-from-keys
+                                       (fn [cluster-url]
+                                         {:exit-code 1
+                                          :message (str "unable to ping token " token-name " on " cluster-url
+                                                        ", reason: health check returned status code 503")})
+                                       waiter-urls)
+                                     :exit-code (count waiter-urls)
+                                     :message (str "pinging token " token-name " on "
+                                                   (-> waiter-urls vec println with-out-str str/trim)
+                                                   " failed")
+                                     :token token-name}]
+                (is (= expected-result actual-result))))
+            (finally
+              (cleanup-token waiter-api waiter-urls token-name))))))))
