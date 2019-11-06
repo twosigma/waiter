@@ -530,6 +530,7 @@
 
 (defn waiter-settings [waiter-url & {:keys [cookies] :or {cookies []}}]
   (let [settings-result (make-request waiter-url "/settings" :verbose true :cookies cookies :idle-timeout 10000)
+        _ (assert-response-status settings-result 200)
         settings-json (try-parse-json (:body settings-result))]
     (walk/keywordize-keys settings-json)))
 
@@ -548,11 +549,13 @@
   (let [settings-path (str "/apps/" service-id)
         settings-result (make-request waiter-url settings-path :cookies cookies :query-params query-params)]
     (log/debug "service" service-id ":" settings-result)
+    (assert-response-status settings-result 200)
     (cond-> (some-> settings-result :body try-parse-json)
       keywordize-keys walk/keywordize-keys)))
 
 (defn service-state [waiter-url service-id & {:keys [cookies] :or {cookies {}}}]
   (let [state-result (make-request waiter-url (str "/state/" service-id) :cookies cookies :idle-timeout 10000)
+        _ (assert-response-status state-result 200)
         state-body (:body state-result)
         _ (log/debug "service" service-id "state:" state-body)
         state-json (try-parse-json state-body)]
@@ -561,7 +564,9 @@
 (defn- retrieve-state-helper
   "Fetches and returns the state at the specified endpoint."
   [waiter-url endpoint & {:keys [cookies] :or {cookies {}}}]
-  (let [state-body (:body (make-request waiter-url endpoint :cookies cookies :idle-timeout 10000 :verbose true))]
+  (let [response (make-request waiter-url endpoint :cookies cookies :idle-timeout 10000 :verbose true)
+        _ (assert-response-status response 200)
+        state-body (:body response)]
     (log/debug endpoint "body:" state-body)
     (try-parse-json state-body)))
 
@@ -889,7 +894,9 @@
 (defn all-cookies
   "Retrieves all cookies from the /waiter-auth endpoint"
   [waiter-url]
-  (:cookies (make-request waiter-url "/waiter-auth")))
+  (let [response (make-request waiter-url "/waiter-auth")]
+    (assert-response-status response 200)
+    (:cookies response)))
 
 (defn auth-cookie
   "Retrieves and returns the value of the x-waiter-auth cookie"
@@ -912,7 +919,9 @@
 (defn router-service-state
   "Fetches and returns the service state from a particular router url"
   [router-url service-id cookies]
-  (let [state-json (:body (make-request router-url (str "/state/" service-id) :cookies cookies :idle-timeout 10000))]
+  (let [response (make-request router-url (str "/state/" service-id) :cookies cookies :idle-timeout 10000)
+        _ (assert-response-status response 200)
+        state-json (:body response)]
     (log/debug "State received from" router-url ":" state-json)
     (try-parse-json state-json)))
 
@@ -923,8 +932,9 @@
   ; allow time for router to receive updates from marathon
   (wait-for
     (fn []
-      (let [{:keys [body]} (make-request waiter-url "/apps" :cookies cookies :query-params query-params)
+      (let [{:keys [body] :as response} (make-request waiter-url "/apps" :cookies cookies :query-params query-params)
             _ (log/debug "Response body:" body)
+            _ (assert-response-status response 200)
             parsed-body (try-parse-json body)
             service (first (filter #(= service-id (get % "service-id")) parsed-body))]
         (when-not service
