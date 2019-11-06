@@ -117,7 +117,7 @@
                           (apply dissoc description system-metadata-keys)))
                   {:code :skip/token-sync}
 
-                  ;; token user-specified content, last update user, or root different
+                  ;; token user-specified content, last update user, and root different
                   (and (seq description)
                        (not= latest-root cluster-root)
                        (not= latest-update-user cluster-update-user)
