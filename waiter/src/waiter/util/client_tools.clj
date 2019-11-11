@@ -519,7 +519,7 @@
 
 (defn retrieve-service-id [waiter-url waiter-headers &
                            {:keys [cookies verbose] :or {cookies [] verbose false}}]
-  (let [service-id-result (make-request waiter-url "/service-id" :cookies cookies :headers waiter-headers :idle-timeout 10000)
+  (let [service-id-result (make-request waiter-url "/service-id" :cookies cookies :headers waiter-headers)
         service-id (str (:body service-id-result))]
     (when verbose
       (log/info "service id: " service-id))
@@ -529,7 +529,7 @@
   (pc/mapply retrieve-service-id waiter-url (merge (kitchen-request-headers) waiter-headers) options))
 
 (defn waiter-settings [waiter-url & {:keys [cookies] :or {cookies []}}]
-  (let [settings-result (make-request waiter-url "/settings" :verbose true :cookies cookies :idle-timeout 10000)
+  (let [settings-result (make-request waiter-url "/settings" :verbose true :cookies cookies)
         _ (assert-response-status settings-result 200)
         settings-json (try-parse-json (:body settings-result))]
     (walk/keywordize-keys settings-json)))
@@ -554,7 +554,7 @@
       keywordize-keys walk/keywordize-keys)))
 
 (defn service-state [waiter-url service-id & {:keys [cookies] :or {cookies {}}}]
-  (let [state-result (make-request waiter-url (str "/state/" service-id) :cookies cookies :idle-timeout 10000)
+  (let [state-result (make-request waiter-url (str "/state/" service-id) :cookies cookies)
         _ (assert-response-status state-result 200)
         state-body (:body state-result)
         _ (log/debug "service" service-id "state:" state-body)
@@ -564,7 +564,7 @@
 (defn- retrieve-state-helper
   "Fetches and returns the state at the specified endpoint."
   [waiter-url endpoint & {:keys [cookies] :or {cookies {}}}]
-  (let [response (make-request waiter-url endpoint :cookies cookies :idle-timeout 10000 :verbose true)
+  (let [response (make-request waiter-url endpoint :cookies cookies :verbose true)
         _ (assert-response-status response 200)
         state-body (:body response)]
     (log/debug endpoint "body:" state-body)
@@ -919,7 +919,7 @@
 (defn router-service-state
   "Fetches and returns the service state from a particular router url"
   [router-url service-id cookies]
-  (let [response (make-request router-url (str "/state/" service-id) :cookies cookies :idle-timeout 10000)
+  (let [response (make-request router-url (str "/state/" service-id) :cookies cookies)
         _ (assert-response-status response 200)
         state-json (:body response)]
     (log/debug "State received from" router-url ":" state-json)
