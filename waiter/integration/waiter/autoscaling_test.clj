@@ -204,11 +204,11 @@
                           :x-waiter-name (rand-name)
                           :x-waiter-scale-up-factor 0.99}
           request-fn (fn [& {:keys [cookies] :or {cookies {}}}]
-                       (log/info "making kitchen request")
+                       (println "test-minmax-instances: making kitchen request")
                        (make-request-with-debug-info
                          custom-headers
                          #(make-kitchen-request waiter-url % :cookies cookies)))
-          _ (log/info "making canary request...")
+          _ (println "test-minmax-instances: making canary request...")
           {:keys [cookies service-id]} (request-fn)
           get-target-instances
           (fn []
@@ -223,9 +223,9 @@
                       target-instances))]
               (log/debug "target instances:" instances)
               instances))]
-      (log/info "waiting up to 20 seconds for autoscaler to catch up for" service-id)
+      (println "test-minmax-instances: waiting up to 20 seconds for autoscaler to catch up for" service-id)
       (is (wait-for #(= min-instances (get-target-instances)) :interval 4 :timeout 20))
-      (log/info "starting parallel requests")
+      (println "test-minmax-instances: starting parallel requests")
       (let [cancellation-token-atom (atom false)
             futures (parallelize-requests (* 2 max-instances)
                                           requests-per-thread
@@ -234,11 +234,12 @@
                                           :service-id service-id
                                           :verbose true
                                           :wait-for-tasks false)]
-        (log/info "waiting for autoscaler to reach" max-instances)
+        (println "test-minmax-instances: waiting for autoscaler to reach" max-instances)
         (is (wait-for #(= max-instances (get-target-instances)) :interval 1))
-        (log/info "waiting to make sure autoscaler does not go above" max-instances)
+        (println "test-minmax-instances: waiting to make sure autoscaler does not go above" max-instances)
         (utils/sleep (-> requests-per-thread (* request-delay-ms) (/ 4)))
         (is (= max-instances (get-target-instances)))
         (reset! cancellation-token-atom true)
+        (println "test-minmax-instances: awaiting futures to complete")
         (await-futures futures))
       (delete-service waiter-url service-id))))
