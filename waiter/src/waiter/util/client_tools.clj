@@ -278,7 +278,7 @@
   [name-with-dashes]
   (->> (str/split (str name-with-dashes) #"-|\.|/")
     (remove str/blank?)
-    (map first)
+    (map #(subs % 0 (min 4 (count (str %)))))
     (str/join "")
     str/lower-case))
 
