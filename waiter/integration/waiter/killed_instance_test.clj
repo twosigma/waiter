@@ -26,26 +26,33 @@
     (let [requests-per-thread 5
           router-count (count (routers waiter-url))
           parallelism router-count
-          extra-headers {:x-waiter-min-instances 1
+          min-instances 1
+          extra-headers {:x-waiter-min-instances min-instances
                          :x-waiter-distribution-scheme "simple"
                          :x-waiter-scale-down-factor 0.99
                          :x-waiter-scale-up-factor 0.99
                          :x-kitchen-delay-ms 5000
                          :x-waiter-name (rand-name)}
           canceled (promise)
+          request-counter (atom 0)
           request-fn (fn []
                        (log/info "making kitchen request")
+                       (swap! request-counter inc)
                        (make-request-with-debug-info extra-headers #(make-kitchen-request waiter-url %)))
           _ (log/info "making canary request")
           {:keys [service-id] :as canary-response} (request-fn)]
       (assert-response-status canary-response 200)
       (with-service-cleanup
         service-id
+        (println "test-delegate-kill-instance: making parallel requests")
         (future (parallelize-requests parallelism requests-per-thread #(request-fn)
                                       :verbose true :canceled? (partial realized? canceled)))
-        (wait-for #(<= router-count (num-instances waiter-url service-id)) :timeout 180)
+        (println "test-delegate-kill-instance: waiting for scale-up to complete; requests completed" @request-counter)
+        (wait-for #(<= parallelism (num-instances waiter-url service-id)) :timeout 180)
         (deliver canceled :canceled)
-        (wait-for #(= 0 (num-instances waiter-url service-id)) :timeout 180)))))
+        (println "test-delegate-kill-instance: waiting for scale-down to complete; requests completed" @request-counter)
+        (wait-for #(= min-instances (num-instances waiter-url service-id)) :timeout 180)
+        (println "test-delegate-kill-instance: test complete; requests completed" @request-counter)))))
 
 (defn- trigger-blacklisting-of-instance [target-url request-headers cookies]
   (log/info "issuing request which will respond with a 503 on" target-url)
