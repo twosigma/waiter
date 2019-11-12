@@ -204,28 +204,32 @@
                           :x-waiter-name (rand-name)
                           :x-waiter-scale-up-factor 0.99}
           request-fn (fn [& {:keys [cookies] :or {cookies {}}}]
-                       (println "test-minmax-instances: making kitchen request")
+                       (log/info "test-minmax-instances: making kitchen request")
                        (make-request-with-debug-info
                          custom-headers
                          #(make-kitchen-request waiter-url % :cookies cookies)))
-          _ (println "test-minmax-instances: making canary request...")
-          {:keys [cookies service-id]} (request-fn)
+          _ (log/info "test-minmax-instances: making canary request...")
+          {:keys [cookies service-id] :as response} (request-fn)
+          _ (log/info "test-minmax-instances: service-id:" service-id)
+          _ (is service-id (str response))
           get-target-instances
           (fn []
+            (log/info "test-minmax-instances: get-target-instances starts...")
             (let [instances
                   (loop [routers (routers waiter-url)
                          target-instances 0]
+                    (log/info "test-minmax-instances: retrieving target instances from" (first routers))
                     (if-let [[_ router-url] (first routers)]
                       (let [{:keys [state]} (service-state router-url service-id :cookies cookies)]
                         (recur (rest routers)
                                (max target-instances
                                     (int (get-in state [:autoscaler-state :scale-to-instances] 0)))))
                       target-instances))]
-              (log/debug "target instances:" instances)
+              (log/info "test-minmax-instances: target instances:" instances)
               instances))]
-      (println "test-minmax-instances: waiting up to 20 seconds for autoscaler to catch up for" service-id)
+      (log/info "test-minmax-instances: waiting up to 20 seconds for autoscaler to catch up for" service-id)
       (is (wait-for #(= min-instances (get-target-instances)) :interval 4 :timeout 20))
-      (println "test-minmax-instances: starting parallel requests")
+      (log/info "test-minmax-instances: starting parallel requests")
       (let [cancellation-token-atom (atom false)
             futures (parallelize-requests (* 2 max-instances)
                                           requests-per-thread
@@ -234,12 +238,16 @@
                                           :service-id service-id
                                           :verbose true
                                           :wait-for-tasks false)]
-        (println "test-minmax-instances: waiting for autoscaler to reach" max-instances)
+        (log/info "test-minmax-instances: waiting for autoscaler to reach" max-instances)
         (is (wait-for #(= max-instances (get-target-instances)) :interval 1))
-        (println "test-minmax-instances: waiting to make sure autoscaler does not go above" max-instances)
-        (utils/sleep (-> requests-per-thread (* request-delay-ms) (/ 4)))
+        (let [sleep-duration-ms (-> requests-per-thread (* request-delay-ms) (/ 4))]
+          (log/info "test-minmax-instances: waiting to make sure autoscaler does not go above" max-instances "for" sleep-duration-ms "ms")
+          (utils/sleep sleep-duration-ms))
+        (log/info "test-minmax-instances: checking instances after waking up")
         (is (= max-instances (get-target-instances)))
+        (log/info "test-minmax-instances: cancelling parallel requests")
         (reset! cancellation-token-atom true)
-        (println "test-minmax-instances: awaiting futures to complete")
+        (log/info "test-minmax-instances: awaiting futures to complete")
         (await-futures futures))
+      (log/info "test-minmax-instances: deleting service" service-id)
       (delete-service waiter-url service-id))))
