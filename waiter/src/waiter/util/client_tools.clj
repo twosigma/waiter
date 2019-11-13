@@ -349,13 +349,19 @@
                          (str scheme "://"))
                        (strip-trailing-slash waiter-url)
                        path)
-         request-headers (walk/stringify-keys (ensure-cid-in-headers headers))]
+         request-headers (walk/stringify-keys (ensure-cid-in-headers headers))
+         correlation-id (get request-headers "x-cid")]
      (try
-       (when verbose
-         (log/info "request url:" request-url)
-         (log/info "request headers:" (into (sorted-map) request-headers)))
+       (if verbose
+         (do
+           (log/info correlation-id "request url:" request-url)
+           (log/info correlation-id "request headers:" (into (sorted-map) request-headers)))
+         (do
+           (log/debug correlation-id "request url:" request-url)
+           (log/debug correlation-id "request headers:" (into (sorted-map) request-headers))))
        (let [waiter-auth-cookie (some #(= authentication/AUTH-COOKIE-NAME (:name %)) cookies)
              add-spnego-auth (and (not disable-auth) use-spnego (not waiter-auth-cookie))
+             _ (log/debug correlation-id {:add-spnego-auth add-spnego-auth :waiter-auth-cookie waiter-auth-cookie})
              {:keys [body error error-chan headers status trailers]}
              (async/<!! (http/request
                           client
@@ -372,11 +378,15 @@
                             (not (str/blank? content-type)) (assoc :content-type content-type)
                             cookies (assoc :cookies (map (fn [c] [(:name c) (:value c)]) cookies))
                             trailers-fn (assoc :trailers-fn trailers-fn))))
+             _ (if verbose
+                 (log/info correlation-id "response:" status headers)
+                 (log/debug correlation-id "response:" status headers))
              response-body (when body (async/<!! body))
              error (or error
                        (when error-chan (async/<!! error-chan)))]
-         (when verbose
-           (log/info (get request-headers "x-cid") "response size:" (count (str response-body))))
+         (if verbose
+           (log/info correlation-id "response size:" (count (str response-body)))
+           (log/debug correlation-id "response size:" (count (str response-body))))
          {:body response-body
           :cookies (parse-cookies (get headers "set-cookie"))
           :error error
@@ -385,8 +395,9 @@
           :status status
           :trailers (when trailers (async/<!! trailers))})
        (catch Exception e
-         (when verbose
-           (log/info (get request-headers "x-cid") "error in obtaining response" (.getMessage e)))
+         (if verbose
+           (log/info correlation-id "error in obtaining response" (.getMessage e))
+           (log/debug correlation-id "error in obtaining response" (.getMessage e)))
          (throw e))))))
 
 (defmacro assert-response-status
