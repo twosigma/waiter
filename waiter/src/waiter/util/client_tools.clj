@@ -38,6 +38,10 @@
            (org.joda.time Period)
            (org.joda.time.format PeriodFormatterBuilder)))
 
+
+;; trigger CID in test logs
+(cid/replace-pattern-layout-in-log4j-appenders)
+
 (def ^:const WAITER-PORT 9091)
 (def ^:const HTTP-SCHEME "http://")
 
