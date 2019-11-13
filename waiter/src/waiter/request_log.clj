@@ -51,9 +51,9 @@
 
 (defn response->context
   "Convert a response into a context suitable for logging."
-  [{:keys [authorization/method authorization/principal backend-response-latency-ns descriptor latest-service-id
-           get-instance-latency-ns handle-request-latency-ns headers instance instance-proto protocol status
-           waiter-api-call?] :as response}]
+  [{:keys [authorization/method authorization/principal backend-response-latency-ns descriptor error-class
+           get-instance-latency-ns handle-request-latency-ns headers instance instance-proto latest-service-id
+           protocol status waiter-api-call?] :as response}]
   (let [{:keys [service-id service-description source-tokens]} descriptor
         token (some->> source-tokens (map #(get % "token")) seq (str/join ","))
         {:strs [metric-group run-as-user version]} service-description
@@ -84,7 +84,8 @@
       handle-request-latency-ns (assoc :handle-request-latency-ns handle-request-latency-ns)
       location (assoc :response-location location)
       token (assoc :token token)
-      (some? waiter-api-call?) (assoc :waiter-api waiter-api-call?))))
+      (some? waiter-api-call?) (assoc :waiter-api waiter-api-call?)
+      error-class (assoc :waiter-error-class error-class))))
 
 (defn log-request!
   "Log a request"

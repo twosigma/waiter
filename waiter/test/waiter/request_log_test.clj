@@ -64,6 +64,7 @@
                                                      "version" "service-version"}
                                :source-tokens [{"token" "test-token1" "version" "E-1234"}
                                                {"token" "test-token2" "version" "E-4321"}]}
+                  :error-class "java.lang.Exception"
                   :get-instance-latency-ns 500
                   :handle-request-latency-ns 2000
                   :headers {"content-length" "40"
@@ -106,7 +107,8 @@
             :service-version "service-version"
             :status 200
             :token "test-token1,test-token2"
-            :waiter-api false}
+            :waiter-api false
+            :waiter-error-class "java.lang.Exception"}
            (response->context response)))))
 
 (deftest test-wrap-log
