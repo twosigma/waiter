@@ -18,7 +18,7 @@
             [clojure.tools.logging :as log]
             [waiter.util.client-tools :refer :all]))
 
-(deftest ^:parallel ^:integration-slow ^:resource-heavy test-work-stealing-load-balancing
+(deftest ^:serial ^:integration-slow ^:resource-heavy test-work-stealing-load-balancing
   (testing-using-waiter-url
     (let [request-fn (fn [router-url waiter-headers & {:keys [cookies] :or {cookies nil}}]
                        (log/info "making kitchen request")

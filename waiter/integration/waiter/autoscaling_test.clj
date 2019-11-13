@@ -50,7 +50,7 @@
         (log/info test-name "deleting service" service-id)
         (delete-service waiter-url service-id)))))
 
-(deftest ^:parallel ^:integration-slow ^:resource-heavy test-scaling-healthy-app
+(deftest ^:serial ^:integration-slow ^:resource-heavy test-scaling-healthy-app
   (testing-using-waiter-url
     (let [concurrency-level 3
           custom-headers {:x-kitchen-delay-ms 5000
@@ -62,7 +62,7 @@
       (scaling-for-service-test "Scaling healthy app" waiter-url 3 concurrency-level
                                 #(make-kitchen-request waiter-url custom-headers)))))
 
-(deftest ^:parallel ^:integration-fast ^:resource-heavy test-scaling-unhealthy-app
+(deftest ^:serial ^:integration-fast ^:resource-heavy test-scaling-unhealthy-app
   (testing-using-waiter-url
     (let [concurrency-level 3
           custom-headers {:x-waiter-concurrency-level concurrency-level
@@ -205,7 +205,7 @@
             (is (contains? killed-instances instance-id)
                 (str {:instance-id instance-id :killed-instances killed-instances}))))))))
 
-(deftest ^:parallel ^:integration-fast ^:resource-heavy test-minmax-instances
+(deftest ^:serial ^:integration-fast ^:resource-heavy test-minmax-instances
   (testing-using-waiter-url
     (let [min-instances 2
           max-instances 5

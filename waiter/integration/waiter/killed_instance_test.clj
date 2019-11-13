@@ -21,7 +21,7 @@
             [plumbing.core :as pc]
             [waiter.util.client-tools :refer :all]))
 
-(deftest ^:parallel ^:integration-slow ^:resource-heavy test-delegate-kill-instance
+(deftest ^:serial ^:integration-slow ^:resource-heavy test-delegate-kill-instance
   (testing-using-waiter-url
     (let [requests-per-thread 5
           router-count (count (routers waiter-url))
