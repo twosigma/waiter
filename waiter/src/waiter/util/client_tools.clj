@@ -221,20 +221,31 @@
     (:out)
     (git-show->branch-name)))
 
-(defn make-http-clients
-  "Instantiates and returns http1 and http2 clients without a cookie store"
-  []
-  (hu/prepare-http-clients {:client-name (str "waiter-test-" (retrieve-git-branch))
-                            :clear-content-decoders false
-                            :conn-timeout 10000
-                            :user-agent (str "waiter-test/" (retrieve-git-branch))}))
-
 (defn current-test-name
   "Get the name of the currently-running test."
   []
   (str (-> *testing-vars* first meta :ns str)
        "/"
        (-> *testing-vars* first meta :name)))
+
+(defn extract-acronym
+  "Shortens the name taking only the leading characters across the delimiters.
+   E.g. `(extract-acronym \"aaa.bbb-ccc/ddd#eee-fff.ggg\") -> \"abcdfg\"`"
+  [name-with-dashes]
+  (->> (str/split (str name-with-dashes) #"-|\.|/")
+    (remove str/blank?)
+    (map #(subs % 0 (min 3 (count (str %)))))
+    (str/join "")
+    str/lower-case))
+
+(defn make-http-clients
+  "Instantiates and returns http1 and http2 clients without a cookie store"
+  []
+  (let [test-name (extract-acronym (current-test-name))]
+    (hu/prepare-http-clients {:client-name (str "waiter-test-" (retrieve-git-branch) "-" test-name)
+                              :clear-content-decoders false
+                              :conn-timeout 10000
+                              :user-agent (str "waiter-test/" (retrieve-git-branch) "-" test-name)})))
 
 (defmacro testing-using-waiter-url
   [& body]
@@ -275,16 +286,6 @@
    Handles both HTTP v1 and v2 styles of capitalization."
   [{:keys [headers]}]
   (or (get headers "Location") (get headers "location")))
-
-(defn extract-acronym
-  "Shortens the name taking only the leading characters across the delimiters.
-   E.g. `(extract-acronym \"aaa.bbb-ccc/ddd#eee-fff.ggg\") -> \"abcdfg\"`"
-  [name-with-dashes]
-  (->> (str/split (str name-with-dashes) #"-|\.|/")
-    (remove str/blank?)
-    (map #(subs % 0 (min 4 (count (str %)))))
-    (str/join "")
-    str/lower-case))
 
 (defn ensure-cid-in-headers
   [request-headers & {:keys [verbose] :or {verbose false}}]
