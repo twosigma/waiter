@@ -22,20 +22,33 @@
 
 (defn- scaling-for-service-test [testing-str waiter-url target-instances concurrency-level request-fn]
   (testing testing-str
-    (let [continue-running (atom true)
+    (let [test-name (current-test-name)
+          continue-running (atom true)
           first-request (request-fn)
           service-id (retrieve-service-id waiter-url (:request-headers first-request))
           count-instances (fn [] (num-instances waiter-url service-id))]
+      (log/info test-name "waiting for first instance to start")
       (is (wait-for #(= 1 (count-instances))) "First instance never started")
-      (future (dorun (pmap (fn [_] (while @continue-running (request-fn)))
-                           (range (* target-instances concurrency-level)))))
-      (is (wait-for #(= target-instances (count-instances))) (str "Never scaled up to " target-instances " instances"))
-      (reset! continue-running false)
-      ; When scaling down in Marathon, we have to wait for forced kills, 
-      ; which by default occur after 60 seconds of failed kills. 
-      ; So give the scale down extra time
-      (is (wait-for #(= 1 (count-instances)) :timeout 300) "Never scaled back down to 1 instance")
-      (delete-service waiter-url service-id))))
+      (log/info test-name "launching parallel tasks")
+      (let [task-futures (parallelize-requests
+                           (* target-instances concurrency-level)
+                           50
+                           request-fn
+                           :canceled? (fn [] @continue-running)
+                           :verbose true
+                           :wait-for-tasks false)]
+        (log/info test-name "waiting for service to scale up to" target-instances "instances")
+        (is (wait-for #(= target-instances (count-instances))) (str "Never scaled up to " target-instances " instances"))
+        (reset! continue-running false)
+        (log/info test-name "waiting for cancellation to propagate")
+        (await-futures task-futures :verbose true)
+        ; When scaling down in Marathon, we have to wait for forced kills,
+        ; which by default occur after 60 seconds of failed kills.
+        ; So give the scale down extra time
+        (log/info test-name "waiting for service to scale down to 1 instance")
+        (is (wait-for #(= 1 (count-instances)) :timeout 300) "Never scaled back down to 1 instance")
+        (log/info test-name "deleting service" service-id)
+        (delete-service waiter-url service-id)))))
 
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-scaling-healthy-app
   (testing-using-waiter-url
@@ -87,7 +100,7 @@
         (str "Expected: " expected-instances ", Actual: " (num-instances waiter-url service-id)))
     (reset! cancellation-token-atom true)
     (log/info "waiting for" num-threads "threads to complete")
-    (await-futures futures)))
+    (await-futures futures :verbose true)))
 
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-scale-factor
   (testing-using-waiter-url
@@ -248,6 +261,6 @@
         (log/info "test-minmax-instances: cancelling parallel requests")
         (reset! cancellation-token-atom true)
         (log/info "test-minmax-instances: awaiting futures to complete")
-        (await-futures futures))
+        (await-futures futures :verbose true))
       (log/info "test-minmax-instances: deleting service" service-id)
       (delete-service waiter-url service-id))))

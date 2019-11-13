@@ -562,6 +562,7 @@
   "Fetches and returns the service data at the /apps/<service-id> endpoint."
   [waiter-url service-id & {:keys [cookies keywordize-keys query-params]
                             :or {cookies [] keywordize-keys true query-params {}}}]
+  (log/debug "retrieving service settings for" service-id)
   (let [settings-path (str "/apps/" service-id)
         settings-result (make-request waiter-url settings-path :cookies cookies :query-params query-params)]
     (log/debug "service" service-id ":" settings-result)
