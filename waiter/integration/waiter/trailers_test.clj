@@ -33,11 +33,9 @@
                            :x-waiter-name (rand-name)}
           {:keys [service-id] :as canary-response}
           (make-request-with-debug-info request-headers #(make-shell-request waiter-url % :path "/status"))]
+      (assert-response-status canary-response 200)
       (with-service-cleanup
         service-id
-        (is service-id)
-        (assert-response-status canary-response 200)
-
         (testing "jet returns some trailers"
           (let [waiter-url (cond-> waiter-url
                              (= "h2c" backend-proto) retrieve-h2c-url)
@@ -135,11 +133,9 @@
                            :x-waiter-name (rand-name)}
           {:keys [service-id] :as canary-response}
           (make-request-with-debug-info request-headers #(make-kitchen-request waiter-url % :path "/status"))]
+      (assert-response-status canary-response 200)
       (with-service-cleanup
         service-id
-        (is service-id)
-        (assert-response-status canary-response 200)
-
         (doseq [response-trailer-delay-ms [0 1000]]
           (testing (str {:backend-proto backend-proto
                          :response-trailer-delay-ms response-trailer-delay-ms})

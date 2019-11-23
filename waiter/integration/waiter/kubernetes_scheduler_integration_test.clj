@@ -264,7 +264,6 @@
               {:x-waiter-distribution-scheme "simple"
                :x-waiter-name (rand-name)}
               #(make-kitchen-request waiter-url % :method :get :path "/"))]
-        (is service-id)
         (with-service-cleanup
           service-id
           (assert-response-status response 200)
@@ -296,7 +295,6 @@
                                :x-waiter-timeout 30000)
               service-id (retrieve-service-id waiter-url waiter-headers)
               timeout-secs 150]
-          (is service-id)
           (if (> container-running-grace-secs timeout-secs)
             (log/warn "skipping test as the configuration will cause the test to run for too long"
                       {:container-running-grace-secs container-running-grace-secs

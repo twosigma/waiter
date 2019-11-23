@@ -846,10 +846,9 @@
         (let [token (str "^SERVICE-ID#" service-id-1)
               response (make-request-with-debug-info {:x-waiter-token token} #(make-request waiter-url "" :headers %))
               service-id-2 (:service-id response)]
+          (assert-response-status response 200)
           (with-service-cleanup
             service-id-2
-            (assert-response-status response 200)
-            (is service-id-2)
             (is (= service-id-1 service-id-2) "The on-the-fly and token-based service ids do not match")
             (assert-service-on-all-routers waiter-url service-id-1 cookies)
             (is (= #{(make-source-tokens-entries waiter-url token)}

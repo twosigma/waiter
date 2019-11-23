@@ -141,7 +141,6 @@
         (assert-response-status (post-token waiter-url token-description-1) 200)
         (let [ping-response-1 (make-request waiter-url "/waiter-ping" :headers request-headers)
               service-id-1 (get-in ping-response-1 [:headers "x-waiter-service-id"])]
-          (is service-id-1)
           (with-service-cleanup
             service-id-1
             (assert-ping-response waiter-url backend-proto nil service-id-1 ping-response-1)
@@ -149,7 +148,6 @@
                   _ (assert-response-status (post-token waiter-url token-description-2) 200)
                   ping-response-2 (make-request waiter-url "/waiter-ping" :headers request-headers)
                   service-id-2 (get-in ping-response-2 [:headers "x-waiter-service-id"])]
-              (is service-id-2)
               (is (not= service-id-1 service-id-2))
               (with-service-cleanup
                 service-id-2
@@ -176,7 +174,6 @@
         (assert-response-status (post-token waiter-url token-description) 200)
         (let [ping-response (make-request waiter-url "/waiter-ping" :headers request-headers)
               service-id (get-in ping-response [:headers "x-waiter-service-id"])]
-          (is service-id)
           (with-service-cleanup
             service-id
             (assert-ping-response waiter-url backend-proto nil service-id ping-response)
@@ -205,7 +202,6 @@
                                        (and (= 1 (count instance-ids))
                                             (= instance-id (first instance-ids)))))]
       (assert-response-status canary-response 200)
-      (is service-id)
       (with-service-cleanup
         service-id
         (doseq [[_ router-url] (routers waiter-url)]

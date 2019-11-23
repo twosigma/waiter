@@ -91,7 +91,6 @@
       (is (not (str/blank? status-location)))
       (is (str/starts-with? (str status-location) "/waiter-async/status/") (str status-location))
       (log/info async-request-cid "status-location:" status-location)
-
       (with-service-cleanup
         service-id
         (testing "validate-in-flight-request-counters"

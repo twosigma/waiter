@@ -245,13 +245,13 @@
                    :ports 2
                    :version "1"}
           waiter-headers (pc/map-keys #(str "x-waiter-" (name %)) headers)
-          service-id (retrieve-service-id waiter-url waiter-headers)
-          _ (is service-id)
-          service-description (service-id->service-description waiter-url service-id)
-          username (retrieve-username)]
-      (is (= (-> headers
-                 (assoc :permitted-user username :run-as-user username))
-             service-description)))))
+          service-id (retrieve-service-id waiter-url waiter-headers)]
+      (with-service-cleanup
+        service-id
+        (let [service-description (service-id->service-description waiter-url service-id)
+              username (retrieve-username)]
+          (is (= (assoc headers :permitted-user username :run-as-user username)
+                 service-description)))))))
 
 (deftest ^:parallel ^:integration-fast test-basic-logs
   (testing-using-waiter-url

@@ -89,9 +89,12 @@
                           "cookie" cookie-header
                           "x-waiter-timeout" "60000")]
     (assert-response-status response 200)
-    (is service-id)
     (log/info "ping cid:" (get headers "x-cid"))
     (log/info "service-id:" service-id)
+    (is service-id)
+    (when-not service-id
+      ;; abort test eagerly when service id is unavailable
+      (throw (ex-info "missing service-id in response" {:response response})))
     (let [{:keys [ping-response service-state]} (some-> response :body try-parse-json walk/keywordize-keys)]
       (is (= "received-response" (:result ping-response)) (str ping-response))
       (is (= "OK" (some-> ping-response :body)) (str ping-response))
