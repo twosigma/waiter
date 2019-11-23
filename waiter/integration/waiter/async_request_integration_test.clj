@@ -34,15 +34,16 @@
           status-location (get (pc/map-keys str/lower-case headers) "location")]
       (assert-response-status response 202)
       (is (str/blank? status-location))
-      (testing "validate-in-flight-request-counters"
-        (let [service-data (service-settings waiter-url service-id)
-              {:keys [async outstanding successful total] :or {async 0} :as request-counts}
-              (get-in service-data [:metrics :aggregate :counters :request-counts])]
-          (is (= 1 successful) (str request-counts))
-          (is (= 1 total) (str request-counts))
-          (is (zero? async) (str request-counts))
-          (is (zero? outstanding) (str request-counts))))
-      (delete-service waiter-url service-id))))
+      (with-service-cleanup
+        service-id
+        (testing "validate-in-flight-request-counters"
+          (let [service-data (service-settings waiter-url service-id)
+                {:keys [async outstanding successful total] :or {async 0} :as request-counts}
+                (get-in service-data [:metrics :aggregate :counters :request-counts])]
+            (is (= 1 successful) (str request-counts))
+            (is (= 1 total) (str request-counts))
+            (is (zero? async) (str request-counts))
+            (is (zero? outstanding) (str request-counts))))))))
 
 (defn- make-async-request
   [waiter-url processing-time-ms]
@@ -163,14 +164,15 @@
       (assert-response-status response 202)
       (is (not (str/blank? status-location)))
       (is (str/starts-with? (str status-location) "/waiter-async/status/") (str status-location))
-      (let [routers (routers waiter-url)]
-        (let [response (cancel-async-request waiter-url status-location true cookies)]
-          (assert-response-status response 204))
-        (doseq [router (seq routers)]
-          (let [{:keys [response result-location]} (async-status router status-location cookies)]
-            (assert-response-status response 410)
-            (is (nil? result-location)))))
-      (delete-service waiter-url service-id))))
+      (with-service-cleanup
+        service-id
+        (let [routers (routers waiter-url)]
+          (let [response (cancel-async-request waiter-url status-location true cookies)]
+            (assert-response-status response 204))
+          (doseq [router (seq routers)]
+            (let [{:keys [response result-location]} (async-status router status-location cookies)]
+              (assert-response-status response 410)
+              (is (nil? result-location)))))))))
 
 (deftest ^:parallel ^:integration-fast test-cancel-unsupported-async-request
   (testing-using-waiter-url
@@ -179,13 +181,14 @@
           (make-async-request waiter-url processing-time-ms)]
       (assert-response-status response 202)
       (is (not (str/blank? status-location)))
-      (let [routers (routers waiter-url)]
-        (let [response (cancel-async-request waiter-url status-location false cookies)]
-          (assert-response-status response 405))
-        (doseq [router (seq routers)]
-          (let [{:keys [response]} (async-status router status-location cookies)]
-            (assert-response-status response 200))))
-      (delete-service waiter-url service-id))))
+      (with-service-cleanup
+        service-id
+        (let [routers (routers waiter-url)]
+          (let [response (cancel-async-request waiter-url status-location false cookies)]
+            (assert-response-status response 405))
+          (doseq [router (seq routers)]
+            (let [{:keys [response]} (async-status router status-location cookies)]
+              (assert-response-status response 200))))))))
 
 ; Marked explicit because it's flaky. Disabled tests are documented and will be fixed
 (deftest ^:parallel ^:integration-slow ^:resource-heavy ^:explicit test-multiple-async-requests

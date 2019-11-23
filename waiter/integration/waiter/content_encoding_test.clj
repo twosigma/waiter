@@ -28,7 +28,8 @@
     (log/info "Test successful chunked gzip response")
     (let [service-headers (assoc (kitchen-request-headers) :x-waiter-name (rand-name))
           {:keys [service-id]} (make-request-with-debug-info service-headers #(make-kitchen-request waiter-url %))]
-      (try
+      (with-service-cleanup
+        service-id
         (let [response-size 2000000
               fail-after-size 8000000
               req-headers (assoc service-headers
@@ -47,16 +48,15 @@
                 (make-request waiter-url "/gzip" :headers req-headers :decompress-body true :verbose true)
                 body-length (count (bytes (byte-array (map (comp byte int) (str body)))))]
             (assert-response-status response 200)
-            (is (= response-size body-length))))
-        (finally
-          (delete-service waiter-url service-id))))))
+            (is (= response-size body-length))))))))
 
 (deftest ^:parallel ^:integration-fast test-support-failed-chunked-gzip-response
   (testing-using-waiter-url
     (log/info "Test failed chunked gzip response")
     (let [service-headers (assoc (kitchen-request-headers) :x-waiter-name (rand-name))
           {:keys [service-id]} (make-request-with-debug-info service-headers #(make-kitchen-request waiter-url %))]
-      (try
+      (with-service-cleanup
+        service-id
         (let [req-headers (assoc service-headers
                             :x-kitchen-chunked true
                             :x-kitchen-fail-after 50
@@ -67,16 +67,15 @@
                 EOFException
                 (clj-http/get url {:headers req-headers
                                    :decompress-body true
-                                   :spnego-auth use-spnego}))))
-        (finally
-          (delete-service waiter-url service-id))))))
+                                   :spnego-auth use-spnego}))))))))
 
 (deftest ^:parallel ^:integration-fast test-support-success-gzip-response
   (testing-using-waiter-url
     (log/info "Test successful gzip response")
     (let [service-headers (assoc (kitchen-request-headers) :x-waiter-name (rand-name))
           {:keys [service-id]} (make-request-with-debug-info service-headers #(make-kitchen-request waiter-url %))]
-      (try
+      (with-service-cleanup
+        service-id
         (let [response-size 2000000
               fail-after-size 8000000
               req-headers (assoc service-headers
@@ -95,16 +94,15 @@
                 (make-request waiter-url "/gzip" :headers req-headers :decompress-body true :verbose true)
                 body-length (count (bytes (byte-array (map (comp byte int) (str body)))))]
             (assert-response-status response 200)
-            (is (= response-size body-length))))
-        (finally
-          (delete-service waiter-url service-id))))))
+            (is (= response-size body-length))))))))
 
 (deftest ^:parallel ^:integration-fast test-support-failed-gzip-response
   (testing-using-waiter-url
     (log/info "Test failed gzip response")
     (let [service-headers (assoc (kitchen-request-headers) :x-waiter-name (rand-name))
           {:keys [service-id]} (make-request-with-debug-info service-headers #(make-kitchen-request waiter-url %))]
-      (try
+      (with-service-cleanup
+        service-id
         (let [req-headers (assoc service-headers
                             :x-kitchen-chunked false
                             :x-kitchen-fail-after 50
@@ -114,16 +112,15 @@
                 ConnectionClosedException
                 (clj-http/get (str HTTP-SCHEME waiter-url "/gzip") {:headers req-headers
                                                                     :decompress-body true
-                                                                    :spnego-auth use-spnego}))))
-        (finally
-          (delete-service waiter-url service-id))))))
+                                                                    :spnego-auth use-spnego}))))))))
 
 (deftest ^:parallel ^:integration-fast test-support-success-chunked-response
   (testing-using-waiter-url
     (log/info "Test successful chunked plain response")
     (let [service-headers (assoc (kitchen-request-headers) :x-waiter-name (rand-name))
           {:keys [service-id]} (make-request-with-debug-info service-headers #(make-kitchen-request waiter-url %))]
-      (try
+      (with-service-cleanup
+        service-id
         (let [req-headers (assoc service-headers
                             :x-kitchen-fail-after 200000
                             :x-kitchen-response-size 100000
@@ -135,16 +132,15 @@
           (is (= (get headers "content-type") "text/plain") (str headers))
           (is (nil? (get headers "content-encoding")) (str headers))
           (is (nil? (get headers "content-length")) (str headers))
-          (is (not (nil? (get headers "x-cid"))) (str headers)))
-        (finally
-          (delete-service waiter-url service-id))))))
+          (is (not (nil? (get headers "x-cid"))) (str headers)))))))
 
 (deftest ^:parallel ^:integration-fast test-support-failed-chunked-response
   (testing-using-waiter-url
     (log/info "Test truncated chunked plain response")
     (let [service-headers (assoc (kitchen-request-headers) :x-waiter-name (rand-name))
           {:keys [service-id]} (make-request-with-debug-info service-headers #(make-kitchen-request waiter-url %))]
-      (try
+      (with-service-cleanup
+        service-id
         (let [req-headers (assoc service-headers
                             :x-kitchen-fail-after 5000
                             :x-kitchen-response-size 100000
@@ -156,16 +152,15 @@
           (is (= (get headers "content-type") "text/plain") (str headers))
           (is (nil? (get headers "content-encoding")) (str headers))
           (is (nil? (get headers "content-length")) (str headers))
-          (is (not (nil? (get headers "x-cid"))) (str headers)))
-        (finally
-          (delete-service waiter-url service-id))))))
+          (is (not (nil? (get headers "x-cid"))) (str headers)))))))
 
 (deftest ^:parallel ^:integration-fast test-support-success-unchunked-response
   (testing-using-waiter-url
     (log/info "Test successful plain response")
     (let [service-headers (assoc (kitchen-request-headers) :x-waiter-name (rand-name))
           {:keys [service-id]} (make-request-with-debug-info service-headers #(make-kitchen-request waiter-url %))]
-      (try
+      (with-service-cleanup
+        service-id
         (dotimes [_ 100]
           (let [req-headers (assoc service-headers
                               :x-kitchen-fail-after 200000
@@ -178,25 +173,22 @@
             (is (= (get headers "content-type") "text/plain") (str headers))
             (is (nil? (get headers "content-encoding")) (str headers))
             ;; TODO flaky: this is sometimes missing (is (not (nil? (get headers "content-length"))) (str headers))
-            (is (not (nil? (get headers "x-cid"))) (str headers))))
-        (finally
-          (delete-service waiter-url service-id))))))
+            (is (not (nil? (get headers "x-cid"))) (str headers))))))))
 
 (deftest ^:parallel ^:integration-fast test-support-failed-unchunked-response
   (testing-using-waiter-url
     (log/info "Test truncated failed plain response")
     (let [service-headers (assoc (kitchen-request-headers) :x-waiter-name (rand-name))
           {:keys [service-id]} (make-request-with-debug-info service-headers #(make-kitchen-request waiter-url %))]
-      (try
+      (with-service-cleanup
+        service-id
         (let [req-headers (assoc service-headers
                             :x-kitchen-fail-after 5000
                             :x-kitchen-response-size 100000
                             :x-waiter-debug true)]
           (is (thrown? ConnectionClosedException
                        (clj-http/get (str HTTP-SCHEME waiter-url "/unchunked") {:headers req-headers
-                                                                                :spnego-auth use-spnego}))))
-        (finally
-          (delete-service waiter-url service-id))))))
+                                                                                :spnego-auth use-spnego}))))))))
 
 (deftest ^:parallel ^:integration-fast test-terminate-chunked-request
   (testing-using-waiter-url
@@ -224,12 +216,13 @@
                                                         :spnego-auth true
                                                         :as :stream
                                                         :connection-manager connection-manager}))]
-      (is (= 1 (get (get-state) "pending-http-requests")))
-      ; Client eagerly terminates the request
-      (.shutdown connection-manager)
-      ; Wait up to 10 seconds for the connection to get cleaned up. If waiter consumes the entire stream it will take
-      ; much longer.
-      (is (wait-for #(= 0 (get (get-state) "pending-http-requests")) :interval 1 :timeout 10))
-      (let [body-data (-> body (InputStreamReader.) slurp)]
-        (is (not= data-length (-> body-data str count)) "Waiter streamed entire response!"))
-      (delete-service waiter-url service-id))))
+      (with-service-cleanup
+        service-id
+        (is (= 1 (get (get-state) "pending-http-requests")))
+        ; Client eagerly terminates the request
+        (.shutdown connection-manager)
+        ; Wait up to 10 seconds for the connection to get cleaned up. If waiter consumes the entire stream it will take
+        ; much longer.
+        (is (wait-for #(= 0 (get (get-state) "pending-http-requests")) :interval 1 :timeout 10))
+        (let [body-data (-> body (InputStreamReader.) slurp)]
+          (is (not= data-length (-> body-data str count)) "Waiter streamed entire response!"))))))
