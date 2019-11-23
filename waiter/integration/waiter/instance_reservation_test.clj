@@ -118,23 +118,24 @@
           _ (log/info (str "Making canary request..."))
           {:keys [cookies instance-id service-id] :as canary-response} (request-fn 100)]
       (assert-response-status canary-response 200)
-      (log/info "Sending additional requests.")
-      (time-it
-        "additional-requests"
-        (parallelize-requests
-          8
-          100
-          #(let [response (request-fn 100 :cookies cookies)]
-             ; all requests should be served by the same instance
-             (is (= instance-id (:instance-id response))))))
-      (let [service-state (service-state waiter-url service-id)
-            responder-state (get-in service-state [:state :responder-state])]
-        (is (= 1 (count (:id->instance responder-state))))
-        (is (empty? (:instance-id->request-id->use-reason-map service-state)))
-        (is (every? #(pos? (:slots-assigned %))
-                    (filter (fn [instance-state] (contains? (:status-tags instance-state) :healthy))
-                            (vals (:instance-id->state responder-state))))))
-      (delete-service waiter-url service-id)
+      (with-service-cleanup
+        service-id
+        (log/info "Sending additional requests.")
+        (time-it
+          "additional-requests"
+          (parallelize-requests
+            8
+            100
+            #(let [response (request-fn 100 :cookies cookies)]
+               ; all requests should be served by the same instance
+               (is (= instance-id (:instance-id response))))))
+        (let [service-state (service-state waiter-url service-id)
+              responder-state (get-in service-state [:state :responder-state])]
+          (is (= 1 (count (:id->instance responder-state))))
+          (is (empty? (:instance-id->request-id->use-reason-map service-state)))
+          (is (every? #(pos? (:slots-assigned %))
+                      (filter (fn [instance-state] (contains? (:status-tags instance-state) :healthy))
+                              (vals (:instance-id->state responder-state)))))))
       (log/info (str "Instance reservation test for concurrent service completed.")))))
 
 (defn run-load-balancing-test

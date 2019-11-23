@@ -47,12 +47,14 @@
 
 (defn- validate-kubernetes-custom-image
   [waiter-url custom-image]
-  (let [{:keys [body service-id]} (make-request-with-debug-info
-                                    {:x-waiter-name (rand-name)
-                                     :x-waiter-image custom-image
-                                     :x-waiter-cmd "echo -n $INTEGRATION_TEST_SENTINEL_VALUE > index.html && python3 -m http.server $PORT0"
-                                     :x-waiter-health-check-url "/"}
-                                    #(make-kitchen-request waiter-url % :method :get :path "/"))]
+  (let [{:keys [body service-id] :as response}
+        (make-request-with-debug-info
+          {:x-waiter-name (rand-name)
+           :x-waiter-image custom-image
+           :x-waiter-cmd "echo -n $INTEGRATION_TEST_SENTINEL_VALUE > index.html && python3 -m http.server $PORT0"
+           :x-waiter-health-check-url "/"}
+          #(make-kitchen-request waiter-url % :method :get :path "/"))]
+    (assert-response-status response 200)
     (is (= "Integration Test Sentinel Value" body))
     (delete-service waiter-url service-id)))
 

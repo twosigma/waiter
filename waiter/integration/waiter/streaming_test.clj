@@ -34,53 +34,55 @@
           epsilon 0.01
           num-streaming-requests 50]
       (assert-response-status canary-response 200)
-      (dotimes [n num-streaming-requests]
-        (let [request-cid (str service-name "-iter" n)
-              headers (assoc headers
-                        :content-length body-size
-                        :content-type "application/octet-stream"
-                        :x-cid request-cid)
-              {:keys [body] :as response} (make-kitchen-request waiter-url headers :body post-body :path "/streaming")]
-          (assert-response-status response 200)
-          (is (.equals post-body body) (str response)))) ;; avoids printing the post-body when assertion fails
-      ; wait to allow metrics to be aggregated
-      (let [sleep-period (max (* 20 metrics-sync-interval-ms) 10000)]
-        (log/debug "sleeping for" sleep-period "ms")
-        (Thread/sleep sleep-period))
-      ; assert request response size metrics
-      (let [service-settings (service-settings waiter-url service-id)
-            _ (log/info "metrics" (get service-settings :metrics))
-            aggregate-metrics (get-in service-settings [:metrics :aggregate])
-            request-counts (get-in aggregate-metrics [:counters :request-counts])
-            request-counts-str (str request-counts)
-            request-size-histogram (get-in aggregate-metrics [:histograms :request-size])
-            response-size-histogram (get-in aggregate-metrics [:histograms :response-size])]
-        (is (zero? (:outstanding request-counts)) request-counts-str)
-        (is (zero? (:request-body-streaming request-counts)) request-counts-str)
-        (is (zero? (:streaming request-counts)) request-counts-str)
-        (is (= (inc num-streaming-requests) (:successful request-counts)) request-counts-str)
-        (is (= (inc num-streaming-requests) (:total request-counts)) request-counts-str)
-        ;; there is no content length on the canary request
-        (is (= (inc num-streaming-requests) (get request-size-histogram :count 0))
-            (str "request-size-histogram: " request-size-histogram))
-        ;; we do not assert the 0th percentile as the value may be corrupted during a multi-router merge
-        (is (->> (get-in request-size-histogram [:value :1.0] 0.0) (- body-size) Math/abs (>= epsilon))
-            (str "request-size-histogram: " request-size-histogram))
-        (is (= (inc num-streaming-requests) (get response-size-histogram :count))
-            (str "response-size-histogram: " response-size-histogram))
-        ;; all (canary and streaming) response sizes are logged
-        (is (->> (get-in response-size-histogram [:value :1.0] 0.0) (- body-size) Math/abs (>= epsilon))
-            (str "response-size-histogram: " response-size-histogram)))
-      (delete-service waiter-url service-id))))
+      (with-service-cleanup
+        service-id
+        (dotimes [n num-streaming-requests]
+          (let [request-cid (str service-name "-iter" n)
+                headers (assoc headers
+                          :content-length body-size
+                          :content-type "application/octet-stream"
+                          :x-cid request-cid)
+                {:keys [body] :as response} (make-kitchen-request waiter-url headers :body post-body :path "/streaming")]
+            (assert-response-status response 200)
+            (is (.equals post-body body) (str response)))) ;; avoids printing the post-body when assertion fails
+        ; wait to allow metrics to be aggregated
+        (let [sleep-period (max (* 20 metrics-sync-interval-ms) 10000)]
+          (log/debug "sleeping for" sleep-period "ms")
+          (Thread/sleep sleep-period))
+        ; assert request response size metrics
+        (let [service-settings (service-settings waiter-url service-id)
+              _ (log/info "metrics" (get service-settings :metrics))
+              aggregate-metrics (get-in service-settings [:metrics :aggregate])
+              request-counts (get-in aggregate-metrics [:counters :request-counts])
+              request-counts-str (str request-counts)
+              request-size-histogram (get-in aggregate-metrics [:histograms :request-size])
+              response-size-histogram (get-in aggregate-metrics [:histograms :response-size])]
+          (is (zero? (:outstanding request-counts)) request-counts-str)
+          (is (zero? (:request-body-streaming request-counts)) request-counts-str)
+          (is (zero? (:streaming request-counts)) request-counts-str)
+          (is (= (inc num-streaming-requests) (:successful request-counts)) request-counts-str)
+          (is (= (inc num-streaming-requests) (:total request-counts)) request-counts-str)
+          ;; there is no content length on the canary request
+          (is (= (inc num-streaming-requests) (get request-size-histogram :count 0))
+              (str "request-size-histogram: " request-size-histogram))
+          ;; we do not assert the 0th percentile as the value may be corrupted during a multi-router merge
+          (is (->> (get-in request-size-histogram [:value :1.0] 0.0) (- body-size) Math/abs (>= epsilon))
+              (str "request-size-histogram: " request-size-histogram))
+          (is (= (inc num-streaming-requests) (get response-size-histogram :count))
+              (str "response-size-histogram: " response-size-histogram))
+          ;; all (canary and streaming) response sizes are logged
+          (is (->> (get-in response-size-histogram [:value :1.0] 0.0) (- body-size) Math/abs (>= epsilon))
+              (str "response-size-histogram: " response-size-histogram)))))))
 
 (deftest ^:parallel ^:integration-fast test-large-request
   (testing-using-waiter-url
     (let [request-body (apply str (take 2000000 (repeat "hello")))
           headers {:x-waiter-name (rand-name), :x-kitchen-echo true}
-          {:keys [body request-headers] :as response} (make-kitchen-request waiter-url headers :body request-body)]
+          {:keys [body service-id] :as response}
+          (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :body request-body))]
       (assert-response-status response 200)
       (is (= (count request-body) (count body)))
-      (delete-service waiter-url (retrieve-service-id waiter-url request-headers)))))
+      (delete-service waiter-url service-id))))
 
 (defn- perform-streaming-timeout-test
   [waiter-url data-size-in-bytes service-name streaming-timeout-fn streaming-timeout-limit-fn
@@ -114,27 +116,28 @@
           input-stream (.getInputStream url-connection)
           data-byte-array (byte-array 300000)
           sleep-iteration 5]
-      (try
-        (log/info "Reading from request")
-        (loop [iteration 0
-               bytes-read 0]
-          (when (= iteration sleep-iteration)
-            (log/info "Sleeping for" streaming-timeout-limit-ms "ms")
-            (Thread/sleep streaming-timeout-limit-ms))
-          (let [bytes-read-iter (.read input-stream data-byte-array)
-                bytes-read-so-far (if (neg? bytes-read-iter) bytes-read (+ bytes-read-iter bytes-read))]
-            (if (pos? bytes-read-iter)
-              (do
-                (when (or (= iteration (dec sleep-iteration)) (zero? (mod iteration 100)))
-                  (log/info (str "Iteration-" iteration) "bytes-read-iter:" bytes-read-iter ", bytes-read-total:" bytes-read-so-far))
-                (recur (inc iteration) bytes-read-so-far))
-              (do
-                (log/info (str "Iteration-" iteration) "response size:" bytes-read-so-far)
-                (assertion-fn bytes-read-so-far data-size-in-bytes)))))
-        (log/info "Done reading from request")
-        (finally
-          (.close input-stream)
-          (delete-service waiter-url service-id))))))
+      (with-service-cleanup
+        service-id
+        (try
+          (log/info "Reading from request")
+          (loop [iteration 0
+                 bytes-read 0]
+            (when (= iteration sleep-iteration)
+              (log/info "Sleeping for" streaming-timeout-limit-ms "ms")
+              (Thread/sleep streaming-timeout-limit-ms))
+            (let [bytes-read-iter (.read input-stream data-byte-array)
+                  bytes-read-so-far (if (neg? bytes-read-iter) bytes-read (+ bytes-read-iter bytes-read))]
+              (if (pos? bytes-read-iter)
+                (do
+                  (when (or (= iteration (dec sleep-iteration)) (zero? (mod iteration 100)))
+                    (log/info (str "Iteration-" iteration) "bytes-read-iter:" bytes-read-iter ", bytes-read-total:" bytes-read-so-far))
+                  (recur (inc iteration) bytes-read-so-far))
+                (do
+                  (log/info (str "Iteration-" iteration) "response size:" bytes-read-so-far)
+                  (assertion-fn bytes-read-so-far data-size-in-bytes)))))
+          (log/info "Done reading from request")
+          (finally
+            (.close input-stream)))))))
 
 (deftest ^:parallel ^:integration-fast test-successful-streaming-with-custom-settings
   (testing-using-waiter-url
