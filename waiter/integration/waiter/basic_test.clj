@@ -530,6 +530,7 @@
                                             :x-waiter-run-as-user current-user}
                                            #(make-kitchen-request waiter-url %))]
         (with-service-cleanup
+          service-id
           (assert-service-on-all-routers waiter-url service-id cookies)
           ;; wait for scaling state to become available on the service endpoint
           (doseq [[_ router-url] (routers waiter-url)]

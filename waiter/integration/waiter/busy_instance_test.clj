@@ -31,10 +31,8 @@
                             (make-request-with-debug-info (merge extra-headers headers) #(make-kitchen-request waiter-url %)))
           _ (log/info "making canary request")
           {:keys [service-id]} (make-request-fn {})]
-
       (with-service-cleanup
         service-id
-
         ;; Make requests to get instances started and avoid shuffling among routers later
         (let [canceled (promise)]
           (future (parallelize-requests parallelism 100 (partial make-request-fn {:x-kitchen-delay-ms 1000})
