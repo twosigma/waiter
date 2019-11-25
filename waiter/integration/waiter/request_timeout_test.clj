@@ -217,17 +217,18 @@
                                                          {:x-waiter-token token}
                                                          #(make-request waiter-url "/req" :headers %))]
           (assert-response-status response 200)
-          (when (= 200 status)
-            (log/info "Verifying app grace period for" token)
-            (let [instance-acquired-delay-ms (-> response
+          (with-service-cleanup
+            service-id
+            (when (= 200 status)
+              (log/info "Verifying app grace period for" token)
+              (let [instance-acquired-delay-ms (-> response
                                                  :headers
                                                  (get "x-waiter-get-available-instance-ns" -1)
                                                  Long/parseLong
                                                  (quot 1000000))] ; truncated nanos->millis
-              (is (<= startup-delay-ms instance-acquired-delay-ms)
-                  (str "Healthy instance was found in just " instance-acquired-delay-ms " ms (too short)")))
-            (when (can-query-for-grace-period? waiter-url)
-              (is (= (t/in-seconds grace-period) (service-id->grace-period waiter-url service-id)))))
-          (delete-service waiter-url service-id))
+                (is (<= startup-delay-ms instance-acquired-delay-ms)
+                    (str "Healthy instance was found in just " instance-acquired-delay-ms " ms (too short)")))
+              (when (can-query-for-grace-period? waiter-url)
+                (is (= (t/in-seconds grace-period) (service-id->grace-period waiter-url service-id)))))))
         (finally
           (delete-token-and-assert waiter-url token))))))

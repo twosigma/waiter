@@ -43,47 +43,45 @@
 
       ;; set up
       (log/info "service-id:" service-id)
-      (parallelize-requests (+ max-instances 2) 2
-                            #(request-fn waiter-url (assoc extra-headers :x-kitchen-delay-ms 6000))
-                            :verbose true)
-      (log/info "num instances running" (num-instances waiter-url service-id))
-      (print-metrics service-id)
-      ;; actual test
-      (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")
-            router->endpoint (routers waiter-url)
-            router (-> router->endpoint (keys) (sort) (first))
-            router-url (get router->endpoint router)]
-        (when (= 1 (count router->endpoint))
-          (log/info "Assertions will be trivially true as only one router is running"))
-        (log/info "Forwarding all requests to router" router "at url" router-url)
-        (let [responses (parallelize-requests (* 4 max-instances)
-                                              1
-                                              #(request-fn router-url (assoc extra-headers :x-kitchen-delay-ms 16000)
-                                                           :cookies cookies)
-                                              :verbose true)
-              _ (log/debug "Num responses:" (count responses))
-              responses-map (reduce (fn [accum {:keys [instance-id]}]
-                                      (update-in accum [instance-id] (fnil inc 0)))
-                                    {} responses)]
-          (print-metrics service-id)
-          (is (pos? (count responses-map))
-              "Error in receiving responses, a possible bug in parallelize-requests!")
-          (log/info (str "Response distribution:" responses-map))
-          (let [service-settings (service-settings waiter-url service-id)
-                num-instances (count (get-in service-settings [:instances :active-instances]))]
-            (log/info (str "Num instances:" num-instances))
-            (when (not= num-instances (count responses-map))
-              (log/info "Instances:" (get service-settings :instances)))
-            (is (<= num-instances (count responses-map))))
-          (is (every? (fn [[_ num-requests]] (pos? num-requests)) responses-map)
-              (str "Response distribution:" responses-map)))
+      (with-service-cleanup
+        service-id
+        (parallelize-requests (+ max-instances 2) 2
+                              #(request-fn waiter-url (assoc extra-headers :x-kitchen-delay-ms 6000))
+                              :verbose true)
+        (log/info "num instances running" (num-instances waiter-url service-id))
+        (print-metrics service-id)
+        ;; actual test
+        (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")
+              router->endpoint (routers waiter-url)
+              router (-> router->endpoint (keys) (sort) (first))
+              router-url (get router->endpoint router)]
+          (when (= 1 (count router->endpoint))
+            (log/info "Assertions will be trivially true as only one router is running"))
+          (log/info "Forwarding all requests to router" router "at url" router-url)
+          (let [responses (parallelize-requests (* 4 max-instances)
+                                                1
+                                                #(request-fn router-url (assoc extra-headers :x-kitchen-delay-ms 16000)
+                                                             :cookies cookies)
+                                                :verbose true)
+                _ (log/debug "Num responses:" (count responses))
+                responses-map (reduce (fn [accum {:keys [instance-id]}]
+                                        (update-in accum [instance-id] (fnil inc 0)))
+                                      {} responses)]
+            (print-metrics service-id)
+            (is (pos? (count responses-map))
+                "Error in receiving responses, a possible bug in parallelize-requests!")
+            (log/info (str "Response distribution:" responses-map))
+            (let [service-settings (service-settings waiter-url service-id)
+                  num-instances (count (get-in service-settings [:instances :active-instances]))]
+              (log/info (str "Num instances:" num-instances))
+              (when (not= num-instances (count responses-map))
+                (log/info "Instances:" (get service-settings :instances)))
+              (is (<= num-instances (count responses-map))))
+            (is (every? (fn [[_ num-requests]] (pos? num-requests)) responses-map)
+                (str "Response distribution:" responses-map)))
 
-        ;; check slot metrics
-        (let [metrics-routers (keys (get-in service-settings [:metrics :routers]))]
-          (doseq [router metrics-routers]
-            (let [slots-in-use (get-in service-settings [:metrics :routers router :counters :instance-counts :slots-in-use])]
-              (is (zero? slots-in-use) (str "Expected zero slots-in-use, but found " slots-in-use " in router " (name router))))))
-
-        ;; cleanup
-        (log/info "Deleting" service-id)
-        (delete-service waiter-url service-id)))))
+          ;; check slot metrics
+          (let [metrics-routers (keys (get-in service-settings [:metrics :routers]))]
+            (doseq [router metrics-routers]
+              (let [slots-in-use (get-in service-settings [:metrics :routers router :counters :instance-counts :slots-in-use])]
+                (is (zero? slots-in-use) (str "Expected zero slots-in-use, but found " slots-in-use " in router " (name router)))))))))))

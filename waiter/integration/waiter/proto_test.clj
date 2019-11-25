@@ -56,7 +56,6 @@
         (make-request-with-debug-info request-headers #(make-shell-request waiter-url % :path "/request-info"))]
     (with-service-cleanup
       service-id
-      (is service-id)
       (assert-response-status response 200)
       (let [{:strs [x-nginx-client-proto x-nginx-client-scheme x-waiter-backend-proto]} headers]
         (is (= backend-proto-version x-nginx-client-proto))

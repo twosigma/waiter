@@ -26,16 +26,17 @@
           first-request (request-fn)
           service-id (retrieve-service-id waiter-url (:request-headers first-request))
           count-instances (fn [] (num-instances waiter-url service-id))]
-      (is (wait-for #(= 1 (count-instances))) "First instance never started")
-      (future (dorun (pmap (fn [_] (while @continue-running (request-fn)))
-                           (range (* target-instances concurrency-level)))))
-      (is (wait-for #(= target-instances (count-instances))) (str "Never scaled up to " target-instances " instances"))
-      (reset! continue-running false)
-      ; When scaling down in Marathon, we have to wait for forced kills, 
-      ; which by default occur after 60 seconds of failed kills. 
-      ; So give the scale down extra time
-      (is (wait-for #(= 1 (count-instances)) :timeout 300) "Never scaled back down to 1 instance")
-      (delete-service waiter-url service-id))))
+      (with-service-cleanup
+        service-id
+        (is (wait-for #(= 1 (count-instances))) "First instance never started")
+        (future (dorun (pmap (fn [_] (while @continue-running (request-fn)))
+                             (range (* target-instances concurrency-level)))))
+        (is (wait-for #(= target-instances (count-instances))) (str "Never scaled up to " target-instances " instances"))
+        (reset! continue-running false)
+        ; When scaling down in Marathon, we have to wait for forced kills,
+        ; which by default occur after 60 seconds of failed kills.
+        ; So give the scale down extra time
+        (is (wait-for #(= 1 (count-instances)) :timeout 300) "Never scaled back down to 1 instance")))))
 
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-scaling-healthy-app
   (testing-using-waiter-url
@@ -223,22 +224,23 @@
                       target-instances))]
               (log/debug "target instances:" instances)
               instances))]
-      (log/info "waiting up to 20 seconds for autoscaler to catch up for" service-id)
-      (is (wait-for #(= min-instances (get-target-instances)) :interval 4 :timeout 20))
-      (log/info "starting parallel requests")
-      (let [cancellation-token-atom (atom false)
-            futures (parallelize-requests (* 2 max-instances)
-                                          requests-per-thread
-                                          #(request-fn :cookies cookies)
-                                          :canceled? (fn [] @cancellation-token-atom)
-                                          :service-id service-id
-                                          :verbose true
-                                          :wait-for-tasks false)]
-        (log/info "waiting for autoscaler to reach" max-instances)
-        (is (wait-for #(= max-instances (get-target-instances)) :interval 1))
-        (log/info "waiting to make sure autoscaler does not go above" max-instances)
-        (utils/sleep (-> requests-per-thread (* request-delay-ms) (/ 4)))
-        (is (= max-instances (get-target-instances)))
-        (reset! cancellation-token-atom true)
-        (await-futures futures))
-      (delete-service waiter-url service-id))))
+      (with-service-cleanup
+        service-id
+        (log/info "waiting up to 20 seconds for autoscaler to catch up for" service-id)
+        (is (wait-for #(= min-instances (get-target-instances)) :interval 4 :timeout 20))
+        (log/info "starting parallel requests")
+        (let [cancellation-token-atom (atom false)
+              futures (parallelize-requests (* 2 max-instances)
+                                            requests-per-thread
+                                            #(request-fn :cookies cookies)
+                                            :canceled? (fn [] @cancellation-token-atom)
+                                            :service-id service-id
+                                            :verbose true
+                                            :wait-for-tasks false)]
+          (log/info "waiting for autoscaler to reach" max-instances)
+          (is (wait-for #(= max-instances (get-target-instances)) :interval 1))
+          (log/info "waiting to make sure autoscaler does not go above" max-instances)
+          (utils/sleep (-> requests-per-thread (* request-delay-ms) (/ 4)))
+          (is (= max-instances (get-target-instances)))
+          (reset! cancellation-token-atom true)
+          (await-futures futures))))))

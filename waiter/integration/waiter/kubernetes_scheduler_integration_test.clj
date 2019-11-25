@@ -47,12 +47,14 @@
 
 (defn- validate-kubernetes-custom-image
   [waiter-url custom-image]
-  (let [{:keys [body service-id]} (make-request-with-debug-info
-                                    {:x-waiter-name (rand-name)
-                                     :x-waiter-image custom-image
-                                     :x-waiter-cmd "echo -n $INTEGRATION_TEST_SENTINEL_VALUE > index.html && python3 -m http.server $PORT0"
-                                     :x-waiter-health-check-url "/"}
-                                    #(make-kitchen-request waiter-url % :method :get :path "/"))]
+  (let [{:keys [body service-id] :as response}
+        (make-request-with-debug-info
+          {:x-waiter-name (rand-name)
+           :x-waiter-image custom-image
+           :x-waiter-cmd "echo -n $INTEGRATION_TEST_SENTINEL_VALUE > index.html && python3 -m http.server $PORT0"
+           :x-waiter-health-check-url "/"}
+          #(make-kitchen-request waiter-url % :method :get :path "/"))]
+    (assert-response-status response 200)
     (is (= "Integration Test Sentinel Value" body))
     (delete-service waiter-url service-id)))
 
@@ -264,7 +266,6 @@
               {:x-waiter-distribution-scheme "simple"
                :x-waiter-name (rand-name)}
               #(make-kitchen-request waiter-url % :method :get :path "/"))]
-        (is service-id)
         (with-service-cleanup
           service-id
           (assert-response-status response 200)
@@ -296,7 +297,6 @@
                                :x-waiter-timeout 30000)
               service-id (retrieve-service-id waiter-url waiter-headers)
               timeout-secs 150]
-          (is service-id)
           (if (> container-running-grace-secs timeout-secs)
             (log/warn "skipping test as the configuration will cause the test to run for too long"
                       {:container-running-grace-secs container-running-grace-secs

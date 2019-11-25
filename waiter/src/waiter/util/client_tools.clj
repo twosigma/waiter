@@ -1078,10 +1078,13 @@
 (defmacro with-service-cleanup
   "Ensures a service is cleaned up."
   [service-id & body]
-  `(try
-     ~@body
-     (finally
-       (delete-service ~'waiter-url ~service-id))))
+  `(let [service-id# ~service-id]
+     (if service-id#
+       (try
+         ~@body
+         (finally
+           (delete-service ~'waiter-url ~service-id)))
+       (is false (str "service-id is false, value is " service-id#)))))
 
 (defn response->service-id
   "Gets the service-id from a response."
