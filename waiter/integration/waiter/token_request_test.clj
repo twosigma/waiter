@@ -1016,15 +1016,15 @@
                         "health-check-url" "/not-used"
                         "metadata" {"a" "b", "c" {"d" "e"}}}
           register-response (post-token waiter-url service-desc)]
-      (is (= 400 (:status register-response))))))
+      (assert-response-status register-response 400))))
 
 (deftest ^:parallel ^:integration-fast test-token-bad-payload
   (testing-using-waiter-url
-    (let [{:keys [status]} (make-request waiter-url "/token"
-                                         :body "i'm bad at json"
-                                         :headers {"host" "test-token"}
-                                         :method :post)]
-      (is (= 400 status)))))
+    (let [response (make-request waiter-url "/token"
+                                 :body "i'm bad at json"
+                                 :headers {"host" "test-token"}
+                                 :method :post)]
+      (assert-response-status response 400))))
 
 (deftest ^:parallel ^:integration-fast test-token-environment-variables
   (testing-using-waiter-url
@@ -1083,7 +1083,7 @@
   `(let [response# (make-request-with-debug-info ~request-headers ~request-fn)
          service-description# (response->service-description ~waiter-url response#)
          service-id# (:service-id response#)]
-     (is (= 200 (:status response#)))
+     (assert-response-status response# 200)
      (is (= ~expected-env (:env service-description#)) (str service-description#))
      (delete-service ~waiter-url service-id#)
      service-id#))
@@ -1107,22 +1107,22 @@
           (assert-response-status token-response 200)
           (let [request-headers {:x-waiter-param-my_variable "value-1"
                                  :x-waiter-token token}
-                {:keys [body status]} (make-request-with-debug-info request-headers kitchen-request)]
-            (is (= 400 status))
+                {:keys [body] :as response} (make-request-with-debug-info request-headers kitchen-request)]
+            (assert-response-status response 400)
             (is (str/includes? body "Some params cannot be configured")))
           (let [request-headers {:x-waiter-allowed-params ""
                                  :x-waiter-param-my_variable "value-1"
                                  :x-waiter-token token}
-                {:keys [body status]} (make-request-with-debug-info request-headers kitchen-request)]
-            (is (= 400 status))
+                {:keys [body] :as response} (make-request-with-debug-info request-headers kitchen-request)]
+            (assert-response-status response 400)
             (is (str/includes? body "Some params cannot be configured"))))
         (let [token-description (-> service-description (dissoc :allowed-params) (assoc :token (str token ".1")))
               token-response (post-token waiter-url token-description :query-params {"update-mode" "admin"})]
           (assert-response-status token-response 200)
           (let [request-headers {:x-waiter-param-my_variable "value-1"
                                  :x-waiter-token token}
-                {:keys [body status]} (make-request-with-debug-info request-headers kitchen-request)]
-            (is (= 400 status))
+                {:keys [body] :as response} (make-request-with-debug-info request-headers kitchen-request)]
+            (assert-response-status response 400)
             (is (str/includes? body "Some params cannot be configured"))))
         (let [service-ids (set [(run-token-param-support
                                   waiter-url kitchen-request
@@ -1151,9 +1151,8 @@
 
 (deftest ^:parallel ^:integration-fast test-token-invalid-environment-variables
   (testing-using-waiter-url
-    (let [{:keys [body status]} (post-token waiter-url {:env {"HOME" "/my/home"}
-                                                        :token (rand-name)})]
-      (is (= 400 status))
+    (let [{:keys [body] :as response} (post-token waiter-url {:env {"HOME" "/my/home"} :token (rand-name)})]
+      (assert-response-status response 400)
       (is (not (str/includes? body "clojure")) body)
       (is (str/includes? body "The following environment variable keys are reserved: HOME.") body))))
 
@@ -1167,8 +1166,8 @@
               param-value (if string-param?
                             (apply str parameter " " (repeat max-constraint "x"))
                             (inc max-constraint))
-              {:keys [body status]} (post-token waiter-url {parameter param-value :token (rand-name)})]
-          (is (= 400 status))
+              {:keys [body] :as response} (post-token waiter-url {parameter param-value :token (rand-name)})]
+          (assert-response-status response 400)
           (is (not (str/includes? body "clojure")) body)
           (is (every? #(str/includes? body %)
                       ["The following fields exceed their allowed limits"
