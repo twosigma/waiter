@@ -62,8 +62,9 @@
 (defn- classify-error
   "Classifies the error responses from the backend into the following vector:
    - error cause (:client-eagerly-closed, :client-error, :instance-error or :generic-error),
-   - associated error message, and
-   - the http status code."
+   - associated error message,
+   - the http status code, and
+   - the canonical name of the exception that 'caused' the error."
   [error]
   (let [classification (cond (instance? ExceptionInfo error)
                              (let [[error-cause message status error-class] (classify-error (ex-cause error))
