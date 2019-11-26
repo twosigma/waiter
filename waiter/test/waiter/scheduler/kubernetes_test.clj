@@ -50,7 +50,8 @@
   ([service-ids] (make-dummy-scheduler service-ids {}))
   ([service-ids args]
    (->
-     {:authorizer {:kind :default
+     {:api-server-url "https://k8s-api.example/"
+      :authorizer {:kind :default
                    :default {:factory-fn 'waiter.authorization/noop-authorizer}}
       :daemon-state (atom nil)
       :cluster-name "waiter"
@@ -104,7 +105,7 @@
         (instance? Service x)
         (dissoc x :k8s/app-name :k8s/namespace)
         (instance? ServiceInstance x)
-        (dissoc x :k8s/app-name :k8s/namespace :k8s/pod-name :k8s/restart-count :k8s/user)
+        (dissoc x :k8s/api-server-url :k8s/app-name :k8s/namespace :k8s/pod-name :k8s/restart-count :k8s/user)
         :else x))
     walkable-collection))
 
@@ -1607,7 +1608,10 @@
       (is (= "an/image" (compute-image nil "an/image" image-aliases))))))
 
 (deftest test-pod->ServiceInstance
-  (let [pod-start-time (t/minus (t/now) (t/seconds 60))
+  (let [api-server-url "https://k8s-api.example/"
+        base-scheduler {:api-server-url api-server-url
+                        :container-running-grace-secs 120}
+        pod-start-time (t/minus (t/now) (t/seconds 60))
         pod-start-time-k8s-str (du/date-to-str pod-start-time k8s-timestamp-format)
         pod {:metadata {:name "test-app-1234-abcd1"
                         :namespace "myself"
@@ -1635,6 +1639,7 @@
                       :port 8080
                       :service-id "test-app-1234"
                       :started-at (timestamp-str->datetime pod-start-time-k8s-str)
+                      :k8s/api-server-url api-server-url
                       :k8s/app-name "test-app-1234"
                       :k8s/container-statuses [{:name "test-app-1234" :ready true}]
                       :k8s/namespace "myself"
@@ -1644,45 +1649,38 @@
         expired-instance-map (assoc instance-map :flags #{:expired})]
 
     (testing "pod to live instance"
-      (let [restart-expiry-threshold 10
-            dummy-scheduler {:container-running-grace-secs 120
-                             :restart-expiry-threshold restart-expiry-threshold}
+      (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
             instance (pod->ServiceInstance dummy-scheduler pod)]
+        (println 'INSTANCE instance)
         (is (= (scheduler/make-ServiceInstance instance-map) instance))))
 
     (testing "pod with expired annotation"
-      (let [restart-expiry-threshold 10
-            dummy-scheduler {:container-running-grace-secs 120
-                             :restart-expiry-threshold restart-expiry-threshold}
+      (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
             pod' (assoc-in pod [:metadata :annotations :waiter/pod-expired] "true")
             instance (pod->ServiceInstance dummy-scheduler pod')]
         (is (= (scheduler/make-ServiceInstance expired-instance-map) instance))))
 
     (testing "pod to expired instance threshold"
-      (let [restart-expiry-threshold 9
-            dummy-scheduler {:container-running-grace-secs 120
-                             :restart-expiry-threshold restart-expiry-threshold}
+      (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 9)
             instance (pod->ServiceInstance dummy-scheduler pod)]
         (is (= (scheduler/make-ServiceInstance expired-instance-map) instance))))
 
     (testing "pod to expired instance exceeded threshold"
-      (let [restart-expiry-threshold 5
-            dummy-scheduler {:container-running-grace-secs 120
-                             :restart-expiry-threshold restart-expiry-threshold}
+      (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 5)
             instance (pod->ServiceInstance dummy-scheduler pod)]
         (is (= (scheduler/make-ServiceInstance expired-instance-map) instance))))
 
     (testing "pod to expired instance exceeded running grace period"
-      (let [restart-expiry-threshold 25
-            dummy-scheduler {:container-running-grace-secs 45
-                             :restart-expiry-threshold restart-expiry-threshold}
+      (let [dummy-scheduler (assoc base-scheduler
+                                   :container-running-grace-secs 45
+                                   :restart-expiry-threshold 25)
             instance (pod->ServiceInstance dummy-scheduler pod)]
         (is (= (scheduler/make-ServiceInstance expired-instance-map) instance))))
 
     (testing "previously started pod not expired despite instance exceeded running grace period"
-      (let [restart-expiry-threshold 25
-            dummy-scheduler {:container-running-grace-secs 45
-                             :restart-expiry-threshold restart-expiry-threshold}
+      (let [dummy-scheduler (assoc base-scheduler
+                                   :container-running-grace-secs 45
+                                   :restart-expiry-threshold 25)
             pod (assoc-in pod [:status :containerStatuses 0 :lastState] {:terminated {}})
             instance (pod->ServiceInstance dummy-scheduler pod)]
         (is (= (scheduler/make-ServiceInstance instance-map) instance))))))
