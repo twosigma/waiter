@@ -243,7 +243,7 @@
 
 (defn pod->ServiceInstance
   "Convert a Kubernetes Pod JSON response into a Waiter Service Instance record."
-  [scheduler pod]
+  [{:keys [api-server-url] :as scheduler} pod]
   (try
     (let [;; waiter-app is the first container we register
           restart-count (get-in pod [:status :containerStatuses 0 :restartCount] 0)
@@ -267,6 +267,7 @@
                  :healthy? (true? (get primary-container-status :ready))
                  :host (get-in pod [:status :podIP] scheduler/UNKNOWN-IP)
                  :id instance-id
+                 :k8s/api-server-url api-server-url
                  :k8s/app-name (get-in pod [:metadata :labels :app])
                  :k8s/namespace (k8s-object->namespace pod)
                  :k8s/pod-name (k8s-object->id pod)
