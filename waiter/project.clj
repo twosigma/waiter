@@ -30,12 +30,12 @@
                    :dev :dev
                    :perf (every-pred :perf (complement :explicit))}
 
-  :dependencies [[bidi "2.1.5"
+  :dependencies [[bidi "2.1.6"
                   :exclusions [prismatic/schema ring/ring-core]]
                  [buddy/buddy-sign "3.1.0"
                   :exclusions [[commons-codec]]]
                  ;; resolve the cheshire dependency used by buddy and jet
-                 [cheshire "5.8.1"]
+                 [cheshire "5.9.0"]
                  [twosigma/courier "1.5.14"
                   :exclusions [com.google.guava/guava io.grpc/grpc-core]
                   :scope "test"]
@@ -49,20 +49,20 @@
                   :exclusions [org.mortbay.jetty.alpn/alpn-boot]]
                  [twosigma/clj-http "1.0.2-20180124_201819-gcdf23e5"
                   :exclusions [commons-codec commons-io org.clojure/tools.reader potemkin slingshot]]
-                 [clj-time "0.15.1"
+                 [clj-time "0.15.2"
                   :exclusions [joda-time]]
                  [com.google.guava/guava "20.0"]
                  [com.taoensso/nippy "2.14.0"
                   :exclusions [org.clojure/clojure org.clojure/tools.reader]]
                  [comb "0.1.1"
                   :exclusions [org.clojure/clojure]]
-                 [digest "1.4.8"
+                 [digest "1.4.9"
                   :exclusions [org.clojure/clojure]]
                  [fullcontact/full.async "1.0.0"
                   :exclusions [org.clojure/clojure org.clojure/clojurescript org.clojure/core.async]]
                  [io.dropwizard.metrics/metrics-graphite "3.1.1"
                   :exclusions [org.slf4j/slf4j-api]]
-                 [joda-time "2.10.1"]
+                 [joda-time "2.10.5"]
                  [twosigma/metrics-clojure "2.6.0-20180124_201441-g72cee16"
                   :exclusions [org.clojure/clojure io.netty/netty org.slf4j/slf4j-api]]
                  [metrics-clojure-jvm "2.10.0"
@@ -81,31 +81,31 @@
                  [org.apache.curator/curator-x-discovery "2.11.0"
                   :exclusions [io.netty/netty org.slf4j/slf4j-api]]
                  [org.clojure/clojure "1.10.1"]
-                 [org.clojure/core.async "0.4.490"
+                 [org.clojure/core.async "0.5.527"
                   :exclusions [org.clojure/clojure org.clojure/tools.reader]]
-                 [org.clojure/core.memoize "0.7.1"
+                 [org.clojure/core.memoize "0.8.2"
                   :exclusions [org.clojure/clojure]]
                  [org.clojure/data.codec "0.1.1"]
                  [org.clojure/data.json "0.2.6"]
                  [org.clojure/data.priority-map "0.0.10"]
-                 [org.clojure/data.zip "0.1.2"]
-                 [org.clojure/tools.cli "0.4.1"]
-                 [org.clojure/tools.logging "0.4.1"]
-                 [org.clojure/tools.namespace "0.2.11"]
+                 [org.clojure/data.zip "0.1.3"]
+                 [org.clojure/tools.cli "0.4.2"]
+                 [org.clojure/tools.logging "0.5.0"]
+                 [org.clojure/tools.namespace "0.3.1"]
                  [org.clojure/tools.reader "1.3.2"]
                  ;; use maven to download this jar so we can set up the boot classpath
                  [org.mortbay.jetty.alpn/alpn-boot "8.1.13.v20181017"
                   :scope "provided"]
                  [org.opensaml/opensaml "2.6.4"
                   :exclusions [commons-codec]]
-                 [org.slf4j/slf4j-log4j12 "1.7.25"
+                 [org.slf4j/slf4j-log4j12 "1.7.29"
                   :exclusions [log4j]]
                  [potemkin "0.4.5"]
                  [prismatic/plumbing "0.5.5"]
-                 [prismatic/schema "1.1.10"]
+                 [prismatic/schema "1.1.12"]
                  [reaver "0.1.2"
                   :scope "test"]
-                 [ring/ring-core "1.7.1"
+                 [ring/ring-core "1.8.0"
                   :exclusions [org.clojure/tools.reader]]
                  [ring/ring-ssl "0.3.0"
                   :exclusions [ring/ring-core]]
