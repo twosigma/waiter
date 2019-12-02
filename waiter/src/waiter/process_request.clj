@@ -62,13 +62,14 @@
 (defn- classify-error
   "Classifies the error responses from the backend into the following vector:
    - error cause (:client-eagerly-closed, :client-error, :instance-error or :generic-error),
-   - associated error message, and
-   - the http status code."
+   - associated error message,
+   - the http status code, and
+   - the canonical name of the exception that 'caused' the error."
   [error]
   (let [classification (cond (instance? ExceptionInfo error)
-                             (let [[error-cause message status] (classify-error (ex-cause error))
+                             (let [[error-cause message status error-class] (classify-error (ex-cause error))
                                    error-cause (or (-> error ex-data :error-cause) error-cause)]
-                               [error-cause message status])
+                               [error-cause message status error-class])
                              (instance? IllegalStateException error)
                              [:generic-error (.getMessage error) 400]
                              ;; cancel_stream_error is used to indicate that the stream is no longer needed
@@ -83,9 +84,10 @@
                              [:instance-error (utils/message :backend-request-timed-out) 504]
                              :else
                              [:instance-error (utils/message :backend-request-failed) 502])
-        [error-cause _ _] classification]
-    (log/info (-> error .getClass .getCanonicalName) (.getMessage error) "identified as" error-cause)
-    classification))
+        [error-cause _ _] classification
+        error-class (-> error .getClass .getCanonicalName)]
+    (log/info error-class (.getMessage error) "identified as" error-cause)
+    (conj classification error-class)))
 
 (defn- determine-client-error
   "Classifies the error into one of :client-eagerly-closed or :client-error"
@@ -233,10 +235,13 @@
 (defn- handle-response-error
   "Handles error responses from the backend."
   [error reservation-status-promise service-id request]
-  (let [[error-cause message status] (classify-error error)
-        metrics-map (metrics/retrieve-local-stats-for-service service-id)]
+  (let [[error-cause message status error-class] (classify-error error)
+        metrics-map (metrics/retrieve-local-stats-for-service service-id)
+        error-map (assoc metrics-map 
+                    :error-class error-class
+                    :status status)]
     (deliver reservation-status-promise error-cause)
-    (utils/exception->response (ex-info message (assoc metrics-map :status status) error) request)))
+    (utils/exception->response (ex-info message error-map error) request)))
 
 (let [min-buffer-size 1024
       max-buffer-size 32768

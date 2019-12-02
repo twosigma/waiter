@@ -307,10 +307,16 @@
     (hu/grpc? headers client-protocol)
     (add-grpc-headers-and-trailers error-context)))
 
+(defn attach-error-class
+  "Attaches error-class on Waiter generated responses when it is available in the provided error data."
+  [response {:keys [error-class]}]
+  (cond-> response
+    error-class (assoc :error-class error-class)))
+
 (defn data->error-response
   "Converts the provided data map into a ring response.
    The data map is expected to contain the following keys: details, headers, message, and status."
-  [{:keys [headers status] :or {status 400} :as data-map} request]
+  [{:keys [details headers status] :or {status 400} :as data-map} request]
   (let [error-context (build-error-context data-map request)
         content-type (request->content-type request)]
     (-> {:body (case content-type
@@ -322,6 +328,7 @@
          :headers (-> headers
                     (assoc-if-absent "content-type" content-type))
          :status status}
+      (attach-error-class details)
       (attach-grpc-status error-context request)
       attach-waiter-source)))
 
@@ -329,10 +336,10 @@
   "Wraps any exception that doesn't already set status in a parent
   exception with a generic error message and a 500 status."
   [ex]
-  (let [{:keys [status]} (ex-data ex)]
+  (let [{:keys [status] :as error-data} (ex-data ex)]
     (if status
       ex
-      (ex-info (str "Internal error: " (.getMessage ex)) {:status 500} ex))))
+      (ex-info (str "Internal error: " (.getMessage ex)) (assoc error-data :status 500) ex))))
 
 (defn exception->response
   "Converts an exception into a ring response."
