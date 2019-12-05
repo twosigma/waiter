@@ -27,6 +27,9 @@ DEFAULT_TIMEOUT_MS = int(os.getenv('WAITER_TEST_DEFAULT_TIMEOUT_MS', 120000))
 # default wait interval (i.e. time between attempts) used by wait_until utility function
 DEFAULT_WAIT_INTERVAL_MS = int(os.getenv('WAITER_TEST_DEFAULT_WAIT_INTERVAL_MS', 1000))
 
+# prefix to be used for tokens created during the integration tests
+TOKEN_PREFIX = os.getenv('WAITER_TEST_TOKEN_PREFIX', 'cli')
+
 
 class WaiterTest(unittest.TestCase):
     def token_name(self):
@@ -38,7 +41,7 @@ class WaiterTest(unittest.TestCase):
         test_function = test_id.split('.')[-1]
         timestamp = datetime.now().strftime('%Y%m%dT%H%M%S')
         random_string = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
-        return f'{test_function}_{timestamp}_{random_string}'
+        return f'{TOKEN_PREFIX}_{test_function}_{timestamp}_{random_string}'
 
 
 @functools.lru_cache()
