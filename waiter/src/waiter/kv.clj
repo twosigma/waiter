@@ -209,19 +209,23 @@
   KeyValueStore
   (retrieve [_ key refresh]
     (when-let [encrypted-value (retrieve inner-kv-store key refresh)]
-      ;; Here, we're trying to decrypt the data with each password in turn
-      (some #(try
-               (nippy/thaw encrypted-value {:password %
-                                            :compressor compression/lzma2-compressor
-                                            :v1-compatibility? false})
-               (catch Exception _
-                 (log/warn "Failed to decrypt hash:" (Arrays/hashCode ^bytes encrypted-value) "for" key)
-                 nil))
-            passwords)))
+      (timers/start-stop-time!
+        (metrics/waiter-timer "core" "kv-crypt" "thaw")
+        ;; Here, we're trying to decrypt the data with each password in turn
+        (some #(try
+                 (nippy/thaw encrypted-value {:password %
+                                              :compressor compression/lzma2-compressor
+                                              :v1-compatibility? false})
+                 (catch Exception _
+                   (log/warn "Failed to decrypt hash:" (Arrays/hashCode ^bytes encrypted-value) "for" key)
+                   nil))
+              passwords))))
   (store [_ key value]
     (let [password (first passwords)
-          encrypted-value (nippy/freeze value {:password password
-                                               :compressor compression/lzma2-compressor})]
+          encrypted-value (timers/start-stop-time!
+                            (metrics/waiter-timer "core" "kv-crypt" "freeze")
+                            (nippy/freeze value {:password password
+                                                 :compressor compression/lzma2-compressor}))]
       (store inner-kv-store key encrypted-value)))
   (delete [_ key]
     (delete inner-kv-store key))
