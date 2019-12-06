@@ -161,6 +161,7 @@ def minimal_service_description(**kwargs):
         'cmd': default_cmd(),
         'cpus': float(os.getenv('WAITER_TEST_DEFAULT_CPUS', 1.0)),
         'mem': int(os.getenv('WAITER_TEST_DEFAULT_MEM_MB', 256)),
+        'metric-group': 'waiter_test',
         'version': str(uuid.uuid4()),
         'cmd-type': 'shell'
     }
