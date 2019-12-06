@@ -1046,10 +1046,11 @@ class WaiterCliTest(util.WaiterTest):
             util.delete_token(self.waiter_url, token_name, assert_response=False)
 
     def test_tokens_sorted(self):
-        token_name_1 = f'foo_{self.token_name()}'
+        token_name_prefix = self.token_name()
+        token_name_1 = f'{token_name_prefix}_foo'
         util.post_token(self.waiter_url, token_name_1, util.minimal_service_description())
         try:
-            token_name_2 = f'bar_{self.token_name()}'
+            token_name_2 = f'{token_name_prefix}_bar'
             util.post_token(self.waiter_url, token_name_2, util.minimal_service_description())
             try:
                 cp = cli.tokens(self.waiter_url)
