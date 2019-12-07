@@ -60,6 +60,10 @@
                   ;; It's best to keep this unique across clusters:
                   :service-prefix "waiter-c1-"}
 
+ ;; The principal to use for requests, e.g. async request status checks, originating in Waiter.
+ ;; It is expected to be of the format name@domain.
+ :waiter-principal "waiter@example.com"
+
  :zookeeper {
              ;; The root path to which Waiter will write data:
              :base-path "/waiter"

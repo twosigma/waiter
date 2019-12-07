@@ -6,6 +6,8 @@
 {
  ; ---------- Cluster ----------
 
+ :waiter-principal "waiter@example.com"
+
  :zookeeper {
              ;; Use an in-process ZK (not for production use):
              :connect-string :in-process}

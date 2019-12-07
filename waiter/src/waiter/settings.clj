@@ -179,6 +179,7 @@
                                    (s/required-key :token-defaults) {(s/required-key "fallback-period-secs") schema/non-negative-int
                                                                      (s/required-key "https-redirect") s/Bool
                                                                      (s/required-key "stale-timeout-mins") schema/non-negative-int}}
+   (s/required-key :waiter-principal) schema/non-empty-string
    (s/required-key :websocket-config) {(s/required-key :ws-max-binary-message-size) schema/positive-int
                                        (s/required-key :ws-max-text-message-size) schema/positive-int}
    (s/required-key :work-stealing) {(s/required-key :max-in-flight-offers) schema/non-negative-int
