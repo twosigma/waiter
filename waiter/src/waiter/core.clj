@@ -944,14 +944,16 @@
                                                      (partial make-blacklist-request make-inter-router-requests-sync-fn blacklist-period-ms)
                                                      reason))))
    :post-process-async-request-response-fn (pc/fnk [[:state async-request-store-atom instance-rpc-chan router-id]
+                                                    [:settings waiter-principal]
                                                     make-http-request-fn]
-                                             (fn post-process-async-request-response-wrapper
-                                               [response service-id metric-group backend-proto instance _
-                                                reason-map request-properties location query-string]
-                                               (async-req/post-process-async-request-response
-                                                 router-id async-request-store-atom make-http-request-fn instance-rpc-chan response
-                                                 service-id metric-group backend-proto instance reason-map request-properties
-                                                 location query-string)))
+                                             (let [auth-params-map (auth/auth-params-map :internal waiter-principal)]
+                                               (fn post-process-async-request-response-wrapper
+                                                 [response service-id metric-group backend-proto instance _
+                                                  reason-map request-properties location query-string]
+                                                 (async-req/post-process-async-request-response
+                                                   router-id async-request-store-atom make-http-request-fn auth-params-map
+                                                   instance-rpc-chan response service-id metric-group backend-proto instance
+                                                   reason-map request-properties location query-string))))
    :prepend-waiter-url (pc/fnk [[:settings hostname port]]
                          (let [hostname (if (sequential? hostname) (first hostname) hostname)]
                            (fn [endpoint-url]

@@ -1,6 +1,8 @@
 {
  ; ---------- Cluster ----------
 
+ :waiter-principal "waiter@example.com"
+
  :zookeeper {:connect-string #config/env "WAITER_ZOOKEEPER_CONNECT_STRING"}
 
  ; ---------- Metrics - Internal ----------
