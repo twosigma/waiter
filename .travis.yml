@@ -52,26 +52,6 @@ matrix:
       before_script: cd waiter
       script: ./bin/ci/run-integration-tests.sh composite eftest integration-slow
 
-    - name: 'Waiter integration tests: kubernetes-heavy'
-      services: docker
-      before_script: cd waiter
-      script: ./bin/ci/run-integration-tests.sh k8s test integration-heavy
-
-    - name: 'Waiter integration tests: kubernetes-lite'
-      services: docker
-      before_script: cd waiter
-      script: ./bin/ci/run-integration-tests.sh k8s eftest integration-lite
-
-    - name: 'Waiter integration tests: marathon-fast'
-      services: docker
-      before_script: cd waiter
-      script: ./bin/ci/run-integration-tests.sh marathon eftest integration-fast
-
-    - name: 'Waiter integration tests: marathon-slow'
-      services: docker
-      before_script: cd waiter
-      script: ./bin/ci/run-integration-tests.sh marathon eftest integration-slow
-
     - name: 'Waiter CLI integration tests'
       services: docker
       before_script: cd cli && ./bin/ci/setup.sh
