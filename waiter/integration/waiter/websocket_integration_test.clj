@@ -113,13 +113,14 @@
   (testing-using-waiter-url
     (let [ws-response-atom (atom [])
           token (str "token-" (rand-name))
-          token-description (assoc (kitchen-request-headers :prefix "")
-                              :authentication "disabled"
-                              :metric-group "waiter_ws_test"
-                              :name (rand-name)
-                              :permitted-user "*"
-                              :run-as-user (retrieve-username)
-                              :token token)
+          token-description (-> (kitchen-request-headers :prefix "")
+                                (update :cmd str " --authentication disabled")
+                                (assoc :authentication "disabled"
+                                       :metric-group "waiter_ws_test"
+                                       :name (rand-name)
+                                       :permitted-user "*"
+                                       :run-as-user (retrieve-username)
+                                       :token token))
           waiter-headers {"x-waiter-token" token}]
       (try
         (let [token-response (post-token waiter-url token-description)]

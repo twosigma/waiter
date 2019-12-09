@@ -1319,6 +1319,7 @@
           token (create-token-name waiter-url service-name)
           current-user (retrieve-username)
           service-description (-> (kitchen-request-headers :prefix "")
+                                  (update :cmd str " --authentication disabled")
                                   (assoc :authentication "disabled"
                                          :name service-name
                                          :permitted-user "*"

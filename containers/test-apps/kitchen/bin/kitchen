@@ -512,8 +512,7 @@ class Kitchen(HTTPWebSocketsHandler):
         elif self.__path in ['/bad-status', '/sleep', '/status']:
             return True
         else:
-            auth_string = self.headers.get('Authorization')
-            return auth_string and _auth_handler(auth_string)
+            return _auth_handler(self)
 
     def __handle_http_request(self):
         """Core logic for a Kitchen HTTP request (all verbs delegate to this handler)."""
@@ -1037,13 +1036,16 @@ class BasicAuthHandler():
         b64_creds = base64.b64encode(':'.join([username, password]).encode('utf-8'))
         self.expected_auth = 'Basic {}'.format(b64_creds.decode())
 
-    def __call__(self, auth_string):
-        return auth_string == self.expected_auth
+    def __call__(self, request):
+        auth_string = self.headers.get('Authorization')
+        auth_principal = self.headers.get('X-Waiter-Auth-Principal')
+        return auth_principal and auth_string == self.expected_auth
 
 
 def main():
     global kitchen_logger, _allow_response_status_change, _auth_handler, binary_max_size, text_max_size
     parser = argparse.ArgumentParser(description='A toy HTTP Service for testing the Waiter platform')
+    parser.add_argument('--authentication', default='basic', choices=['basic', 'disabled'], help='Authentication strategy')
     parser.add_argument('--enable-status-change', action='store_true', default=False,
             help='Enables option to configure default response status using the x-kitchen-default-status-value header')
     parser.add_argument('--hostname', metavar='HOSTNAME', default='', help='Server host name')
