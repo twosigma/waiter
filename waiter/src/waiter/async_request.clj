@@ -105,7 +105,9 @@
                         (let [location-header (get headers "location")
                               location (normalize-location-header status-endpoint location-header)]
                           (if (str/starts-with? (str location) "/")
-                            (recur (max 0 (- ttl check-interval-ms)))
+                            (do
+                              (log/info "continuing async request status checks as location is a relative path:" location)
+                              (recur (max 0 (- ttl check-interval-ms))))
                             (do
                               (log/info "completing async request as result location is not a relative path:" location)
                               (complete-async-request :success)
