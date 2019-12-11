@@ -55,6 +55,11 @@
   (cookie-support/add-encoded-cookie response password AUTH-COOKIE-NAME [principal (tc/to-long (t/now))]
                                      (or age-in-seconds (-> 1 t/days t/in-seconds))))
 
+(defn select-auth-params
+  "Returns a map that contains only the auth params from the input map"
+  [m]
+  (select-keys m [:authorization/method :authorization/principal :authorization/user]))
+
 (defn auth-params-map
   "Creates a map intended to be merged into requests/responses."
   ([method principal]

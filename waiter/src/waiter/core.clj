@@ -1369,9 +1369,10 @@
                                    (handler/metrics-request-handler request)))
    :not-found-handler-fn (pc/fnk [] handler/not-found-handler)
    :ping-service-handler (pc/fnk [[:daemons router-state-maintainer]
-                                  [:state fallback-state-atom]
+                                  [:state fallback-state-atom user-agent-version]
                                   process-request-handler-fn process-request-wrapper-fn wrap-secure-request-fn]
                            (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
+                                 user-agent (str "waiter-ping/" user-agent-version)
                                  handler (process-request-wrapper-fn
                                            (fn inner-ping-service-handler [request]
                                              (let [service-state-fn
@@ -1382,7 +1383,7 @@
                                                         :healthy? (descriptor/service-healthy? fallback-state service-id)
                                                         :service-id service-id
                                                         :status (service/retrieve-service-status-label service-id global-state)}))]
-                                               (pr/ping-service process-request-handler-fn service-state-fn request))))]
+                                               (pr/ping-service user-agent process-request-handler-fn service-state-fn request))))]
                              (wrap-secure-request-fn
                                (fn ping-service-handler [request]
                                  (-> request
