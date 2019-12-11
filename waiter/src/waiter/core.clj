@@ -197,7 +197,9 @@
   (fn attach-waiter-api-middleware-fn [request]
     (let [waiter-api-call? (boolean (waiter-request?-fn request))
           add-waiter-api-call-fn (fn add-waiter-api-call-fn [http-obj]
-                                   (assoc http-obj :waiter-api-call? waiter-api-call?))]
+                                   (assoc http-obj
+                                     :request-type (if waiter-api-call? "waiter-api" "waiter-proxy")
+                                     :waiter-api-call? waiter-api-call?))]
       (-> request
         (add-waiter-api-call-fn)
         (handler)
@@ -718,6 +720,7 @@
                                (utils/create-component
                                  cluster-calculator :context {:default-cluster name}))
    :token-root (pc/fnk [[:settings [:cluster-config name]]] name)
+   :user-agent-version (pc/fnk [[:settings git-version]] (str/join (take 7 git-version)))
    :waiter-hostnames (pc/fnk [[:settings hostname]]
                        (set (if (sequential? hostname)
                               hostname
@@ -819,14 +822,14 @@
                                             (sd/service-id->service-description
                                               kv-store service-id service-description-defaults
                                               metric-group-mappings :effective? effective?)))
-   :start-scheduler-syncer-fn (pc/fnk [[:settings [:health-check-config health-check-timeout-ms failed-check-threshold] git-version]
-                                       [:state clock]
+   :start-scheduler-syncer-fn (pc/fnk [[:settings [:health-check-config health-check-timeout-ms failed-check-threshold]]
+                                       [:state clock user-agent-version]
                                        service-id->service-description-fn*]
                                 (let [http-client (hu/http-client-factory
-                                                    {:client-name (str "waiter-syncer-" (str/join (take 7 git-version)))
+                                                    {:client-name (str "waiter-syncer-" user-agent-version)
                                                      :conn-timeout health-check-timeout-ms
                                                      :socket-timeout health-check-timeout-ms
-                                                     :user-agent (str "waiter-syncer/" (str/join (take 7 git-version)))})
+                                                     :user-agent (str "waiter-syncer/" user-agent-version)})
                                       available? (fn scheduler-available?
                                                    [scheduler-name service-instance health-check-proto health-check-port-index health-check-path]
                                                    (scheduler/available? http-client scheduler-name service-instance health-check-proto

@@ -80,6 +80,7 @@
                   :instance-proto "instance-proto"
                   :latest-service-id "latest-service-id"
                   :protocol "HTTP/2.0"
+                  :request-type "test-request"
                   :status 200
                   :waiter-api-call? false}]
     (is (= {:authentication-method "cookie"
@@ -97,6 +98,7 @@
             :latest-service-id "latest-service-id"
             :metric-group "service-metric-group"
             :principal "principal@DOMAIN.COM"
+            :request-type "test-request"
             :response-content-length "40"
             :response-content-type "application/xml"
             :response-location "/foo/bar"
