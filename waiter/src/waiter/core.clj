@@ -945,16 +945,17 @@
                                                      instance short-circuit? router-ids "blacklist"
                                                      (partial make-blacklist-request make-inter-router-requests-sync-fn blacklist-period-ms)
                                                      reason))))
-   :post-process-async-request-response-fn (pc/fnk [[:state async-request-store-atom instance-rpc-chan router-id]
-                                                    [:settings waiter-principal]
+   :post-process-async-request-response-fn (pc/fnk [[:settings waiter-principal]
+                                                    [:state async-request-store-atom instance-rpc-chan router-id user-agent-version]
                                                     make-http-request-fn]
-                                             (let [auth-params-map (auth/auth-params-map :internal waiter-principal)]
+                                             (let [auth-params-map (auth/auth-params-map :internal waiter-principal)
+                                                   user-agent (str "waiter-async-status-check/" user-agent-version)]
                                                (fn post-process-async-request-response-wrapper
-                                                 [response service-id metric-group backend-proto instance _
+                                                 [response descriptor instance _
                                                   reason-map request-properties location query-string]
                                                  (async-req/post-process-async-request-response
                                                    router-id async-request-store-atom make-http-request-fn auth-params-map
-                                                   instance-rpc-chan response service-id metric-group backend-proto instance
+                                                   instance-rpc-chan user-agent response descriptor instance
                                                    reason-map request-properties location query-string))))
    :prepend-waiter-url (pc/fnk [[:settings hostname port]]
                          (let [hostname (if (sequential? hostname) (first hostname) hostname)]

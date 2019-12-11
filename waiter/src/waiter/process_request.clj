@@ -679,7 +679,7 @@
                             (metrics/stream-metric-map service-id))
       (-> (cond-> response
             location (post-process-async-request-response-fn
-                       service-id metric-group backend-proto instance (handler/make-auth-user-map request)
+                       descriptor instance (handler/make-auth-user-map request)
                        reason-map instance-request-properties location query-string))
         (utils/attach-waiter-source :backend)
         (introspect-trailers)
@@ -780,7 +780,8 @@
                                                    (make-request-fn instance request instance-request-properties
                                                                     passthrough-headers uri metric-group backend-proto proto-version)))
                                 response-elapsed (:elapsed timed-response)
-                                {:keys [error] :as response} (:out timed-response)]
+                                {:keys [error] :as response} (assoc (:out timed-response)
+                                                               :backend-response-latency-ns response-elapsed)]
                             (statsd/histo! metric-group "backend_response" response-elapsed)
                             (-> (if error
                                   (let [error-response (handle-response-error error reservation-status-promise service-id request)]
@@ -797,7 +798,6 @@
                                     (catch Exception e
                                       (async/close! request-state-chan)
                                       (handle-process-exception e request))))
-                                (assoc :backend-response-latency-ns response-elapsed)
                                 (assoc-debug-header "x-waiter-backend-response-ns" (str response-elapsed))))
                           (catch Exception e
                             (async/close! request-state-chan)
