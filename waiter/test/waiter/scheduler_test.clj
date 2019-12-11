@@ -275,9 +275,12 @@
                                                              :failed-instances []}
                                   (->Service "s2" {} {} {}) {:active-instances []
                                                              :failed-instances []}})
-        available? (fn [_ {:keys [id]} proto port-index url]
+        available? (fn [_ {:keys [id]} {:strs [backend-proto health-check-proto health-check-port-index health-check-url]}]
                      (async/go (cond
-                                 (and (= "s1.i1" id) (= "https" proto) (= 2 port-index) (= "/s1" url))
+                                 (and (= "s1.i1" id)
+                                      (= "https" (or health-check-proto backend-proto))
+                                      (= 2 health-check-port-index)
+                                      (= "/s1" health-check-url))
                                  {:healthy? true, :status 200}
                                  :else
                                  {:healthy? false, :status 400})))
@@ -344,7 +347,7 @@
 (deftest test-start-health-checks
   (let [available-instance "id1"
         service {:id "s1"}
-        available? (fn [_ instance _ _ _]
+        available? (fn [_ instance _]
                      (async/go
                        (let [healthy? (= (:id instance) available-instance)]
                          {:healthy? healthy?
@@ -382,7 +385,7 @@
 (deftest test-do-health-checks
   (let [available-instance "id1"
         service {:id "s1"}
-        available? (fn [_ {:keys [id]} _ _ _]
+        available? (fn [_ {:keys [id]} _]
                      (async/go
                        (let [healthy? (= id available-instance)]
                          {:healthy? healthy?
@@ -515,22 +518,25 @@
   (let [http-client (HttpClient.)
         health-check-proto "http"
         scheduler-name "test-scheduler"
-        service-instance {:extra-ports [81] :host "www.example.com" :port 80}]
+        service-instance {:extra-ports [81] :host "www.example.com" :port 80}
+        service-description {"health-check-proto" health-check-proto
+                             "health-check-port-index" 0
+                             "health-check-url" "/health-check"}]
     (.setConnectTimeout http-client 200)
     (.setIdleTimeout http-client 200)
 
     (testing "unknown host"
       (let [service-instance {:host "www.example.com"}
-            resp (async/<!! (available? http-client scheduler-name service-instance health-check-proto 0 "/health-check"))]
+            resp (async/<!! (available? http-client scheduler-name service-instance service-description))]
         (is (= {:error :unknown-authority :healthy? false} resp)))
       (let [service-instance {:host "www.example.com" :port 0}
-            resp (async/<!! (available? http-client scheduler-name service-instance health-check-proto 0 "/health-check"))]
+            resp (async/<!! (available? http-client scheduler-name service-instance service-description))]
         (is (= {:error :unknown-authority :healthy? false} resp)))
       (let [service-instance {:port 80}
-            resp (async/<!! (available? http-client scheduler-name service-instance health-check-proto 0 "/health-check"))]
+            resp (async/<!! (available? http-client scheduler-name service-instance service-description))]
         (is (= {:error :unknown-authority :healthy? false} resp)))
       (let [service-instance {:host "0.0.0.0" :port 80}
-            resp (async/<!! (available? http-client scheduler-name service-instance health-check-proto 0 "/health-check"))]
+            resp (async/<!! (available? http-client scheduler-name service-instance service-description))]
         (is (= {:error :unknown-authority :healthy? false} resp))))
 
     (with-redefs [http/get (fn [in-http-client in-health-check-url _]
@@ -539,13 +545,14 @@
                              (let [response-chan (async/promise-chan)]
                                (async/>!! response-chan {:status 200})
                                response-chan))]
-      (let [resp (async/<!! (available? http-client scheduler-name service-instance health-check-proto 0 "/health-check"))]
+      (let [resp (async/<!! (available? http-client scheduler-name service-instance service-description))]
         (is (= {:error nil, :healthy? true, :status 200} resp))))
     (with-redefs [http/get (fn [in-http-client in-health-check-url _]
                              (is (= http-client in-http-client))
                              (is (= "http://www.example.com:81/health-check" in-health-check-url))
                              (throw (IllegalArgumentException. "Unable to make request")))]
-      (let [resp (async/<!! (available? http-client scheduler-name service-instance health-check-proto 1 "/health-check"))]
+      (let [service-description (assoc service-description "health-check-port-index" 1)
+            resp (async/<!! (available? http-client scheduler-name service-instance service-description))]
         (is (= {:healthy? false} resp))))
     (let [abort-chan-atom (atom nil)]
       (with-redefs [http/get (fn [in-http-client in-health-check-url in-request-config]
@@ -553,12 +560,12 @@
                                (is (= http-client in-http-client))
                                (is (= "http://www.example.com:80/health-check" in-health-check-url))
                                (async/promise-chan))]
-        (let [resp (async/<!! (available? http-client scheduler-name service-instance health-check-proto 0 "/health-check"))]
+        (let [resp (async/<!! (available? http-client scheduler-name service-instance service-description))]
           (is (= {:error :operation-timeout, :healthy? false, :status nil} resp)))
         (let [abort-chan @abort-chan-atom]
           (is (au/chan? abort-chan))
-          (is (protocols/closed? abort-chan))
           (when (au/chan? abort-chan)
+            (is (protocols/closed? abort-chan))
             (let [[abort-ex abort-cb] (async/<!! abort-chan)]
               (is (instance? TimeoutException abort-ex))
               (is abort-cb))))))))

@@ -28,6 +28,7 @@
             [waiter.config :as config]
             [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics]
+            [waiter.request-log :as rlog]
             [waiter.statsd :as statsd]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
@@ -210,7 +211,7 @@
   (str (base-url protocol host port)
        (if (and end-point (str/starts-with? end-point "/")) end-point (str "/" end-point))))
 
-(defn health-check-url
+(defn build-health-check-url
   "Returns the health check url which can be queried on the service instance."
   [{:keys [host] :as instance} health-check-proto health-check-port-index health-check-path]
   (let [url-port (instance->port instance health-check-port-index)]
@@ -235,32 +236,70 @@
                                                        :instance service-instance
                                                        :service instance-health-check-url}))))
 
+(defn service-description->health-check-protocol
+  "Determines the protocol to use for health checks."
+  [{:strs [backend-proto health-check-proto]}]
+  (or health-check-proto backend-proto))
+
 (defn available?
   "Async go block which returns the status code and success of a health check.
    Returns {:healthy? false} if such a connection cannot be established."
-  [^HttpClient http-client scheduler-name {:keys [host port] :as service-instance}
-   protocol health-check-port-index health-check-path]
+  [^HttpClient http-client scheduler-name {:keys [host port service-id] :as service-instance}
+   {:strs [health-check-port-index health-check-url] :as service-description}]
   (async/go
     (try
       (if (and port (pos? port) host (not= UNKNOWN-IP host))
-        (let [instance-health-check-url (health-check-url service-instance protocol health-check-port-index health-check-path)
+        (let [protocol (service-description->health-check-protocol service-description)
+              instance-health-check-url (build-health-check-url service-instance protocol health-check-port-index health-check-url)
               request-timeout-ms (max (+ (.getConnectTimeout http-client) (.getIdleTimeout http-client)) 200)
               request-abort-chan (async/chan 1)
-              health-check-response-chan (http/get http-client instance-health-check-url {:abort-ch request-abort-chan})
+              request-time (t/now)
+              request-time-ns (System/nanoTime)
+              correlation-id (str "waiter-health-check-" (utils/unique-identifier))
+              request-headers {"host" host
+                               "user-agent" (some-> http-client .getUserAgentField .getValue)
+                               "x-cid" correlation-id}
+              health-check-response-chan (http/get http-client instance-health-check-url
+                                                   {:abort-ch request-abort-chan
+                                                    :headers request-headers})
               _ (meters/mark! (metrics/waiter-meter "scheduler" scheduler-name "health-check" "invocation-rate"))
               {:keys [error-flag status]}
               (async/alt!
                 health-check-response-chan
                 ([response]
-                  (let [{:keys [error status]} response
-                        error-flag (cond
-                                     (instance? ConnectException error) :connect-exception
-                                     (instance? EOFException error) :hangup-exception
-                                     (instance? SocketTimeoutException error) :timeout-exception
-                                     (instance? TimeoutException error) :timeout-exception)]
-                    (log-health-check-issues service-instance instance-health-check-url status error)
-                    {:error-flag error-flag
-                     :status status}))
+                 (let [{:keys [error status] :as response} response
+                       response-time-ns (System/nanoTime)
+                       error-flag (cond
+                                    (instance? ConnectException error) :connect-exception
+                                    (instance? EOFException error) :hangup-exception
+                                    (instance? SocketTimeoutException error) :timeout-exception
+                                    (instance? TimeoutException error) :timeout-exception)]
+                   (log-health-check-issues service-instance instance-health-check-url status error)
+                   (let [backend-protocol (hu/backend-protocol->http-version protocol)
+                         backend-scheme (hu/backend-proto->scheme protocol)
+                         request {:client-protocol backend-protocol
+                                  :headers request-headers
+                                  :internal-protocol backend-protocol
+                                  :request-id correlation-id
+                                  :request-method :get
+                                  :request-time request-time
+                                  :scheme backend-scheme
+                                  :uri health-check-url}
+                         backend-response-latency-ns (- response-time-ns request-time-ns)
+                         response (assoc response
+                                    :backend-response-latency-ns backend-response-latency-ns
+                                    :descriptor {:service-description service-description
+                                                 :service-id service-id}
+                                    :error-class (some-> error .getClass .getCanonicalName)
+                                    :instance service-instance
+                                    :instance-proto protocol
+                                    :latest-service-id service-id
+                                    :protocol protocol
+                                    :request-type "health-check"
+                                    :waiter-api-call? false)]
+                     (rlog/log-request! request response))
+                   {:error-flag error-flag
+                    :status status}))
 
                 (async/timeout request-timeout-ms)
                 ([_]
@@ -268,13 +307,13 @@
                        callback (fn abort-health-check-callback [aborted?]
                                   (log/info "health check aborted:" aborted?))]
                    (async/>! request-abort-chan [ex callback]))
-                  (meters/mark! (metrics/waiter-meter "scheduler" scheduler-name "health-check" "timeout-rate"))
-                  (log/info "health check timed out before receiving response"
-                            {:health-check-path health-check-path
-                             :instance service-instance
-                             :scheduler scheduler-name
-                             :timeout request-timeout-ms})
-                  {:error-flag :operation-timeout}))]
+                 (meters/mark! (metrics/waiter-meter "scheduler" scheduler-name "health-check" "timeout-rate"))
+                 (log/info "health check timed out before receiving response"
+                           {:health-check-url health-check-url
+                            :instance service-instance
+                            :scheduler scheduler-name
+                            :timeout request-timeout-ms})
+                 {:error-flag :operation-timeout}))]
           (async/close! request-abort-chan)
           {:healthy? (and (nil? error-flag) (<= 200 status 299))
            :status status
@@ -283,7 +322,7 @@
          :healthy? false})
       (catch Exception e
         (log/error e "exception thrown while performing health check" {:instance service-instance
-                                                                       :health-check-path health-check-path})
+                                                                       :health-check-url health-check-url})
         {:healthy? false}))))
 
 (defn instance-comparator
@@ -425,11 +464,6 @@
       {:healthy-instances (vec healthy-instances)
        :unhealthy-instances (vec unhealthy-instances)})))
 
-(defn service-description->health-check-protocol
-  "Determines the protocol to use for health checks."
-  [{:strs [backend-proto health-check-proto]}]
-  (or health-check-proto backend-proto))
-
 (defn start-health-checks
   "Takes a map from service -> service instances and replaces each active instance with a ref which performs a
    health check if necessary, or returns the instance immediately."
@@ -450,7 +484,7 @@
          service->service-instances' {}]
     (if-not service
       service->service-instances'
-      (let [{:strs [health-check-port-index health-check-url] :as service-description} (service-id->service-description-fn (:id service))
+      (let [service-description (some-> service :id service-id->service-description-fn)
             connection-errors #{:connect-exception :hangup-exception :timeout-exception}
             update-unhealthy-instance (fn [instance status error]
                                         (-> instance
@@ -466,7 +500,6 @@
                                                         (and (not= error :unknown-authority)
                                                              (not (contains? connection-errors error)))
                                                         (conj :has-responded))))))
-            protocol (service-description->health-check-protocol service-description)
             health-check-refs (map (fn [instance]
                                      (let [chan (async/promise-chan)]
                                        (if (:healthy? instance)
@@ -476,7 +509,7 @@
                                                          (if healthy?
                                                            (assoc instance :healthy? true)
                                                            (update-unhealthy-instance instance status error))))
-                                           (available? scheduler-name instance protocol health-check-port-index health-check-url)))
+                                           (available? scheduler-name instance service-description)))
                                        chan))
                                    active-instances)]
         (recur rest (assoc service->service-instances' service

@@ -831,9 +831,8 @@
                                                      :socket-timeout health-check-timeout-ms
                                                      :user-agent (str "waiter-syncer/" user-agent-version)})
                                       available? (fn scheduler-available?
-                                                   [scheduler-name service-instance health-check-proto health-check-port-index health-check-path]
-                                                   (scheduler/available? http-client scheduler-name service-instance health-check-proto
-                                                                         health-check-port-index health-check-path))]
+                                                   [scheduler-name service-instance service-description]
+                                                   (scheduler/available? http-client scheduler-name service-instance service-description))]
                                   (fn start-scheduler-syncer-fn
                                     [scheduler-name get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs]
                                     (let [timer-ch (-> scheduler-syncer-interval-secs t/seconds t/in-millis au/timer-chan)]
