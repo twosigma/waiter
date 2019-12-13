@@ -33,6 +33,7 @@
             [waiter.handler :as handler]
             [waiter.headers :as headers]
             [waiter.metrics :as metrics]
+            [waiter.request-log :as rlog]
             [waiter.scheduler :as scheduler]
             [waiter.service :as service]
             [waiter.statsd :as statsd]
@@ -678,7 +679,7 @@
                             (metrics/stream-metric-map service-id))
       (-> (cond-> response
             location (post-process-async-request-response-fn
-                       service-id metric-group backend-proto instance (handler/make-auth-user-map request)
+                       descriptor instance (handler/make-auth-user-map request)
                        reason-map instance-request-properties location query-string))
         (utils/attach-waiter-source :backend)
         (introspect-trailers)
@@ -779,7 +780,8 @@
                                                    (make-request-fn instance request instance-request-properties
                                                                     passthrough-headers uri metric-group backend-proto proto-version)))
                                 response-elapsed (:elapsed timed-response)
-                                {:keys [error] :as response} (:out timed-response)]
+                                {:keys [error] :as response} (assoc (:out timed-response)
+                                                               :backend-response-latency-ns response-elapsed)]
                             (statsd/histo! metric-group "backend_response" response-elapsed)
                             (-> (if error
                                   (let [error-response (handle-response-error error reservation-status-promise service-id request)]
@@ -796,7 +798,6 @@
                                     (catch Exception e
                                       (async/close! request-state-chan)
                                       (handle-process-exception e request))))
-                                (assoc :backend-response-latency-ns response-elapsed)
                                 (assoc-debug-header "x-waiter-backend-response-ns" (str response-elapsed))))
                           (catch Exception e
                             (async/close! request-state-chan)
@@ -859,12 +860,11 @@
 (defn make-health-check-request
   "Makes a health check request to the backend using the specified proto and port from the descriptor.
    Returns the health check response from an arbitrary backend or the failure response."
-  [process-request-handler-fn idle-timeout-ms {:keys [descriptor] :as request}]
+  [process-request-handler-fn idle-timeout-ms {:keys [descriptor] :as request} health-check-protocol]
   (async/go
     (try
       (let [{:keys [service-description]} descriptor
             {:strs [health-check-url health-check-port-index]} service-description
-            health-check-protocol (scheduler/service-description->health-check-protocol service-description)
             ctrl-ch (async/chan)
             attach-empty-content (fn attach-empty-content [request]
                                    (-> request
@@ -910,8 +910,8 @@
                        body (str body))]
         (async/close! ctrl-ch)
         (-> health-check-response
-          (assoc :body body-str)
-          (assoc :result (if (= source-ch timeout-ch) :timed-out :received-response))))
+          (assoc :body body-str
+                 :result (if (= source-ch timeout-ch) :timed-out :received-response))))
       (catch Exception ex
         (utils/exception->response ex request)))))
 
@@ -919,12 +919,30 @@
   "Performs a health check on an arbitrary instance of the service specified in the descriptor.
    If the service is not running, an instance will be started.
    The response body contains the following map: {:ping-response ..., :service-state ...}"
-  [process-request-handler-fn service-state-fn {:keys [descriptor headers] :as request}]
+  [user-agent process-request-handler-fn service-state-fn {:keys [descriptor headers] :as request}]
   (async/go
     (try
-      (let [{:keys [core-service-description service-id]} descriptor
+      (let [{:keys [core-service-description service-description service-id]} descriptor
+            request (assoc-in request [:headers "user-agent"] user-agent)
             idle-timeout-ms (Integer/parseInt (get headers "x-waiter-timeout" "300000"))
-            ping-response (async/<! (make-health-check-request process-request-handler-fn idle-timeout-ms request))]
+            health-check-protocol (scheduler/service-description->health-check-protocol service-description)
+            ping-response (async/<! (make-health-check-request process-request-handler-fn idle-timeout-ms request health-check-protocol))]
+        (let [{:strs [health-check-url]} service-description
+              backend-protocol (hu/backend-protocol->http-version health-check-protocol)
+              backend-scheme (hu/backend-proto->scheme health-check-protocol)
+              request (assoc request
+                        :client-protocol backend-protocol
+                        :internal-protocol backend-protocol
+                        :request-method :get
+                        :scheme backend-scheme
+                        :uri health-check-url)
+              auth-params (auth/select-auth-params request)
+              response (-> (merge auth-params ping-response)
+                         (assoc :descriptor descriptor
+                                :latest-service-id service-id
+                                :request-type "ping"
+                                :waiter-api-call? false))]
+          (rlog/log-request! request response))
         (merge
           (dissoc ping-response [:body :error-chan :headers :request :result :status :trailers])
           (utils/clj->json-response
