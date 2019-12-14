@@ -19,6 +19,7 @@
             [qbits.jet.client.http :as http]
             [token-syncer.cli :as cli]
             [token-syncer.commands.backup :as backup]
+            [token-syncer.commands.cleanup :as cleanup]
             [token-syncer.commands.ping :as ping]
             [token-syncer.commands.syncer :as syncer]
             [token-syncer.waiter :as waiter])
@@ -113,6 +114,7 @@
     (log/info "command-line arguments:" (vec args))
     (let [token-syncer-command-config (assoc base-command-config :command-name "token-syncer")
           context {:sub-command->config {"backup-tokens" backup/backup-tokens-config
+                                         "cleanup-tokens" cleanup/cleanup-tokens-config
                                          "ping-token" ping/ping-token-config
                                          "sync-clusters" syncer/sync-clusters-config}}
           {:keys [exit-code message]} (cli/process-command token-syncer-command-config context args)]

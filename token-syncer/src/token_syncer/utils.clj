@@ -13,9 +13,27 @@
 ;; See the License for the specific language governing permissions and
 ;; limitations under the License.
 ;;
-(ns token-syncer.utils)
+(ns token-syncer.utils
+  (:require [clj-time.coerce :as tc]
+            [clj-time.core :as t]
+            [clj-time.format :as f]))
 
 (defn successful?
   "Returns true if the response has a 2XX status code."
   [{:keys [status]}]
   (and (integer? status) (<= 200 status 299)))
+
+(defn iso8601->millis
+  "Convert the ISO 8601 string to numeric milliseconds."
+  [date-str]
+  (-> (:date-time f/formatters)
+    (f/with-zone (t/default-time-zone))
+    (f/parse date-str)
+    .getMillis))
+
+(defn millis->iso8601
+  "Convert the numeric milliseconds to ISO 8601 string."
+  [epoch-time]
+  (-> (:date-time f/formatters)
+    (f/with-zone (t/default-time-zone))
+    (f/unparse (tc/from-long epoch-time))))
