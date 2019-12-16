@@ -668,6 +668,7 @@
                    (let [leader-latch-path (str base-path "/" leader-latch-relative-path)
                          latch (LeaderLatch. curator leader-latch-path router-id)]
                      (.start latch)
+                     (metrics/waiter-gauge #(if (.hasLeadership latch) 1 0) "core" "leader")
                      latch))
    :local-usage-agent (pc/fnk [] (agent {}))
    :offers-allowed-semaphore (pc/fnk [[:settings [:work-stealing max-in-flight-offers]]]
