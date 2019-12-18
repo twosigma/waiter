@@ -1040,7 +1040,9 @@ class WaiterCliTest(util.WaiterTest):
 
             # Ensure that tokens does not list our token
             cp, tokens = cli.tokens_data(self.waiter_url)
-            self.assertEqual(0, cp.returncode, cp.stderr)
+            # The CLI returns 0 if there are any tokens 
+            # owned by the user and 1 if there are none
+            self.assertIn(cp.returncode, [0, 1], cp.stderr)
             self.assertFalse(any(t['token'] == token_name for t in tokens))
         finally:
             util.delete_token(self.waiter_url, token_name, assert_response=False)
