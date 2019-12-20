@@ -374,7 +374,7 @@
                         correlation-id
                         (if (integer? status-code-or-exception)
                           (close-client-session! request status-code-or-exception close-message)
-                          (let [ex-message (.getMessage status-code-or-exception)]
+                          (let [ex-message (or (some-> status-code-or-exception .getMessage) close-message)]
                             (close-client-session! request server-termination-on-unexpected-condition ex-message))))))))
               ;; close client and backend channels
               (close-requests! request response request-state-chan))))))
@@ -397,10 +397,11 @@
       ;; force close connection
       ;; - a day after the auth cookie expires if it is available, or
       ;; - a day after the unauthenticated request is made
-      (let [expiry-start-time (:waiter/auth-expiry-time request 0)
+      (let [current-time-ms (System/currentTimeMillis)
+            expiry-start-time (:waiter/auth-expiry-time request current-time-ms)
             one-day-in-millis (-> 1 t/days t/in-millis)
             expiry-time-ms (+ expiry-start-time one-day-in-millis)
-            time-left-ms (max (- expiry-time-ms (System/currentTimeMillis)) 0)]
+            time-left-ms (max (- expiry-time-ms current-time-ms) 0)]
         (async/go
           (let [timeout-ch (async/timeout time-left-ms)
                 [_ selected-chan] (async/alts! [request-close-promise-chan timeout-ch] :priority true)]
@@ -409,11 +410,11 @@
                 ;; close connections if the request is still live
                 (confirm-live-connection-with-abort)
                 (log/info "cookie has expired, triggering closing of websocket connections")
-                (async/>! request-close-promise-chan :cookie-expired)
+                (async/>! request-close-promise-chan [:cookie-expired nil nil "Cookie Expired"])
                 (catch Exception _
                   (log/debug "ignoring exception generated from closed connection")))))))
       (catch Exception e
-        (async/>!! request-close-promise-chan :process-error)
+        (async/>!! request-close-promise-chan [:process-error nil e "Unexpected error"])
         (log/error e "error while processing websocket response"))))
   ;; return an empty response map to maintain consistency with the http case
   {})
