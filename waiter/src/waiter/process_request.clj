@@ -60,35 +60,40 @@
       (= (first state) ::servlet/timeout) (throw (ex-info "Operation timed out" {:cid correlation-id} (second state)))
       :else (throw (ex-info "Connection closed while still processing" {:cid correlation-id})))))
 
-(defn- classify-error
+(defn classify-error
   "Classifies the error responses from the backend into the following vector:
    - error cause (:client-eagerly-closed, :client-error, :instance-error or :generic-error),
    - associated error message,
    - the http status code, and
    - the canonical name of the exception that 'caused' the error."
   [error]
-  (let [classification (cond (instance? ExceptionInfo error)
-                             (let [[error-cause message status error-class] (classify-error (ex-cause error))
-                                   error-cause (or (-> error ex-data :error-cause) error-cause)]
-                               [error-cause message status error-class])
+  (let [error-class (-> error .getClass .getCanonicalName)
+        error-message (str (.getMessage error))
+        classification (cond (instance? ExceptionInfo error)
+                             (if-let [ex-info-cause (ex-cause error)]
+                               (let [[error-cause message status error-class] (classify-error ex-info-cause)
+                                     error-cause (or (-> error ex-data :error-cause) error-cause)]
+                                 [error-cause message status error-class])
+                               (let [error-status (or (-> error ex-data :status) 500)
+                                     error-cause (or (-> error ex-data :error-cause) :generic-error)]
+                                 [error-cause error-message error-status error-class]))
                              (instance? IllegalStateException error)
-                             [:generic-error (.getMessage error) 400]
+                             [:generic-error error-message 400 error-class]
                              ;; cancel_stream_error is used to indicate that the stream is no longer needed
-                             (and (instance? IOException error) (= "cancel_stream_error" (.getMessage error)))
-                             [:client-error "Client action means stream is no longer needed" 400]
+                             (and (instance? IOException error) (= "cancel_stream_error" error-message))
+                             [:client-error "Client action means stream is no longer needed" 400 error-class]
                              ;; connection has already been closed by the client
-                             (and (instance? EofException error) (= "reset" (.getMessage error)))
-                             [:client-eagerly-closed "Connection eagerly closed by client" 400]
+                             (and (instance? EofException error) (= "reset" error-message))
+                             [:client-eagerly-closed "Connection eagerly closed by client" 400 error-class]
                              (instance? EofException error)
-                             [:client-error "Connection unexpectedly closed while streaming request" 400]
+                             [:client-error "Connection unexpectedly closed while streaming request" 400 error-class]
                              (instance? TimeoutException error)
-                             [:instance-error (utils/message :backend-request-timed-out) 504]
+                             [:instance-error (utils/message :backend-request-timed-out) 504 error-class]
                              :else
-                             [:instance-error (utils/message :backend-request-failed) 502])
-        [error-cause _ _] classification
-        error-class (-> error .getClass .getCanonicalName)]
-    (log/info error-class (.getMessage error) "identified as" error-cause)
-    (conj classification error-class)))
+                             [:instance-error (utils/message :backend-request-failed) 502 error-class])
+        error-cause (first classification)]
+    (log/info error-class error-message "identified as" error-cause)
+    classification))
 
 (defn- determine-client-error
   "Classifies the error into one of :client-eagerly-closed or :client-error"
