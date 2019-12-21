@@ -471,7 +471,10 @@
             (service-id->references-fn [service-id]
               (get service-id->references service-id))
             (service-id->service-description-fn [service-id & _]
-              {"run-as-user" (if (contains? test-user-services service-id) test-user "another-user")})
+              (let [id (subs service-id (count "service"))]
+                {"cpus" (Integer/parseInt id)
+                 "metric-group" (str "mg" id)
+                 "run-as-user" (if (contains? test-user-services service-id) test-user "another-user")}))
             (service-id->source-tokens-entries-fn [service-id]
               (when (contains? service-id->source-tokens service-id)
                 (let [source-tokens (-> service-id service-id->source-tokens walk/stringify-keys)]
@@ -493,6 +496,51 @@
                                        service-id->references-fn service-id->source-tokens-entries-fn request)]
             (assert-successful-json-response response)
             (is (= other-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
+
+      (testing "list-services-handler:success-regular-user-with-filter-for-another-user"
+        (let [request (assoc request :query-string "run-as-user=another-user&run-as-user=another-user")]
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
+            (assert-successful-json-response response)
+            (is (= other-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
+
+      (testing "list-services-handler:success-regular-user-with-filter-for-another-user"
+        (let [request (assoc request :query-string "run-as-user=another-user&run-as-user=test-user")]
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
+            (assert-successful-json-response response)
+            (is (= all-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
+
+      (testing "list-services-handler:success-with-filter-for-cpus"
+        (let [request (assoc request :query-string "cpus=1")]
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
+            (assert-successful-json-response response)
+            (is (= #{"service1"} (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
+
+      (testing "list-services-handler:success-with-filter-for-metric-group"
+        (let [request (assoc request :query-string "metric-group=mg3")]
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
+            (assert-successful-json-response response)
+            (is (= #{"service3"} (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
+
+      (testing "list-services-handler:success-with-filter-for-multiple-metric-groups"
+        (let [request (assoc request :query-string "metric-group=mg1&metric-group=mg2")]
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
+            (assert-successful-json-response response)
+            (is (= #{"service1" "service2"} (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
 
       (testing "list-services-handler:success-regular-user-with-filter-for-same-user"
         (let [entitlement-manager (reify authz/EntitlementManager
