@@ -143,6 +143,12 @@
     (instance? Process v) (str v)
     (instance? ValidationError v) (str v)
     (symbol? v) (str v)
+    (or
+      (and (double? v) (or (Double/isInfinite v) (Double/isNaN v)))
+      (and (float? v) (or (Float/isInfinite v) (Float/isNaN v))))
+    (do
+      (log/warn "Unsupported json value for number where" k "maps to" v)
+      (str v))
     :else v))
 
 (defn clj->json
