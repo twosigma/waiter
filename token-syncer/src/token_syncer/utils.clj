@@ -18,6 +18,8 @@
             [clj-time.core :as t]
             [clj-time.format :as f]))
 
+(def ^:private iso8601-formatter (f/with-zone (:date-time f/formatters) (t/default-time-zone)))
+
 (defn successful?
   "Returns true if the response has a 2XX status code."
   [{:keys [status]}]
@@ -26,14 +28,9 @@
 (defn iso8601->millis
   "Convert the ISO 8601 string to numeric milliseconds."
   [date-str]
-  (-> (:date-time f/formatters)
-    (f/with-zone (t/default-time-zone))
-    (f/parse date-str)
-    .getMillis))
+  (.getMillis (f/parse iso8601-formatter date-str)))
 
 (defn millis->iso8601
   "Convert the numeric milliseconds to ISO 8601 string."
   [epoch-time]
-  (-> (:date-time f/formatters)
-    (f/with-zone (t/default-time-zone))
-    (f/unparse (tc/from-long epoch-time))))
+  (f/unparse iso8601-formatter (tc/from-long epoch-time)))
