@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns token-syncer.commands.cleanup
-  (:require [clj-time.core :as t]
+  (:require [clj-time.coerce :as tc]
+            [clj-time.core :as t]
             [clojure.tools.logging :as log]
             [token-syncer.utils :as utils]))
 
@@ -44,19 +45,22 @@
                         (if-not (= (count arguments) 1)
                           {:exit-code 1
                            :message (str "expected one argument URL, provided " (count arguments) ": " (vec arguments))}
-                          (let [before-time (if before
-                                              (Long/parseLong before)
-                                              (- (System/currentTimeMillis) (-> 1 t/weeks t/in-millis)))
-                                cluster-url (first arguments)]
+                          (let [cluster-url (first arguments)]
                             (log/info "hard-deleting tokens from" cluster-url "soft-deleted before"
-                                      (utils/millis->iso8601 before-time))
-                            (cleanup-tokens waiter-api cluster-url before-time)
+                                      (utils/millis->iso8601 before))
+                            (cleanup-tokens waiter-api cluster-url before)
                             {:exit-code 0
                              :message "exiting with code 0"}))))
-   :option-specs [["-b" "--before"
+   :option-specs [["-b" "--before BEFORE-TIME"
                    (str "Hard-delete tokens soft-deleted before the specified time. "
-                        "Must be specified in as an epoch time. "
-                        "The default value is 7 days before now.")]]
+                        "Must be specified in ISO8601 time format. "
+                        "The default value is 7 days before now.")
+                   :default (-> (t/now) (t/minus (t/weeks 1)) tc/to-long)
+                   :parse-fn #(try
+                                (utils/iso8601->millis %)
+                                (catch Throwable th
+                                  (log/error th "Error in parsing input" %)
+                                  (throw (IllegalArgumentException. (str "Unable to parse " % " as a ISO8601 date")))))]]
    :retrieve-documentation (fn retrieve-sync-clusters-documentation
                              [command-name _]
                              {:description (str "Hard-deletes soft-deleted tokens on the specified cluster")

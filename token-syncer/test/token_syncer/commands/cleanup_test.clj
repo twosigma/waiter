@@ -73,14 +73,33 @@
       (is (= {:exit-code 1
               :message "test-command: expected one argument URL, provided 2: [\"some-file.txt\" \"cluster-1.com\"]"}
              (cli/process-command test-command-config context args))))
-    (let [args ["http://cluster-1.com"]
-          invocation-promise (promise)]
-      (with-redefs [cleanup-tokens (fn [in-waiter-api cluster-url before-epoch-time]
-                                     (is (= waiter-api in-waiter-api))
-                                     (is (= (first args) cluster-url))
-                                     (is (number? before-epoch-time))
-                                     (deliver invocation-promise ::invoked))]
-        (is (= {:exit-code 0
-                :message "test-command: exiting with code 0"}
-               (cli/process-command test-command-config context args)))
-        (is (= ::invoked (deref invocation-promise 0 ::un-initialized)))))))
+    (let [date-input (str (System/currentTimeMillis))
+          args ["--before" date-input "cluster-1.com"]]
+      (is (= {:data [(str "Error while parsing option \"--before " date-input "\": "
+                          "java.lang.IllegalArgumentException: "
+                          "Unable to parse " date-input " as a ISO8601 date")]
+              :exit-code 1
+              :message "test-command: error in parsing arguments"}
+             (cli/process-command test-command-config context args))))
+
+    (let [cluster-url "http://cluster-1.com"
+          make-cleanup-tokens (fn [invocation-promise]
+                                (fn [in-waiter-api in-cluster-url before-epoch-time]
+                                  (is (= waiter-api in-waiter-api))
+                                  (is (= cluster-url in-cluster-url))
+                                  (is (number? before-epoch-time))
+                                  (deliver invocation-promise ::invoked)))]
+      (let [args [cluster-url]
+            invocation-promise (promise)]
+        (with-redefs [cleanup-tokens (make-cleanup-tokens invocation-promise)]
+          (is (= {:exit-code 0
+                  :message "test-command: exiting with code 0"}
+                 (cli/process-command test-command-config context args)))
+          (is (= ::invoked (deref invocation-promise 0 ::un-initialized)))))
+      (let [args ["--before" (-> (System/currentTimeMillis) (- 100000) utils/millis->iso8601) cluster-url]
+            invocation-promise (promise)]
+        (with-redefs [cleanup-tokens (make-cleanup-tokens invocation-promise)]
+          (is (= {:exit-code 0
+                  :message "test-command: exiting with code 0"}
+                 (cli/process-command test-command-config context args)))
+          (is (= ::invoked (deref invocation-promise 0 ::un-initialized))))))))
