@@ -230,10 +230,8 @@
                 (is (= expected-result actual-result))
                 (doseq [waiter-url waiter-urls]
                   (is (= {:description {}
-                          :headers {"content-type" "application/json"
-                                    "etag" ""}
-                          :status 404
-                          :token-etag ""}
+                          :headers {"content-type" "application/json"}
+                          :status 404}
                          (load-token waiter-url token-name))))))))
         (finally
           (cleanup-token waiter-api waiter-urls token-name))))))
@@ -683,10 +681,8 @@
                   (map
                     (fn [waiter-url]
                       (is (= {:description {}
-                              :headers {"content-type" "application/json"
-                                        "etag" ""}
-                              :status 404
-                              :token-etag ""}
+                              :headers {"content-type" "application/json"}
+                              :status 404}
                              (load-token waiter-url token-name))))
                     waiter-urls))))))
         (finally
@@ -868,10 +864,8 @@
           ;; ASSERT
           (is (= #{token-name} actual-result))
           (is (= {:description {}
-                  :headers {"content-type" "application/json"
-                            "etag" ""}
-                  :status 404
-                  :token-etag ""}
+                  :headers {"content-type" "application/json"}
+                  :status 404}
                  (load-token cluster-url token-name))))
 
         (finally
