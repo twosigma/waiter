@@ -843,6 +843,30 @@
         (is (instance? ManyToManyChannel response-chan))
         (async/close! response-chan)))
     (let [{:keys [status]} (async/<!! response-chan)]
+      (is (= 404 status)))))
+
+(deftest test-work-stealing-handler-channel-put-failed
+  (let [instance-rpc-chan (async/chan)
+        test-service-id "test-service-id"
+        request {:body (StringBufferInputStream.
+                         (utils/clj->json
+                           {"cid" "test-cid"
+                            "instance" {"id" "test-instance-id", "service-id" test-service-id}
+                            "request-id" "test-request-id"
+                            "router-id" "test-router-id"
+                            "service-id" test-service-id}))}
+        response-chan (work-stealing-handler instance-rpc-chan request)]
+    (async/thread
+      (let [{:keys [cid method response-chan service-id]} (async/<!! instance-rpc-chan)
+            work-stealing-chan (async/chan)]
+        (is (= :offer method))
+        (is (= test-service-id service-id))
+        (is cid)
+        (is (instance? ManyToManyChannel response-chan))
+        (async/close! work-stealing-chan)
+        (async/put! response-chan work-stealing-chan)
+        (async/close! response-chan)))
+    (let [{:keys [status]} (async/<!! response-chan)]
       (is (= 500 status)))))
 
 (deftest test-get-router-state
