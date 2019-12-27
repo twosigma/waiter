@@ -18,6 +18,7 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [plumbing.core :as pc]
+            [token-syncer.commands.cleanup :as cleanup]
             [token-syncer.commands.ping :as ping]
             [token-syncer.commands.syncer :as syncer]
             [token-syncer.main :as main])
@@ -229,10 +230,8 @@
                 (is (= expected-result actual-result))
                 (doseq [waiter-url waiter-urls]
                   (is (= {:description {}
-                          :headers {"content-type" "application/json"
-                                    "etag" ""}
-                          :status 404
-                          :token-etag ""}
+                          :headers {"content-type" "application/json"}
+                          :status 404}
                          (load-token waiter-url token-name))))))))
         (finally
           (cleanup-token waiter-api waiter-urls token-name))))))
@@ -682,10 +681,8 @@
                   (map
                     (fn [waiter-url]
                       (is (= {:description {}
-                              :headers {"content-type" "application/json"
-                                        "etag" ""}
-                              :status 404
-                              :token-etag ""}
+                              :headers {"content-type" "application/json"}
+                              :status 404}
                              (load-token waiter-url token-name))))
                     waiter-urls))))))
         (finally
@@ -840,3 +837,36 @@
                 (is (= expected-result actual-result))))
             (finally
               (cleanup-token waiter-api waiter-urls token-name))))))))
+
+(deftest ^:integration test-cleanup-token
+  (testing "token cleanup on cluster"
+    (let [cluster-url (first (waiter-urls))
+          {:keys [load-token store-token] :as waiter-api} (waiter-api)
+          token-name (str "test-cleanup-token-" (UUID/randomUUID))
+          current-time-ms (System/currentTimeMillis)
+          last-update-time-ms (- current-time-ms 10000)]
+
+      ;; ARRANGE
+      (store-token cluster-url token-name nil
+                   (assoc basic-description
+                     "cluster" (waiter-url->cluster cluster-url)
+                     "cpus" 1.0
+                     "deleted" true
+                     "last-update-time" last-update-time-ms
+                     "last-update-user" "auth-user"
+                     "owner" "test-user"
+                     "root" cluster-url))
+
+      (try
+        ;; ACT
+        (let [actual-result (cleanup/cleanup-tokens waiter-api cluster-url current-time-ms)]
+
+          ;; ASSERT
+          (is (= #{token-name} actual-result))
+          (is (= {:description {}
+                  :headers {"content-type" "application/json"}
+                  :status 404}
+                 (load-token cluster-url token-name))))
+
+        (finally
+          (cleanup-token waiter-api [cluster-url] token-name))))))

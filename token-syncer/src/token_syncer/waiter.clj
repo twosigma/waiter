@@ -100,20 +100,12 @@
                        :status status
                        :url token-list-url})))))
 
-(defn- iso8601->millis
-  "Convert the ISO 8601 string to numeric milliseconds."
-  [date-str]
-  (-> (:date-time f/formatters)
-      (f/with-zone (t/default-time-zone))
-      (f/parse date-str)
-      .getMillis))
-
 (defn- convert-iso8601->millis
   [token-description]
   (loop [loop-token-description token-description
          nested-last-update-time-path ["last-update-time"]]
     (if (get-in loop-token-description nested-last-update-time-path)
-      (recur (update-in loop-token-description nested-last-update-time-path iso8601->millis)
+      (recur (update-in loop-token-description nested-last-update-time-path utils/iso8601->millis)
              (concat ["previous"] nested-last-update-time-path))
       loop-token-description)))
 
