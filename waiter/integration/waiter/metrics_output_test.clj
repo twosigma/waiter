@@ -151,7 +151,9 @@
             (is (empty? (get metrics-response "waiter")) (str metrics-response)))))
 
       (doseq [service-id @all-service-ids-atom]
-        (let [apps-response (service-settings waiter-url service-id :keywordize-keys false)
+        (let [apps-response (service-settings waiter-url service-id
+                                              :keywordize-keys false
+                                              :query-params {"include" "metrics"})
               routers->metrics (get-in apps-response ["metrics" "routers"])
               aggregate-metrics (get-in apps-response ["metrics" "aggregate"])]
           (when (get apps-response "error-messages")

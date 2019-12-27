@@ -36,7 +36,8 @@
           {:keys [service-id]} (request-fn waiter-url extra-headers)
           print-metrics (fn [service-id]
                           (let [router-ids (keys (routers waiter-url))
-                                service-metrics (:metrics (service-settings waiter-url service-id))]
+                                service-data (service-settings waiter-url service-id :query-params {"include" "metrics"})
+                                service-metrics (:metrics service-data)]
                             (log/info "Aggregate process metrics:" (get-in service-metrics [:aggregate :timers :process]))
                             (doseq [router-id router-ids]
                               (log/info router-id " process metrics:" (get-in service-metrics [:routers (keyword router-id) :timers :process])))))]
@@ -71,7 +72,7 @@
             (is (pos? (count responses-map))
                 "Error in receiving responses, a possible bug in parallelize-requests!")
             (log/info (str "Response distribution:" responses-map))
-            (let [service-settings (service-settings waiter-url service-id)
+            (let [service-settings (service-settings waiter-url service-id :query-params {"include" "metrics"})
                   num-instances (count (get-in service-settings [:instances :active-instances]))]
               (log/info (str "Num instances:" num-instances))
               (when (not= num-instances (count responses-map))

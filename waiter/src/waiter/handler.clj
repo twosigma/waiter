@@ -431,24 +431,28 @@
                                       (update :killed-instances assoc-log-url-to-instances)))
                                 (catch Exception e
                                   (log/error e "Error in retrieving instances for" service-id)))
-        router->metrics (try
-                          (let [router->response (-> (make-inter-router-requests-fn (str "metrics?service-id=" service-id) :method :get)
+        request-params (-> request ru/query-params-request :query-params)
+        include-metrics? (utils/param-contains? request-params "include" "metrics")
+        router->metrics (when include-metrics?
+                          (try
+                            (let [router->response (-> (make-inter-router-requests-fn (str "metrics?service-id=" service-id) :method :get)
                                                      (assoc router-id (-> (metrics/get-service-metrics service-id)
-                                                                          (utils/clj->json-response))))
-                                response->service-metrics (fn response->metrics [{:keys [body]}]
-                                                            (try
-                                                              (let [metrics (json/read-str (str body))]
-                                                                (get-in metrics ["services" service-id]))
-                                                              (catch Exception e
-                                                                (log/error e "unable to retrieve metrics from response" (str body)))))
-                                router->service-metrics (pc/map-vals response->service-metrics router->response)]
-                            (utils/filterm val router->service-metrics))
-                          (catch Exception e
-                            (log/error e "Error in retrieving router metrics for" service-id)))
-        aggregate-metrics-map (try
-                                (metrics/aggregate-router-codahale-metrics (or router->metrics {}))
-                                (catch Exception e
-                                  (log/error e "Error in aggregating router metrics for" service-id)))
+                                                                        (utils/clj->json-response))))
+                                  response->service-metrics (fn response->metrics [{:keys [body]}]
+                                                              (try
+                                                                (let [metrics (json/read-str (str body))]
+                                                                  (get-in metrics ["services" service-id]))
+                                                                (catch Exception e
+                                                                  (log/error e "unable to retrieve metrics from response" (str body)))))
+                                  router->service-metrics (pc/map-vals response->service-metrics router->response)]
+                              (utils/filterm val router->service-metrics))
+                            (catch Exception e
+                              (log/error e "Error in retrieving router metrics for" service-id))))
+        aggregate-metrics-map (when include-metrics?
+                                (try
+                                  (metrics/aggregate-router-codahale-metrics (or router->metrics {}))
+                                  (catch Exception e
+                                    (log/error e "Error in aggregating router metrics for" service-id))))
         service-description-overrides (try
                                         (sd/service-id->overrides kv-store service-id :refresh true)
                                         (catch Exception e
@@ -459,9 +463,8 @@
                                     (log/error e "Error in retrieving service suspended state for" service-id)))
         source-tokens-entries (service-id->source-tokens-entries-fn service-id)
         current-for-tokens (get-current-for-tokens source-tokens-entries token->token-hash)
-        request-params (-> request ru/query-params-request :query-params)
         include-effective-parameters? (or (utils/request-flag request-params "effective-parameters")
-                                          (utils/param-contains? request-params "include" "request-info"))
+                                          (utils/param-contains? request-params "include" "effective-parameters"))
         include-references? (utils/param-contains? request-params "include" "references")
         last-request-time (get-in (service-id->metrics-fn) [service-id "last-request-time"])
         scaling-state (retrieve-scaling-state query-autoscaler-state-fn service-id)

@@ -78,7 +78,7 @@
           ;; allow time for long requests to be processed
           (is (wait-for
                 (fn []
-                  (let [service-data (service-settings waiter-url service-id)
+                  (let [service-data (service-settings waiter-url service-id :query-params {"include" "metrics"})
                         request-counts (get-in service-data [:metrics :aggregate :counters :request-counts])]
                     (= num-routers (get request-counts :outstanding))))
                 :interval 200 :timeout 2000 :unit-multiplier 1))
