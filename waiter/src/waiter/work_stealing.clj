@@ -246,12 +246,12 @@
                   (async/>! response-chan :no-matching-instance-found)))))
           (release-instance-fn
             [{:keys [instance status] :as reservation-summary}]
-            (counters/inc! (metrics/waiter-counter "work-stealing" "offer" (str "response-" status)))
+            (counters/inc! (metrics/waiter-counter "work-stealing" "offer" (str "response-" (name status))))
             (meters/mark! (metrics/waiter-meter "work-stealing" "offer" "response-rate"))
             (service/release-instance-go
               instance-rpc-chan
               instance
-              (select-keys reservation-summary [:cid, :request-id, :status])))
+              (select-keys reservation-summary [:cid :request-id :status])))
           (offer-help-fn
             [{:keys [request-id target-router-id] :as reservation-parameters} cleanup-chan]
             (async/go
