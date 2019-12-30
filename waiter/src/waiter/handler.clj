@@ -296,6 +296,9 @@
                                    (let [service-description (service-id->service-description-fn service-id :effective? true)
                                          source-tokens (-> (service-id->source-tokens-entries-fn service-id) vec flatten)]
                                      (and (service-description-filter-predicate service-description)
+                                          ;; legacy behavior:
+                                          ;; when run-as-user param is missing list only services managed by current user
+                                          ;; else list services filtered by the provided run-as-user query parameters.
                                           (if (or (nil? run-as-user)
                                                   (and (string? run-as-user) (str/blank? run-as-user)))
                                             (authz/manage-service? entitlement-manager auth-user service-id service-description)
