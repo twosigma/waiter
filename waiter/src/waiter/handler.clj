@@ -245,6 +245,12 @@
                     re-pattern)]
     #(re-matches pattern %)))
 
+(defn- strs->filter-fn
+  "Returns a name-filtering function that matches on any of the given sequence of user-provided names as filter string."
+  [names]
+  (let [filter-fns (map str->filter-fn names)]
+    (fn [value] (some #(%1 value) filter-fns))))
+
 (defn- retrieve-scaling-state
   "Retrieves the scaling state for the service from the autoscaler state."
   [query-autoscaler-state-fn service-id]
@@ -255,12 +261,12 @@
     utils/scale-amount->scaling-state))
 
 (defn param-value->filter-fn
-  "Creates the filter function that does substring match for the input string or any string in the sequence."
+  "Accepts a single string or a sequence of strings as input.
+   Creates the filter function that does substring match for the input string or any string in the sequence."
   [param-value]
   (if (string? param-value)
     (str->filter-fn param-value)
-    (let [filter-fns (map str->filter-fn param-value)]
-      (fn [value] (some #(%1 value) filter-fns)))))
+    (strs->filter-fn param-value)))
 
 (defn query-params->service-description-filter-predicate
   "Creates the filter function for service descriptions that matches every parameter provided in the request-params map."
