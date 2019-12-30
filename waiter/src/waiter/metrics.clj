@@ -504,7 +504,10 @@
    :stream-onto-resp-chan (service-timer service-id "stream-onto-resp-chan")
    :stream-read-body (service-timer service-id "stream-read-body")
    :stream-request-rate (service-meter service-id "stream-request-rate")
-   :throughput-meter (service-meter service-id "stream-throughput")})
+   :throughput-meter (service-meter service-id "stream-throughput")
+   :throughput-meter-global (waiter-meter "streaming" "response-bytes")
+   :throughput-packets-meter (service-meter service-id "streaming" "response-packets")
+   :throughput-packets-meter-global (waiter-meter "streaming" "response-packets")})
 
 (defn duration-between
   "Returns the duration (interval) elapsed between the start and end times.
