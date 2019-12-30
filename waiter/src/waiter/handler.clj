@@ -245,6 +245,12 @@
                     re-pattern)]
     #(re-matches pattern %)))
 
+(defn- strs->filter-fn
+  "Returns a name-filtering function that matches on any of the given sequence of user-provided names as filter string."
+  [names]
+  (let [filter-fns (map str->filter-fn names)]
+    (fn [value] (some #(%1 value) filter-fns))))
+
 (defn- retrieve-scaling-state
   "Retrieves the scaling state for the service from the autoscaler state."
   [query-autoscaler-state-fn service-id]
@@ -254,6 +260,27 @@
     :scale-amount
     utils/scale-amount->scaling-state))
 
+(defn param-value->filter-fn
+  "Accepts a single string or a sequence of strings as input.
+   Creates the filter function that does substring match for the input string or any string in the sequence."
+  [param-value]
+  (if (string? param-value)
+    (str->filter-fn param-value)
+    (strs->filter-fn param-value)))
+
+(defn query-params->service-description-filter-predicate
+  "Creates the filter function for service descriptions that matches every parameter provided in the request-params map."
+  [request-params]
+  (let [service-description-params (select-keys request-params sd/service-parameter-keys)
+        param-predicates (map (fn [[param-name param-value]]
+                                (let [param-predicate (param-value->filter-fn param-value)]
+                                  (fn [service-description]
+                                    (param-predicate (str (get service-description param-name))))))
+                              (seq service-description-params))]
+    (fn [service-description]
+      (or (empty? param-predicates)
+          (every? #(%1 service-description) param-predicates)))))
+
 (defn list-services-handler
   "Retrieves the list of services viewable by the currently logged in user.
    A service is viewable by the run-as-user or a waiter super-user."
@@ -261,27 +288,32 @@
    service-id->metrics-fn service-id->references-fn service-id->source-tokens-entries-fn request]
   (let [{:keys [all-available-service-ids service-id->healthy-instances service-id->unhealthy-instances] :as global-state} (query-state-fn)]
     (let [{:strs [run-as-user token token-version] :as request-params} (-> request ru/query-params-request :query-params)
+          service-description-filter-predicate (query-params->service-description-filter-predicate
+                                                 (dissoc request-params "run-as-users"))
           auth-user (get request :authorization/user)
-          viewable-services (filter
-                              (fn [service-id]
-                                (let [service-description (service-id->service-description-fn service-id :effective? false)
-                                      source-tokens (-> (service-id->source-tokens-entries-fn service-id)
-                                                        vec
-                                                        flatten)]
-                                  (and (if (str/blank? run-as-user)
-                                         (authz/manage-service? entitlement-manager auth-user service-id service-description)
-                                         ((str->filter-fn run-as-user) (get service-description "run-as-user")))
-                                       (or (str/blank? token)
-                                           (let [filter-fn (str->filter-fn token)]
-                                             (->> source-tokens
+          viewable-service-ids (filter
+                                 (fn [service-id]
+                                   (let [service-description (service-id->service-description-fn service-id :effective? true)
+                                         source-tokens (-> (service-id->source-tokens-entries-fn service-id) vec flatten)]
+                                     (and (service-description-filter-predicate service-description)
+                                          ;; legacy behavior:
+                                          ;; when run-as-user param is missing list only services managed by current user
+                                          ;; else list services filtered by the provided run-as-user query parameters.
+                                          (if (or (nil? run-as-user)
+                                                  (and (string? run-as-user) (str/blank? run-as-user)))
+                                            (authz/manage-service? entitlement-manager auth-user service-id service-description)
+                                            ((param-value->filter-fn run-as-user) (get service-description "run-as-user")))
+                                          (or (str/blank? token)
+                                              (let [filter-fn (str->filter-fn token)]
+                                                (->> source-tokens
                                                   (map #(get % "token"))
                                                   (some filter-fn))))
-                                       (or (str/blank? token-version)
-                                           (let [filter-fn (str->filter-fn token-version)]
-                                             (->> source-tokens
+                                          (or (str/blank? token-version)
+                                              (let [filter-fn (str->filter-fn token-version)]
+                                                (->> source-tokens
                                                   (map #(get % "version"))
                                                   (some filter-fn)))))))
-                              (sort all-available-service-ids))
+                                 (sort all-available-service-ids))
           retrieve-instance-counts (fn retrieve-instance-counts [service-id]
                                      {:healthy-instances (-> service-id->healthy-instances (get service-id) count)
                                       :unhealthy-instances (-> service-id->unhealthy-instances (get service-id) count)})
@@ -310,7 +342,7 @@
                                 (assoc :scaling-state scaling-state)
                                 (seq source-tokens-entries)
                                 (assoc :source-tokens source-tokens-entries))))
-                          viewable-services)]
+                          viewable-service-ids)]
       (utils/clj->streaming-json-response response-data))))
 
 (defn delete-service-handler
