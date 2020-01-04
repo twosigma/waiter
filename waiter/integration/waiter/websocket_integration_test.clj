@@ -70,7 +70,7 @@
           [close-code error] (connection->ctrl-data connection)]
       (is (= :qbits.jet.websocket/error close-code))
       (is (instance? UpgradeException error))
-      (is (str/includes? (.getMessage error) "403 Unauthorized"))
+      (is (str/includes? (.getMessage error) "Unexpected HTTP Response Status Code: 403 Forbidden"))
       (is (not (realized? connect-success-promise))))))
 
 (deftest ^:parallel ^:integration-fast test-request-auth-success
@@ -183,8 +183,7 @@
                 [close-code error] (connection->ctrl-data connection)]
             (is (= :qbits.jet.websocket/error close-code))
             (is (instance? UpgradeException error))
-            (is (str/includes? (.getMessage error)
-                               "400 An authentication disabled token may not be combined with on-the-fly headers"))
+            (is (str/includes? (.getMessage error) "Unexpected HTTP Response Status Code: 400 Bad Request"))
             (is (not (realized? connect-success-promise))))
 
           (let [connect-success-promise (promise)
@@ -201,8 +200,7 @@
                 [close-code error] (connection->ctrl-data connection)]
             (is (= :qbits.jet.websocket/error close-code))
             (is (instance? UpgradeException error))
-            (is (str/includes? (.getMessage error)
-                               "400 An authentication parameter is not supported for on-the-fly headers"))
+            (is (str/includes? (.getMessage error) "Unexpected HTTP Response Status Code: 400 Bad Request"))
             (is (not (realized? connect-success-promise)))))
         (finally
           (delete-token-and-assert waiter-url token))))))
@@ -291,7 +289,7 @@
           (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url % :method :get))
           _ (assert-response-status canary-response http-200-ok)
           first-request-time-header (-> (get headers "x-waiter-request-date")
-                                        (du/str-to-date du/formatter-rfc822))
+                                      (du/str-to-date du/formatter-rfc822))
           num-iterations 5]
       (is (pos? metrics-sync-interval-ms))
       (with-service-cleanup
@@ -434,13 +432,13 @@
           auth-cookie-value (auth-cookie waiter-url)
           process-mem 1024
           waiter-headers (-> (kitchen-request-headers)
-                             (assoc :x-waiter-mem process-mem
-                                    :x-waiter-metric-group "waiter_ws_test"
-                                    :x-waiter-name (rand-name))
-                             (update :x-waiter-cmd
-                                     (fn [cmd] (str cmd ;; on-the-fly doesn't support x-waiter-env
-                                                    " --ws-max-binary-message-size " ws-max-binary-message-size'
-                                                    " --ws-max-text-message-size " ws-max-text-message-size'))))
+                           (assoc :x-waiter-mem process-mem
+                                  :x-waiter-metric-group "waiter_ws_test"
+                                  :x-waiter-name (rand-name))
+                           (update :x-waiter-cmd
+                                   (fn [cmd] (str cmd ;; on-the-fly doesn't support x-waiter-env
+                                                  " --ws-max-binary-message-size " ws-max-binary-message-size'
+                                                  " --ws-max-text-message-size " ws-max-text-message-size'))))
           middleware (fn middleware [_ ^UpgradeRequest request]
                        (websocket/add-headers-to-upgrade-request! request waiter-headers)
                        (add-auth-cookie request auth-cookie-value))]
