@@ -108,18 +108,18 @@
                     nippy/freeze (fn [data _] (.getBytes (str data)))
                     nippy/thaw (fn [data _]
                                  (if (= "my-saml-auth-data" (String. data))
-                                   {:not-on-or-after (t/plus test-time (t/years 1)) :saml-principal "my-user@domain" :redirect-url "redirect-url"}
+                                   {:not-on-or-after (t/plus test-time (t/years 1)) :saml-principal "johndoe@domain" :redirect-url "redirect-url"}
                                    nil))
                     t/now (fn [] test-time)]
         (let [dummy-request' (-> (merge-with merge dummy-request {:headers {"content-type" "application/x-www-form-urlencoded"}})
                                (merge {:request-method :post
                                        :body (StringBufferInputStream. "saml-auth-data=my-saml-auth-data")}))]
           (is (= {:authorization/method :saml
-                  :authorization/principal "my-user@domain"
-                  :authorization/user "my-user"
+                  :authorization/principal "johndoe@domain"
+                  :authorization/user "johndoe"
                   :body ""
                   :headers {"location" "redirect-url"
-                            "set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000%5D;Max-Age=86400;Path=/;HttpOnly=true"}
+                            "set-cookie" "x-waiter-auth=%5B%22johndoe%40domain%22+1557792000000%5D;Max-Age=86400;Path=/;HttpOnly=true"}
                   :status http-303-see-other}
                  (saml-auth-redirect-handler saml-authenticator dummy-request'))))))
     (testing "has saml-auth-data no expiry"
@@ -128,18 +128,18 @@
                     nippy/freeze (fn [data _] (.getBytes (str data)))
                     nippy/thaw (fn [data _]
                                  (if (= "my-saml-auth-data" (String. data))
-                                   {:saml-principal "my-user@domain" :redirect-url "redirect-url"}
+                                   {:saml-principal "johndoe@domain" :redirect-url "redirect-url"}
                                    nil))
                     t/now (fn [] test-time)]
         (let [dummy-request' (-> (merge-with merge dummy-request {:headers {"content-type" "application/x-www-form-urlencoded"}})
                                (merge {:request-method :post
                                        :body (StringBufferInputStream. "saml-auth-data=my-saml-auth-data")}))]
           (is (= {:authorization/method :saml
-                  :authorization/principal "my-user@domain"
-                  :authorization/user "my-user"
+                  :authorization/principal "johndoe@domain"
+                  :authorization/user "johndoe"
                   :body ""
                   :headers {"location" "redirect-url"
-                            "set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000%5D;Max-Age=86400;Path=/;HttpOnly=true"}
+                            "set-cookie" "x-waiter-auth=%5B%22johndoe%40domain%22+1557792000000%5D;Max-Age=86400;Path=/;HttpOnly=true"}
                   :status http-303-see-other}
                  (saml-auth-redirect-handler saml-authenticator dummy-request'))))))
     (testing "has saml-auth-data short expiry"
@@ -148,18 +148,18 @@
                     nippy/freeze (fn [data _] (.getBytes (str data)))
                     nippy/thaw (fn [data _]
                                  (if (= "my-saml-auth-data" (String. data))
-                                   {:min-session-not-on-or-after (t/plus test-time (t/hours 1)) :saml-principal "my-user@domain" :redirect-url "redirect-url"}
+                                   {:min-session-not-on-or-after (t/plus test-time (t/hours 1)) :saml-principal "johndoe@domain" :redirect-url "redirect-url"}
                                    nil))
                     t/now (fn [] test-time)]
         (let [dummy-request' (-> (merge-with merge dummy-request {:headers {"content-type" "application/x-www-form-urlencoded"}})
                                (merge {:request-method :post
                                        :body (StringBufferInputStream. "saml-auth-data=my-saml-auth-data")}))]
           (is (= {:authorization/method :saml
-                  :authorization/principal "my-user@domain"
-                  :authorization/user "my-user"
+                  :authorization/principal "johndoe@domain"
+                  :authorization/user "johndoe"
                   :body ""
                   :headers {"location" "redirect-url"
-                            "set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000%5D;Max-Age=3600;Path=/;HttpOnly=true"}
+                            "set-cookie" "x-waiter-auth=%5B%22johndoe%40domain%22+1557792000000%5D;Max-Age=3600;Path=/;HttpOnly=true"}
                   :status http-303-see-other}
                  (saml-auth-redirect-handler saml-authenticator dummy-request'))))))))
 
