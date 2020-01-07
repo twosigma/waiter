@@ -297,8 +297,8 @@
                                           (when (pos? bytes-read)
                                             (meters/mark! throughput-meter bytes-read)
                                             (meters/mark! throughput-meter-global bytes-read)
-                                            (meters/mark! throughput-packets-meter 1)
-                                            (meters/mark! throughput-packets-meter-global 1)
+                                            (meters/mark! throughput-packets-meter)
+                                            (meters/mark! throughput-packets-meter-global)
                                             (swap! bytes-streamed-atom + bytes-read)
                                             (swap! statsd-unreported-bytes-atom + bytes-read))
                                           (if complete?
@@ -495,8 +495,8 @@
                             (do
                               (meters/mark! throughput-meter bytes-read)
                               (meters/mark! throughput-meter-global bytes-read)
-                              (meters/mark! throughput-packets-meter 1)
-                              (meters/mark! throughput-packets-meter-global 1)
+                              (meters/mark! throughput-packets-meter)
+                              (meters/mark! throughput-packets-meter-global)
                               (if (or (zero? bytes-read) ;; don't write empty buffer, channel may be potentially closed
                                       (timers/start-stop-time!
                                         stream-onto-resp-chan

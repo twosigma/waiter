@@ -274,8 +274,8 @@
                      (fn ws-bytes-uploaded [bytes-streamed]
                        (meters/mark! throughput-meter bytes-streamed)
                        (meters/mark! throughput-meter-global bytes-streamed)
-                       (meters/mark! throughput-packets-meter 1)
-                       (meters/mark! throughput-packets-meter-global 1)
+                       (meters/mark! throughput-packets-meter)
+                       (meters/mark! throughput-packets-meter-global)
                        (send local-usage-agent metrics/update-last-request-time-usage-metric service-id (t/now))
                        (histograms/update! (metrics/service-histogram service-id "request-size") bytes-streamed)
                        (statsd/inc! metric-group "request_bytes" bytes-streamed))))
@@ -288,8 +288,8 @@
                      (fn ws-bytes-downloaded [bytes-streamed]
                        (meters/mark! throughput-meter bytes-streamed)
                        (meters/mark! throughput-meter-global bytes-streamed)
-                       (meters/mark! throughput-packets-meter 1)
-                       (meters/mark! throughput-packets-meter-global 1)
+                       (meters/mark! throughput-packets-meter)
+                       (meters/mark! throughput-packets-meter-global)
                        (histograms/update! (metrics/service-histogram service-id "response-size") bytes-streamed)
                        (statsd/inc! metric-group "response_bytes" bytes-streamed))))))
 
