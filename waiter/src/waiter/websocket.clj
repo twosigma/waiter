@@ -267,29 +267,29 @@
           instance-out (-> response :request :out)
           throughput-meter (metrics/service-meter service-id "streaming" "request-bytes")
           throughput-meter-global (metrics/waiter-meter "streaming" "request-bytes")
-          throughput-packets-meter (metrics/service-meter service-id "streaming" "request-packets")
-          throughput-packets-meter-global (metrics/waiter-meter "streaming" "request-packets")]
+          throughput-iterations-meter (metrics/service-meter service-id "streaming" "request-iterations")
+          throughput-iterations-meter-global (metrics/waiter-meter "streaming" "request-iterations")]
       (stream-helper "client" client-in "instance" instance-out streaming-timeout-ms reservation-status-promise
                      :instance-error request-close-chan stream-read-body stream-back-pressure
                      (fn ws-bytes-uploaded [bytes-streamed]
                        (meters/mark! throughput-meter bytes-streamed)
                        (meters/mark! throughput-meter-global bytes-streamed)
-                       (meters/mark! throughput-packets-meter)
-                       (meters/mark! throughput-packets-meter-global)
+                       (meters/mark! throughput-iterations-meter)
+                       (meters/mark! throughput-iterations-meter-global)
                        (send local-usage-agent metrics/update-last-request-time-usage-metric service-id (t/now))
                        (histograms/update! (metrics/service-histogram service-id "request-size") bytes-streamed)
                        (statsd/inc! metric-group "request_bytes" bytes-streamed))))
     ;; launch go-block to stream data from instance to client
     (let [client-out (:out request)
           instance-in (-> response :request :in)
-          {:keys [throughput-meter throughput-meter-global throughput-packets-meter throughput-packets-meter-global]} metric-map]
+          {:keys [throughput-iterations-meter throughput-iterations-meter-global throughput-meter throughput-meter-global]} metric-map]
       (stream-helper "instance" instance-in "client" client-out streaming-timeout-ms reservation-status-promise
                      :client-error request-close-chan stream-onto-resp-chan stream-back-pressure
                      (fn ws-bytes-downloaded [bytes-streamed]
                        (meters/mark! throughput-meter bytes-streamed)
                        (meters/mark! throughput-meter-global bytes-streamed)
-                       (meters/mark! throughput-packets-meter)
-                       (meters/mark! throughput-packets-meter-global)
+                       (meters/mark! throughput-iterations-meter)
+                       (meters/mark! throughput-iterations-meter-global)
                        (histograms/update! (metrics/service-histogram service-id "response-size") bytes-streamed)
                        (statsd/inc! metric-group "response_bytes" bytes-streamed))))))
 
