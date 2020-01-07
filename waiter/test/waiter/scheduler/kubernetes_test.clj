@@ -1651,7 +1651,6 @@
     (testing "pod to live instance"
       (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
             instance (pod->ServiceInstance dummy-scheduler pod)]
-        (println 'INSTANCE instance)
         (is (= (scheduler/make-ServiceInstance instance-map) instance))))
 
     (testing "pod with expired annotation"
