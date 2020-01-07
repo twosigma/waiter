@@ -287,10 +287,18 @@
         request-body-streaming-counter (metrics/service-counter service-id "request-counts" "request-body-streaming")
         body-ch (async/chan 2048)
         report-request-size-metrics (let [bytes-streamed-atom (atom 0)
-                                          statsd-unreported-bytes-atom (atom 0)]
+                                          statsd-unreported-bytes-atom (atom 0)
+                                          throughput-meter (metrics/service-meter service-id "streaming" "request-bytes")
+                                          throughput-meter-global (metrics/waiter-meter "streaming" "request-bytes")
+                                          throughput-iterations-meter (metrics/service-meter service-id "streaming" "request-iterations")
+                                          throughput-iterations-meter-global (metrics/waiter-meter "streaming" "request-iterations")]
                                       (fn report-request-size-metrics [bytes-read complete?]
                                         (try
                                           (when (pos? bytes-read)
+                                            (meters/mark! throughput-meter bytes-read)
+                                            (meters/mark! throughput-meter-global bytes-read)
+                                            (meters/mark! throughput-iterations-meter)
+                                            (meters/mark! throughput-iterations-meter-global)
                                             (swap! bytes-streamed-atom + bytes-read)
                                             (swap! statsd-unreported-bytes-atom + bytes-read))
                                           (if complete?
@@ -458,10 +466,10 @@
   [{:keys [body error-chan]} confirm-live-connection request-abort-callback resp-chan
    {:keys [streaming-timeout-ms]}
    reservation-status-promise request-state-chan metric-group waiter-debug-enabled?
-   {:keys [throughput-meter requests-streaming requests-waiting-to-stream
-           stream-request-rate stream-complete-rate
-           stream-exception-meter stream-back-pressure stream-read-body
-           stream-onto-resp-chan stream service-id]}]
+   {:keys [requests-streaming requests-waiting-to-stream service-id
+           stream stream-back-pressure stream-complete-rate stream-exception-meter
+           stream-onto-resp-chan stream-read-body stream-request-rate
+           throughput-iterations-meter throughput-iterations-meter-global throughput-meter throughput-meter-global]}]
   (async/go
     (let [output-stream-atom (atom nil)]
       (try
@@ -486,6 +494,9 @@
                           (if-not (= -1 bytes-read)
                             (do
                               (meters/mark! throughput-meter bytes-read)
+                              (meters/mark! throughput-meter-global bytes-read)
+                              (meters/mark! throughput-iterations-meter)
+                              (meters/mark! throughput-iterations-meter-global)
                               (if (or (zero? bytes-read) ;; don't write empty buffer, channel may be potentially closed
                                       (timers/start-stop-time!
                                         stream-onto-resp-chan
