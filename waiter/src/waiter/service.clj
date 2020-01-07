@@ -87,8 +87,8 @@
        (do
          (log/info "received offer channel, making offer request.")
          (when-not (au/offer! work-stealing-chan# offer-params#)
-           (log/info "unable to put instance on work-stealing-chan"
-                     {:offer-params offer-params# :service-id ~service-id})
+           (log/error "unable to put instance on work-stealing-chan"
+                      {:offer-params offer-params# :service-id ~service-id})
            (when-let [offer-response-chan# (:response-chan offer-params#)]
              (async/put! offer-response-chan# :channel-put-failed))))
        (do
