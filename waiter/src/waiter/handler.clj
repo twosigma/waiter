@@ -625,6 +625,7 @@
   [instance-rpc-chan request]
   (async/go
     (try
+      (meters/mark! (metrics/waiter-meter "work-stealing" "request-rate"))
       (let [{:keys [cid instance request-id router-id service-id] :as request-body-map}
             (-> request ru/json-request :body walk/keywordize-keys)]
         (log/info "received work-stealing offer" (:id instance) "of" service-id "from" router-id)
@@ -638,11 +639,28 @@
                               :response-chan response-chan
                               :router-id router-id
                               :service-id service-id}]
+            (meters/mark! (metrics/service-meter service-id "work-stealing" "request-rate"))
             (service/offer-instance! instance-rpc-chan service-id offer-params)
-            (let [response-status (async/<! response-chan)]
-              (utils/clj->json-response (assoc (select-keys offer-params [:cid :request-id :router-id :service-id])
-                                          :response-status response-status))))))
+            (let [response-status (async/<! response-chan)
+                  http-status (condp = response-status
+                                :channel-not-found 404
+                                :channel-put-failed 500
+                                :client-error 400
+                                :generic-error 500
+                                :instance-busy 503
+                                :instance-error 502
+                                200)]
+              (counters/inc! (metrics/waiter-counter "work-stealing" "response" (name response-status)))
+              (meters/mark! (metrics/waiter-meter "work-stealing" "response-rate" (name response-status)))
+              (counters/inc! (metrics/service-counter service-id "work-stealing" "response" (name response-status)))
+              (meters/mark! (metrics/service-meter service-id "work-stealing" "response-rate" (name response-status)))
+              (utils/clj->json-response (-> offer-params
+                                          (select-keys [:cid :request-id :router-id :service-id])
+                                          (assoc :response-status response-status))
+                                        :status http-status)))))
       (catch Exception ex
+        (counters/inc! (metrics/waiter-counter "work-stealing" "response" "error"))
+        (meters/mark! (metrics/waiter-meter "work-stealing" "response-rate" "error"))
         (utils/exception->response ex request)))))
 
 (defn- retrieve-channel-state

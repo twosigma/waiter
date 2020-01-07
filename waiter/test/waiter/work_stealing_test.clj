@@ -621,4 +621,16 @@
                 reservation-parameters {:request-id request-id :target-router-id target-router-id}
                 cleanup-chan (async/chan 1)]
             (offer-help-fn reservation-parameters cleanup-chan)
-            (is (= {:request-id request-id :status :work-stealing-error} (async/<!! cleanup-chan)))))))))
+            (is (= {:request-id request-id :status :failure} (async/<!! cleanup-chan))))))
+
+      (testing "5XX response - failure"
+        (let [offers-allowed-semaphore (semaphore/create-semaphore 10)
+              make-inter-router-requests-fn (make-inter-router-requests-fn-factory 500 {:response-status "failure"})]
+          (start-work-stealing-balancer instance-rpc-chan reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
+                                        service-id->router-id->metrics make-inter-router-requests-fn router-id service-id)
+          (is @offer-help-fn-atom)
+          (let [offer-help-fn @offer-help-fn-atom
+                reservation-parameters {:request-id request-id :target-router-id target-router-id}
+                cleanup-chan (async/chan 1)]
+            (offer-help-fn reservation-parameters cleanup-chan)
+            (is (= {:request-id request-id :status :failure} (async/<!! cleanup-chan)))))))))

@@ -73,9 +73,10 @@
 ;; Offer instances obtained via work-stealing mechanism
 (defmacro offer-instance!
   "Sends a rpc to the proxy state to offer the given instance.
-   Throws an exception if a work-stealing channel cannot be found for the specfied service."
+   Throws an exception if a work-stealing channel cannot be found for the specified service."
   [instance-rpc-chan service-id offer-params]
-  `(let [response-chan# (async/promise-chan)]
+  `(let [offer-params# ~offer-params
+         response-chan# (async/promise-chan)]
      (log/debug "Requesting offer channel for" ~service-id)
      (->> {:cid (cid/get-correlation-id)
            :method :offer
@@ -84,13 +85,17 @@
           (async/put! ~instance-rpc-chan))
      (if-let [work-stealing-chan# (async/<! response-chan#)]
        (do
-         (log/info "Received offer channel, making offer request.")
-         (when-not (au/offer! work-stealing-chan# ~offer-params)
-           (throw (ex-info "Unable to put instance on work-stealing-chan."
-                           {:offer-params ~offer-params, :service-id ~service-id}))))
+         (log/info "received offer channel, making offer request.")
+         (when-not (au/offer! work-stealing-chan# offer-params#)
+           (log/error "unable to put instance on work-stealing-chan"
+                      {:offer-params offer-params# :service-id ~service-id})
+           (when-let [offer-response-chan# (:response-chan offer-params#)]
+             (async/put! offer-response-chan# :channel-put-failed))))
        (do
-         (throw (ex-info "Unable to find work-stealing-chan."
-                         {:offer-params ~offer-params, :service-id ~service-id}))))))
+         (log/info "unable to find work-stealing-chan"
+                   {:offer-params offer-params# :service-id ~service-id})
+         (when-let [offer-response-chan# (:response-chan offer-params#)]
+           (async/put! offer-response-chan# :channel-not-found))))))
 
 (defn offer-instance-go
   "Sends a rpc to the proxy state to offer the lock on the given instance."
