@@ -37,7 +37,7 @@ class MultiWaiterCliTest(util.WaiterTest):
             # Single query for the token name, federated across clusters
             config = self.__two_cluster_config()
             with cli.temp_config_file(config) as path:
-                cp, tokens = cli.show_token(token_name=token_name, flags='--config %s' % path)
+                cp, tokens = cli.show_token('json', token_name=token_name, flags='--config %s' % path)
                 versions = [t['version'] for t in tokens]
                 self.assertEqual(0, cp.returncode, cp.stderr)
                 self.assertEqual(1, len(tokens), tokens)
@@ -48,7 +48,7 @@ class MultiWaiterCliTest(util.WaiterTest):
                 util.post_token(self.waiter_url_2, token_name, {'version': version_2})
                 try:
                     # Again, single query for the token name, federated across clusters
-                    cp, tokens = cli.show_token(token_name=token_name, flags='--config %s' % path)
+                    cp, tokens = cli.show_token('json', token_name=token_name, flags='--config %s' % path)
                     versions = [t['version'] for t in tokens]
                     self.assertEqual(0, cp.returncode, cp.stderr)
                     self.assertEqual(2, len(tokens), tokens)

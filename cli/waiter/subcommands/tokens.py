@@ -1,9 +1,9 @@
 import collections
 import getpass
-import json
 
 from tabulate import tabulate
 
+from waiter.data_format import display_data
 from waiter.format import format_timestamp_string
 from waiter.querying import print_no_data, query_tokens
 from waiter.util import guard_no_cluster
@@ -32,17 +32,19 @@ def tokens(clusters, args, _):
     """Prints info for the tokens owned by the given user."""
     guard_no_cluster(clusters)
     as_json = args.get('json')
+    as_yaml = args.get('yaml')
     user = args.get('user')
+
     query_result = query_tokens(clusters, user)
-    if as_json:
-        print(json.dumps(query_result))
+    if as_json or as_yaml:
+        display_data(args, query_result)
     else:
         print_as_table(query_result)
 
     if query_result['count'] > 0:
         return 0
     else:
-        if not as_json:
+        if not as_json and not as_yaml:
             print_no_data(clusters)
         return 1
 
@@ -52,4 +54,5 @@ def register(add_parser):
     parser = add_parser('tokens', help='list tokens by owner')
     parser.add_argument('--user', '-u', help='list tokens owned by a user', default=getpass.getuser())
     parser.add_argument('--json', help='show the data in JSON format', dest='json', action='store_true')
+    parser.add_argument('--yaml', help='show the data in YAML format', dest='yaml', action='store_true')
     return tokens

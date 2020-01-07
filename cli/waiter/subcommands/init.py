@@ -1,9 +1,9 @@
 import getpass
-import json
 import logging
 import os
 
 from waiter import token_post
+from waiter.data_format import determine_format
 from waiter.util import deep_merge
 
 parser = None
@@ -31,10 +31,15 @@ def init_token_json(_, args, __):
     if os.path.isfile(file) and not should_overwrite:
         raise Exception(f'There is already a file at {file}. Use --force if you want to overwrite it.')
     else:
-        print(f'Writing token JSON to {file}.')
+        input_format = determine_format(args)
+        print(f'Writing token {input_format} to {file}.')
+
+        args.pop('json')
+        args.pop('yaml')
         token_fields = deep_merge(DEFAULTS, args)
-        with open(file, 'w') as outfile:
-            json.dump(token_fields, outfile, indent=2)
+
+        with open(file, 'w') as out_file:
+            input_format.dump(token_fields, out_file)
 
 
 def register(add_parser):
@@ -43,7 +48,10 @@ def register(add_parser):
     action = token_post.Action.INIT
     parser = token_post.register_argument_parser(add_parser, action)
     token_post.add_token_flags(parser)
-    parser.add_argument('--file', '-F', help='name of file to write token JSON to', default='token.json')
+    parser.add_argument('--json', help='write the data in JSON format', dest='json', action='store_true')
+    parser.add_argument('--yaml', help='write the data in YAML format', dest='yaml', action='store_true')
+    parser.add_argument('--file', '-F', help='name of file to write token in JSON (default) or YAML format to',
+                        default='token.json')
     parser.add_argument('--force', '-f', help='overwrite existing file', dest='force', action='store_true')
     return init_token_json
 
