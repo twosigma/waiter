@@ -37,7 +37,7 @@
       (with-service-cleanup
         service-id
         (testing "validate-in-flight-request-counters"
-          (let [service-data (service-settings waiter-url service-id)
+          (let [service-data (service-settings waiter-url service-id :query-params {"include" "metrics"})
                 {:keys [async outstanding successful total] :or {async 0} :as request-counts}
                 (get-in service-data [:metrics :aggregate :counters :request-counts])]
             (is (= 1 successful) (str request-counts))
@@ -97,7 +97,7 @@
         (testing "validate-in-flight-request-counters"
           (log/info "validate in-flight request counters")
           (is (wait-for
-                #(let [service-data (service-settings waiter-url service-id)
+                #(let [service-data (service-settings waiter-url service-id :query-params {"include" "metrics"})
                        request-counts (get-in service-data [:metrics :aggregate :counters :request-counts])]
                    (log/info "request counts" service-id request-counts)
                    (and (= 1 (get request-counts :async))
@@ -128,7 +128,7 @@
           (testing "validate-303-does-not-reset-in-flight-request-counters"
             (log/info "validating 303 status does not reset in-flight request counters")
             (is (wait-for
-                  #(let [service-data (service-settings waiter-url service-id)
+                  #(let [service-data (service-settings waiter-url service-id :query-params {"include" "metrics"})
                          request-counts (get-in service-data [:metrics :aggregate :counters :request-counts])]
                      (log/info "request counts" service-id request-counts)
                      (and (= 1 (get request-counts :async))
@@ -149,7 +149,7 @@
         (testing "validate-completed-request-counters"
           (log/info "validate completed request counters")
           (is (wait-for
-                #(let [service-data (service-settings waiter-url service-id)
+                #(let [service-data (service-settings waiter-url service-id :query-params {"include" "metrics"})
                        request-counts (get-in service-data [:metrics :aggregate :counters :request-counts])]
                    (log/info "request counts" service-id request-counts)
                    (and (zero? (get request-counts :async))
@@ -228,7 +228,7 @@
           (Thread/sleep inter-router-metrics-interval-ms) ;; allow routers to sync metrics
           (let [expected-total (inc num-threads)
                 {:keys [async outstanding successful total] :as request-counts}
-                (-> (service-settings waiter-url service-id)
+                (-> (service-settings waiter-url service-id :query-params {"include" "metrics"})
                     (get-in [:metrics :aggregate :counters :request-counts]))]
             (is (= expected-total total) (str request-counts))
             (is (= expected-total (+ async successful)) (str request-counts))
@@ -245,7 +245,7 @@
                 (is (str/includes? body "Deleted request-id")))))
           (Thread/sleep inter-router-metrics-interval-ms) ;; allow routers to sync metrics
           (let [{:keys [async outstanding] :as request-counts}
-                (-> (service-settings waiter-url service-id)
+                (-> (service-settings waiter-url service-id :query-params {"include" "metrics"})
                     (get-in [:metrics :aggregate :counters :request-counts]))
                 num-requests-alive (- num-threads num-requests-to-delete)]
             (is (<= 0 async num-requests-alive) (str request-counts))
@@ -275,7 +275,7 @@
             (Thread/sleep inter-router-metrics-interval-ms) ;; allow routers to sync metrics
             (let [expected-total (inc num-threads)
                   {:keys [async outstanding successful total] :as request-counts}
-                  (-> (service-settings waiter-url service-id)
+                  (-> (service-settings waiter-url service-id :query-params {"include" "metrics"})
                       (get-in [:metrics :aggregate :counters :request-counts]))]
               (is (= expected-total total) (str request-counts))
               (is (= expected-total successful) (str request-counts))

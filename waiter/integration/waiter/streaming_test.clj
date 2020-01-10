@@ -50,7 +50,7 @@
           (log/debug "sleeping for" sleep-period "ms")
           (Thread/sleep sleep-period))
         ; assert request response size metrics
-        (let [service-settings (service-settings waiter-url service-id)
+        (let [service-settings (service-settings waiter-url service-id :query-params {"include" "metrics"})
               _ (log/info "metrics" (get service-settings :metrics))
               aggregate-metrics (get-in service-settings [:metrics :aggregate])
               request-counts (get-in aggregate-metrics [:counters :request-counts])

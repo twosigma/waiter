@@ -962,7 +962,7 @@
   {:pre [(not (str/blank? waiter-url))]
    :post [%]}
   (let [routers (routers waiter-url)
-        settings (service-settings waiter-url service-id)
+        settings (service-settings waiter-url service-id :query-params {"include" "metrics"})
         assigned? (fn [router-id]
                     (let [slots (get-in
                                   settings

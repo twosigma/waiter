@@ -550,6 +550,7 @@
                                                  :port 31045,
                                                  :started-at started-time}]}})
         (let [request {:headers {"accept" "application/json"}
+                       :query-string "include=metrics"
                        :request-method :get
                        :uri (str "/apps/" service-id)}
               {:keys [body headers status]} (ring-handler request)]
@@ -577,7 +578,9 @@
         (reset! router-state-atom {:service-id->failed-instances {service-id [{:id (str service-id ".F"), :service-id service-id}]}
                                    :service-id->healthy-instances {service-id [{:id (str service-id ".A"), :service-id service-id}]}
                                    :service-id->killed-instances {service-id [{:id (str service-id ".K"), :service-id service-id}]}})
-        (let [request {:request-method :get, :uri (str "/apps/" service-id)}
+        (let [request {:query-string "include=metrics"
+                       :request-method :get
+                       :uri (str "/apps/" service-id)}
               {:keys [body headers status]} (ring-handler request)]
           (is (= 200 status))
           (is (= expected-json-response-headers headers))
