@@ -6,12 +6,12 @@ import logging
 import os
 import random
 import string
+import unittest
 import uuid
 from datetime import datetime
 
-import unittest
-
 import requests
+import yaml
 from retrying import retry
 
 session = importlib.import_module(os.getenv('WAITER_TEST_SESSION_MODULE', 'requests')).Session()
@@ -31,6 +31,10 @@ DEFAULT_WAIT_INTERVAL_MS = int(os.getenv('WAITER_TEST_DEFAULT_WAIT_INTERVAL_MS',
 TOKEN_PREFIX = os.getenv('WAITER_TEST_TOKEN_PREFIX', 'cli')
 
 
+def get_random_string(length):
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
+
+
 class WaiterTest(unittest.TestCase):
     def token_name(self):
         """
@@ -40,7 +44,7 @@ class WaiterTest(unittest.TestCase):
         test_id = self.id()
         test_function = test_id.split('.')[-1]
         timestamp = datetime.now().strftime('%Y%m%dT%H%M%S')
-        random_string = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+        random_string = get_random_string(8)
         return f'{TOKEN_PREFIX}_{test_function}_{timestamp}_{random_string}'
 
 
@@ -162,6 +166,7 @@ def minimal_service_description(**kwargs):
         'cpus': float(os.getenv('WAITER_TEST_DEFAULT_CPUS', 1.0)),
         'mem': int(os.getenv('WAITER_TEST_DEFAULT_MEM_MB', 256)),
         'metric-group': 'waiter_test',
+        'name': f'service_{get_random_string(10)}',
         'version': str(uuid.uuid4()),
         'cmd-type': 'shell'
     }
@@ -204,17 +209,22 @@ def wait_until(query, predicate, max_wait_ms=DEFAULT_TIMEOUT_MS, wait_interval_m
         raise
 
 
-def load_json_file(path):
+def load_file(file_format, path):
     """Decode a JSON formatted file."""
     content = None
 
     if os.path.isfile(path):
         with open(path) as json_file:
             try:
-                logging.debug(f'attempting to load json configuration from {path}')
-                content = json.load(json_file)
+                logging.debug(f'attempting to load {file_format} configuration from {path}')
+                if file_format == 'json':
+                    content = json.load(json_file)
+                elif file_format == 'yaml':
+                    content = yaml.safe_load(json_file)
+                else:
+                    raise Exception(f'Unsupported file format: {file_format}')
             except Exception as e:
-                logging.error(e, f'error loading json configuration from {path}')
+                logging.error(e, f'error loading {file_format} configuration from {path}')
     else:
         logging.info(f'{path} is not a file')
 

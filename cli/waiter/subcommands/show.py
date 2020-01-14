@@ -1,9 +1,9 @@
 import collections
-import json
 
 from tabulate import tabulate
 
 from waiter import terminal
+from waiter.data_format import display_data
 from waiter.format import format_field_name, format_last_request_time, format_mem_field, format_memory_amount, \
     format_status, format_timestamp_string
 
@@ -105,11 +105,14 @@ def show(clusters, args, _):
     """Prints info for the token with the given token name."""
     guard_no_cluster(clusters)
     as_json = args.get('json')
+    as_yaml = args.get('yaml')
     token_name = args.get('token')[0]
     include_services = not args.get('no-services')
+
     query_result = query_token(clusters, token_name, include_services=include_services)
-    if as_json:
-        print(json.dumps(query_result))
+
+    if as_json or as_yaml:
+        display_data(args, query_result)
     else:
         for cluster_name, entities in sorted(query_result['clusters'].items()):
             services = entities['services'] if include_services else []
@@ -119,7 +122,7 @@ def show(clusters, args, _):
     if query_result['count'] > 0:
         return 0
     else:
-        if not as_json:
+        if not as_json and not as_yaml:
             print_no_data(clusters)
         return 1
 
@@ -128,7 +131,9 @@ def register(add_parser):
     """Adds this sub-command's parser and returns the action function"""
     show_parser = add_parser('show', help='show token by name')
     show_parser.add_argument('token', nargs=1)
-    show_parser.add_argument('--json', help='show the data in JSON format', dest='json', action='store_true')
     show_parser.add_argument('--no-services', help="don't show the token's services",
                              dest='no-services', action='store_true')
+    format_group = show_parser.add_mutually_exclusive_group()
+    format_group.add_argument('--json', help='show the data in JSON format', dest='json', action='store_true')
+    format_group.add_argument('--yaml', help='show the data in YAML format', dest='yaml', action='store_true')
     return show
