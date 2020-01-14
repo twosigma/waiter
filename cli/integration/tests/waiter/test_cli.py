@@ -10,7 +10,6 @@ import unittest
 import uuid
 
 import pytest
-import yaml
 
 from tests.waiter import util, cli
 
@@ -331,7 +330,7 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(1, cp.returncode, cp.stderr)
             self.assertIn('must specify at least one cluster', cli.decode(cp.stderr))
 
-    def _test_show(self, file_format):
+    def __test_show(self, file_format):
         token_name = self.token_name()
         util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
         try:
@@ -343,10 +342,10 @@ class WaiterCliTest(util.WaiterTest):
             util.delete_token(self.waiter_url, token_name)
 
     def test_show_json(self):
-        self._test_show('json')
+        self.__test_show('json')
 
     def test_show_yaml(self):
-        self._test_show('yaml')
+        self.__test_show('yaml')
 
     @pytest.mark.serial
     def test_create_if_match(self):
@@ -787,7 +786,7 @@ class WaiterCliTest(util.WaiterTest):
         finally:
             util.delete_token(self.waiter_url, token_name)
 
-    def _test_create_token(self, file_format, input_flag=None):
+    def __test_create_token(self, file_format, input_flag=None):
         if input_flag is None:
             input_flag = file_format
 
@@ -814,18 +813,18 @@ class WaiterCliTest(util.WaiterTest):
             util.delete_token(self.waiter_url, token_name)
 
     def test_create_token_json(self):
-        self._test_create_token('json')
+        self.__test_create_token('json')
 
     def test_create_token_yaml(self):
-        self._test_create_token('yaml')
+        self.__test_create_token('yaml')
 
     def test_create_token_json_input(self):
-        self._test_create_token('json', 'input')
+        self.__test_create_token('json', 'input')
 
     def test_create_token_yaml_input(self):
-        self._test_create_token('yaml', 'input')
+        self.__test_create_token('yaml', 'input')
 
-    def _test_update_token(self, file_format):
+    def __test_update_token(self, file_format):
         token_name = self.token_name()
         create_fields = {'cpus': 0.1, 'mem': 128, 'cmd': 'foo'}
         update_fields = {'cpus': 0.2, 'mem': 256}
@@ -853,12 +852,12 @@ class WaiterCliTest(util.WaiterTest):
             util.delete_token(self.waiter_url, token_name)
 
     def test_update_token_json(self):
-        self._test_update_token('json')
+        self.__test_update_token('json')
 
     def test_update_token_yaml(self):
-        self._test_update_token('yaml')
+        self.__test_update_token('yaml')
 
-    def _test_post_token_and_flags(self, file_format):
+    def __test_post_token_and_flags(self, file_format):
         token_name = self.token_name()
         update_fields = {'cpus': 0.2, 'mem': 256}
         with cli.temp_token_file(update_fields, file_format) as path:
@@ -895,12 +894,12 @@ class WaiterCliTest(util.WaiterTest):
                 util.delete_token(self.waiter_url, token_name)
 
     def test_post_token_json_and_flags(self):
-        self._test_post_token_and_flags('json')
+        self.__test_post_token_and_flags('json')
 
     def test_post_token_yaml_and_flags(self):
-        self._test_post_token_and_flags('yaml')
+        self.__test_post_token_and_flags('yaml')
 
-    def _test_post_token_invalid(self, file_format):
+    def __test_post_token_invalid(self, file_format):
         token_name = self.token_name()
 
         stdin = json.dumps([]).encode('utf8')
@@ -919,10 +918,10 @@ class WaiterCliTest(util.WaiterTest):
             self.assertIn(f'Unable to load {file_format.upper()} from', cli.stderr(cp))
 
     def test_post_token_json_invalid(self):
-        self._test_post_token_invalid('json')
+        self.__test_post_token_invalid('json')
 
     def test_post_token_yaml_invalid(self):
-        self._test_post_token_invalid('yaml')
+        self.__test_post_token_invalid('yaml')
 
     def test_kill_service_id(self):
         token_name = self.token_name()
@@ -955,7 +954,7 @@ class WaiterCliTest(util.WaiterTest):
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
 
-    def _test_init_basic(self, file_format):
+    def __test_init_basic(self, file_format):
         token_name = self.token_name()
         filename = str(uuid.uuid4())
         flags = f"--cmd '{util.default_cmd()}' --cmd-type shell --health-check-url /status " \
@@ -988,10 +987,10 @@ class WaiterCliTest(util.WaiterTest):
             os.remove(filename)
 
     def test_init_basic_json(self):
-        self._test_init_basic('json')
+        self.__test_init_basic('json')
 
     def test_init_basic_yaml(self):
-        self._test_init_basic('yaml')
+        self.__test_init_basic('yaml')
 
     def test_implicit_init_args(self):
         cp = cli.init(init_flags='--help')
@@ -1140,7 +1139,7 @@ class WaiterCliTest(util.WaiterTest):
         finally:
             util.delete_token(self.waiter_url, token_name_1)
 
-    def _test_create_token_containing_token_name(self, file_format):
+    def __test_create_token_containing_token_name(self, file_format):
         token_name = self.token_name()
         with cli.temp_token_file({'token': token_name, 'cpus': 0.1, 'mem': 128}, file_format) as path:
             cp = cli.create(self.waiter_url, create_flags=f'--{file_format} {path}')
@@ -1153,12 +1152,12 @@ class WaiterCliTest(util.WaiterTest):
                 util.delete_token(self.waiter_url, token_name)
 
     def test_create_token_json_containing_token_name(self):
-        self._test_create_token_containing_token_name('json')
+        self.__test_create_token_containing_token_name('json')
 
     def test_create_token_yaml_containing_token_name(self):
-        self._test_create_token_containing_token_name('yaml')
+        self.__test_create_token_containing_token_name('yaml')
 
-    def _test_update_token_containing_token_name(self, file_format):
+    def __test_update_token_containing_token_name(self, file_format):
         token_name = self.token_name()
         util.post_token(self.waiter_url, token_name, {'cpus': 0.1, 'mem': 128, 'cmd': 'foo'})
         try:
@@ -1173,10 +1172,10 @@ class WaiterCliTest(util.WaiterTest):
             util.delete_token(self.waiter_url, token_name)
 
     def test_update_token_json_containing_token_name(self):
-        self._test_update_token_containing_token_name('json')
+        self.__test_update_token_containing_token_name('json')
 
     def test_update_token_yaml_containing_token_name(self):
-        self._test_update_token_containing_token_name('yaml')
+        self.__test_update_token_containing_token_name('yaml')
 
     def test_post_token_over_specified_token_name(self):
         token_name = self.token_name()
