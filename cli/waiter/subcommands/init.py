@@ -48,11 +48,12 @@ def register(add_parser):
     action = token_post.Action.INIT
     parser = token_post.register_argument_parser(add_parser, action)
     token_post.add_token_flags(parser)
-    parser.add_argument('--json', help='write the data in JSON format', dest='json', action='store_true')
-    parser.add_argument('--yaml', help='write the data in YAML format', dest='yaml', action='store_true')
     parser.add_argument('--file', '-F', help='name of file to write token in JSON (default) or YAML format to',
                         default='token.json')
     parser.add_argument('--force', '-f', help='overwrite existing file', dest='force', action='store_true')
+    format_group = parser.add_mutually_exclusive_group()
+    format_group.add_argument('--json', help='write the data in JSON format', dest='json', action='store_true')
+    format_group.add_argument('--yaml', help='write the data in YAML format', dest='yaml', action='store_true')
     return init_token_json
 
 

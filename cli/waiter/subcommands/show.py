@@ -131,8 +131,9 @@ def register(add_parser):
     """Adds this sub-command's parser and returns the action function"""
     show_parser = add_parser('show', help='show token by name')
     show_parser.add_argument('token', nargs=1)
-    show_parser.add_argument('--json', help='show the data in JSON format', dest='json', action='store_true')
-    show_parser.add_argument('--yaml', help='show the data in YAML format', dest='yaml', action='store_true')
     show_parser.add_argument('--no-services', help="don't show the token's services",
                              dest='no-services', action='store_true')
+    format_group = show_parser.add_mutually_exclusive_group()
+    format_group.add_argument('--json', help='show the data in JSON format', dest='json', action='store_true')
+    format_group.add_argument('--yaml', help='show the data in YAML format', dest='yaml', action='store_true')
     return show

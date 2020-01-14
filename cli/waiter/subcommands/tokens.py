@@ -53,6 +53,7 @@ def register(add_parser):
     """Adds this sub-command's parser and returns the action function"""
     parser = add_parser('tokens', help='list tokens by owner')
     parser.add_argument('--user', '-u', help='list tokens owned by a user', default=getpass.getuser())
-    parser.add_argument('--json', help='show the data in JSON format', dest='json', action='store_true')
-    parser.add_argument('--yaml', help='show the data in YAML format', dest='yaml', action='store_true')
+    format_group = parser.add_mutually_exclusive_group()
+    format_group.add_argument('--json', help='show the data in JSON format', dest='json', action='store_true')
+    format_group.add_argument('--yaml', help='show the data in YAML format', dest='yaml', action='store_true')
     return tokens

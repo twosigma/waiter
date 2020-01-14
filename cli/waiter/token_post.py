@@ -123,9 +123,10 @@ def create_or_update_token(clusters, args, _, action):
 def add_arguments(parser):
     """Adds arguments to the given parser"""
     add_token_flags(parser)
-    parser.add_argument('--json', help='provide the data in a JSON file', dest='json')
-    parser.add_argument('--yaml', help='provide the data in a YAML file', dest='yaml')
     parser.add_argument('token', nargs='?')
+    format_group = parser.add_mutually_exclusive_group()
+    format_group.add_argument('--json', help='provide the data in a JSON file', dest='json')
+    format_group.add_argument('--yaml', help='provide the data in a YAML file', dest='yaml')
 
 
 def add_token_flags(parser):

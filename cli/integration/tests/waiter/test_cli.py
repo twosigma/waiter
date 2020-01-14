@@ -222,26 +222,26 @@ class WaiterCliTest(util.WaiterTest):
 
     def test_cli_invalid_file_format_combo(self):
         cp = cli.create(self.waiter_url, create_flags='--json test.json --yaml test.yaml')
-        self.assertEqual(1, cp.returncode, cp.stderr)
-        self.assertIn('JSON and YAML mode cannot be used simultaneously', cli.stderr(cp))
+        self.assertEqual(2, cp.returncode, cp.stderr)
+        self.assertIn('not allowed with argument', cli.stderr(cp))
 
         cp = cli.update(self.waiter_url, update_flags='--json test.json --yaml test.yaml')
-        self.assertEqual(1, cp.returncode, cp.stderr)
-        self.assertIn('JSON and YAML mode cannot be used simultaneously', cli.stderr(cp))
+        self.assertEqual(2, cp.returncode, cp.stderr)
+        self.assertIn('not allowed with argument', cli.stderr(cp))
 
         token_name = self.token_name()
         cp = cli.show(self.waiter_url, token_name, show_flags='--json --yaml')
-        self.assertEqual(1, cp.returncode, cp.stderr)
-        self.assertIn('JSON and YAML mode cannot be used simultaneously', cli.stderr(cp))
+        self.assertEqual(2, cp.returncode, cp.stderr)
+        self.assertIn('not allowed with argument', cli.stderr(cp))
 
         token_name = self.token_name()
         cp = cli.show(self.waiter_url, token_name, show_flags='--json --yaml')
-        self.assertEqual(1, cp.returncode, cp.stderr)
-        self.assertIn('JSON and YAML mode cannot be used simultaneously', cli.stderr(cp))
+        self.assertEqual(2, cp.returncode, cp.stderr)
+        self.assertIn('not allowed with argument', cli.stderr(cp))
 
         cp = cli.tokens(self.waiter_url, tokens_flags='--json --yaml')
-        self.assertEqual(1, cp.returncode, cp.stderr)
-        self.assertIn('JSON and YAML mode cannot be used simultaneously', cli.stderr(cp))
+        self.assertEqual(2, cp.returncode, cp.stderr)
+        self.assertIn('not allowed with argument', cli.stderr(cp))
 
     def test_implicit_update_args(self):
         cp = cli.create(create_flags='--help')
@@ -447,7 +447,8 @@ class WaiterCliTest(util.WaiterTest):
         token_name = self.token_name()
         util.post_token(self.waiter_url, token_name, util.minimal_service_description())
         try:
-            self.logger.info(f'Token: {util.load_token(self.waiter_url, token_name)}')
+            self.logger.info(f'python3'
+                             f'Token: {util.load_token(self.waiter_url, token_name)}')
             service_id = util.ping_token(self.waiter_url, token_name)
             try:
                 cp = cli.delete(self.waiter_url, token_name)
