@@ -958,7 +958,7 @@ class WaiterCliTest(util.WaiterTest):
         token_name = self.token_name()
         filename = str(uuid.uuid4())
         flags = f"--cmd '{util.default_cmd()}' --cmd-type shell --health-check-url /status " \
-                f"--{file_format} --file {filename} "
+                f"--name {token_name} --{file_format} --file {filename} "
         cp = cli.init(self.waiter_url, init_flags=flags)
         self.assertEqual(0, cp.returncode, cp.stderr)
         self.assertIn(f'Writing token {file_format.upper()}', cli.stdout(cp))
@@ -968,7 +968,7 @@ class WaiterCliTest(util.WaiterTest):
             util.post_token(self.waiter_url, token_name, token_definition)
             try:
                 token = util.load_token(self.waiter_url, token_name)
-                self.assertEqual('your-app-name', token['name'])
+                self.assertEqual(token_name, token['name'])
                 self.assertEqual('your-metric-group', token['metric-group'])
                 self.assertEqual('shell', token['cmd-type'])
                 self.assertEqual(util.default_cmd(), token['cmd'])

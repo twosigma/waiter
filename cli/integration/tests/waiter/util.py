@@ -31,6 +31,10 @@ DEFAULT_WAIT_INTERVAL_MS = int(os.getenv('WAITER_TEST_DEFAULT_WAIT_INTERVAL_MS',
 TOKEN_PREFIX = os.getenv('WAITER_TEST_TOKEN_PREFIX', 'cli')
 
 
+def get_random_string(length):
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
+
+
 class WaiterTest(unittest.TestCase):
     def token_name(self):
         """
@@ -40,7 +44,7 @@ class WaiterTest(unittest.TestCase):
         test_id = self.id()
         test_function = test_id.split('.')[-1]
         timestamp = datetime.now().strftime('%Y%m%dT%H%M%S')
-        random_string = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+        random_string = get_random_string(8)
         return f'{TOKEN_PREFIX}_{test_function}_{timestamp}_{random_string}'
 
 
@@ -162,6 +166,7 @@ def minimal_service_description(**kwargs):
         'cpus': float(os.getenv('WAITER_TEST_DEFAULT_CPUS', 1.0)),
         'mem': int(os.getenv('WAITER_TEST_DEFAULT_MEM_MB', 256)),
         'metric-group': 'waiter_test',
+        'name': f'service_{get_random_string(10)}',
         'version': str(uuid.uuid4()),
         'cmd-type': 'shell'
     }
