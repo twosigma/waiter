@@ -787,22 +787,25 @@ class WaiterCliTest(util.WaiterTest):
         finally:
             util.delete_token(self.waiter_url, token_name)
 
-    def _test_create_token(self, file_format):
+    def _test_create_token(self, file_format, input_flag=None):
+        if input_flag is None:
+            input_flag = file_format
+
         create_fields = {'cpus': 0.1, 'mem': 128}
         stdin = cli.dump(file_format, create_fields)
 
         token_name = self.token_name()
-        cp = cli.create(self.waiter_url, token_name, create_flags=f'--{file_format} -', stdin=stdin)
+        cp = cli.create(self.waiter_url, token_name, create_flags=f'--{input_flag} -', stdin=stdin)
         self.assertEqual(0, cp.returncode, cp.stderr)
         try:
             token_data = util.load_token(self.waiter_url, token_name)
             self.assertEqual(0.1, token_data['cpus'])
             self.assertEqual(128, token_data['mem'])
 
-            # Test with json from a file
+            # Test with data from a file
             util.delete_token(self.waiter_url, token_name)
             with cli.temp_token_file(create_fields, file_format) as path:
-                cp = cli.create(self.waiter_url, token_name, create_flags=f'--{file_format} {path}')
+                cp = cli.create(self.waiter_url, token_name, create_flags=f'--{input_flag} {path}')
                 self.assertEqual(0, cp.returncode, cp.stderr)
                 token_data = util.load_token(self.waiter_url, token_name)
                 self.assertEqual(0.1, token_data['cpus'])
@@ -815,6 +818,12 @@ class WaiterCliTest(util.WaiterTest):
 
     def test_create_token_yaml(self):
         self._test_create_token('yaml')
+
+    def test_create_token_json_input(self):
+        self._test_create_token('json', 'input')
+
+    def test_create_token_yaml_input(self):
+        self._test_create_token('yaml', 'input')
 
     def _test_update_token(self, file_format):
         token_name = self.token_name()
@@ -897,7 +906,7 @@ class WaiterCliTest(util.WaiterTest):
         stdin = json.dumps([]).encode('utf8')
         cp = cli.update(self.waiter_url, token_name, update_flags=f'--{file_format} -', stdin=stdin)
         self.assertEqual(1, cp.returncode, cp.stderr)
-        self.assertIn(f'{file_format.upper()} data must be a dictionary', cli.stderr(cp))
+        self.assertIn(f'Input {file_format.upper()} must be a dictionary', cli.stderr(cp))
 
         stdin = '{"mem": 128'.encode('utf8')
         cp = cli.update(self.waiter_url, token_name, update_flags=f'--{file_format} -', stdin=stdin)

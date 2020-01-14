@@ -76,9 +76,12 @@ def create_or_update_token(clusters, args, _, action):
     token_name_from_args = args.pop('token', None)
     json_file = args.pop('json', None)
     yaml_file = args.pop('yaml', None)
+    input_file = args.pop('input', None)
 
-    if json_file or yaml_file:
-        token_fields_from_json = load_data({'json': json_file, 'yaml': yaml_file})
+    if input_file or json_file or yaml_file:
+        token_fields_from_json = load_data({'data': input_file,
+                                            'json': json_file,
+                                            'yaml': yaml_file})
     else:
         token_fields_from_json = {}
 
@@ -127,6 +130,7 @@ def add_arguments(parser):
     format_group = parser.add_mutually_exclusive_group()
     format_group.add_argument('--json', help='provide the data in a JSON file', dest='json')
     format_group.add_argument('--yaml', help='provide the data in a YAML file', dest='yaml')
+    format_group.add_argument('--input', help='provide the data in a JSON/YAML file', dest='input')
 
 
 def add_token_flags(parser):

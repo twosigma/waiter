@@ -69,6 +69,32 @@ JSON = JsonDataFormat()
 YAML = YamlDataFormat()
 
 
+class AnySupportedFormat(DataFormat):
+    def name(self):
+        return 'data'
+
+    def parse(self, data):
+        content = None
+        for input_format in [JSON, YAML]:
+            try:
+                logging.debug(f'attempting to parse input data as {input_format}')
+                content = input_format.parse(data)
+                logging.debug(f'successfully parsed input data as {input_format}')
+                continue
+            except Exception:
+                logging.debug(f'error parsing input data as {input_format}')
+                pass
+        if content is None:
+            raise ValueError('Malformed data in input.')
+        return content
+
+    def dump(self, out_data, out_file=None):
+        raise NotImplementedError('Data format needs to be specified explicitly!')
+
+
+ANY_FORMAT = AnySupportedFormat()
+
+
 def validate_options(options):
     """Validates whether unique file format is specified."""
     as_json = options.get(JSON.name())
@@ -119,7 +145,7 @@ def load_data(options):
     Data must be a dict of attributes.
     Throws a ValueError if there is a problem parsing the data.
     """
-    input_format = determine_format(options)
+    input_format = ANY_FORMAT if options.get('data') else determine_format(options)
     input_file = options.get(input_format.name())
 
     if input_file == '-':
@@ -137,7 +163,7 @@ def load_data(options):
     if type(content) is dict:
         return content
     else:
-        raise ValueError(f'{input_format} data must be a dictionary of attributes.')
+        raise ValueError(f'Input {input_format} must be a dictionary of attributes.')
 
 
 def display_data(options, data):
