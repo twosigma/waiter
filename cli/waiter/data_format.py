@@ -83,7 +83,6 @@ class AnySupportedFormat(DataFormat):
                 continue
             except Exception:
                 logging.debug(f'error parsing input data as {input_format}')
-                pass
         if content is None:
             raise ValueError('Malformed data in input.')
         return content
