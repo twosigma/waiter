@@ -198,24 +198,12 @@
   `(using-waiter-url
      (time-it ~name ~@body)))
 
-(defn- git-show->branch-name [text]
-  (->
-    text
-    (str/trim)
-    (str/split #", ")
-    (last)
-    (str/replace ")" "")
-    (str/replace #"^.+/" "")))
-
-(deftest test-git-show->branch-name
-  (is (= "master" (git-show->branch-name "(HEAD, origin/master)")))
-  (is (= "foo" (git-show->branch-name " (HEAD, origin/foo, foo)"))))
-
 (defn- retrieve-git-branch []
   (->
-    (shell/sh "git" "show" "-s" "--pretty=%d" "HEAD")
-    (:out)
-    (git-show->branch-name)))
+    (shell/sh "git" "rev-parse" "--abbrev-ref" "HEAD")
+    :out
+    (or "_unknown_branch_")
+    str/trim))
 
 (defn make-http-clients
   "Instantiates and returns http1 and http2 clients without a cookie store"
