@@ -830,9 +830,9 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(256, token_data['mem'])
             self.assertEqual('foo', token_data['cmd'])
 
-            # Test with json from a file
+            # Test with data from a file
             util.post_token(self.waiter_url, token_name, create_fields)
-            with cli.temp_token_file(update_fields, 'json') as path:
+            with cli.temp_token_file(update_fields, file_format) as path:
                 cp = cli.update(self.waiter_url, token_name, update_flags=f'--{file_format} {path}')
                 self.assertEqual(0, cp.returncode, cp.stderr)
                 token_data = util.load_token(self.waiter_url, token_name)
@@ -945,16 +945,17 @@ class WaiterCliTest(util.WaiterTest):
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
 
-    def test_init_basic_json(self):
+    def _test_init_basic(self, file_format):
         token_name = self.token_name()
         filename = str(uuid.uuid4())
-        flags = f"--cmd '{util.default_cmd()}' --file {filename} --cmd-type shell --health-check-url /status"
+        flags = f"--cmd '{util.default_cmd()}' --cmd-type shell --health-check-url /status " \
+                f"--{file_format} --file {filename} "
         cp = cli.init(self.waiter_url, init_flags=flags)
         self.assertEqual(0, cp.returncode, cp.stderr)
-        self.assertIn('Writing token JSON', cli.stdout(cp))
+        self.assertIn(f'Writing token {file_format.upper()}', cli.stdout(cp))
         try:
-            token_definition = util.load_json_file(filename)
-            self.logger.info(f'Token definition: {json.dumps(token_definition, indent=2)}')
+            token_definition = util.load_file(file_format, filename)
+            self.logger.info(f'Token definition: {cli.dump(file_format, token_definition)}')
             util.post_token(self.waiter_url, token_name, token_definition)
             try:
                 token = util.load_token(self.waiter_url, token_name)
@@ -975,6 +976,12 @@ class WaiterCliTest(util.WaiterTest):
                 util.delete_token(self.waiter_url, token_name, kill_services=True)
         finally:
             os.remove(filename)
+
+    def test_init_basic_json(self):
+        self._test_init_basic('json')
+
+    def test_init_basic_yaml(self):
+        self._test_init_basic('yaml')
 
     def test_implicit_init_args(self):
         cp = cli.init(init_flags='--help')
@@ -999,7 +1006,7 @@ class WaiterCliTest(util.WaiterTest):
                 '--force')
             cp = cli.init(self.waiter_url, init_flags=init_flags)
             self.assertEqual(0, cp.returncode, cp.stderr)
-            token_definition = util.load_json_file(file.name)
+            token_definition = util.load_file('json', file.name)
             self.logger.info(f'Token definition: {json.dumps(token_definition, indent=2)}')
             util.post_token(self.waiter_url, token_name, token_definition)
             try:

@@ -128,17 +128,27 @@ def update_minimal(waiter_url=None, token_name=None, flags=None, **kwargs):
     return cp
 
 
+def dump(file_format, data):
+    """Serializes data to a string in the specified format."""
+    if file_format == 'json':
+        return json.dumps(data, indent=2, sort_keys=True).encode('utf8')
+    elif file_format == 'yaml':
+        return yaml.safe_dump(data).encode('utf8')
+    else:
+        raise Exception(f'Unsupported file format: {file_format}')
+
+
 def write_json(path, config):
     """Writes the given config map as JSON to the given path."""
     with open(path, 'w') as outfile:
-        logging.info('echo \'%s\' > %s' % (json.dumps(config), path))
+        logging.info('echo \'%s\' > %s' % (dump('json', config), path))
         json.dump(config, outfile)
 
 
 def write_yaml(path, config):
     """Writes the given config map as JSON to the given path."""
     with open(path, 'w') as outfile:
-        logging.info('echo \'%s\' > %s' % (json.dumps(config), path))
+        logging.info('echo \'%s\' > %s' % (dump('yaml', config), path))
         yaml.safe_dump(config, outfile)
 
 
@@ -251,16 +261,6 @@ def show_token_services(file_format, waiter_url=None, token_name=None, flags=Non
     return cp, services
 
 
-def dump(file_format, data):
-    """Serializes data to a string in the specified format."""
-    if file_format == 'json':
-        return json.dumps(data).encode('utf8')
-    elif file_format == 'yaml':
-        return yaml.safe_dump(data).encode('utf8')
-    else:
-        raise Exception(f'Unsupported file format: {file_format}')
-
-
 def output(cp):
     """Returns a string containing the stdout and stderr from the given CompletedProcess"""
     return f'\nstdout:\n{stdout(cp)}\n\nstderr:\n{decode(cp.stderr)}'
@@ -273,7 +273,7 @@ def plugins_config():
     """
     if 'WAITER_TEST_PLUGIN_JSON' in os.environ:
         path = os.environ['WAITER_TEST_PLUGIN_JSON']
-        content = util.load_json_file(os.path.abspath(path))
+        content = util.load_file('json', os.path.abspath(path))
         return content or {}
     else:
         return {}

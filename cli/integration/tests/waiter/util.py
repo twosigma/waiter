@@ -6,12 +6,12 @@ import logging
 import os
 import random
 import string
+import unittest
 import uuid
 from datetime import datetime
 
-import unittest
-
 import requests
+import yaml
 from retrying import retry
 
 session = importlib.import_module(os.getenv('WAITER_TEST_SESSION_MODULE', 'requests')).Session()
@@ -204,17 +204,22 @@ def wait_until(query, predicate, max_wait_ms=DEFAULT_TIMEOUT_MS, wait_interval_m
         raise
 
 
-def load_json_file(path):
+def load_file(file_format, path):
     """Decode a JSON formatted file."""
     content = None
 
     if os.path.isfile(path):
         with open(path) as json_file:
             try:
-                logging.debug(f'attempting to load json configuration from {path}')
-                content = json.load(json_file)
+                logging.debug(f'attempting to load {file_format} configuration from {path}')
+                if file_format == 'json':
+                    content = json.load(json_file)
+                elif file_format == 'yaml':
+                    content = yaml.safe_load(json_file)
+                else:
+                    raise Exception(f'Unsupported file format: {file_format}')
             except Exception as e:
-                logging.error(e, f'error loading json configuration from {path}')
+                logging.error(e, f'error loading {file_format} configuration from {path}')
     else:
         logging.info(f'{path} is not a file')
 
