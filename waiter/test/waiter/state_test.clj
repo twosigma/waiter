@@ -1429,12 +1429,14 @@
                               (retrieve-peer-routers discovery router-chan)))))))
 
 (defmacro check-service-maintainer-state-fn
-  [query-state-chan service-id expected-state]
-  `(let [query-state-response-chan# (async/chan 1)]
+  [query-state-chan query-state-fn service-id expected-state]
+  `(let [query-state-response-chan# (async/chan 1)
+         expected-state# ~expected-state
+         query-state-fn# ~query-state-fn]
      (async/>!! ~query-state-chan {:response-chan query-state-response-chan#, :service-id ~service-id})
      (let [actual-state# (async/<!! query-state-response-chan#)
            check-fn# (fn [item-key#]
-                       (let [expected# (item-key# ~expected-state)
+                       (let [expected# (item-key# expected-state#)
                              actual# (item-key# actual-state#)]
                          (when (not (nil? expected#))
                            (when (not= expected# actual#)
@@ -1446,6 +1448,8 @@
        (check-fn# :service-id->channel-map)
        (check-fn# :maintainer-chan-available)
        (check-fn# :last-state-update-time)
+       (is (= (-> (query-state-fn#) :service-ids set)
+              (-> expected-state# :service-id->channel-map keys set)))
        actual-state#)))
 
 (let [service-channel-map-atom (atom {})
@@ -1465,9 +1469,11 @@
       (let [state-source-chan (async/chan)
             request-chan (async/chan 1)
             query-chan (async/chan 1)
-            {:keys [exit-chan]} (start-service-chan-maintainer {} request-chan state-source-chan query-chan
-                                                               start-service remove-service retrieve-channel)]
-        (check-service-maintainer-state-fn query-chan nil {:service-id->channel-map {}, :last-state-update-time nil})
+            {:keys [exit-chan query-state-fn]}
+            (start-service-chan-maintainer {} request-chan state-source-chan query-chan
+                                           start-service remove-service retrieve-channel)]
+        (check-service-maintainer-state-fn query-chan query-state-fn nil
+                                           {:service-id->channel-map {}, :last-state-update-time nil})
         (async/>!! exit-chan :exit))))
 
   (deftest test-start-service-chan-maintainer-start-services
@@ -1477,8 +1483,9 @@
             query-chan (async/chan 1)
             current-time (t/now)
             initial-state {}
-            {:keys [exit-chan]} (start-service-chan-maintainer initial-state request-chan state-source-chan query-chan
-                                                               start-service remove-service retrieve-channel)]
+            {:keys [exit-chan query-state-fn]}
+            (start-service-chan-maintainer initial-state request-chan state-source-chan query-chan
+                                           start-service remove-service retrieve-channel)]
 
         (let [state-map {:service-id->my-instance->slots {"service-1" {"service-1.A" 1, "service-1.B" 2}
                                                           "service-2" {"service-2.A" 3}
@@ -1493,7 +1500,7 @@
           (async/>!! state-source-chan state-map))
 
         (check-service-maintainer-state-fn
-          query-chan nil
+          query-chan query-state-fn nil
           {:service-id->channel-map {"service-1" {:channel-map-for "service-1"}
                                      "service-2" {:channel-map-for "service-2"}
                                      "service-3" {:channel-map-for "service-3"}}
@@ -1511,8 +1518,9 @@
                                                      "service-2" {:channel-map-for "service-2"}
                                                      "service-3" {:channel-map-for "service-3"}}
                            :last-state-update-time (t/minus current-time (t/seconds 10))}
-            {:keys [exit-chan]} (start-service-chan-maintainer initial-state request-chan state-source-chan query-chan
-                                                               start-service remove-service retrieve-channel)]
+            {:keys [exit-chan query-state-fn]}
+            (start-service-chan-maintainer initial-state request-chan state-source-chan query-chan
+                                           start-service remove-service retrieve-channel)]
         (doseq [service-id ["service-1" "service-2" "service-3"]]
           (start-service service-id))
 
@@ -1527,7 +1535,7 @@
           (async/>!! state-source-chan state-map))
 
         (check-service-maintainer-state-fn
-          query-chan nil
+          query-chan query-state-fn nil
           {:service-id->channel-map {"service-1" {:channel-map-for "service-1"}
                                      "service-3" {:channel-map-for "service-3"}}
            :last-state-update-time current-time})
@@ -1544,8 +1552,9 @@
                                                      "service-2" {:channel-map-for "service-2"}
                                                      "service-3" {:channel-map-for "service-3"}}
                            :last-state-update-time (t/minus current-time (t/seconds 10))}
-            {:keys [exit-chan]} (start-service-chan-maintainer initial-state request-chan state-source-chan query-chan
-                                                               start-service remove-service retrieve-channel)]
+            {:keys [exit-chan query-state-fn]}
+            (start-service-chan-maintainer initial-state request-chan state-source-chan query-chan
+                                           start-service remove-service retrieve-channel)]
         (doseq [service-id ["service-1" "service-2" "service-3"]]
           (start-service service-id))
 
@@ -1560,7 +1569,7 @@
           (async/>!! state-source-chan state-map))
 
         (check-service-maintainer-state-fn
-          query-chan nil
+          query-chan query-state-fn nil
           {:service-id->channel-map {"service-1" {:channel-map-for "service-1"}
                                      "service-3" {:channel-map-for "service-3"}
                                      "service-4" {:channel-map-for "service-4"}

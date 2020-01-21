@@ -817,15 +817,17 @@
     (doseq [{:keys [name request-body response-status expected-status expected-body-fragments]} test-cases]
       (testing name
         (let [instance-rpc-chan (instance-rpc-chan-factory response-status)
+              populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
               request {:uri (str "/work-stealing")
                        :request-method :post
                        :body (StringBufferInputStream. (utils/clj->json (walk/stringify-keys request-body)))}
-              {:keys [status body]} (fa/<?? (work-stealing-handler instance-rpc-chan request))]
+              {:keys [status body]} (fa/<?? (work-stealing-handler populate-maintainer-chan! request))]
           (is (= expected-status status))
           (is (every? #(str/includes? (str body) %) expected-body-fragments)))))))
 
 (deftest test-work-stealing-handler-cannot-find-channel
   (let [instance-rpc-chan (async/chan)
+        populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
         test-service-id "test-service-id"
         request {:body (StringBufferInputStream.
                          (utils/clj->json
@@ -834,7 +836,7 @@
                             "request-id" "test-request-id"
                             "router-id" "test-router-id"
                             "service-id" test-service-id}))}
-        response-chan (work-stealing-handler instance-rpc-chan request)]
+        response-chan (work-stealing-handler populate-maintainer-chan! request)]
     (async/thread
       (let [{:keys [cid method response-chan service-id]} (async/<!! instance-rpc-chan)]
         (is (= :offer method))
@@ -847,6 +849,7 @@
 
 (deftest test-work-stealing-handler-channel-put-failed
   (let [instance-rpc-chan (async/chan)
+        populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
         test-service-id "test-service-id"
         request {:body (StringBufferInputStream.
                          (utils/clj->json
@@ -855,7 +858,7 @@
                             "request-id" "test-request-id"
                             "router-id" "test-router-id"
                             "service-id" test-service-id}))}
-        response-chan (work-stealing-handler instance-rpc-chan request)]
+        response-chan (work-stealing-handler populate-maintainer-chan! request)]
     (async/thread
       (let [{:keys [cid method response-chan service-id]} (async/<!! instance-rpc-chan)
             work-stealing-chan (async/chan)]
@@ -1030,6 +1033,7 @@
     (testing "returns 400 for missing service id"
       (is (= 400 (:status (async/<!! (get-service-state router-id nil local-usage-agent "" {} {}))))))
     (let [instance-rpc-chan (async/chan 1)
+          populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
           query-state-chan (async/chan 1)
           query-work-stealing-chan (async/chan 1)
           maintainer-state-chan (async/chan 1)
@@ -1060,7 +1064,7 @@
       (let [query-sources {:autoscaler-state (fn [{:keys [service-id]}]
                                                {:service-id service-id :source "autoscaler"})
                            :maintainer-state maintainer-state-chan}
-            response (async/<!! (get-service-state router-id instance-rpc-chan local-usage-agent service-id query-sources {}))
+            response (async/<!! (get-service-state router-id populate-maintainer-chan! local-usage-agent service-id query-sources {}))
             service-state (json/read-str (:body response) :key-fn keyword)]
         (is (= router-id (get-in service-state [:router-id])))
         (is (= responder-state (get-in service-state [:state :responder-state])))
@@ -1421,13 +1425,14 @@
 (deftest test-blacklist-instance-cannot-find-channel
   (let [notify-instance-killed-fn (fn [instance] (throw (ex-info "Unexpected call" {:instance instance})))
         instance-rpc-chan (async/chan)
+        populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
         test-service-id "test-service-id"
         request {:body (StringBufferInputStream.
                          (utils/clj->json
                            {"instance" {"id" "test-instance-id", "service-id" test-service-id}
                             "period-in-ms" 1000
                             "reason" "blacklist"}))}
-        response-chan (blacklist-instance notify-instance-killed-fn instance-rpc-chan request)]
+        response-chan (blacklist-instance notify-instance-killed-fn populate-maintainer-chan! request)]
     (async/thread
       (let [{:keys [cid method response-chan service-id]} (async/<!! instance-rpc-chan)]
         (is (= :blacklist method))
@@ -1442,6 +1447,7 @@
   (let [notify-instance-chan (async/promise-chan)
         notify-instance-killed-fn (fn [instance] (async/>!! notify-instance-chan instance))
         instance-rpc-chan (async/chan)
+        populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
         test-service-id "test-service-id"
         instance {:id "test-instance-id"
                   :service-id test-service-id
@@ -1452,7 +1458,7 @@
                             "period-in-ms" 1000
                             "reason" "killed"}))}]
     (with-redefs []
-      (let [response-chan (blacklist-instance notify-instance-killed-fn instance-rpc-chan request)
+      (let [response-chan (blacklist-instance notify-instance-killed-fn populate-maintainer-chan! request)
             blacklist-chan (async/promise-chan)]
         (async/thread
           (let [{:keys [cid method response-chan service-id]} (async/<!! instance-rpc-chan)]
@@ -1472,8 +1478,9 @@
 
 (deftest test-get-blacklisted-instances-cannot-find-channel
   (let [instance-rpc-chan (async/chan)
+        populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
         test-service-id "test-service-id"
-        response-chan (get-blacklisted-instances instance-rpc-chan test-service-id {})]
+        response-chan (get-blacklisted-instances populate-maintainer-chan! test-service-id {})]
     (async/thread
       (let [{:keys [cid method response-chan service-id]} (async/<!! instance-rpc-chan)]
         (is (= :query-state method))

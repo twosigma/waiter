@@ -218,7 +218,7 @@
    The function assumes location begins with a slash.
    This method wires up the completion and status check callbacks for the monitoring system.
    It also modifies the status check endpoint in the response header."
-  [router-id async-request-store-atom make-http-request-fn auth-params-map instance-rpc-chan user-agent
+  [router-id async-request-store-atom make-http-request-fn auth-params-map populate-maintainer-chan! user-agent
    response {:keys [service-description service-id] :as descriptor} {:keys [host port] :as instance}
    {:keys [request-id] :as reason-map} request-properties location query-string]
   (let [correlation-id (cid/get-correlation-id)
@@ -241,7 +241,7 @@
               (when (= :success status)
                 (counters/inc! (metrics/service-counter service-id "request-counts" "successful")))
               (statsd/gauge-delta! metric-group "request_outstanding" -1)
-              (service/release-instance-go instance-rpc-chan instance {:status status, :cid correlation-id, :request-id request-id}))
+              (service/release-instance-go populate-maintainer-chan! instance {:status status, :cid correlation-id, :request-id request-id}))
             (complete-async-request-fn [status]
               (complete-async-request-locally async-request-store-atom release-instance-fn request-id status))
             (request-still-active? []
