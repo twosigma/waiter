@@ -325,13 +325,20 @@
             timeout-chan
             (do
               (try
-                (let [service-id->codahale-metrics (utils/filterm (fn [[_ metrics]] (some pos? (vals metrics)))
-                                                                  (metrics/get-core-codahale-metrics))
-                      service-id->usage-metrics @local-usage-agent
-                      service-id->metrics (pc/map-from-keys (fn service-id->metrics-fn [service-id]
-                                                              (merge (service-id->codahale-metrics service-id)
-                                                                     (service-id->usage-metrics service-id)))
-                                                            (keys service-id->codahale-metrics))]
+                (let [service-id->usage-metrics @local-usage-agent
+                      service-id->metrics (timers/start-stop-time!
+                                            (metrics/waiter-timer "metrics-syncer" "metrics" "computation")
+                                            (let [service-id->codahale-metrics
+                                                  (utils/filterm (fn [[_ metrics]] (some pos? (vals metrics)))
+                                                                 (metrics/get-core-codahale-metrics))]
+                                              (pc/map-from-keys
+                                                (fn service-id->metrics-fn [service-id]
+                                                  (merge (service-id->codahale-metrics service-id)
+                                                         (service-id->usage-metrics service-id)))
+                                                (keys service-id->codahale-metrics))))]
+                  (metrics/reset-counter
+                    (metrics/waiter-counter "metrics-syncer" "metrics" "services")
+                    (count service-id->metrics))
                   (send router-metrics-agent publish-router-metrics encrypt service-id->metrics "core"))
                 (catch Exception e
                   (log/error e "error in making broadcast router metrics request" {:iteration iteration})))
