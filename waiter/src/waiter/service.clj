@@ -346,24 +346,3 @@
   (let [deployment-error (get service-id->deployment-error service-id)
         instance-counts (get service-id->instance-counts service-id)]
     (utils/message (resolve-service-status deployment-error instance-counts))))
-
-(defn forward-request-to-instance-rpc-chan!
-  "Forwards the request to the instance-rpc-chan which will eventually populate/close response-chan.
-   If the forwarding fails, closes the input response-chan immediately."
-  [instance-rpc-chan {:keys [cid response-chan] :as request-map}]
-  (when-not (try
-              (async/put! instance-rpc-chan request-map)
-              (catch Throwable th
-                (cid/cerror cid th "error in forwarding request to instance-rpc-chan")))
-    (cid/cinfo cid "put! on instance-rpc-chan unsuccessful, closing response-chan")
-    (async/close! response-chan)))
-
-(defn populate-maintainer-chan!
-  "Retrieves the maintainer channel responsible for the requested method for the specific service.
-   The result channel is populated into the provided response channel.
-   Returns nil."
-  [instance-rpc-chan retrieve-maintainer-chan-fn
-   {:keys [method response-chan service-id] :as request-map}]
-  (if-let [result-chan (retrieve-maintainer-chan-fn service-id method)]
-    (async/put! response-chan result-chan)
-    (forward-request-to-instance-rpc-chan! instance-rpc-chan request-map)))

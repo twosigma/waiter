@@ -1453,10 +1453,11 @@
        actual-state#)))
 
 (let [service-channel-map-atom (atom {})
-      start-service (fn [service-id]
+      start-service! (fn [populate-maintainer-chan! service-id]
+                      (is (function? populate-maintainer-chan!))
                       (swap! service-channel-map-atom assoc service-id {:update-state-chan (au/latest-chan)})
                       {:channel-map-for service-id})
-      remove-service (fn [service-id {:keys [channel-map-for]}]
+      remove-service! (fn [service-id {:keys [channel-map-for]}]
                        (is (= service-id channel-map-for))
                        (swap! service-channel-map-atom dissoc service-id))
       retrieve-channel (fn [{:keys [channel-map-for]} method]
@@ -1467,11 +1468,10 @@
   (deftest test-start-service-chan-maintainer-initialization
     (testing "test-start-service-chan-maintainer-initialization"
       (let [state-source-chan (async/chan)
-            request-chan (async/chan 1)
             query-chan (async/chan 1)
             {:keys [exit-chan query-state-fn]}
-            (start-service-chan-maintainer {} request-chan state-source-chan query-chan
-                                           start-service remove-service retrieve-channel)]
+            (start-service-chan-maintainer
+              {} state-source-chan query-chan start-service! remove-service! retrieve-channel)]
         (check-service-maintainer-state-fn query-chan query-state-fn nil
                                            {:service-id->channel-map {}, :last-state-update-time nil})
         (async/>!! exit-chan :exit))))
@@ -1479,13 +1479,12 @@
   (deftest test-start-service-chan-maintainer-start-services
     (testing "test-start-service-chan-maintainer-start-services"
       (let [state-source-chan (async/chan)
-            request-chan (async/chan 1)
             query-chan (async/chan 1)
             current-time (t/now)
             initial-state {}
             {:keys [exit-chan query-state-fn]}
-            (start-service-chan-maintainer initial-state request-chan state-source-chan query-chan
-                                           start-service remove-service retrieve-channel)]
+            (start-service-chan-maintainer
+              initial-state state-source-chan query-chan start-service! remove-service! retrieve-channel)]
 
         (let [state-map {:service-id->my-instance->slots {"service-1" {"service-1.A" 1, "service-1.B" 2}
                                                           "service-2" {"service-2.A" 3}
@@ -1511,7 +1510,6 @@
   (deftest test-start-service-chan-maintainer-remove-services
     (testing "test-start-service-chan-maintainer-remove-services"
       (let [state-source-chan (async/chan)
-            request-chan (async/chan 1)
             query-chan (async/chan 1)
             current-time (t/now)
             initial-state {:service-id->channel-map {"service-1" {:channel-map-for "service-1"}
@@ -1519,10 +1517,10 @@
                                                      "service-3" {:channel-map-for "service-3"}}
                            :last-state-update-time (t/minus current-time (t/seconds 10))}
             {:keys [exit-chan query-state-fn]}
-            (start-service-chan-maintainer initial-state request-chan state-source-chan query-chan
-                                           start-service remove-service retrieve-channel)]
+            (start-service-chan-maintainer
+              initial-state state-source-chan query-chan start-service! remove-service! retrieve-channel)]
         (doseq [service-id ["service-1" "service-2" "service-3"]]
-          (start-service service-id))
+          (start-service! identity service-id))
 
         (let [state-map {:service-id->my-instance->slots {"service-1" {"service-1.A" 1, "service-1.B" 2}
                                                           "service-3" {"service-3.A" 6, "service-3.B" 8}}
@@ -1545,7 +1543,6 @@
   (deftest test-start-service-chan-maintainer-start-and-remove-services
     (testing "test-start-service-chan-maintainer-start-and-remove-services"
       (let [state-source-chan (async/chan)
-            request-chan (async/chan 1)
             query-chan (async/chan 1)
             current-time (t/now)
             initial-state {:service-id->channel-map {"service-1" {:channel-map-for "service-1"}
@@ -1553,10 +1550,10 @@
                                                      "service-3" {:channel-map-for "service-3"}}
                            :last-state-update-time (t/minus current-time (t/seconds 10))}
             {:keys [exit-chan query-state-fn]}
-            (start-service-chan-maintainer initial-state request-chan state-source-chan query-chan
-                                           start-service remove-service retrieve-channel)]
+            (start-service-chan-maintainer
+              initial-state state-source-chan query-chan start-service! remove-service! retrieve-channel)]
         (doseq [service-id ["service-1" "service-2" "service-3"]]
-          (start-service service-id))
+          (start-service! identity service-id))
 
         (let [state-map {:service-id->my-instance->slots {"service-1" {"service-1.A" 11, "service-1.B" 12}
                                                           "service-3" {"service-3.A" 6, "service-3.B" 8}
@@ -1615,20 +1612,20 @@
 
         (async/>!! exit-chan :exit))))
 
-  (deftest test-start-service-chan-maintainer-request-channel
-    (testing "test-start-service-chan-maintainer-request-channel"
+  (deftest test-start-service-chan-maintainer-instance-rpc-channel
+    (testing "test-start-service-chan-maintainer-instance-rpc-channel"
       (let [state-source-chan (async/chan)
-            request-chan (async/chan 1)
             query-chan (async/chan 1)
             current-time (t/now)
             initial-state {:service-id->channel-map {"service-1" {:channel-map-for "service-1"}
                                                      "service-2" {:channel-map-for "service-2"}
                                                      "service-3" {:channel-map-for "service-3"}}
                            :last-state-update-time (t/minus current-time (t/seconds 10))}
-            {:keys [exit-chan]} (start-service-chan-maintainer initial-state request-chan state-source-chan query-chan
-                                                               start-service remove-service retrieve-channel)]
+            {:keys [exit-chan instance-rpc-chan]}
+            (start-service-chan-maintainer
+              initial-state state-source-chan query-chan start-service! remove-service! retrieve-channel)]
         (doseq [service-id ["service-1" "service-2" "service-3"]]
-          (start-service service-id))
+          (start-service! identity service-id))
 
         (doseq [service-id ["service-2" "service-1" "service-3"]]
           (let [response-chan (async/promise-chan)]
@@ -1636,7 +1633,7 @@
                   :method :method
                   :response-chan response-chan
                   :service-id service-id}
-                 (async/>!! request-chan))
+                 (async/>!! instance-rpc-chan))
             (is (= (str service-id "::method") (async/<!! response-chan)))))
 
         (async/>!! exit-chan :exit)))))
