@@ -1745,9 +1745,17 @@
                                [handler]
                                (fn [request]
                                  (cond
-                                   (and (get-in request [:waiter-discovery :token-metadata "https-redirect"])
-                                        ;; ignore websocket requests
-                                        (= :http (utils/request->scheme request)))
+                                   (and
+                                     ;; ignore websocket requests
+                                     (= :http (utils/request->scheme request))
+                                     ;; lookup in request header before checking in token parameter
+                                     (let [https-redirect-header (some-> request
+                                                                   :headers
+                                                                   (get "x-waiter-https-redirect")
+                                                                   (Boolean/parseBoolean))]
+                                       (if (nil? https-redirect-header)
+                                         (get-in request [:waiter-discovery :token-metadata "https-redirect"])
+                                         https-redirect-header)))
                                    (do
                                      (log/info "triggering ssl redirect")
                                      (-> (ssl/ssl-redirect-response request {})

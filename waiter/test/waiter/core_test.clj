@@ -1399,7 +1399,7 @@
 
       (testing "http request with waiter header https-redirect set to false"
         (let [test-request {:headers {"host" "token.localtest.me"
-                                      "x-waiter-https-redirect" "true"}
+                                      "x-waiter-https-redirect" "false"}
                             :request-method :get
                             :scheme :http
                             :waiter-discovery {:passthrough-headers {}
@@ -1410,6 +1410,24 @@
               {:keys [handled-request response]} (execute-request test-request)]
           (is (= test-request handled-request))
           (is (= handler-response response))))
+
+      (testing "http request with waiter header https-redirect set to true"
+        (let [test-request {:headers {"host" "token.localtest.me"
+                                      "x-waiter-https-redirect" "true"}
+                            :request-method :get
+                            :scheme :http
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {}
+                                               :token "token.localtest.me"
+                                               :token-metadata {"https-redirect" false}
+                                               :waiter-headers {"x-waiter-https-redirect" true}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (nil? handled-request))
+          (is (= {:body ""
+                  :headers {"Location" "https://token.localtest.me"}
+                  :status 301
+                  :waiter/response-source :waiter}
+                 response))))
 
       (testing "https request with token https-redirect set to false"
         (let [test-request {:headers {"host" "token.localtest.me"}
@@ -1478,7 +1496,7 @@
                   :waiter/response-source :waiter}
                  response))))
 
-      (testing "http request with waiter header https-redirect set to false"
+      (testing "http request with https-redirect on token set to true and on waiter header set to false"
         (let [test-request {:headers {"host" "token.localtest.me"
                                       "x-waiter-https-redirect" "false"}
                             :request-method :get
@@ -1489,12 +1507,8 @@
                                                :token-metadata {"https-redirect" true}
                                                :waiter-headers {"x-waiter-https-redirect" false}}}
               {:keys [handled-request response]} (execute-request test-request)]
-          (is (nil? handled-request))
-          (is (= {:body ""
-                  :headers {"Location" "https://token.localtest.me"}
-                  :status 301
-                  :waiter/response-source :waiter}
-                 response)))))))
+          (is (= test-request handled-request))
+          (is (= handler-response response)))))))
 
 (deftest test-request->protocol
   (is (nil? (request->protocol {})))
