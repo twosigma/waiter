@@ -57,7 +57,9 @@
             [waiter.service-description :as sd]
             [waiter.settings :as settings]
             [waiter.simulator :as simulator]
-            [waiter.state :as state]
+            [waiter.state.maintainer :as maintainer]
+            [waiter.state.responder :as responder]
+            [waiter.state.router :as router]
             [waiter.statsd :as statsd]
             [waiter.token :as token]
             [waiter.util.async-utils :as au]
@@ -1203,7 +1205,7 @@
                              (let [{:keys [delay-ms interval-ms]} router-syncer
                                    router-chan (au/latest-chan)
                                    router-mult-chan (async/mult router-chan)]
-                               (state/start-router-syncer discovery router-chan interval-ms delay-ms)
+                               (router/start-router-syncer discovery router-chan interval-ms delay-ms)
                                {:router-mult-chan router-mult-chan}))
    :router-metrics-syncer (pc/fnk [[:routines crypt-helpers websocket-request-auth-cookie-attacher]
                                    [:settings [:metrics-config inter-router-metrics-idle-timeout-ms metrics-sync-interval-ms router-update-interval-ms]]
@@ -1224,7 +1226,7 @@
                               (let [exit-chan (async/chan)
                                     router-chan (async/tap (:router-mult-chan router-list-maintainer) (au/latest-chan))
                                     service-id->deployment-error-config-fn #(scheduler/deployment-error-config scheduler %)
-                                    maintainer (state/start-router-state-maintainer
+                                    maintainer (maintainer/start-router-state-maintainer
                                                  scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn
                                                  refresh-service-descriptions-fn service-id->deployment-error-config-fn
                                                  deployment-error-config)]
@@ -1258,20 +1260,20 @@
                               (let [start-service
                                     (fn start-service [populate-maintainer-chan! service-id]
                                       (let [service-description (service-id->service-description-fn service-id)
-                                            maintainer-chan-map (state/prepare-and-start-service-chan-responder
+                                            maintainer-chan-map (responder/prepare-and-start-service-chan-responder
                                                                   service-id service-description instance-request-properties blacklist-config)
                                             work-stealing-chan-map (start-work-stealing-balancer-fn populate-maintainer-chan! service-id)]
                                         {:maintainer-chan-map maintainer-chan-map
                                          :work-stealing-chan-map work-stealing-chan-map}))
                                     remove-service
                                     (fn remove-service [service-id {:keys [maintainer-chan-map work-stealing-chan-map]}]
-                                      (state/close-update-state-channel service-id maintainer-chan-map)
+                                      (maintainer/close-update-state-channel service-id maintainer-chan-map)
                                       (stop-work-stealing-balancer-fn service-id work-stealing-chan-map))
-                                    retrieve-channel state/retrieve-maintainer-channel
+                                    retrieve-channel maintainer/retrieve-maintainer-channel
                                     {{:keys [router-state-push-mult]} :maintainer} router-state-maintainer
                                     state-chan (au/latest-chan)]
                                 (async/tap router-state-push-mult state-chan)
-                                (state/start-service-chan-maintainer
+                                (maintainer/start-service-chan-maintainer
                                   {} state-chan query-service-maintainer-chan start-service remove-service retrieve-channel)))
    :state-sources (pc/fnk [[:scheduler scheduler]
                            [:state query-service-maintainer-chan]
