@@ -199,19 +199,17 @@
             (headers/get-waiter-header waiter-headers "streaming-timeout") "streaming timeout")))
 
 (defn- prepare-instance
-  "Tries to acquire an instance and set up a mechanism to release the instance when
-   `request-state-chan` is closed. Takes `instance-rpc-chan`, `service-id` and
-   `reason-map` to acquire the instance.
+  "Tries to acquire an instance and set up a mechanism to release the instance when `request-state-chan` is closed.
+   Takes `populate-maintainer-chan!`, `service-id` and `reason-map` to acquire the instance.
    If an exception has occurred, no instance was acquired.
-   Returns the instance if it was acquired successfully,
-   or an exception if there was an error"
-  [instance-rpc-chan service-id {:keys [request-id] :as reason-map} start-new-service-fn request-state-chan
+   Returns the instance if it was acquired successfully, or an exception if there was an error"
+  [populate-maintainer-chan! service-id {:keys [request-id] :as reason-map} start-new-service-fn request-state-chan
    queue-timeout-ms reservation-status-promise metric-group]
   (fa/go-try
     (log/debug "retrieving instance for" service-id "using" (dissoc reason-map :cid :time))
     (let [correlation-id (cid/get-correlation-id)
           instance (fa/<? (service/get-available-instance
-                            instance-rpc-chan service-id reason-map start-new-service-fn queue-timeout-ms metric-group))]
+                            populate-maintainer-chan! service-id reason-map start-new-service-fn queue-timeout-ms metric-group))]
       (au/on-chan-close request-state-chan
                         (fn on-request-state-chan-close []
                           (cid/with-correlation-id
@@ -219,7 +217,8 @@
                             (log/debug "request-state-chan closed")
                             ; assume request did not process successfully if no value in promise
                             (deliver reservation-status-promise :generic-error)
-                            (let [status @reservation-status-promise]
+                            (let [status @reservation-status-promise
+                                  reservation-result {:cid correlation-id :request-id request-id :status status}]
                               (log/info "done processing request" status)
                               (when (= :success status)
                                 (counters/inc! (metrics/service-counter service-id "request-counts" "successful")))
@@ -231,7 +230,7 @@
                               (when (not= :success-async status)
                                 (counters/dec! (metrics/service-counter service-id "request-counts" "outstanding"))
                                 (statsd/gauge-delta! metric-group "request_outstanding" -1))
-                              (service/release-instance-go instance-rpc-chan instance {:status status, :cid correlation-id, :request-id request-id}))))
+                              (service/release-instance-go populate-maintainer-chan! instance reservation-result))))
                         (fn [e]
                           (cid/with-correlation-id
                             correlation-id
@@ -724,7 +723,7 @@
 (let [process-timer (metrics/waiter-timer "core" "process")]
   (defn process
     "Process the incoming request and stream back the response."
-    [make-request-fn instance-rpc-chan start-new-service-fn
+    [make-request-fn populate-maintainer-chan! start-new-service-fn
      instance-request-properties determine-priority-fn process-backend-response-fn
      request-abort-callback-factory local-usage-agent
      {:keys [ctrl descriptor request-id request-time] :as request}]
@@ -778,7 +777,7 @@
                         queue-timeout-ms (:queue-timeout-ms instance-request-properties)
                         timed-instance (metrics/with-timer
                                          (metrics/service-timer service-id "get-available-instance")
-                                         (fa/<? (prepare-instance instance-rpc-chan service-id reason-map
+                                         (fa/<? (prepare-instance populate-maintainer-chan! service-id reason-map
                                                                   start-new-service-fn request-state-chan queue-timeout-ms
                                                                   reservation-status-promise metric-group)))
                         instance (:out timed-instance)

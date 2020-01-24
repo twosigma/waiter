@@ -397,3 +397,7 @@
        (finally
          (.removeMatching mc/default-registry all-metrics-match-filter)))))
 
+(defn make-populate-maintainer-chan!
+  [instance-rpc-chan]
+  (fn populate-maintainer-chan!-put! [request-map]
+    (async/put! instance-rpc-chan request-map)))

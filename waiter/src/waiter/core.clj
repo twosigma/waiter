@@ -120,6 +120,7 @@
                               ["/router-metrics" :state-router-metrics-handler-fn]
                               ["/scheduler" :state-scheduler-handler-fn]
                               ["/service-description-builder" :state-service-description-builder-handler-fn]
+                              ["/service-maintainer" :state-service-maintainer-handler-fn]
                               ["/statsd" :state-statsd-handler-fn]
                               ["/work-stealing" :state-work-stealing-handler-fn]
                               [["/" :service-id] :state-service-handler-fn]]
@@ -639,7 +640,6 @@
                               :socket-timeout client-connection-idle-timeout-ms})
    :http-clients (pc/fnk [http-client-properties]
                    (hu/prepare-http-clients http-client-properties))
-   :instance-rpc-chan (pc/fnk [] (async/chan 1024)) ; TODO move to service-chan-maintainer
    :interstitial-state-atom (pc/fnk [] (atom {:initialized? false
                                               :service-id->interstitial-promise {}}))
    :jwt-authenticator (pc/fnk [[:settings authenticator-config]
@@ -946,18 +946,6 @@
                                                      instance short-circuit? router-ids "blacklist"
                                                      (partial make-blacklist-request make-inter-router-requests-sync-fn blacklist-period-ms)
                                                      reason))))
-   :post-process-async-request-response-fn (pc/fnk [[:settings waiter-principal]
-                                                    [:state async-request-store-atom instance-rpc-chan router-id user-agent-version]
-                                                    make-http-request-fn]
-                                             (let [auth-params-map (auth/auth-params-map :internal waiter-principal)
-                                                   user-agent (str "waiter-async-status-check/" user-agent-version)]
-                                               (fn post-process-async-request-response-wrapper
-                                                 [response descriptor instance _
-                                                  reason-map request-properties location query-string]
-                                                 (async-req/post-process-async-request-response
-                                                   router-id async-request-store-atom make-http-request-fn auth-params-map
-                                                   instance-rpc-chan user-agent response descriptor instance
-                                                   reason-map request-properties location query-string))))
    :prepend-waiter-url (pc/fnk [[:settings hostname port]]
                          (let [hostname (if (sequential? hostname) (first hostname) hostname)]
                            (fn [endpoint-url]
@@ -1021,14 +1009,14 @@
                              (service/start-new-service
                                scheduler descriptor start-service-cache scheduler-interactions-thread-pool)))
    :start-work-stealing-balancer-fn (pc/fnk [[:settings [:work-stealing offer-help-interval-ms reserve-timeout-ms]]
-                                             [:state instance-rpc-chan offers-allowed-semaphore router-id]
+                                             [:state offers-allowed-semaphore router-id]
                                              make-inter-router-requests-async-fn router-metrics-helpers]
-                                      (fn start-work-stealing-balancer [service-id]
+                                      (fn start-work-stealing-balancer [populate-maintainer-chan! service-id]
                                         (let [{:keys [service-id->router-id->metrics]} router-metrics-helpers]
                                           (work-stealing/start-work-stealing-balancer
-                                            instance-rpc-chan reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
-                                            service-id->router-id->metrics make-inter-router-requests-async-fn
-                                            router-id service-id))))
+                                            populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms
+                                            offers-allowed-semaphore service-id->router-id->metrics
+                                            make-inter-router-requests-async-fn router-id service-id))))
    :stop-work-stealing-balancer-fn (pc/fnk []
                                      (fn stop-work-stealing-balancer [service-id work-stealing-chan-map]
                                        (log/info "stopping work-stealing balancer for" service-id)
@@ -1112,14 +1100,15 @@
   {:autoscaler (pc/fnk [[:routines router-metrics-helpers service-id->service-description-fn]
                         [:scheduler scheduler]
                         [:settings [:scaling autoscaler-interval-ms max-expired-unhealthy-instances-to-consider]]
-                        [:state instance-rpc-chan leader?-fn scheduler-interactions-thread-pool]
-                        autoscaling-multiplexer router-state-maintainer]
+                        [:state leader?-fn scheduler-interactions-thread-pool]
+                        autoscaling-multiplexer populate-maintainer-chan! router-state-maintainer]
                  (let [service-id->metrics-fn (:service-id->metrics-fn router-metrics-helpers)
                        {{:keys [router-state-push-mult]} :maintainer} router-state-maintainer
                        {:keys [executor-multiplexer-chan]} autoscaling-multiplexer
                        update-service-scale-state! (fn update-service-scale-state! [service-id scaling-state]
                                                      (log/info service-id "updating scaling state to" scaling-state)
-                                                     (service/notify-scaling-state-go instance-rpc-chan service-id scaling-state))]
+                                                     (service/notify-scaling-state-go
+                                                       populate-maintainer-chan! service-id scaling-state))]
                    (scaling/autoscaler-goroutine
                      {} leader?-fn service-id->metrics-fn executor-multiplexer-chan scheduler autoscaler-interval-ms
                      scaling/scale-service service-id->service-description-fn router-state-push-mult
@@ -1129,15 +1118,15 @@
                                       service-id->service-description-fn]
                                      [:scheduler scheduler]
                                      [:settings [:scaling quanta-constraints]]
-                                     [:state instance-rpc-chan scheduler-interactions-thread-pool scaling-timeout-config]
-                                     router-state-maintainer]
+                                     [:state scheduler-interactions-thread-pool scaling-timeout-config]
+                                     populate-maintainer-chan! router-state-maintainer]
                               (let [{{:keys [notify-instance-killed-fn]} :maintainer} router-state-maintainer]
                                 (scaling/service-scaling-multiplexer
                                   (fn scaling-executor-factory [service-id]
                                     (scaling/service-scaling-executor
                                       notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
                                       delegate-instance-kill-request-fn service-id->service-description-fn
-                                      scheduler instance-rpc-chan quanta-constraints scaling-timeout-config
+                                      scheduler populate-maintainer-chan! quanta-constraints scaling-timeout-config
                                       scheduler-interactions-thread-pool service-id))
                                   {})))
    :codahale-reporters (pc/fnk [[:settings [:metrics-config codahale-reporters]]]
@@ -1191,6 +1180,24 @@
    :messages (pc/fnk [[:settings {messages nil}]]
                (when messages
                  (utils/load-messages messages)))
+   ;; This function is defined as a convenience to avoid repeated extraction from daemons/service-chan-maintainer.
+   :populate-maintainer-chan! (pc/fnk [service-chan-maintainer]
+                                (let [{:keys [populate-maintainer-chan!]} service-chan-maintainer]
+                                  populate-maintainer-chan!))
+   ;; This function is defined in daemons as it depends upon from daemons/populate-maintainer-chan!.
+   :post-process-async-request-response-fn (pc/fnk [[:routines make-http-request-fn]
+                                                    [:settings waiter-principal]
+                                                    [:state async-request-store-atom router-id user-agent-version]
+                                                    populate-maintainer-chan!]
+                                             (let [auth-params-map (auth/auth-params-map :internal waiter-principal)
+                                                   user-agent (str "waiter-async-status-check/" user-agent-version)]
+                                               (fn post-process-async-request-response-wrapper
+                                                 [response descriptor instance _
+                                                  reason-map request-properties location query-string]
+                                                 (async-req/post-process-async-request-response
+                                                   router-id async-request-store-atom make-http-request-fn auth-params-map
+                                                   populate-maintainer-chan! user-agent response descriptor instance
+                                                   reason-map request-properties location query-string))))
    :router-list-maintainer (pc/fnk [[:settings router-syncer]
                                     [:state discovery]]
                              (let [{:keys [delay-ms interval-ms]} router-syncer
@@ -1243,40 +1250,29 @@
                               (scheduler/scheduler-services-gc
                                 scheduler query-state-fn service-id->metrics-fn scheduler-gc-config service-gc-go-routine
                                 service-id->idle-timeout)))
-   :service-chan-maintainer (pc/fnk [[:routines service-id->service-description-fn start-work-stealing-balancer-fn stop-work-stealing-balancer-fn]
+   :service-chan-maintainer (pc/fnk [[:routines service-id->service-description-fn
+                                      start-work-stealing-balancer-fn stop-work-stealing-balancer-fn]
                                      [:settings blacklist-config instance-request-properties]
-                                     [:state instance-rpc-chan query-service-maintainer-chan]
+                                     [:state query-service-maintainer-chan]
                                      router-state-maintainer]
                               (let [start-service
-                                    (fn start-service [service-id]
+                                    (fn start-service [populate-maintainer-chan! service-id]
                                       (let [service-description (service-id->service-description-fn service-id)
                                             maintainer-chan-map (state/prepare-and-start-service-chan-responder
                                                                   service-id service-description instance-request-properties blacklist-config)
-                                            workstealing-chan-map (start-work-stealing-balancer-fn service-id)]
+                                            work-stealing-chan-map (start-work-stealing-balancer-fn populate-maintainer-chan! service-id)]
                                         {:maintainer-chan-map maintainer-chan-map
-                                         :work-stealing-chan-map workstealing-chan-map}))
+                                         :work-stealing-chan-map work-stealing-chan-map}))
                                     remove-service
                                     (fn remove-service [service-id {:keys [maintainer-chan-map work-stealing-chan-map]}]
                                       (state/close-update-state-channel service-id maintainer-chan-map)
                                       (stop-work-stealing-balancer-fn service-id work-stealing-chan-map))
-                                    retrieve-channel
-                                    (fn retrieve-channel [channel-map method]
-                                      (let [method-chan (case method
-                                                          :blacklist [:maintainer-chan-map :blacklist-instance-chan]
-                                                          :kill [:maintainer-chan-map :kill-instance-chan]
-                                                          :offer [:maintainer-chan-map :work-stealing-chan]
-                                                          :query-state [:maintainer-chan-map :query-state-chan]
-                                                          :query-work-stealing [:work-stealing-chan-map :query-chan]
-                                                          :release [:maintainer-chan-map :release-instance-chan]
-                                                          :reserve [:maintainer-chan-map :reserve-instance-chan-in]
-                                                          :scaling-state [:maintainer-chan-map :scaling-state-chan]
-                                                          :update-state [:maintainer-chan-map :update-state-chan])]
-                                        (get-in channel-map method-chan)))
+                                    retrieve-channel state/retrieve-maintainer-channel
                                     {{:keys [router-state-push-mult]} :maintainer} router-state-maintainer
                                     state-chan (au/latest-chan)]
                                 (async/tap router-state-push-mult state-chan)
                                 (state/start-service-chan-maintainer
-                                  {} instance-rpc-chan state-chan query-service-maintainer-chan start-service remove-service retrieve-channel)))
+                                  {} state-chan query-service-maintainer-chan start-service remove-service retrieve-channel)))
    :state-sources (pc/fnk [[:scheduler scheduler]
                            [:state query-service-maintainer-chan]
                            autoscaler autoscaling-multiplexer gc-for-transient-metrics interstitial-maintainer
@@ -1318,19 +1314,19 @@
                               (wrap-secure-request-fn
                                 (fn async-status-handler-fn [request]
                                   (handler/async-status-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))))
-   :blacklist-instance-handler-fn (pc/fnk [[:daemons router-state-maintainer]
-                                           [:state instance-rpc-chan]
+   :blacklist-instance-handler-fn (pc/fnk [[:daemons populate-maintainer-chan! router-state-maintainer]
                                            wrap-router-auth-fn]
                                     (let [{{:keys [notify-instance-killed-fn]} :maintainer} router-state-maintainer]
                                       (wrap-router-auth-fn
                                         (fn blacklist-instance-handler-fn [request]
-                                          (handler/blacklist-instance notify-instance-killed-fn instance-rpc-chan request)))))
-   :blacklisted-instances-list-handler-fn (pc/fnk [[:state instance-rpc-chan]]
+                                          (handler/blacklist-instance notify-instance-killed-fn populate-maintainer-chan! request)))))
+   :blacklisted-instances-list-handler-fn (pc/fnk [[:daemons populate-maintainer-chan!]]
                                             (fn blacklisted-instances-list-handler-fn [{{:keys [service-id]} :route-params :as request}]
-                                              (handler/get-blacklisted-instances instance-rpc-chan service-id request)))
-   :default-websocket-handler-fn (pc/fnk [[:routines determine-priority-fn service-id->password-fn start-new-service-fn]
+                                              (handler/get-blacklisted-instances populate-maintainer-chan! service-id request)))
+   :default-websocket-handler-fn (pc/fnk [[:daemons populate-maintainer-chan!]
+                                          [:routines determine-priority-fn service-id->password-fn start-new-service-fn]
                                           [:settings instance-request-properties]
-                                          [:state instance-rpc-chan local-usage-agent passwords websocket-client]
+                                          [:state local-usage-agent passwords websocket-client]
                                           wrap-descriptor-fn]
                                    (let [password (first passwords)
                                          make-request-fn (fn make-ws-request
@@ -1339,7 +1335,7 @@
                                                            (ws/make-request websocket-client service-id->password-fn instance request request-properties
                                                                             passthrough-headers end-route metric-group backend-proto proto-version))
                                          process-request-fn (fn process-request-fn [request]
-                                                              (pr/process make-request-fn instance-rpc-chan start-new-service-fn
+                                                              (pr/process make-request-fn populate-maintainer-chan! start-new-service-fn
                                                                           instance-request-properties determine-priority-fn ws/process-response!
                                                                           ws/abort-request-callback-factory local-usage-agent request))]
                                      (->> process-request-fn
@@ -1354,18 +1350,18 @@
                          (fn favicon-handler-fn [_]
                            {:body (io/input-stream (io/resource "web/favicon.ico"))
                             :content-type "image/png"}))
-   :kill-instance-handler-fn (pc/fnk [[:daemons router-state-maintainer]
+   :kill-instance-handler-fn (pc/fnk [[:daemons populate-maintainer-chan! router-state-maintainer]
                                       [:routines peers-acknowledged-blacklist-requests-fn]
                                       [:scheduler scheduler]
-                                      [:state instance-rpc-chan scaling-timeout-config scheduler-interactions-thread-pool]
+                                      [:state scaling-timeout-config scheduler-interactions-thread-pool]
                                       wrap-router-auth-fn]
                                (let [{{:keys [notify-instance-killed-fn]} :maintainer} router-state-maintainer]
                                  (wrap-router-auth-fn
                                    (fn kill-instance-handler-fn [request]
                                      (scaling/kill-instance-handler
                                        notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
-                                       scheduler instance-rpc-chan scaling-timeout-config scheduler-interactions-thread-pool
-                                       request)))))
+                                       scheduler populate-maintainer-chan! scaling-timeout-config
+                                       scheduler-interactions-thread-pool request)))))
    :metrics-request-handler-fn (pc/fnk []
                                  (fn metrics-request-handler-fn [request]
                                    (handler/metrics-request-handler request)))
@@ -1393,10 +1389,10 @@
                                    (handler))))))
    :process-request-fn (pc/fnk [process-request-handler-fn process-request-wrapper-fn]
                          (process-request-wrapper-fn process-request-handler-fn))
-   :process-request-handler-fn (pc/fnk [[:routines determine-priority-fn make-basic-auth-fn post-process-async-request-response-fn
-                                         service-id->password-fn start-new-service-fn]
+   :process-request-handler-fn (pc/fnk [[:daemons populate-maintainer-chan! post-process-async-request-response-fn]
+                                        [:routines determine-priority-fn make-basic-auth-fn service-id->password-fn start-new-service-fn]
                                         [:settings instance-request-properties]
-                                        [:state http-clients instance-rpc-chan local-usage-agent]]
+                                        [:state http-clients local-usage-agent]]
                                  (let [make-request-fn (fn [instance request request-properties passthrough-headers end-route metric-group
                                                             backend-proto proto-version]
                                                          (pr/make-request
@@ -1405,7 +1401,7 @@
                                                            backend-proto proto-version))
                                        process-response-fn (partial pr/process-http-response post-process-async-request-response-fn)]
                                    (fn inner-process-request [request]
-                                     (pr/process make-request-fn instance-rpc-chan start-new-service-fn
+                                     (pr/process make-request-fn populate-maintainer-chan! start-new-service-fn
                                                  instance-request-properties determine-priority-fn process-response-fn
                                                  pr/abort-http-request-callback-factory local-usage-agent request))))
    :process-request-wrapper-fn (pc/fnk [[:state interstitial-state-atom]
@@ -1624,12 +1620,19 @@
                                                        router-id
                                                        #(sd/state service-description-builder)
                                                        request)))
-   :state-service-handler-fn (pc/fnk [[:daemons state-sources]
-                                      [:state instance-rpc-chan local-usage-agent router-id]
+   :state-service-maintainer-handler-fn (pc/fnk [[:daemons service-chan-maintainer]
+                                                 [:state router-id]
+                                                 wrap-secure-request-fn]
+                                          (let [{:keys [query-state-fn]} service-chan-maintainer]
+                                            (wrap-secure-request-fn
+                                              (fn state-service-maintainer-handler-fn [request]
+                                                (handler/get-query-fn-state router-id query-state-fn request)))))
+   :state-service-handler-fn (pc/fnk [[:daemons populate-maintainer-chan! state-sources]
+                                      [:state local-usage-agent router-id]
                                       wrap-secure-request-fn]
                                (wrap-secure-request-fn
                                  (fn service-state-handler-fn [{{:keys [service-id]} :route-params :as request}]
-                                   (handler/get-service-state router-id instance-rpc-chan local-usage-agent
+                                   (handler/get-service-state router-id populate-maintainer-chan! local-usage-agent
                                                               service-id state-sources request))))
    :state-statsd-handler-fn (pc/fnk [[:state router-id]
                                      wrap-secure-request-fn]
@@ -1719,11 +1722,11 @@
                                                  (interstitial/display-interstitial-handler request))))
    :welcome-handler-fn (pc/fnk [settings]
                          (partial handler/welcome-handler settings))
-   :work-stealing-handler-fn (pc/fnk [[:state instance-rpc-chan]
+   :work-stealing-handler-fn (pc/fnk [[:daemons populate-maintainer-chan!]
                                       wrap-router-auth-fn]
                                (wrap-router-auth-fn
                                  (fn [request]
-                                   (handler/work-stealing-handler instance-rpc-chan request))))
+                                   (handler/work-stealing-handler populate-maintainer-chan! request))))
    :wrap-auth-bypass-fn (pc/fnk []
                           (fn wrap-auth-bypass-fn
                             [handler]

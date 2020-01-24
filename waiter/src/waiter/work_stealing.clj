@@ -224,15 +224,15 @@
 
 (defn start-work-stealing-balancer
   "Starts the work-stealing balancer for all services."
-  [instance-rpc-chan reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore service-id->router-id->metrics
-   make-inter-router-requests-fn router-id service-id]
+  [populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
+   service-id->router-id->metrics make-inter-router-requests-fn router-id service-id]
   (log/info "starting work-stealing balancer for" service-id)
   (letfn [(reserve-instance-fn
             [reservation-parameters response-chan]
             (async/go
               (try
                 (let [instance (-> (service/get-rand-inst
-                                     instance-rpc-chan
+                                     populate-maintainer-chan!
                                      service-id
                                      (assoc reservation-parameters
                                        :reason :work-stealing
@@ -249,7 +249,7 @@
             (counters/inc! (metrics/waiter-counter "work-stealing" "offer" (str "response-" (name status))))
             (meters/mark! (metrics/waiter-meter "work-stealing" "offer" "response-rate"))
             (service/release-instance-go
-              instance-rpc-chan
+              populate-maintainer-chan!
               instance
               (select-keys reservation-summary [:cid :request-id :status])))
           (offer-help-fn

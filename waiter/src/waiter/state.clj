@@ -801,14 +801,52 @@
       (start-service-chan-responder service-id trigger-unblacklist-process timeout-config channel-map initial-state))
     channel-map))
 
+(defn retrieve-maintainer-channel
+  "Retrieves the channel mapped to the provided method."
+  [channel-map method]
+  (let [maintainer-chan-keyword :maintainer-chan-map
+        method-chan (case method
+                      :blacklist [maintainer-chan-keyword :blacklist-instance-chan]
+                      :kill [maintainer-chan-keyword :kill-instance-chan]
+                      :offer [maintainer-chan-keyword :work-stealing-chan]
+                      :query-state [maintainer-chan-keyword :query-state-chan]
+                      :query-work-stealing [:work-stealing-chan-map :query-chan]
+                      :release [maintainer-chan-keyword :release-instance-chan]
+                      :reserve [maintainer-chan-keyword :reserve-instance-chan-in]
+                      :scaling-state [maintainer-chan-keyword :scaling-state-chan]
+                      :update-state [maintainer-chan-keyword :update-state-chan])]
+    (get-in channel-map method-chan)))
+
 (defn close-update-state-channel
-  "Closes the update-state channelfor the responder"
+  "Closes the update-state channel for the responder"
   [service-id {:keys [update-state-chan]}]
   (log/warn "[close-update-state-channel] closing update-state-chan of" service-id)
   (async/go (async/close! update-state-chan)))
 
+(defn retrieve-service-method-chan
+  "Retrieves the channel mapped to the provided service and method."
+  [{:keys [service-id->channel-map]} retrieve-channel service-id method]
+  (if-let [channel-map (get service-id->channel-map service-id)]
+    (do
+      (counters/inc! (metrics/service-counter service-id "maintainer" "fast-path" "hit"))
+      (retrieve-channel channel-map method))
+    (do
+      (counters/inc! (metrics/service-counter service-id "maintainer" "fast-path" "miss"))
+      nil)))
+
+(defn forward-request-to-instance-rpc-chan!
+  "Forwards the request to the instance-rpc-chan which will eventually populate/close response-chan.
+   If the forwarding fails, closes the input response-chan immediately."
+  [instance-rpc-chan {:keys [cid response-chan] :as request-map}]
+  (when-not (try
+              (async/put! instance-rpc-chan request-map)
+              (catch Throwable th
+                (cid/cerror cid th "error in forwarding request to instance-rpc-chan")))
+    (cid/cinfo cid "put! on instance-rpc-chan unsuccessful, closing response-chan")
+    (async/close! response-chan)))
+
 (defn start-service-chan-maintainer
-  "go block to maintain the mapping from service-id to chans to communicate with
+  "go block to maintain the mapping from service-id to channels to communicate with
    service-chan-responders.
 
    Services are started by invoking `start-service` with the `service-id` and the
@@ -817,26 +855,42 @@
    Services are destroyed (when the service is missing in state updates) by invoking
    `(remove-service service-id channel-map)`.
 
-   Requests for service-chan-responder channels is passed into request-chan
-      It is expected that messages on the channel have a map with keys
+   Requests for service-chan-responder channels is passed into instance-rpc-chan
+   It is expected that messages on the channel have a map with keys
       `:cid`, `:method`, `:response-chan`, and `:service-id`.
-      The `method` should be either `:blacklist`, `:kill`, `:query-state`, `:reserve`, `:release`, or `:scaling-state`.
-      The `service-id` is the service for the request and
-      `response-chan` will have the corresponding channel placed onto it by invoking
-      `(retrieve-channel channel-map method)`.
+   The `method` should be either `:blacklist`, `:kill`, `:query-state`, `:reserve`,
+      `:release`, or `:scaling-state`.
+   The `service-id` is the service for the request and `response-chan` will have the
+       corresponding channel placed onto it by invoking `(retrieve-channel channel-map method)`.
+   The returned `populate-maintainer-chan!` function can be used as a fast-path to bypass
+       a message on instance-rpc-chan and instead retrieve the channel by directly invoking
+       `(retrieve-channel channel-map method)`.
 
-   Updated state for the router is passed into `state-chan` and then propogated to the
+   Updated state for the router is passed into `state-chan` and then propagated to the
    service-chan-responders.
 
    `query-service-maintainer-chan` return the current state of the maintainer."
-  [initial-state request-chan state-chan query-service-maintainer-chan
+  [initial-state state-chan query-service-maintainer-chan
    start-service remove-service retrieve-channel]
-  (let [exit-chan (async/chan 1)
-        update-state-timer (metrics/waiter-timer "state" "service-chan-maintainer" "update-state")]
+  (let [instance-rpc-chan (async/chan 1024)
+        exit-chan (async/chan 1)
+        state-atom (atom {:last-update-time (t/now)
+                          :service-id->channel-map nil})
+        update-state-timer (metrics/waiter-timer "state" "service-chan-maintainer" "update-state")
+        populate-maintainer-chan! (fn populate-maintainer-chan!
+                                    [{:keys [method response-chan service-id] :as request-map}]
+                                    (if-let [result-chan (retrieve-service-method-chan @state-atom retrieve-channel service-id method)]
+                                      (async/put! response-chan result-chan)
+                                      (forward-request-to-instance-rpc-chan! instance-rpc-chan request-map)))]
     (async/go
       (try
         (loop [service-id->channel-map (or (:service-id->channel-map initial-state) {})
                last-state-update-time (:last-state-update-time initial-state)]
+          (swap!
+            state-atom
+            assoc
+            :last-update-time last-state-update-time
+            :service-id->channel-map service-id->channel-map)
           (let [new-state
                 (async/alt!
                   exit-chan
@@ -857,7 +911,7 @@
                               new-service-ids (set/difference incoming-service-ids known-service-ids)
                               removed-service-ids (set/difference known-service-ids incoming-service-ids)
                               service-id->channel-map' (select-keys service-id->channel-map incoming-service-ids)
-                              new-chans (map start-service new-service-ids) ; create new responders
+                              new-chans (map #(start-service populate-maintainer-chan! %) new-service-ids) ; create new responders
                               service-id->channel-map'' (if (seq new-chans)
                                                           (apply assoc service-id->channel-map' (interleave new-service-ids new-chans))
                                                           service-id->channel-map')]
@@ -895,7 +949,7 @@
                           (log/error ex "[service-chan-maintainer] error in updating router state")
                           (throw ex)))))
 
-                  request-chan
+                  instance-rpc-chan
                   ([message]
                     (let [{:keys [cid method response-chan service-id]} message]
                       (cid/cdebug cid "[service-chan-maintainer]" service-id "received request of type" method)
@@ -931,7 +985,13 @@
         (catch Exception e
           (log/error e "fatal error in service-chan-maintainer")
           (System/exit 1))))
-    {:exit-chan exit-chan}))
+    {:exit-chan exit-chan
+     :instance-rpc-chan instance-rpc-chan
+     :query-state-fn (fn query-service-chan-maintainer-state []
+                       (-> @state-atom
+                         (update :service-id->channel-map keys)
+                         (set/rename-keys {:service-id->channel-map :service-ids})))
+     :populate-maintainer-chan! populate-maintainer-chan!}))
 
 (defn md5-hash-function
   "Computes the md5 hash after concatenating the input strings."

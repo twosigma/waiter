@@ -141,7 +141,7 @@
         (utils/exception->response ex request)))))
 
 (defn blacklist-instance
-  [notify-instance-killed-fn instance-rpc-chan request]
+  [notify-instance-killed-fn populate-maintainer-chan! request]
   (async/go
     (try
       (let [{:strs [instance period-in-ms reason] :as request-body-map} (-> request ru/json-request :body)
@@ -156,7 +156,7 @@
                            :log-level :info
                            :status 400}))
           (let [response-chan (async/promise-chan)
-                _ (service/blacklist-instance! instance-rpc-chan service-id instance-id period-in-ms response-chan)
+                _ (service/blacklist-instance! populate-maintainer-chan! service-id instance-id period-in-ms response-chan)
                 _ (log/info "Waiting for response from blacklist channel...")
                 response-code (async/alt!
                                 response-chan ([code] code)
@@ -187,13 +187,13 @@
 
 (defn get-blacklisted-instances
   "Return the blacklisted instances for a given service-id at this router."
-  [instance-rpc-chan service-id request]
+  [populate-maintainer-chan! service-id request]
   (async/go
     (try
       (when (str/blank? service-id)
         (throw (ex-info "Missing service-id" {:log-level :info :status 400})))
       (let [response-chan (async/promise-chan)
-            _ (service/query-instance! instance-rpc-chan service-id response-chan)
+            _ (service/query-instance! populate-maintainer-chan! service-id response-chan)
             _ (log/info "Waiting for response from query-state channel...")
             current-state (async/alt!
                             response-chan ([state] state)
@@ -625,7 +625,7 @@
 
 (defn work-stealing-handler
   "Handles work-stealing offers of instances for load-balancing work on the current router."
-  [instance-rpc-chan request]
+  [populate-maintainer-chan! request]
   (async/go
     (try
       (meters/mark! (metrics/waiter-meter "work-stealing" "request-rate"))
@@ -643,7 +643,7 @@
                               :router-id router-id
                               :service-id service-id}]
             (meters/mark! (metrics/service-meter service-id "work-stealing" "request-rate"))
-            (service/offer-instance! instance-rpc-chan service-id offer-params)
+            (service/offer-instance! populate-maintainer-chan! service-id offer-params)
             (let [response-status (async/<! response-chan)
                   http-status (condp = response-status
                                 :channel-not-found 404
@@ -686,7 +686,7 @@
                                                           "gc-broken-services" "gc-services" "gc-transient-metrics" "interstitial"
                                                           "jwt-authenticator" "kv-store" "launch-metrics" "leader" "local-usage"
                                                           "maintainer" "router-metrics" "scheduler" "service-description-builder"
-                                                          "statsd" "work-stealing"]
+                                                          "service-maintainer" "statsd" "work-stealing"]
                                                          (pc/map-from-keys make-url))
                                            :router-id router-id
                                            :routers routers}))
@@ -784,18 +784,18 @@
 
 (defn get-service-state
   "Retrieves the state for a particular service on the router."
-  [router-id instance-rpc-chan local-usage-agent service-id query-sources request]
+  [router-id populate-maintainer-chan! local-usage-agent service-id query-sources request]
   (async/go
     (try
       (if (str/blank? service-id)
         (throw (ex-info "Missing service-id" {:log-level :info :status 400}))
         (let [timeout-ms (-> 10 t/seconds t/in-millis)
               _ (log/info "waiting for response from query-state channel...")
-              responder-state-chan
-              (service/query-maintainer-channel-map-with-timeout! instance-rpc-chan service-id timeout-ms :query-state)
+              responder-state-chan (service/query-maintainer-channel-map-with-timeout!
+                                     populate-maintainer-chan! service-id timeout-ms :query-state)
               _ (log/info "waiting for response from query-work-stealing channel...")
-              work-stealing-state-chan
-              (service/query-maintainer-channel-map-with-timeout! instance-rpc-chan service-id timeout-ms :query-work-stealing)
+              work-stealing-state-chan (service/query-maintainer-channel-map-with-timeout!
+                                         populate-maintainer-chan! service-id timeout-ms :query-work-stealing)
               local-usage-state (get @local-usage-agent service-id)
               query-params {:cid (cid/get-correlation-id) :service-id service-id}
               [query-chans initial-result]

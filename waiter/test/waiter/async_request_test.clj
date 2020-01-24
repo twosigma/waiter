@@ -20,7 +20,8 @@
             [plumbing.core :as pc]
             [waiter.async-request :refer :all]
             [waiter.auth.authentication :as auth]
-            [waiter.service :as service])
+            [waiter.service :as service]
+            [waiter.test-helpers :refer :all])
   (:import java.net.URLDecoder))
 
 (deftest test-monitor-async-request
@@ -320,6 +321,7 @@
                                (is (= "http" backend-proto))
                                (async/go {}))
         instance-rpc-chan (async/chan 1)
+        populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
         complete-async-request-atom (atom nil)
         response {}]
     (with-redefs [service/release-instance-go (constantly nil)
@@ -338,7 +340,7 @@
                         :service-id service-id}
             {:keys [headers]} (post-process-async-request-response
                                 router-id async-request-store-atom make-http-request-fn auth-params-map
-                                instance-rpc-chan user-agent response descriptor instance reason-map
+                                populate-maintainer-chan! user-agent response descriptor instance reason-map
                                 request-properties location query-string)]
         (is (get @async-request-store-atom request-id))
         (is (= (str "/waiter-async/status/" request-id "/" router-id "/" service-id "/" host "/" port location "?" query-string)
@@ -388,6 +390,7 @@
                                (is (= "http" backend-proto))
                                (async/go {}))
         instance-rpc-chan (async/chan 1)
+        populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
         complete-async-request-atom (atom nil)
         response {}]
     (with-redefs [service/release-instance-go (constantly nil)
@@ -409,7 +412,7 @@
                         :service-id service-id}
             {:keys [headers]} (post-process-async-request-response
                                 router-id async-request-store-atom make-http-request-fn auth-params-map
-                                instance-rpc-chan user-agent response descriptor instance
+                                populate-maintainer-chan! user-agent response descriptor instance
                                 reason-map request-properties location query-string)]
         (is (get @async-request-store-atom request-id))
         (is (= (str "/waiter-async/status/" request-id "/" router-id "/" service-id "/" host "/" port location "?" query-string)
