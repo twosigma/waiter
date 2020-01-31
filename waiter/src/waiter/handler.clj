@@ -301,7 +301,7 @@
   (let [{:keys [all-available-service-ids service-id->healthy-instances service-id->unhealthy-instances] :as global-state} (query-state-fn)]
     (let [{:strs [run-as-user token token-version] :as request-params} (-> request ru/query-params-request :query-params)
           service-description-filter-predicate (query-params->service-description-filter-predicate
-                                                 (dissoc request-params "run-as-users"))
+                                                 (dissoc request-params "run-as-user"))
           auth-user (get request :authorization/user)
           viewable-service-ids (filter
                                  (fn [service-id]
