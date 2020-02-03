@@ -144,8 +144,8 @@
   (defn create-job-description
     "Create the Cook job description for a service."
     [service-id service-description service-id->password-fn home-path-prefix instance-priority backend-port]
-    (let [{:strs [backend-proto cmd cmd-type cpus health-check-proto health-check-url instance-expiry-mins
-                  mem name ports run-as-user version]} service-description
+    (let [{:strs [backend-proto cmd cmd-type cpus health-check-authentication health-check-proto health-check-url
+                  instance-expiry-mins mem name ports run-as-user version]} service-description
           job-uuid (str (UUID/randomUUID)) ;; TODO Use "less random" UUIDs for better Cook cache performance.
           _ (log/info "creating a new job for" service-id "with uuid" job-uuid)
           home-path (str home-path-prefix run-as-user)
@@ -164,6 +164,11 @@
           (if container-support-enabled?
             (log/info "container support enabled" container-data)
             (throw (ex-info "to use container support format version as namespace/name:label" container-data)))))
+      (when (not= "disabled" health-check-authentication)
+        (throw (ex-info "Unsupported health check authentication on service"
+                        {:health-check-authentication health-check-authentication
+                         :service-description service-description
+                         :service-id service-id})))
       {:jobs [(cond-> {:application {:name name
                                      :version (or image-label version)}
                        :command cmd

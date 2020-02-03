@@ -24,8 +24,10 @@
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [slingshot.slingshot :as ss]
+            [waiter.config :as config]
             [waiter.core :as core]
             [waiter.curator :as curator]
+            [waiter.headers :as headers]
             [waiter.metrics :as metrics]
             [waiter.scheduler :refer :all]
             [waiter.util.async-utils :as au]
@@ -34,6 +36,7 @@
   (:import (java.net ConnectException SocketTimeoutException)
            (java.util.concurrent TimeoutException)
            (org.eclipse.jetty.client HttpClient)
+           (org.eclipse.jetty.http HttpField)
            (org.joda.time DateTime)))
 
 (deftest test-record-Service
@@ -263,6 +266,7 @@
         scheduler-state-chan (async/chan 1)
         timeout-chan (async/chan 1)
         service-id->service-description-fn (fn [id] {"backend-proto" "http"
+                                                     "health-check-authentication" "standard"
                                                      "health-check-proto" "https"
                                                      "health-check-port-index" 2
                                                      "health-check-url" (str "/" id)})
@@ -275,9 +279,11 @@
                                                              :failed-instances []}
                                   (->Service "s2" {} {} {}) {:active-instances []
                                                              :failed-instances []}})
-        available? (fn [_ {:keys [id]} {:strs [backend-proto health-check-proto health-check-port-index health-check-url]}]
+        available? (fn [_ {:keys [id]} {:strs [backend-proto health-check-authentication health-check-proto
+                                               health-check-port-index health-check-url]}]
                      (async/go (cond
                                  (and (= "s1.i1" id)
+                                      (= "standard" health-check-authentication)
                                       (= "https" (or health-check-proto backend-proto))
                                       (= 2 health-check-port-index)
                                       (= "/s1" health-check-url))
@@ -514,61 +520,96 @@
                   (throw (Exception. "test"))))))
         (is (= 5 @call-counter))))))
 
+(defmacro assert-health-check-headers
+  [health-check-authentication http-client service-password waiter-principal request-headers]
+  `(let [health-check-authentication# ~health-check-authentication
+         http-client# ~http-client
+         service-password# ~service-password
+         waiter-principal# ~waiter-principal
+         request-headers# ~request-headers
+         expected-headers# (cond-> {"host" "www.example.com"
+                                    "user-agent" (some-> http-client# .getUserAgentField .getValue)}
+                             (= "standard" health-check-authentication#)
+                             (merge (headers/retrieve-basic-auth-headers "waiter" service-password# waiter-principal#)))]
+     (is (contains? request-headers# "x-cid"))
+     (is (= expected-headers# (dissoc request-headers# "x-cid")))))
+
 (deftest test-available?
   (let [http-client (HttpClient.)
-        health-check-proto "http"
+        service-password "test-password"
+        service-id->password-fn (constantly service-password)
         scheduler-name "test-scheduler"
+        waiter-principal "waiter@test.com"
+        health-check-proto "http"
+        available-fn? (fn available-fn? [service-instance service-description]
+                        (available? service-id->password-fn http-client scheduler-name
+                                    service-instance service-description))
         service-instance {:extra-ports [81] :host "www.example.com" :port 80}
         service-description {"health-check-proto" health-check-proto
                              "health-check-port-index" 0
                              "health-check-url" "/health-check"}]
+
     (.setConnectTimeout http-client 200)
     (.setIdleTimeout http-client 200)
+    (.setUserAgentField http-client (HttpField. "user-agent" "waiter-test"))
 
-    (testing "unknown host"
-      (let [service-instance {:host "www.example.com"}
-            resp (async/<!! (available? http-client scheduler-name service-instance service-description))]
-        (is (= {:error :unknown-authority :healthy? false} resp)))
-      (let [service-instance {:host "www.example.com" :port 0}
-            resp (async/<!! (available? http-client scheduler-name service-instance service-description))]
-        (is (= {:error :unknown-authority :healthy? false} resp)))
-      (let [service-instance {:port 80}
-            resp (async/<!! (available? http-client scheduler-name service-instance service-description))]
-        (is (= {:error :unknown-authority :healthy? false} resp)))
-      (let [service-instance {:host "0.0.0.0" :port 80}
-            resp (async/<!! (available? http-client scheduler-name service-instance service-description))]
-        (is (= {:error :unknown-authority :healthy? false} resp))))
+    (with-redefs [config/retrieve-waiter-principal (constantly waiter-principal)]
 
-    (with-redefs [http/get (fn [in-http-client in-health-check-url _]
-                             (is (= http-client in-http-client))
-                             (is (= "http://www.example.com:80/health-check" in-health-check-url))
-                             (let [response-chan (async/promise-chan)]
-                               (async/>!! response-chan {:status 200})
-                               response-chan))]
-      (let [resp (async/<!! (available? http-client scheduler-name service-instance service-description))]
-        (is (= {:error nil, :healthy? true, :status 200} resp))))
-    (with-redefs [http/get (fn [in-http-client in-health-check-url _]
-                             (is (= http-client in-http-client))
-                             (is (= "http://www.example.com:81/health-check" in-health-check-url))
-                             (throw (IllegalArgumentException. "Unable to make request")))]
-      (let [service-description (assoc service-description "health-check-port-index" 1)
-            resp (async/<!! (available? http-client scheduler-name service-instance service-description))]
-        (is (= {:healthy? false} resp))))
-    (let [abort-chan-atom (atom nil)]
-      (with-redefs [http/get (fn [in-http-client in-health-check-url in-request-config]
-                               (reset! abort-chan-atom (:abort-ch in-request-config))
-                               (is (= http-client in-http-client))
-                               (is (= "http://www.example.com:80/health-check" in-health-check-url))
-                               (async/promise-chan))]
-        (let [resp (async/<!! (available? http-client scheduler-name service-instance service-description))]
-          (is (= {:error :operation-timeout, :healthy? false, :status nil} resp)))
-        (let [abort-chan @abort-chan-atom]
-          (is (au/chan? abort-chan))
-          (when (au/chan? abort-chan)
-            (is (protocols/closed? abort-chan))
-            (let [[abort-ex abort-cb] (async/<!! abort-chan)]
-              (is (instance? TimeoutException abort-ex))
-              (is abort-cb))))))))
+      (testing "unknown host"
+        (let [service-instance {:host "www.example.com"}
+              resp (async/<!! (available-fn? service-instance service-description))]
+          (is (= {:error :unknown-authority :healthy? false} resp)))
+        (let [service-instance {:host "www.example.com" :port 0}
+              resp (async/<!! (available-fn? service-instance service-description))]
+          (is (= {:error :unknown-authority :healthy? false} resp)))
+        (let [service-instance {:port 80}
+              resp (async/<!! (available-fn? service-instance service-description))]
+          (is (= {:error :unknown-authority :healthy? false} resp)))
+        (let [service-instance {:host "0.0.0.0" :port 80}
+              resp (async/<!! (available-fn? service-instance service-description))]
+          (is (= {:error :unknown-authority :healthy? false} resp))))
+
+      (doseq [health-check-authentication ["disabled" "standard"]]
+        (let [service-description (assoc service-description "health-check-authentication" health-check-authentication)]
+
+          (with-redefs [http/get (fn [in-http-client in-health-check-url {:keys [headers]}]
+                                   (is (= http-client in-http-client))
+                                   (is (= "http://www.example.com:80/health-check" in-health-check-url))
+                                   (assert-health-check-headers
+                                     health-check-authentication http-client service-password waiter-principal headers)
+                                   (let [response-chan (async/promise-chan)]
+                                     (async/>!! response-chan {:status 200})
+                                     response-chan))]
+            (let [resp (async/<!! (available-fn? service-instance service-description))]
+              (is (= {:error nil, :healthy? true, :status 200} resp))))
+
+          (with-redefs [http/get (fn [in-http-client in-health-check-url {:keys [headers]}]
+                                   (is (= http-client in-http-client))
+                                   (is (= "http://www.example.com:81/health-check" in-health-check-url))
+                                   (assert-health-check-headers
+                                     health-check-authentication http-client service-password waiter-principal headers)
+                                   (throw (IllegalArgumentException. "Unable to make request")))]
+            (let [service-description (assoc service-description "health-check-port-index" 1)
+                  resp (async/<!! (available-fn? service-instance service-description))]
+              (is (= {:healthy? false} resp))))
+
+          (let [abort-chan-atom (atom nil)]
+            (with-redefs [http/get (fn [in-http-client in-health-check-url {:keys [headers] :as in-request-config}]
+                                     (reset! abort-chan-atom (:abort-ch in-request-config))
+                                     (is (= http-client in-http-client))
+                                     (is (= "http://www.example.com:80/health-check" in-health-check-url))
+                                     (assert-health-check-headers
+                                       health-check-authentication http-client service-password waiter-principal headers)
+                                     (async/promise-chan))]
+              (let [resp (async/<!! (available-fn? service-instance service-description))]
+                (is (= {:error :operation-timeout, :healthy? false, :status nil} resp)))
+              (let [abort-chan @abort-chan-atom]
+                (is (au/chan? abort-chan))
+                (when (au/chan? abort-chan)
+                  (is (protocols/closed? abort-chan))
+                  (let [[abort-ex abort-cb] (async/<!! abort-chan)]
+                    (is (instance? TimeoutException abort-ex))
+                    (is abort-cb)))))))))))
 
 (defmacro check-trackers
   [all-trackers assertion-maps]

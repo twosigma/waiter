@@ -751,13 +751,28 @@
   (let [unresolved-image (or image default-container-image)]
     (get image-aliases unresolved-image unresolved-image)))
 
+(defn prepare-health-check-probe
+  "Returns the configuration for a basic health check probe."
+  [service-id->password-fn service-id health-check-authentication
+   health-check-scheme health-check-url health-check-port health-check-interval-secs]
+  {:httpGet (cond-> {:path health-check-url
+                     :port health-check-port
+                     :scheme health-check-scheme}
+              (= "standard" health-check-authentication)
+              (assoc :httpHeaders
+                     (->> (scheduler/retrieve-auth-headers service-id->password-fn service-id)
+                       (map (fn [[k v]] {:name k :value v})))))
+   :periodSeconds health-check-interval-secs
+   :timeoutSeconds 1})
+
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
   [{:keys [cluster-name fileserver pod-base-port pod-sigkill-delay-secs
            replicaset-api-version service-id->password-fn] :as scheduler}
    service-id
-   {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs health-check-max-consecutive-failures
-           health-check-port-index health-check-proto image mem min-instances namespace ports run-as-user]
+   {:strs [backend-proto cmd cpus grace-period-secs health-check-authentication health-check-interval-secs
+           health-check-max-consecutive-failures health-check-port-index health-check-proto image
+           mem min-instances namespace ports run-as-user]
     :as service-description}
    {:keys [container-init-commands default-container-image default-namespace log-bucket-url image-aliases]
     :as context}]
@@ -840,24 +855,25 @@
                                               :env env
                                               :image (compute-image image default-container-image image-aliases)
                                               :imagePullPolicy "IfNotPresent"
-                                              :livenessProbe {:httpGet {:path health-check-url
-                                                                        :port health-check-port
-                                                                        :scheme health-check-scheme}
-                                                              ;; We increment the threshold value to match Marathon behavior.
-                                                              ;; Marathon treats this as a retry count,
-                                                              ;; whereas Kubernetes treats it as a run count.
-                                                              :failureThreshold (inc health-check-max-consecutive-failures)
-                                                              :initialDelaySeconds grace-period-secs
-                                                              :periodSeconds health-check-interval-secs
-                                                              :timeoutSeconds 1}
+                                              :livenessProbe (-> (prepare-health-check-probe
+                                                                   service-id->password-fn service-id
+                                                                   health-check-authentication health-check-scheme
+                                                                   health-check-url health-check-port
+                                                                   health-check-interval-secs)
+                                                               (assoc
+                                                                 ;; We increment the threshold value to match Marathon behavior.
+                                                                 ;; Marathon treats this as a retry count,
+                                                                 ;; whereas Kubernetes treats it as a run count.
+                                                                 :failureThreshold (inc health-check-max-consecutive-failures)
+                                                                 :initialDelaySeconds grace-period-secs))
                                               :name "waiter-app"
                                               :ports [{:containerPort port0}]
-                                              :readinessProbe {:httpGet {:path health-check-url
-                                                                         :port health-check-port
-                                                                         :scheme health-check-scheme}
-                                                               :failureThreshold 1
-                                                               :periodSeconds health-check-interval-secs
-                                                               :timeoutSeconds 1}
+                                              :readinessProbe (-> (prepare-health-check-probe
+                                                                    service-id->password-fn service-id
+                                                                    health-check-authentication health-check-scheme
+                                                                    health-check-url health-check-port
+                                                                    health-check-interval-secs)
+                                                                (assoc :failureThreshold 1))
                                               :resources {:limits {:memory memory}
                                                           :requests {:cpu cpus
                                                                      :memory memory}}

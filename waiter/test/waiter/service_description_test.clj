@@ -76,6 +76,11 @@
     (is (s/check service-description-schema (assoc basic-description "grace-period-secs" -1)))
     (is (s/check service-description-schema (assoc basic-description "grace-period-secs" (t/in-seconds (t/minutes 75)))))
 
+    (is (nil? (s/check service-description-schema (assoc basic-description "health-check-authentication" "disabled"))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "health-check-authentication" "standard"))))
+    (is (not (nil? (s/check service-description-schema (assoc basic-description "health-check-authentication" "jwt")))))
+    (is (not (nil? (s/check service-description-schema (assoc basic-description "health-check-authentication" "saml")))))
+
     (is (nil? (s/check service-description-schema (assoc basic-description "health-check-port-index" 0))))
     (is (nil? (s/check service-description-schema (assoc basic-description "health-check-port-index" 1))))
     (is (nil? (s/check service-description-schema (assoc basic-description "health-check-port-index" 9))))

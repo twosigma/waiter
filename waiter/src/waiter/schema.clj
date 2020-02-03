@@ -79,6 +79,11 @@
   "Validator for number of ports."
   (s/pred #(<= 1 % 10) 'between-1-and-10))
 
+(def valid-health-check-authentication
+  "Validator for health check authentication.
+   Valid values are 'disabled' and 'standard'."
+  (s/constrained non-empty-string #{"disabled" "standard"} 'invalid-health-check-authentication))
+
 (def valid-health-check-port-index
   "Validator for health check port index."
   (s/pred #(<= 0 % 9) 'between-0-and-9))

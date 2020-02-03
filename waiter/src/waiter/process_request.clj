@@ -903,7 +903,8 @@
                                (getOutputStream [] servlet-output-stream)
                                (flushBuffer [] (.flush servlet-output-stream)))
             new-request (-> request
-                          (select-keys [:character-encoding :client-protocol :content-type :descriptor :headers
+                          (select-keys [:authorization/principal  :authorization/user
+                                        :character-encoding :client-protocol :content-type :descriptor :headers
                                         :internal-protocol :remote-addr :request-id :request-time :router-id
                                         :scheme :server-name :server-port :support-info])
                           (attach-empty-content)
