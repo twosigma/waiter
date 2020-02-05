@@ -27,6 +27,7 @@
             [slingshot.slingshot :as ss]
             [waiter.config :as config]
             [waiter.correlation-id :as cid]
+            [waiter.headers :as headers]
             [waiter.metrics :as metrics]
             [waiter.request-log :as rlog]
             [waiter.statsd :as statsd]
@@ -241,11 +242,25 @@
   [{:strs [backend-proto health-check-proto]}]
   (or health-check-proto backend-proto))
 
+(defn retrieve-auth-headers
+  "Retrieves the map of auth headers to be passed to health checks."
+  [service-id->password-fn service-id]
+  (let [service-password (service-id->password-fn service-id)
+        waiter-principal (config/retrieve-waiter-principal)]
+    (headers/retrieve-basic-auth-headers
+      "waiter" service-password waiter-principal)))
+
+(defn merge-auth-headers
+  "Merges the map of auth headers to be passed to health checks with the existing headers."
+  [existing-headers service-id->password-fn service-id]
+  (merge existing-headers
+         (retrieve-auth-headers service-id->password-fn service-id)))
+
 (defn available?
   "Async go block which returns the status code and success of a health check.
    Returns {:healthy? false} if such a connection cannot be established."
-  [^HttpClient http-client scheduler-name {:keys [host port service-id] :as service-instance}
-   {:strs [health-check-port-index health-check-url] :as service-description}]
+  [service-id->password-fn ^HttpClient http-client scheduler-name {:keys [host port service-id] :as service-instance}
+   {:strs [health-check-authentication health-check-port-index health-check-url] :as service-description}]
   (async/go
     (try
       (if (and port (pos? port) host (not= UNKNOWN-IP host))
@@ -256,9 +271,11 @@
               request-time (t/now)
               request-time-ns (System/nanoTime)
               correlation-id (str "waiter-health-check-" (utils/unique-identifier))
-              request-headers {"host" host
-                               "user-agent" (some-> http-client .getUserAgentField .getValue)
-                               "x-cid" correlation-id}
+              request-headers (cond-> {"host" host
+                                       "user-agent" (some-> http-client .getUserAgentField .getValue)
+                                       "x-cid" correlation-id}
+                                (= "standard" health-check-authentication)
+                                (merge-auth-headers service-id->password-fn service-id))
               health-check-response-chan (http/get http-client instance-health-check-url
                                                    {:abort-ch request-abort-chan
                                                     :headers request-headers})

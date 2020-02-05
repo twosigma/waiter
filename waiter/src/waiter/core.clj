@@ -827,7 +827,7 @@
                                               metric-group-mappings :effective? effective?)))
    :start-scheduler-syncer-fn (pc/fnk [[:settings [:health-check-config health-check-timeout-ms failed-check-threshold]]
                                        [:state clock user-agent-version]
-                                       service-id->service-description-fn*]
+                                       service-id->password-fn* service-id->service-description-fn*]
                                 (let [http-client (hu/http-client-factory
                                                     {:client-name (str "waiter-syncer-" user-agent-version)
                                                      :conn-timeout health-check-timeout-ms
@@ -835,7 +835,8 @@
                                                      :user-agent (str "waiter-syncer/" user-agent-version)})
                                       available? (fn scheduler-available?
                                                    [scheduler-name service-instance service-description]
-                                                   (scheduler/available? http-client scheduler-name service-instance service-description))]
+                                                   (scheduler/available? service-id->password-fn* http-client
+                                                                         scheduler-name service-instance service-description))]
                                   (fn start-scheduler-syncer-fn
                                     [scheduler-name get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs]
                                     (let [timer-ch (-> scheduler-syncer-interval-secs t/seconds t/in-millis au/timer-chan)]

@@ -15,6 +15,7 @@
 ;;
 (ns waiter.headers
   (:require [cheshire.core :as json]
+            [clojure.data.codec.base64 :as b64]
             [clojure.tools.logging :as log]
             [clojure.string :as str]
             [plumbing.core :as pc]
@@ -26,8 +27,8 @@
 ;; authentication is intentionally missing from this list as we do not support it as an on-the-fly header
 (def ^:const params-with-str-value
   #{"allowed-params" "authentication" "backend-proto" "cmd" "cmd-type" "distribution-scheme" "endpoint-path"
-    "health-check-proto" "health-check-url" "image" "load-balancing" "metric-group" "name" "namespace"
-    "permitted-user" "run-as-user" "token" "version"})
+    "health-check-authentication" "health-check-proto" "health-check-url" "image" "load-balancing"
+    "metric-group" "name" "namespace" "permitted-user" "run-as-user" "token" "version"})
 
 (def ^:const waiter-headers-with-str-value (set (map #(str waiter-header-prefix %) params-with-str-value)))
 
@@ -112,7 +113,26 @@
 (defn assoc-auth-headers
   "`assoc`s the x-waiter-auth-principal and x-waiter-authenticated-principal headers if the
    username and principal are non-nil, respectively."
-  [headers username principal]
-  (cond-> headers
-    username (assoc "x-waiter-auth-principal" username)
-    principal (assoc "x-waiter-authenticated-principal" principal)))
+  ([headers principal]
+   (let [username (first (str/split principal #"@" 2))]
+     (assoc-auth-headers headers username principal)))
+  ([headers username principal]
+   (cond-> headers
+     username (assoc "x-waiter-auth-principal" username)
+     principal (assoc "x-waiter-authenticated-principal" principal))))
+
+(defn basic-auth-header
+  "Constructs the basic auth header for the provided username and password."
+  [username password]
+  (->> (str username ":" password)
+    (.getBytes)
+    (b64/encode)
+    (utils/bytes->str)
+    (str "Basic ")))
+
+(defn retrieve-basic-auth-headers
+  "Constructs the waiter authentication headers for request to a backend."
+  [waiter-username service-password request-principal]
+  (assoc-auth-headers
+    {"authorization" (basic-auth-header waiter-username service-password)}
+    request-principal))

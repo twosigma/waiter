@@ -78,6 +78,7 @@
    (s/optional-key "ports") schema/valid-number-of-ports
    ; start-up related
    (s/optional-key "grace-period-secs") (s/both s/Int (s/pred #(<= 1 % (t/in-seconds (t/minutes 60))) 'at-most-60-minutes))
+   (s/optional-key "health-check-authentication") schema/valid-health-check-authentication
    (s/optional-key "health-check-interval-secs") (s/both s/Int (s/pred #(<= 5 % 60) 'between-5-seconds-and-1-minute))
    (s/optional-key "health-check-max-consecutive-failures") (s/both s/Int (s/pred #(<= 1 % 15) 'at-most-fifteen))
    (s/optional-key "health-check-port-index") schema/valid-health-check-port-index
@@ -126,8 +127,9 @@
     "scale-down-factor" "scale-factor" "scale-up-factor"})
 
 (def ^:const service-non-override-keys
-  #{"allowed-params" "backend-proto" "cmd" "cmd-type" "cpus" "env" "health-check-port-index" "health-check-proto"
-    "health-check-url" "image" "mem" "metadata" "metric-group" "name" "namespace" "permitted-user" "ports" "run-as-user"
+  #{"allowed-params" "backend-proto" "cmd" "cmd-type" "cpus" "env"
+    "health-check-authentication" "health-check-port-index" "health-check-proto" "health-check-url"
+    "image" "mem" "metadata" "metric-group" "name" "namespace" "permitted-user" "ports" "run-as-user"
     "scheduler" "version"})
 
 ; keys used as parameters in the service description
@@ -427,8 +429,11 @@
                                              parameter->issues :grace-period-secs
                                              "grace-period-secs must be an integer in the range [1, 3600].")
                                            (attach-error-message-for-parameter
+                                             parameter->issues :health-check-authentication
+                                             "health-check-authentication must be one of standard or disabled.")
+                                           (attach-error-message-for-parameter
                                              parameter->issues :health-check-port-index
-                                             "health-check-port-index  must be an integer in the range [0, 9].")
+                                             "health-check-port-index must be an integer in the range [0, 9].")
                                            (attach-error-message-for-parameter
                                              parameter->issues :health-check-proto
                                              "health-check-proto, when provided, must be one of h2, h2c, http, or https.")

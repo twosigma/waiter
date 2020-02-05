@@ -138,6 +138,7 @@
                                                    (s/required-key "env") {s/Str s/Str}
                                                    (s/required-key "expired-instance-restart-rate") schema/positive-fraction-less-than-or-equal-to-1
                                                    (s/required-key "grace-period-secs") schema/positive-int
+                                                   (s/required-key "health-check-authentication") schema/valid-health-check-authentication
                                                    (s/required-key "health-check-interval-secs") schema/positive-int
                                                    (s/required-key "health-check-max-consecutive-failures") schema/positive-int
                                                    (s/required-key "health-check-port-index") schema/valid-health-check-port-index
@@ -430,6 +431,7 @@
                                   "env" {}
                                   "expired-instance-restart-rate" 0.1
                                   "grace-period-secs" 30
+                                  "health-check-authentication" "disabled"
                                   "health-check-interval-secs" 10
                                   "health-check-max-consecutive-failures" 5
                                   "health-check-port-index" 0

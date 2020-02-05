@@ -57,6 +57,7 @@ _async_state_lock = threading.Lock()
 _async_state = {}
 
 _allow_response_status_change = False
+_authenticated_health_checks = False
 _default_response_status = 200
 
 _counter_lock = threading.Lock()
@@ -509,7 +510,9 @@ class Kitchen(HTTPWebSocketsHandler):
         """Validate user authentication credentials, with exceptions for excluded endpoints."""
         if _auth_handler is None:
             return True
-        elif self.__path in ['/bad-status', '/sleep', '/status']:
+        elif self.__path in ['/bad-status', '/sleep']:
+            return True
+        elif not _authenticated_health_checks and self.__path == '/status':
             return True
         else:
             auth_string = self.headers.get('Authorization')
@@ -879,7 +882,11 @@ class Kitchen(HTTPWebSocketsHandler):
 
         if self.__response_bytes is None:
             # Set default response
-            self.__set_response(b'Hello World')
+            auth_user = self.headers.get('x-waiter-auth-principal')
+            greeting_subject = 'World'
+            if _authenticated_health_checks and auth_user:
+                greeting_subject = auth_user
+            self.__set_response('Hello {}'.format(greeting_subject).encode())
 
     def __resource_async_create(self):
         req_id = self.__async_req.get('id') or str(uuid.uuid4())
@@ -1042,8 +1049,11 @@ class BasicAuthHandler():
 
 
 def main():
-    global kitchen_logger, _allow_response_status_change, _auth_handler, binary_max_size, text_max_size
+    global kitchen_logger, _allow_response_status_change, _auth_handler, _authenticated_health_checks, \
+        binary_max_size, text_max_size
     parser = argparse.ArgumentParser(description='A toy HTTP Service for testing the Waiter platform')
+    parser.add_argument('--enable-health-check-authentication', action='store_true', default=False,
+            help='Enable authentication on health checks')
     parser.add_argument('--enable-status-change', action='store_true', default=False,
             help='Enables option to configure default response status using the x-kitchen-default-status-value header')
     parser.add_argument('--hostname', metavar='HOSTNAME', default='', help='Server host name')
@@ -1073,6 +1083,10 @@ def main():
     if username and password:
         kitchen_logger.info('Basic Authentication Enabled')
         _auth_handler = BasicAuthHandler(username, password)
+
+    if args.enable_health_check_authentication:
+        kitchen_logger.info('Health check authentication enabled')
+        _authenticated_health_checks = True
 
     if args.ssl:
         cert_path = os.environ.get('CERT_PATH')

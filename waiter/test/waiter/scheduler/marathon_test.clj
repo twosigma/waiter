@@ -635,6 +635,7 @@
                                    "ports" 2
                                    "restart-backoff-factor" 2
                                    "grace-period-secs" 111
+                                   "health-check-authentication" "disabled"
                                    "health-check-interval-secs" 10
                                    "health-check-max-consecutive-failures" 5
                                    "health-check-port-index" 0
