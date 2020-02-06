@@ -626,6 +626,17 @@
    :clock (pc/fnk [] t/now)
    :cors-validator (pc/fnk [[:settings cors-config]]
                      (utils/create-component cors-config))
+   :custom-components (pc/fnk [[:curator synchronize-fn]
+                               [:settings custom-components]
+                               kv-store-factory leader?-fn]
+                        (let [context {:kv-store-factory kv-store-factory
+                                       :leader?-fn leader?-fn
+                                       :synchronize-fn synchronize-fn}]
+                          (pc/map-vals
+                            (fn [{:keys [factory-fn] :as component-config}]
+                              (let [resolved-factory-fn (utils/resolve-symbol! factory-fn)]
+                                (resolved-factory-fn (merge context component-config))))
+                            custom-components)))
    :discovery (pc/fnk [[:curator curator]
                        [:settings [:cluster-config name] [:zookeeper base-path discovery-relative-path] host port]
                        router-id]
@@ -650,10 +661,14 @@
                           (when (not= :disabled jwt-config)
                             (let [jwt-config (assoc jwt-config :password (first passwords))]
                               (jwt/jwt-authenticator jwt-config)))))
-   :kv-store (pc/fnk [[:curator curator]
-                      [:settings [:zookeeper base-path] kv-config]
-                      passwords]
-               (kv/new-kv-store kv-config curator base-path passwords))
+   :kv-store (pc/fnk [[:settings kv-config]
+                      kv-store-factory]
+               (kv-store-factory kv-config))
+   :kv-store-factory (pc/fnk [[:curator curator]
+                              [:settings [:zookeeper base-path]]
+                              passwords]
+                       (fn kv-store-factory [kv-config]
+                         (kv/new-kv-store kv-config curator base-path passwords)))
    :leader?-fn (pc/fnk [[:settings [:cluster-config min-routers]]
                         router-id
                         discovery leader-latch]
@@ -696,10 +711,9 @@
    :scheduler-interactions-thread-pool (pc/fnk [] (Executors/newFixedThreadPool 20))
    :scheduler-state-chan (pc/fnk [] (au/latest-chan))
    :server-name (pc/fnk [[:settings git-version]] (str "waiter/" (str/join (take 7 git-version))))
-   :service-description-builder (pc/fnk [[:curator curator synchronize-fn]
-                                         [:settings service-description-builder-config service-description-constraints
-                                          [:zookeeper base-path]]
-                                         leader?-fn passwords]
+   :service-description-builder (pc/fnk [[:curator synchronize-fn]
+                                         [:settings service-description-builder-config service-description-constraints]
+                                         custom-components kv-store-factory leader?-fn]
                                   (when-let [unknown-keys (-> service-description-constraints
                                                             keys
                                                             set
@@ -708,9 +722,8 @@
                                     (throw (ex-info "Unsupported keys present in the service description constraints"
                                                     {:service-description-constraints service-description-constraints
                                                      :unsupported-keys (-> unknown-keys vec sort)})))
-                                  (let [kv-store-factory (fn kv-store-factory [kv-config]
-                                                           (kv/new-kv-store kv-config curator base-path passwords))
-                                        context {:constraints service-description-constraints
+                                  (let [context {:constraints service-description-constraints
+                                                 :custom-components custom-components
                                                  :kv-store-factory kv-store-factory
                                                  :leader?-fn leader?-fn
                                                  :synchronize-fn synchronize-fn}]
@@ -794,13 +807,14 @@
 
 (def scheduler
   {:scheduler (pc/fnk [[:settings scheduler-config scheduler-syncer-interval-secs]
-                       [:state leader?-fn scheduler-state-chan service-id-prefix]
+                       [:state custom-components leader?-fn scheduler-state-chan service-id-prefix]
                        service-id->password-fn*
                        service-id->service-description-fn*
                        start-scheduler-syncer-fn]
                 (let [is-waiter-service?-fn (fn is-waiter-service? [^String service-id]
                                               (str/starts-with? service-id service-id-prefix))
-                      scheduler-context {:is-waiter-service?-fn is-waiter-service?-fn
+                      scheduler-context {:custom-components custom-components
+                                         :is-waiter-service?-fn is-waiter-service?-fn
                                          :leader?-fn leader?-fn
                                          :scheduler-name (-> scheduler-config :kind utils/keyword->str)
                                          :scheduler-state-chan scheduler-state-chan

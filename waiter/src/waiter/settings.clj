@@ -42,6 +42,7 @@
                                      (s/required-key :name) schema/non-empty-string
                                      (s/required-key :service-prefix) schema/non-empty-string}
    (s/required-key :consent-expiry-days) schema/positive-int
+   (s/required-key :custom-components) {s/Keyword schema/require-symbol-factory-fn}
    (s/required-key :deployment-error-config) {(s/required-key :min-failed-instances) schema/positive-int
                                               (s/required-key :min-hosts) schema/positive-int}
    (s/required-key :entitlement-config) (s/constrained
@@ -276,6 +277,7 @@
                     :name "waiter"
                     :service-prefix "waiter-service-"}
    :consent-expiry-days 90
+   :custom-components {}
    :deployment-error-config {:min-failed-instances 2
                              :min-hosts 2}
    :entitlement-config {:kind :simple
