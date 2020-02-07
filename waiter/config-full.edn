@@ -897,6 +897,11 @@
 
  ; ---------- Miscellaneous ----------
 
+ ;; Custom components allow sharing of components between the scheduler and service description builder.
+ ;; The values in the entries must contain a :factory-fn and the necessary config for the component.
+ ;; Components also get passed in the :kv-store-factory, :leader?-fn and :synchronize-fn for use in the factory.
+ :custom-components {:in-memory-kv-store {:factory-fn waiter.kv/new-local-kv-store}}
+
  ;; Certain messages that Waiter returns can be customized:
  :messages {:backend-request-failed "Request to service backend failed"
             :backend-request-timed-out "Request to service backend timed out"
