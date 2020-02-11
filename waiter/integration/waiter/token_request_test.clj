@@ -1098,7 +1098,7 @@
                                :env {"BINARY" binary
                                      "FEE" "FIE"
                                      "FOO" "BAR"}
-                               :name "test-token-param-support"
+                               :name (rand-name)
                                :version "does-not-matter"}
           kitchen-request #(make-kitchen-request waiter-url % :path "/environment")]
       (try
