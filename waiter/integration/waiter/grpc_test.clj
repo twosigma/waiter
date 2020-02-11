@@ -575,7 +575,7 @@
                     (Thread/sleep 1500) ;; sleep to allow cancellation propagation to backend
                     (assert-request-state grpc-client request-headers service-id correlation-id ::client-cancel)))))))))))
 
-(deftest ^:parallel ^:integration-slow ^:explicit test-grpc-bidi-streaming-server-exit
+(deftest ^:parallel ^:integration-slow test-grpc-bidi-streaming-server-exit
   (testing-using-waiter-url
     (let [num-messages 120
           num-iterations 3
@@ -724,7 +724,7 @@
 ;;  :status {:code "OK", :description nil}}
 ;; expected: "INIT"
 ;;   actual: nil
-(deftest ^:parallel ^:integration-fast ^:explicit test-grpc-client-streaming-client-cancellation
+(deftest ^:parallel ^:integration-fast test-grpc-client-streaming-client-cancellation
   (testing-using-waiter-url
     ;; TODO undo after fix to https://github.com/haproxy/haproxy/issues/172
     (when-not (behind-proxy? waiter-url)
@@ -791,7 +791,7 @@
 ;; {:body nil, :result "timed-out"}
 ;; expected: "received-response"
 ;;   actual: "timed-out"
-(deftest ^:parallel ^:integration-fast ^:explicit test-grpc-client-streaming-deadline-exceeded
+(deftest ^:parallel ^:integration-fast test-grpc-client-streaming-deadline-exceeded
   (testing-using-waiter-url
     (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)
           correlation-id-prefix (rand-name)]
@@ -896,7 +896,7 @@
 ;; :status {:code "OK", :description nil}}
 ;; expected: 1
 ;;   actual: 0
-(deftest ^:parallel ^:integration-slow ^:explicit test-grpc-client-streaming-server-cancellation
+(deftest ^:parallel ^:integration-slow test-grpc-client-streaming-server-cancellation
   (testing-using-waiter-url
     (let [num-messages 120
           num-iterations 3
