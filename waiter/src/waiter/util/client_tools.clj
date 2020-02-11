@@ -115,6 +115,12 @@
   (or (System/getenv "WAITER_H2C_PORT")
       (retrieve-waiter-port waiter-url)))
 
+(defn retrieve-grpc-cleartext-port
+  "Retrieves the Waiter port for receiving grpc requests over cleartext."
+  [waiter-url]
+  (or (System/getenv "WAITER_GRPC_CLEARTEXT_PORT")
+      (retrieve-h2c-port waiter-url)))
+
 (defn retrieve-h2c-url
   "Retrieves the Waiter url for receiving h2c requests."
   [waiter-url]

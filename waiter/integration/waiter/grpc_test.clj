@@ -80,7 +80,7 @@
 (defn start-courier-instance
   [waiter-url]
   (let [[host _] (str/split waiter-url #":")
-        h2c-port (Integer/parseInt (retrieve-h2c-port waiter-url))
+        h2c-port (Integer/parseInt (retrieve-grpc-cleartext-port waiter-url))
         request-headers (basic-grpc-service-parameters)
         {:keys [cookies headers] :as response} (ping-courier-service waiter-url request-headers)
         cookie-header (str/join "; " (map #(str (:name %) "=" (:value %)) cookies))
