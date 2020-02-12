@@ -142,12 +142,6 @@
        ":"
        (retrieve-ssl-port ssl-port)))
 
-(defn behind-proxy?
-  "Returns true if Waiter if running behind a proxy."
-  [waiter-url]
-  (not= (retrieve-waiter-port waiter-url)
-        (retrieve-h2c-port waiter-url)))
-
 (defn interval-to-str [^Period interval]
   (let [builder (doto (PeriodFormatterBuilder.)
                   (.printZeroNever)
