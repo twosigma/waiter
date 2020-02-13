@@ -142,6 +142,20 @@
        ":"
        (retrieve-ssl-port ssl-port)))
 
+(defn behind-proxy?
+  "Returns true if Waiter if running behind a proxy."
+  [waiter-url]
+  (not= (retrieve-waiter-port waiter-url)
+        (retrieve-h2c-port waiter-url)))
+
+(defn grpc-cancellations-supported?
+  "Returns true if gRPC cancellations are supported.
+   Certain proxies, e.g. haproxy https://github.com/haproxy/haproxy/issues/172, do not support cancellations.
+   Other proxies, e.g. Envoy, do support gRPC cancellations."
+  [waiter-url]
+  (or (not (behind-proxy? waiter-url))
+      (not (str/blank? (System/getenv "WAITER_GRPC_CLEARTEXT_PORT")))))
+
 (defn interval-to-str [^Period interval]
   (let [builder (doto (PeriodFormatterBuilder.)
                   (.printZeroNever)
