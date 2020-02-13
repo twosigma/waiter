@@ -181,7 +181,7 @@
 
 (defn retrieve-request-state
   "Retrieves the request state for the specified correlation-id.
-   When timeout is proivded, retries for specified interval until state contains CLOSED."
+   When timeout is provided, retries for specified interval until state contains CLOSED."
   ([grpc-client request-headers query-correlation-id]
    (let [state-correlation-id (rand-name)
          state-request-headers (assoc request-headers "x-cid" state-correlation-id)]
@@ -191,8 +191,10 @@
          (fn retrieve-closed-request-state []
            (when-let [^GrpcClient$RpcResult rpc-result
                       (retrieve-request-state grpc-client request-headers query-correlation-id)]
+             (log/info "retrieve-request-state:" query-correlation-id
+                       {:result(.result rpc-result) :status (.status rpc-result)})
              (let [^StateReply reply (.result rpc-result)
-                   states (seq (.getStateList reply))]
+                   states (some-> reply .getStateList seq)]
                (log/info "retrieve-request-state:" query-correlation-id
                          {:cid (some-> reply .getCid) :state (some-> reply .getStateList)})
                (when (some #(= "CLOSE" %) states)

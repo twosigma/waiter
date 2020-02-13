@@ -36,7 +36,7 @@
                   :exclusions [[commons-codec]]]
                  ;; resolve the cheshire dependency used by buddy and jet
                  [cheshire "5.9.0"]
-                 [twosigma/courier "1.5.14"
+                 [twosigma/courier "1.5.15"
                   :exclusions [com.google.guava/guava io.grpc/grpc-core]
                   :scope "test"]
                  ;; avoids the following:
