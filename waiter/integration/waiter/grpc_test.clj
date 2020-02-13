@@ -820,9 +820,14 @@
                                         (into (sorted-map))
                                         str)]
                 (log/info correlation-id "aggregated packages...")
-                ;; TODO undo after fix to https://github.com/haproxy/haproxy/issues/172
-                (if (= "UNAVAILABLE" (some-> status .getCode str))
-                  (assert-grpc-status status "UNAVAILABLE" "Received Rst Stream" assertion-message)
+                (condp = (some-> status .getCode str)
+                  "UNAVAILABLE"
+                  (assert-grpc-status status "UNAVAILABLE" "Received Rst Stream"
+                                      assertion-message)
+                  "INVALID_ARGUMENT"
+                  (assert-grpc-status status "INVALID_ARGUMENT" "Client action means stream is no longer needed"
+                                      assertion-message)
+                  ;; default
                   (assert-grpc-deadline-exceeded-status status assertion-message))
                 (is (nil? summary) assertion-message)
                 (.await sleep-duration-latch)
