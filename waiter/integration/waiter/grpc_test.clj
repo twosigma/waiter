@@ -794,45 +794,42 @@
           (let [num-messages 120
                 messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))]
 
-            (testing (str max-message-length " messages completion")
-              (log/info "starting streaming to and from server - independent mode test")
-              (let [cancel-threshold (inc num-messages)
-                    from (rand-name "f")
-                    correlation-id (str correlation-id-prefix "-" max-message-length)
-                    request-headers (assoc request-headers "x-cid" correlation-id)
-                    ids (map #(str "id-" %) (range num-messages))
-                    grpc-client (initialize-grpc-client correlation-id host h2c-port)
-                    sleep-duration-latch (CountDownLatch. 1)
-                    sleep-duration-ms 5000
-                    deadline-duration-ms (- sleep-duration-ms 1000)
-                    _ (async/go
-                        (async/<! (async/timeout (+ sleep-duration-ms 1000)))
-                        (.countDown sleep-duration-latch))
-                    rpc-result (.aggregatePackages grpc-client request-headers ids from messages 1000
-                                                   cancel-threshold cancel-policy-none deadline-duration-ms)
-                    ^CourierSummary summary (.result rpc-result)
-                    ^Status status (.status rpc-result)
-                    assertion-message (->> (cond-> {:correlation-id correlation-id
-                                                    :service-id service-id}
-                                             summary (assoc :summary {:num-messages (.getNumMessages summary)
-                                                                      :total-length (.getTotalLength summary)})
-                                             status (assoc :status {:code (-> status .getCode str)
-                                                                    :description (.getDescription status)}))
-                                        (into (sorted-map))
-                                        str)]
-                (log/info correlation-id "aggregated packages...")
-                (condp = (some-> status .getCode str)
-                  "UNAVAILABLE"
-                  (assert-grpc-status status "UNAVAILABLE" "Received Rst Stream"
-                                      assertion-message)
-                  "INVALID_ARGUMENT"
-                  (assert-grpc-status status "INVALID_ARGUMENT" "Client action means stream is no longer needed"
-                                      assertion-message)
-                  ;; default
-                  (assert-grpc-deadline-exceeded-status status assertion-message))
-                (is (nil? summary) assertion-message)
-                (.await sleep-duration-latch)
-                (assert-request-state grpc-client request-headers service-id correlation-id ::deadline-exceeded)))))))))
+              (testing (str max-message-length " messages completion")
+                (log/info "starting streaming to and from server - independent mode test")
+                (let [cancel-threshold (inc num-messages)
+                      from (rand-name "f")
+                      correlation-id (str correlation-id-prefix "-" max-message-length)
+                      request-headers (assoc request-headers "x-cid" correlation-id)
+                      ids (map #(str "id-" %) (range num-messages))
+                      grpc-client (initialize-grpc-client correlation-id host h2c-port)
+                      sleep-duration-latch (CountDownLatch. 1)
+                      sleep-duration-ms 5000
+                      deadline-duration-ms (- sleep-duration-ms 1000)
+                      _ (async/go
+                          (async/<! (async/timeout (+ sleep-duration-ms 1000)))
+                          (.countDown sleep-duration-latch))
+                      rpc-result (.aggregatePackages grpc-client request-headers ids from messages 1000
+                                                     cancel-threshold cancel-policy-none deadline-duration-ms)
+                      ^CourierSummary summary (.result rpc-result)
+                      ^Status status (.status rpc-result)
+                      assertion-message (->> (cond-> {:correlation-id correlation-id
+                                                      :service-id service-id}
+                                               summary (assoc :summary {:num-messages (.getNumMessages summary)
+                                                                        :total-length (.getTotalLength summary)})
+                                               status (assoc :status {:code (-> status .getCode str)
+                                                                      :description (.getDescription status)}))
+                                          (into (sorted-map))
+                                          str)]
+                  (log/info correlation-id "aggregated packages...")
+                  (condp = (some-> status .getCode str)
+                    "INVALID_ARGUMENT"
+                    (assert-grpc-status status "INVALID_ARGUMENT" "Client action means stream is no longer needed"
+                                        assertion-message)
+                    ;; default
+                    (assert-grpc-deadline-exceeded-status status assertion-message))
+                  (is (nil? summary) assertion-message)
+                  (.await sleep-duration-latch)
+                  (assert-request-state grpc-client request-headers service-id correlation-id ::deadline-exceeded))))))))))
 
 (deftest ^:parallel ^:integration-slow test-grpc-client-streaming-server-exit
   (testing-using-waiter-url
