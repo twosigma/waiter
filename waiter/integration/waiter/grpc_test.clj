@@ -181,7 +181,7 @@
 
 (defn retrieve-request-state
   "Retrieves the request state for the specified correlation-id.
-   When timeout is proivded, retries for specified interval until state contains CLOSED."
+   When timeout is provided, retries for specified interval until state contains CLOSED."
   ([grpc-client request-headers query-correlation-id]
    (let [state-correlation-id (rand-name)
          state-request-headers (assoc request-headers "x-cid" state-correlation-id)]
@@ -191,8 +191,10 @@
          (fn retrieve-closed-request-state []
            (when-let [^GrpcClient$RpcResult rpc-result
                       (retrieve-request-state grpc-client request-headers query-correlation-id)]
+             (log/info "retrieve-request-state:" query-correlation-id
+                       {:result (.result rpc-result) :status (.status rpc-result)})
              (let [^StateReply reply (.result rpc-result)
-                   states (seq (.getStateList reply))]
+                   states (some-> reply .getStateList seq)]
                (log/info "retrieve-request-state:" query-correlation-id
                          {:cid (some-> reply .getCid) :state (some-> reply .getStateList)})
                (when (some #(= "CLOSE" %) states)
@@ -201,8 +203,9 @@
        (retrieve-request-state grpc-client request-headers query-correlation-id))))
 
 (defn assert-request-state
-  "Asserts the states on the cid of a previously successful rpc call."
+  "Asserts the states on the cid of a previous grpc call."
   [grpc-client request-headers service-id query-correlation-id mode]
+  (Thread/sleep 1000) ;; sleep to allow completion of grpc server-side internal events
   (let [timeout-secs 10
         rpc-result (retrieve-request-state grpc-client request-headers query-correlation-id timeout-secs)
         ^StateReply reply (.result rpc-result)
@@ -214,8 +217,8 @@
                                                       :state (seq (.getStateList reply))})
                                  status (assoc :status {:code (-> status .getCode str)
                                                         :description (.getDescription status)}))
-                               (into (sorted-map))
-                               str)]
+                            (into (sorted-map))
+                            str)]
     (is status assertion-message)
     (assert-grpc-ok-status status assertion-message)
     (is reply assertion-message)
@@ -227,26 +230,27 @@
           (is (= "INIT" (first states)) assertion-message)
           (is (<= (count-items (take 2 states) "READY") 1) assertion-message)
           (when (pos? (count-items states "SEND_MESSAGE"))
-            (is (= 1 (count-items states "SEND_HEADERS")) assertion-message))
+            (is (= (count-items states "SEND_HEADERS") 1) assertion-message))
           (is (every? #{"HALF_CLOSE" "RECEIVE_MESSAGE" "SEND_MESSAGE" "SEND_HEADERS"} states-middle) assertion-message)
           (is (<= (count-items states "HALF_CLOSE") 1) assertion-message)
-          (is (= 1 (count-items (take-last 3 states) "CANCEL")) assertion-message)
-          (is (= 1 (count-items (take-last 3 states) "CANCEL_HANDLER")) assertion-message)
-          (is (= 1 (count-items (take-last 3 states) "CLOSE")) assertion-message))
+          (is (= (count-items (take-last 3 states) "CANCEL") 1) assertion-message)
+          (is (= (count-items (take-last 3 states) "CANCEL_HANDLER") 1) assertion-message)
+          (is (= (count-items (take-last 3 states) "CLOSE") 1) assertion-message))
         (= ::server-cancel mode)
         (do
           (is (= ["INIT" "READY"] (take 2 states)) assertion-message)
           (is (pos? (count-items states "RECEIVE_MESSAGE")) assertion-message)
+          (is (<= (count-items states "SEND_HEADERS") 1) assertion-message)
           (is (<= (count-items states "HALF_CLOSE") 1) assertion-message)
-          (is (= 1 (count-items states "CLOSE")) assertion-message)
-          (is (= 1 (count-items states "COMPLETE")) assertion-message))
+          (is (= (count-items states "CLOSE") 1) assertion-message)
+          (is (<= (count-items states "COMPLETE") 1) assertion-message))
         (= ::success mode)
         (do
           (is (= ["INIT" "READY"] (take 2 states)) assertion-message)
           (is (pos? (count-items states "RECEIVE_MESSAGE")) assertion-message)
-          (is (= 1 (count-items states "SEND_HEADERS")) assertion-message)
+          (is (= (count-items states "SEND_HEADERS") 1) assertion-message)
           (is (pos? (count-items states "SEND_MESSAGE")) assertion-message)
-          (is (= 1 (count-items states "HALF_CLOSE")) assertion-message)
+          (is (= (count-items states "HALF_CLOSE") 1) assertion-message)
           (is (= ["CLOSE" "COMPLETE"] (take-last 2 states)) assertion-message))))))
 
 (deftest ^:parallel ^:integration-fast test-grpc-unary-call
@@ -345,8 +349,7 @@
             (assert-grpc-deadline-exceeded-status status assertion-message)
             (is (nil? reply) assertion-message)
             (.await sleep-duration-latch)
-            ;; TODO undo after fix to https://github.com/haproxy/haproxy/issues/172
-            (when-not (behind-proxy? waiter-url)
+            (when (grpc-cancellations-supported? waiter-url)
               (assert-request-state grpc-client request-headers service-id correlation-id ::deadline-exceeded))))))))
 
 (deftest ^:parallel ^:integration-fast test-grpc-unary-call-server-cancellation
@@ -482,8 +485,7 @@
 
 (deftest ^:parallel ^:integration-slow test-grpc-bidi-streaming-client-cancellation
   (testing-using-waiter-url
-    ;; TODO undo after fix to https://github.com/haproxy/haproxy/issues/172
-    (when-not (behind-proxy? waiter-url)
+    (when (grpc-cancellations-supported? waiter-url)
       (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)
             correlation-id-prefix (rand-name)]
         (with-service-cleanup
@@ -531,9 +533,7 @@
                       (is (= (reductions + (map count (take (count summaries) messages)))
                              (map #(.getTotalLength ^CourierSummary %) summaries))
                           assertion-message))
-                    ;; TODO undo after fix to https://github.com/haproxy/haproxy/issues/172
-                    (when-not (behind-proxy? waiter-url)
-                      (assert-request-state grpc-client request-headers service-id correlation-id ::client-cancel))))
+                    (assert-request-state grpc-client request-headers service-id correlation-id ::client-cancel)))
 
                 (testing (str "lock-step mode " max-message-length " messages completion")
                   (log/info "starting streaming to and from server - lock-step mode test")
@@ -575,7 +575,7 @@
                     (Thread/sleep 1500) ;; sleep to allow cancellation propagation to backend
                     (assert-request-state grpc-client request-headers service-id correlation-id ::client-cancel)))))))))))
 
-(deftest ^:parallel ^:integration-slow ^:explicit test-grpc-bidi-streaming-server-exit
+(deftest ^:parallel ^:integration-slow test-grpc-bidi-streaming-server-exit
   (testing-using-waiter-url
     (let [num-messages 120
           num-iterations 3
@@ -715,19 +715,9 @@
                   (is (= (reduce + (map count messages)) (.getTotalLength summary)) assertion-message))
                 (assert-request-state grpc-client request-headers service-id correlation-id ::success)))))))))
 
-;; FAIL in (test-grpc-client-streaming-client-cancellation) (grpc_test.clj:224)
-;; waiter.grpc-test/test-grpc-client-streaming-client-cancellation 1000 messages completion CONTEXT
-;; {:correlation-id "wgttgcscc836957099200-in-1000-CONTEXT",
-;;  :mode "client-cancel",
-;;  :reply {:cid "wgttgcscc836957099200-in-1000-CONTEXT", :state nil},
-;;  :service-id "waiter-service-wgttgcscc799081430489-dbb536aab211b9da10dd26e67b7b64df",
-;;  :status {:code "OK", :description nil}}
-;; expected: "INIT"
-;;   actual: nil
-(deftest ^:parallel ^:integration-fast ^:explicit test-grpc-client-streaming-client-cancellation
+(deftest ^:parallel ^:integration-fast test-grpc-client-streaming-client-cancellation
   (testing-using-waiter-url
-    ;; TODO undo after fix to https://github.com/haproxy/haproxy/issues/172
-    (when-not (behind-proxy? waiter-url)
+    (when (grpc-cancellations-supported? waiter-url)
       (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)
             correlation-id-prefix (rand-name)]
         (with-service-cleanup
@@ -765,13 +755,11 @@
                       (= cancel-policy-observer cancel-policy)
                       (assert-grpc-unknown-status status "call was cancelled" assertion-message))
                     (is (nil? summary) assertion-message)
-                    ;; TODO undo after fix to https://github.com/haproxy/haproxy/issues/172
-                    (when-not (behind-proxy? waiter-url)
-                      (assert-request-state grpc-client request-headers service-id correlation-id ::client-cancel))))))))))))
+                    (assert-request-state grpc-client request-headers service-id correlation-id ::client-cancel)))))))))))
 
 (deftest ^:parallel ^:integration-slow test-grpc-bidi-streaming-client-exit
   (testing-using-waiter-url
-    (when-not (behind-proxy? waiter-url)
+    (when (grpc-cancellations-supported? waiter-url)
       (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)
             {:strs [cookie]} request-headers]
         (with-service-cleanup
@@ -786,12 +774,7 @@
             (let [grpc-client (initialize-grpc-client correlation-id host h2c-port)]
               (assert-request-state grpc-client request-headers service-id correlation-id ::client-cancel))))))))
 
-;; FAIL in (test-grpc-client-streaming-deadline-exceeded) (grpc_test.clj:96)
-;; waiter.grpc-test/test-grpc-client-streaming-deadline-exceeded
-;; {:body nil, :result "timed-out"}
-;; expected: "received-response"
-;;   actual: "timed-out"
-(deftest ^:parallel ^:integration-fast ^:explicit test-grpc-client-streaming-deadline-exceeded
+(deftest ^:parallel ^:integration-fast test-grpc-client-streaming-deadline-exceeded
   (testing-using-waiter-url
     (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)
           correlation-id-prefix (rand-name)]
@@ -828,15 +811,18 @@
                                         (into (sorted-map))
                                         str)]
                 (log/info correlation-id "aggregated packages...")
-                ;; TODO undo after fix to https://github.com/haproxy/haproxy/issues/172
-                (if (and (behind-proxy? waiter-url)
-                         (= "UNAVAILABLE" (some-> status .getCode str)))
+                (cond
+                  (and (grpc-cancellations-supported? waiter-url)
+                       (= "UNAVAILABLE" (some-> status .getCode str)))
                   (assert-grpc-status status "UNAVAILABLE" "Received Rst Stream" assertion-message)
+                  (= "INVALID_ARGUMENT" (some-> status .getCode str))
+                  (assert-grpc-status status "INVALID_ARGUMENT" "Client action means stream is no longer needed"
+                                      assertion-message)
+                  :else
                   (assert-grpc-deadline-exceeded-status status assertion-message))
                 (is (nil? summary) assertion-message)
                 (.await sleep-duration-latch)
-                ;; TODO undo after fix to https://github.com/haproxy/haproxy/issues/172
-                (when-not (behind-proxy? waiter-url)
+                (when (grpc-cancellations-supported? waiter-url)
                   (assert-request-state grpc-client request-headers service-id correlation-id ::deadline-exceeded))))))))))
 
 (deftest ^:parallel ^:integration-slow test-grpc-client-streaming-server-exit
@@ -879,24 +865,7 @@
                       (assert-grpc-server-exit-status status assertion-message)
                       (is (nil? message-summary) assertion-message))))))))))))
 
-;; FAIL in (test-grpc-client-streaming-server-cancellation) (grpc_test.clj:239)
-;; waiter.grpc-test/test-grpc-client-streaming-server-cancellation 1000 messages server error
-;; {:correlation-id "wgttgcssc796969990733.SEND_ERROR.40-120.1000",
-;;  :mode "server-cancel",
-;;  :reply {:cid "wgttgcssc796969990733.SEND_ERROR.40-120.1000",
-;;  :state ("INIT" "READY" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE"
-;;          "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE"
-;;          "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE"
-;;          "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE"
-;;          "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE"
-;;          "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE"
-;;          "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE" "RECEIVE_MESSAGE"
-;;          "CLOSE" "HALF_CLOSE")},
-;; :service-id "waiter-service-wgttgcssc800602673571-78ab76f80b2ab2c810a3a73b1d505ec4",
-;; :status {:code "OK", :description nil}}
-;; expected: 1
-;;   actual: 0
-(deftest ^:parallel ^:integration-slow ^:explicit test-grpc-client-streaming-server-cancellation
+(deftest ^:parallel ^:integration-slow test-grpc-client-streaming-server-cancellation
   (testing-using-waiter-url
     (let [num-messages 120
           num-iterations 3

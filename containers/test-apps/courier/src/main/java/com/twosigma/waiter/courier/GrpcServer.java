@@ -82,7 +82,12 @@ public class GrpcServer {
                 final List<Long> timestamps = new ArrayList<Long>(stateEntries.keySet());
                 Collections.sort(timestamps);
                 final Long requestTime = timestamps.get(0);
-                return stateEntries.get(requestTime);
+                final List<String> stateList = stateEntries.get(requestTime);
+                if (stateList == null) {
+                    return null;
+                } else {
+                    return new ArrayList<>(stateList);
+                }
             } else {
                 return new ArrayList<>();
             }
