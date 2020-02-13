@@ -203,8 +203,9 @@
        (retrieve-request-state grpc-client request-headers query-correlation-id))))
 
 (defn assert-request-state
-  "Asserts the states on the cid of a previously successful rpc call."
+  "Asserts the states on the cid of a previous grpc call."
   [grpc-client request-headers service-id query-correlation-id mode]
+  (Thread/sleep 1000) ;; sleep to allow completion of grpc server-side internal events
   (let [timeout-secs 10
         rpc-result (retrieve-request-state grpc-client request-headers query-correlation-id timeout-secs)
         ^StateReply reply (.result rpc-result)
