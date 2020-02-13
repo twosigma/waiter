@@ -150,8 +150,13 @@
 
 (defn grpc-cancellations-supported?
   "Returns true if gRPC cancellations are supported.
-   Certain proxies, e.g. haproxy https://github.com/haproxy/haproxy/issues/172, do not support cancellations.
-   Other proxies, e.g. Envoy, do support gRPC cancellations."
+   Waiter routers support gRPC client and server cancellation.
+   However, sometimes traffic to the Waiter routers are fronted by another proxy, e.g. haproxy or envoy.
+   Certain proxies, e.g. haproxy https://github.com/haproxy/haproxy/issues/172, do not support cancellations due to
+   how they terminate http/2 connections.
+   Other proxies, e.g. Envoy, do support gRPC cancellations as they respect the http/2 protocol for closing connections.
+   We require the presence of WAITER_GRPC_CLEARTEXT_PORT env variable to signal that gRPC cancellation is
+   supported by the proxy intercepting traffic to Waiter routers."
   [waiter-url]
   (or (not (behind-proxy? waiter-url))
       (not (str/blank? (System/getenv "WAITER_GRPC_CLEARTEXT_PORT")))))
