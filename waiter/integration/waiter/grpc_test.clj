@@ -192,7 +192,7 @@
            (when-let [^GrpcClient$RpcResult rpc-result
                       (retrieve-request-state grpc-client request-headers query-correlation-id)]
              (log/info "retrieve-request-state:" query-correlation-id
-                       {:result(.result rpc-result) :status (.status rpc-result)})
+                       {:result (.result rpc-result) :status (.status rpc-result)})
              (let [^StateReply reply (.result rpc-result)
                    states (some-> reply .getStateList seq)]
                (log/info "retrieve-request-state:" query-correlation-id
@@ -217,8 +217,8 @@
                                                       :state (seq (.getStateList reply))})
                                  status (assoc :status {:code (-> status .getCode str)
                                                         :description (.getDescription status)}))
-                               (into (sorted-map))
-                               str)]
+                            (into (sorted-map))
+                            str)]
     (is status assertion-message)
     (assert-grpc-ok-status status assertion-message)
     (is reply assertion-message)
@@ -713,15 +713,6 @@
                   (is (= (reduce + (map count messages)) (.getTotalLength summary)) assertion-message))
                 (assert-request-state grpc-client request-headers service-id correlation-id ::success)))))))))
 
-;; FAIL in (test-grpc-client-streaming-client-cancellation) (grpc_test.clj:224)
-;; waiter.grpc-test/test-grpc-client-streaming-client-cancellation 1000 messages completion CONTEXT
-;; {:correlation-id "wgttgcscc836957099200-in-1000-CONTEXT",
-;;  :mode "client-cancel",
-;;  :reply {:cid "wgttgcscc836957099200-in-1000-CONTEXT", :state nil},
-;;  :service-id "waiter-service-wgttgcscc799081430489-dbb536aab211b9da10dd26e67b7b64df",
-;;  :status {:code "OK", :description nil}}
-;; expected: "INIT"
-;;   actual: nil
 (deftest ^:parallel ^:integration-fast test-grpc-client-streaming-client-cancellation
   (testing-using-waiter-url
     (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)
@@ -779,11 +770,6 @@
           (let [grpc-client (initialize-grpc-client correlation-id host h2c-port)]
             (assert-request-state grpc-client request-headers service-id correlation-id ::client-cancel)))))))
 
-;; FAIL in (test-grpc-client-streaming-deadline-exceeded) (grpc_test.clj:96)
-;; waiter.grpc-test/test-grpc-client-streaming-deadline-exceeded
-;; {:body nil, :result "timed-out"}
-;; expected: "received-response"
-;;   actual: "timed-out"
 (deftest ^:parallel ^:integration-fast test-grpc-client-streaming-deadline-exceeded
   (testing-using-waiter-url
     (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)
@@ -794,42 +780,42 @@
           (let [num-messages 120
                 messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))]
 
-              (testing (str max-message-length " messages completion")
-                (log/info "starting streaming to and from server - independent mode test")
-                (let [cancel-threshold (inc num-messages)
-                      from (rand-name "f")
-                      correlation-id (str correlation-id-prefix "-" max-message-length)
-                      request-headers (assoc request-headers "x-cid" correlation-id)
-                      ids (map #(str "id-" %) (range num-messages))
-                      grpc-client (initialize-grpc-client correlation-id host h2c-port)
-                      sleep-duration-latch (CountDownLatch. 1)
-                      sleep-duration-ms 5000
-                      deadline-duration-ms (- sleep-duration-ms 1000)
-                      _ (async/go
-                          (async/<! (async/timeout (+ sleep-duration-ms 1000)))
-                          (.countDown sleep-duration-latch))
-                      rpc-result (.aggregatePackages grpc-client request-headers ids from messages 1000
-                                                     cancel-threshold cancel-policy-none deadline-duration-ms)
-                      ^CourierSummary summary (.result rpc-result)
-                      ^Status status (.status rpc-result)
-                      assertion-message (->> (cond-> {:correlation-id correlation-id
-                                                      :service-id service-id}
-                                               summary (assoc :summary {:num-messages (.getNumMessages summary)
-                                                                        :total-length (.getTotalLength summary)})
-                                               status (assoc :status {:code (-> status .getCode str)
-                                                                      :description (.getDescription status)}))
-                                          (into (sorted-map))
-                                          str)]
-                  (log/info correlation-id "aggregated packages...")
-                  (condp = (some-> status .getCode str)
-                    "INVALID_ARGUMENT"
-                    (assert-grpc-status status "INVALID_ARGUMENT" "Client action means stream is no longer needed"
-                                        assertion-message)
-                    ;; default
-                    (assert-grpc-deadline-exceeded-status status assertion-message))
-                  (is (nil? summary) assertion-message)
-                  (.await sleep-duration-latch)
-                  (assert-request-state grpc-client request-headers service-id correlation-id ::deadline-exceeded))))))))))
+            (testing (str max-message-length " messages completion")
+              (log/info "starting streaming to and from server - independent mode test")
+              (let [cancel-threshold (inc num-messages)
+                    from (rand-name "f")
+                    correlation-id (str correlation-id-prefix "-" max-message-length)
+                    request-headers (assoc request-headers "x-cid" correlation-id)
+                    ids (map #(str "id-" %) (range num-messages))
+                    grpc-client (initialize-grpc-client correlation-id host h2c-port)
+                    sleep-duration-latch (CountDownLatch. 1)
+                    sleep-duration-ms 5000
+                    deadline-duration-ms (- sleep-duration-ms 1000)
+                    _ (async/go
+                        (async/<! (async/timeout (+ sleep-duration-ms 1000)))
+                        (.countDown sleep-duration-latch))
+                    rpc-result (.aggregatePackages grpc-client request-headers ids from messages 1000
+                                                   cancel-threshold cancel-policy-none deadline-duration-ms)
+                    ^CourierSummary summary (.result rpc-result)
+                    ^Status status (.status rpc-result)
+                    assertion-message (->> (cond-> {:correlation-id correlation-id
+                                                    :service-id service-id}
+                                             summary (assoc :summary {:num-messages (.getNumMessages summary)
+                                                                      :total-length (.getTotalLength summary)})
+                                             status (assoc :status {:code (-> status .getCode str)
+                                                                    :description (.getDescription status)}))
+                                        (into (sorted-map))
+                                        str)]
+                (log/info correlation-id "aggregated packages...")
+                (condp = (some-> status .getCode str)
+                  "INVALID_ARGUMENT"
+                  (assert-grpc-status status "INVALID_ARGUMENT" "Client action means stream is no longer needed"
+                                      assertion-message)
+                  ;; default
+                  (assert-grpc-deadline-exceeded-status status assertion-message))
+                (is (nil? summary) assertion-message)
+                (.await sleep-duration-latch)
+                (assert-request-state grpc-client request-headers service-id correlation-id ::deadline-exceeded)))))))))
 
 (deftest ^:parallel ^:integration-slow test-grpc-client-streaming-server-exit
   (testing-using-waiter-url
