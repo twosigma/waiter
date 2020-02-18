@@ -62,7 +62,7 @@
           (is (str/includes? body error-message)))))))
 
 (defn- perform-saml-authentication
-  "Perform authentication wtih an identity provider service.
+  "Perform authentication with an identity provider service.
    Return map of waiter acs endpoint, saml-response and relay-state"
   [saml-redirect-location]
   (let [make-connection (fn [request-url]
