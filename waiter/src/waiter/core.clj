@@ -232,13 +232,18 @@
 
 (defn request->protocol
   "Determines the protocol and version used by the request.
-   For HTTP requests, it returns values like HTTP/1.0, HTTP/1.1, HTTP/2.
+   For HTTP requests, it returns values like HTTP/1.0, HTTP/1.1, HTTP/2.0.
    For WebSocket requests, it returns values like WS/8, WS/13."
   [{:keys [headers scheme ^ServletRequest servlet-request]}]
   (if servlet-request
-    (or (some-> headers
-          (get "x-forwarded-proto-version")
-          str/upper-case)
+    (or (let [proto-version (some-> headers
+                              (get "x-forwarded-proto-version")
+                              str/upper-case)]
+          (cond
+            (nil? proto-version) nil
+            (= "HTTP/1" proto-version) "HTTP/1.0"
+            (= "HTTP/2" proto-version) "HTTP/2.0"
+            :else proto-version))
         (.getProtocol servlet-request))
     (when scheme
       (str/upper-case

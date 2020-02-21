@@ -1502,6 +1502,16 @@
   (is (= "HTTP" (request->protocol {:scheme :http})))
   (is (= "FOO/BAR" (request->protocol {:headers {"x-forwarded-proto-version" "Foo/Bar"}
                                        :servlet-request (Object.)})))
+  (is (= "HTTP/1.0" (request->protocol {:headers {"x-forwarded-proto-version" "HTTP/1"}
+                                        :servlet-request (Object.)})))
+  (is (= "HTTP/1.0" (request->protocol {:headers {"x-forwarded-proto-version" "HTTP/1.0"}
+                                        :servlet-request (Object.)})))
+  (is (= "HTTP/1.1" (request->protocol {:headers {"x-forwarded-proto-version" "HTTP/1.1"}
+                                        :servlet-request (Object.)})))
+  (is (= "HTTP/2.0" (request->protocol {:headers {"x-forwarded-proto-version" "HTTP/2"}
+                                        :servlet-request (Object.)})))
+  (is (= "HTTP/2.0" (request->protocol {:headers {"x-forwarded-proto-version" "HTTP/2.0"}
+                                        :servlet-request (Object.)})))
   (is (= "HTTP/1.1" (request->protocol {:scheme :http
                                         :servlet-request (reify ServletRequest
                                                            (getProtocol [_] "HTTP/1.1"))})))
