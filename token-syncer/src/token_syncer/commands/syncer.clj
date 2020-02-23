@@ -71,6 +71,11 @@
     {}
     cluster-urls))
 
+(def admin-no-sync-user
+  "Reserved value for last-update-user used to indicate a no-sync admin update.
+   Value is nil if this feature is not enabled."
+  (System/getenv "WAITER_TOKEN_ADMIN_NO_SYNC_USER"))
+
 (defn sync-token-on-clusters
   "Syncs a given token description on all clusters.
    If the cluster-url->token-data says that a given token was not successfully loaded, it is skipped.
@@ -126,6 +131,13 @@
                   {:code :error/root-mismatch
                    :details {:cluster description
                              :latest latest-token-description}}
+
+                  ;; token explicitly marked for no-sync by admin-mode operation
+                  (and admin-no-sync-user
+                       (or (= admin-no-sync-user latest-update-user)
+                           (= admin-no-sync-user cluster-update-user)))
+                  {:code :skip/token-sync
+                   :details "skipping token excluded from sync by admin"}
 
                   (not= latest-token-description description)
                   (let [token-etag (:token-etag token-data)

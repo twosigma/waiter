@@ -266,6 +266,31 @@
                 "www.cluster-2.com" {:code :skip/token-sync}}
                (sync-token-on-clusters waiter-api cluster-urls test-token token-description-1 cluster-url->token-data)))))
 
+    (testing "skip token excluded from sync by admin"
+      (let [skip-sync-user "admin-skip-sync"
+            cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
+            test-token "test-token-1"
+            token-description-1 {"cpus" 1
+                                 "last-update-user" "john.doe"
+                                 "mem" 1024
+                                 "name" "test-name"
+                                 "owner" "test-user-1"
+                                 "root" "cluster-1"}
+            token-description-2 (assoc token-description-1
+                                       "last-update-user" skip-sync-user
+                                       "cpus" 10)
+            cluster-url->token-data {"www.cluster-1.com" {:description token-description-1
+                                                          :token-etag (str test-token-etag ".1")
+                                                          :status 200}
+                                     "www.cluster-2.com" {:description token-description-2
+                                                          :token-etag (str test-token-etag ".2")
+                                                          :status 200}}]
+        (with-redefs [admin-no-sync-user skip-sync-user]
+          (is (= {"www.cluster-1.com" {:code :skip/token-sync
+                                       :details "skipping token excluded from sync by admin"}
+                  "www.cluster-2.com" {:code :success/token-match}}
+                 (sync-token-on-clusters waiter-api cluster-urls test-token token-description-2 cluster-url->token-data))))))
+
     (testing "sync cluster same owner; soft-deleted on one; and different last-update-user and root"
       (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
             test-token "test-token-1"

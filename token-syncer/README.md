@@ -54,6 +54,12 @@ Outline of steps performed by the syncer:
     1. Update all clusters with stale tokens to the latest token.
     1. Hard-deletes tokens on all clusters once all clusters agree that a token has been soft-deleted.
 
+## Admin-mode exclusion
+
+Tokens may be manually excluded from synchronization via an admin-mode update
+by setting the last-update-user field to match a value set via the environment
+in the token syncer: `WAITER_TOKEN_ADMIN_NO_SYNC_USER`
+
 # Build Uberjar
 
 ```bash
