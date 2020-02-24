@@ -138,7 +138,7 @@
                                                      "name" "service-name"
                                                      "run-as-user" "john.doe"
                                                      "version" "service-version"
-                                                     "redacted-request-fields" ["path" "principal"]}
+                                                     "env" {"WAITER_REDACTED_REQUEST_FIELDS" "path,principal"}}
                                :source-tokens [{"token" "test-token1" "version" "E-1234"}
                                                {"token" "test-token2" "version" "E-4321"}]}
                   :error-class "java.lang.Exception"
