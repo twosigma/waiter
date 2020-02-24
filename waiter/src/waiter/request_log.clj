@@ -93,7 +93,9 @@
 (defn log-request!
   "Log a request"
   [request response]
-  (log (merge (request->context request) (response->context response))))
+  (log (apply dissoc
+              (merge (request->context request) (response->context response))
+              (map keyword (get-in response [:descriptor :service-description "redacted-request-fields"])))))
 
 (defn wrap-log
   "Wraps a handler logging data from requests and responses."
