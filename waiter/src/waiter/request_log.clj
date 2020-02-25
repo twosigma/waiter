@@ -93,7 +93,7 @@
 (defn log-request!
   "Log a request"
   [request response]
-  (let [redacted-request-fields-string (get-in response [:descriptor :service-description "env" "WAITER_REDACTED_REQUEST_FIELDS"])]
+  (let [redacted-request-fields-string (get-in response [:descriptor :service-description "env" "REDACTED_REQUEST_FIELDS"])]
     (log (apply dissoc
                 (merge (request->context request) (response->context response))
                 (when-not (str/blank? redacted-request-fields-string)
