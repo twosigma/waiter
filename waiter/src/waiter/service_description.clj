@@ -44,7 +44,7 @@
       (str/starts-with? name "MARATHON_")
       (str/starts-with? name "MESOS_")
       (re-matches #"^PORT\d*$" name)
-      (str/starts-with? name "WAITER_")))
+      (and (str/starts-with? name "WAITER_") (not (str/starts-with? name "WAITER_CONFIG_")))))
 
 (def environment-variable-schema
   (s/both (s/constrained s/Str #(<= 1 (count %) 512))
