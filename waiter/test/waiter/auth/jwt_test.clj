@@ -184,6 +184,7 @@
 (deftest test-validate-access-token
   (let [all-keys (-> "test-files/jwt/jwks.json" slurp json/read-str walk/keywordize-keys :keys)
         issuer "test-issuer"
+        max-expiry-duration-ms (-> 1 t/hours t/in-millis)
         subject-key :sub
         supported-algorithms #{:eddsa :rs256}
         token-type "ty+pe"
@@ -198,11 +199,12 @@
             alg :es256
             {:keys [kid] :as jwk-entry} (first (vals jwks))
             expiry-time (+ (current-time-secs) 10000)
-            subject-key :custom-key
-            payload {:aud realm :custom-key "foo@bar.baz" :exp expiry-time :iss issuer :sub "foo@bar.com"}
+            subject-key :sub
+            payload {:aud realm :exp expiry-time :iss issuer :sub "foo@bar.com"}
             access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
         (is (thrown-with-msg? ExceptionInfo #"Unsupported algorithm :es256 in token header"
-                              (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token)))))
+                              (validate-access-token token-type issuer subject-key supported-algorithms jwks
+                                                     max-expiry-duration-ms realm request-scheme access-token)))))
 
     (doseq [{:keys [alg jwks]}
             [{:alg :eddsa
@@ -216,65 +218,86 @@
 
       (testing (str "algorithm " (name alg))
         (is (thrown-with-msg? ExceptionInfo #"JWT authentication can only be used with host header"
-                              (validate-access-token token-type issuer subject-key supported-algorithms jwks nil request-scheme access-token)))
+                              (validate-access-token token-type issuer subject-key supported-algorithms jwks
+                                                     max-expiry-duration-ms nil request-scheme access-token)))
 
         (is (thrown-with-msg? ExceptionInfo #"JWT authentication can only be used with HTTPS connections"
-                              (validate-access-token token-type issuer subject-key supported-algorithms jwks realm :http access-token)))
+                              (validate-access-token token-type issuer subject-key supported-algorithms jwks
+                                                     max-expiry-duration-ms realm :http access-token)))
 
         (is (thrown-with-msg? ExceptionInfo #"Must provide Bearer token in Authorization header"
-                              (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme " ")))
+                              (validate-access-token token-type issuer subject-key supported-algorithms jwks
+                                                     max-expiry-duration-ms realm request-scheme " ")))
 
         (is (thrown-with-msg? ExceptionInfo #"JWT access token is malformed"
-                              (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme "abcd")))
+                              (validate-access-token token-type issuer subject-key supported-algorithms jwks
+                                                     max-expiry-duration-ms realm request-scheme "abcd")))
 
         (let [jwk-entry (rand-nth (vals jwks))
               access-token (generate-jwt-access-token alg jwk-entry {} {})]
           (is (thrown-with-msg? ExceptionInfo #"JWT header is missing key ID"
-                                (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
+                                (validate-access-token token-type issuer subject-key supported-algorithms jwks
+                                                       max-expiry-duration-ms realm request-scheme access-token))))
 
         (let [jwk-entry (rand-nth (vals jwks))
               access-token (generate-jwt-access-token alg jwk-entry {} {:kid "invalid-key" :typ (str token-type ".err")})]
           (is (thrown-with-msg? ExceptionInfo #"Unsupported type"
-                                (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
+                                (validate-access-token token-type issuer subject-key supported-algorithms jwks
+                                                       max-expiry-duration-ms realm request-scheme access-token))))
 
         (let [jwk-entry (rand-nth (vals jwks))
               access-token (generate-jwt-access-token alg jwk-entry {} {:kid "invalid-key" :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"No matching JWKS key found for key invalid-key"
-                                (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
+                                (validate-access-token token-type issuer subject-key supported-algorithms jwks
+                                                       max-expiry-duration-ms realm request-scheme access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               access-token (generate-jwt-access-token alg jwk-entry {} {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"Issuer does not match test-issuer"
-                                (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
+                                (validate-access-token token-type issuer subject-key supported-algorithms jwks
+                                                       max-expiry-duration-ms realm request-scheme access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               access-token (generate-jwt-access-token alg jwk-entry {:iss (str issuer "-john")} {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"Issuer does not match test-issuer"
-                                (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
+                                (validate-access-token token-type issuer subject-key supported-algorithms jwks
+                                                       max-expiry-duration-ms realm request-scheme access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               access-token (generate-jwt-access-token alg jwk-entry {:iss issuer} {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"Audience does not match www.test-realm.com"
-                                (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
+                                (validate-access-token token-type issuer subject-key supported-algorithms jwks
+                                                       max-expiry-duration-ms realm request-scheme access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               expiry-time (+ (current-time-secs) 10000)
               access-token (generate-jwt-access-token alg jwk-entry {:aud realm :exp expiry-time :iss issuer} {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"No subject provided in the token payload"
-                                (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
+                                (validate-access-token token-type issuer subject-key supported-algorithms jwks
+                                                       max-expiry-duration-ms realm request-scheme access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               payload {:aud realm :iss issuer :sub "foo@bar.com"}
               access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"No expiry provided in the token payload"
-                                (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
+                                (validate-access-token token-type issuer subject-key supported-algorithms jwks
+                                                       max-expiry-duration-ms realm request-scheme access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               expiry-time (- (current-time-secs) 1000)
               payload {:aud realm :exp expiry-time :iss issuer :sub "foo@bar.com"}
               access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"Token is expired"
-                                (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
+                                (validate-access-token token-type issuer subject-key supported-algorithms jwks
+                                                       max-expiry-duration-ms realm request-scheme access-token))))
+
+        (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
+              expiry-time (+ (current-time-secs) max-expiry-duration-ms 10000)
+              payload {:aud realm :exp expiry-time :iss issuer :sub "foo@bar.com"}
+              access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
+          (is (thrown-with-msg? ExceptionInfo #"Token expiry is too far into the future"
+                                (validate-access-token token-type issuer subject-key supported-algorithms jwks
+                                                       max-expiry-duration-ms realm request-scheme access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               expiry-time (+ (current-time-secs) 10000)
@@ -282,13 +305,15 @@
               payload {:aud realm :exp expiry-time :iss issuer :sub "foo@bar.com"}
               access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"No custom-key provided in the token payload"
-                                (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
+                                (validate-access-token token-type issuer subject-key supported-algorithms jwks
+                                                       max-expiry-duration-ms realm request-scheme access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               expiry-time (+ (current-time-secs) 10000)
               payload {:aud realm :exp expiry-time :iss issuer :sub "foo@bar.com"}
               access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
-          (is (= payload (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
+          (is (= payload (validate-access-token token-type issuer subject-key supported-algorithms jwks
+                                                max-expiry-duration-ms realm request-scheme access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               expiry-time (+ (current-time-secs) 10000)
@@ -296,14 +321,16 @@
               payload {:aud realm :custom-key "foo@bar.baz" :exp expiry-time :iss issuer}
               access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"No subject provided in the token payload"
-                                (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
+                                (validate-access-token token-type issuer subject-key supported-algorithms jwks
+                                                       max-expiry-duration-ms realm request-scheme access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               expiry-time (+ (current-time-secs) 10000)
               subject-key :custom-key
               payload {:aud realm :custom-key "foo@bar.baz" :exp expiry-time :iss issuer :sub "foo@bar.com"}
               access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
-          (is (= payload (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))))))
+          (is (= payload (validate-access-token token-type issuer subject-key supported-algorithms jwks
+                                                max-expiry-duration-ms realm request-scheme access-token))))))))
 
 (deftest test-authenticate-request
   (let [issuer "test-issuer"
@@ -311,7 +338,8 @@
         subject-key :sub
         supported-algorithms #{:eddsa :rs256}
         token-type "jwt+type"
-        password "test-password"]
+        password "test-password"
+        max-expiry-duration-ms (-> 1 t/hours t/in-millis)]
 
     (testing "error scenario - non 401"
       (let [request-handler (fn [request] (assoc request :source ::request-handler))
@@ -324,7 +352,8 @@
                                                   (is (= request in-request))
                                                   (assoc request :source ::exception-handler))]
           (is (= (assoc request :source ::exception-handler)
-                 (authenticate-request request-handler issuer subject-key supported-algorithms type keys password request))))))
+                 (authenticate-request request-handler issuer subject-key supported-algorithms type keys password
+                                       max-expiry-duration-ms request))))))
 
     (testing "error scenario 401 - downstream 200 from backend"
       (let [request-handler (fn [request] (assoc request :source ::request-handler :status 200))
@@ -333,7 +362,8 @@
                      :request-id (rand-int 10000)}]
         (with-redefs [validate-access-token (fn [& _] (throw ex))]
           (is (= (assoc request :source ::request-handler :status 200)
-                 (authenticate-request request-handler issuer subject-key supported-algorithms type keys password request))))))
+                 (authenticate-request request-handler issuer subject-key supported-algorithms type keys password
+                                       max-expiry-duration-ms request))))))
 
     (testing "error scenario 401 - downstream 200 from waiter"
       (let [request-handler (fn [request] (-> request (dissoc :headers) (assoc :source ::request-handler :status 200) utils/attach-waiter-source))
@@ -345,7 +375,8 @@
                    (dissoc :headers)
                    (assoc :source ::request-handler :status 200)
                    utils/attach-waiter-source)
-                 (authenticate-request request-handler issuer subject-key supported-algorithms type keys password request))))))
+                 (authenticate-request request-handler issuer subject-key supported-algorithms type keys password
+                                       max-expiry-duration-ms request))))))
 
     (testing "error scenario 401 - downstream 401 from backend"
       (let [request-handler (fn [request] (assoc request :source ::request-handler :status 401))
@@ -354,7 +385,8 @@
                      :request-id (rand-int 10000)}]
         (with-redefs [validate-access-token (fn [& _] (throw ex))]
           (is (= (assoc request :source ::request-handler :status 401)
-                 (authenticate-request request-handler issuer subject-key supported-algorithms type keys password request))))))
+                 (authenticate-request request-handler issuer subject-key supported-algorithms type keys password
+                                       max-expiry-duration-ms request))))))
 
     (testing "error scenario 401 - downstream 401 from waiter"
       (let [request-handler (fn [request] (-> request (dissoc :headers) (assoc :source ::request-handler :status 401) utils/attach-waiter-source))
@@ -367,7 +399,8 @@
           (is (= (-> request
                    (assoc :headers {"www-authenticate" auth-header} :source ::request-handler :status 401)
                    utils/attach-waiter-source)
-                 (authenticate-request request-handler issuer subject-key supported-algorithms type keys password request))))))
+                 (authenticate-request request-handler issuer subject-key supported-algorithms type keys password
+                                       max-expiry-duration-ms request))))))
 
     (testing "success scenario - non 401"
       (let [request-handler (fn [request] (assoc request :source ::request-handler))
@@ -381,12 +414,14 @@
             expiry-time (+ current-time expiry-interval-secs)
             principal "foo@bar.com"
             payload {:aud realm :exp expiry-time :iss issuer :sub principal}]
-        (with-redefs [validate-access-token (fn [in-type in-issuer in-sub-key in-algorithms in-keys in-realm in-request-scheme in-access-token]
+        (with-redefs [validate-access-token (fn [in-type in-issuer in-sub-key in-algorithms in-keys in-max-expiry-duration-ms
+                                                 in-realm in-request-scheme in-access-token]
                                               (is (= token-type in-type))
                                               (is (= issuer in-issuer))
                                               (is (= subject-key in-sub-key))
                                               (is (= supported-algorithms in-algorithms))
                                               (is (= keys in-keys))
+                                              (is (= max-expiry-duration-ms in-max-expiry-duration-ms))
                                               (is (= realm in-realm))
                                               (is (= :test-scheme in-request-scheme))
                                               (is (= "foo.bar.baz" in-access-token))
@@ -406,7 +441,8 @@
                    :password password
                    :principal principal
                    :source ::request-handler)
-                 (authenticate-request request-handler token-type issuer subject-key supported-algorithms keys password request))))))))
+                 (authenticate-request request-handler token-type issuer subject-key supported-algorithms keys password
+                                       max-expiry-duration-ms request))))))))
 
 (deftest test-jwt-authenticator
   (with-redefs [start-jwt-cache-maintainer (constantly nil)]
@@ -421,6 +457,7 @@
                   :update-interval-ms 1000}]
       (testing "valid configuration"
         (is (instance? JwtAuthenticator (jwt-authenticator config)))
+        (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :max-expiry-duration-ms 900000))))
         (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :supported-algorithms #{:eddsa :rs256})))))
 
       (testing "invalid configuration"
@@ -428,6 +465,8 @@
         (is (thrown? Throwable (jwt-authenticator (dissoc config :token-type))))
         (is (thrown? Throwable (jwt-authenticator (dissoc config :issuer))))
         (is (thrown? Throwable (jwt-authenticator (dissoc config :jwks-url))))
+        (is (thrown? Throwable (jwt-authenticator (assoc config :max-expiry-duration-ms 0))))
+        (is (thrown? Throwable (jwt-authenticator (assoc config :max-expiry-duration-ms -1000))))
         (is (thrown? Throwable (jwt-authenticator (dissoc config :password))))
         (is (thrown? Throwable (jwt-authenticator (dissoc config :subject-key))))
         (is (thrown? Throwable (jwt-authenticator (assoc config :subject-key "sub"))))
@@ -440,18 +479,21 @@
   (let [handler (fn [{:keys [source]}] {:body source})
         supported-algorithms #{:eddsa}
         keys-cache (atom {:key-id->jwk ::jwt-keys})
-        authenticator (->JwtAuthenticator "issuer" keys-cache "password" :sub supported-algorithms "jwt+type")
+        max-expiry-duration-ms (-> 1 t/hours t/in-millis)
+        authenticator (->JwtAuthenticator "issuer" keys-cache max-expiry-duration-ms "password" :sub supported-algorithms "jwt+type")
         jwt-handler (wrap-auth-handler authenticator handler)
         attach-bearer-auth-env
         (fn attach-bearer-auth-env [request]
           (assoc-in request [:waiter-discovery :service-parameter-template "env" "USE_BEARER_AUTH"] "true"))]
-    (with-redefs [authenticate-request (fn [handler token-type issuer subject-key in-algorithms keys password request]
+    (with-redefs [authenticate-request (fn [handler token-type issuer subject-key in-algorithms keys password
+                                            in-max-expiry-duration-ms request]
                                          (is (= "jwt+type" token-type))
                                          (is (= "issuer" issuer))
                                          (is (= :sub subject-key))
                                          (is (= supported-algorithms in-algorithms))
                                          (is (= ::jwt-keys keys))
                                          (is (= "password" password))
+                                         (is (= max-expiry-duration-ms in-max-expiry-duration-ms))
                                          (handler (assoc request :source ::jwt-auth)))]
       (is (= {:body ::standard-request}
              (jwt-handler {:headers {}
