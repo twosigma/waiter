@@ -191,6 +191,19 @@
         request-scheme :https
         access-token "access-token"]
 
+    (testing "unsupported algorithm"
+      (let [jwks (->> (filter (fn [{:keys [crv]}] (= crv "P-256")) all-keys)
+                   (map attach-public-key)
+                   (pc/map-from-vals :kid))
+            alg :es256
+            {:keys [kid] :as jwk-entry} (first (vals jwks))
+            expiry-time (+ (current-time-secs) 10000)
+            subject-key :custom-key
+            payload {:aud realm :custom-key "foo@bar.baz" :exp expiry-time :iss issuer :sub "foo@bar.com"}
+            access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
+        (is (thrown-with-msg? ExceptionInfo #"Unsupported algorithm :es256 in token header"
+                              (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token)))))
+
     (doseq [{:keys [alg jwks]}
             [{:alg :eddsa
               :jwks (->> (filter eddsa-key? all-keys)
@@ -200,6 +213,7 @@
               :jwks (->> (filter rs256-key? all-keys)
                       (map attach-public-key)
                       (pc/map-from-vals :kid))}]]
+
       (testing (str "algorithm " (name alg))
         (is (thrown-with-msg? ExceptionInfo #"JWT authentication can only be used with host header"
                               (validate-access-token token-type issuer subject-key supported-algorithms jwks nil request-scheme access-token)))
@@ -230,6 +244,11 @@
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               access-token (generate-jwt-access-token alg jwk-entry {} {:kid kid :typ token-type})]
+          (is (thrown-with-msg? ExceptionInfo #"Issuer does not match test-issuer"
+                                (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
+
+        (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
+              access-token (generate-jwt-access-token alg jwk-entry {:iss (str issuer "-john")} {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"Issuer does not match test-issuer"
                                 (validate-access-token token-type issuer subject-key supported-algorithms jwks realm request-scheme access-token))))
 

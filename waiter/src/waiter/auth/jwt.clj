@@ -247,8 +247,7 @@
                                       :status status-unauthorized)]
                            (throw (ex-info (.getMessage ex) data ex)))))]
           (log/info "access token claims:" claims)
-          (validate-claims claims (assoc options :subject-key subject-key))
-          claims)))))
+          (validate-claims claims (assoc options :subject-key subject-key)))))))
 
 (defn current-time-secs
   "Returns the current time in seconds."
