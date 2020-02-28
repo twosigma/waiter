@@ -147,7 +147,7 @@
    Checks the `:sub` and subject-key claims are present.
 
    A check that fails raises an exception."
-  [{:keys [exp sub] :as claims} {:keys [aud iss subject-key]}]
+  [{:keys [exp sub] :as claims} {:keys [aud iss max-expiry-duration-ms subject-key]}]
   ;; Check the `:iss` claim.
   (when (and iss (not= (:iss claims) iss))
     (throw (ex-info (str "Issuer does not match " iss)
@@ -163,9 +163,15 @@
     (throw (ex-info "No expiry provided in the token payload"
                     {:log-level :info
                      :status status-unauthorized})))
-  (let [now-epoch (tc/to-epoch (t/now))]
-    (when (and (:exp claims) (<= (:exp claims) now-epoch))
-      (throw (ex-info (format "Token is expired (%s)" (:exp claims))
+  (let [now-epoch (tc/to-epoch (t/now))
+        max-epoch (+ now-epoch max-expiry-duration-ms)
+        claims-exp (:exp claims)]
+    (when (and claims-exp (<= claims-exp now-epoch))
+      (throw (ex-info (format "Token is expired (%s)" claims-exp)
+                      {:log-level :info
+                       :status status-unauthorized})))
+    (when (and claims-exp (> claims-exp max-epoch))
+      (throw (ex-info (format "Token expiry is too far into the future (%s)" claims-exp)
                       {:log-level :info
                        :status status-unauthorized}))))
   ;; Check the `:sub` claim.
@@ -182,7 +188,8 @@
 
 (defn validate-access-token
   "Validates the JWT access token using the provided keys, realm and issuer."
-  [token-type issuer subject-key supported-algorithms key-id->jwk realm request-scheme access-token]
+  [token-type issuer subject-key supported-algorithms key-id->jwk max-expiry-duration-ms
+   realm request-scheme access-token]
   (when (str/blank? realm)
     (throw (ex-info "JWT authentication can only be used with host header"
                     {:log-level :info
@@ -245,9 +252,12 @@
                          (let [data (assoc (ex-data ex)
                                       :log-level :info
                                       :status status-unauthorized)]
-                           (throw (ex-info (.getMessage ex) data ex)))))]
+                           (throw (ex-info (.getMessage ex) data ex)))))
+              validation-options (assoc options
+                                   :max-expiry-duration-ms max-expiry-duration-ms
+                                   :subject-key subject-key)]
           (log/info "access token claims:" claims)
-          (validate-claims claims (assoc options :subject-key subject-key)))))))
+          (validate-claims claims validation-options))))))
 
 (defn current-time-secs
   "Returns the current time in seconds."
@@ -269,7 +279,7 @@
 (defn extract-claims
   "Returns either claims in the access token provided in the request, or
    an exception that occurred while attempting to extract the claims."
-  [token-type issuer subject-key supported-algorithms key-id->jwk request]
+  [token-type issuer subject-key supported-algorithms key-id->jwk max-expiry-duration-ms request]
   (let [validation-timer (metrics/waiter-timer "core" "jwt" "validation")
         timer-context (timers/start validation-timer)]
     (try
@@ -277,8 +287,8 @@
             request-scheme (utils/request->scheme request)
             bearer-entry (auth/select-auth-header request access-token?)
             access-token (str/trim (subs bearer-entry (count bearer-prefix)))
-            claims (validate-access-token token-type issuer subject-key supported-algorithms key-id->jwk realm
-                                          request-scheme access-token)]
+            claims (validate-access-token token-type issuer subject-key supported-algorithms key-id->jwk max-expiry-duration-ms
+                                          realm request-scheme access-token)]
         (timers/stop timer-context)
         (counters/inc! (metrics/waiter-counter "core" "jwt" "validation" "success"))
         claims)
@@ -292,8 +302,10 @@
   "Performs authentication and then
    - responds with an error response when authentication fails, or
    - invokes the downstream request handler using the authenticated credentials in the request."
-  [request-handler token-type issuer subject-key supported-algorithms key-id->jwk password request]
-  (let [claims-or-throwable (extract-claims token-type issuer subject-key supported-algorithms key-id->jwk request)]
+  [request-handler token-type issuer subject-key supported-algorithms key-id->jwk password max-expiry-duration-ms
+   request]
+  (let [claims-or-throwable (extract-claims token-type issuer subject-key supported-algorithms key-id->jwk
+                                            max-expiry-duration-ms request)]
     (if (instance? Throwable claims-or-throwable)
       (if (-> claims-or-throwable ex-data :status (= status-unauthorized))
         ;; allow downstream processing before deciding on authentication challenge in response
@@ -321,13 +333,14 @@
 
 (defn wrap-auth-handler
   "Wraps the request handler with a handler to trigger JWT access token authentication."
-  [{:keys [issuer keys-cache password subject-key supported-algorithms token-type]} request-handler]
+  [{:keys [issuer keys-cache max-expiry-duration-ms password subject-key supported-algorithms token-type]}
+   request-handler]
   (fn jwt-auth-handler [request]
     (if (and (not (auth/request-authenticated? request))
              (= "true" (get-in request [:waiter-discovery :service-parameter-template "env" "USE_BEARER_AUTH"]))
              (auth/select-auth-header request access-token?))
       (authenticate-request request-handler token-type issuer subject-key supported-algorithms
-                            (:key-id->jwk @keys-cache) password request)
+                            (:key-id->jwk @keys-cache) password max-expiry-duration-ms request)
       (request-handler request))))
 
 (defn retrieve-state
@@ -338,13 +351,17 @@
                              (pc/map-vals #(update % ::public-key str) key-id->jwk)))]
     {:cache-data cache-data}))
 
-(defrecord JwtAuthenticator [issuer keys-cache password subject-key supported-algorithms token-type])
+(defrecord JwtAuthenticator [issuer keys-cache max-expiry-duration-ms password subject-key
+                             supported-algorithms token-type])
 
 (defn jwt-authenticator
   "Factory function for creating jwt authenticator middleware"
-  [{:keys [http-options issuer jwks-url password subject-key supported-algorithms token-type update-interval-ms]}]
+  [{:keys [http-options issuer jwks-url max-expiry-duration-ms password subject-key supported-algorithms
+           token-type update-interval-ms]
+    :or {max-expiry-duration-ms (-> 24 t/hours t/in-millis)}}]
   {:pre [(map? http-options)
          (not (str/blank? issuer))
+         (pos? max-expiry-duration-ms)
          (some? password)
          (not (str/blank? jwks-url))
          (keyword? subject-key)
@@ -360,4 +377,4 @@
                       (utils/assoc-if-absent :user-agent "waiter-jwt")
                       hu/http-client-factory)]
     (start-jwt-cache-maintainer http-client http-options jwks-url update-interval-ms supported-algorithms keys-cache)
-    (->JwtAuthenticator issuer keys-cache password subject-key supported-algorithms token-type)))
+    (->JwtAuthenticator issuer keys-cache max-expiry-duration-ms password subject-key supported-algorithms token-type)))

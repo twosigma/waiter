@@ -112,6 +112,7 @@
     {(s/required-key :http-options) {s/Keyword s/Any}
      (s/required-key :issuer) non-empty-string
      (s/required-key :jwks-url) s/Str
+     (s/optional-key :max-expiry-duration-ms) positive-int
      (s/required-key :subject-key) s/Keyword
      (s/required-key :supported-algorithms) #{s/Keyword}
      (s/required-key :token-type) non-empty-string
