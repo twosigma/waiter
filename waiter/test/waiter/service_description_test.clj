@@ -1963,8 +1963,23 @@
 (deftest test-merge-defaults-into-service-description
   (testing "Merging defaults into service description"
     (testing "should incorporate metric group mappings"
-      (is (= {"name" "foo", "metric-group" "bar"}
-             (merge-defaults {"name" "foo"} {} [[#"f.." "bar"]]))))))
+      (is (= {"metric-group" "bar"
+              "name" "foo"}
+             (merge-defaults {"name" "foo"} {} [[#"f.." "bar"]]))))
+    (testing "min-instances should be updated when not provided"
+      (is (= {"max-instances" 2
+              "metric-group" "other"
+              "min-instances" 2}
+             (merge-defaults {"max-instances" 2} {"min-instances" 3} [[#"f.." "bar"]]))))
+    (testing "min-instances should not be updated when provided without max-instances"
+      (is (= {"metric-group" "other"
+              "min-instances" 4}
+             (merge-defaults {"min-instances" 4} {"min-instances" 3} [[#"f.." "bar"]]))))
+    (testing "min-instances should not be updated when provided with max-instances"
+      (is (= {"max-instances" 2
+              "metric-group" "other"
+              "min-instances" 4}
+             (merge-defaults {"max-instances" 2 "min-instances" 4} {"min-instances" 3} [[#"f.." "bar"]]))))))
 
 (deftest test-validate-cmd-type
   (testing "DefaultServiceDescriptionBuilder validation"
