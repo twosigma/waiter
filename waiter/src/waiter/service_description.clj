@@ -37,6 +37,8 @@
 
 (def ^:const default-health-check-path "/status")
 
+(def ^:const minimum-min-instances 1)
+
 (def reserved-environment-vars #{"HOME" "LOGNAME" "USER"})
 
 (defn reserved-environment-variable? [name]
@@ -94,8 +96,8 @@
    (s/optional-key "instance-expiry-mins") (s/constrained s/Int #(<= 0 %))
    (s/optional-key "jitter-threshold") schema/greater-than-or-equal-to-0-less-than-1
    (s/optional-key "load-balancing") schema/valid-load-balancing
-   (s/optional-key "max-instances") (s/both s/Int (s/pred #(<= 1 % 1000) 'between-one-and-1000))
-   (s/optional-key "min-instances") (s/both s/Int (s/pred #(<= 1 % 4) 'between-one-and-four))
+   (s/optional-key "max-instances") (s/both s/Int (s/pred #(<= minimum-min-instances % 1000) 'between-one-and-1000))
+   (s/optional-key "min-instances") (s/both s/Int (s/pred #(<= minimum-min-instances % 4) 'between-one-and-four))
    (s/optional-key "scale-factor") schema/positive-fraction-less-than-or-equal-to-2
    (s/optional-key "scale-down-factor") schema/positive-fraction-less-than-1
    (s/optional-key "scale-up-factor") schema/positive-fraction-less-than-1
@@ -292,7 +294,16 @@
   "Merges the defaults into the existing service description."
   [service-description-without-defaults service-description-defaults metric-group-mappings]
   (->
-    service-description-defaults
+    (let [provided-max-instances (get service-description-without-defaults "max-instances")
+          provided-min-instances (get service-description-without-defaults "min-instances")
+          default-min-instances (get service-description-defaults "min-instances")]
+      (cond-> service-description-defaults
+        ;; adjust the min-instances if the max-instances is provided without min-instances and
+        ;; the max-instances is smaller than the default min-instances
+        (and (integer? provided-max-instances)
+             (nil? provided-min-instances)
+             (> default-min-instances provided-max-instances))
+        (assoc "min-instances" (max provided-max-instances minimum-min-instances))))
     (merge service-description-without-defaults)
     (metric-group-filter metric-group-mappings)))
 
