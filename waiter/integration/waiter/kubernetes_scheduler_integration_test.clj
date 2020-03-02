@@ -302,7 +302,6 @@
             (log/info "skipping test as container-running-grace-secs is disabled"
                       {:container-running-grace-secs container-running-grace-secs
                        :waiter-url waiter-url})
-
             (> container-running-grace-secs timeout-secs)
             (log/warn "skipping test as the configuration will cause the test to run for too long"
                       {:container-running-grace-secs container-running-grace-secs
