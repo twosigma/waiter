@@ -342,6 +342,22 @@
       (merge-defaults defaults metric-group-mappings)
       (merge-overrides (:overrides (service-id->overrides kv-store service-id)))))
 
+;; TODO remove this function after it is no longer needed (e.g. one release cycle with the service-ID change)
+(defn parameters->id-v0
+  "Generates a ID from the input parameter map.
+   This is the old implementation of the function."
+  [parameters]
+  (let [sorted-parameters (sort parameters)
+        id (loop [[[k v] & kvs] sorted-parameters
+                  acc (transient [])]
+             (if k
+               (recur kvs (-> acc
+                            (conj! k)
+                            (conj! (str v))))
+               (str (digest/digest "MD5" (str/join "" (persistent! acc))))))]
+    (log/debug "got ID" id "for" sorted-parameters)
+    id))
+
 (defn parameters->id
   "Generates a deterministic ID from the input parameter map."
   [parameters]

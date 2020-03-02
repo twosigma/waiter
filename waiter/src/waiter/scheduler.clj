@@ -30,6 +30,7 @@
             [waiter.headers :as headers]
             [waiter.metrics :as metrics]
             [waiter.request-log :as rlog]
+            [waiter.service-description :as sd]
             [waiter.statsd :as statsd]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
@@ -371,7 +372,7 @@
    They are then deleted by the leader using the `delete-service` function.
    If an error occurs while deleting a service, there will be repeated attempts to delete it later."
   [scheduler query-state-fn service-id->metrics-fn {:keys [scheduler-gc-interval-ms]} service-gc-go-routine
-   service-id->idle-timeout]
+   service-id->idle-timeout service-id->service-description-fn]
   (let [service->raw-data-fn (fn scheduler-services-gc-service->raw-data-fn []
                                (let [{:keys [all-available-service-ids]} (query-state-fn)
                                      global-state (service-id->metrics-fn)]
@@ -394,10 +395,14 @@
                          (let [outstanding (get state "outstanding")]
                            (and (number? outstanding)
                                 (zero? outstanding)
-                                (let [idle-timeout-mins (service-id->idle-timeout service-id)
-                                      timeout-time (t/plus last-modified-time (t/minutes idle-timeout-mins))]
-                                  (log/debug service-id "timeout:" (du/date-to-str timeout-time) "current:" (du/date-to-str current-time))
-                                  (t/after? current-time timeout-time)))))
+                                (or (let [idle-timeout-mins (service-id->idle-timeout service-id)
+                                          timeout-time (t/plus last-modified-time (t/minutes idle-timeout-mins))]
+                                      (log/debug service-id "timeout:" (du/date-to-str timeout-time) "current:" (du/date-to-str current-time))
+                                      (t/after? current-time timeout-time))
+                                    ;; TODO remove this function after it is no longer needed (e.g. one release cycle with the service-ID change)
+                                    (let [core-service-description (service-id->service-description-fn service-id :effective? false)
+                                          service-hash-v0 (sd/parameters->id-v0 core-service-description)]
+                                      (not (str/ends-with? service-id service-hash-v0)))))))
         perform-gc-fn (fn [service-id]
                         (log/info "deleting idle service" service-id)
                         (try

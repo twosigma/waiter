@@ -30,6 +30,7 @@
             [waiter.headers :as headers]
             [waiter.metrics :as metrics]
             [waiter.scheduler :refer :all]
+            [waiter.service-description :as sd]
             [waiter.util.async-utils :as au]
             [waiter.util.client-tools :as ct]
             [waiter.util.date-utils :as du])
@@ -114,13 +115,18 @@
         leader? (constantly true)
         state-store (atom {})
         read-state-fn (fn [name] (:data (curator/read-path curator (str gc-base-path "/" name) :nil-on-missing? true :serializer :nippy)))
-        write-state-fn (fn [name state] (curator/write-path curator (str gc-base-path "/" name) state :serializer :nippy :create-parent-zknodes? true))]
+        write-state-fn (fn [name state] (curator/write-path curator (str gc-base-path "/" name) state :serializer :nippy :create-parent-zknodes? true))
+        service-id->service-description-fn (fn [service-id & _] {:service-id service-id})]
     (with-redefs [curator/read-path (fn [_ path & _] {:data (get @state-store path)})
-                  curator/write-path (fn [_ path data & _] (swap! state-store (fn [v] (assoc v path data))))]
+                  curator/write-path (fn [_ path data & _] (swap! state-store (fn [v] (assoc v path data))))
+                  sd/parameters->id-v0 (fn [{:keys [service-id]}]
+                                         (cond-> service-id
+                                           (str/includes? service-id "v0test")
+                                           (str "v0")))]
       (let [available-services-atom (atom #{"service01" "service02" "service03" "service04stayalive" "service05"
                                             "service06faulty" "service07" "service08stayalive" "service09stayalive"
                                             "service10broken" "service11broken" "service12missingmetrics"
-                                            "service13zerooutmetrics"})
+                                            "service13zerooutmetrics" "service14Av0test" "service14Bv0test"})
             initial-global-state {"service01" {"last-request-time" (tc/from-long 10)
                                                "outstanding" 0}
                                   "service02" {"last-request-time" (tc/from-long 20)
@@ -144,7 +150,11 @@
                                   "service12missingmetrics" {"last-request-time" (tc/from-long 30)
                                                              "outstanding" 24}
                                   "service13zerooutmetrics" {"last-request-time" (tc/from-long 40)
-                                                             "outstanding" 5000}}
+                                                             "outstanding" 5000}
+                                  "service14Av0test" {"last-request-time" (tc/from-long 20)
+                                                      "outstanding" 0}
+                                  "service14Bv0test" {"last-request-time" (tc/from-long 20)
+                                                      "outstanding" 2000}}
             deleted-services-atom (atom #{})
             scheduler (reify ServiceScheduler
                         (delete-service [_ service-id]
@@ -170,7 +180,8 @@
                               {:broken-service-min-hosts broken-service-min-hosts
                                :broken-service-timeout-mins broken-service-timeout-mins
                                :scheduler-gc-interval-ms timeout-interval-ms}
-                              service-gc-go-routine service-id->idle-timeout)
+                              service-gc-go-routine service-id->idle-timeout
+                              service-id->service-description-fn)
                 service-gc-exit-chan (:exit channel-map)]
             (dotimes [n 100]
               (let [global-state (->> (map (fn [[service-id state]]
@@ -191,10 +202,11 @@
                 (Thread/sleep 2)
                 (swap! iteration-counter inc)))
             (async/>!! service-gc-exit-chan :exit)
-            (is (= #{"service01" "service02" "service03" "service05" "service07" "service13zerooutmetrics"}
+            (is (= #{"service01" "service02" "service03" "service05" "service07" "service13zerooutmetrics"
+                     "service14Av0test"}
                    @deleted-services-atom))
             (is (= #{"service04stayalive" "service06faulty" "service08stayalive" "service09stayalive"
-                     "service10broken" "service11broken" "service12missingmetrics"}
+                     "service10broken" "service11broken" "service12missingmetrics" "service14Bv0test"}
                    @available-services-atom))
             (is (= {:state {"last-request-time" (tc/from-long 30)
                             "outstanding" 15}}

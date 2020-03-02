@@ -1261,7 +1261,7 @@
                                          service-gc-go-routine (partial service-gc-go-routine gc-state-reader-fn gc-state-writer-fn leader?-fn clock)]
                                      (scheduler/scheduler-broken-services-gc service-gc-go-routine query-state-fn scheduler scheduler-gc-config)))
    :scheduler-services-gc (pc/fnk [[:curator gc-state-reader-fn gc-state-writer-fn]
-                                   [:routines router-metrics-helpers service-id->idle-timeout]
+                                   [:routines router-metrics-helpers service-id->idle-timeout service-id->service-description-fn]
                                    [:scheduler scheduler]
                                    [:settings scheduler-gc-config]
                                    [:state clock leader?-fn]
@@ -1271,7 +1271,7 @@
                                   service-gc-go-routine (partial service-gc-go-routine gc-state-reader-fn gc-state-writer-fn leader?-fn clock)]
                               (scheduler/scheduler-services-gc
                                 scheduler query-state-fn service-id->metrics-fn scheduler-gc-config service-gc-go-routine
-                                service-id->idle-timeout)))
+                                service-id->idle-timeout service-id->service-description-fn)))
    :service-chan-maintainer (pc/fnk [[:routines service-id->service-description-fn
                                       start-work-stealing-balancer-fn stop-work-stealing-balancer-fn]
                                      [:settings blacklist-config instance-request-properties]
