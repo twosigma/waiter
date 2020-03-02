@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.service-description-test
-  (:require [clj-time.core :as t]
+  (:require [clj-time.coerce :as tc]
+            [clj-time.core :as t]
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.test :refer :all]
@@ -23,7 +24,8 @@
             [waiter.authorization :as authz]
             [waiter.kv :as kv]
             [waiter.service-description :refer :all]
-            [waiter.util.cache-utils :as cu])
+            [waiter.util.cache-utils :as cu]
+            [waiter.util.utils :as utils])
   (:import (clojure.lang ExceptionInfo)
            (org.joda.time DateTime)))
 
@@ -803,7 +805,9 @@
             (is (= expected actual))))))))
 
 (defn- compute-service-description-helper
-  ([sources & {:keys [assoc-run-as-user-approved? component->previous-descriptor-fns kv-store waiter-headers]}]
+  ([sources &
+    {:keys [assoc-run-as-user-approved? component->previous-descriptor-fns kv-store service-id-prefix waiter-headers]
+     :or {service-id-prefix "test-service-"}}]
    (with-redefs [metric-group-filter (fn [sd _] sd)
                  service-description-schema {s/Str s/Any}]
      (let [assoc-run-as-user-approved? (or assoc-run-as-user-approved? (constantly false))
@@ -812,7 +816,6 @@
            waiter-headers (or waiter-headers {})
            passthrough-headers {}
            metric-group-mappings []
-           service-id-prefix "test-service-"
            current-user "current-request-user"
            service-description-builder (create-default-service-description-builder {})]
        (compute-service-description
@@ -840,6 +843,37 @@
     (is (nil? (compute-on-the-fly {"cmd" "on-the-fly-cmd", "run-as-user" "on-the-fly-ru"})))
     (is (compute-on-the-fly {"x-waiter-cmd" "on-the-fly-cmd", "x-waiter-run-as-user" "on-the-fly-ru"}))
     (is (compute-on-the-fly {"x-waiter-token" "value-does-not-matter"}))))
+
+(deftest test-compute-service-description-v0
+  (let [defaults {"health-check-url" "/ping"
+                  "permitted-user" "bob"}
+        core-service-description {"cmd" "token-cmd"
+               "env" {"FOE" "FUM", "FEE" "FIE"}}
+        sources {:defaults defaults
+                 :service-description-template core-service-description}
+        service-id-prefix "test-service-"
+        current-time (t/now)]
+    (with-redefs [t/now (constantly current-time)]
+      (let [{:keys [component->previous-descriptor-fns] :as result-descriptor}
+            (compute-service-description-helper sources)]
+        (clojure.pprint/pprint result-descriptor)
+        (is (= {:core-service-description core-service-description
+                :on-the-fly? nil
+                :reference-type->entry {}
+                :service-authentication-disabled nil
+                :service-description (merge defaults core-service-description)
+                :service-id (str service-id-prefix (parameters->id core-service-description))
+                :service-preauthorized nil
+                :source-tokens nil}
+               (dissoc result-descriptor :component->previous-descriptor-fns)))
+        (is (= #{:deterministic-service-id} (set (keys component->previous-descriptor-fns))))
+        (let [{:keys [retrieve-last-update-time retrieve-previous-descriptor]}
+              (get component->previous-descriptor-fns :deterministic-service-id)]
+                (is (= (dec (tc/to-epoch current-time)) retrieve-last-update-time))
+                (is (= (-> result-descriptor
+                         (assoc :service-id (str service-id-prefix (parameters->id-v0 core-service-description)))
+                         (utils/dissoc-in [:component->previous-descriptor-fns :deterministic-service-id]))
+                       (retrieve-previous-descriptor result-descriptor))))))))
 
 (deftest test-compute-service-description-source-tokens
   (let [defaults {"health-check-url" "/ping", "permitted-user" "bob"}

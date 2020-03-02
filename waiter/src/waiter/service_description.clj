@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.service-description
-  (:require [clj-time.core :as t]
+  (:require [clj-time.coerce :as tc]
+            [clj-time.core :as t]
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
@@ -613,8 +614,22 @@
                                                     kv-store defaults service-id)
           reference-type->entry (cond-> (or reference-type->entry {})
                                   (seq source-tokens)
-                                  (assoc :token {:sources (map walk/keywordize-keys source-tokens)}))]
-      {:component->previous-descriptor-fns component->previous-descriptor-fns
+                                  (assoc :token {:sources (map walk/keywordize-keys source-tokens)}))
+          ;; TODO remove id-v0 support after it is no longer needed (e.g. one release cycle with the service-ID change)
+          service-hash-v0 (parameters->id-v0 core-service-description)
+          component->previous-descriptor-fns' (cond-> component->previous-descriptor-fns
+                                                (not (str/ends-with? service-id service-hash-v0))
+                                                (assoc
+                                                  :deterministic-service-id
+                                                  {:retrieve-last-update-time (dec (tc/to-epoch (t/now)))
+                                                   :retrieve-previous-descriptor
+                                                   (fn retrieve-service-id-v0-descriptor
+                                                     [descriptor]
+                                                     (-> descriptor
+                                                       (assoc :service-id (str service-id-prefix service-hash-v0))
+                                                       ;; allow fallback to older service only once
+                                                       (utils/dissoc-in [:component->previous-descriptor-fns :deterministic-service-id])))}))]
+      {:component->previous-descriptor-fns component->previous-descriptor-fns'
        :core-service-description core-service-description
        :reference-type->entry reference-type->entry
        :service-description service-description
