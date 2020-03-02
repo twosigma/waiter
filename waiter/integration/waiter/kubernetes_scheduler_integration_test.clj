@@ -297,10 +297,17 @@
                                :x-waiter-timeout 30000)
               service-id (retrieve-service-id waiter-url waiter-headers)
               timeout-secs 150]
-          (if (> container-running-grace-secs timeout-secs)
+          (cond
+            (zero? container-running-grace-secs)
+            (log/info "skipping test as container-running-grace-secs is disabled"
+                      {:container-running-grace-secs container-running-grace-secs
+                       :waiter-url waiter-url})
+
+            (> container-running-grace-secs timeout-secs)
             (log/warn "skipping test as the configuration will cause the test to run for too long"
                       {:container-running-grace-secs container-running-grace-secs
                        :waiter-url waiter-url})
+            :else
             (with-service-cleanup
               service-id
               ;; make request to launch service instance(s), we do not care about the response
