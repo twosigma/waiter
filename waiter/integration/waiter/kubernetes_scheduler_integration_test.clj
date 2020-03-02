@@ -288,18 +288,11 @@
     (when (using-k8s? waiter-url)
       (if-let [custom-image (System/getenv "INTEGRATION_TEST_BAD_IMAGE")]
         (let [{:keys [container-running-grace-secs]} (get-kubernetes-scheduler-settings waiter-url)
-              waiter-headers (assoc (kitchen-request-headers)
-                               :x-waiter-distribution-scheme "simple"
-                               :x-waiter-image custom-image
-                               :x-waiter-max-instances 1
-                               :x-waiter-min-instances 1
-                               :x-waiter-name (rand-name)
-                               :x-waiter-timeout 30000)
-              service-id (retrieve-service-id waiter-url waiter-headers)
               timeout-secs 150]
+          (println "container-running-grace-secs is" container-running-grace-secs)
           (cond
             (zero? container-running-grace-secs)
-            (log/info "skipping test as container-running-grace-secs is disabled"
+            (log/warn "skipping test as container-running-grace-secs is disabled"
                       {:container-running-grace-secs container-running-grace-secs
                        :waiter-url waiter-url})
             (> container-running-grace-secs timeout-secs)
@@ -307,21 +300,29 @@
                       {:container-running-grace-secs container-running-grace-secs
                        :waiter-url waiter-url})
             :else
-            (with-service-cleanup
-              service-id
-              ;; make request to launch service instance(s), we do not care about the response
-              (make-request waiter-url "/status" :headers waiter-headers)
-              ;; assert that more than one pod was created
-              (is (wait-for
-                    (fn []
-                      (let [{:keys [instances]} (service-settings waiter-url service-id)
-                            {:keys [active-instances failed-instances]} instances
-                            pod-ids (->> (concat active-instances failed-instances)
-                                         (map :k8s/pod-name)
-                                         (into #{}))]
-                        (log/info "active-instances" active-instances)
-                        (log/info "failed-instances" failed-instances)
-                        (< 1 (count pod-ids))))
-                    :interval 15
-                    :timeout timeout-secs)))))
+            (let [waiter-headers (assoc (kitchen-request-headers)
+                                   :x-waiter-distribution-scheme "simple"
+                                   :x-waiter-image custom-image
+                                   :x-waiter-max-instances 1
+                                   :x-waiter-min-instances 1
+                                   :x-waiter-name (rand-name)
+                                   :x-waiter-timeout 30000)
+                  service-id (retrieve-service-id waiter-url waiter-headers)]
+              (with-service-cleanup
+                service-id
+                ;; make request to launch service instance(s), we do not care about the response
+                (make-request waiter-url "/status" :headers waiter-headers)
+                ;; assert that more than one pod was created
+                (is (wait-for
+                      (fn []
+                        (let [{:keys [instances]} (service-settings waiter-url service-id)
+                              {:keys [active-instances failed-instances]} instances
+                              pod-ids (->> (concat active-instances failed-instances)
+                                        (map :k8s/pod-name)
+                                        (into #{}))]
+                          (log/info "active-instances" active-instances)
+                          (log/info "failed-instances" failed-instances)
+                          (< 1 (count pod-ids))))
+                      :interval 15
+                      :timeout timeout-secs))))))
         (log/warn "skipping test as INTEGRATION_TEST_BAD_IMAGE is not specified")))))
