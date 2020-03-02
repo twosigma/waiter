@@ -206,16 +206,7 @@
                           :expected (str service-id-prefix "fum1234a-a1030ca63357baad681c25935eb4e494")}
                          {:name "service-description->service-id:invalid-chars-present-in--name"
                           :input-data {"name" "fum-!@#$%.,:()"}
-                          :expected (str service-id-prefix "fum-df72716b57632adfc64b74165eb7d7f2")}
-                         {:name "service-description->service-id:map-data"
-                          :input-data {"env" {"bar" "baz"}}
-                          :expected (str service-id-prefix "23dcf01c78e18f56be504c40c236438a")}
-                         {:name "service-description->service-id:map-data"
-                          :input-data {"env" {"bar" "baz", "fee" "fie", "foe" "fum"}}
-                          :expected (str service-id-prefix "49c060d06a02e18e102568b60abc48a9")}
-                         {:name "service-description->service-id:map-data-reordered"
-                          :input-data {"env" {"foe" "fum", "bar" "baz", "fee" "fie"}}
-                          :expected (str service-id-prefix "49c060d06a02e18e102568b60abc48a9")})]
+                          :expected (str service-id-prefix "fum-df72716b57632adfc64b74165eb7d7f2")})]
         (doseq [{:keys [name input-data expected]} test-cases]
           (testing (str "Test " name)
             (is (= expected (service-description->service-id service-id-prefix input-data)))))))
