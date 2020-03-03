@@ -351,7 +351,7 @@
              (if k
                (recur kvs (-> acc
                               (conj! k)
-                              (conj! (str (cond->> v (map? v) (into (sorted-map)))))))
+                              (conj! (str v))))
                (str (digest/digest "MD5" (str/join "" (persistent! acc))))))]
     (log/debug "got ID" id "for" sorted-parameters)
     id))
