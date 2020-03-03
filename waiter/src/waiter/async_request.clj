@@ -14,16 +14,20 @@
 ;; limitations under the License.
 ;;
 (ns waiter.async-request
-  (:require [clojure.core.async :as async]
+  (:require [clj-time.core :as t]
+            [clojure.core.async :as async]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [metrics.counters :as counters]
             [metrics.timers :as timers]
             [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics]
+            [waiter.request-log :as rlog]
             [waiter.scheduler :as scheduler]
             [waiter.service :as service]
-            [waiter.statsd :as statsd])
+            [waiter.statsd :as statsd]
+            [waiter.util.http-utils :as hu]
+            [waiter.util.utils :as utils])
   (:import (java.net ConnectException SocketTimeoutException URI URLEncoder)
            (java.util.concurrent TimeoutException)))
 
@@ -105,7 +109,9 @@
                         (let [location-header (get headers "location")
                               location (normalize-location-header status-endpoint location-header)]
                           (if (str/starts-with? (str location) "/")
-                            (recur (max 0 (- ttl check-interval-ms)))
+                            (do
+                              (log/info "continuing async request status checks as location is a relative path:" location)
+                              (recur (max 0 (- ttl check-interval-ms))))
                             (do
                               (log/info "completing async request as result location is not a relative path:" location)
                               (complete-async-request :success)
@@ -170,15 +176,53 @@
                   "from" async-check-interval-ms)
         sanitized-check-interval-ms))))
 
+(defn- make-async-status-get-request
+  "Performs the get request for the async request status and returns the response.
+   Also, adds a corresponding entry into the request log."
+  [make-http-request-fn auth-params-map user-agent {:keys [service-description service-id] :as descriptor}
+   {:keys [host] :as instance} location query-string]
+  (counters/inc! (metrics/service-counter service-id "request-counts" "async-monitor"))
+  (let [{:strs [metric-group backend-proto]} service-description
+        backend-protocol (hu/backend-protocol->http-version backend-proto)
+        backend-scheme (hu/backend-proto->scheme backend-proto)
+        request-stub (assoc auth-params-map
+                       :body nil
+                       :client-protocol backend-protocol
+                       :headers {"host" host
+                                 "user-agent" user-agent
+                                 "x-cid" (cid/get-correlation-id)}
+                       :internal-protocol backend-protocol
+                       :query-string query-string
+                       :request-id (str "waiter-async-status-check-" (utils/unique-identifier))
+                       :request-method :get
+                       :request-time (t/now)
+                       :scheme backend-scheme
+                       :uri location)
+        response-ch (make-http-request-fn instance request-stub location metric-group backend-proto)]
+    (async/go
+      (let [{:keys [error] :as response} (async/<! response-ch)]
+        (let [response (-> (merge auth-params-map response)
+                         (utils/assoc-if-absent :instance instance)
+                         (assoc :descriptor descriptor
+                                :error-class (some-> error .getClass .getCanonicalName)
+                                :instance-proto backend-proto
+                                :latest-service-id service-id
+                                :protocol backend-protocol
+                                :request-type "async-status-check"
+                                :waiter-api-call? false))]
+          (rlog/log-request! request-stub response))
+        response))))
+
 (defn post-process-async-request-response
   "Triggers execution of monitoring system for an async request.
    The function assumes location begins with a slash.
    This method wires up the completion and status check callbacks for the monitoring system.
    It also modifies the status check endpoint in the response header."
-  [router-id async-request-store-atom make-http-request-fn auth-params-map instance-rpc-chan response
-   service-id metric-group backend-proto {:keys [host port] :as instance}
+  [router-id async-request-store-atom make-http-request-fn auth-params-map populate-maintainer-chan! user-agent
+   response {:keys [service-description service-id] :as descriptor} {:keys [host port] :as instance}
    {:keys [request-id] :as reason-map} request-properties location query-string]
   (let [correlation-id (cid/get-correlation-id)
+        {:strs [metric-group backend-proto]} service-description
         status-endpoint (scheduler/end-point-url backend-proto host port location)
         _ (log/info "status endpoint for async request is" status-endpoint query-string)
         {:keys [async-check-interval-ms async-request-max-status-checks async-request-timeout-ms]} request-properties
@@ -188,13 +232,8 @@
     (counters/inc! (metrics/service-counter service-id "request-counts" "async"))
     ;; trigger execution of monitoring system
     (letfn [(make-get-request-fn []
-              (counters/inc! (metrics/service-counter service-id "request-counts" "async-monitor"))
-              (let [request-stub (assoc auth-params-map
-                                   :body nil
-                                   :headers {}
-                                   :query-string query-string
-                                   :request-method :get)]
-                (make-http-request-fn instance request-stub location metric-group backend-proto)))
+              (make-async-status-get-request make-http-request-fn auth-params-map user-agent descriptor
+                                             instance location query-string))
             (release-instance-fn [status]
               (log/info "decrementing outstanding requests as an async request has completed:" status)
               (counters/dec! (metrics/service-counter service-id "request-counts" "async"))
@@ -202,7 +241,7 @@
               (when (= :success status)
                 (counters/inc! (metrics/service-counter service-id "request-counts" "successful")))
               (statsd/gauge-delta! metric-group "request_outstanding" -1)
-              (service/release-instance-go instance-rpc-chan instance {:status status, :cid correlation-id, :request-id request-id}))
+              (service/release-instance-go populate-maintainer-chan! instance {:status status, :cid correlation-id, :request-id request-id}))
             (complete-async-request-fn [status]
               (complete-async-request-locally async-request-store-atom release-instance-fn request-id status))
             (request-still-active? []

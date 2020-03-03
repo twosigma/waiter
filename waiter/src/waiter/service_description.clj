@@ -37,6 +37,8 @@
 
 (def ^:const default-health-check-path "/status")
 
+(def ^:const minimum-min-instances 1)
+
 (def reserved-environment-vars #{"HOME" "LOGNAME" "USER"})
 
 (defn reserved-environment-variable? [name]
@@ -44,7 +46,7 @@
       (str/starts-with? name "MARATHON_")
       (str/starts-with? name "MESOS_")
       (re-matches #"^PORT\d*$" name)
-      (str/starts-with? name "WAITER_")))
+      (and (str/starts-with? name "WAITER_") (not (str/starts-with? name "WAITER_CONFIG_")))))
 
 (def environment-variable-schema
   (s/both (s/constrained s/Str #(<= 1 (count %) 512))
@@ -78,6 +80,7 @@
    (s/optional-key "ports") schema/valid-number-of-ports
    ; start-up related
    (s/optional-key "grace-period-secs") (s/both s/Int (s/pred #(<= 1 % (t/in-seconds (t/minutes 60))) 'at-most-60-minutes))
+   (s/optional-key "health-check-authentication") schema/valid-health-check-authentication
    (s/optional-key "health-check-interval-secs") (s/both s/Int (s/pred #(<= 5 % 60) 'between-5-seconds-and-1-minute))
    (s/optional-key "health-check-max-consecutive-failures") (s/both s/Int (s/pred #(<= 1 % 15) 'at-most-fifteen))
    (s/optional-key "health-check-port-index") schema/valid-health-check-port-index
@@ -93,8 +96,8 @@
    (s/optional-key "instance-expiry-mins") (s/constrained s/Int #(<= 0 %))
    (s/optional-key "jitter-threshold") schema/greater-than-or-equal-to-0-less-than-1
    (s/optional-key "load-balancing") schema/valid-load-balancing
-   (s/optional-key "max-instances") (s/both s/Int (s/pred #(<= 1 % 1000) 'between-one-and-1000))
-   (s/optional-key "min-instances") (s/both s/Int (s/pred #(<= 1 % 4) 'between-one-and-four))
+   (s/optional-key "max-instances") (s/both s/Int (s/pred #(<= minimum-min-instances % 1000) 'between-one-and-1000))
+   (s/optional-key "min-instances") (s/both s/Int (s/pred #(<= minimum-min-instances % 4) 'between-one-and-four))
    (s/optional-key "scale-factor") schema/positive-fraction-less-than-or-equal-to-2
    (s/optional-key "scale-down-factor") schema/positive-fraction-less-than-1
    (s/optional-key "scale-up-factor") schema/positive-fraction-less-than-1
@@ -126,8 +129,9 @@
     "scale-down-factor" "scale-factor" "scale-up-factor"})
 
 (def ^:const service-non-override-keys
-  #{"allowed-params" "backend-proto" "cmd" "cmd-type" "cpus" "env" "health-check-port-index" "health-check-proto"
-    "health-check-url" "image" "mem" "metadata" "metric-group" "name" "namespace" "permitted-user" "ports" "run-as-user"
+  #{"allowed-params" "backend-proto" "cmd" "cmd-type" "cpus" "env"
+    "health-check-authentication" "health-check-port-index" "health-check-proto" "health-check-url"
+    "image" "mem" "metadata" "metric-group" "name" "namespace" "permitted-user" "ports" "run-as-user"
     "scheduler" "version"})
 
 ; keys used as parameters in the service description
@@ -290,7 +294,16 @@
   "Merges the defaults into the existing service description."
   [service-description-without-defaults service-description-defaults metric-group-mappings]
   (->
-    service-description-defaults
+    (let [provided-max-instances (get service-description-without-defaults "max-instances")
+          provided-min-instances (get service-description-without-defaults "min-instances")
+          default-min-instances (get service-description-defaults "min-instances")]
+      (cond-> service-description-defaults
+        ;; adjust the min-instances if the max-instances is provided without min-instances and
+        ;; the max-instances is smaller than the default min-instances
+        (and (integer? provided-max-instances)
+             (nil? provided-min-instances)
+             (> default-min-instances provided-max-instances))
+        (assoc "min-instances" (max provided-max-instances minimum-min-instances))))
     (merge service-description-without-defaults)
     (metric-group-filter metric-group-mappings)))
 
@@ -427,8 +440,11 @@
                                              parameter->issues :grace-period-secs
                                              "grace-period-secs must be an integer in the range [1, 3600].")
                                            (attach-error-message-for-parameter
+                                             parameter->issues :health-check-authentication
+                                             "health-check-authentication must be one of standard or disabled.")
+                                           (attach-error-message-for-parameter
                                              parameter->issues :health-check-port-index
-                                             "health-check-port-index  must be an integer in the range [0, 9].")
+                                             "health-check-port-index must be an integer in the range [0, 9].")
                                            (attach-error-message-for-parameter
                                              parameter->issues :health-check-proto
                                              "health-check-proto, when provided, must be one of h2, h2c, http, or https.")

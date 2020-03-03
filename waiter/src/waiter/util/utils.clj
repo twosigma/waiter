@@ -143,6 +143,12 @@
     (instance? Process v) (str v)
     (instance? ValidationError v) (str v)
     (symbol? v) (str v)
+    (or
+      (and (double? v) (or (Double/isInfinite v) (Double/isNaN v)))
+      (and (float? v) (or (Float/isInfinite v) (Float/isNaN v))))
+    (do
+      (log/warn "Unsupported json value for number where" k "maps to" v)
+      (str v))
     :else v))
 
 (defn clj->json
@@ -456,6 +462,11 @@
     (.get byte-buffer result-bytes)
     result-bytes))
 
+(defn bytes->str
+  "Constructs a new String by decoding the specified array of bytes."
+  [byte-array]
+  (String. ^bytes byte-array "utf-8"))
+
 (defn compressed-bytes->map
   "Decompresses the byte array and converts it into a clojure data-structure."
   [byte-buffer decryption-key]
@@ -465,7 +476,7 @@
 (defn map->base-64-string
   "Serializes data to a base 64 string along with encryption."
   [data-map encryption-key]
-  (String. (b64/encode (nippy/freeze data-map {:compressor nil :password encryption-key}))))
+  (bytes->str (b64/encode (nippy/freeze data-map {:compressor nil :password encryption-key}))))
 
 (defn base-64-string->map
   "Deserializes and decrypts a base 64 string."

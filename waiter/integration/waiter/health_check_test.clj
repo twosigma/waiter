@@ -15,6 +15,7 @@
 ;;
 (ns waiter.health-check-test
   (:require [clojure.data.json :as json]
+            [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.walk :as walk]
             [waiter.util.client-tools :refer :all]
@@ -220,3 +221,36 @@
         (doseq [[_ router-url] (routers waiter-url)]
           (is (wait-for #(check-filtered-instances router-url filter)))
           (is (= 1 (count (active-instances router-url service-id :cookies cookies)))))))))
+
+(deftest ^:parallel ^:integration-fast test-standard-health-check-authentication
+  (testing-using-waiter-url
+    (when-not (using-marathon? waiter-url)
+      (let [token (rand-name)
+            request-headers {:x-waiter-debug true
+                             :x-waiter-token token}
+            backend-proto "http"
+            token-description (-> (kitchen-request-headers :prefix "")
+                                (assoc :backend-proto backend-proto
+                                       :cmd (kitchen-cmd "--enable-health-check-authentication -p $PORT0")
+                                       :health-check-authentication "standard"
+                                       :health-check-interval-secs 5
+                                       :health-check-max-consecutive-failures 4
+                                       :health-check-url "/status"
+                                       :idle-timeout-mins 1
+                                       :name token
+                                       :permitted-user "*"
+                                       :run-as-user "*"
+                                       :token token
+                                       :version "version-foo"))]
+        (try
+          (assert-response-status (post-token waiter-url token-description) 200)
+          (let [ping-response (make-request waiter-url "/waiter-ping" :headers request-headers :method :get)
+                service-id (get-in ping-response [:headers "x-waiter-service-id"])]
+            (is service-id (str ping-response))
+            (with-service-cleanup
+              service-id
+              (let [backend-response (-> ping-response :body json/read-str walk/keywordize-keys :ping-response)]
+                (assert-response-status backend-response 200)
+                (is (= (str "Hello " (retrieve-username)) (-> backend-response :body str))))))
+          (finally
+            (delete-token-and-assert waiter-url token)))))))

@@ -20,6 +20,7 @@
             [clojure.walk :as walk]
             [waiter.test-helpers]
             [waiter.util.semaphore :as semaphore]
+            [waiter.test-helpers :refer :all]
             [waiter.util.utils :as utils]
             [waiter.work-stealing :refer :all]))
 
@@ -551,6 +552,7 @@
         service-id "test-service-id"
         request-id "test-request-id"
         instance-rpc-chan (async/chan 100)
+        populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
         reserve-timeout-ms 1000
         offer-help-interval-ms 1000
         service-id->router-id->metrics {}
@@ -578,7 +580,7 @@
       (testing "2XX response - missing status"
         (let [offers-allowed-semaphore (semaphore/create-semaphore 10)
               make-inter-router-requests-fn (make-inter-router-requests-fn-factory 200 {})]
-          (start-work-stealing-balancer instance-rpc-chan reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
+          (start-work-stealing-balancer populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
                                         service-id->router-id->metrics make-inter-router-requests-fn router-id service-id)
           (is @offer-help-fn-atom)
           (let [offer-help-fn @offer-help-fn-atom
@@ -590,7 +592,7 @@
       (testing "2XX response - success"
         (let [offers-allowed-semaphore (semaphore/create-semaphore 10)
               make-inter-router-requests-fn (make-inter-router-requests-fn-factory 200 {:response-status "successful"})]
-          (start-work-stealing-balancer instance-rpc-chan reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
+          (start-work-stealing-balancer populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
                                         service-id->router-id->metrics make-inter-router-requests-fn router-id service-id)
           (is @offer-help-fn-atom)
           (let [offer-help-fn @offer-help-fn-atom
@@ -602,7 +604,7 @@
       (testing "2XX response - failure"
         (let [offers-allowed-semaphore (semaphore/create-semaphore 10)
               make-inter-router-requests-fn (make-inter-router-requests-fn-factory 200 {:response-status "failure"})]
-          (start-work-stealing-balancer instance-rpc-chan reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
+          (start-work-stealing-balancer populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
                                         service-id->router-id->metrics make-inter-router-requests-fn router-id service-id)
           (is @offer-help-fn-atom)
           (let [offer-help-fn @offer-help-fn-atom
@@ -614,11 +616,23 @@
       (testing "4XX response - failure"
         (let [offers-allowed-semaphore (semaphore/create-semaphore 10)
               make-inter-router-requests-fn (make-inter-router-requests-fn-factory 400 {:response-status "failure"})]
-          (start-work-stealing-balancer instance-rpc-chan reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
+          (start-work-stealing-balancer populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
                                         service-id->router-id->metrics make-inter-router-requests-fn router-id service-id)
           (is @offer-help-fn-atom)
           (let [offer-help-fn @offer-help-fn-atom
                 reservation-parameters {:request-id request-id :target-router-id target-router-id}
                 cleanup-chan (async/chan 1)]
             (offer-help-fn reservation-parameters cleanup-chan)
-            (is (= {:request-id request-id :status :work-stealing-error} (async/<!! cleanup-chan)))))))))
+            (is (= {:request-id request-id :status :failure} (async/<!! cleanup-chan))))))
+
+      (testing "5XX response - failure"
+        (let [offers-allowed-semaphore (semaphore/create-semaphore 10)
+              make-inter-router-requests-fn (make-inter-router-requests-fn-factory 500 {:response-status "failure"})]
+          (start-work-stealing-balancer populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
+                                        service-id->router-id->metrics make-inter-router-requests-fn router-id service-id)
+          (is @offer-help-fn-atom)
+          (let [offer-help-fn @offer-help-fn-atom
+                reservation-parameters {:request-id request-id :target-router-id target-router-id}
+                cleanup-chan (async/chan 1)]
+            (offer-help-fn reservation-parameters cleanup-chan)
+            (is (= {:request-id request-id :status :failure} (async/<!! cleanup-chan)))))))))

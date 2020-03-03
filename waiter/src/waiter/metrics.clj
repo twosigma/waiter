@@ -261,7 +261,7 @@
    :slots-available (counters/value (service-counter service-id "instance-counts" "slots-available"))})
 
 (defn is-quantile-metric?
-  "Returns true if the input map represents a quantile metric (timer or historgram).
+  "Returns true if the input map represents a quantile metric (timer or histogram).
    Warning: Not foolproof."
   [value]
   (and (map? value)
@@ -275,7 +275,7 @@
               (contains? value-entry "0.75")))))
 
 (defn- merge-quantile-metrics
-  "Merges the quantile metrics (timers and historgrams) using a weighted sum reduction."
+  "Merges the quantile metrics (timers and histograms) using a weighted sum reduction."
   [& values]
   (let [non-nil-values (remove nil? values)]
     (when-not (every? is-quantile-metric? non-nil-values)
@@ -504,7 +504,10 @@
    :stream-onto-resp-chan (service-timer service-id "stream-onto-resp-chan")
    :stream-read-body (service-timer service-id "stream-read-body")
    :stream-request-rate (service-meter service-id "stream-request-rate")
-   :throughput-meter (service-meter service-id "stream-throughput")})
+   :throughput-iterations-meter (service-meter service-id "streaming" "response-iterations")
+   :throughput-iterations-meter-global (waiter-meter "streaming" "response-iterations")
+   :throughput-meter (service-meter service-id "stream-throughput")
+   :throughput-meter-global (waiter-meter "streaming" "response-bytes")})
 
 (defn duration-between
   "Returns the duration (interval) elapsed between the start and end times.

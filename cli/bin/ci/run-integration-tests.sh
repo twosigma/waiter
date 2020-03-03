@@ -13,14 +13,6 @@ export GRAPHITE_SERVER_PORT=5555
 # Start netcat to listen to a port. The Codahale Graphite reporter will be able to report without failing and spamming logs.
 nc -kl localhost ${GRAPHITE_SERVER_PORT} > /dev/null &
 
-# Start waiter
-: ${WAITER_PORT:=9091}
-${ROOT_DIR}/waiter/bin/run-using-shell-scheduler.sh ${WAITER_PORT} waiter1 &
-
-# Start a second waiter
-: ${WAITER_PORT_2:=9191}
-${ROOT_DIR}/waiter/bin/run-using-shell-scheduler.sh ${WAITER_PORT_2} waiter2 &
-
 function wait_for_waiter {
     URI=${1}
     while ! curl -s ${URI} >/dev/null;
@@ -39,6 +31,10 @@ else
     echo "WAITER_URI is set to ${WAITER_URI}"
 fi
 
+# Start first waiter
+: ${WAITER_PORT:=9091}
+${ROOT_DIR}/waiter/bin/run-using-shell-scheduler.sh ${WAITER_PORT} waiter1 &
+
 # Wait for waiter to be listening
 timeout 180s bash -c "wait_for_waiter ${WAITER_URI}"
 if [[ $? -ne 0 ]]; then
@@ -53,6 +49,10 @@ if [[ -z ${WAITER_URI_2+x} ]]; then
 else
     echo "WAITER_URI_2 is set to ${WAITER_URI_2}"
 fi
+
+# Start a second waiter, no need to recompile Waiter code
+: ${WAITER_PORT_2:=9191}
+${ROOT_DIR}/waiter/bin/run-using-shell-scheduler.sh ${WAITER_PORT_2} waiter2 0 &
 
 # Wait for second waiter to be listening
 timeout 180s bash -c "wait_for_waiter ${WAITER_URI_2}"

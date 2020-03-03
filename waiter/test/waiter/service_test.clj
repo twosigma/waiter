@@ -20,6 +20,7 @@
             [full.async :as fa]
             [waiter.mocks :refer :all]
             [waiter.service :refer :all]
+            [waiter.test-helpers :refer :all]
             [waiter.util.cache-utils :as cu])
   (:import (java.util.concurrent Future Executors)))
 
@@ -40,6 +41,7 @@
 (deftest test-blacklist-instance
   (testing "basic blacklist"
     (let [instance-rpc-chan (async/chan 1)
+          populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
           service-id "test-id"
           instance-id "test-id.12345"
           instance {:service-id service-id :id instance-id}
@@ -52,7 +54,7 @@
           (is (= (:id instance) instance-id))
           (is (not (nil? cid)))
           (is (= custom-blacklist-period-ms blacklist-period-ms))))
-      (blacklist-instance-go instance-rpc-chan service-id instance-id custom-blacklist-period-ms response-chan)
+      (blacklist-instance-go populate-maintainer-chan! service-id instance-id custom-blacklist-period-ms response-chan)
       (async/<!! (async/timeout 10)))))
 
 (defn- mock-offering-instance
@@ -73,6 +75,7 @@
 (deftest test-offer-instance
   (testing "basic offer"
     (let [instance-rpc-chan (async/chan 1)
+          populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
           router-id "router-id"
           service-id "test-id"
           instance-id "test-id.12345"
@@ -85,7 +88,7 @@
           (is (= instance (:instance offer-params)))
           (is (= response-chan (:response-chan offer-params)))
           (is (= router-id (:router-id offer-params)))))
-      (offer-instance-go instance-rpc-chan service-id {:instance instance
+      (offer-instance-go populate-maintainer-chan! service-id {:instance instance
                                                        :response-chan response-chan
                                                        :router-id router-id})
       (async/<!! (async/timeout 10)))))
@@ -93,6 +96,7 @@
 (deftest test-query-maintainer-channel-map-with-timeout!
   (testing "basic query-state success"
     (let [instance-rpc-chan (async/chan 1)
+          populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
           test-service-id "test-id"
           result-query-chan (async/chan 1)]
       (async/thread
@@ -103,10 +107,12 @@
           (async/>!! response-chan result-query-chan)))
       (async/<!! ;; wait for the go-block to complete execution
         (async/go
-          (let [result-chan (query-maintainer-channel-map-with-timeout! instance-rpc-chan test-service-id 1000 :query-key)]
+          (let [result-chan (query-maintainer-channel-map-with-timeout!
+                              populate-maintainer-chan! test-service-id 1000 :query-key)]
             (is (= result-query-chan result-chan)))))))
   (testing "basic query-state timeout"
     (let [instance-rpc-chan (async/chan 1)
+          populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
           test-service-id "test-id"]
       (async/thread
         (let [{:keys [method response-chan service-id]} (async/<!! instance-rpc-chan)]
@@ -115,7 +121,8 @@
           (is (not (nil? response-chan)))))
       (async/<!! ;; wait for the go-block to complete execution
         (async/go
-          (let [result-chan (query-maintainer-channel-map-with-timeout! instance-rpc-chan test-service-id 100 :query-key)]
+          (let [result-chan (query-maintainer-channel-map-with-timeout!
+                              populate-maintainer-chan! test-service-id 100 :query-key)]
             (is (= {:message "Request timed-out!"} result-chan))))))))
 
 (defn- mock-query-state-instance
@@ -135,6 +142,7 @@
 (deftest test-query-state-instance
   (testing "basic query-state"
     (let [instance-rpc-chan (async/chan 1)
+          populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
           in-service-id "test-id"
           response-chan (async/promise-chan)]
       (mock-query-state-instance
@@ -144,41 +152,44 @@
           (is (= in-service-id service-id))
           (is (not (nil? cid)))
           (is (not (nil? response-chan)))))
-      (query-instance-go instance-rpc-chan in-service-id response-chan)
+      (query-instance-go populate-maintainer-chan! in-service-id response-chan)
       (async/<!! (async/timeout 10)))))
 
 (deftest test-release-instance
   (testing "basic release"
     (let [instance-rpc-chan (async/chan 1)
+          populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
           instance {:service-id "test-id" :id "test-id.12345"}
           reservation-result {:status :success, :cid "CID"}]
       (mock-reservation-system instance-rpc-chan
                                [(fn [[inst reservation-result]]
                                   (is (= instance inst))
                                   (is (= :success (:status reservation-result))))])
-      (release-instance-go instance-rpc-chan instance reservation-result)
-      ; Let mock propogate
+      (release-instance-go populate-maintainer-chan! instance reservation-result)
+      ; Let mock propagate
       (async/<!! (async/timeout 10)))))
 
 (deftest test-get-rand-inst
   (testing "basic get"
     (let [instance-rpc-chan (async/chan 1)
+          populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
           instance {:service-id "test-id" :id "test-id.12345"}
           service-id "test-id"]
       (mock-reservation-system instance-rpc-chan [(fn [[_ resp-chan]] (async/>!! resp-chan instance))])
       (is (= instance
-             (fa/<?? (async/go (get-rand-inst instance-rpc-chan service-id {:reason :serve-request} nil 100))))))))
+             (fa/<?? (async/go (get-rand-inst populate-maintainer-chan! service-id {:reason :serve-request} nil 100))))))))
 
 (deftest test-notify-scaling-state
   (testing "basic release"
     (let [instance-rpc-chan (async/chan 1)
+          populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
           service-id "test-id"
           scaling-state :scaling-state]
       (mock-reservation-system instance-rpc-chan
                                [(fn [{:keys [scaling-state]}]
                                   (is (= :scaling-state scaling-state)))])
-      (notify-scaling-state-go instance-rpc-chan service-id scaling-state)
-      ; Let mock propogate
+      (notify-scaling-state-go populate-maintainer-chan! service-id scaling-state)
+      ; Let mock propagate
       (async/<!! (async/timeout 10)))))
 
 (deftest test-start-new-service

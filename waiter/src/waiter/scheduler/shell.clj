@@ -319,7 +319,8 @@
   [{:keys [port] :as instance} health-check-proto health-check-port-index health-check-path http-client]
   (if (pos? port)
     (let [_ (log/debug "running health check against" instance)
-          instance-health-check-url (scheduler/health-check-url instance health-check-proto health-check-port-index health-check-path)
+          instance-health-check-url (scheduler/build-health-check-url
+                                      instance health-check-proto health-check-port-index health-check-path)
           {:keys [status error]} (async/<!! (http/get http-client instance-health-check-url))]
       (scheduler/log-health-check-issues instance instance-health-check-url status error)
       (and (not error) (<= 200 status 299)))

@@ -30,3 +30,9 @@
   []
   {:pre [(realized? config-promise)]}
   (get-in @config-promise [:cluster-config :name]))
+
+(defn retrieve-waiter-principal
+  "Retrieves the configured waiter principal."
+  []
+  {:pre [(realized? config-promise)]}
+  (get-in @config-promise [:waiter-principal]))

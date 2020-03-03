@@ -604,7 +604,7 @@
           (is (<= (* 0.75 num-requests) (->> iteration-results vals (filter #{:success}) count)) (str iteration-results)))
         (is (pos? (num-instances waiter-url service-id)))
         (Thread/sleep 1000) ;; allow metrics to be sync-ed
-        (let [service-data (service-settings waiter-url service-id)
+        (let [service-data (service-settings waiter-url service-id :query-params {"include" "metrics"})
               request-counts (get-in service-data [:metrics :aggregate :counters :request-counts])
               response-status (get-in service-data [:metrics :aggregate :counters :response-status])]
           (is (= num-requests (reduce + (vals (select-keys response-status [:1000 :1006])))) (str response-status))

@@ -28,8 +28,10 @@
             [waiter.process-request :refer :all]
             [waiter.statsd :as statsd]
             [waiter.test-helpers :refer :all])
-  (:import (java.io ByteArrayOutputStream)
-           (org.eclipse.jetty.client HttpClient)))
+  (:import (java.io ByteArrayOutputStream IOException)
+           (java.util.concurrent TimeoutException)
+           (org.eclipse.jetty.client HttpClient)
+           (org.eclipse.jetty.io EofException)))
 
 (deftest test-prepare-request-properties
   (let [test-cases (list
@@ -472,3 +474,29 @@
     (is (= [4 -103] (determine-priority position-generator-atom {"x-waiter-foo" "2", "x-waiter-priority" "4"})))
     (is (nil? (determine-priority position-generator-atom {"priority" 1})))
     (is (= 103 @position-generator-atom))))
+
+(deftest test-classify-error
+  (is (= [:generic-error "Test Exception" 500 "clojure.lang.ExceptionInfo"]
+         (classify-error (ex-info "Test Exception" {:source :test}))))
+  (is (= [:test-error "Test Exception" 500 "clojure.lang.ExceptionInfo"]
+         (classify-error (ex-info "Test Exception" {:error-cause :test-error :source :test}))))
+  (is (= [:generic-error "Test Exception" 400 "clojure.lang.ExceptionInfo"]
+         (classify-error (ex-info "Test Exception" {:source :test :status 400}))))
+  (is (= [:instance-error nil 502 "java.io.IOException"]
+         (classify-error (ex-info "Test Exception" {:source :test :status 400} (IOException. "Test")))))
+  (is (= [:instance-error nil 502 "java.io.IOException"]
+         (classify-error (IOException. "Test"))))
+  (is (= [:client-error "Client action means stream is no longer needed" 400 "java.io.IOException"]
+         (classify-error (ex-info "Test Exception" {:source :test :status 400} (IOException. "cancel_stream_error")))))
+  (is (= [:client-error "Client action means stream is no longer needed" 400 "java.io.IOException"]
+         (classify-error (IOException. "cancel_stream_error"))))
+  (is (= [:client-error "Connection unexpectedly closed while streaming request" 400 "org.eclipse.jetty.io.EofException"]
+         (classify-error (ex-info "Test Exception" {:source :test :status 400} (EofException. "Test")))))
+  (is (= [:client-eagerly-closed "Connection eagerly closed by client" 400 "org.eclipse.jetty.io.EofException"]
+         (classify-error (ex-info "Test Exception" {:source :test :status 400} (EofException. "reset")))))
+  (is (= [:client-eagerly-closed "Connection eagerly closed by client" 400 "org.eclipse.jetty.io.EofException"]
+         (classify-error (EofException. "reset"))))
+  (is (= [:instance-error nil 504 "java.util.concurrent.TimeoutException"]
+         (classify-error (TimeoutException. "timeout"))))
+  (is (= [:instance-error nil 502 "java.lang.Exception"]
+         (classify-error (Exception. "Test Exception")))))

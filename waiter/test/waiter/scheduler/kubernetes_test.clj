@@ -119,7 +119,8 @@
      (is (= expected# actual#))))
 
 (deftest replicaset-spec-health-check-port-index
-  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
+                config/retrieve-waiter-principal (constantly "waiter@test.com")]
     (let [service-description (assoc dummy-service-description "health-check-port-index" 2 "ports" 3)
           scheduler (make-dummy-scheduler ["test-service-id"]
                                           {:service-id->service-description-fn (constantly service-description)})
@@ -129,7 +130,8 @@
              (get-in replicaset-spec [:spec :template :metadata :annotations]))))))
 
 (deftest replicaset-spec-namespace
-  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
+                config/retrieve-waiter-principal (constantly "waiter@test.com")]
     (let [service-id "test-service-id"]
       (testing "Default namespace"
         (let [scheduler (make-dummy-scheduler [service-id]
@@ -147,17 +149,45 @@
           (is (= target-namespace (get-in replicaset-spec [:metadata :namespace]))))))))
 
 (deftest replicaset-spec-no-image
-  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
+                config/retrieve-waiter-principal (constantly "waiter@test.com")]
     (let [scheduler (make-dummy-scheduler ["test-service-id"])
           replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" dummy-service-description)]
       (is (= "twosigma/waiter-test-apps:latest" (get-in replicaset-spec [:spec :template :spec :containers 0 :image]))))))
 
 (deftest replicaset-spec-custom-image
-  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
+                config/retrieve-waiter-principal (constantly "waiter@test.com")]
     (let [scheduler (make-dummy-scheduler ["test-service-id"])
           replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id"
                             (assoc dummy-service-description "image" "custom/image"))]
       (is (= "custom/image" (get-in replicaset-spec [:spec :template :spec :containers 0 :image]))))))
+
+(deftest test-prepare-health-check-probe
+  (with-redefs [scheduler/retrieve-auth-headers (constantly {"Authorization" "Basic foo:bar"})]
+    (let [service-id->password-fn (constantly "waiter-password")
+          service-id "test-service-id"
+          health-check-scheme "http"
+          health-check-url "/status"
+          health-check-port 80
+          health-check-interval-secs 10]
+      (is (= {:httpGet {:httpHeaders [{:name "Authorization", :value "Basic foo:bar"}]
+                        :path health-check-url
+                        :port health-check-port
+                        :scheme health-check-scheme}
+              :periodSeconds health-check-interval-secs
+              :timeoutSeconds 1}
+             (prepare-health-check-probe
+               service-id->password-fn service-id "standard"
+               health-check-scheme health-check-url health-check-port health-check-interval-secs)))
+      (is (= {:httpGet {:path health-check-url
+                        :port health-check-port
+                        :scheme health-check-scheme}
+              :periodSeconds health-check-interval-secs
+              :timeoutSeconds 1}
+             (prepare-health-check-probe
+               service-id->password-fn service-id "disabled"
+               health-check-scheme health-check-url health-check-port health-check-interval-secs))))))
 
 (deftest test-service-id->k8s-app-name
   (let [base-scheduler-spec {:pod-suffix-length default-pod-suffix-length}
@@ -686,7 +716,8 @@
         (is (= expected-result actual-result))))))
 
 (deftest test-create-app
-  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
+                config/retrieve-waiter-principal (constantly "waiter@test.com")]
     (let [service-id "test-service-id"
           service {:service-id service-id}
           descriptor {:service-description dummy-service-description
@@ -696,7 +727,8 @@
         (let [actual (with-redefs [service-id->service (constantly service)]
                        (scheduler/create-service-if-new dummy-scheduler descriptor))]
           (is (nil? actual))))
-      (with-redefs [service-id->service (constantly nil)]
+      (with-redefs [config/retrieve-waiter-principal (constantly "waiter@test.com")
+                    service-id->service (constantly nil)]
         (testing "unsuccessful-create: forbidden"
           (let [actual (with-redefs [api-request (fn mocked-api-request [& _]
                                                    (ss/throw+ {:status 403}))]
@@ -719,7 +751,8 @@
             (is (= service actual))))))))
 
 (deftest test-keywords-in-replicaset-spec
-  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
+                config/retrieve-waiter-principal (constantly "waiter@test.com")]
     (testing "namespaced keywords in annotation keys and values correctly converted"
       (let [service-id "test-service-id"
             descriptor {:service-description dummy-service-description
@@ -1651,7 +1684,6 @@
     (testing "pod to live instance"
       (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
             instance (pod->ServiceInstance dummy-scheduler pod)]
-        (println 'INSTANCE instance)
         (is (= (scheduler/make-ServiceInstance instance-map) instance))))
 
     (testing "pod with expired annotation"

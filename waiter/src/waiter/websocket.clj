@@ -257,27 +257,39 @@
    It is assumed the body is an input stream.
    The function buffers bytes, and pushes byte input streams onto the channel until the body input stream is exhausted."
   [request response descriptor {:keys [streaming-timeout-ms]} reservation-status-promise request-close-chan local-usage-agent
-   {:keys [requests-streaming requests-waiting-to-stream stream-back-pressure stream-read-body stream-onto-resp-chan throughput-meter]}]
+   {:keys [requests-streaming requests-waiting-to-stream stream-back-pressure stream-read-body stream-onto-resp-chan] :as metric-map}]
   (let [{:keys [service-description service-id]} descriptor
         {:strs [metric-group]} service-description]
     (counters/dec! requests-waiting-to-stream)
     (counters/inc! requests-streaming)
     ;; launch go-block to stream data from client to instance
     (let [client-in (:in request)
-          instance-out (-> response :request :out)]
+          instance-out (-> response :request :out)
+          throughput-meter (metrics/service-meter service-id "streaming" "request-bytes")
+          throughput-meter-global (metrics/waiter-meter "streaming" "request-bytes")
+          throughput-iterations-meter (metrics/service-meter service-id "streaming" "request-iterations")
+          throughput-iterations-meter-global (metrics/waiter-meter "streaming" "request-iterations")]
       (stream-helper "client" client-in "instance" instance-out streaming-timeout-ms reservation-status-promise
                      :instance-error request-close-chan stream-read-body stream-back-pressure
                      (fn ws-bytes-uploaded [bytes-streamed]
+                       (meters/mark! throughput-meter bytes-streamed)
+                       (meters/mark! throughput-meter-global bytes-streamed)
+                       (meters/mark! throughput-iterations-meter)
+                       (meters/mark! throughput-iterations-meter-global)
                        (send local-usage-agent metrics/update-last-request-time-usage-metric service-id (t/now))
                        (histograms/update! (metrics/service-histogram service-id "request-size") bytes-streamed)
                        (statsd/inc! metric-group "request_bytes" bytes-streamed))))
     ;; launch go-block to stream data from instance to client
     (let [client-out (:out request)
-          instance-in (-> response :request :in)]
+          instance-in (-> response :request :in)
+          {:keys [throughput-iterations-meter throughput-iterations-meter-global throughput-meter throughput-meter-global]} metric-map]
       (stream-helper "instance" instance-in "client" client-out streaming-timeout-ms reservation-status-promise
                      :client-error request-close-chan stream-onto-resp-chan stream-back-pressure
                      (fn ws-bytes-downloaded [bytes-streamed]
                        (meters/mark! throughput-meter bytes-streamed)
+                       (meters/mark! throughput-meter-global bytes-streamed)
+                       (meters/mark! throughput-iterations-meter)
+                       (meters/mark! throughput-iterations-meter-global)
                        (histograms/update! (metrics/service-histogram service-id "response-size") bytes-streamed)
                        (statsd/inc! metric-group "response_bytes" bytes-streamed))))))
 
@@ -374,7 +386,7 @@
                         correlation-id
                         (if (integer? status-code-or-exception)
                           (close-client-session! request status-code-or-exception close-message)
-                          (let [ex-message (.getMessage status-code-or-exception)]
+                          (let [ex-message (or (some-> status-code-or-exception .getMessage) close-message)]
                             (close-client-session! request server-termination-on-unexpected-condition ex-message))))))))
               ;; close client and backend channels
               (close-requests! request response request-state-chan))))))
@@ -397,10 +409,11 @@
       ;; force close connection
       ;; - a day after the auth cookie expires if it is available, or
       ;; - a day after the unauthenticated request is made
-      (let [expiry-start-time (:waiter/auth-expiry-time request 0)
+      (let [current-time-ms (System/currentTimeMillis)
+            expiry-start-time (:waiter/auth-expiry-time request current-time-ms)
             one-day-in-millis (-> 1 t/days t/in-millis)
             expiry-time-ms (+ expiry-start-time one-day-in-millis)
-            time-left-ms (max (- expiry-time-ms (System/currentTimeMillis)) 0)]
+            time-left-ms (max (- expiry-time-ms current-time-ms) 0)]
         (async/go
           (let [timeout-ch (async/timeout time-left-ms)
                 [_ selected-chan] (async/alts! [request-close-promise-chan timeout-ch] :priority true)]
@@ -409,11 +422,11 @@
                 ;; close connections if the request is still live
                 (confirm-live-connection-with-abort)
                 (log/info "cookie has expired, triggering closing of websocket connections")
-                (async/>! request-close-promise-chan :cookie-expired)
+                (async/>! request-close-promise-chan [:cookie-expired nil nil "Cookie Expired"])
                 (catch Exception _
                   (log/debug "ignoring exception generated from closed connection")))))))
       (catch Exception e
-        (async/>!! request-close-promise-chan :process-error)
+        (async/>!! request-close-promise-chan [:process-error nil e "Unexpected error"])
         (log/error e "error while processing websocket response"))))
   ;; return an empty response map to maintain consistency with the http case
   {})

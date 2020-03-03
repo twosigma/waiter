@@ -224,15 +224,15 @@
 
 (defn start-work-stealing-balancer
   "Starts the work-stealing balancer for all services."
-  [instance-rpc-chan reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore service-id->router-id->metrics
-   make-inter-router-requests-fn router-id service-id]
+  [populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
+   service-id->router-id->metrics make-inter-router-requests-fn router-id service-id]
   (log/info "starting work-stealing balancer for" service-id)
   (letfn [(reserve-instance-fn
             [reservation-parameters response-chan]
             (async/go
               (try
                 (let [instance (-> (service/get-rand-inst
-                                     instance-rpc-chan
+                                     populate-maintainer-chan!
                                      service-id
                                      (assoc reservation-parameters
                                        :reason :work-stealing
@@ -246,12 +246,12 @@
                   (async/>! response-chan :no-matching-instance-found)))))
           (release-instance-fn
             [{:keys [instance status] :as reservation-summary}]
-            (counters/inc! (metrics/waiter-counter "work-stealing" "offer" (str "response-" status)))
+            (counters/inc! (metrics/waiter-counter "work-stealing" "offer" (str "response-" (name status))))
             (meters/mark! (metrics/waiter-meter "work-stealing" "offer" "response-rate"))
             (service/release-instance-go
-              instance-rpc-chan
+              populate-maintainer-chan!
               instance
-              (select-keys reservation-summary [:cid, :request-id, :status])))
+              (select-keys reservation-summary [:cid :request-id :status])))
           (offer-help-fn
             [{:keys [request-id target-router-id] :as reservation-parameters} cleanup-chan]
             (async/go
@@ -261,28 +261,29 @@
                   (counters/inc! (metrics/waiter-counter "work-stealing" "offer" "request"))
                   (meters/mark! (metrics/waiter-meter "work-stealing" "offer" "send-rate"))
                   (let [{:keys [body error headers status] :as inter-router-response}
-                        (-> (make-inter-router-requests-fn "work-stealing"
-                                                           :acceptable-router? #(= target-router-id %)
-                                                           :body (-> reservation-parameters
-                                                                     (assoc :router-id router-id
-                                                                            :service-id service-id)
-                                                                     (utils/clj->json-response)
-                                                                     :body)
-                                                           :method :post)
-                            (get target-router-id)
-                            async/<!)
+                        (some-> (make-inter-router-requests-fn "work-stealing"
+                                                               :acceptable-router? #(= target-router-id %)
+                                                               :body (-> reservation-parameters
+                                                                       (assoc :router-id router-id
+                                                                              :service-id service-id)
+                                                                       (utils/clj->json-response)
+                                                                       :body)
+                                                               :method :post)
+                          (get target-router-id)
+                          async/<!)
                         _ (when error
                             (throw error))
-                        response-result (if (and inter-router-response status (<= 200 status 299))
+                        response-result (if (and inter-router-response body)
                                           (-> body
                                               async/<! ;; rely on http client library to close the body
                                               str
                                               json/read-str
                                               walk/keywordize-keys
-                                              (get :response-status default-response-result))
+                                              :response-status
+                                              (or default-response-result))
                                           (do
                                             (log/info "no inter-router response from" target-router-id
-                                                      {:cid (get headers "x-cid"), :status status})
+                                                      {:cid (get headers "x-cid") :status status})
                                             default-response-result))]
                     (deliver response-result-promise response-result))
                   (catch Exception e
@@ -292,7 +293,7 @@
                   (finally
                     (deliver response-result-promise "success")
                     (let [offer-response-status (keyword @response-result-promise)]
-                      (async/>! cleanup-chan {:request-id request-id, :status offer-response-status})))))))
+                      (async/>! cleanup-chan {:request-id request-id :status offer-response-status})))))))
           (timeout-chan-factory
             []
             (async/timeout offer-help-interval-ms))]

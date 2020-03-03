@@ -3,10 +3,11 @@ import logging
 import os
 import pty
 import shlex
-
 import subprocess
 import tempfile
 from fcntl import fcntl, F_GETFL, F_SETFL
+
+import yaml
 
 from tests.waiter import util
 
@@ -127,11 +128,28 @@ def update_minimal(waiter_url=None, token_name=None, flags=None, **kwargs):
     return cp
 
 
+def dump(file_format, data):
+    """Serializes data to a string in the specified format."""
+    if file_format == 'json':
+        return json.dumps(data, indent=2, sort_keys=True).encode('utf8')
+    elif file_format == 'yaml':
+        return yaml.safe_dump(data).encode('utf8')
+    else:
+        raise Exception(f'Unsupported file format: {file_format}')
+
+
 def write_json(path, config):
     """Writes the given config map as JSON to the given path."""
     with open(path, 'w') as outfile:
-        logging.info('echo \'%s\' > %s' % (json.dumps(config), path))
+        logging.info('echo \'%s\' > %s' % (dump('json', config), path))
         json.dump(config, outfile)
+
+
+def write_yaml(path, config):
+    """Writes the given config map as JSON to the given path."""
+    with open(path, 'w') as outfile:
+        logging.info('echo \'%s\' > %s' % (dump('yaml', config), path))
+        yaml.safe_dump(config, outfile)
 
 
 class temp_config_file:
@@ -175,16 +193,22 @@ class temp_token_file:
     token JSON file for the CLI. Takes as input the token dictionary to use.
     """
 
-    def __init__(self, token_data):
+    def __init__(self, token_data, format='json'):
+        self.format = format
         self.token_data = token_data
 
-    def write_temp_json(self):
+    def write_temp_file(self):
         path = tempfile.NamedTemporaryFile(delete=False).name
-        write_json(path, self.token_data)
+        if self.format == 'json':
+            write_json(path, self.token_data)
+        elif self.format == 'yaml':
+            write_yaml(path, self.token_data)
+        else:
+            raise Exception(f'Unsupported format: {self.format}')
         return path
 
     def __enter__(self):
-        self.path = self.write_temp_json()
+        self.path = self.write_temp_file()
         return self.path
 
     def __exit__(self, _, __, ___):
@@ -206,16 +230,33 @@ def __show_json(waiter_url=None, token_name=None, flags=None):
     return cp, data
 
 
-def show_token(waiter_url=None, token_name=None, flags=None):
-    """Shows the token JSON corresponding to the given token name"""
-    cp, data = __show_json(waiter_url, token_name, flags)
+def __show_yaml(waiter_url=None, token_name=None, flags=None):
+    """Invokes show on the given token with --yaml, and returns the parsed YAML"""
+    flags = (flags + ' ') if flags else ''
+    cp = show(waiter_url, token_name, flags, '--yaml')
+    data = yaml.safe_load(stdout(cp))
+    return cp, data
+
+
+def __show(file_format, waiter_url=None, token_name=None, flags=None):
+    if file_format == 'json':
+        return __show_json(waiter_url, token_name, flags)
+    elif file_format == 'yaml':
+        return __show_yaml(waiter_url, token_name, flags)
+    else:
+        raise Exception(f'Unsupported file format: {file_format}')
+
+
+def show_token(file_format, waiter_url=None, token_name=None, flags=None):
+    """Shows the token JSON/YAML corresponding to the given token name"""
+    cp, data = __show(file_format, waiter_url, token_name, flags)
     token_list = [entities['token'] for entities in data['clusters'].values()]
     return cp, token_list
 
 
-def show_token_services(waiter_url=None, token_name=None, flags=None):
-    """Shows the token JSON corresponding to the given token name's services"""
-    cp, data = __show_json(waiter_url, token_name, flags)
+def show_token_services(file_format, waiter_url=None, token_name=None, flags=None):
+    """Shows the token JSON /YAML corresponding to the given token name's services"""
+    cp, data = __show(file_format, waiter_url, token_name, flags)
     services = [s for entities in data['clusters'].values() for s in entities['services']]
     return cp, services
 
@@ -232,7 +273,7 @@ def plugins_config():
     """
     if 'WAITER_TEST_PLUGIN_JSON' in os.environ:
         path = os.environ['WAITER_TEST_PLUGIN_JSON']
-        content = util.load_json_file(os.path.abspath(path))
+        content = util.load_file('json', os.path.abspath(path))
         return content or {}
     else:
         return {}

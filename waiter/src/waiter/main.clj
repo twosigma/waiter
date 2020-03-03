@@ -29,13 +29,15 @@
             [waiter.cors :as cors]
             [waiter.core :as core]
             [waiter.correlation-id :as cid]
+            [waiter.metrics :as metrics]
             [waiter.request-log :as rlog]
             [waiter.settings :as settings]
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
   (:import clojure.core.async.impl.channels.ManyToManyChannel
            java.io.IOException
-           javax.servlet.ServletInputStream)
+           javax.servlet.ServletInputStream
+           (org.eclipse.jetty.server AbstractConnector Server))
   (:gen-class))
 
 (defn retrieve-git-version []
@@ -66,6 +68,30 @@
             (log/error e "Unable to consume request stream"))))
       resp)))
 
+(defn- initialize-server-metrics
+  "Initializes the gauge metrics for the server instance."
+  [^Server server]
+  (metrics/waiter-gauge
+    #(if (.getThreads (.getThreadPool server)) 1 0)
+    "core" "server" "thread-pool" "threads" "total")
+  (metrics/waiter-gauge
+    #(if (.getIdleThreads (.getThreadPool server)) 1 0)
+    "core" "server" "thread-pool" "threads" "idle")
+  (doseq [connector (.getConnectors server)]
+    (when (instance? AbstractConnector connector)
+      (let [^AbstractConnector connector connector
+            connector-name (or (.getName connector)
+                               (str "server-connector-" (.hashCode connector)))]
+        (metrics/waiter-gauge
+          #(if (.isAccepting connector) 1 0)
+          "core" "server" "connector" connector-name "is-accepting")
+        (metrics/waiter-gauge
+          #(.getAcceptors connector)
+          "core" "server" "connector" connector-name "num-acceptors")
+        (metrics/waiter-gauge
+          #(.size (.getConnectedEndPoints connector))
+          "core" "server" "connector" connector-name "connected-endpoints")))))
+
 (defn wire-app
   [settings]
   {:curator core/curator
@@ -83,25 +109,27 @@
                                          (:ssl-port server-options) (assoc :ssl? true))
                                        websocket-config
                                        {:ring-handler (-> (core/ring-handler-factory waiter-request?-fn handlers)
-                                                          (cors/wrap-cors-preflight cors-validator (:max-age cors-config) kv-store token-defaults waiter-hostnames)
-                                                          core/wrap-error-handling
-                                                          (core/wrap-debug generate-log-url-fn)
-                                                          (core/attach-waiter-api-middleware waiter-request?-fn)
-                                                          (core/attach-server-header-middleware server-name)
-                                                          rlog/wrap-log
-                                                          core/correlation-id-middleware
-                                                          (core/wrap-request-info router-id support-info)
-                                                          consume-request-stream)
+                                                        (cors/wrap-cors-preflight cors-validator (:max-age cors-config) kv-store token-defaults waiter-hostnames)
+                                                        core/wrap-error-handling
+                                                        (core/wrap-debug generate-log-url-fn)
+                                                        (core/attach-waiter-api-middleware waiter-request?-fn)
+                                                        (core/attach-server-header-middleware server-name)
+                                                        rlog/wrap-log
+                                                        core/correlation-id-middleware
+                                                        (core/wrap-request-info router-id support-info)
+                                                        consume-request-stream)
                                         :websocket-acceptor websocket-request-acceptor
                                         :websocket-handler (-> (core/websocket-handler-factory handlers)
-                                                               rlog/wrap-log
-                                                               core/correlation-id-middleware
-                                                               (core/wrap-request-info router-id support-info))
+                                                             rlog/wrap-log
+                                                             core/correlation-id-middleware
+                                                             (core/wrap-request-info router-id support-info))
                                         :host host
                                         :join? false
                                         :port port
-                                        :send-server-version? false})]
-                    (server/run-jetty options)))})
+                                        :send-server-version? false})
+                        ^Server server (server/run-jetty options)]
+                    (initialize-server-metrics server)
+                    server))})
 
 (defn start-waiter [config-file]
   (try

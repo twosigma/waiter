@@ -42,6 +42,7 @@
                                      (s/required-key :name) schema/non-empty-string
                                      (s/required-key :service-prefix) schema/non-empty-string}
    (s/required-key :consent-expiry-days) schema/positive-int
+   (s/required-key :custom-components) {s/Keyword schema/require-symbol-factory-fn}
    (s/required-key :deployment-error-config) {(s/required-key :min-failed-instances) schema/positive-int
                                               (s/required-key :min-hosts) schema/positive-int}
    (s/required-key :entitlement-config) (s/constrained
@@ -138,6 +139,7 @@
                                                    (s/required-key "env") {s/Str s/Str}
                                                    (s/required-key "expired-instance-restart-rate") schema/positive-fraction-less-than-or-equal-to-1
                                                    (s/required-key "grace-period-secs") schema/positive-int
+                                                   (s/required-key "health-check-authentication") schema/valid-health-check-authentication
                                                    (s/required-key "health-check-interval-secs") schema/positive-int
                                                    (s/required-key "health-check-max-consecutive-failures") schema/positive-int
                                                    (s/required-key "health-check-port-index") schema/valid-health-check-port-index
@@ -275,6 +277,7 @@
                     :name "waiter"
                     :service-prefix "waiter-service-"}
    :consent-expiry-days 90
+   :custom-components {}
    :deployment-error-config {:min-failed-instances 2
                              :min-hosts 2}
    :entitlement-config {:kind :simple
@@ -430,6 +433,7 @@
                                   "env" {}
                                   "expired-instance-restart-rate" 0.1
                                   "grace-period-secs" 30
+                                  "health-check-authentication" "disabled"
                                   "health-check-interval-secs" 10
                                   "health-check-max-consecutive-failures" 5
                                   "health-check-port-index" 0

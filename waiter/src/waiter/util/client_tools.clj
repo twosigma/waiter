@@ -115,6 +115,12 @@
   (or (System/getenv "WAITER_H2C_PORT")
       (retrieve-waiter-port waiter-url)))
 
+(defn retrieve-grpc-cleartext-port
+  "Retrieves the Waiter port for receiving grpc requests over cleartext."
+  [waiter-url]
+  (or (System/getenv "WAITER_GRPC_CLEARTEXT_PORT")
+      (retrieve-h2c-port waiter-url)))
+
 (defn retrieve-h2c-url
   "Retrieves the Waiter url for receiving h2c requests."
   [waiter-url]
@@ -141,6 +147,19 @@
   [waiter-url]
   (not= (retrieve-waiter-port waiter-url)
         (retrieve-h2c-port waiter-url)))
+
+(defn grpc-cancellations-supported?
+  "Returns true if gRPC cancellations are supported.
+   Waiter routers support gRPC client and server cancellation.
+   However, sometimes traffic to the Waiter routers are fronted by another proxy, e.g. haproxy or envoy.
+   Certain proxies, e.g. haproxy https://github.com/haproxy/haproxy/issues/172, do not support cancellations due to
+   how they terminate http/2 connections.
+   Other proxies, e.g. Envoy, do support gRPC cancellations as they respect the http/2 protocol for closing connections.
+   We require the presence of WAITER_GRPC_CLEARTEXT_PORT env variable to signal that gRPC cancellation is
+   supported by the proxy intercepting traffic to Waiter routers."
+  [waiter-url]
+  (or (not (behind-proxy? waiter-url))
+      (not (str/blank? (System/getenv "WAITER_GRPC_CLEARTEXT_PORT")))))
 
 (defn interval-to-str [^Period interval]
   (let [builder (doto (PeriodFormatterBuilder.)
@@ -198,24 +217,12 @@
   `(using-waiter-url
      (time-it ~name ~@body)))
 
-(defn- git-show->branch-name [text]
-  (->
-    text
-    (str/trim)
-    (str/split #", ")
-    (last)
-    (str/replace ")" "")
-    (str/replace #"^.+/" "")))
-
-(deftest test-git-show->branch-name
-  (is (= "master" (git-show->branch-name "(HEAD, origin/master)")))
-  (is (= "foo" (git-show->branch-name " (HEAD, origin/foo, foo)"))))
-
 (defn- retrieve-git-branch []
   (->
-    (shell/sh "git" "show" "-s" "--pretty=%d" "HEAD")
-    (:out)
-    (git-show->branch-name)))
+    (shell/sh "git" "rev-parse" "--abbrev-ref" "HEAD")
+    :out
+    (or "_unknown_branch_")
+    str/trim))
 
 (defn make-http-clients
   "Instantiates and returns http1 and http2 clients without a cookie store"
@@ -962,7 +969,7 @@
   {:pre [(not (str/blank? waiter-url))]
    :post [%]}
   (let [routers (routers waiter-url)
-        settings (service-settings waiter-url service-id)
+        settings (service-settings waiter-url service-id :query-params {"include" "metrics"})
         assigned? (fn [router-id]
                     (let [slots (get-in
                                   settings

@@ -7,8 +7,8 @@ import requests
 
 from waiter import terminal, http_util
 from waiter.querying import get_token, query_token
-from waiter.util import FALSE_STRINGS, print_info, response_message, TRUE_STRINGS, guard_no_cluster, str2bool, \
-    load_json_file
+from waiter.data_format import load_data
+from waiter.util import FALSE_STRINGS, print_info, response_message, TRUE_STRINGS, guard_no_cluster, str2bool
 
 BOOL_STRINGS = TRUE_STRINGS + FALSE_STRINGS
 INT_PARAM_SUFFIXES = ['-failures', '-index', '-instances', '-length', '-level', '-mins', '-secs']
@@ -69,61 +69,37 @@ def create_or_update(cluster, token_name, token_fields, action):
         print_info(f'{message}\n')
 
 
-def parse_raw_token_spec(r):
-    """
-    Parse a JSON string containing raw token data.
-    Token data must be a dict of token attributes.
-    Throws a ValueError if there is a problem parsing the data.
-    """
-    try:
-        content = json.loads(r)
-    except Exception:
-        raise ValueError('Malformed JSON for raw token.')
-
-    if type(content) is dict:
-        return content
-    else:
-        raise ValueError('Token must be a dictionary of attributes.')
-
-
-def read_token_from_stdin():
-    """Prompts for and then reads token JSON from stdin"""
-    print('Enter the raw token JSON (press Ctrl+D on a blank line to submit)', file=sys.stderr)
-    token_json = sys.stdin.read()
-    return token_json
-
-
 def create_or_update_token(clusters, args, _, action):
     """Creates (or updates) a Waiter token"""
     guard_no_cluster(clusters)
     logging.debug('args: %s' % args)
     token_name_from_args = args.pop('token', None)
     json_file = args.pop('json', None)
-    if json_file:
-        if json_file == '-':
-            token_json = read_token_from_stdin()
-            token_fields_from_json = parse_raw_token_spec(token_json)
-        else:
-            token_fields_from_json = load_json_file(json_file)
-            if not token_fields_from_json:
-                raise Exception(f'Unable to load token JSON from {json_file}.')
+    yaml_file = args.pop('yaml', None)
+    input_file = args.pop('input', None)
+
+    if input_file or json_file or yaml_file:
+        token_fields_from_json = load_data({'data': input_file,
+                                            'json': json_file,
+                                            'yaml': yaml_file})
     else:
         token_fields_from_json = {}
 
     token_fields_from_args = args
     shared_keys = set(token_fields_from_json).intersection(token_fields_from_args)
     if shared_keys:
-        raise Exception(f'You cannot specify the same parameter in both a token JSON file and token field flags at '
-                        f'the same time ({", ".join(shared_keys)}).')
+        raise Exception(f'You cannot specify the same parameter in both an input file '
+                        f'and token field flags at the same time ({", ".join(shared_keys)}).')
 
     token_fields = {**token_fields_from_json, **token_fields_from_args}
     token_name_from_json = token_fields.pop('token', None)
     if token_name_from_args and token_name_from_json:
-        raise Exception('You cannot specify the token name both as an argument and in the token JSON file.')
+        raise Exception('You cannot specify the token name both as an argument and in the input file.')
 
     token_name = token_name_from_args or token_name_from_json
     if not token_name:
-        raise Exception('You must specify the token name either as an argument or in a token JSON file via --json.')
+        raise Exception('You must specify the token name either as an argument or in an input file via '
+                        '--json or --yaml.')
 
     if len(clusters) > 1:
         default_for_create = [c for c in clusters if c.get('default-for-create', False)]
@@ -150,8 +126,11 @@ def create_or_update_token(clusters, args, _, action):
 def add_arguments(parser):
     """Adds arguments to the given parser"""
     add_token_flags(parser)
-    parser.add_argument('--json', help='provide the data in a JSON file', dest='json')
     parser.add_argument('token', nargs='?')
+    format_group = parser.add_mutually_exclusive_group()
+    format_group.add_argument('--json', help='provide the data in a JSON file', dest='json')
+    format_group.add_argument('--yaml', help='provide the data in a YAML file', dest='yaml')
+    format_group.add_argument('--input', help='provide the data in a JSON/YAML file', dest='input')
 
 
 def add_token_flags(parser):

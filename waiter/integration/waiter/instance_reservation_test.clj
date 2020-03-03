@@ -19,7 +19,7 @@
             [clojure.set :as set]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
-            [waiter.state :as state]
+            [waiter.state.responder :as responder]
             [waiter.util.client-tools :refer :all]
             [waiter.util.date-utils :as du])
   (:import (java.util.concurrent CountDownLatch)))
@@ -78,7 +78,7 @@
           ;; allow time for long requests to be processed
           (is (wait-for
                 (fn []
-                  (let [service-data (service-settings waiter-url service-id)
+                  (let [service-data (service-settings waiter-url service-id :query-params {"include" "metrics"})
                         request-counts (get-in service-data [:metrics :aggregate :counters :request-counts])]
                     (= num-routers (get request-counts :outstanding))))
                 :interval 200 :timeout 2000 :unit-multiplier 1))
@@ -176,7 +176,7 @@
             (assert-response-status response 200))
           (let [sorted-instance-ids (->> (active-instances router-url service-id :cookies cookies)
                                       (map (fn [instance] (update instance :started-at du/str-to-date)))
-                                      (state/sort-instances-for-processing #{})
+                                      (responder/sort-instances-for-processing #{})
                                       (map :id))
                 instance-id->request-count @instance-id->request-count-atom]
             (assertion-fn sorted-instance-ids instance-id->request-count)))))))

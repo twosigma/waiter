@@ -234,6 +234,9 @@
                               :issuer "test.com"
                               ;; url of the authorization server where the public keys (JWKS) are available:
                               :jwks-url "http://127.0.0.1:8040/jwks"
+                              ;; The maximum duration from current time allowed for expiry time on the JWT claim.
+                              ;; The value defaults to 24 hours, i.e. 3600000
+                              :max-expiry-duration-ms 86400000
                               ;; The keyword used to retrieve the subject from the access token claims
                               :subject-key :sub
                               ;; The supported algorithms while validating access tokens, must be subset of #{:eddsa :rs256}
@@ -704,6 +707,7 @@
                                        "BAZ" "qux"}
                                 "expired-instance-restart-rate" 0.1
                                 "grace-period-secs" 30
+                                "health-check-authentication" "disabled"
                                 "health-check-interval-secs" 10
                                 "health-check-max-consecutive-failures" 5
                                 "health-check-port-index" 0
@@ -895,6 +899,11 @@
                   :transient-metrics-timeout-ms 300000}
 
  ; ---------- Miscellaneous ----------
+
+ ;; Custom components allow sharing of components between the scheduler and service description builder.
+ ;; The values in the entries must contain a :factory-fn and the necessary config for the component.
+ ;; Components also get passed in the :kv-store-factory, :leader?-fn and :synchronize-fn for use in the factory.
+ :custom-components {:in-memory-kv-store {:factory-fn waiter.kv/new-local-kv-store}}
 
  ;; Certain messages that Waiter returns can be customized:
  :messages {:backend-request-failed "Request to service backend failed"

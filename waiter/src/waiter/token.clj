@@ -350,7 +350,7 @@
                      (assoc "root" token-root))))
           :headers {"etag" token-hash}))
       (throw (ex-info (str "Couldn't find token " token)
-                      {:headers {"etag" token-hash}
+                      {:headers {}
                        :status 404
                        :token token
                        :log-level :warn})))))

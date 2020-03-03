@@ -33,6 +33,7 @@
             [waiter.handler :as handler]
             [waiter.headers :as headers]
             [waiter.metrics :as metrics]
+            [waiter.request-log :as rlog]
             [waiter.scheduler :as scheduler]
             [waiter.service :as service]
             [waiter.statsd :as statsd]
@@ -59,35 +60,40 @@
       (= (first state) ::servlet/timeout) (throw (ex-info "Operation timed out" {:cid correlation-id} (second state)))
       :else (throw (ex-info "Connection closed while still processing" {:cid correlation-id})))))
 
-(defn- classify-error
+(defn classify-error
   "Classifies the error responses from the backend into the following vector:
    - error cause (:client-eagerly-closed, :client-error, :instance-error or :generic-error),
    - associated error message,
    - the http status code, and
    - the canonical name of the exception that 'caused' the error."
   [error]
-  (let [classification (cond (instance? ExceptionInfo error)
-                             (let [[error-cause message status error-class] (classify-error (ex-cause error))
-                                   error-cause (or (-> error ex-data :error-cause) error-cause)]
-                               [error-cause message status error-class])
+  (let [error-class (-> error .getClass .getCanonicalName)
+        error-message (str (.getMessage error))
+        classification (cond (instance? ExceptionInfo error)
+                             (if-let [ex-info-cause (ex-cause error)]
+                               (let [[error-cause message status error-class] (classify-error ex-info-cause)
+                                     error-cause (or (-> error ex-data :error-cause) error-cause)]
+                                 [error-cause message status error-class])
+                               (let [error-status (or (-> error ex-data :status) 500)
+                                     error-cause (or (-> error ex-data :error-cause) :generic-error)]
+                                 [error-cause error-message error-status error-class]))
                              (instance? IllegalStateException error)
-                             [:generic-error (.getMessage error) 400]
+                             [:generic-error error-message 400 error-class]
                              ;; cancel_stream_error is used to indicate that the stream is no longer needed
-                             (and (instance? IOException error) (= "cancel_stream_error" (.getMessage error)))
-                             [:client-error "Client action means stream is no longer needed" 400]
+                             (and (instance? IOException error) (= "cancel_stream_error" error-message))
+                             [:client-error "Client action means stream is no longer needed" 400 error-class]
                              ;; connection has already been closed by the client
-                             (and (instance? EofException error) (= "reset" (.getMessage error)))
-                             [:client-eagerly-closed "Connection eagerly closed by client" 400]
+                             (and (instance? EofException error) (= "reset" error-message))
+                             [:client-eagerly-closed "Connection eagerly closed by client" 400 error-class]
                              (instance? EofException error)
-                             [:client-error "Connection unexpectedly closed while streaming request" 400]
+                             [:client-error "Connection unexpectedly closed while streaming request" 400 error-class]
                              (instance? TimeoutException error)
-                             [:instance-error (utils/message :backend-request-timed-out) 504]
+                             [:instance-error (utils/message :backend-request-timed-out) 504 error-class]
                              :else
-                             [:instance-error (utils/message :backend-request-failed) 502])
-        [error-cause _ _] classification
-        error-class (-> error .getClass .getCanonicalName)]
-    (log/info error-class (.getMessage error) "identified as" error-cause)
-    (conj classification error-class)))
+                             [:instance-error (utils/message :backend-request-failed) 502 error-class])
+        error-cause (first classification)]
+    (log/info error-class error-message "identified as" error-cause)
+    classification))
 
 (defn- determine-client-error
   "Classifies the error into one of :client-eagerly-closed or :client-error"
@@ -193,19 +199,17 @@
             (headers/get-waiter-header waiter-headers "streaming-timeout") "streaming timeout")))
 
 (defn- prepare-instance
-  "Tries to acquire an instance and set up a mechanism to release the instance when
-   `request-state-chan` is closed. Takes `instance-rpc-chan`, `service-id` and
-   `reason-map` to acquire the instance.
+  "Tries to acquire an instance and set up a mechanism to release the instance when `request-state-chan` is closed.
+   Takes `populate-maintainer-chan!`, `service-id` and `reason-map` to acquire the instance.
    If an exception has occurred, no instance was acquired.
-   Returns the instance if it was acquired successfully,
-   or an exception if there was an error"
-  [instance-rpc-chan service-id {:keys [request-id] :as reason-map} start-new-service-fn request-state-chan
+   Returns the instance if it was acquired successfully, or an exception if there was an error"
+  [populate-maintainer-chan! service-id {:keys [request-id] :as reason-map} start-new-service-fn request-state-chan
    queue-timeout-ms reservation-status-promise metric-group]
   (fa/go-try
     (log/debug "retrieving instance for" service-id "using" (dissoc reason-map :cid :time))
     (let [correlation-id (cid/get-correlation-id)
           instance (fa/<? (service/get-available-instance
-                            instance-rpc-chan service-id reason-map start-new-service-fn queue-timeout-ms metric-group))]
+                            populate-maintainer-chan! service-id reason-map start-new-service-fn queue-timeout-ms metric-group))]
       (au/on-chan-close request-state-chan
                         (fn on-request-state-chan-close []
                           (cid/with-correlation-id
@@ -213,7 +217,8 @@
                             (log/debug "request-state-chan closed")
                             ; assume request did not process successfully if no value in promise
                             (deliver reservation-status-promise :generic-error)
-                            (let [status @reservation-status-promise]
+                            (let [status @reservation-status-promise
+                                  reservation-result {:cid correlation-id :request-id request-id :status status}]
                               (log/info "done processing request" status)
                               (when (= :success status)
                                 (counters/inc! (metrics/service-counter service-id "request-counts" "successful")))
@@ -225,7 +230,7 @@
                               (when (not= :success-async status)
                                 (counters/dec! (metrics/service-counter service-id "request-counts" "outstanding"))
                                 (statsd/gauge-delta! metric-group "request_outstanding" -1))
-                              (service/release-instance-go instance-rpc-chan instance {:status status, :cid correlation-id, :request-id request-id}))))
+                              (service/release-instance-go populate-maintainer-chan! instance reservation-result))))
                         (fn [e]
                           (cid/with-correlation-id
                             correlation-id
@@ -281,10 +286,18 @@
         request-body-streaming-counter (metrics/service-counter service-id "request-counts" "request-body-streaming")
         body-ch (async/chan 2048)
         report-request-size-metrics (let [bytes-streamed-atom (atom 0)
-                                          statsd-unreported-bytes-atom (atom 0)]
+                                          statsd-unreported-bytes-atom (atom 0)
+                                          throughput-meter (metrics/service-meter service-id "streaming" "request-bytes")
+                                          throughput-meter-global (metrics/waiter-meter "streaming" "request-bytes")
+                                          throughput-iterations-meter (metrics/service-meter service-id "streaming" "request-iterations")
+                                          throughput-iterations-meter-global (metrics/waiter-meter "streaming" "request-iterations")]
                                       (fn report-request-size-metrics [bytes-read complete?]
                                         (try
                                           (when (pos? bytes-read)
+                                            (meters/mark! throughput-meter bytes-read)
+                                            (meters/mark! throughput-meter-global bytes-read)
+                                            (meters/mark! throughput-iterations-meter)
+                                            (meters/mark! throughput-iterations-meter-global)
                                             (swap! bytes-streamed-atom + bytes-read)
                                             (swap! statsd-unreported-bytes-atom + bytes-read))
                                           (if complete?
@@ -452,10 +465,10 @@
   [{:keys [body error-chan]} confirm-live-connection request-abort-callback resp-chan
    {:keys [streaming-timeout-ms]}
    reservation-status-promise request-state-chan metric-group waiter-debug-enabled?
-   {:keys [throughput-meter requests-streaming requests-waiting-to-stream
-           stream-request-rate stream-complete-rate
-           stream-exception-meter stream-back-pressure stream-read-body
-           stream-onto-resp-chan stream service-id]}]
+   {:keys [requests-streaming requests-waiting-to-stream service-id
+           stream stream-back-pressure stream-complete-rate stream-exception-meter
+           stream-onto-resp-chan stream-read-body stream-request-rate
+           throughput-iterations-meter throughput-iterations-meter-global throughput-meter throughput-meter-global]}]
   (async/go
     (let [output-stream-atom (atom nil)]
       (try
@@ -480,6 +493,9 @@
                           (if-not (= -1 bytes-read)
                             (do
                               (meters/mark! throughput-meter bytes-read)
+                              (meters/mark! throughput-meter-global bytes-read)
+                              (meters/mark! throughput-iterations-meter)
+                              (meters/mark! throughput-iterations-meter-global)
                               (if (or (zero? bytes-read) ;; don't write empty buffer, channel may be potentially closed
                                       (timers/start-stop-time!
                                         stream-onto-resp-chan
@@ -678,7 +694,7 @@
                             (metrics/stream-metric-map service-id))
       (-> (cond-> response
             location (post-process-async-request-response-fn
-                       service-id metric-group backend-proto instance (handler/make-auth-user-map request)
+                       descriptor instance (handler/make-auth-user-map request)
                        reason-map instance-request-properties location query-string))
         (utils/attach-waiter-source :backend)
         (introspect-trailers)
@@ -707,7 +723,7 @@
 (let [process-timer (metrics/waiter-timer "core" "process")]
   (defn process
     "Process the incoming request and stream back the response."
-    [make-request-fn instance-rpc-chan start-new-service-fn
+    [make-request-fn populate-maintainer-chan! start-new-service-fn
      instance-request-properties determine-priority-fn process-backend-response-fn
      request-abort-callback-factory local-usage-agent
      {:keys [ctrl descriptor request-id request-time] :as request}]
@@ -761,7 +777,7 @@
                         queue-timeout-ms (:queue-timeout-ms instance-request-properties)
                         timed-instance (metrics/with-timer
                                          (metrics/service-timer service-id "get-available-instance")
-                                         (fa/<? (prepare-instance instance-rpc-chan service-id reason-map
+                                         (fa/<? (prepare-instance populate-maintainer-chan! service-id reason-map
                                                                   start-new-service-fn request-state-chan queue-timeout-ms
                                                                   reservation-status-promise metric-group)))
                         instance (:out timed-instance)
@@ -779,7 +795,8 @@
                                                    (make-request-fn instance request instance-request-properties
                                                                     passthrough-headers uri metric-group backend-proto proto-version)))
                                 response-elapsed (:elapsed timed-response)
-                                {:keys [error] :as response} (:out timed-response)]
+                                {:keys [error] :as response} (assoc (:out timed-response)
+                                                               :backend-response-latency-ns response-elapsed)]
                             (statsd/histo! metric-group "backend_response" response-elapsed)
                             (-> (if error
                                   (let [error-response (handle-response-error error reservation-status-promise service-id request)]
@@ -796,7 +813,6 @@
                                     (catch Exception e
                                       (async/close! request-state-chan)
                                       (handle-process-exception e request))))
-                                (assoc :backend-response-latency-ns response-elapsed)
                                 (assoc-debug-header "x-waiter-backend-response-ns" (str response-elapsed))))
                           (catch Exception e
                             (async/close! request-state-chan)
@@ -859,12 +875,11 @@
 (defn make-health-check-request
   "Makes a health check request to the backend using the specified proto and port from the descriptor.
    Returns the health check response from an arbitrary backend or the failure response."
-  [process-request-handler-fn idle-timeout-ms {:keys [descriptor] :as request}]
+  [process-request-handler-fn idle-timeout-ms {:keys [descriptor] :as request} health-check-protocol]
   (async/go
     (try
       (let [{:keys [service-description]} descriptor
             {:strs [health-check-url health-check-port-index]} service-description
-            health-check-protocol (scheduler/service-description->health-check-protocol service-description)
             ctrl-ch (async/chan)
             attach-empty-content (fn attach-empty-content [request]
                                    (-> request
@@ -888,7 +903,8 @@
                                (getOutputStream [] servlet-output-stream)
                                (flushBuffer [] (.flush servlet-output-stream)))
             new-request (-> request
-                          (select-keys [:character-encoding :client-protocol :content-type :descriptor :headers
+                          (select-keys [:authorization/principal  :authorization/user
+                                        :character-encoding :client-protocol :content-type :descriptor :headers
                                         :internal-protocol :remote-addr :request-id :request-time :router-id
                                         :scheme :server-name :server-port :support-info])
                           (attach-empty-content)
@@ -910,8 +926,8 @@
                        body (str body))]
         (async/close! ctrl-ch)
         (-> health-check-response
-          (assoc :body body-str)
-          (assoc :result (if (= source-ch timeout-ch) :timed-out :received-response))))
+          (assoc :body body-str
+                 :result (if (= source-ch timeout-ch) :timed-out :received-response))))
       (catch Exception ex
         (utils/exception->response ex request)))))
 
@@ -919,12 +935,30 @@
   "Performs a health check on an arbitrary instance of the service specified in the descriptor.
    If the service is not running, an instance will be started.
    The response body contains the following map: {:ping-response ..., :service-state ...}"
-  [process-request-handler-fn service-state-fn {:keys [descriptor headers] :as request}]
+  [user-agent process-request-handler-fn service-state-fn {:keys [descriptor headers] :as request}]
   (async/go
     (try
-      (let [{:keys [core-service-description service-id]} descriptor
+      (let [{:keys [core-service-description service-description service-id]} descriptor
+            request (assoc-in request [:headers "user-agent"] user-agent)
             idle-timeout-ms (Integer/parseInt (get headers "x-waiter-timeout" "300000"))
-            ping-response (async/<! (make-health-check-request process-request-handler-fn idle-timeout-ms request))]
+            health-check-protocol (scheduler/service-description->health-check-protocol service-description)
+            ping-response (async/<! (make-health-check-request process-request-handler-fn idle-timeout-ms request health-check-protocol))]
+        (let [{:strs [health-check-url]} service-description
+              backend-protocol (hu/backend-protocol->http-version health-check-protocol)
+              backend-scheme (hu/backend-proto->scheme health-check-protocol)
+              request (assoc request
+                        :client-protocol backend-protocol
+                        :internal-protocol backend-protocol
+                        :request-method :get
+                        :scheme backend-scheme
+                        :uri health-check-url)
+              auth-params (auth/select-auth-params request)
+              response (-> (merge auth-params ping-response)
+                         (assoc :descriptor descriptor
+                                :latest-service-id service-id
+                                :request-type "ping"
+                                :waiter-api-call? false))]
+          (rlog/log-request! request response))
         (merge
           (dissoc ping-response [:body :error-chan :headers :request :result :status :trailers])
           (utils/clj->json-response

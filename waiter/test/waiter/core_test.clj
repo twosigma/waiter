@@ -550,6 +550,7 @@
                                                  :port 31045,
                                                  :started-at started-time}]}})
         (let [request {:headers {"accept" "application/json"}
+                       :query-string "include=metrics"
                        :request-method :get
                        :uri (str "/apps/" service-id)}
               {:keys [body headers status]} (ring-handler request)]
@@ -577,7 +578,9 @@
         (reset! router-state-atom {:service-id->failed-instances {service-id [{:id (str service-id ".F"), :service-id service-id}]}
                                    :service-id->healthy-instances {service-id [{:id (str service-id ".A"), :service-id service-id}]}
                                    :service-id->killed-instances {service-id [{:id (str service-id ".K"), :service-id service-id}]}})
-        (let [request {:request-method :get, :uri (str "/apps/" service-id)}
+        (let [request {:query-string "include=metrics"
+                       :request-method :get
+                       :uri (str "/apps/" service-id)}
               {:keys [body headers status]} (ring-handler request)]
           (is (= 200 status))
           (is (= expected-json-response-headers headers))
@@ -1499,6 +1502,16 @@
   (is (= "HTTP" (request->protocol {:scheme :http})))
   (is (= "FOO/BAR" (request->protocol {:headers {"x-forwarded-proto-version" "Foo/Bar"}
                                        :servlet-request (Object.)})))
+  (is (= "HTTP/1.0" (request->protocol {:headers {"x-forwarded-proto-version" "HTTP/1"}
+                                        :servlet-request (Object.)})))
+  (is (= "HTTP/1.0" (request->protocol {:headers {"x-forwarded-proto-version" "HTTP/1.0"}
+                                        :servlet-request (Object.)})))
+  (is (= "HTTP/1.1" (request->protocol {:headers {"x-forwarded-proto-version" "HTTP/1.1"}
+                                        :servlet-request (Object.)})))
+  (is (= "HTTP/2.0" (request->protocol {:headers {"x-forwarded-proto-version" "HTTP/2"}
+                                        :servlet-request (Object.)})))
+  (is (= "HTTP/2.0" (request->protocol {:headers {"x-forwarded-proto-version" "HTTP/2.0"}
+                                        :servlet-request (Object.)})))
   (is (= "HTTP/1.1" (request->protocol {:scheme :http
                                         :servlet-request (reify ServletRequest
                                                            (getProtocol [_] "HTTP/1.1"))})))

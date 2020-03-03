@@ -396,7 +396,15 @@
       (is (= '(("foo" "bar") ("baz" "qux")) (stringify-elements :k [[#"foo" "bar"] [#"baz" "qux"]]))))
 
     (testing "should convert symbols to strings, inlcuding their namespace"
-      (is (= "waiter.cors/pattern-based-validator" (stringify-elements :k 'waiter.cors/pattern-based-validator))))))
+      (is (= "waiter.cors/pattern-based-validator" (stringify-elements :k 'waiter.cors/pattern-based-validator))))
+
+    (testing "NaN and Infinity"
+      (is (= "NaN" (stringify-elements :k Double/NaN)))
+      (is (= "Infinity" (stringify-elements :k Double/POSITIVE_INFINITY)))
+      (is (= "-Infinity" (stringify-elements :k Double/NEGATIVE_INFINITY)))
+      (is (= "NaN" (stringify-elements :k Float/NaN)))
+      (is (= "Infinity" (stringify-elements :k Float/POSITIVE_INFINITY)))
+      (is (= "-Infinity" (stringify-elements :k Float/NEGATIVE_INFINITY))))))
 
 (deftest test-deep-sort-map
   (let [deep-seq (fn [data] (walk/postwalk #(if (or (map? %) (seq? %)) (seq %) %) data))]

@@ -38,14 +38,14 @@
 (defmacro blacklist-instance!
   "Sends a rpc to the router state to blacklist the given instance.
    Throws an exception if a blacklist channel cannot be found for the specfied service."
-  [instance-rpc-chan service-id instance-id blacklist-period-ms response-chan]
+  [populate-maintainer-chan! service-id instance-id blacklist-period-ms response-chan]
   `(let [response-chan# (async/promise-chan)]
      (log/info "Requesting blacklist channel for" ~service-id)
      (->> {:cid (cid/get-correlation-id)
            :method :blacklist
            :response-chan response-chan#
            :service-id ~service-id}
-          (async/put! ~instance-rpc-chan))
+          (~populate-maintainer-chan!))
      (if-let [blacklist-chan# (async/<! response-chan#)]
        (do
          (log/info "Received blacklist channel, making blacklist request.")
@@ -63,59 +63,64 @@
 
 (defn blacklist-instance-go
   "Sends a rpc to the router state to blacklist the lock on the given instance."
-  [instance-rpc-chan service-id instance-id blacklist-period-ms response-chan]
+  [populate-maintainer-chan! service-id instance-id blacklist-period-ms response-chan]
   (async/go
     (try
-      (blacklist-instance! instance-rpc-chan service-id instance-id blacklist-period-ms response-chan)
+      (blacklist-instance! populate-maintainer-chan! service-id instance-id blacklist-period-ms response-chan)
       (catch Exception e
         (log/error e "Error while blacklisting instance" instance-id)))))
 
 ;; Offer instances obtained via work-stealing mechanism
 (defmacro offer-instance!
   "Sends a rpc to the proxy state to offer the given instance.
-   Throws an exception if a work-stealing channel cannot be found for the specfied service."
-  [instance-rpc-chan service-id offer-params]
-  `(let [response-chan# (async/promise-chan)]
+   Throws an exception if a work-stealing channel cannot be found for the specified service."
+  [populate-maintainer-chan! service-id offer-params]
+  `(let [offer-params# ~offer-params
+         response-chan# (async/promise-chan)]
      (log/debug "Requesting offer channel for" ~service-id)
      (->> {:cid (cid/get-correlation-id)
            :method :offer
            :response-chan response-chan#
            :service-id ~service-id}
-          (async/put! ~instance-rpc-chan))
+          (~populate-maintainer-chan!))
      (if-let [work-stealing-chan# (async/<! response-chan#)]
        (do
-         (log/info "Received offer channel, making offer request.")
-         (when-not (au/offer! work-stealing-chan# ~offer-params)
-           (throw (ex-info "Unable to put instance on work-stealing-chan."
-                           {:offer-params ~offer-params, :service-id ~service-id}))))
+         (log/info "received offer channel, making offer request.")
+         (when-not (au/offer! work-stealing-chan# offer-params#)
+           (log/error "unable to put instance on work-stealing-chan"
+                      {:offer-params offer-params# :service-id ~service-id})
+           (when-let [offer-response-chan# (:response-chan offer-params#)]
+             (async/put! offer-response-chan# :channel-put-failed))))
        (do
-         (throw (ex-info "Unable to find work-stealing-chan."
-                         {:offer-params ~offer-params, :service-id ~service-id}))))))
+         (log/info "unable to find work-stealing-chan"
+                   {:offer-params offer-params# :service-id ~service-id})
+         (when-let [offer-response-chan# (:response-chan offer-params#)]
+           (async/put! offer-response-chan# :channel-not-found))))))
 
 (defn offer-instance-go
   "Sends a rpc to the proxy state to offer the lock on the given instance."
-  [instance-rpc-chan service-id offer-params]
+  [populate-maintainer-chan! service-id offer-params]
   (async/go
     (try
-      (offer-instance! instance-rpc-chan service-id offer-params)
+      (offer-instance! populate-maintainer-chan! service-id offer-params)
       (catch Exception e
         (log/error e "Error while offering instance to service" {:service-id service-id, :offer-params offer-params})))))
 
 ;; Query Service State
 (defmacro query-maintainer-channel-map!
   "Sends a rpc to retrieve the channel on which to query the state of the given service."
-  [instance-rpc-chan service-id response-chan query-type]
+  [populate-maintainer-chan! service-id response-chan query-type]
   `(->> {:cid (cid/get-correlation-id)
          :method ~query-type
          :response-chan ~response-chan
          :service-id ~service-id}
-        (async/put! ~instance-rpc-chan)))
+        (~populate-maintainer-chan!)))
 
 (defmacro query-maintainer-channel-map-with-timeout!
   "Sends a rpc to retrieve the channel on which to query the state of the given service."
-  [instance-rpc-chan service-id timeout-ms query-type]
+  [populate-maintainer-chan! service-id timeout-ms query-type]
   `(let [response-chan# (async/promise-chan)]
-     (query-maintainer-channel-map! ~instance-rpc-chan ~service-id response-chan# ~query-type)
+     (query-maintainer-channel-map! ~populate-maintainer-chan! ~service-id response-chan# ~query-type)
      (async/alt!
        response-chan# ([result-channel#] result-channel#)
        (async/timeout ~timeout-ms) ([ignore#] {:message "Request timed-out!"})
@@ -124,9 +129,9 @@
 (defmacro query-instance!
   "Sends a rpc to the router state to query the state of the given service.
    Throws an exception if a query channel cannot be found for the specfied service."
-  [instance-rpc-chan service-id response-chan]
+  [populate-maintainer-chan! service-id response-chan]
   `(let [response-chan# (async/promise-chan)]
-     (query-maintainer-channel-map! ~instance-rpc-chan ~service-id response-chan# :query-state)
+     (query-maintainer-channel-map! ~populate-maintainer-chan! ~service-id response-chan# :query-state)
      (if-let [query-state-chan# (async/<! response-chan#)]
        (when-not (au/offer! query-state-chan# {:cid (cid/get-correlation-id)
                                                :response-chan ~response-chan
@@ -140,10 +145,10 @@
 
 (defn query-instance-go
   "Sends a rpc to the router state to query the state of the given service."
-  [instance-rpc-chan service-id response-chan]
+  [populate-maintainer-chan! service-id response-chan]
   (async/go
     (try
-      (query-instance! instance-rpc-chan service-id response-chan)
+      (query-instance! populate-maintainer-chan! service-id response-chan)
       (catch Exception e
         (log/error e "Error while querying state of" service-id)))))
 
@@ -151,14 +156,14 @@
 (defmacro release-instance!
   "Sends a rpc to the router state to release the lock on the given instance.
    Throws an exception if a release channel cannot be found for the specified service."
-  [instance-rpc-chan instance reservation-result]
+  [populate-maintainer-chan! instance reservation-result]
   `(let [response-chan# (async/promise-chan)
          service-id# (scheduler/instance->service-id ~instance)]
      (->> {:cid (cid/get-correlation-id)
            :method :release
            :response-chan response-chan#
            :service-id service-id#}
-          (async/put! ~instance-rpc-chan))
+          (~populate-maintainer-chan!))
      (if-let [release-chan# (async/<! response-chan#)]
        (when-not (au/offer! release-chan# [~instance ~reservation-result])
          (throw (ex-info "Unable to put instance on release-chan."
@@ -169,17 +174,17 @@
 
 (defn release-instance-go
   "Sends a rpc to the router state to release the lock on the given instance."
-  [instance-rpc-chan instance reservation-result]
+  [populate-maintainer-chan! instance reservation-result]
   (async/go
     (try
-      (release-instance! instance-rpc-chan instance reservation-result)
+      (release-instance! populate-maintainer-chan! instance reservation-result)
       (catch Exception e
         (log/error e "Error while releasing instance" instance)))))
 
 (defmacro notify-scaling-state!
   "Sends a rpc to the router state to notify the scaling mode of a service.
    Throws an exception if a release channel cannot be found for the specified service."
-  [instance-rpc-chan service-id scaling-state]
+  [populate-maintainer-chan! service-id scaling-state]
   `(let [response-chan# (async/promise-chan)
          service-id# ~service-id
          scaling-state# ~scaling-state]
@@ -187,7 +192,7 @@
            :method :scaling-state
            :response-chan response-chan#
            :service-id service-id#}
-       (async/put! ~instance-rpc-chan))
+       (~populate-maintainer-chan!))
      (if-let [release-chan# (async/<! response-chan#)]
        (when-not (au/offer! release-chan# {:scaling-state scaling-state#})
          (throw (ex-info "Unable to put scaling-state on release-chan."
@@ -198,10 +203,10 @@
 
 (defn notify-scaling-state-go
   "Sends a rpc to the router state to notify the scaling mode of a service."
-  [instance-rpc-chan service-id scaling-state]
+  [populate-maintainer-chan! service-id scaling-state]
   (async/go
     (try
-      (notify-scaling-state! instance-rpc-chan service-id scaling-state)
+      (notify-scaling-state! populate-maintainer-chan! service-id scaling-state)
       (catch Exception e
         (log/error e "Error while notifying scaling mode" service-id scaling-state)))))
 
@@ -210,7 +215,7 @@
 
    Will return an instance if the service exists and an instance is available,
    will return nil if the service is unknown or no instances are available"
-  [instance-rpc-chan service-id reason-map exclude-ids-set timeout-in-millis]
+  [populate-maintainer-chan! service-id reason-map exclude-ids-set timeout-in-millis]
   `(timers/start-stop-time!
      (metrics/service-timer ~service-id "get-task")
      (let [response-chan# (async/promise-chan)
@@ -224,7 +229,7 @@
              :method method#
              :response-chan response-chan#
              :service-id ~service-id}
-            (async/put! ~instance-rpc-chan))
+            (~populate-maintainer-chan!))
        (when-let [service-chan# (async/<! response-chan#)]
          (log/debug "found reservation channel for" ~service-id)
          (timers/start-stop-time!
@@ -240,14 +245,14 @@
   "Starts a `clojure.core.async/go` block to query the router state to get an
    available instance to send a request. It will continue to query the state until
    an instance is available."
-  [instance-rpc-chan service-id {:keys [cid] :as reason-map} service-not-found-fn queue-timeout-ms metric-group]
+  [populate-maintainer-chan! service-id {:keys [cid] :as reason-map} service-not-found-fn queue-timeout-ms metric-group]
   (async/go
     (try
       (counters/inc! (metrics/service-counter service-id "request-counts" "waiting-for-available-instance"))
       (statsd/gauge-delta! metric-group "request_waiting_for_instance" +1)
       (let [expiry-time (t/plus (t/now) (t/millis queue-timeout-ms))]
         (loop [iterations 1]
-          (let [instance (get-rand-inst instance-rpc-chan service-id reason-map #{} queue-timeout-ms)]
+          (let [instance (get-rand-inst populate-maintainer-chan! service-id reason-map #{} queue-timeout-ms)]
             (if-not (nil? (:id instance)) ; instance is nil or :no-matching-instance-found
               (do
                 (histograms/update!

@@ -20,7 +20,8 @@
             [plumbing.core :as pc]
             [waiter.async-request :refer :all]
             [waiter.auth.authentication :as auth]
-            [waiter.service :as service])
+            [waiter.service :as service]
+            [waiter.test-helpers :refer :all])
   (:import java.net.URLDecoder))
 
 (deftest test-monitor-async-request
@@ -284,11 +285,13 @@
       (is (= "remote" @terminate-call-atom)))))
 
 (deftest test-post-process-async-request-response
-  (let [{:keys [host port] :as instance} {:host "www.example.com", :port 1234}
+  (let [instance-host "www.example.com"
+        {:keys [host port] :as instance} {:host instance-host :port 1234}
         router-id "my-router-id"
         service-id "test-service-id"
         metric-group "test-metric-group"
         backend-proto "http"
+        user-agent "waiter-async-status-check/1234"
         async-request-store-atom (atom {})
         request-id "request-2394613984619"
         reason-map {:request-id request-id}
@@ -298,16 +301,27 @@
         auth-params-map (auth/auth-params-map :internal "waiter@example.com")
         make-http-request-fn (fn [in-instance in-request end-route metric-group backend-proto]
                                (is (= instance in-instance))
+                               (is (contains? in-request :request-id))
+                               (is (str/starts-with? (str (:request-id in-request)) "waiter-async-status-check-"))
+                               (is (contains? in-request :request-time))
                                (is (= (assoc auth-params-map
                                         :body nil
-                                        :headers {}
+                                        :client-protocol "HTTP/1.1"
+                                        :headers {"host" instance-host
+                                                  "user-agent" "waiter-async-status-check/1234"
+                                                  "x-cid" "UNKNOWN"}
+                                        :internal-protocol "HTTP/1.1"
                                         :query-string "a=b&c=d|e"
-                                        :request-method :get)
-                                      in-request))
+                                        :request-method :get
+                                        :scheme "http"
+                                        :uri location)
+                                      (dissoc in-request :request-id :request-time)))
                                (is (= "/location/request-2394613984619" end-route))
                                (is (= "test-metric-group" metric-group))
-                               (is (= "http" backend-proto)))
+                               (is (= "http" backend-proto))
+                               (async/go {}))
         instance-rpc-chan (async/chan 1)
+        populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
         complete-async-request-atom (atom nil)
         response {}]
     (with-redefs [service/release-instance-go (constantly nil)
@@ -321,9 +335,12 @@
                     (is exit-chan)
                     (make-get-request-fn)
                     (reset! complete-async-request-atom complete-async-request-fn))]
-      (let [{:keys [headers]} (post-process-async-request-response
+      (let [descriptor {:service-description {"backend-proto" backend-proto
+                                              "metric-group" metric-group}
+                        :service-id service-id}
+            {:keys [headers]} (post-process-async-request-response
                                 router-id async-request-store-atom make-http-request-fn auth-params-map
-                                instance-rpc-chan response service-id metric-group backend-proto instance reason-map
+                                populate-maintainer-chan! user-agent response descriptor instance reason-map
                                 request-properties location query-string)]
         (is (get @async-request-store-atom request-id))
         (is (= (str "/waiter-async/status/" request-id "/" router-id "/" service-id "/" host "/" port location "?" query-string)
@@ -334,11 +351,13 @@
           (is (nil? (get @async-request-store-atom request-id))))))))
 
 (deftest test-post-process-async-request-response-sanitized-check-interval
-  (let [{:keys [host port] :as instance} {:host "www.example.com", :port 1234}
+  (let [instance-host "www.example.com"
+        {:keys [host port] :as instance} {:host instance-host :port 1234}
         router-id "my-router-id"
         service-id "test-service-id"
         metric-group "test-metric-group"
         backend-proto "http"
+        user-agent "waiter-async-status-check/1234"
         async-request-store-atom (atom {})
         request-id "request-2394613984619"
         reason-map {:request-id request-id}
@@ -351,16 +370,27 @@
         auth-params-map (auth/auth-params-map :internal "waiter@example.com")
         make-http-request-fn (fn [in-instance in-request end-route metric-group backend-proto]
                                (is (= instance in-instance))
+                               (is (contains? in-request :request-id))
+                               (is (str/starts-with? (str (:request-id in-request)) "waiter-async-status-check-"))
+                               (is (contains? in-request :request-time))
                                (is (= (assoc auth-params-map
                                         :body nil
-                                        :headers {}
+                                        :client-protocol "HTTP/1.1"
+                                        :headers {"host" instance-host
+                                                  "user-agent" "waiter-async-status-check/1234"
+                                                  "x-cid" "UNKNOWN"}
+                                        :internal-protocol "HTTP/1.1"
                                         :query-string "a=b&c=d|e"
-                                        :request-method :get)
-                                      in-request))
+                                        :request-method :get
+                                        :scheme "http"
+                                        :uri location)
+                                      (dissoc in-request :request-id :request-time)))
                                (is (= "/location/request-2394613984619" end-route))
                                (is (= "test-metric-group" metric-group))
-                               (is (= "http" backend-proto)))
+                               (is (= "http" backend-proto))
+                               (async/go {}))
         instance-rpc-chan (async/chan 1)
+        populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
         complete-async-request-atom (atom nil)
         response {}]
     (with-redefs [service/release-instance-go (constantly nil)
@@ -377,9 +407,12 @@
       (let [request-properties {:async-check-interval-ms async-check-interval-ms
                                 :async-request-max-status-checks async-request-max-status-checks
                                 :async-request-timeout-ms async-request-timeout-ms}
+            descriptor {:service-description {"backend-proto" backend-proto
+                                              "metric-group" metric-group}
+                        :service-id service-id}
             {:keys [headers]} (post-process-async-request-response
                                 router-id async-request-store-atom make-http-request-fn auth-params-map
-                                instance-rpc-chan response service-id metric-group backend-proto instance
+                                populate-maintainer-chan! user-agent response descriptor instance
                                 reason-map request-properties location query-string)]
         (is (get @async-request-store-atom request-id))
         (is (= (str "/waiter-async/status/" request-id "/" router-id "/" service-id "/" host "/" port location "?" query-string)
