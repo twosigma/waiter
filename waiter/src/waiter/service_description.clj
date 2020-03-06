@@ -302,6 +302,7 @@
         ;; the max-instances is smaller than the default min-instances
         (and (integer? provided-max-instances)
              (nil? provided-min-instances)
+             (integer? default-min-instances)
              (> default-min-instances provided-max-instances))
         (assoc "min-instances" (max provided-max-instances minimum-min-instances))))
     (merge service-description-without-defaults)
@@ -1075,8 +1076,8 @@
   "Returns whether the `username` is allowed to modify the specified service description."
   [kv-store entitlement-manager service-id username]
   ; the stored service description should already have a run-as-user
-  (let [service-description (service-id->service-description kv-store service-id {} [])]
-    (authz/manage-service? entitlement-manager username service-id service-description)))
+  (let [core-service-description (service-id->service-description kv-store service-id {} [])]
+    (authz/manage-service? entitlement-manager username service-id core-service-description)))
 
 (defn consent-cookie-value
   "Creates the consent cookie value vector based on the mode.
