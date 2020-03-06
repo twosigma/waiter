@@ -1075,8 +1075,9 @@
 (defn can-manage-service?
   "Returns whether the `username` is allowed to modify the specified service description."
   [kv-store entitlement-manager service-id username]
-  ; the stored service description should already have a run-as-user
-  (let [core-service-description (service-id->service-description kv-store service-id {} [])]
+  ;; the stored service description should already have a run-as-user
+  ;; none of the overridden parameters should affect who can manage a service
+  (let [core-service-description (fetch-core kv-store service-id :refresh false)]
     (authz/manage-service? entitlement-manager username service-id core-service-description)))
 
 (defn consent-cookie-value
