@@ -1966,6 +1966,10 @@
       (is (= {"metric-group" "bar"
               "name" "foo"}
              (merge-defaults {"name" "foo"} {} [[#"f.." "bar"]]))))
+    (testing "min-instances default missing but only max-instances provided"
+      (is (= {"max-instances" 2
+              "metric-group" "other"}
+             (merge-defaults {"max-instances" 2} {} [[#"f.." "bar"]]))))
     (testing "min-instances should be updated when not provided"
       (is (= {"max-instances" 2
               "metric-group" "other"
