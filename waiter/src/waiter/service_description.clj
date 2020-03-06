@@ -1041,11 +1041,21 @@
   "Factory function to return the function used to complete creating a descriptor using the builder."
   [kv-store service-id-prefix current-request-user metric-group-mappings service-description-builder
    assoc-run-as-user-approved?]
-  (fn build-service-description-and-id-helper [descriptor]
-    (-> descriptor
-      (merge-service-description-and-id kv-store service-id-prefix current-request-user metric-group-mappings
-                                        service-description-builder assoc-run-as-user-approved?)
-      (merge-suspended kv-store))))
+  (fn build-service-description-and-id-helper
+    ;; If there is an error in attaching the service description or id and throw-exception? is false,
+    ;; the descriptor is returned with the exception in the :error key.
+    [descriptor throw-exception?]
+    (try
+      (-> descriptor
+        (merge-service-description-and-id kv-store service-id-prefix current-request-user metric-group-mappings
+                                          service-description-builder assoc-run-as-user-approved?)
+        (merge-suspended kv-store))
+      (catch Throwable ex
+        (if throw-exception?
+          (throw ex)
+          (do
+            (log/info ex "error in building service-description")
+            (assoc descriptor :error ex)))))))
 
 (defn retrieve-most-recently-modified-token
   "Computes the most recently modified token from the token->token-data map."

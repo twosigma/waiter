@@ -239,7 +239,7 @@
           (-> (select-keys descriptor [:passthrough-headers :waiter-headers])
             (assoc :component->previous-descriptor-fns {:token token-previous-descriptor-fns}
                    :sources new-sources)
-            (build-service-description-and-id)))))))
+            (build-service-description-and-id false)))))))
 
 (defn attach-token-fallback-source
   "Attaches the helper functions map to retrieve previous descriptor using tokens into the
@@ -268,7 +268,7 @@
         (-> (headers/split-headers (:headers request))
           (sd/merge-service-description-sources kv-store waiter-hostnames service-description-defaults token-defaults)
           (attach-token-fallback-source token-defaults build-service-description-and-id-helper)
-          (build-service-description-and-id-helper))]
+          (build-service-description-and-id-helper true))]
     (when-let [throwable (sd/validate-service-description kv-store service-description-builder descriptor)]
       (throw throwable))
     descriptor))
@@ -289,8 +289,9 @@
       (let [component (key component-entry)
             {:keys [retrieve-previous-descriptor]} (val component-entry)]
         (if-let [previous-descriptor (retrieve-previous-descriptor descriptor)]
-          (if (sd/validate-service-description kv-store service-description-builder previous-descriptor)
-            (recur previous-descriptor)
+          (if (or (:error previous-descriptor)
+                  (sd/validate-service-description kv-store service-description-builder previous-descriptor))
+            (recur (dissoc previous-descriptor :error))
             (do
               (log/info (:service-id descriptor) "has previous descriptor with service-id"
                         (:service-id previous-descriptor) "computed using" component)
