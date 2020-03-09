@@ -232,12 +232,12 @@
       (if-not (and (map? data) (contains? data :kind))
         data
         (->> (keys data)
-             (remove #(let [nested-data (get data %)]
-                        (and (not= % :kind)
-                             (not= % (:kind data))
-                             (map? nested-data)
-                             (contains? nested-data :factory-fn))))
-             (select-keys data))))
+          (remove #(let [nested-data (get data %)]
+                     (and (not= % :kind)
+                          (not= % (:kind data))
+                          (map? nested-data)
+                          (contains? nested-data :factory-fn))))
+          (select-keys data))))
     (cond-> settings
       (get-in settings [:server-options :key-password])
       (assoc-in [:server-options :key-password] "<hidden>")
@@ -250,8 +250,8 @@
   "Endpoint to display the current settings in use."
   [settings]
   (-> settings
-      sanitize-settings
-      utils/clj->json-response))
+    sanitize-settings
+    utils/clj->json-response))
 
 (def settings-defaults
   {:authenticator-config {:jwt :disabled

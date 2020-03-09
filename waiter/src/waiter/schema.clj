@@ -114,6 +114,7 @@
      (s/required-key :jwks-url) s/Str
      (s/optional-key :max-expiry-duration-ms) positive-int
      (s/required-key :subject-key) s/Keyword
+     (s/optional-key :subject-regex) s/Regex
      (s/required-key :supported-algorithms) #{s/Keyword}
      (s/required-key :token-type) non-empty-string
      (s/required-key :update-interval-ms) positive-int}
