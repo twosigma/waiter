@@ -16,6 +16,10 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WAITER_DIR=${DIR}/../..
 JWT_DIR=${WAITER_DIR}/../containers/test-apps/jwks-server
 
+JWT_SUBJECT="$(id -un)@localtest.me"
+echo "Configuring JWT subject to ${JWT_SUBJECT} from JWKS server"
+export JWT_SUBJECT="${JWT_SUBJECT}"
+
 echo "Starting JWKS server on port ${JWKS_PORT}"
 ( pushd ${JWT_DIR} && lein run ${JWKS_PORT} resources/jwks.json resources/settings.edn && popd ) &
 
