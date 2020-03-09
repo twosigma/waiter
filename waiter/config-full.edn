@@ -230,8 +230,10 @@
                                              :conn-timeout 10000
                                              :socket-timeout 10000
                                              :spnego-auth false}
-                              ;; The issuer expected on the access token claims
-                              :issuer "test.com"
+                              ;; The issuer constraint expected on the iss field of access token claims.
+                              ;; The field can be a string, a regex pattern or a vector consisting of any mix of string or patterns.
+                              ;; The constraints in a vector are disjunctive, any matching constraint will validate a JWT iss claim.
+                              :issuer ["test.com" #config/regex "https://test.com/.*"]
                               ;; url of the authorization server where the public keys (JWKS) are available:
                               :jwks-url "http://127.0.0.1:8040/jwks"
                               ;; The maximum duration from current time allowed for expiry time on the JWT claim.

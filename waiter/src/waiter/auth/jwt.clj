@@ -33,7 +33,8 @@
             [waiter.util.http-utils :as hu]
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils])
-  (:import (clojure.lang ExceptionInfo)))
+  (:import (clojure.lang ExceptionInfo)
+           (java.util.regex Pattern)))
 
 (defn eddsa-key?
   "Returns true if the JWKS entry represents an EDSA key."
@@ -133,6 +134,20 @@
 
 (def ^:const status-forbidden 403)
 
+(defn- regex-pattern?
+  "Predicate to check if the input is a regex pattern."
+  [candidate]
+  (instance? Pattern candidate))
+
+(defn- validate-issuer
+  "Validates the issuers against the specific string or pattern constraint."
+  [issuer-constraint issuer]
+  (cond
+    (string? issuer-constraint)
+    (= issuer-constraint issuer)
+    (regex-pattern? issuer-constraint)
+    (re-find issuer-constraint issuer)))
+
 (defn- validate-claims
   "Checks the issuer in the `:iss` claim against one of the allowed issuers in the passed `:iss`.
    Passed `:iss` must be a string.
@@ -147,12 +162,18 @@
    Checks the `:sub` and subject-key claims are present.
 
    A check that fails raises an exception."
-  [{:keys [exp sub] :as claims} {:keys [aud iss max-expiry-duration-ms subject-key subject-regex]}]
+  [{:keys [exp iss sub] :as claims}
+   {:keys [aud issuer-constraints max-expiry-duration-ms subject-key subject-regex]}]
   ;; Check the `:iss` claim.
-  (when (and iss (not= (:iss claims) iss))
-    (throw (ex-info (str "Issuer does not match " iss)
+  (if (str/blank? iss)
+    (throw (ex-info (str "Issuer not provided in claims")
                     {:log-level :info
-                     :status status-unauthorized})))
+                     :status status-unauthorized}))
+    (when-not (some #(validate-issuer % iss) issuer-constraints)
+      (throw (ex-info (str "Issuer does not match provided constraints")
+                      {:issuer iss
+                       :log-level :info
+                       :status status-unauthorized}))))
   ;; Check the `:aud` claim.
   (when (and aud (not= aud (:aud claims)))
     (throw (ex-info (str "Audience does not match " aud)
@@ -196,7 +217,7 @@
 
 (defn validate-access-token
   "Validates the JWT access token using the provided keys, realm and issuer."
-  [token-type issuer subject-key subject-regex supported-algorithms key-id->jwk
+  [token-type issuer-constraints subject-key subject-regex supported-algorithms key-id->jwk
    max-expiry-duration-ms realm request-scheme access-token]
   (when (str/blank? realm)
     (throw (ex-info "JWT authentication can only be used with host header"
@@ -251,8 +272,6 @@
                            :message "No matching JWKS key found"
                            :status status-unauthorized})))
         (let [options {:alg alg
-                       :aud realm
-                       :iss issuer
                        :skip-validation true}
               claims (try
                        (jwt/unsign access-token public-key options)
@@ -262,6 +281,8 @@
                                       :status status-unauthorized)]
                            (throw (ex-info (.getMessage ex) data ex)))))
               validation-options (assoc options
+                                   :aud realm
+                                   :issuer-constraints issuer-constraints
                                    :max-expiry-duration-ms max-expiry-duration-ms
                                    :subject-key subject-key
                                    :subject-regex subject-regex)]
@@ -288,7 +309,8 @@
 (defn extract-claims
   "Returns either claims in the access token provided in the request, or
    an exception that occurred while attempting to extract the claims."
-  [token-type issuer subject-key subject-regex supported-algorithms key-id->jwk max-expiry-duration-ms request]
+  [token-type issuer-constraints subject-key subject-regex supported-algorithms key-id->jwk max-expiry-duration-ms
+   request]
   (let [validation-timer (metrics/waiter-timer "core" "jwt" "validation")
         timer-context (timers/start validation-timer)]
     (try
@@ -296,8 +318,8 @@
             request-scheme (utils/request->scheme request)
             bearer-entry (auth/select-auth-header request access-token?)
             access-token (str/trim (subs bearer-entry (count bearer-prefix)))
-            claims (validate-access-token token-type issuer subject-key subject-regex supported-algorithms key-id->jwk
-                                          max-expiry-duration-ms realm request-scheme access-token)]
+            claims (validate-access-token token-type issuer-constraints subject-key subject-regex supported-algorithms
+                                          key-id->jwk max-expiry-duration-ms realm request-scheme access-token)]
         (timers/stop timer-context)
         (counters/inc! (metrics/waiter-counter "core" "jwt" "validation" "success"))
         claims)
@@ -311,9 +333,9 @@
   "Performs authentication and then
    - responds with an error response when authentication fails, or
    - invokes the downstream request handler using the authenticated credentials in the request."
-  [request-handler token-type issuer subject-key subject-regex supported-algorithms key-id->jwk
+  [request-handler token-type issuer-constraints subject-key subject-regex supported-algorithms key-id->jwk
    password max-expiry-duration-ms request]
-  (let [claims-or-throwable (extract-claims token-type issuer subject-key subject-regex supported-algorithms
+  (let [claims-or-throwable (extract-claims token-type issuer-constraints subject-key subject-regex supported-algorithms
                                             key-id->jwk max-expiry-duration-ms request)]
     (if (instance? Throwable claims-or-throwable)
       (if (-> claims-or-throwable ex-data :status (= status-unauthorized))
@@ -342,14 +364,14 @@
 
 (defn wrap-auth-handler
   "Wraps the request handler with a handler to trigger JWT access token authentication."
-  [{:keys [issuer keys-cache max-expiry-duration-ms password subject-key subject-regex supported-algorithms
+  [{:keys [issuer-constraints keys-cache max-expiry-duration-ms password subject-key subject-regex supported-algorithms
            token-type]}
    request-handler]
   (fn jwt-auth-handler [request]
     (if (and (not (auth/request-authenticated? request))
              (= "true" (get-in request [:waiter-discovery :service-parameter-template "env" "USE_BEARER_AUTH"]))
              (auth/select-auth-header request access-token?))
-      (authenticate-request request-handler token-type issuer subject-key subject-regex supported-algorithms
+      (authenticate-request request-handler token-type issuer-constraints subject-key subject-regex supported-algorithms
                             (:key-id->jwk @keys-cache) password max-expiry-duration-ms request)
       (request-handler request))))
 
@@ -361,10 +383,16 @@
                              (pc/map-vals #(update % ::public-key str) key-id->jwk)))]
     {:cache-data cache-data}))
 
-(defrecord JwtAuthenticator [issuer keys-cache max-expiry-duration-ms password subject-key subject-regex
+(defrecord JwtAuthenticator [issuer-constraints keys-cache max-expiry-duration-ms password subject-key subject-regex
                              supported-algorithms token-type])
 
 (def ^:const default-subject-regex #"([a-zA-Z0-9]+)@([a-zA-Z0-9]+(-[a-zA-Z0-9]+)*\.)+([a-zA-Z]{2,})$")
+
+(defn- issuer->issuer-constraints
+  "Converts the input issuer config to issuer-constraints vector."
+  [issuer]
+  (cond-> issuer
+    (or (string? issuer) (regex-pattern? issuer)) vector))
 
 (defn jwt-authenticator
   "Factory function for creating jwt authenticator middleware"
@@ -373,7 +401,14 @@
     :or {max-expiry-duration-ms (-> 24 t/hours t/in-millis)
          subject-regex default-subject-regex}}]
   {:pre [(map? http-options)
-         (not (str/blank? issuer))
+         (vector? (issuer->issuer-constraints issuer))
+         (seq (issuer->issuer-constraints issuer))
+         (every? #(or (and (string? %)
+                           (not (str/blank? %)))
+                      (and (regex-pattern? %)
+                           (nil? (re-find % ""))
+                           (nil? (re-find % " "))))
+                 (issuer->issuer-constraints issuer))
          (pos? max-expiry-duration-ms)
          (some? password)
          (not (str/blank? jwks-url))
@@ -388,7 +423,8 @@
         http-client (-> http-options
                       (utils/assoc-if-absent :client-name "waiter-jwt")
                       (utils/assoc-if-absent :user-agent "waiter-jwt")
-                      hu/http-client-factory)]
+                      hu/http-client-factory)
+        issuer-constraints (issuer->issuer-constraints issuer)]
     (start-jwt-cache-maintainer http-client http-options jwks-url update-interval-ms supported-algorithms keys-cache)
-    (->JwtAuthenticator issuer keys-cache max-expiry-duration-ms password subject-key subject-regex supported-algorithms
-                        token-type)))
+    (->JwtAuthenticator issuer-constraints keys-cache max-expiry-duration-ms password subject-key subject-regex
+                        supported-algorithms token-type)))

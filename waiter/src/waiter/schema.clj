@@ -25,6 +25,7 @@
 (def positive-fraction-less-than-1 (s/pred #(< 0 % 1) 'positive-fraction-less-than-1))
 (def non-empty-string (s/both s/Str (s/pred #(not (str/blank? %)) 'non-empty-string)))
 (def valid-string-length (s/constrained s/Str #(and (pos? (count %)) (< (count %) 1000))))
+(def regex-pattern (s/pred #(instance? Pattern %) 'regex-pattern))
 (def positive-number-greater-than-or-equal-to-1 (s/pred #(and (pos? %) (>= % 1))
                                                         'positive-number-greater-than-or-equal-to-1))
 (def positive-fraction-less-than-or-equal-to-1 (s/pred #(and (pos? %) (<= % 1))
@@ -33,7 +34,7 @@
                                                        'positive-fraction-less-than-or-equal-to-2))
 (def greater-than-or-equal-to-0-less-than-1 (s/pred #(and (<= 0 %) (< % 1))
                                                     'greater-than-or-equal-to-0-less-than-1))
-(def regex-pattern (s/both non-empty-string (s/pred #(re-pattern %) 'is-a-valid-regular-expression?)))
+(def regex-pattern (s/pred #(re-pattern %) 'is-a-valid-regular-expression?))
 
 (def http-methods #{"CONNECT" "DELETE" "GET" "HEAD" "OPTIONS" "PATCH" "POST" "PUT" "TRACE"})
 (def http-method (s/pred #(contains? http-methods %) 'is-an-http-method?))
@@ -104,13 +105,24 @@
   [{:keys [kind] :as config}]
   (nil? (s/check {(s/required-key :factory-fn) s/Symbol, s/Keyword s/Any} (get config kind))))
 
+(def valid-jwt-issuer-config
+  "Validator for the JWT issuer field.
+   The issuer field is either
+   - a string,
+   - a pattern, or
+   - a non-empty vector of string / regex patterns."
+  (s/conditional
+    string? non-empty-string
+    #(instance? Pattern %) regex-pattern
+    :else (s/constrained [(s/either non-empty-string regex-pattern)] not-empty)))
+
 (def valid-jwt-authenticator-config
   "Validator for the Zookeeper connection configuration. We allow either
   a non-empty string (representing a connection string), or the keyword
   :in-process, indicating that ZK should be started in-process"
   (s/either
     {(s/required-key :http-options) {s/Keyword s/Any}
-     (s/required-key :issuer) non-empty-string
+     (s/required-key :issuer) valid-jwt-issuer-config
      (s/required-key :jwks-url) s/Str
      (s/optional-key :max-expiry-duration-ms) positive-int
      (s/required-key :subject-key) s/Keyword
