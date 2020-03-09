@@ -239,6 +239,8 @@
                               :max-expiry-duration-ms 86400000
                               ;; The keyword used to retrieve the subject from the access token claims
                               :subject-key :sub
+                              ;; The regex used to validate the subject from the claims
+                              :subject-regex #config/regex "([a-zA-Z0-9]+)@([a-zA-Z0-9]+(-[a-zA-Z0-9]+)*\\.)+([a-zA-Z]{2,})$"
                               ;; The supported algorithms while validating access tokens, must be subset of #{:eddsa :rs256}
                               :supported-algorithms #{:eddsa}
                               ;; The token type expected in the access token header
