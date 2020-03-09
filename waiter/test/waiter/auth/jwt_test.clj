@@ -317,6 +317,13 @@
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               expiry-time (+ (current-time-secs) 10000)
+              payload {:aud realm :exp expiry-time :iss issuer :sub "foo@bar.com" :unknown-claim "john.doe"}
+              access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
+          (is (= payload (validate-access-token token-type issuer subject-key supported-algorithms jwks
+                                                max-expiry-duration-ms realm request-scheme access-token))))
+
+        (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
+              expiry-time (+ (current-time-secs) 10000)
               subject-key :custom-key
               payload {:aud realm :custom-key "foo@bar.baz" :exp expiry-time :iss issuer}
               access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
