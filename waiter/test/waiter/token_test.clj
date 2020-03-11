@@ -2008,21 +2008,54 @@
         tokens {"token1" {"last-update-time" 1000 "owner" "owner1"}
                 "token2" {"owner" "owner1"}
                 "token3" {"last-update-time" 3000 "owner" "owner2"}}
-        kv-store (kv/->LocalKeyValueStore (atom {}))]
+        kv-store (kv/->LocalKeyValueStore (atom {}))
+        token-owners-key "^TOKEN_OWNERS"
+        token1-etag (sd/token-data->token-hash (get tokens "token1"))
+        token1-index-entry (make-index-entry token1-etag false 1000)
+        token2-etag (sd/token-data->token-hash (get tokens "token2"))
+        token2-index-entry (make-index-entry token2-etag false nil)
+        token3-etag (sd/token-data->token-hash (get tokens "token3"))
+        token3-index-entry (make-index-entry token3-etag false 3000)
+        bad-token-entry (make-index-entry "E-123456" true 2000)]
     (doseq [[token token-data] tokens]
       (kv/store kv-store token token-data))
     (reindex-tokens synchronize-fn kv-store (keys tokens))
-    (is (= {"token1" {:deleted false
-                      :etag (sd/token-data->token-hash (get tokens "token1"))
-                      :last-update-time 1000}
-            "token2" {:deleted false
-                      :etag (sd/token-data->token-hash (get tokens "token2"))
-                      :last-update-time nil}}
+    (is (= #{"owner1" "owner2"}
+           (-> (kv/fetch kv-store token-owners-key) keys set)))
+    (is (= {"token1" token1-index-entry
+            "token2" token2-index-entry}
            (list-index-entries-for-owner kv-store "owner1")))
-    (is (= {"token3" {:deleted false
-                      :etag (sd/token-data->token-hash (get tokens "token3"))
-                      :last-update-time 3000}}
-           (list-index-entries-for-owner kv-store "owner2")))))
+    (is (= {"token3" token3-index-entry}
+           (list-index-entries-for-owner kv-store "owner2")))
+    ;; corrupt the index
+    (let [owner->owner-key (kv/fetch kv-store token-owners-key)
+          owner-key (get owner->owner-key "owner2")
+          token->index-entry (kv/fetch kv-store owner-key)
+          token->index-entry' (assoc token->index-entry "token-bad" bad-token-entry)]
+      (kv/store kv-store owner-key token->index-entry'))
+    (is (= {"token1" token1-index-entry
+            "token2" token2-index-entry}
+           (list-index-entries-for-owner kv-store "owner1")))
+    (is (= {"token3" token3-index-entry
+            "token-bad" bad-token-entry}
+           (list-index-entries-for-owner kv-store "owner2")))
+    ;; validate re-index cleans the index
+    (reindex-tokens synchronize-fn kv-store (keys tokens))
+    (is (= #{"owner1" "owner2"}
+           (-> (kv/fetch kv-store token-owners-key) keys set)))
+    (is (= {"token1" token1-index-entry
+            "token2" token2-index-entry}
+           (list-index-entries-for-owner kv-store "owner1")))
+    (is (= {"token3" token3-index-entry}
+           (list-index-entries-for-owner kv-store "owner2")))
+    ;; validate re-index drops user
+    (reindex-tokens synchronize-fn kv-store (keys (dissoc tokens "token3")))
+    (is (= #{"owner1"}
+           (-> (kv/fetch kv-store token-owners-key) keys set)))
+    (is (= {"token1" token1-index-entry
+            "token2" token2-index-entry}
+           (list-index-entries-for-owner kv-store "owner1")))
+    (is (nil? (list-index-entries-for-owner kv-store "owner2")))))
 
 (deftest test-handle-reindex-tokens-request
   (let [lock (Object.)

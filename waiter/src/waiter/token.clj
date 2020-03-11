@@ -56,7 +56,7 @@
 ;; a map of owner to another key, in which we'll store the tokens
 ;; that that owner owns.
 
-(defn- make-index-entry
+(defn make-index-entry
   "Factory method for the token index entry."
   [token-hash deleted last-update-time]
   {:deleted (true? deleted)
@@ -213,25 +213,20 @@
     (into {} (kv/fetch kv-store token-owners-key)))
 
   (defn reindex-tokens
-    "Reindex all tokens. `tokens` is a sequence of token maps.  Remove existing index entries."
+    "Reindex all tokens. `tokens` is a sequence of token maps.  Remove existing index entries.
+     Writes new entries before deleting old ones to avoid intervening index queries from reading empty results."
     [synchronize-fn kv-store tokens]
     (synchronize-fn
       token-lock
       (fn inner-reindex-tokens []
-        (let [owner->owner-key (kv/fetch kv-store token-owners-key)]
-          (when (map? owner->owner-key)
-            ; Delete each owner node
-            (doseq [[_ owner-key] owner->owner-key]
-              (kv/delete kv-store owner-key)))
-          ; Delete owner map
-          (kv/delete kv-store token-owners-key))
-        (let [owner->tokens (->> tokens
-                                 (map (fn [token] (let [{:strs [owner]} (kv/fetch kv-store token)]
-                                                    {:owner owner
-                                                     :token token})))
-                                 (filter :owner)
-                                 (group-by :owner)
-                                 (pc/map-vals (fn [entries] (map :token entries))))
+        (let [existing-owner->owner-key (kv/fetch kv-store token-owners-key)
+              owner->tokens (->> tokens
+                              (map (fn [token] (let [{:strs [owner]} (kv/fetch kv-store token)]
+                                                 {:owner owner
+                                                  :token token})))
+                              (filter :owner)
+                              (group-by :owner)
+                              (pc/map-vals (fn [entries] (map :token entries))))
               owner->index-entries (pc/map-vals
                                      (fn [tokens]
                                        (pc/map-from-keys
@@ -242,12 +237,19 @@
                                          tokens))
                                      owner->tokens)
               owner->owner-key (pc/map-from-keys (fn [_] (new-owner-key)) (keys owner->index-entries))]
-          ; Create new owner map
-          (kv/store kv-store token-owners-key owner->owner-key)
-          ; Write each owner node
+          ; Write new owner nodes
           (doseq [[owner index-entries] owner->index-entries]
             (let [owner-key (get owner->owner-key owner)]
-              (kv/store kv-store owner-key index-entries))))))))
+              (kv/store kv-store owner-key index-entries)))
+          ; Overwrite new owner-key map _after_ writing the new owner nodes
+          (kv/store kv-store token-owners-key owner->owner-key)
+          ; Delete existing owner nodes
+          (when (map? existing-owner->owner-key)
+            (let [new-owner-keys (-> owner->owner-key vals set)]
+              (doseq [[_ owner-key] existing-owner->owner-key]
+                ;; defensive check to avoid deleting duplicated keys after reindex
+                (when-not (contains? new-owner-keys owner-key)
+                  (kv/delete kv-store owner-key))))))))))
 
 (defprotocol ClusterCalculator
   (get-default-cluster [this]
