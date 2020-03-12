@@ -20,6 +20,7 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
+            [plumbing.core :as pc]
             [waiter.correlation-id :as cid]
             [waiter.util.client-tools :refer :all])
   (:import (com.twosigma.waiter.courier
@@ -48,25 +49,26 @@
     (GrpcClient. host port log-function)))
 
 (defn- basic-grpc-service-parameters
-  []
+  [& {:keys [prefix] :or {prefix "x-waiter-"}}]
   (let [courier-command (courier-server-command "${PORT0} ${PORT1}")]
-    (walk/stringify-keys
-      {:x-waiter-backend-proto "h2c"
-       :x-waiter-cmd courier-command
-       :x-waiter-cmd-type "shell"
-       :x-waiter-concurrency-level 32
-       :x-waiter-cpus 0.2
-       :x-waiter-debug true
-       :x-waiter-grace-period-secs 120
-       :x-waiter-health-check-port-index 1
-       :x-waiter-health-check-proto "http"
-       :x-waiter-idle-timeout-mins 10
-       :x-waiter-max-instances 1
-       :x-waiter-min-instances 1
-       :x-waiter-mem 512
-       :x-waiter-name (rand-name)
-       :x-waiter-ports 2
-       :x-waiter-version "version-does-not-matter"})))
+    (pc/map-keys
+      #(str prefix %)
+      {"backend-proto" "h2c"
+       "cmd" courier-command
+       "cmd-type" "shell"
+       "concurrency-level" 32
+       "cpus" 0.2
+       "debug" true
+       "grace-period-secs" 120
+       "health-check-port-index" 1
+       "health-check-proto" "http"
+       "idle-timeout-mins" 10
+       "max-instances" 1
+       "min-instances" 1
+       "mem" 512
+       "name" (rand-name)
+       "ports" 2
+       "version" "version-does-not-matter"})))
 
 (defn- rand-str
   "Generates a random string with the specified length."
@@ -78,37 +80,39 @@
   (make-request waiter-url "/waiter-ping" :headers request-headers))
 
 (defn start-courier-instance
-  [waiter-url]
-  (let [[host _] (str/split waiter-url #":")
-        h2c-port (Integer/parseInt (retrieve-grpc-cleartext-port waiter-url))
-        request-headers (basic-grpc-service-parameters)
-        {:keys [cookies headers] :as response} (ping-courier-service waiter-url request-headers)
-        cookie-header (str/join "; " (map #(str (:name %) "=" (:value %)) cookies))
-        service-id (get headers "x-waiter-service-id")
-        request-headers (assoc request-headers
-                          "cookie" cookie-header
-                          "x-waiter-timeout" "60000")]
-    (assert-response-status response 200)
-    (log/info "ping cid:" (get headers "x-cid"))
-    (log/info "service-id:" service-id)
-    (is service-id)
-    (when-not service-id
-      ;; abort test eagerly when service id is unavailable
-      (throw (ex-info "missing service-id in response" {:response response})))
-    (let [{:keys [ping-response service-state]} (some-> response :body try-parse-json walk/keywordize-keys)]
-      (is (= "received-response" (:result ping-response)) (str ping-response))
-      (is (= "OK" (some-> ping-response :body)) (str ping-response))
-      (is (str/starts-with? (str (some-> ping-response :headers :server)) "courier-health-check") (str ping-response))
-      (assert-response-status ping-response 200)
-      (is (true? (:exists? service-state)) (str service-state))
-      (is (= service-id (:service-id service-state)) (str service-state))
-      (is (contains? #{"Running" "Starting"} (:status service-state)) (str service-state)))
-    (assert-service-on-all-routers waiter-url service-id cookies)
+  ([waiter-url]
+   (let [request-headers (basic-grpc-service-parameters)]
+     (start-courier-instance waiter-url request-headers)))
+  ([waiter-url request-headers]
+   (let [[host _] (str/split waiter-url #":")
+         h2c-port (Integer/parseInt (retrieve-grpc-cleartext-port waiter-url))
+         {:keys [cookies headers] :as response} (ping-courier-service waiter-url request-headers)
+         cookie-header (str/join "; " (map #(str (:name %) "=" (:value %)) cookies))
+         service-id (get headers "x-waiter-service-id")
+         request-headers (assoc request-headers
+                           "cookie" cookie-header
+                           "x-waiter-timeout" "60000")]
+     (assert-response-status response 200)
+     (log/info "ping cid:" (get headers "x-cid"))
+     (log/info "service-id:" service-id)
+     (is service-id)
+     (when-not service-id
+       ;; abort test eagerly when service id is unavailable
+       (throw (ex-info "missing service-id in response" {:response response})))
+     (let [{:keys [ping-response service-state]} (some-> response :body try-parse-json walk/keywordize-keys)]
+       (is (= "received-response" (:result ping-response)) (str ping-response))
+       (is (= "OK" (some-> ping-response :body)) (str ping-response))
+       (is (str/starts-with? (str (some-> ping-response :headers :server)) "courier-health-check") (str ping-response))
+       (assert-response-status ping-response 200)
+       (is (true? (:exists? service-state)) (str service-state))
+       (is (= service-id (:service-id service-state)) (str service-state))
+       (is (contains? #{"Running" "Starting"} (:status service-state)) (str service-state)))
+     (assert-service-on-all-routers waiter-url service-id cookies)
 
-    {:h2c-port h2c-port
-     :host host
-     :request-headers request-headers
-     :service-id service-id}))
+     {:h2c-port h2c-port
+      :host host
+      :request-headers request-headers
+      :service-id service-id})))
 
 (defmacro assert-grpc-ok-status
   "Asserts that the status represents a grpc OK status."
@@ -482,6 +486,100 @@
                   (is (= (reductions + (map count messages)) (map #(.getTotalLength ^CourierSummary %) summaries))
                       assertion-message))
                 (assert-request-state grpc-client request-headers service-id correlation-id ::success)))))))))
+
+(deftest ^:parallel ^:integration-slow ^:resource-heavy test-grpc-bidi-streaming-multiple-services
+  (testing-using-waiter-url
+    (let [correlation-id-prefix (rand-name)
+          current-user (retrieve-username)
+          basic-service-parameters (-> (basic-grpc-service-parameters :prefix "")
+                                     (dissoc "debug" "name")
+                                     (assoc "permitted-user" current-user
+                                            "run-as-user" current-user))
+          num-tokens-to-create 5
+          tokens-to-create (map #(str "token" %1 "." correlation-id-prefix) (range num-tokens-to-create))
+          token->service-id-atom (atom {})
+          host-atom (atom nil)
+          port-atom (atom nil)]
+      (try
+        (doseq [token tokens-to-create]
+          (let [token-parameters (assoc basic-service-parameters
+                                   "name" token
+                                   "token" token)
+                _ (log/info "creating token:" token)
+                post-response (post-token waiter-url (walk/keywordize-keys token-parameters))
+                _ (assert-response-status post-response 200)
+                request-headers {"host" token
+                                 "x-waiter-debug" true}
+                {:keys [h2c-port host service-id]} (start-courier-instance waiter-url request-headers)]
+            (log/info "started service:" service-id)
+            (is service-id)
+            (when service-id (swap! token->service-id-atom assoc token service-id))
+            (when host (reset! host-atom host))
+            (when h2c-port (reset! port-atom h2c-port))))
+        (is @host-atom)
+        (is @port-atom)
+        (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")
+              cookie-header (str/join "; " (map #(str (:name %) "=" (:value %)) cookies))
+              max-message-length 50000
+              task-index-atom (atom -1)
+              host @host-atom
+              h2c-port @port-atom]
+          (parallelize-requests
+            num-tokens-to-create 1
+            (fn test-grpc-bidi-streaming-multiple-services-task []
+              (testing (str "independent mode " max-message-length " messages completion")
+                (let [task-index (swap! task-index-atom inc)
+                      token (nth tokens-to-create task-index)
+                      service-id (get @token->service-id-atom token)
+                      _ (log/info "starting streaming to and from server" {:service-id service-id :token token})
+                      num-messages (+ 50 (* task-index 20))
+                      client-cancellation? (= 2 (mod task-index 2))
+                      cancel-threshold (if client-cancellation? (/ num-messages 2) (inc num-messages))
+                      from (rand-name "f")
+                      correlation-id (str correlation-id-prefix "-in-" max-message-length)
+                      messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))
+                      request-headers {"cookie" cookie-header
+                                       "x-cid" correlation-id
+                                       "x-waiter-debug" true
+                                       "x-waiter-timeout" "60000"
+                                       "x-waiter-token" token}
+                      ids (map #(str "id-" token "-" %) (range num-messages))
+                      grpc-client (initialize-grpc-client correlation-id host h2c-port)
+                      _ (log/info correlation-id "collecting independent packages...")
+                      rpc-result (.collectPackages grpc-client request-headers ids from messages 10 false
+                                                   cancel-threshold cancel-policy-context 60000)
+                      summaries (.result rpc-result)
+                      ^Status status (.status rpc-result)
+                      assertion-message (->> (cond-> {:correlation-id correlation-id
+                                                      :service-id service-id
+                                                      :summaries (map (fn [^CourierSummary s]
+                                                                        {:num-messages (.getNumMessages s)
+                                                                         :total-length (.getTotalLength s)})
+                                                                      summaries)}
+                                               status (assoc :status {:code (-> status .getCode str)
+                                                                      :description (.getDescription status)}))
+                                          (into (sorted-map))
+                                          str)]
+                  (log/info correlation-id "asserting collected packages...")
+                  (assert-grpc-ok-status status assertion-message)
+                  (if client-cancellation?
+                    (is (<= (count summaries) (inc cancel-threshold)) assertion-message)
+                    (is (= (count messages) (count summaries)) assertion-message))
+                  (when (seq summaries)
+                    (is (= (range 1 (inc (count messages))) (map #(.getNumMessages ^CourierSummary %) summaries))
+                        assertion-message)
+                    (is (= (reductions + (map count messages)) (map #(.getTotalLength ^CourierSummary %) summaries))
+                        assertion-message))
+                  (if client-cancellation?
+                    (assert-request-state grpc-client request-headers service-id correlation-id ::client-cancel)
+                    (assert-request-state grpc-client request-headers service-id correlation-id ::success)))))))
+        (finally
+          (doseq [service-id (vals @token->service-id-atom)]
+            (log/info "deleting service" service-id)
+            (delete-service waiter-url service-id))
+          (doseq [token tokens-to-create]
+            (log/info "deleting token" token)
+            (delete-token-and-assert waiter-url token)))))))
 
 (deftest ^:parallel ^:integration-slow test-grpc-bidi-streaming-client-cancellation
   (testing-using-waiter-url
