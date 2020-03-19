@@ -257,7 +257,7 @@
           (is (= (count-items states "HALF_CLOSE") 1) assertion-message)
           (is (= ["CLOSE" "COMPLETE"] (take-last 2 states)) assertion-message))))))
 
-(deftest ^:parallel ^:integration-fast test-grpc-unary-call
+(deftest ^:parallel ^:integration-slow test-grpc-unary-call
   (testing-using-waiter-url
     (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)
           id (rand-name "m")
@@ -281,7 +281,33 @@
           (let [correlation-id (rand-name)
                 request-headers (assoc request-headers "x-cid" correlation-id)
                 grpc-client (initialize-grpc-client correlation-id host h2c-port)
-                rpc-result (.sendPackage grpc-client request-headers id from content 1000 10000)
+                sleep-ms 1000
+                deadline-ms 10000
+                rpc-result (.sendPackage grpc-client request-headers id from content sleep-ms deadline-ms)
+                ^CourierReply reply (.result rpc-result)
+                ^Status status (.status rpc-result)
+                assertion-message (grpc-result->assertion-message correlation-id rpc-result)]
+            (assert-grpc-ok-status status assertion-message)
+            (is reply assertion-message)
+            (when reply
+              (is (= id (.getId reply)) assertion-message)
+              (is (= content (.getMessage reply)) assertion-message)
+              (is (= "received" (.getResponse reply)) assertion-message))
+            (assert-request-state grpc-client request-headers service-id correlation-id ::success)))
+
+        (testing "long request and reply"
+          (log/info "starting long request and reply test")
+          (let [correlation-id (rand-name)
+                idle-timeout-config (setting waiter-url [:instance-request-properties :client-connection-idle-timeout-ms])
+                idle-timeout-request (+ 10000 (* 2 idle-timeout-config))
+                sleep-ms (+ 2000 idle-timeout-config)
+                deadline-ms (+ 10000 sleep-ms)
+                request-headers (assoc request-headers
+                                  "x-cid" correlation-id
+                                  "x-waiter-timeout" idle-timeout-request
+                                  "x-waiter-streaming-timeout" idle-timeout-request)
+                grpc-client (initialize-grpc-client correlation-id host h2c-port)
+                rpc-result (.sendPackage grpc-client request-headers id from content sleep-ms deadline-ms)
                 ^CourierReply reply (.result rpc-result)
                 ^Status status (.status rpc-result)
                 assertion-message (grpc-result->assertion-message correlation-id rpc-result)]
