@@ -126,6 +126,7 @@
     {:http1-client (http-client-factory (cond-> config
                                           client-name (update :client-name str "-http1")
                                           user-agent (update :user-agent str ".http1")))
+     ;; prepare-http2-transport already handles the connect and socket timeouts
      :http2-client (-> (cond-> (dissoc config :conn-timeout :socket-timeout)
                          client-name (update :client-name str "-http2")
                          user-agent (update :user-agent str ".http2"))
