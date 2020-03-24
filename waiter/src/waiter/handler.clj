@@ -71,10 +71,15 @@
       (throw (ex-info "Missing host, location, port, request-id, router-id or service-id in uri"
                       {:log-level :info :route-params route-params :status 400 :uri uri})))
     (counters/inc! (metrics/service-counter service-id "request-counts" counter-name))
-    (let [{:strs [backend-proto metric-group]} (service-id->service-description-fn service-id)
+    (let [{:strs [backend-proto metric-group] :as service-description} (service-id->service-description-fn service-id)
           instance (scheduler/make-ServiceInstance {:host host :port port :service-id service-id})
-          _ (log/info request-id counter-name "relative location is" location)]
-      (make-http-request-fn instance request location metric-group backend-proto))))
+          _ (log/info request-id counter-name "relative location is" location)
+          response-chan (make-http-request-fn instance request location metric-group backend-proto)]
+      (async/go
+        (-> (async/<! response-chan)
+          (assoc :descriptor {:service-description service-description
+                              :service-id service-id}
+                 :instance instance))))))
 
 (defn complete-async-handler
   "Completes execution of an async request by propagating a termination message to the request monitor system."
