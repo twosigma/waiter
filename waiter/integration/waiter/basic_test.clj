@@ -260,15 +260,18 @@
       (with-service-cleanup
         service-id
         (assert-service-on-all-routers waiter-url service-id cookies)
-        (let [active-instances (get-in (service-settings waiter-url service-id :cookies cookies)
-                                       [:instances :active-instances])
-              log-url (:log-url (first active-instances))
+        (let [log-url (wait-for
+                        #(let [service-info (service-settings waiter-url service-id :cookies cookies)
+                               {:keys [healthy? log-url]} (get-in service-info [:instances :active-instances 0])]
+                           (and healthy? log-url)))
               _ (log/debug "Log Url:" log-url)
-              make-request-fn (fn [url] (make-request url "" :verbose true))
+              make-request-fn (fn [url]
+                                (let [request-to-ip? (some? (re-find #"^https?://\d+\.\d+\.\d+\.\d+:" url))]
+                                  (make-request url "" :disable-auth request-to-ip? :verbose true)))
               {:keys [body] :as logs-response} (make-request-fn log-url)
               _ (assert-response-status logs-response 200)
               _ (log/debug "Response body:" body)
-              log-files-list (walk/keywordize-keys (json/read-str body))
+              log-files-list (walk/keywordize-keys (try-parse-json body))
               stdout-file-link (:url (first (filter #(= (:name %) "stdout") log-files-list)))
               stderr-file-link (:url (first (filter #(= (:name %) "stderr") log-files-list)))]
           (is (every? #(str/includes? body %) ["stderr" "stdout"])
