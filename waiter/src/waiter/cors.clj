@@ -15,6 +15,7 @@
 ;;
 (ns waiter.cors
   (:require [clojure.string :as str]
+            [clojure.tools.logging :as log]
             [metrics.counters :as counters]
             [waiter.metrics :as metrics]
             [waiter.service-description :as sd]
@@ -66,11 +67,13 @@
           (let [{:keys [allowed? summary allowed-methods]}
                 (preflight-check cors-validator (assoc request :waiter-discovery discovered-parameters))]
             (when-not allowed?
+              (log/info "cors preflight request not allowed" summary)
               (throw (ex-info "Cross-origin request not allowed" {:cors-checks summary
                                                                   :origin origin
                                                                   :request-method request-method
                                                                   :status 403
                                                                   :log-level :warn})))
+            (log/info "cors preflight request allowed" summary)
             (let [{:strs [access-control-request-headers]} headers]
               {:status 200
                :headers {"access-control-allow-origin" origin
@@ -105,12 +108,14 @@
           (handler request)
           (do
             (when-not allowed?
+              (log/info "cors request not allowed" summary)
               (throw (ex-info "Cross-origin request not allowed"
                               {:cors-checks summary
                                :origin origin
                                :request-method request-method
                                :status 403
                                :log-level :warn})))
+            (log/info "cors request allowed" summary)
             (-> (handler request)
               (ru/update-response bless))))))))
 
