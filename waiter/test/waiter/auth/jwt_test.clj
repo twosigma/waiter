@@ -654,7 +654,36 @@
                  {:authorization/principal "user@test.com"
                   :authorization/user "user"
                   :headers {"authorization" "Bearer abcd"}
-                  :source ::standard-request}))))
+                  :source ::standard-request})))
+
+        (is (= {:body ::standard-request}
+               (jwt-handler
+                 (attach-bearer-auth-env
+                   {:headers {"authorization" "Bearer wxyz,Bearer ab.cd.ef"}
+                    :source ::standard-request
+                    :waiter-api-call? true}
+                   true))))
+        (is (= {:body ::standard-request}
+               (jwt-handler
+                 (attach-bearer-auth-env
+                   {:headers {"authorization" "Negotiate abcd,Bearer ab.cd.ef"}
+                    :source ::standard-request
+                    :waiter-api-call? true}
+                   true))))
+        (is (= {:body ::standard-request}
+               (jwt-handler
+                 (attach-bearer-auth-env
+                   {:headers {"authorization" "Bearer ab.cd.ef,Negotiate wxyz"}
+                    :source ::standard-request
+                    :waiter-api-call? true}
+                   true))))
+        (is (= {:body ::standard-request}
+               (jwt-handler
+                 (attach-bearer-auth-env
+                   {:headers {"authorization" "Negotiate abcd,Bearer ab.cd.ef,Negotiate wxyz"}
+                    :source ::standard-request
+                    :waiter-api-call? true}
+                   true)))))
 
       (let [authenticator (->JwtAuthenticator issuer-constraints keys-cache max-expiry-duration-ms "password" :sub
                                               subject-regex supported-algorithms "jwt+type" true)
@@ -698,4 +727,36 @@
                  (attach-bearer-auth-env
                    {:headers {"authorization" "Negotiate abcd,Bearer ab.cd.ef,Negotiate wxyz"}
                     :source ::standard-request}
+                   false)))))
+
+      (let [authenticator (->JwtAuthenticator issuer-constraints keys-cache max-expiry-duration-ms "password" :sub
+                                              subject-regex supported-algorithms "jwt+type" true)
+            jwt-handler (wrap-auth-handler authenticator handler)]
+        (is (= {:body ::jwt-auth}
+               (jwt-handler
+                 (attach-bearer-auth-env
+                   {:headers {"authorization" "Bearer wxyz,Bearer ab.cd.ef"}
+                    :source ::standard-request
+                    :waiter-api-call? true}
+                   false))))
+        (is (= {:body ::jwt-auth}
+               (jwt-handler
+                 (attach-bearer-auth-env
+                   {:headers {"authorization" "Negotiate abcd,Bearer ab.cd.ef"}
+                    :source ::standard-request
+                    :waiter-api-call? true}
+                   false))))
+        (is (= {:body ::jwt-auth}
+               (jwt-handler
+                 (attach-bearer-auth-env
+                   {:headers {"authorization" "Bearer ab.cd.ef,Negotiate wxyz"}
+                    :source ::standard-request
+                    :waiter-api-call? true}
+                   false))))
+        (is (= {:body ::jwt-auth}
+               (jwt-handler
+                 (attach-bearer-auth-env
+                   {:headers {"authorization" "Negotiate abcd,Bearer ab.cd.ef,Negotiate wxyz"}
+                    :source ::standard-request
+                    :waiter-api-call? true}
                    false))))))))

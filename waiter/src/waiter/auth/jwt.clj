@@ -367,11 +367,17 @@
   [{:keys [issuer-constraints keys-cache max-expiry-duration-ms password subject-key subject-regex supported-algorithms
            token-type use-bearer-auth-default]}
    request-handler]
-  (fn jwt-auth-handler [request]
+  (fn jwt-auth-handler [{:keys [waiter-api-call?] :as request}]
     (if (and (not (auth/request-authenticated? request))
-             (= "true" (get-in request [:waiter-discovery :service-parameter-template "env" "USE_BEARER_AUTH"]
-                               (str use-bearer-auth-default)))
-             (auth/select-auth-header request access-token?))
+             (auth/select-auth-header request access-token?)
+             (or
+               ;; service requests will enable JWT auth based on env variable or when absent, the use-bearer-auth-default
+               (and (not waiter-api-call?)
+                    (= "true" (get-in request [:waiter-discovery :service-parameter-template "env" "USE_BEARER_AUTH"]
+                                      (str use-bearer-auth-default))))
+               ;; waiter api requests will enable JWT auth based on use-bearer-auth-default
+               (and waiter-api-call?
+                    use-bearer-auth-default)))
       (authenticate-request request-handler token-type issuer-constraints subject-key subject-regex supported-algorithms
                             (:key-id->jwk @keys-cache) password max-expiry-duration-ms request)
       (request-handler request))))
