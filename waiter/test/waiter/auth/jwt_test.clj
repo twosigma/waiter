@@ -515,7 +515,9 @@
         (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :issuer #"w8r.*"))))
         (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :issuer ["w8r" #"w8r.*"]))))
         (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :max-expiry-duration-ms 900000))))
-        (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :supported-algorithms #{:eddsa :rs256})))))
+        (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :supported-algorithms #{:eddsa :rs256}))))
+        (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :use-bearer-auth-default true))))
+        (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :use-bearer-auth-default false)))))
 
       (testing "invalid configuration"
         (is (thrown? Throwable (jwt-authenticator (dissoc config :http-options))))
@@ -533,7 +535,8 @@
         (is (thrown? Throwable (jwt-authenticator (dissoc config :supported-algorithms))))
         (is (thrown? Throwable (jwt-authenticator (assoc config :supported-algorithms [:eddsa :rs256]))))
         (is (thrown? Throwable (jwt-authenticator (assoc config :supported-algorithms #{:hs256}))))
-        (is (thrown? Throwable (jwt-authenticator (dissoc config :update-interval-ms))))))))
+        (is (thrown? Throwable (jwt-authenticator (dissoc config :update-interval-ms))))
+        (is (thrown? Throwable (jwt-authenticator (assoc config :use-bearer-auth-default "true"))))))))
 
 (deftest test-jwt-auth-handler
   (let [handler (fn [{:keys [source]}] {:body source})
@@ -542,12 +545,10 @@
         max-expiry-duration-ms (-> 1 t/hours t/in-millis)
         subject-regex default-subject-regex
         issuer-constraints ["issuer"]
-        authenticator (->JwtAuthenticator issuer-constraints keys-cache max-expiry-duration-ms "password" :sub
-                                          subject-regex supported-algorithms "jwt+type")
-        jwt-handler (wrap-auth-handler authenticator handler)
         attach-bearer-auth-env
-        (fn attach-bearer-auth-env [request]
-          (assoc-in request [:waiter-discovery :service-parameter-template "env" "USE_BEARER_AUTH"] "true"))]
+        (fn attach-bearer-auth-env [request env-value]
+          (assoc-in request [:waiter-discovery :service-parameter-template "env" "USE_BEARER_AUTH"]
+                    (str env-value)))]
     (with-redefs [authenticate-request (fn [handler token-type in-issuer-constraints subject-key in-subject-regex in-algorithms
                                             keys password in-max-expiry-duration-ms request]
                                          (is (= "jwt+type" token-type))
@@ -559,58 +560,142 @@
                                          (is (= "password" password))
                                          (is (= max-expiry-duration-ms in-max-expiry-duration-ms))
                                          (handler (assoc request :source ::jwt-auth)))]
-      (is (= {:body ::standard-request}
-             (jwt-handler {:headers {}
-                           :source ::standard-request})))
-      (is (= {:body ::standard-request}
-             (jwt-handler {:headers {"authorization" "Negotiate abcd"}
-                           :source ::standard-request})))
-      (is (= {:body ::standard-request}
-             (jwt-handler {:headers {"authorization" "Negotiate abcd,Negotiate wxyz"}
-                           :source ::standard-request})))
-      (is (= {:body ::standard-request}
-             (jwt-handler {:headers {"authorization" "Bearer abcdef"}
-                           :source ::standard-request})))
-      (is (= {:body ::standard-request}
-             (jwt-handler {:headers {"authorization" "Bearer abcdef,Bearer wxyz"}
-                           :source ::standard-request})))
-      (is (= {:body ::standard-request}
-             (jwt-handler {:headers {"authorization" "Bearer ab.cd.ef"}
-                           :source ::standard-request})))
-      (is (= {:body ::standard-request}
-             (jwt-handler {:headers {"authorization" "Bearer wxyz,Bearer ab.cd.ef"}
-                           :source ::standard-request})))
-      (is (= {:body ::standard-request}
-             (jwt-handler {:headers {"authorization" "Negotiate abcd,Bearer ab.cd.ef"}
-                           :source ::standard-request})))
-      (is (= {:body ::standard-request}
-             (jwt-handler {:headers {"authorization" "Bearer ab.cd.ef,Negotiate wxyz"}
-                           :source ::standard-request})))
-      (is (= {:body ::standard-request}
-             (jwt-handler {:headers {"authorization" "Negotiate abcd,Bearer ab.cd.ef,Negotiate wxyz"}
-                           :source ::standard-request})))
-      (is (= {:body ::jwt-auth}
-             (jwt-handler
-               (attach-bearer-auth-env {:headers {"authorization" "Bearer ab.cd.ef"}
-                                        :source ::standard-request}))))
-      (is (= {:body ::jwt-auth}
-             (jwt-handler
-               (attach-bearer-auth-env {:headers {"authorization" "Bearer wxyz,Bearer ab.cd.ef"}
-                                        :source ::standard-request}))))
-      (is (= {:body ::jwt-auth}
-             (jwt-handler
-               (attach-bearer-auth-env {:headers {"authorization" "Negotiate abcd,Bearer ab.cd.ef"}
-                                        :source ::standard-request}))))
-      (is (= {:body ::jwt-auth}
-             (jwt-handler
-               (attach-bearer-auth-env {:headers {"authorization" "Bearer ab.cd.ef,Negotiate wxyz"}
-                                        :source ::standard-request}))))
-      (is (= {:body ::jwt-auth}
-             (jwt-handler
-               (attach-bearer-auth-env {:headers {"authorization" "Negotiate abcd,Bearer ab.cd.ef,Negotiate wxyz"}
-                                        :source ::standard-request}))))
-      (is (= {:body ::standard-request}
-             (jwt-handler {:authorization/principal "user@test.com"
-                           :authorization/user "user"
-                           :headers {"authorization" "Bearer abcd"}
-                           :source ::standard-request}))))))
+      (let [authenticator (->JwtAuthenticator issuer-constraints keys-cache max-expiry-duration-ms "password" :sub
+                                              subject-regex supported-algorithms "jwt+type" false)
+            jwt-handler (wrap-auth-handler authenticator handler)]
+        (is (= {:body ::standard-request}
+               (jwt-handler {:headers {}
+                             :source ::standard-request})))
+        (is (= {:body ::standard-request}
+               (jwt-handler {:headers {"authorization" "Negotiate abcd"}
+                             :source ::standard-request})))
+        (is (= {:body ::standard-request}
+               (jwt-handler {:headers {"authorization" "Negotiate abcd,Negotiate wxyz"}
+                             :source ::standard-request})))
+        (is (= {:body ::standard-request}
+               (jwt-handler {:headers {"authorization" "Bearer abcdef"}
+                             :source ::standard-request})))
+        (is (= {:body ::standard-request}
+               (jwt-handler {:headers {"authorization" "Bearer abcdef,Bearer wxyz"}
+                             :source ::standard-request})))
+        (is (= {:body ::standard-request}
+               (jwt-handler {:headers {"authorization" "Bearer ab.cd.ef"}
+                             :source ::standard-request})))
+        (is (= {:body ::standard-request}
+               (jwt-handler {:headers {"authorization" "Bearer wxyz,Bearer ab.cd.ef"}
+                             :source ::standard-request})))
+        (is (= {:body ::standard-request}
+               (jwt-handler {:headers {"authorization" "Negotiate abcd,Bearer ab.cd.ef"}
+                             :source ::standard-request})))
+        (is (= {:body ::standard-request}
+               (jwt-handler {:headers {"authorization" "Bearer ab.cd.ef,Negotiate wxyz"}
+                             :source ::standard-request})))
+        (is (= {:body ::standard-request}
+               (jwt-handler {:headers {"authorization" "Negotiate abcd,Bearer ab.cd.ef,Negotiate wxyz"}
+                             :source ::standard-request})))
+        (is (= {:body ::jwt-auth}
+               (jwt-handler
+                 (attach-bearer-auth-env
+                   {:headers {"authorization" "Bearer ab.cd.ef"}
+                    :source ::standard-request}
+                   true))))
+        (is (= {:body ::jwt-auth}
+               (jwt-handler
+                 (attach-bearer-auth-env
+                   {:headers {"authorization" "Bearer wxyz,Bearer ab.cd.ef"}
+                    :source ::standard-request}
+                   true))))
+        (is (= {:body ::jwt-auth}
+               (jwt-handler
+                 (attach-bearer-auth-env
+                   {:headers {"authorization" "Negotiate abcd,Bearer ab.cd.ef"}
+                    :source ::standard-request}
+                   true))))
+        (is (= {:body ::jwt-auth}
+               (jwt-handler
+                 (attach-bearer-auth-env
+                   {:headers {"authorization" "Bearer ab.cd.ef,Negotiate wxyz"}
+                    :source ::standard-request}
+                   true))))
+        (is (= {:body ::jwt-auth}
+               (jwt-handler
+                 (attach-bearer-auth-env
+                   {:headers {"authorization" "Negotiate abcd,Bearer ab.cd.ef,Negotiate wxyz"}
+                    :source ::standard-request}
+                   true))))
+
+        (is (= {:body ::standard-request}
+               (jwt-handler
+                 (attach-bearer-auth-env
+                   {:headers {"authorization" "Bearer wxyz,Bearer ab.cd.ef"}
+                    :source ::standard-request}
+                   false))))
+        (is (= {:body ::standard-request}
+               (jwt-handler
+                 (attach-bearer-auth-env
+                   {:headers {"authorization" "Negotiate abcd,Bearer ab.cd.ef"}
+                    :source ::standard-request}
+                   false))))
+        (is (= {:body ::standard-request}
+               (jwt-handler
+                 (attach-bearer-auth-env
+                   {:headers {"authorization" "Bearer ab.cd.ef,Negotiate wxyz"}
+                    :source ::standard-request}
+                   false))))
+        (is (= {:body ::standard-request}
+               (jwt-handler
+                 (attach-bearer-auth-env
+                   {:headers {"authorization" "Negotiate abcd,Bearer ab.cd.ef,Negotiate wxyz"}
+                    :source ::standard-request}
+                   false))))
+
+        (is (= {:body ::standard-request}
+               (jwt-handler
+                 {:authorization/principal "user@test.com"
+                  :authorization/user "user"
+                  :headers {"authorization" "Bearer abcd"}
+                  :source ::standard-request}))))
+
+      (let [authenticator (->JwtAuthenticator issuer-constraints keys-cache max-expiry-duration-ms "password" :sub
+                                              subject-regex supported-algorithms "jwt+type" true)
+            jwt-handler (wrap-auth-handler authenticator handler)]
+        (is (= {:body ::jwt-auth}
+               (jwt-handler {:headers {"authorization" "Bearer ab.cd.ef"}
+                             :source ::standard-request})))
+        (is (= {:body ::jwt-auth}
+               (jwt-handler {:headers {"authorization" "Bearer wxyz,Bearer ab.cd.ef"}
+                             :source ::standard-request})))
+        (is (= {:body ::jwt-auth}
+               (jwt-handler {:headers {"authorization" "Negotiate abcd,Bearer ab.cd.ef"}
+                             :source ::standard-request})))
+        (is (= {:body ::jwt-auth}
+               (jwt-handler {:headers {"authorization" "Bearer ab.cd.ef,Negotiate wxyz"}
+                             :source ::standard-request})))
+        (is (= {:body ::jwt-auth}
+               (jwt-handler {:headers {"authorization" "Negotiate abcd,Bearer ab.cd.ef,Negotiate wxyz"}
+                             :source ::standard-request})))
+
+        (is (= {:body ::standard-request}
+               (jwt-handler
+                 (attach-bearer-auth-env
+                   {:headers {"authorization" "Bearer wxyz,Bearer ab.cd.ef"}
+                    :source ::standard-request}
+                   false))))
+        (is (= {:body ::standard-request}
+               (jwt-handler
+                 (attach-bearer-auth-env
+                   {:headers {"authorization" "Negotiate abcd,Bearer ab.cd.ef"}
+                    :source ::standard-request}
+                   false))))
+        (is (= {:body ::standard-request}
+               (jwt-handler
+                 (attach-bearer-auth-env
+                   {:headers {"authorization" "Bearer ab.cd.ef,Negotiate wxyz"}
+                    :source ::standard-request}
+                   false))))
+        (is (= {:body ::standard-request}
+               (jwt-handler
+                 (attach-bearer-auth-env
+                   {:headers {"authorization" "Negotiate abcd,Bearer ab.cd.ef,Negotiate wxyz"}
+                    :source ::standard-request}
+                   false))))))))
