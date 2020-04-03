@@ -248,7 +248,11 @@
                               ;; The token type expected in the access token header
                               :token-type "JWT"
                               ;; The interval at which to refresh the keys from the authorization server:
-                              :update-interval-ms 60000}
+                              :update-interval-ms 60000
+                              ;; Whether JWT authentication is the default for services and Waiter API requests.
+                              ;; For services, the value of USE_BEARER_AUTH environment variable overrides this value.
+                              ;; The default is false.
+                              :use-bearer-auth-default? false}
 
                         ;; :kind :one-user allows anonymous access to services (for testing purposes only):
                         :one-user {;; Custom implementations should specify a :factory-fn
