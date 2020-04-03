@@ -516,8 +516,8 @@
         (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :issuer ["w8r" #"w8r.*"]))))
         (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :max-expiry-duration-ms 900000))))
         (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :supported-algorithms #{:eddsa :rs256}))))
-        (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :use-bearer-auth-default true))))
-        (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :use-bearer-auth-default false)))))
+        (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :use-bearer-auth-default? true))))
+        (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :use-bearer-auth-default? false)))))
 
       (testing "invalid configuration"
         (is (thrown? Throwable (jwt-authenticator (dissoc config :http-options))))
@@ -536,7 +536,7 @@
         (is (thrown? Throwable (jwt-authenticator (assoc config :supported-algorithms [:eddsa :rs256]))))
         (is (thrown? Throwable (jwt-authenticator (assoc config :supported-algorithms #{:hs256}))))
         (is (thrown? Throwable (jwt-authenticator (dissoc config :update-interval-ms))))
-        (is (thrown? Throwable (jwt-authenticator (assoc config :use-bearer-auth-default "true"))))))))
+        (is (thrown? Throwable (jwt-authenticator (assoc config :use-bearer-auth-default? "true"))))))))
 
 (deftest test-jwt-auth-handler
   (let [handler (fn [{:keys [source]}] {:body source})
