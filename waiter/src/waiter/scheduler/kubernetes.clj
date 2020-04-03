@@ -575,6 +575,7 @@
                                 pod-suffix-length
                                 replicaset-api-version
                                 replicaset-spec-builder-fn
+                                retrieve-auth-token-state-fn
                                 retrieve-syncer-state-fn
                                 service-id->failed-instances-transient-store
                                 service-id->password-fn
@@ -736,13 +737,14 @@
      :syncer (retrieve-syncer-state-fn service-id)})
 
   (state [{:keys [watch-state]}]
-    {:authorizer (when authorizer (authz/state authorizer))
+    {:auth-token (retrieve-auth-token-state-fn)
+     :authorizer (when authorizer (authz/state authorizer))
      :service-id->failed-instances @service-id->failed-instances-transient-store
      :syncer (retrieve-syncer-state-fn)
      :watch-state @watch-state})
 
   (validate-service [this service-id]
-    (let [{:strs [namespace run-as-user]} (retrieve-service-description this service-id)]
+    (let [{:strs [run-as-user]} (retrieve-service-description this service-id)]
       (authz/check-user authorizer run-as-user service-id))))
 
 (defn compute-image
@@ -913,16 +915,21 @@
              (pos-int? refresh-delay-mins))
          (symbol? action-fn)]}
   (let [refresh! (-> action-fn utils/resolve-symbol deref)
+        auth-update-time-atom (atom nil)
         auth-update-task (fn auth-update-task []
-                           (if-let [auth-str' (refresh! context)]
+                           (when-let [auth-str' (refresh! context)]
+                             (reset! auth-update-time-atom (t/now))
                              (reset! k8s-api-auth-str auth-str')))]
     (assert (fn? refresh!) "Refresh function must be a Clojure fn")
     (auth-update-task)
-    (when refresh-delay-mins
-      (du/start-timer-task
-        (t/minutes refresh-delay-mins)
-        auth-update-task
-        :delay-ms (* 60000 refresh-delay-mins)))))
+    {:cancel-fn (if refresh-delay-mins
+                  (du/start-timer-task
+                    (t/minutes refresh-delay-mins)
+                    auth-update-task
+                    :delay-ms (* 60000 refresh-delay-mins))
+                  (constantly nil))
+     :query-state-fn (fn query-auth-token-state []
+                       {:last-token-retrieve-time @auth-update-time-atom})}))
 
 
 (defn- reset-watch-state!
@@ -1161,9 +1168,11 @@
                                              get-service->instances-fn
                                              scheduler-state-chan
                                              scheduler-syncer-interval-secs)]
-    (when authentication
-      (start-auth-renewer authentication))
+
     (let [daemon-state (atom nil)
+          auth-renewer (when authentication
+                         (start-auth-renewer authentication))
+          retrieve-auth-token-state-fn (or (:query-state-fn auth-renewer) (constantly nil))
           scheduler (->KubernetesScheduler url
                                            authorizer
                                            cluster-name
@@ -1180,6 +1189,7 @@
                                            pod-suffix-length
                                            replicaset-api-version
                                            replicaset-spec-builder-fn
+                                           retrieve-auth-token-state-fn
                                            retrieve-syncer-state-fn
                                            service-id->failed-instances-transient-store
                                            service-id->password-fn

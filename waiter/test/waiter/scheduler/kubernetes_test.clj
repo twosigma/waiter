@@ -71,6 +71,8 @@
                                      {:container-init-commands ["waiter-k8s-init"]
                                       :default-namespace dummy-scheduler-default-namespace
                                       :default-container-image "twosigma/waiter-test-apps:latest"})
+      :retrieve-auth-token-state-fn (constantly nil)
+      :retrieve-syncer-state-fn (constantly nil)
       :restart-expiry-threshold 100
       :service-id->failed-instances-transient-store (atom {})
       :service-id->password-fn #(str "password-" %)
@@ -1014,7 +1016,9 @@
                 orig-start-auth-renewer start-auth-renewer
                 secret-value "secret-value"]
             (try
-              (with-redefs [start-auth-renewer #(reset! kill-task-fn (apply orig-start-auth-renewer %&))]
+              (with-redefs [start-auth-renewer (fn [context]
+                                                 (let [{:keys [cancel-fn]} (orig-start-auth-renewer context)]
+                                                   (reset! kill-task-fn cancel-fn)))]
                 (is (instance? KubernetesScheduler (kubernetes-scheduler (assoc base-config :authentication {:action-fn `test-auth-refresher
                                                                                                              :refresh-delay-mins 1
                                                                                                              :refresh-value secret-value})))))
