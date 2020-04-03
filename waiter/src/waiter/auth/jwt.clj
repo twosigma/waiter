@@ -365,19 +365,18 @@
 (defn wrap-auth-handler
   "Wraps the request handler with a handler to trigger JWT access token authentication."
   [{:keys [issuer-constraints keys-cache max-expiry-duration-ms password subject-key subject-regex supported-algorithms
-           token-type use-bearer-auth-default?]}
+           token-type use-bearer-auth-default-for-api? use-bearer-auth-default-for-service?]}
    request-handler]
   (fn jwt-auth-handler [{:keys [waiter-api-call?] :as request}]
     (if (and (not (auth/request-authenticated? request))
              (auth/select-auth-header request access-token?)
              (or
-               ;; service requests will enable JWT auth based on env variable or when absent, the use-bearer-auth-default?
+               ;; service requests will enable JWT auth based on env variable or when absent, the use-bearer-auth-default-for-service?
                (and (not waiter-api-call?)
                     (= "true" (get-in request [:waiter-discovery :service-parameter-template "env" "USE_BEARER_AUTH"]
-                                      (str use-bearer-auth-default?))))
-               ;; waiter api requests will enable JWT auth based on use-bearer-auth-default?
-               (and waiter-api-call?
-                    use-bearer-auth-default?)))
+                                      (str use-bearer-auth-default-for-service?))))
+               ;; waiter api requests will enable JWT auth based on use-bearer-auth-default-for-api?
+               (and waiter-api-call? use-bearer-auth-default-for-api?)))
       (authenticate-request request-handler token-type issuer-constraints subject-key subject-regex supported-algorithms
                             (:key-id->jwk @keys-cache) password max-expiry-duration-ms request)
       (request-handler request))))
@@ -390,8 +389,9 @@
                              (pc/map-vals #(update % ::public-key str) key-id->jwk)))]
     {:cache-data cache-data}))
 
-(defrecord JwtAuthenticator [issuer-constraints keys-cache max-expiry-duration-ms password subject-key subject-regex
-                             supported-algorithms token-type use-bearer-auth-default?])
+(defrecord JwtAuthenticator [issuer-constraints keys-cache max-expiry-duration-ms password
+                             subject-key subject-regex supported-algorithms token-type
+                             use-bearer-auth-default-for-api? use-bearer-auth-default-for-service?])
 
 (def ^:const default-subject-regex #"([a-zA-Z0-9]+)@([a-zA-Z0-9]+(-[a-zA-Z0-9]+)*\.)+([a-zA-Z]{2,})$")
 
@@ -404,10 +404,12 @@
 (defn jwt-authenticator
   "Factory function for creating jwt authenticator middleware"
   [{:keys [http-options issuer jwks-url max-expiry-duration-ms password subject-key subject-regex
-           supported-algorithms token-type update-interval-ms use-bearer-auth-default?]
+           supported-algorithms token-type update-interval-ms use-bearer-auth-default-for-api?
+           use-bearer-auth-default-for-service?]
     :or {max-expiry-duration-ms (-> 24 t/hours t/in-millis)
          subject-regex default-subject-regex
-         use-bearer-auth-default? false}}]
+         use-bearer-auth-default-for-api? true
+         use-bearer-auth-default-for-service? false}}]
   {:pre [(map? http-options)
          (vector? (issuer->issuer-constraints issuer))
          (seq (issuer->issuer-constraints issuer))
@@ -427,7 +429,8 @@
          (not (str/blank? token-type))
          (and (integer? update-interval-ms)
               (not (neg? update-interval-ms)))
-         (boolean? use-bearer-auth-default?)]}
+         (boolean? use-bearer-auth-default-for-api?)
+         (boolean? use-bearer-auth-default-for-service?)]}
   (let [keys-cache (atom {})
         http-client (-> http-options
                       (utils/assoc-if-absent :client-name "waiter-jwt")
@@ -435,5 +438,6 @@
                       hu/http-client-factory)
         issuer-constraints (issuer->issuer-constraints issuer)]
     (start-jwt-cache-maintainer http-client http-options jwks-url update-interval-ms supported-algorithms keys-cache)
-    (->JwtAuthenticator issuer-constraints keys-cache max-expiry-duration-ms password subject-key subject-regex
-                        supported-algorithms token-type use-bearer-auth-default?)))
+    (->JwtAuthenticator issuer-constraints keys-cache max-expiry-duration-ms password
+                        subject-key subject-regex supported-algorithms token-type
+                        use-bearer-auth-default-for-api? use-bearer-auth-default-for-service?)))

@@ -130,5 +130,6 @@
      (s/required-key :supported-algorithms) #{s/Keyword}
      (s/required-key :token-type) non-empty-string
      (s/required-key :update-interval-ms) positive-int
-     (s/optional-key :use-bearer-auth-default?) s/Bool}
+     (s/optional-key :use-bearer-auth-default-for-api?) s/Bool
+     (s/optional-key :use-bearer-auth-default-for-service?) s/Bool}
     (s/constrained s/Keyword #(= :disabled %))))
