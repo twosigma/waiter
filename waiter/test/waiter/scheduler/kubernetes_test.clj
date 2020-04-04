@@ -931,8 +931,8 @@
 
 (defn test-auth-refresher
   "Test implementation of the authentication action-fn"
-  [{:keys [refresh-value] :as context}]
-  refresh-value)
+  [{:keys [refresh-value]}]
+  {:auth-token refresh-value})
 
 (deftest test-kubernetes-scheduler
   (let [context {:is-waiter-service?-fn (constantly nil)

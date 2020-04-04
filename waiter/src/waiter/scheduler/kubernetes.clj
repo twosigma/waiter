@@ -39,12 +39,14 @@
   (:import (java.io InputStreamReader)
            (org.joda.time.format DateTimeFormat)))
 
-(defn authorization-from-environment []
+(defn authorization-from-environment
   "Sample implementation of the authentication string refresh function.
-   Returns a string to be used as the value for the Authorization HTTP header,
-   reading the string from the WAITER_K8S_AUTH_STRING environment variable."
+   Returns a map with :auth-token mapped to a string that can be used as
+   the value for the Authorization HTTP header, reading the string from
+   the WAITER_K8S_AUTH_STRING environment variable."
+  [_]
   (log/info "called waiter.scheduler.kubernetes/authorization-from-environment")
-  (System/getenv "WAITER_K8S_AUTH_STRING"))
+  {:auth-token (System/getenv "WAITER_K8S_AUTH_STRING")})
 
 (def k8s-api-auth-str
   "Atom containing authentication string for the Kubernetes API server.
@@ -736,8 +738,8 @@
     {:failed-instances (vals (get @service-id->failed-instances-transient-store service-id))
      :syncer (retrieve-syncer-state-fn service-id)})
 
-  (state [{:keys [watch-state]}]
-    {:auth-token (retrieve-auth-token-state-fn)
+  (state [_]
+    {:auth-token-renewer (retrieve-auth-token-state-fn)
      :authorizer (when authorizer (authz/state authorizer))
      :service-id->failed-instances @service-id->failed-instances-transient-store
      :syncer (retrieve-syncer-state-fn)
@@ -915,11 +917,16 @@
              (pos-int? refresh-delay-mins))
          (symbol? action-fn)]}
   (let [refresh! (-> action-fn utils/resolve-symbol deref)
-        auth-update-time-atom (atom nil)
+        auth-renewer-state-atom (atom nil)
         auth-update-task (fn auth-update-task []
-                           (when-let [auth-str' (refresh! context)]
-                             (reset! auth-update-time-atom (t/now))
-                             (reset! k8s-api-auth-str auth-str')))]
+                           (let [{:keys [auth-token] :as auth-state} (refresh! context)]
+                             (if auth-token
+                               (do
+                                 (reset! auth-renewer-state-atom
+                                         (assoc auth-state
+                                           :last-token-retrieve-time (t/now)))
+                                 (reset! k8s-api-auth-str auth-token))
+                               (log/info "auth token renewal failed:" auth-state))))]
     (assert (fn? refresh!) "Refresh function must be a Clojure fn")
     (auth-update-task)
     {:cancel-fn (if refresh-delay-mins
@@ -929,7 +936,7 @@
                     :delay-ms (* 60000 refresh-delay-mins))
                   (constantly nil))
      :query-state-fn (fn query-auth-token-state []
-                       {:last-token-retrieve-time @auth-update-time-atom})}))
+                       @auth-renewer-state-atom)}))
 
 
 (defn- reset-watch-state!
