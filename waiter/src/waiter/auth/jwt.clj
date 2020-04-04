@@ -322,6 +322,7 @@
                                           key-id->jwk max-expiry-duration-ms realm request-scheme access-token)]
         (timers/stop timer-context)
         (counters/inc! (metrics/waiter-counter "core" "jwt" "validation" "success"))
+        (log/info "access token claims" claims)
         claims)
       (catch Throwable throwable
         (timers/stop timer-context)
@@ -368,18 +369,28 @@
            password subject-key subject-regex supported-algorithms token-type]}
    request-handler]
   (fn jwt-auth-handler [{:keys [waiter-api-call?] :as request}]
-    (if (and (not (auth/request-authenticated? request))
-             (auth/select-auth-header request access-token?)
-             (or
-               ;; service requests will enable JWT auth based on env variable or when absent, the allow-bearer-auth-services?
-               (and (not waiter-api-call?)
-                    (= "true" (get-in request [:waiter-discovery :service-parameter-template "env" "USE_BEARER_AUTH"]
-                                      (str allow-bearer-auth-services?))))
-               ;; waiter api requests will enable JWT auth based on allow-bearer-auth-api?
-               (and waiter-api-call? allow-bearer-auth-api?)))
-      (authenticate-request request-handler token-type issuer-constraints subject-key subject-regex supported-algorithms
-                            (:key-id->jwk @keys-cache) password max-expiry-duration-ms request)
-      (request-handler request))))
+    (if-let [auth-header (auth/select-auth-header request access-token?)]
+      (do
+        (log/info "access token provided in authorization headers"
+                  {:allow-bearer-auth-api? allow-bearer-auth-api?
+                   :allow-bearer-auth-services? allow-bearer-auth-services?
+                   :auth-header (utils/truncate auth-header 25)
+                   :request-authenticated? (auth/request-authenticated? request)
+                   :waiter-api-call? waiter-api-call?})
+        (if (and (not (auth/request-authenticated? request))
+                 (or
+                   ;; service requests will enable JWT auth based on env variable or when absent, the allow-bearer-auth-services?
+                   (and (not waiter-api-call?)
+                        (= "true" (get-in request [:waiter-discovery :service-parameter-template "env" "USE_BEARER_AUTH"]
+                                          (str allow-bearer-auth-services?))))
+                   ;; waiter api requests will enable JWT auth based on allow-bearer-auth-api?
+                   (and waiter-api-call? allow-bearer-auth-api?)))
+          (authenticate-request request-handler token-type issuer-constraints subject-key subject-regex supported-algorithms
+                                (:key-id->jwk @keys-cache) password max-expiry-duration-ms request)
+          (request-handler request)))
+      (do
+        (log/info "no access token provided in authorization headers")
+        (request-handler request)))))
 
 (defn retrieve-state
   "Returns the state of the JWT authenticator."
