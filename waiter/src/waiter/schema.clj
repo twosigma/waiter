@@ -121,7 +121,9 @@
   a non-empty string (representing a connection string), or the keyword
   :in-process, indicating that ZK should be started in-process"
   (s/either
-    {(s/required-key :http-options) {s/Keyword s/Any}
+    {(s/optional-key :allow-bearer-auth-api?) s/Bool
+     (s/optional-key :allow-bearer-auth-services?) s/Bool
+     (s/required-key :http-options) {s/Keyword s/Any}
      (s/required-key :issuer) valid-jwt-issuer-config
      (s/required-key :jwks-url) s/Str
      (s/optional-key :max-expiry-duration-ms) positive-int

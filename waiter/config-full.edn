@@ -225,7 +225,14 @@
                         ;; Waiter supports JWT access token-based authentication before trying the configured authenticator.
                         ;; JWT authentication can be disabled by specifying a value of :disabled instead of configuring the map below:
                         ;; :jwt :disabled
-                        :jwt {;; JWT relies on periodically refreshing the list of available keys from a JWKS
+                        :jwt {;; Whether JWT authentication is allowed for Waiter API requests.
+                              ;; When not configured, the value is assumed to be true.
+                              :allow-bearer-auth-api? true
+                              ;; Whether JWT authentication is the allowed for service (proxy) requests.
+                              ;; The value of USE_BEARER_AUTH environment variable of the service overrides this value.
+                              ;; When not configured, the value is assumed to be false.
+                              :allow-bearer-auth-services? false
+                              ;; JWT relies on periodically refreshing the list of available keys from a JWKS
                               :http-options {;; The HTTP options that will be used when accessing the authorization server:
                                              :conn-timeout 10000
                                              :socket-timeout 10000
