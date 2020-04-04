@@ -225,7 +225,14 @@
                         ;; Waiter supports JWT access token-based authentication before trying the configured authenticator.
                         ;; JWT authentication can be disabled by specifying a value of :disabled instead of configuring the map below:
                         ;; :jwt :disabled
-                        :jwt {;; JWT relies on periodically refreshing the list of available keys from a JWKS
+                        :jwt {;; Whether JWT authentication is allowed for Waiter API requests.
+                              ;; When not configured, the value is assumed to be true.
+                              :allow-bearer-auth-api? true
+                              ;; Whether JWT authentication is the allowed for service (proxy) requests.
+                              ;; The value of USE_BEARER_AUTH environment variable of the service overrides this value.
+                              ;; When not configured, the value is assumed to be false.
+                              :allow-bearer-auth-services? false
+                              ;; JWT relies on periodically refreshing the list of available keys from a JWKS
                               :http-options {;; The HTTP options that will be used when accessing the authorization server:
                                              :conn-timeout 10000
                                              :socket-timeout 10000
@@ -248,15 +255,7 @@
                               ;; The token type expected in the access token header
                               :token-type "JWT"
                               ;; The interval at which to refresh the keys from the authorization server:
-                              :update-interval-ms 60000
-                              ;; Whether JWT authentication is the default for Waiter API requests.
-                              ;; For services, the value of USE_BEARER_AUTH environment variable overrides this value.
-                              ;; The default is true.
-                              :use-bearer-auth-default-for-api? true
-                              ;; Whether JWT authentication is the default for services proxy requests.
-                              ;; The value of USE_BEARER_AUTH environment variable of the service overrides this value.
-                              ;; The default is false.
-                              :use-bearer-auth-default-for-service? false}
+                              :update-interval-ms 60000}
 
                         ;; :kind :one-user allows anonymous access to services (for testing purposes only):
                         :one-user {;; Custom implementations should specify a :factory-fn

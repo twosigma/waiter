@@ -511,17 +511,19 @@
                   :update-interval-ms 1000}]
       (testing "valid configuration"
         (is (instance? JwtAuthenticator (jwt-authenticator config)))
+        (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :allow-bearer-auth-api? true))))
+        (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :allow-bearer-auth-api? false))))
+        (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :allow-bearer-auth-services? true))))
+        (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :allow-bearer-auth-services? false))))
         (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :issuer "w8r.*"))))
         (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :issuer #"w8r.*"))))
         (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :issuer ["w8r" #"w8r.*"]))))
         (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :max-expiry-duration-ms 900000))))
-        (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :supported-algorithms #{:eddsa :rs256}))))
-        (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :use-bearer-auth-default-for-api? true))))
-        (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :use-bearer-auth-default-for-api? false))))
-        (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :use-bearer-auth-default-for-service? true))))
-        (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :use-bearer-auth-default-for-service? false)))))
+        (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :supported-algorithms #{:eddsa :rs256})))))
 
       (testing "invalid configuration"
+        (is (thrown? Throwable (jwt-authenticator (assoc config :allow-bearer-auth-api? "true"))))
+        (is (thrown? Throwable (jwt-authenticator (assoc config :allow-bearer-auth-services? "true"))))
         (is (thrown? Throwable (jwt-authenticator (dissoc config :http-options))))
         (is (thrown? Throwable (jwt-authenticator (dissoc config :token-type))))
         (is (thrown? Throwable (jwt-authenticator (dissoc config :issuer))))
@@ -537,9 +539,7 @@
         (is (thrown? Throwable (jwt-authenticator (dissoc config :supported-algorithms))))
         (is (thrown? Throwable (jwt-authenticator (assoc config :supported-algorithms [:eddsa :rs256]))))
         (is (thrown? Throwable (jwt-authenticator (assoc config :supported-algorithms #{:hs256}))))
-        (is (thrown? Throwable (jwt-authenticator (dissoc config :update-interval-ms))))
-        (is (thrown? Throwable (jwt-authenticator (assoc config :use-bearer-auth-default-for-api? "true"))))
-        (is (thrown? Throwable (jwt-authenticator (assoc config :use-bearer-auth-default-for-service? "true"))))))))
+        (is (thrown? Throwable (jwt-authenticator (dissoc config :update-interval-ms))))))))
 
 (deftest test-jwt-auth-handler
   (let [handler (fn [{:keys [source]}] {:body source})
@@ -563,8 +563,8 @@
                                          (is (= "password" password))
                                          (is (= max-expiry-duration-ms in-max-expiry-duration-ms))
                                          (handler (assoc request :source ::jwt-auth)))]
-      (let [authenticator (->JwtAuthenticator issuer-constraints keys-cache max-expiry-duration-ms "password" :sub
-                                              subject-regex supported-algorithms "jwt+type" false false)
+      (let [authenticator (->JwtAuthenticator false false issuer-constraints keys-cache max-expiry-duration-ms
+                                              "password" :sub subject-regex supported-algorithms "jwt+type")
             jwt-handler (wrap-auth-handler authenticator handler)]
         (is (= {:body ::standard-request}
                (jwt-handler {:headers {}
@@ -688,10 +688,10 @@
                     :waiter-api-call? true}
                    true)))))
 
-      (doseq [use-bearer-auth-default-for-api? [true false]]
-        (let [authenticator (->JwtAuthenticator issuer-constraints keys-cache max-expiry-duration-ms "password"
-                                                :sub subject-regex supported-algorithms "jwt+type"
-                                                use-bearer-auth-default-for-api? true)
+      (doseq [allow-bearer-auth-api? [true false]]
+        (let [authenticator (->JwtAuthenticator
+                              allow-bearer-auth-api? true issuer-constraints keys-cache max-expiry-duration-ms
+                              "password" :sub subject-regex supported-algorithms "jwt+type")
               jwt-handler (wrap-auth-handler authenticator handler)]
           (is (= {:body ::jwt-auth}
                  (jwt-handler {:headers {"authorization" "Bearer ab.cd.ef"}
@@ -734,10 +734,10 @@
                       :source ::standard-request}
                      false))))))
 
-      (doseq [use-bearer-auth-default-for-service? [true false]]
-        (let [authenticator (->JwtAuthenticator issuer-constraints keys-cache max-expiry-duration-ms "password"
-                                                :sub subject-regex supported-algorithms "jwt+type"
-                                                true use-bearer-auth-default-for-service?)
+      (doseq [allow-bearer-auth-services? [true false]]
+        (let [authenticator (->JwtAuthenticator
+                              true allow-bearer-auth-services? issuer-constraints keys-cache max-expiry-duration-ms
+                              "password" :sub subject-regex supported-algorithms "jwt+type")
               jwt-handler (wrap-auth-handler authenticator handler)]
           (is (= {:body ::jwt-auth}
                  (jwt-handler
