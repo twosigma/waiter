@@ -923,8 +923,9 @@
                              (if auth-token
                                (do
                                  (reset! auth-renewer-state-atom
-                                         (assoc auth-state
-                                           :last-token-retrieve-time (t/now)))
+                                         (-> auth-state
+                                           (update :auth-token utils/truncate 20)
+                                           (assoc :k8s/retrieve-time (t/now))))
                                  (reset! k8s-api-auth-str auth-token))
                                (log/info "auth token renewal failed:" auth-state))))]
     (assert (fn? refresh!) "Refresh function must be a Clojure fn")
