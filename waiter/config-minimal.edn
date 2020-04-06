@@ -6,14 +6,15 @@
 {
  ; ---------- Cluster ----------
 
+ :waiter-principal "waiter@example.com"
+
  :zookeeper {
              ;; Use an in-process ZK (not for production use):
              :connect-string :in-process}
 
  ; ---------- Security ----------
 
- :authenticator-config {:one-user {
-                                   ;; the user account used to launch services
+ :authenticator-config {:one-user {;; the user account used to launch services
                                    :run-as-user "launch-username"}}
 
  ; ---------- Scheduling ----------

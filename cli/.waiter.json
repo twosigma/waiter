@@ -1,0 +1,23 @@
+{
+  "clusters": [
+    {
+      "name": "WAITER1",
+      "url": "http://127.0.0.1:9091/",
+      "disabled": false,
+      "default-for-create": true
+    },
+    {
+      "name": "WAITER2",
+      "url": "http://127.0.0.1:9191/",
+      "disabled": true
+    }
+  ],
+  "metrics": {
+    "disabled": true,
+    "host": "localhost",
+    "port": 8125,
+    "line-formats": {
+      "count": "{namespace}.{name}:{value}|c"
+    }
+  }
+}

@@ -15,13 +15,12 @@
 ;;
 (ns waiter.cookie-support
   (:require [clj-time.core :as t]
-            [clojure.core.cache :as cache]
             [clojure.data.codec.base64 :as b64]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [taoensso.nippy :as nippy]
-            [waiter.util.ring-utils :as ru]
-            [waiter.util.utils :as utils])
+            [waiter.util.cache-utils :as cu]
+            [waiter.util.ring-utils :as ru])
   (:import clojure.lang.ExceptionInfo
            org.eclipse.jetty.util.UrlEncoded))
 
@@ -60,13 +59,11 @@
 
 (defn add-encoded-cookie
   "Inserts the provided name-value pair as a Set-Cookie header in the response"
-  [response password name value age-in-days]
+  [response password name value age-in-seconds]
   (letfn [(add-cookie-into-response [response]
-            (let [encoded-cookie (-> (encode-cookie value password)
-                                     UrlEncoded/encodeString)
-                  max-age (-> age-in-days t/days t/in-seconds)
+            (let [encoded-cookie (UrlEncoded/encodeString (encode-cookie value password))
                   path "/"
-                  set-cookie-header (str name "=" encoded-cookie ";Max-Age=" max-age ";Path=" path ";HttpOnly=true")
+                  set-cookie-header (str name "=" encoded-cookie ";Max-Age=" age-in-seconds ";Path=" path ";HttpOnly=true")
                   existing-header (get-in response [:headers "set-cookie"])
                   new-header (cond
                                (nil? existing-header) set-cookie-header
@@ -87,15 +84,12 @@
       (log/error "Error in decoding cookie" (.getMessage e))
       ;; remove password from exception throw by nippy
       (throw (ex-info (.getMessage e)
-                      (-> (ex-data e)
-                          (update-in [:opts :password] (fn [password] (when password "***")))))))))
+                      (update-in (ex-data e) [:opts :password] (fn [password] (when password "***"))))))))
 
-(let [cookie-cache (-> {}
-                       (cache/ttl-cache-factory :ttl (-> 300 t/seconds t/in-millis))
-                       atom)]
+(let [cookie-cache (cu/cache-factory {:ttl (-> 300 t/seconds t/in-millis)})]
   (defn decode-cookie-cached
     "Decode Waiter encoded cookie."
     [^String waiter-cookie password]
-    (utils/atom-cache-get-or-load
+    (cu/cache-get-or-load
       cookie-cache waiter-cookie
       (fn [] (decode-cookie waiter-cookie password)))))

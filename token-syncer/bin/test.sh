@@ -38,11 +38,14 @@ export WAITER_URIS=${WAITER_URIS:-http://127.0.0.1:9091,http://127.0.0.1:9092}
 # Wait for waiter to be listening
 for WAITER_URI in ${WAITER_URIS//,/ }
 do
-  timeout 180s bash -c "wait_for_server ${WAITER_URI}"
-  if [ $? -ne 0 ]; then
-    echo "$(date +%H:%M:%S) timed out waiting for waiter to start listening on ${WAITER_URI}, displaying waiter log"
+  timeout 240s bash -c "wait_for_server ${WAITER_URI}"
+  if [[ $? -ne 0 ]]; then
+    echo "$(date +%H:%M:%S) ERROR timed out waiting for waiter to start listening on ${WAITER_URI}"
+    echo "$(date +%H:%M:%S) displaying waiter log:"
     cat ${WAITER_DIR}/log/*waiter.log
     exit 1
+  else
+    echo "$(date +%H:%M:%S) waiter server listening on ${WAITER_URI} started"
   fi
 done
 

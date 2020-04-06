@@ -229,7 +229,8 @@
     (testing "sync cluster different owners and different root"
       (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
             test-token "test-token-1"
-            token-description {"name" "test-name"
+            token-description {"last-update-user" "john.doe"
+                               "name" "test-name"
                                "owner" "test-user-1"
                                "root" "cluster-1"}
             cluster-url->token-data {"www.cluster-1.com" {:description token-description
@@ -245,16 +246,145 @@
                                                :latest token-description}}}
                (sync-token-on-clusters waiter-api cluster-urls test-token token-description cluster-url->token-data)))))
 
+    (testing "sync cluster same parameters and owner but different root"
+      (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
+            test-token "test-token-1"
+            token-description {"cpus" 1
+                               "last-update-user" "john.doe"
+                               "mem" 1024
+                               "name" "test-name"
+                               "owner" "test-user-1"}
+            token-description-1 (assoc token-description "root" "cluster-1")
+            token-description-2 (assoc token-description "root" "cluster-2")
+            cluster-url->token-data {"www.cluster-1.com" {:description token-description-1
+                                                          :token-etag (str test-token-etag ".1")
+                                                          :status 200}
+                                     "www.cluster-2.com" {:description token-description-2
+                                                          :token-etag (str test-token-etag ".2")
+                                                          :status 200}}]
+        (is (= {"www.cluster-1.com" {:code :success/token-match}
+                "www.cluster-2.com" {:code :skip/token-sync}}
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description-1 cluster-url->token-data)))))
+
+    (testing "sync cluster same owner; soft-deleted on one; and different last-update-user and root"
+      (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
+            test-token "test-token-1"
+            token-description {"cpus" 1
+                               "last-update-user" "john.doe"
+                               "mem" 1024
+                               "name" "test-name"
+                               "owner" "test-user-1"}
+            token-description-1 (assoc token-description "deleted" true "root" "cluster-1")
+            token-description-2 (assoc token-description "last-update-user" "jane.doe" "root" "cluster-2")
+            cluster-url->token-data {"www.cluster-1.com" {:description token-description-1
+                                                          :token-etag (str test-token-etag ".1")
+                                                          :status 200}
+                                     "www.cluster-2.com" {:description token-description-2
+                                                          :token-etag (str test-token-etag ".2")
+                                                          :status 200}}]
+        (is (= {"www.cluster-1.com" {:code :success/token-match}
+                "www.cluster-2.com" {:code :error/root-mismatch
+                                     :details {:cluster token-description-2
+                                               :latest token-description-1}}}
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description-1 cluster-url->token-data)))))
+
+    (testing "sync cluster same last-update-user and owner; soft-deleted on one; and different root"
+      (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
+            test-token "test-token-1"
+            token-description {"cpus" 1
+                               "last-update-user" "john.doe"
+                               "mem" 1024
+                               "name" "test-name"
+                               "owner" "test-user-1"}
+            token-description-1 (assoc token-description "deleted" true "root" "cluster-1")
+            token-description-2 (assoc token-description "root" "cluster-2")
+            cluster-url->token-data {"www.cluster-1.com" {:description token-description-1
+                                                          :token-etag (str test-token-etag ".1")
+                                                          :status 200}
+                                     "www.cluster-2.com" {:description token-description-2
+                                                          :token-etag (str test-token-etag ".2")
+                                                          :status 200}}]
+        (is (= {"www.cluster-1.com" {:code :success/token-match}
+                "www.cluster-2.com" {:code :success/soft-delete
+                                     :details {:etag (str test-token-etag ".2.new")
+                                               :status 200}}}
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description-1 cluster-url->token-data)))))
+
+    (testing "sync cluster different root and parameters; deleted on both"
+      (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
+            test-token "test-token-1"
+            token-description {"last-update-user" "john.doe"
+                               "mem" 1024
+                               "name" "test-name"
+                               "owner" "test-user-1"}
+            token-description-1 (assoc token-description "cpus" 1 "deleted" true "root" "cluster-1")
+            token-description-2 (assoc token-description "cpus" 2 "deleted" true "root" "cluster-2")
+            cluster-url->token-data {"www.cluster-1.com" {:description token-description-1
+                                                          :token-etag (str test-token-etag ".1")
+                                                          :status 200}
+                                     "www.cluster-2.com" {:description token-description-2
+                                                          :token-etag (str test-token-etag ".2")
+                                                          :status 200}}]
+        (is (= {"www.cluster-1.com" {:code :success/token-match}
+                "www.cluster-2.com" {:code :error/tokens-deleted
+                                     :details {:message "soft-deleted tokens should have already been hard-deleted"}}}
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description-1 cluster-url->token-data)))))
+
+    (testing "sync cluster same owner; different last-update-user, parameters and root"
+      (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
+            test-token "test-token-1"
+            token-description {"last-update-user" "john.doe"
+                               "mem" 1024
+                               "name" "test-name"
+                               "owner" "test-user-1"}
+            token-description-1 (assoc token-description "cpus" 1 "root" "cluster-1")
+            token-description-2 (assoc token-description "cpus" 2 "last-update-user" "jane.doe" "root" "cluster-2")
+            cluster-url->token-data {"www.cluster-1.com" {:description token-description-1
+                                                          :token-etag (str test-token-etag ".1")
+                                                          :status 200}
+                                     "www.cluster-2.com" {:description token-description-2
+                                                          :token-etag (str test-token-etag ".2")
+                                                          :status 200}}]
+        (is (= {"www.cluster-1.com" {:code :success/token-match}
+                "www.cluster-2.com" {:code :error/root-mismatch
+                                     :details {:cluster token-description-2
+                                               :latest token-description-1}}}
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description-1 cluster-url->token-data)))))
+
+    (testing "sync cluster same last-update-user and owner; different parameters and root"
+      (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
+            test-token "test-token-1"
+            token-description {"last-update-user" "john.doe"
+                               "mem" 1024
+                               "name" "test-name"
+                               "owner" "test-user-1"}
+            token-description-1 (assoc token-description "cpus" 1 "root" "cluster-1")
+            token-description-2 (assoc token-description "cpus" 2 "root" "cluster-2")
+            cluster-url->token-data {"www.cluster-1.com" {:description token-description-1
+                                                          :token-etag (str test-token-etag ".1")
+                                                          :status 200}
+                                     "www.cluster-2.com" {:description token-description-2
+                                                          :token-etag (str test-token-etag ".2")
+                                                          :status 200}}]
+        (is (= {"www.cluster-1.com" {:code :success/token-match}
+                "www.cluster-2.com" {:code :success/sync-update
+                                     :details {:etag (str test-token-etag ".2.new")
+                                               :status 200}}}
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description-1 cluster-url->token-data)))))
+
     (testing "sync cluster with missing owners"
       (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
             test-token "test-token-1"
-            token-description {"name" "test-name-1"
+            token-description {"last-update-user" "john.doe"
+                               "name" "test-name-1"
                                "root" "test-cluster-1"}
-            cluster-url->token-data {"www.cluster-1.com" {:description {"name" "test-name-1"
+            cluster-url->token-data {"www.cluster-1.com" {:description {"last-update-user" "john.doe"
+                                                                        "name" "test-name-1"
                                                                         "root" "test-cluster-1"}
                                                           :token-etag (str test-token-etag ".1")
                                                           :status 200}
-                                     "www.cluster-2.com" {:description {"name" "test-name-2"
+                                     "www.cluster-2.com" {:description {"last-update-user" "john.doe"
+                                                                        "name" "test-name-2"
                                                                         "root" "test-cluster-1"}
                                                           :token-etag (str test-token-etag ".2")
                                                           :status 200}}]
@@ -264,12 +394,14 @@
                                                :status 200}}}
                (sync-token-on-clusters waiter-api cluster-urls test-token token-description cluster-url->token-data)))))
 
-    (testing "sync cluster with outdated missing root"
+    (testing "sync cluster with outdated missing last-update-user and root"
       (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
             test-token "test-token-1"
-            token-description {"name" "test-name-1"
+            token-description {"last-update-user" "john.doe"
+                               "name" "test-name-1"
                                "root" "test-user-1"}
-            cluster-url->token-data {"www.cluster-1.com" {:description {"name" "test-name-1"
+            cluster-url->token-data {"www.cluster-1.com" {:description {"last-update-user" "john.doe"
+                                                                        "name" "test-name-1"
                                                                         "root" "test-user-1"}
                                                           :token-etag (str test-token-etag ".1")
                                                           :status 200}
@@ -279,7 +411,32 @@
         (is (= {"www.cluster-1.com" {:code :success/token-match}
                 "www.cluster-2.com" {:code :error/root-mismatch
                                      :details {:cluster {"name" "test-name-2"}
-                                               :latest {"name" "test-name-1"
+                                               :latest {"last-update-user" "john.doe"
+                                                        "name" "test-name-1"
+                                                        "root" "test-user-1"}}}}
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description cluster-url->token-data)))))
+
+    (testing "sync cluster with outdated missing root; different last-update-user"
+      (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
+            test-token "test-token-1"
+            token-description {"last-update-user" "john.doe"
+                               "name" "test-name-1"
+                               "root" "test-user-1"}
+            cluster-url->token-data {"www.cluster-1.com" {:description {"last-update-user" "john.doe"
+                                                                        "name" "test-name-1"
+                                                                        "root" "test-user-1"}
+                                                          :token-etag (str test-token-etag ".1")
+                                                          :status 200}
+                                     "www.cluster-2.com" {:description {"last-update-user" "jane.doe"
+                                                                        "name" "test-name-2"}
+                                                          :token-etag (str test-token-etag ".2")
+                                                          :status 200}}]
+        (is (= {"www.cluster-1.com" {:code :success/token-match}
+                "www.cluster-2.com" {:code :error/root-mismatch
+                                     :details {:cluster {"last-update-user" "jane.doe"
+                                                         "name" "test-name-2"}
+                                               :latest {"last-update-user" "john.doe"
+                                                        "name" "test-name-1"
                                                         "root" "test-user-1"}}}}
                (sync-token-on-clusters waiter-api cluster-urls test-token token-description cluster-url->token-data)))))
 
@@ -303,10 +460,12 @@
     (testing "sync cluster successfully"
       (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
             test-token "test-token-1"
-            token-description {"name" "test-name"
+            token-description {"last-update-user" "john.doe"
+                               "name" "test-name"
                                "owner" "test-user-1"
                                "root" "test-cluster-1"}
-            cluster-url->token-data {"www.cluster-1.com" {:description {"name" "test-name"
+            cluster-url->token-data {"www.cluster-1.com" {:description {"last-update-user" "john.doe"
+                                                                        "name" "test-name"
                                                                         "owner" "test-user-1"
                                                                         "root" "test-cluster-1"}
                                                           :token-etag (str test-token-etag ".1")
@@ -324,10 +483,12 @@
     (testing "sync cluster error"
       (let [cluster-urls ["www.cluster-1.com" "www.cluster-2-error.com"]
             test-token "test-token-1"
-            token-description {"name" "test-name"
+            token-description {"last-update-user" "john.doe"
+                               "name" "test-name"
                                "owner" "test-user-1"
                                "root" "test-cluster-1"}
-            cluster-url->token-data {"www.cluster-1.com" {:description {"name" "test-name"
+            cluster-url->token-data {"www.cluster-1.com" {:description {"last-update-user" "john.doe"
+                                                                        "name" "test-name"
                                                                         "owner" "test-user-1"
                                                                         "root" "test-cluster-1"}
                                                           :token-etag (str test-token-etag ".1")
@@ -447,9 +608,9 @@
         cluster-2 "www.cluster-2.com"
         cluster-3 "www.cluster-3.com"
         cluster-urls [cluster-1 cluster-2 cluster-3]
-        cluster-url->tokens {cluster-1 ["token-1" "token-2"]
-                             cluster-2 ["token-1" "token-2" "token-3" "token-4"]
-                             cluster-3 ["token-1" "token-3"]}
+        cluster-url->tokens {cluster-1 ["token-1" "token-2" "token-5" "token-6"]
+                             cluster-2 ["token-1" "token-2" "token-3" "token-4" "token-5" "token-6"]
+                             cluster-3 ["token-1" "token-3" "token-5" "token-6"]}
         token-desc-1 {"last-update-time" current-time-ms
                       "name" "t1-all-synced"}
         token-desc-2 {"last-update-time" current-time-ms
@@ -483,6 +644,26 @@
                                                    cluster-2 {:description token-desc-4
                                                               :token-etag current-time-ms}
                                                    cluster-3 {:description token-desc-4
+                                                              :token-etag current-time-ms}}
+                                        "token-5" {cluster-1 {:description (assoc token-desc-4
+                                                                             "cpus" 1
+                                                                             "root" cluster-1)
+                                                              :token-etag current-time-ms}
+                                                   cluster-2 {:description (assoc token-desc-4
+                                                                             "cpus" 2
+                                                                             "last-update-time" previous-time-ms
+                                                                             "root" cluster-2)
+                                                              :token-etag current-time-ms}
+                                                   cluster-3 {:description (assoc token-desc-4
+                                                                             "cpus" 3
+                                                                             "last-update-time" previous-time-ms
+                                                                             "root" cluster-1)
+                                                              :token-etag previous-time-ms}}
+                                        "token-6" {cluster-1 {:description (assoc token-desc-1 "cpus" 6 "root" cluster-1)
+                                                              :token-etag current-time-ms}
+                                                   cluster-2 {:description (assoc token-desc-1 "cpus" 6 "root" cluster-2)
+                                                              :token-etag current-time-ms}
+                                                   cluster-3 {:description (assoc token-desc-1 "cpus" 6 "root" cluster-3)
                                                               :token-etag current-time-ms}}}
         token->latest-description {"token-1" {:cluster-url cluster-1
                                               :description token-desc-1
@@ -495,7 +676,13 @@
                                               :token-etag (str (get token-desc-3 "last-update-time"))}
                                    "token-4" {:cluster-url cluster-1
                                               :description token-desc-4
-                                              :token-etag (str (get token-desc-4 "last-update-time"))}}
+                                              :token-etag (str (get token-desc-4 "last-update-time"))}
+                                   "token-5" {:cluster-url cluster-1
+                                              :description (assoc token-desc-4 "cpus" 1 "root" "c2")
+                                              :token-etag (str (get token-desc-4 "last-update-time"))}
+                                   "token-6" {:cluster-url cluster-1
+                                              :description (assoc token-desc-1 "cpus" 6 "root" cluster-1)
+                                              :token-etag (str (get token-desc-1 "last-update-time"))}}
         compute-sync-result (fn [cluster-urls token code]
                               (pc/map-from-keys
                                 (fn [cluster-url]
@@ -517,7 +704,7 @@
                              vec)))}]
     (with-redefs [retrieve-token->url->token-data (fn [_ in-cluster-urls all-tokens]
                                                     (is (= (set cluster-urls) in-cluster-urls))
-                                                    (is (= #{"token-2" "token-3" "token-4"}
+                                                    (is (= #{"token-2" "token-3" "token-4" "token-5"}
                                                            (set all-tokens)))
                                                     token->cluster-url->token-data)
                   retrieve-token->latest-description (fn [in-token->cluster-url->token-data]
@@ -542,16 +729,19 @@
                                             (compute-sync-result "token-3" :success/soft-delete))}
                 "token-4" {:latest (token->latest-description "token-4")
                            :sync-result (-> [cluster-1 cluster-2 cluster-3]
-                                            (compute-sync-result "token-4" :success/hard-delete))}}
+                                            (compute-sync-result "token-4" :success/hard-delete))}
+                "token-5" {:latest (token->latest-description "token-5")
+                           :sync-result (-> [cluster-1 cluster-2 cluster-3]
+                                            (compute-sync-result "token-5" :success/hard-delete))}}
                details))
         (is (= {:sync {:failed #{}
                        :unmodified #{}
-                       :updated #{"token-2" "token-3" "token-4"}}
-                :tokens {:pending {:count 3 :value #{"token-2" "token-3" "token-4"}}
-                         :previously-synced {:count 1 :value #{"token-1"}}
-                         :processed {:count 3 :value #{"token-2" "token-3" "token-4"}}
-                         :selected {:count 3 :value #{"token-2" "token-3" "token-4"}}
-                         :total {:count 4 :value #{"token-1" "token-2" "token-3" "token-4"}}}}
+                       :updated #{"token-2" "token-3" "token-4" "token-5"}}
+                :tokens {:pending {:count 4 :value #{"token-2" "token-3" "token-4" "token-5"}}
+                         :previously-synced {:count 2 :value #{"token-1" "token-6"}}
+                         :processed {:count 4 :value #{"token-2" "token-3" "token-4" "token-5"}}
+                         :selected {:count 4 :value #{"token-2" "token-3" "token-4" "token-5"}}
+                         :total {:count 6 :value #{"token-1" "token-2" "token-3" "token-4" "token-5" "token-6"}}}}
                summary))))))
 
 (deftest test-parse-sync-clusters-cli-options

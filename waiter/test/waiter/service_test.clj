@@ -15,79 +15,14 @@
 ;;
 (ns waiter.service-test
   (:require [clojure.core.async :as async]
-            [clojure.core.cache :as cache]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [full.async :as fa]
             [waiter.mocks :refer :all]
-            [waiter.service :refer :all])
+            [waiter.service :refer :all]
+            [waiter.test-helpers :refer :all]
+            [waiter.util.cache-utils :as cu])
   (:import (java.util.concurrent Future Executors)))
-
-(deftest test-extract-health-check-url
-  (let [default-url "/defaultStatus"
-        custom-url  "/customStatus"]
-    (let [test-cases (list
-                       {:name     "extract-health-check-url-nil-data"
-                        :app-info nil
-                        :expected default-url
-                        }
-                       {:name     "extract-health-check-url-empty-data"
-                        :app-info {}
-                        :expected default-url
-                        }
-                       {:name     "extract-health-check-url-empty-app"
-                        :app-info {:app {}}
-                        :expected default-url
-                        }
-                       {:name     "extract-health-check-url-empty-health-check"
-                        :app-info {:app {:healthChecks []}}
-                        :expected default-url
-                        }
-                       {:name     "extract-health-check-url-missing-health-check-url"
-                        :app-info {:app {:healthChecks [{:foo 1 :bar 2}]}}
-                        :expected default-url
-                        }
-                       {:name     "extract-health-check-url-present-health-check-url"
-                        :app-info {:app {:healthChecks [{:foo 1 :bar 2 :path custom-url}]}}
-                        :expected custom-url
-                        }
-                       {:name     "extract-health-check-url-multiple-health-check-urls"
-                        :app-info {:app {:healthChecks [{:foo 1 :path custom-url} {:bar 2 :path "/fooBarBaz"}]}}
-                        :expected custom-url
-                        })]
-      (doseq [test-case test-cases]
-        (testing (str "Test " (:name test-case))
-          (is (= (:expected test-case)
-                (extract-health-check-url (:app-info test-case) default-url))))))))
-
-
-(deftest test-annotate-tasks-with-health-url
-  (let [custom-url  "/customStatus"
-        app-info->task (fn [x] {:tasks (get-in x [:app :tasks])})]
-    (let [test-cases (list
-                       {:name     "annotate-tasks-with-health-url:nil-data"
-                        :app-info nil
-                        :expected {:tasks ()}
-                        }
-                       {:name     "annotate-tasks-with-health-url:empty-data"
-                        :app-info {}
-                        :expected {:tasks ()}
-                        }
-                       {:name     "annotate-tasks-with-health-url:valid-data"
-                        :app-info {:app {:healthChecks [{:path custom-url}] :tasks [{:foo 1 :bar 2}]}}
-                        :expected {:tasks [{:foo 1 :bar 2 :health-check-url custom-url}]}
-                        }
-                       {:name     "annotate-tasks-with-health-url:valid-data2"
-                        :app-info {:app {:healthChecks [{:path custom-url}]
-                                         :tasks [{:foo 1 :bar 2}, {:fie 3 :foe 4}]}}
-                        :expected {:tasks [{:foo 1 :bar 2 :health-check-url custom-url},
-                                           {:fie 3 :foe 4 :health-check-url custom-url}]}
-                        }
-                       )]
-      (doseq [test-case test-cases]
-        (testing (str "Test " (:name test-case))
-          (is (= (:expected test-case)
-                 (-> (:app-info test-case) annotate-tasks-with-health-url app-info->task))))))))
 
 (defn- mock-blacklisting-instance
   [instance-rpc-chan test-service-id callback-fn]
@@ -106,6 +41,7 @@
 (deftest test-blacklist-instance
   (testing "basic blacklist"
     (let [instance-rpc-chan (async/chan 1)
+          populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
           service-id "test-id"
           instance-id "test-id.12345"
           instance {:service-id service-id :id instance-id}
@@ -118,7 +54,7 @@
           (is (= (:id instance) instance-id))
           (is (not (nil? cid)))
           (is (= custom-blacklist-period-ms blacklist-period-ms))))
-      (blacklist-instance-go instance-rpc-chan service-id instance-id custom-blacklist-period-ms response-chan)
+      (blacklist-instance-go populate-maintainer-chan! service-id instance-id custom-blacklist-period-ms response-chan)
       (async/<!! (async/timeout 10)))))
 
 (defn- mock-offering-instance
@@ -139,6 +75,7 @@
 (deftest test-offer-instance
   (testing "basic offer"
     (let [instance-rpc-chan (async/chan 1)
+          populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
           router-id "router-id"
           service-id "test-id"
           instance-id "test-id.12345"
@@ -151,7 +88,7 @@
           (is (= instance (:instance offer-params)))
           (is (= response-chan (:response-chan offer-params)))
           (is (= router-id (:router-id offer-params)))))
-      (offer-instance-go instance-rpc-chan service-id {:instance instance
+      (offer-instance-go populate-maintainer-chan! service-id {:instance instance
                                                        :response-chan response-chan
                                                        :router-id router-id})
       (async/<!! (async/timeout 10)))))
@@ -159,6 +96,7 @@
 (deftest test-query-maintainer-channel-map-with-timeout!
   (testing "basic query-state success"
     (let [instance-rpc-chan (async/chan 1)
+          populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
           test-service-id "test-id"
           result-query-chan (async/chan 1)]
       (async/thread
@@ -169,10 +107,12 @@
           (async/>!! response-chan result-query-chan)))
       (async/<!! ;; wait for the go-block to complete execution
         (async/go
-          (let [result-chan (query-maintainer-channel-map-with-timeout! instance-rpc-chan test-service-id 1000 :query-key)]
+          (let [result-chan (query-maintainer-channel-map-with-timeout!
+                              populate-maintainer-chan! test-service-id 1000 :query-key)]
             (is (= result-query-chan result-chan)))))))
   (testing "basic query-state timeout"
     (let [instance-rpc-chan (async/chan 1)
+          populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
           test-service-id "test-id"]
       (async/thread
         (let [{:keys [method response-chan service-id]} (async/<!! instance-rpc-chan)]
@@ -181,7 +121,8 @@
           (is (not (nil? response-chan)))))
       (async/<!! ;; wait for the go-block to complete execution
         (async/go
-          (let [result-chan (query-maintainer-channel-map-with-timeout! instance-rpc-chan test-service-id 100 :query-key)]
+          (let [result-chan (query-maintainer-channel-map-with-timeout!
+                              populate-maintainer-chan! test-service-id 100 :query-key)]
             (is (= {:message "Request timed-out!"} result-chan))))))))
 
 (defn- mock-query-state-instance
@@ -201,6 +142,7 @@
 (deftest test-query-state-instance
   (testing "basic query-state"
     (let [instance-rpc-chan (async/chan 1)
+          populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
           in-service-id "test-id"
           response-chan (async/promise-chan)]
       (mock-query-state-instance
@@ -210,87 +152,103 @@
           (is (= in-service-id service-id))
           (is (not (nil? cid)))
           (is (not (nil? response-chan)))))
-      (query-instance-go instance-rpc-chan in-service-id response-chan)
+      (query-instance-go populate-maintainer-chan! in-service-id response-chan)
       (async/<!! (async/timeout 10)))))
 
 (deftest test-release-instance
   (testing "basic release"
     (let [instance-rpc-chan (async/chan 1)
+          populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
           instance {:service-id "test-id" :id "test-id.12345"}
           reservation-result {:status :success, :cid "CID"}]
       (mock-reservation-system instance-rpc-chan
                                [(fn [[inst reservation-result]]
                                   (is (= instance inst))
                                   (is (= :success (:status reservation-result))))])
-      (release-instance-go instance-rpc-chan instance reservation-result)
-      ; Let mock propogate
+      (release-instance-go populate-maintainer-chan! instance reservation-result)
+      ; Let mock propagate
       (async/<!! (async/timeout 10)))))
 
 (deftest test-get-rand-inst
   (testing "basic get"
     (let [instance-rpc-chan (async/chan 1)
+          populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
           instance {:service-id "test-id" :id "test-id.12345"}
           service-id "test-id"]
       (mock-reservation-system instance-rpc-chan [(fn [[_ resp-chan]] (async/>!! resp-chan instance))])
       (is (= instance
-             (fa/<?? (async/go (get-rand-inst instance-rpc-chan service-id {:reason :serve-request} nil 100))))))))
+             (fa/<?? (async/go (get-rand-inst populate-maintainer-chan! service-id {:reason :serve-request} nil 100))))))))
+
+(deftest test-notify-scaling-state
+  (testing "basic release"
+    (let [instance-rpc-chan (async/chan 1)
+          populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
+          service-id "test-id"
+          scaling-state :scaling-state]
+      (mock-reservation-system instance-rpc-chan
+                               [(fn [{:keys [scaling-state]}]
+                                  (is (= :scaling-state scaling-state)))])
+      (notify-scaling-state-go populate-maintainer-chan! service-id scaling-state)
+      ; Let mock propagate
+      (async/<!! (async/timeout 10)))))
 
 (deftest test-start-new-service
   (let [make-cache-fn (fn [threshold ttl]
-                        (-> {}
-                            (cache/fifo-cache-factory :threshold threshold)
-                            (cache/ttl-cache-factory :ttl ttl)
-                            atom))
-        start-app-threadpool (Executors/newFixedThreadPool 20)
+                        (cu/cache-factory {:threshold threshold :ttl ttl}))
+        start-service-thread-pool (Executors/newFixedThreadPool 20)
         scheduler (Object.)
-        descriptor {:id "test-service-id"}]
+        descriptor {:service-id "test-service-id"}]
+
     (testing "start-new-service"
-      (let [cache-atom (make-cache-fn 100 20)
+      (let [cache (make-cache-fn 100 20)
             start-called-atom (atom false)
             start-fn (fn [] (reset! start-called-atom (not @start-called-atom)))
-            start-app-result (start-new-service scheduler descriptor cache-atom start-app-threadpool :start-fn start-fn)]
-        (is (not (nil? start-app-result)))
-        (.get ^Future start-app-result)
+            start-service-result (start-new-service scheduler descriptor cache start-service-thread-pool :start-fn start-fn)]
+        (is (not (nil? start-service-result)))
+        (.get ^Future start-service-result)
         (is @start-called-atom)))
-    (testing "app-already-starting"
-      (let [cache-atom (make-cache-fn 100 1000)
+
+    (testing "service-already-starting"
+      (let [cache (make-cache-fn 100 1000)
             start-called-atom (atom false)
             start-fn (fn [] (reset! start-called-atom (not @start-called-atom)))]
-        (let [start-app-result-1 (start-new-service scheduler descriptor cache-atom start-app-threadpool :start-fn start-fn)]
-          (is (not (nil? start-app-result-1)))
-          (.get ^Future start-app-result-1)
+        (let [start-service-result-1 (start-new-service scheduler descriptor cache start-service-thread-pool :start-fn start-fn)]
+          (is (not (nil? start-service-result-1)))
+          (.get ^Future start-service-result-1)
           (is @start-called-atom))
-        (let [start-app-result-2 (start-new-service scheduler descriptor cache-atom start-app-threadpool :start-fn start-fn)]
-          (is (nil? start-app-result-2)))))
-    (testing "app-starting-after-cache-eviction"
-      (let [cache-atom (make-cache-fn 100 20)
+        (let [start-service-result-2 (start-new-service scheduler descriptor cache start-service-thread-pool :start-fn start-fn)]
+          (is (nil? start-service-result-2)))))
+
+    (testing "service-starting-after-cache-eviction"
+      (let [cache (make-cache-fn 100 20)
             start-called-atom (atom 0)]
         (let [start-fn (fn [] (reset! start-called-atom 1))
-              start-app-result-1 (start-new-service scheduler descriptor cache-atom start-app-threadpool :start-fn start-fn)]
-          (is (not (nil? start-app-result-1)))
-          (.get ^Future start-app-result-1)
+              start-service-result-1 (start-new-service scheduler descriptor cache start-service-thread-pool :start-fn start-fn)]
+          (is (not (nil? start-service-result-1)))
+          (.get ^Future start-service-result-1)
           (is (= 1 @start-called-atom)))
         (Thread/sleep 30)
         (let [start-fn (fn [] (reset! start-called-atom 2))
-              start-app-result-2 (start-new-service scheduler descriptor cache-atom start-app-threadpool :start-fn start-fn)]
-          (is (not (nil? start-app-result-2)))
-          (.get ^Future start-app-result-2))
+              start-service-result-2 (start-new-service scheduler descriptor cache start-service-thread-pool :start-fn start-fn)]
+          (is (not (nil? start-service-result-2)))
+          (.get ^Future start-service-result-2))
         (is (= 2 @start-called-atom))))
-    (testing "tens-of-apps-starting-simultaneously"
-      (let [cache-atom (make-cache-fn 100 15000)
+
+    (testing "tens-of-services-starting-simultaneously"
+      (let [cache (make-cache-fn 100 15000)
             start-called-atom (atom {})
             individual-call-result-atom (atom {})]
         (doall
           (pmap
             (fn [n]
-              (let [app-num (rand-int 50)
-                    service-id (str "test-service-id-" app-num)
-                    descriptor {:id service-id}
+              (let [service-num (rand-int 50)
+                    service-id (str "test-service-id-" service-num)
+                    descriptor {:service-id service-id}
                     start-fn (fn [] (swap! start-called-atom assoc service-id (not (get @start-called-atom service-id))))
-                    start-app-result (start-new-service scheduler descriptor cache-atom start-app-threadpool :start-fn start-fn)]
-                (if-not (nil? start-app-result)
+                    start-service-result (start-new-service scheduler descriptor cache start-service-thread-pool :start-fn start-fn)]
+                (if-not (nil? start-service-result)
                   (do
-                    (.get ^Future start-app-result)
+                    (.get ^Future start-service-result)
                     (swap! individual-call-result-atom assoc n (get @start-called-atom service-id)))
                   (swap! individual-call-result-atom assoc n true))))
             (range 1 1000)))
@@ -298,3 +256,21 @@
                  (every? (fn [[_ value]] (true? value)) @start-called-atom)))
         (is (and (pos? (count @individual-call-result-atom))
                  (every? (fn [[_ value]] (true? value)) @individual-call-result-atom)))))))
+
+(deftest test-resolve-service-status
+  (is (= :service-state-failing (resolve-service-status :error {})))
+  (is (= :service-state-inactive (resolve-service-status nil {})))
+  (is (= :service-state-inactive (resolve-service-status nil {:healthy 0 :requested 0 :scheduled 0})))
+  ;; invalid scenario handled by giving priority to requested and scheduled counts
+  (is (= :service-state-inactive (resolve-service-status nil {:healthy 1 :requested 0 :scheduled 0})))
+  (is (= :service-state-starting (resolve-service-status nil {:healthy 0 :requested 1 :scheduled 0})))
+  (is (= :service-state-running (resolve-service-status nil {:healthy 1 :requested 1 :scheduled 0})))
+  (is (= :service-state-starting (resolve-service-status nil {:healthy 0 :requested 0 :scheduled 1})))
+  (is (= :service-state-running (resolve-service-status nil {:healthy 1 :requested 0 :scheduled 1})))
+  (is (= :service-state-starting (resolve-service-status nil {:healthy 0 :requested 1 :scheduled 1})))
+  (is (= :service-state-running (resolve-service-status nil {:healthy 1 :requested 1 :scheduled 1})))
+  (is (= :service-state-running (resolve-service-status nil {:healthy 1 :requested 2 :scheduled 1})))
+  (is (= :service-state-running (resolve-service-status nil {:healthy 1 :requested 1 :scheduled 2})))
+  (is (= :service-state-running (resolve-service-status nil {:healthy 2 :requested 2 :scheduled 1})))
+  (is (= :service-state-running (resolve-service-status nil {:healthy 2 :requested 1 :scheduled 2})))
+  (is (= :service-state-running (resolve-service-status nil {:healthy 2 :requested 2 :scheduled 2}))))

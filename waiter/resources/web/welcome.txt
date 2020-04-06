@@ -10,7 +10,7 @@ Server Info
 
        Host: <%= hostname %>
   Interface: <%= host %>
-       Port: <%= port %>
+       Port(s): <%= port %>
 
 Request Info
 ============

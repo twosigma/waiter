@@ -31,10 +31,11 @@
           (is (cookie-fn cookies "x-waiter-auth"))))
       (testing "single cookie sent from backend"
         (let [headers (assoc headers :x-kitchen-cookies "test=singlecookie")
-              {:keys [cookies] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
-          (is (= "singlecookie" (cookie-fn cookies "test")))
-          (is (cookie-fn cookies "x-waiter-auth"))
-          (delete-service waiter-url (:service-id response)))))))
+              {:keys [cookies service-id] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
+          (with-service-cleanup
+            service-id
+            (is (= "singlecookie" (cookie-fn cookies "test")))
+            (is (cookie-fn cookies "x-waiter-auth"))))))))
 
 (deftest ^:parallel ^:integration-fast test-cookie-sent-to-backend
   (testing-using-waiter-url
@@ -49,11 +50,14 @@
                                                                                               :discard false
                                                                                               :path "/"})))
               body-json (json/read-str (str body))]
-          (is (= "test=cookie" (get-in body-json ["headers" "cookie"])))))
+          (is (= ["test=cookie"] (get-in body-json ["headers" "cookie"])))))
       (testing "no cookies sent to backend (x-waiter-auth removed)"
-        (let [{:keys [service-id cookies]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
-              {:keys [body]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :path "/request-info"
-                                                                                          :cookies cookies))
-              {:strings [headers]} (json/read-str (str body))]
-          (is (not (contains? headers "cookie")))
-          (delete-service waiter-url service-id))))))
+        (let [{:keys [cookies service-id] :as response}
+              (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
+          (assert-response-status response 200)
+          (with-service-cleanup
+            service-id
+            (let [{:keys [body] :as response} (make-kitchen-request waiter-url headers :cookies cookies :path "/request-info")
+                  _ (assert-response-status response 200)
+                  {:strs [headers]} (json/read-str (str body))]
+              (is (empty? (get headers "cookie"))))))))))

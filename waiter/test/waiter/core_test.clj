@@ -23,6 +23,7 @@
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [waiter.auth.authentication :as auth]
+            [waiter.auth.jwt :as jwt]
             [waiter.authorization :as authz]
             [waiter.core :refer :all]
             [waiter.curator :as curator]
@@ -37,7 +38,9 @@
             [waiter.test-helpers :refer :all]
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
-  (:import java.io.StringBufferInputStream))
+  (:import (java.io StringBufferInputStream)
+           (java.util.concurrent Executors)
+           (javax.servlet ServletRequest)))
 
 (defn request
   [resource request-method & params]
@@ -94,7 +97,7 @@
                      :priority true)]
         (let [new-service-data (into {} (map (fn [[service data]]
                                                [service (if (:delete data)
-                                                          (assoc data :counter (dec (:counter data)))
+                                                          (update-in data [:counter] dec)
                                                           data)])
                                              @service-data-atom))]
           (reset! service-data-atom new-service-data))
@@ -110,6 +113,7 @@
       (let [service-gc-block (fn [service-data-atom num-times]
                                (let [service-data-exit-chan (async/chan 1)
                                      service-data-chan (async/chan (async/sliding-buffer num-times))
+                                     service->raw-data-fn (fn service->raw-data-fn [] (async/<!! service-data-chan))
                                      timeout-interval-ms 1
                                      read-state-fn (fn [name] (:data (curator/read-path curator (str gc-base-path "/" name) :nil-on-missing? true :serializer :nippy)))
                                      write-state-fn (fn [name state] (curator/write-path curator (str gc-base-path "/" name) state :serializer :nippy :create-parent-zknodes? true))]
@@ -125,7 +129,7 @@
                                                               leader?
                                                               t/now
                                                               "test-routine"
-                                                              service-data-chan
+                                                              service->raw-data-fn
                                                               timeout-interval-ms
                                                               (fn [prev-service->state _] prev-service->state)
                                                               (fn [_ _ data] data)
@@ -176,10 +180,10 @@
         allowed-to-manage-service? (fn [service-id auth-user]
                                      (sd/can-manage-service? kv-store entitlement-manager service-id auth-user))
         make-inter-router-requests-sync-fn (fn [path _ _] (is (str/includes? path "service-id-")))
-        configuration {:curator {:kv-store kv-store}
-                       :routines {:allowed-to-manage-service?-fn allowed-to-manage-service?
+        configuration {:routines {:allowed-to-manage-service?-fn allowed-to-manage-service?
                                   :make-inter-router-requests-sync-fn make-inter-router-requests-sync-fn
                                   :service-description-defaults service-description-defaults}
+                       :state {:kv-store kv-store}
                        :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-resume-handler-fn ((:service-resume-handler-fn request-handlers) configuration)
                   :service-suspend-handler-fn ((:service-suspend-handler-fn request-handlers) configuration)}
@@ -220,19 +224,19 @@
         allowed-to-manage-service? (fn [service-id auth-user]
                                      (sd/can-manage-service? kv-store entitlement-manager service-id auth-user))
         make-inter-router-requests-sync-fn (fn [path _ _] (is (str/includes? path "service-id-")))
-        configuration {:curator {:kv-store kv-store}
-                       :routines {:allowed-to-manage-service?-fn allowed-to-manage-service?
+        configuration {:routines {:allowed-to-manage-service?-fn allowed-to-manage-service?
                                   :make-inter-router-requests-sync-fn make-inter-router-requests-sync-fn
                                   :service-description-defaults service-description-defaults}
+                       :state {:kv-store kv-store}
                        :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-override-handler-fn ((:service-override-handler-fn request-handlers) configuration)}
-        request-handler (-> (ring-handler-factory waiter-request?-fn handlers) wrap-error-handling)
+        request-handler (wrap-error-handling (ring-handler-factory waiter-request?-fn handlers))
         test-service-id "service-id-1"]
     (sd/store-core kv-store test-service-id service-description-defaults (constantly nil))
     (testing "override-service-handler"
       (let [user "tu1"
             request {:authorization/user user
-                     :body (StringBufferInputStream. (json/write-str {"scale-factor" 0.3, "cmd" "overridden-cmd"}))
+                     :body (StringBufferInputStream. (utils/clj->json {"scale-factor" 0.3, "cmd" "overridden-cmd"}))
                      :request-method :post
                      :uri (str "/apps/" test-service-id "/override")}
             {:keys [status body]} (request-handler request)]
@@ -241,7 +245,7 @@
         (is (= {"scale-factor" 0.3} (:overrides (sd/service-id->overrides kv-store test-service-id)))))
       (let [user "tu1"
             request {:authorization/user user
-                     :body (StringBufferInputStream. (json/write-str {"scale-factor" 0.3, "cmd" "overridden-cmd"}))
+                     :body (StringBufferInputStream. (utils/clj->json {"scale-factor" 0.3, "cmd" "overridden-cmd"}))
                      :request-method :get
                      :uri (str "/apps/" test-service-id "/override")}
             {:keys [status body]} (request-handler request)]
@@ -250,7 +254,7 @@
         (is (= test-service-id (-> body json/read-str walk/keywordize-keys :service-id))))
       (let [user "tu1"
             request {:authorization/user user
-                     :body (StringBufferInputStream. (json/write-str {"scale-factor" 0.3, "cmd" "overridden-cmd"}))
+                     :body (StringBufferInputStream. (utils/clj->json {"scale-factor" 0.3, "cmd" "overridden-cmd"}))
                      :request-method :delete
                      :uri (str "/apps/" test-service-id "/override")}
             {:keys [status body]} (request-handler request)]
@@ -286,9 +290,21 @@
         (is (= 405 status))))))
 
 (deftest test-service-view-logs-handler
-  (let [scheduler (marathon/->MarathonScheduler (Object.) {:slave-port 5051} (fn [] nil) "/home/path/"
-                                                (atom {}) (atom {}) (atom {}) {} 0
-                                                (constantly true) (constantly true) (atom nil))
+  (let [scheduler (marathon/map->MarathonScheduler
+                    {:force-kill-after-ms 1000
+                     :home-path-prefix "/home/path/"
+                     :is-waiter-service?-fn (constantly true)
+                     :marathon-api (Object.)
+                     :mesos-api {:slave-port 5051}
+                     :retrieve-framework-id-fn (constantly nil)
+                     :retrieve-syncer-state-fn (constantly {})
+                     :scheduler-name "marathon"
+                     :service-id->failed-instances-transient-store (atom {})
+                     :service-id->kill-info-store (atom {})
+                     :service-id->out-of-sync-state-store (atom {})
+                     :service-id->password-fn #(str % ".password")
+                     :service-id->service-description (constantly nil)
+                     :sync-deployment-maintainer-atom (atom nil)})
         configuration {:routines {:generate-log-url-fn (partial handler/generate-log-url identity)}
                        :scheduler {:scheduler scheduler}
                        :wrap-secure-request-fn utils/wrap-identity}
@@ -393,53 +409,72 @@
                               (authorized? [_ subject _ {:keys [user]}] (= subject user)))
         allowed-to-manage-service? (fn [service-id auth-user]
                                      (sd/can-manage-service? kv-store entitlement-manager service-id auth-user))
-        configuration {:curator {:kv-store nil}
+        scheduler-interactions-thread-pool (Executors/newFixedThreadPool 1)
+        delete-service-result-atom (atom nil) ;; with-redefs fails as we are executing inside different threads
+        configuration {:daemons {:autoscaler {:query-state-fn (constantly {})}
+                                 :router-state-maintainer {:maintainer {:query-state-fn (constantly {})}}}
                        :routines {:allowed-to-manage-service?-fn allowed-to-manage-service?
                                   :generate-log-url-fn nil
                                   :make-inter-router-requests-sync-fn nil
-                                  :service-id->service-description-fn (constantly {})}
-                       :scheduler {:scheduler (Object.)}
-                       :state {:router-id "router-id"}
+                                  :router-metrics-helpers {:service-id->metrics-fn (constantly {})}
+                                  :service-id->references-fn (constantly [])
+                                  :service-id->service-description-fn (constantly {})
+                                  :service-id->source-tokens-entries-fn (constantly #{})
+                                  :token->token-hash identity}
+                       :scheduler {:scheduler (reify scheduler/ServiceScheduler
+                                                (delete-service [_ _]
+                                                  (let [result @delete-service-result-atom]
+                                                    (if (instance? Throwable result)
+                                                      (throw result)
+                                                      result))))}
+                       :state {:kv-store nil
+                               :router-id "router-id"
+                               :scheduler-interactions-thread-pool scheduler-interactions-thread-pool}
                        :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-handler-fn ((:service-handler-fn request-handlers) configuration)}]
+
     (testing "service-handler:delete-successful"
-      (with-redefs [scheduler/delete-app (fn [_ service-id] {:result :deleted, :service-id service-id})
-                    sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
+      (reset! delete-service-result-atom {:result :deleted, :service-id service-id})
+      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
-              {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+              {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
           (is (= 200 status))
-          (is (= {"content-type" "application/json"} headers))
+          (is (= expected-json-response-headers headers))
           (is (= {"success" true, "service-id" service-id, "result" "deleted"} (json/read-str body))))))
+
     (testing "service-handler:delete-nil-response"
-      (with-redefs [scheduler/delete-app (fn [_ _] nil)
-                    sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
+      (reset! delete-service-result-atom nil)
+      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
-              {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+              {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
           (is (= 400 status))
-          (is (= {"content-type" "application/json"} headers))
+          (is (= expected-json-response-headers headers))
           (is (= {"success" false, "service-id" service-id} (json/read-str body))))))
+
     (testing "service-handler:delete-unauthorized-user"
-      (with-redefs [scheduler/delete-app (fn [_ _] (throw (IllegalStateException. "Unexpected call!")))
-                    sd/fetch-core (fn [_ service-id & _] {"run-as-user" (str "another-" user), "name" (str service-id "-name")})]
+      (reset! delete-service-result-atom (IllegalStateException. "Unexpected call!"))
+      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" (str "another-" user), "name" (str service-id "-name")})]
         (let [request {:authorization/user user
                        :headers {"accept" "application/json"}
                        :request-method :delete
                        :uri (str "/apps/" service-id)}
               {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
           (is (= 403 status))
-          (is (= {"content-type" "application/json"} headers))
+          (is (= expected-json-response-headers headers))
           (is (str/includes? body "User not allowed to delete service")))))
+
     (testing "service-handler:delete-404-response"
-      (with-redefs [scheduler/delete-app (fn [_ _] {:result :no-such-service-exists})
-                    sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
+      (reset! delete-service-result-atom {:result :no-such-service-exists})
+      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
-              {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+              {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
           (is (= 404 status))
-          (is (= {"content-type" "application/json"} headers))
+          (is (= expected-json-response-headers headers))
           (is (= {"result" "no-such-service-exists", "service-id" service-id, "success" false} (json/read-str body))))))
+
     (testing "service-handler:delete-non-existent-service"
-      (with-redefs [scheduler/delete-app (fn [_ _] (throw (IllegalStateException. "Unexpected call!")))
-                    sd/fetch-core (fn [_ _ & _] {})]
+      (reset! delete-service-result-atom (IllegalStateException. "Unexpected call!"))
+      (with-redefs [sd/fetch-core (fn [_ _ & _] {})]
         (let [request {:authorization/user user
                        :headers {"accept" "application/json"}
                        :request-method :delete
@@ -448,35 +483,50 @@
               {{message "message"
                 {:strs [service-id]} "details"} "waiter-error"} (json/read-str body)]
           (is (= 404 status))
-          (is (= {"content-type" "application/json"} headers))
+          (is (= expected-json-response-headers headers))
           (is (= "Service not found" message))
           (is (= "test-service-1" service-id)))))
+
     (testing "service-handler:delete-throws-exception"
-      (with-redefs [scheduler/delete-app (fn [_ _] (throw (RuntimeException. "Error in deleting service")))
-                    sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
+      (reset! delete-service-result-atom (RuntimeException. "Error in deleting service"))
+      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:authorization/user user
                        :headers {"accept" "application/json"}
                        :request-method :delete
                        :uri (str "/apps/" service-id)}
-              {:keys [headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+              {:keys [headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
           (is (= 500 status))
-          (is (= {"content-type" "application/json"} headers)))))))
+          (is (= expected-json-response-headers headers)))))
+
+    (.shutdown scheduler-interactions-thread-pool)))
 
 (deftest test-service-handler-get
   (let [user "waiter-user"
         service-id "test-service-1"
         waiter-request?-fn (fn [_] true)
-        configuration {:curator {:kv-store nil}
+        router-state-atom (atom {})
+        last-request-time (str service-id ".last-request-time")
+        service-id->metrics {service-id {"last-request-time" last-request-time}}
+        scheduler-interactions-thread-pool (Executors/newFixedThreadPool 1)
+        configuration {:daemons {:autoscaler {:query-state-fn (constantly {})}
+                                 :router-state-maintainer {:maintainer {:query-state-fn (fn [] @router-state-atom)}}}
                        :routines {:allowed-to-manage-service?-fn (constantly true)
                                   :generate-log-url-fn (partial handler/generate-log-url #(str "http://www.example.com" %))
                                   :make-inter-router-requests-sync-fn nil
-                                  :service-id->service-description-fn (constantly {})}
+                                  :router-metrics-helpers {:service-id->metrics-fn (constantly service-id->metrics)}
+                                  :service-id->references-fn (constantly [])
+                                  :service-id->service-description-fn (constantly {})
+                                  :service-id->source-tokens-entries-fn (constantly #{})
+                                  :token->token-hash identity}
                        :scheduler {:scheduler (Object.)}
-                       :state {:router-id "router-id"}
+                       :state {:kv-store nil
+                               :router-id "router-id"
+                               :scheduler-interactions-thread-pool scheduler-interactions-thread-pool}
                        :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-handler-fn ((:service-handler-fn request-handlers) configuration)}
         ring-handler (wrap-handler-json-response (ring-handler-factory waiter-request?-fn handlers))
         started-time (t/now)]
+
     (testing "service-handler:get-missing-service-description"
       (with-redefs [sd/fetch-core (constantly nil)]
         (let [request {:headers {"accept" "application/json"}
@@ -484,55 +534,58 @@
                        :uri (str "/apps/" service-id)}
               {:keys [body headers status]} (ring-handler request)]
           (is (= 404 status))
-          (is (= {"content-type" "application/json"} headers))
+          (is (= expected-json-response-headers headers))
           (let [{{message "message"
                   {:strs [service-id]} "details"} "waiter-error"} (json/read-str (str body))]
             (is (= "Service not found" message))
             (is (= "test-service-1" service-id))))))
+
     (testing "service-handler:valid-response-missing-killed-and-failed"
-      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})
-                    scheduler/get-instances (fn [_ service-id]
-                                              {:active-instances [{:id (str service-id ".A")
-                                                                   :service-id service-id
-                                                                   :healthy? true,
-                                                                   :host "10.141.141.11"
-                                                                   :port 31045,
-                                                                   :started-at started-time}]
-                                               :failed-instances []})]
+      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
+        (reset! router-state-atom {:service-id->healthy-instances
+                                   {service-id [{:id (str service-id ".A")
+                                                 :service-id service-id
+                                                 :healthy? true,
+                                                 :host "10.141.141.11"
+                                                 :port 31045,
+                                                 :started-at started-time}]}})
         (let [request {:headers {"accept" "application/json"}
+                       :query-string "include=metrics"
                        :request-method :get
                        :uri (str "/apps/" service-id)}
               {:keys [body headers status]} (ring-handler request)]
           (is (= 200 status))
-          (is (= {"content-type" "application/json"} headers))
+          (is (= expected-json-response-headers headers))
           (let [body-json (json/read-str (str body))]
-            (is (= (get body-json "instances")
-                   {"active-instances" [{"id" (str service-id ".A")
+            (is (= {"active-instances" [{"id" (str service-id ".A")
                                          "service-id" service-id
                                          "healthy?" true,
                                          "host" "10.141.141.11"
                                          "log-url" "http://www.example.com/apps/test-service-1/logs?instance-id=test-service-1.A&host=10.141.141.11"
                                          "port" 31045,
-                                         "started-at" (du/date-to-str started-time du/formatter-iso8601)}]}))
-            (is (= (get body-json "metrics")
-                   {"aggregate" {"routers-sent-requests-to" 0}}))
-            (is (= (get body-json "num-active-instances") 1))
-            (is (= (get body-json "num-routers") 0))
-            (is (= (get body-json "service-description")
-                   {"name" "test-service-1-name", "run-as-user" "waiter-user"}))))))
+                                         "started-at" (du/date-to-str started-time du/formatter-iso8601)}]
+                    "failed-instances" []
+                    "killed-instances" []}
+                   (get body-json "instances")))
+            (is (= {"aggregate" {"routers-sent-requests-to" 0}} (get body-json "metrics")))
+            (is (= last-request-time (get body-json "last-request-time")))
+            (is (= 1 (get body-json "num-active-instances")))
+            (is (zero? (get body-json "num-routers")))
+            (is (= {"name" "test-service-1-name", "run-as-user" "waiter-user"} (get body-json "service-description")))))))
+
     (testing "service-handler:valid-response-including-active-killed-and-failed"
-      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})
-                    scheduler/get-instances (fn [_ service-id]
-                                              {:active-instances [{:id (str service-id ".A"), :service-id service-id}]
-                                               :failed-instances [{:id (str service-id ".F"), :service-id service-id}]
-                                               :killed-instances [{:id (str service-id ".K"), :service-id service-id}]})]
-        (let [request {:request-method :get, :uri (str "/apps/" service-id)}
+      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
+        (reset! router-state-atom {:service-id->failed-instances {service-id [{:id (str service-id ".F"), :service-id service-id}]}
+                                   :service-id->healthy-instances {service-id [{:id (str service-id ".A"), :service-id service-id}]}
+                                   :service-id->killed-instances {service-id [{:id (str service-id ".K"), :service-id service-id}]}})
+        (let [request {:query-string "include=metrics"
+                       :request-method :get
+                       :uri (str "/apps/" service-id)}
               {:keys [body headers status]} (ring-handler request)]
           (is (= 200 status))
-          (is (= {"content-type" "application/json"} headers))
+          (is (= expected-json-response-headers headers))
           (let [body-json (json/read-str (str body))]
-            (is (= (get body-json "instances")
-                   {"active-instances" [{"id" (str service-id ".A")
+            (is (= {"active-instances" [{"id" (str service-id ".A")
                                          "service-id" service-id
                                          "log-url" "http://www.example.com/apps/test-service-1/logs?instance-id=test-service-1.A&host="}]
                     "killed-instances" [{"id" (str service-id ".K")
@@ -540,13 +593,15 @@
                                          "log-url" "http://www.example.com/apps/test-service-1/logs?instance-id=test-service-1.K&host="}]
                     "failed-instances" [{"id" (str service-id ".F")
                                          "service-id" service-id
-                                         "log-url" "http://www.example.com/apps/test-service-1/logs?instance-id=test-service-1.F&host="}]}))
-            (is (= (get body-json "metrics")
-                   {"aggregate" {"routers-sent-requests-to" 0}}))
-            (is (= (get body-json "num-active-instances") 1))
-            (is (= (get body-json "num-routers") 0))
-            (is (= (get body-json "service-description")
-                   {"name" "test-service-1-name", "run-as-user" "waiter-user"}))))))))
+                                         "log-url" "http://www.example.com/apps/test-service-1/logs?instance-id=test-service-1.F&host="}]}
+                   (get body-json "instances")))
+            (is (= {"aggregate" {"routers-sent-requests-to" 0}} (get body-json "metrics")))
+            (is (= last-request-time (get body-json "last-request-time")))
+            (is (= 1 (get body-json "num-active-instances")))
+            (is (zero? (get body-json "num-routers")))
+            (is (= {"name" "test-service-1-name", "run-as-user" "waiter-user"} (get body-json "service-description")))))))
+
+    (.shutdown scheduler-interactions-thread-pool)))
 
 (deftest test-make-inter-router-requests
   (let [auth-object (Object.)
@@ -562,7 +617,9 @@
         make-request-fn-factory (fn [urls-invoked-atom]
                                   (fn [method endpoint-url auth body config]
                                     (is (str/blank? body))
-                                    (is (= {:headers {"accept" "application/json"}} config))
+                                    (is (= {:headers {"accept" "application/json"
+                                                      "x-cid" "waiter.unique-identifier"}}
+                                           config))
                                     (is (= :get method))
                                     (is (= auth-object auth))
                                     (swap! urls-invoked-atom conj endpoint-url)
@@ -572,7 +629,8 @@
                     (pc/map-from-keys (fn [router-id]
                                         (str protocol "://" router-id "/" endpoint))
                                       (remove #(contains? exclude-set %)
-                                              ["router-0", "router-1", "router-2", "router-3", "router-4"])))]
+                                              ["router-0", "router-1", "router-2", "router-3", "router-4"])))
+                  utils/unique-identifier (constantly "unique-identifier")]
       (testing "make-call-to-all-other-routers"
         (let [urls-invoked-atom (atom [])
               make-request-fn (make-request-fn-factory urls-invoked-atom)]
@@ -596,7 +654,7 @@
               make-request-fn (make-request-fn-factory urls-invoked-atom)]
           (make-inter-router-requests make-request-fn make-basic-auth-fn my-router-id discovery passwords "test/endpoint3"
                                       :acceptable-router? (fn [router-id] (some #(str/includes? router-id %) ["A" "B" "C"])))
-          (is (= 0 (count @urls-invoked-atom))))))))
+          (is (zero? (count (deref urls-invoked-atom)))))))))
 
 (deftest test-make-request-async
   (let [http-client (Object.)
@@ -691,11 +749,11 @@
                     :waiter-request?-fn (constantly true)}
           {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
       (is (= 200 status))
-      (is (= {} headers))
-      (is (= "ok" (str body))))))
+      (is (= expected-json-response-headers headers))
+      (is (= {"status" "ok"} (json/read-str body))))))
 
 (deftest test-leader-fn-factory
-  (with-redefs [discovery/cluster-size (fn [discovery] (int discovery))]
+  (with-redefs [discovery/cluster-size int]
     (testing "leader-as-single-instance"
       (let [discovery 1
             has-leadership? (constantly true)
@@ -743,30 +801,30 @@
         waiter-request?-fn (fn [_] true)
         ring-handler (wrap-handler-json-response (ring-handler-factory waiter-request?-fn handlers))]
     (testing "metrics-request-handler:all-metrics"
-      (with-redefs [metrics/get-metrics (fn get-metrics [] {:data "metrics-from-get-metrics"})]
+      (with-redefs [metrics/get-metrics (fn get-metrics [_] {:data "metrics-from-get-metrics"})]
         (let [request {:headers {"accept" "application/json"}
                        :request-method :get
                        :uri "/metrics"}
               {:keys [body headers status]} (ring-handler request)]
           (is (= 200 status))
-          (is (= {"content-type" "application/json"} headers))
+          (is (= expected-json-response-headers headers))
           (is (str/includes? (str body) "metrics-from-get-metrics")))))
 
     (testing "metrics-request-handler:all-metrics:error"
-      (with-redefs [metrics/get-metrics (fn get-metrics [] (throw (Exception. "get-metrics")))]
+      (with-redefs [metrics/get-metrics (fn get-metrics [_] (throw (Exception. "get-metrics")))]
         (let [request {:headers {"accept" "application/json"}
                        :request-method :get
                        :uri "/metrics"}
               {:keys [headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
           (is (= 500 status))
-          (is (= {"content-type" "application/json"} headers)))))
+          (is (= expected-json-response-headers headers)))))
 
     (testing "metrics-request-handler:waiter-metrics"
       (with-redefs [metrics/get-waiter-metrics (fn get-waiter-metrics-fn [] {:data (str "metrics-for-waiter")})]
         (let [request {:request-method :get, :uri "/metrics", :query-string "exclude-services=true"}
               {:keys [body headers status]} (ring-handler request)]
           (is (= 200 status))
-          (is (= {"content-type" "application/json"} headers))
+          (is (= expected-json-response-headers headers))
           (is (str/includes? (str body) "metrics-for-waiter")))))
 
     (testing "metrics-request-handler:service-metrics"
@@ -774,7 +832,7 @@
         (let [request {:request-method :get, :uri "/metrics", :query-string "service-id=abcd"}
               {:keys [body headers status]} (ring-handler request)]
           (is (= 200 status))
-          (is (= {"content-type" "application/json"} headers))
+          (is (= expected-json-response-headers headers))
           (is (str/includes? (str body) "metrics-for-abcd")))))
 
     (testing "metrics-request-handler:service-metrics:error"
@@ -785,7 +843,7 @@
                        :uri "/metrics"}
               {:keys [headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
           (is (= 500 status))
-          (is (= {"content-type" "application/json"} headers)))))))
+          (is (= expected-json-response-headers headers)))))))
 
 (deftest test-async-result-handler-call
   (testing "test-async-result-handler-call"
@@ -863,6 +921,8 @@
            (exec-routes-mapper "/metrics")))
     (is (= {:handler :not-found-handler-fn}
            (exec-routes-mapper "/not-found"))) ; any path that isn't mapped
+    (is (= {:handler :not-found-handler-fn}
+           (exec-routes-mapper "/secrun")))
     (is (= {:handler :service-id-handler-fn}
            (exec-routes-mapper "/service-id")))
     (is (= {:handler :display-settings-handler-fn}
@@ -919,6 +979,10 @@
            (exec-routes-mapper "/waiter-async/status/test-request-id/test-router-id/test-service-id/test-host/test-port/some/test/location?a=b")))
     (is (= {:handler :waiter-auth-handler-fn}
            (exec-routes-mapper "/waiter-auth")))
+    (is (= {:handler :waiter-auth-callback-handler-fn
+            :route-params {:authentication-provider "saml"
+                           :operation "acs"}}
+           (exec-routes-mapper "/waiter-auth/saml/acs")))
     (is (= {:handler :waiter-acknowledge-consent-handler-fn}
            (exec-routes-mapper "/waiter-consent")))
     (is (= {:handler :waiter-request-consent-handler-fn
@@ -938,6 +1002,8 @@
            (exec-routes-mapper "/waiter-consent/nested/path/example?with=params")))
     (is (= {:handler :kill-instance-handler-fn, :route-params {:service-id "test-service"}}
            (exec-routes-mapper "/waiter-kill-instance/test-service")))
+    (is (= {:handler :ping-service-handler}
+           (exec-routes-mapper "/waiter-ping")))
     (is (= {:handler :work-stealing-handler-fn}
            (exec-routes-mapper "/work-stealing")))))
 
@@ -994,9 +1060,9 @@
         service-id "service-id"
         discovery (Object.)
         make-inter-router-requests-sync-fn (Object.)
-        configuration {:curator {:discovery discovery}
-                       :make-inter-router-requests-sync-fn make-inter-router-requests-sync-fn
-                       :state {:router-id my-router-id}}
+        configuration {:make-inter-router-requests-sync-fn make-inter-router-requests-sync-fn
+                       :state {:discovery discovery
+                               :router-id my-router-id}}
         delegate-instance-kill-request-fn ((:delegate-instance-kill-request-fn routines) configuration)
         router-ids #{"peer-1" "peer-2" "peer-3"}
         make-kill-instance-peer-ids-atom (atom #{})]
@@ -1016,12 +1082,16 @@
 
 (deftest test-wrap-auth-bypass
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
-        configuration {:curator {:kv-store kv-store}
-                       :state {:waiter-hostnames #{"www.waiter-router.com"}}}
+        token-defaults {"fallback-period-secs" 300
+                        "https-redirect" false}
+        waiter-hostnames #{"www.waiter-router.com"}
+        configuration {}
         wrap-auth-bypass-fn ((:wrap-auth-bypass-fn request-handlers) configuration)
         handler-response (Object.)
-        execute-request (fn execute-request-fn [test-request]
-                          (let [request-handler-argument-atom (atom nil)
+        execute-request (fn execute-request-fn [{:keys [headers] :as in-request}]
+                          (let [test-request (->> (sd/discover-service-parameters kv-store token-defaults waiter-hostnames headers)
+                                                  (assoc in-request :waiter-discovery))
+                                request-handler-argument-atom (atom nil)
                                 test-request-handler (fn request-handler-fn [request]
                                                        (reset! request-handler-argument-atom request)
                                                        handler-response)
@@ -1029,116 +1099,240 @@
                             {:handled-request @request-handler-argument-atom
                              :response test-response}))]
 
-    (kv/store kv-store "www.token-1.com" {"cpu" 1, "mem" 2048})
-    (kv/store kv-store "www.token-2.com" {"authentication" "standard", "cpu" 1, "mem" 2048})
-    (kv/store kv-store "www.token-3.com" {"authentication" "disabled", "cpu" 1, "mem" 2048})
-    (kv/store kv-store "a-named-token-A" {"cpu" 1, "mem" 2048})
-    (kv/store kv-store "a-named-token-B" {"authentication" "disabled", "cpu" 1, "mem" 2048})
-    (kv/store kv-store "a-named-token-C" {"authentication" "standard", "cpu" 1, "mem" 2048})
+    (kv/store kv-store "www.token-1.com" {"cpu" 1
+                                          "mem" 2048})
+    (kv/store kv-store "www.token-2.com" {"authentication" "standard"
+                                          "cpu" 1
+                                          "mem" 2048})
+    (kv/store kv-store "www.token-3.com" {"authentication" "disabled"
+                                          "cpu" 1
+                                          "mem" 2048})
+    (kv/store kv-store "a-named-token-A" {"cpu" 1
+                                          "mem" 2048})
+    (kv/store kv-store "a-named-token-B" {"authentication" "disabled"
+                                          "cpu" 1
+                                          "mem" 2048})
+    (kv/store kv-store "a-named-token-C" {"authentication" "standard"
+                                          "cpu" 1
+                                          "mem" 2048})
 
     (testing "request-without-non-existing-hostname-token"
       (let [test-request {:headers {"host" "www.host.com"}}
             {:keys [handled-request response]} (execute-request test-request)]
-        (is (= test-request handled-request))
+        (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.host.com"}
+                                                      :service-parameter-template {}
+                                                      :token "www.host.com"
+                                                      :token-metadata token-defaults
+                                                      :waiter-headers {}})
+               handled-request))
         (is (= handler-response response))))
 
     (testing "request-without-non-existing-hostname-token-with-on-the-fly-headers"
-      (let [test-request {:headers {"host" "www.host.com", "x-waiter-run-as-user" "test-user"}}
+      (let [test-request {:headers {"host" "www.host.com" "x-waiter-run-as-user" "test-user"}}
             {:keys [handled-request response]} (execute-request test-request)]
-        (is (= test-request handled-request))
+        (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.host.com"}
+                                                      :service-parameter-template {}
+                                                      :token "www.host.com"
+                                                      :token-metadata token-defaults
+                                                      :waiter-headers {"x-waiter-run-as-user" "test-user"}})
+               handled-request))
         (is (= handler-response response))))
 
     (testing "request-without-existing-non-auth-hostname-token"
       (let [test-request {:headers {"host" "www.token-1.com"}}
             {:keys [handled-request response]} (execute-request test-request)]
-        (is (= test-request handled-request))
+        (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.token-1.com"}
+                                                      :service-parameter-template {"mem" 2048}
+                                                      :token "www.token-1.com"
+                                                      :token-metadata (assoc token-defaults "owner" nil "previous" {})
+                                                      :waiter-headers {}})
+               handled-request))
         (is (= handler-response response))))
 
     (testing "request-without-existing-auth-disabled-hostname-token"
       (let [test-request {:headers {"host" "www.token-3.com"}}
             {:keys [handled-request response]} (execute-request test-request)]
-        (is (= (assoc test-request :skip-authentication true) handled-request))
+        (is (= (assoc test-request :skip-authentication true
+                                   :waiter-discovery {:passthrough-headers {"host" "www.token-3.com"}
+                                                      :service-parameter-template {"authentication" "disabled"
+                                                                                   "mem" 2048}
+                                                      :token "www.token-3.com"
+                                                      :token-metadata (assoc token-defaults "owner" nil "previous" {})
+                                                      :waiter-headers {}})
+               handled-request))
         (is (= handler-response response))))
 
     (testing "request-without-existing-auth-disabled-hostname-token-with-on-the-fly-headers"
-      (let [test-request {:headers {"host" "www.token-3.com", "x-waiter-run-as-user" "test-user"}}
+      (let [test-request {:headers {"host" "www.token-3.com"
+                                    "x-waiter-run-as-user" "test-user"}}
             {:keys [handled-request response]} (execute-request test-request)]
         (is (nil? handled-request))
-        (is (= (utils/map->json-response {:error "An authentication disabled token may not be combined with on-the-fly headers"}
+        (is (= (utils/clj->json-response {:error "An authentication disabled token may not be combined with on-the-fly headers"}
                                          :status 400)
                response))))
 
     (testing "request-without-existing-non-auth-named-token"
-      (let [test-request {:headers {"host" "www.service.com", "x-waiter-token" "a-named-token-A"}}
+      (let [test-request {:headers {"host" "www.service.com"
+                                    "x-waiter-token" "a-named-token-A"}}
             {:keys [handled-request response]} (execute-request test-request)]
-        (is (= test-request handled-request))
+        (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.service.com"}
+                                                      :service-parameter-template {"mem" 2048}
+                                                      :token "a-named-token-A"
+                                                      :token-metadata (assoc token-defaults "owner" nil "previous" {})
+                                                      :waiter-headers {"x-waiter-token" "a-named-token-A"}})
+               handled-request))
         (is (= handler-response response))))
 
     (testing "request-without-existing-non-auth-named-token-with-authentication-header"
-      (let [test-request {:headers {"host" "www.service.com", "x-waiter-token" "a-named-token-A", "x-waiter-authentication" "disabled"}}
+      (let [test-request {:headers {"host" "www.service.com"
+                                    "x-waiter-token" "a-named-token-A"
+                                    "x-waiter-authentication" "disabled"}}
             {:keys [handled-request response]} (execute-request test-request)]
         (is (nil? handled-request))
-        (is (= (utils/map->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
+        (is (= (utils/clj->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
                                          :status 400)
                response))))
 
     (testing "request-without-existing-auth-disabled-named-token"
-      (let [test-request {:headers {"host" "www.service.com", "x-waiter-token" "a-named-token-B"}}
+      (let [test-request {:headers {"host" "www.service.com"
+                                    "x-waiter-token" "a-named-token-B"}}
             {:keys [handled-request response]} (execute-request test-request)]
-        (is (= (assoc test-request :skip-authentication true) handled-request))
+        (is (= (assoc test-request :skip-authentication true
+                                   :waiter-discovery {:passthrough-headers {"host" "www.service.com"}
+                                                      :service-parameter-template {"authentication" "disabled"
+                                                                                   "mem" 2048}
+                                                      :token "a-named-token-B"
+                                                      :token-metadata (assoc token-defaults "owner" nil "previous" {})
+                                                      :waiter-headers {"x-waiter-token" "a-named-token-B"}})
+               handled-request))
         (is (= handler-response response))))
 
     (testing "request-without-existing-auth-disabled-named-token-with-authentication-header"
-      (let [test-request {:headers {"host" "www.service.com", "x-waiter-authentication" "disabled", "x-waiter-token" "a-named-token-B"}}
+      (let [test-request {:headers {"host" "www.service.com"
+                                    "x-waiter-authentication" "disabled"
+                                    "x-waiter-token" "a-named-token-B"}}
             {:keys [handled-request response]} (execute-request test-request)]
         (is (nil? handled-request))
-        (is (= (utils/map->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
+        (is (= (utils/clj->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
                                          :status 400)
                response))))
 
     (testing "request-without-existing-auth-disabled-named-token-with-on-the-fly-headers"
-      (let [test-request {:headers {"host" "www.service.com", "x-waiter-run-as-user" "test-user", "x-waiter-token" "a-named-token-B"}}
+      (let [test-request {:headers {"host" "www.service.com"
+                                    "x-waiter-run-as-user" "test-user"
+                                    "x-waiter-token" "a-named-token-B"}}
             {:keys [handled-request response]} (execute-request test-request)]
         (is (nil? handled-request))
-        (is (= (utils/map->json-response {:error "An authentication disabled token may not be combined with on-the-fly headers"}
+        (is (= (utils/clj->json-response {:error "An authentication disabled token may not be combined with on-the-fly headers"}
                                          :status 400)
                response))))
 
     (testing "request-without-existing-auth-default-named-token"
-      (let [test-request {:headers {"host" "www.service.com", "x-waiter-token" "a-named-token-C"}}
+      (let [test-request {:headers {"host" "www.service.com"
+                                    "x-waiter-token" "a-named-token-C"}}
             {:keys [handled-request response]} (execute-request test-request)]
-        (is (= test-request handled-request))
+        (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.service.com"}
+                                                      :service-parameter-template {"authentication" "standard"
+                                                                                   "mem" 2048}
+                                                      :token "a-named-token-C"
+                                                      :token-metadata (assoc token-defaults "owner" nil "previous" {})
+                                                      :waiter-headers {"x-waiter-token" "a-named-token-C"}})
+               handled-request))
         (is (= handler-response response))))
 
     (testing "request-without-existing-auth-default-named-token-with-authentication-header"
-      (let [test-request {:headers {"host" "www.service.com", "x-waiter-authentication" "disabled", "x-waiter-token" "a-named-token-C"}}
+      (let [test-request {:headers {"host" "www.service.com"
+                                    "x-waiter-authentication" "disabled"
+                                    "x-waiter-token" "a-named-token-C"}}
             {:keys [handled-request response]} (execute-request test-request)]
         (is (nil? handled-request))
-        (is (= (utils/map->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
+        (is (= (utils/clj->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
+                                         :status 400)
+               response))))
+    (testing "request-without-existing-auth-default-named-token-with-authentication-header-2"
+      (let [test-request {:headers {"host" "www.service.com"
+                                    "x-waiter-authentication" "standard"}}
+            {:keys [handled-request response]} (execute-request test-request)]
+        (is (nil? handled-request))
+        (is (= (utils/clj->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
                                          :status 400)
                response))))
 
     (testing "request-without-existing-auth-default-named-token-with-on-the-fly-headers"
-      (let [test-request {:headers {"host" "www.service.com", "x-waiter-run-as-user" "test-user", "x-waiter-token" "a-named-token-C"}}
+      (let [test-request {:headers {"host" "www.service.com"
+                                    "x-waiter-run-as-user" "test-user"
+                                    "x-waiter-token" "a-named-token-C"}}
             {:keys [handled-request response]} (execute-request test-request)]
-        (is (= test-request handled-request))
+        (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.service.com"}
+                                                      :service-parameter-template {"authentication" "standard"
+                                                                                   "mem" 2048}
+                                                      :token "a-named-token-C"
+                                                      :token-metadata (assoc token-defaults "owner" nil "previous" {})
+                                                      :waiter-headers {"x-waiter-run-as-user" "test-user"
+                                                                       "x-waiter-token" "a-named-token-C"}})
+               handled-request))
         (is (= handler-response response))))))
 
 (deftest test-authentication-method-wrapper-fn
-  (let [standard-handler (fn [_] {:source :standard-handler})]
-    (let [authenticator (reify auth/Authenticator
-                          (wrap-auth-handler [_ request-handler]
-                            (is (= standard-handler request-handler))
-                            (fn [_]
-                              {:source :spnego-handler})))
-          authenticate-request-handler ((:authentication-method-wrapper-fn routines) {:state {:authenticator authenticator}})
-          request-handler (authenticate-request-handler standard-handler)]
+  (let [standard-handler (fn [request] (assoc request ::standard-handler true))
+        jwt-authenticator (Object.)]
+    (with-redefs [jwt/wrap-auth-handler (fn [in-authenticator request-handler]
+                                          (is (= jwt-authenticator in-authenticator))
+                                          (is (some? request-handler))
+                                          (fn [request]
+                                            (-> request
+                                              (assoc ::jwt-authenticator
+                                                     (-> request :headers (get "authorization") str (str/starts-with? "Bearer ")))
+                                              request-handler)))]
+      (let [authenticator (reify auth/Authenticator
+                            (wrap-auth-handler [_ request-handler]
+                              (is (= standard-handler request-handler))
+                              (fn [request]
+                                (-> request
+                                  (assoc ::authenticator true)
+                                  request-handler))))
+            {:keys [authentication-method-wrapper-fn]} routines
+            authenticate-request-handler (authentication-method-wrapper-fn {:state {:authenticator authenticator
+                                                                                    :jwt-authenticator jwt-authenticator
+                                                                                    :passwords ["a" "b" "c"]}})
+            request-handler (authenticate-request-handler standard-handler)]
 
-      (testing "skip-authentication"
-        (is (= {:source :standard-handler} (request-handler {:skip-authentication true, :headers {}}))))
+        (testing "skip-authentication"
+          (is (= {:headers {}
+                  :skip-authentication true
+                  ::jwt-authenticator false
+                  ::standard-handler true}
+                 (request-handler {:headers {}
+                                   :skip-authentication true}))))
 
-      (testing "require-authentication"
-        (is (= {:source :spnego-handler} (request-handler {:headers {}})))))))
+        (testing "JWT authentication"
+          (is (= {:headers {"authorization" "Bearer abcd.efgh.ijkl"}
+                  ::authenticator true
+                  ::jwt-authenticator true
+                  ::standard-handler true}
+                 (request-handler {:headers {"authorization" "Bearer abcd.efgh.ijkl"}}))))
+
+        (testing "cookie-authentication"
+          (with-redefs [auth/get-and-decode-auth-cookie-value (constantly ["user@test.com" (System/currentTimeMillis)])
+                        auth/decoded-auth-valid? (fn [[principal _]] (some? principal))]
+            (is (= {:headers {"cookie" "test-cookie"}
+                    :authorization/method :cookie
+                    :authorization/principal "user@test.com"
+                    :authorization/user "user"
+                    ::jwt-authenticator false
+                    ::standard-handler true}
+                   (request-handler {:headers {"cookie" "test-cookie"}})))))
+
+        (testing "require-authentication"
+          (is (= {::authenticator true
+                  ::jwt-authenticator false
+                  ::standard-handler true}
+                 (request-handler {})))
+          (is (= {:headers {"cookie" "test-cookie"}
+                  ::authenticator true
+                  ::jwt-authenticator false
+                  ::standard-handler true}
+                 (request-handler {:headers {"cookie" "test-cookie"}}))))))))
 
 (deftest test-waiter-request?-fn
   (testing "string hostname config"
@@ -1164,3 +1358,163 @@
     (testing "async, error"
       (let [{:keys [status]} (async/<!! ((wrap-error-handling handler-async-error) {}))]
         (is (= 400 status))))))
+
+(deftest test-wrap-https-redirect
+  (let [configuration {}
+        wrap-https-redirect-fn ((:wrap-https-redirect-fn request-handlers) configuration)
+        handler-response (Object.)
+        execute-request (fn execute-request-fn [test-request]
+                          (let [request-handler-argument-atom (atom nil)
+                                test-request-handler (fn request-handler-fn [request]
+                                                       (reset! request-handler-argument-atom request)
+                                                       handler-response)
+                                test-response ((wrap-https-redirect-fn test-request-handler) test-request)]
+                            {:handled-request @request-handler-argument-atom
+                             :response test-response}))]
+
+    (testing "no redirect"
+      (testing "ws request with token https-redirect set to false"
+        (let [test-request {:headers {"host" "token.localtest.me"}
+                            :scheme :ws
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {}
+                                               :token "token.localtest.me"
+                                               :token-metadata {"https-redirect" true}
+                                               :waiter-headers {}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (= test-request handled-request))
+          (is (= handler-response response))))
+
+      (testing "http request with token https-redirect set to false"
+        (let [test-request {:headers {"host" "token.localtest.me"}
+                            :scheme :http
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {}
+                                               :token "token.localtest.me"
+                                               :token-metadata {"https-redirect" false}
+                                               :waiter-headers {}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (= test-request handled-request))
+          (is (= handler-response response))))
+
+      (testing "http request with waiter header https-redirect set to false"
+        (let [test-request {:headers {"host" "token.localtest.me"
+                                      "x-waiter-https-redirect" "true"}
+                            :request-method :get
+                            :scheme :http
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {}
+                                               :token "token.localtest.me"
+                                               :token-metadata {"https-redirect" false}
+                                               :waiter-headers {"x-waiter-https-redirect" true}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (= test-request handled-request))
+          (is (= handler-response response))))
+
+      (testing "https request with token https-redirect set to false"
+        (let [test-request {:headers {"host" "token.localtest.me"}
+                            :scheme :https
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {}
+                                               :token "token.localtest.me"
+                                               :token-metadata {"https-redirect" false}
+                                               :waiter-headers {}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (= test-request handled-request))
+          (is (= handler-response response))))
+
+      (testing "https request with token https-redirect set to true"
+        (let [test-request {:headers {"host" "token.localtest.me"}
+                            :scheme :https
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {}
+                                               :token "token.localtest.me"
+                                               :token-metadata {"https-redirect" true}
+                                               :waiter-headers {}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (= test-request handled-request))
+          (is (= handler-response response))))
+
+      (testing "https request with waiter-header https-redirect set to false"
+        (let [test-request {:headers {"host" "token.localtest.me"
+                                      "x-waiter-https-redirect" "false"}
+                            :scheme :https
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {"cpus" 1}
+                                               :token "token.localtest.me"
+                                               :token-metadata {"https-redirect" false}
+                                               :waiter-headers {"x-waiter-https-redirect" false}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (= test-request handled-request))
+          (is (= handler-response response))))
+
+      (testing "https request with waiter-header https-redirect set to true"
+        (let [test-request {:headers {"host" "token.localtest.me"
+                                      "x-waiter-https-redirect" "true"}
+                            :scheme :https
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {"cpus" 1}
+                                               :token "token.localtest.me"
+                                               :token-metadata {"https-redirect" false}
+                                               :waiter-headers {"x-waiter-https-redirect" true}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (= test-request handled-request))
+          (is (= handler-response response)))))
+
+    (testing "https redirect"
+      (testing "http request with token https-redirect set to true"
+        (let [test-request {:headers {"host" "token.localtest.me:1234"}
+                            :scheme :http
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {}
+                                               :token "token.localtest.me"
+                                               :token-metadata {"https-redirect" true}
+                                               :waiter-headers {}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (nil? handled-request))
+          (is (= {:body ""
+                  :headers {"Location" "https://token.localtest.me"}
+                  :status 307
+                  :waiter/response-source :waiter}
+                 response))))
+
+      (testing "http request with waiter header https-redirect set to false"
+        (let [test-request {:headers {"host" "token.localtest.me"
+                                      "x-waiter-https-redirect" "false"}
+                            :request-method :get
+                            :scheme :http
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {}
+                                               :token "token.localtest.me"
+                                               :token-metadata {"https-redirect" true}
+                                               :waiter-headers {"x-waiter-https-redirect" false}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (nil? handled-request))
+          (is (= {:body ""
+                  :headers {"Location" "https://token.localtest.me"}
+                  :status 301
+                  :waiter/response-source :waiter}
+                 response)))))))
+
+(deftest test-request->protocol
+  (is (nil? (request->protocol {})))
+  (is (nil? (request->protocol {:headers {"x-forwarded-proto-version" "Foo/Bar"}})))
+  (is (= "HTTP" (request->protocol {:scheme :http})))
+  (is (= "FOO/BAR" (request->protocol {:headers {"x-forwarded-proto-version" "Foo/Bar"}
+                                       :servlet-request (Object.)})))
+  (is (= "HTTP/1.0" (request->protocol {:headers {"x-forwarded-proto-version" "HTTP/1"}
+                                        :servlet-request (Object.)})))
+  (is (= "HTTP/1.0" (request->protocol {:headers {"x-forwarded-proto-version" "HTTP/1.0"}
+                                        :servlet-request (Object.)})))
+  (is (= "HTTP/1.1" (request->protocol {:headers {"x-forwarded-proto-version" "HTTP/1.1"}
+                                        :servlet-request (Object.)})))
+  (is (= "HTTP/2.0" (request->protocol {:headers {"x-forwarded-proto-version" "HTTP/2"}
+                                        :servlet-request (Object.)})))
+  (is (= "HTTP/2.0" (request->protocol {:headers {"x-forwarded-proto-version" "HTTP/2.0"}
+                                        :servlet-request (Object.)})))
+  (is (= "HTTP/1.1" (request->protocol {:scheme :http
+                                        :servlet-request (reify ServletRequest
+                                                           (getProtocol [_] "HTTP/1.1"))})))
+  (is (= "WS" (request->protocol {:scheme :ws})))
+  (is (= "WS" (request->protocol {:headers {} :scheme :ws})))
+  (is (= "WS/13" (request->protocol {:headers {"sec-websocket-version" "13"} :scheme :ws}))))

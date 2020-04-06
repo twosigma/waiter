@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.headers-test
-  (:require [clojure.test :refer :all]
+  (:require [clojure.string :as str]
+            [clojure.test :refer :all]
             [waiter.headers :refer :all]
             [waiter.token :as token]
             [waiter.util.utils :as utils]))
@@ -49,7 +50,7 @@
     (is (= "JLgw1jg81Melpev3gXtL3COyATKrqZKj" (parse-header-value "x-waiter-token" "JLgw1jg81Melpev3gXtL3COyATKrqZKj"))))
 
   (testing "parse-header-value:json-boolean"
-    (is (= true (parse-header-value "x-waiter-json-boolean" "true"))))
+    (is (true? (parse-header-value "x-waiter-json-boolean" "true"))))
 
   (testing "parse-header-value:json-int"
     (is (= 123 (parse-header-value "x-waiter-json-int" "123"))))
@@ -79,7 +80,19 @@
     (is (= "foo" (parse-header-value "x-waiter-metric-group" "foo"))))
 
   (testing "parse-header-value:metric-group-is-not-json"
-    (is (= "true" (parse-header-value "x-waiter-metric-group" "true")))))
+    (is (= "true" (parse-header-value "x-waiter-metric-group" "true"))))
+
+  (testing "parse-header-value:backend-proto:http"
+    (is (= "http" (parse-header-value "x-waiter-backend-proto" "http"))))
+
+  (testing "parse-header-value:backend-proto:http"
+    (is (= "https" (parse-header-value "x-waiter-backend-proto" "https"))))
+
+  (testing "parse-header-value:backend-proto:h2c"
+    (is (= "h2c" (parse-header-value "x-waiter-backend-proto" "h2c"))))
+
+  (testing "parse-header-value:backend-proto:h2"
+    (is (= "h2" (parse-header-value "x-waiter-backend-proto" "h2")))))
 
 (deftest test-contains-waiter-header
   (let [test-cases (list
@@ -131,11 +144,46 @@
   (testing "Truncating header values"
 
     (testing "should truncate to 80 characters by default"
-      (let [value (apply str (repeat 30 "foo"))]
+      (let [value (str/join (repeat 30 "foo"))]
         (is (= 90 (count value)))
         (is (= {"some-header" (utils/truncate value 80)} (truncate-header-values {"some-header" value})))))
 
     (testing "should not truncate x-waiter-token"
-      (let [token (apply str (repeat 30 "foo"))]
+      (let [token (str/join (repeat 30 "foo"))]
         (is (= 90 (count token)))
         (is (= {"x-waiter-token" token} (truncate-header-values {"x-waiter-token" token})))))))
+
+(deftest test-dissoc-hop-by-hop-headers
+  (let [headers {"connection" "keep-alive, foo, lorem, ipsum"
+                 "content-encoding" "gzip"
+                 "content-type" "text/html"
+                 "bar" "bar-value"
+                 "foo" "foo-value"
+                 "lorem" "lorem-value"
+                 "keep-alive" "timeout=5, max=1000"
+                 "proxy-connection" "keep-alive"
+                 "referer" "http://www.test-referer.com"
+                 "te" "trailers, deflate"
+                 "transfer-encoding" "trailers, deflate"
+                 "upgrade" "http/2.0, https/1.3, irc/6.9, rta/x11, websocket"}]
+    (is (= {"bar" "bar-value"
+            "content-encoding" "gzip"
+            "content-type" "text/html"
+            "proxy-connection" "keep-alive"
+            "referer" "http://www.test-referer.com"}
+           (dissoc-hop-by-hop-headers headers "HTTP/2.0")))
+    (is (= {"bar" "bar-value"
+            "content-encoding" "gzip"
+            "content-type" "application/grpc"
+            "proxy-connection" "keep-alive"
+            "referer" "http://www.test-referer.com"
+            "te" "trailers, deflate"}
+           (-> headers
+             (assoc "content-type" "application/grpc")
+             (dissoc-hop-by-hop-headers "HTTP/2.0"))))
+    (is (= {"bar" "bar-value"
+            "content-encoding" "gzip"
+            "content-type" "text/html"
+            "proxy-connection" "keep-alive"
+            "referer" "http://www.test-referer.com"}
+           (dissoc-hop-by-hop-headers headers "HTTP/1.0")))))

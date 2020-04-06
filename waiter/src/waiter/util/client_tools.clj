@@ -25,15 +25,16 @@
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [waiter.auth.authentication :as authentication]
-            [waiter.auth.spnego :as spnego]
             [waiter.correlation-id :as cid]
             [waiter.mesos.marathon :as marathon]
             [waiter.statsd :as statsd]
             [waiter.util.date-utils :as du]
+            [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
   (:import (java.net HttpCookie URI)
+           (java.io ByteArrayInputStream)
+           (java.nio ByteBuffer)
            (java.util.concurrent Callable Future Executors)
-           (org.eclipse.jetty.util HttpCookieStore$Empty)
            (org.joda.time Period)
            (org.joda.time.format PeriodFormatterBuilder)))
 
@@ -71,7 +72,8 @@
     (str/trim (:out shell-output))))
 
 (defn retrieve-username []
-  (execute-command "id" "-un"))
+  (or (System/getProperty "user.name")
+      (execute-command "id" "-un")))
 
 (defn retrieve-hostname []
   (if use-spnego
@@ -101,6 +103,64 @@
           (log/info "port" port "is already in use, assuming Waiter is running"))
         (str (retrieve-hostname) ":" port)))))
 
+(defn retrieve-waiter-port
+  "Retrieves the Waiter port for receiving http requests."
+  [waiter-url]
+  (or (second (str/split waiter-url #":" 2))
+      "80"))
+
+(defn retrieve-h2c-port
+  "Retrieves the Waiter port for receiving h2c requests."
+  [waiter-url]
+  (or (System/getenv "WAITER_H2C_PORT")
+      (retrieve-waiter-port waiter-url)))
+
+(defn retrieve-grpc-cleartext-port
+  "Retrieves the Waiter port for receiving grpc requests over cleartext."
+  [waiter-url]
+  (or (System/getenv "WAITER_GRPC_CLEARTEXT_PORT")
+      (retrieve-h2c-port waiter-url)))
+
+(defn retrieve-h2c-url
+  "Retrieves the Waiter url for receiving h2c requests."
+  [waiter-url]
+  (str (first (str/split waiter-url #":" 2))
+       ":"
+       (retrieve-h2c-port waiter-url)))
+
+(defn retrieve-ssl-port
+  "Retrieves the Waiter port for receiving ssl requests."
+  [ssl-port]
+  (or (System/getenv "WAITER_SSL_PORT")
+      ssl-port
+      "443"))
+
+(defn retrieve-ssl-url
+  "Retrieves the Waiter url for receiving ssl requests."
+  [waiter-url ssl-port]
+  (str (first (str/split waiter-url #":" 2))
+       ":"
+       (retrieve-ssl-port ssl-port)))
+
+(defn behind-proxy?
+  "Returns true if Waiter if running behind a proxy."
+  [waiter-url]
+  (not= (retrieve-waiter-port waiter-url)
+        (retrieve-h2c-port waiter-url)))
+
+(defn grpc-cancellations-supported?
+  "Returns true if gRPC cancellations are supported.
+   Waiter routers support gRPC client and server cancellation.
+   However, sometimes traffic to the Waiter routers are fronted by another proxy, e.g. haproxy or envoy.
+   Certain proxies, e.g. haproxy https://github.com/haproxy/haproxy/issues/172, do not support cancellations due to
+   how they terminate http/2 connections.
+   Other proxies, e.g. Envoy, do support gRPC cancellations as they respect the http/2 protocol for closing connections.
+   We require the presence of WAITER_GRPC_CLEARTEXT_PORT env variable to signal that gRPC cancellation is
+   supported by the proxy intercepting traffic to Waiter routers."
+  [waiter-url]
+  (or (not (behind-proxy? waiter-url))
+      (not (str/blank? (System/getenv "WAITER_GRPC_CLEARTEXT_PORT")))))
+
 (defn interval-to-str [^Period interval]
   (let [builder (doto (PeriodFormatterBuilder.)
                   (.printZeroNever)
@@ -117,7 +177,8 @@
 
 (def waiter-url "DUMMY-DEF-TO-KEEP-IDE-HAPPY-INSTEAD-WRAP-INSIDE-timing-using-waiter-url")
 
-(def ^:dynamic http-client nil)
+(def ^:dynamic http1-client nil)
+(def ^:dynamic http2-client nil)
 
 (defmacro using-waiter-url
   [& body]
@@ -156,18 +217,27 @@
   `(using-waiter-url
      (time-it ~name ~@body)))
 
-(defn make-http-client
-  "Instantiates and returns a new HttpClient without a cookie store"
+(defn- retrieve-git-branch []
+  (->
+    (shell/sh "git" "rev-parse" "--abbrev-ref" "HEAD")
+    :out
+    (or "_unknown_branch_")
+    str/trim))
+
+(defn make-http-clients
+  "Instantiates and returns http1 and http2 clients without a cookie store"
   []
-  (let [client (http/client)]
-    (.setCookieStore client (HttpCookieStore$Empty.))
-    (.setDefaultRequestContentType client nil)
-    client))
+  (hu/prepare-http-clients {:client-name (str "waiter-test-" (retrieve-git-branch))
+                            :clear-content-decoders false
+                            :conn-timeout 10000
+                            :user-agent (str "waiter-test/" (retrieve-git-branch))}))
 
 (defn current-test-name
   "Get the name of the currently-running test."
   []
-  (-> *testing-vars* first meta :name (or "test-unknown-name") str))
+  (str (-> *testing-vars* first meta :ns str)
+       "/"
+       (-> *testing-vars* first meta :name)))
 
 (defmacro testing-using-waiter-url
   [& body]
@@ -177,11 +247,16 @@
          name#
          (timing-using-waiter-url
            name#
-           (binding [http-client (make-http-client)]
-             (try
-               ~@body
-               (finally
-                 (http/stop-client! http-client)))))))))
+           (let [local-http-clients# (make-http-clients)
+                 local-http1-client# (:http1-client local-http-clients#)
+                 local-http2-client# (:http2-client local-http-clients#)]
+             (binding [http1-client local-http1-client#
+                       http2-client local-http2-client#]
+               (try
+                 ~@body
+                 (finally
+                   (http/stop-client! http1-client)
+                   (http/stop-client! http2-client))))))))))
 
 (defn instance-id->service-id [^String instance-id]
   (when (str/index-of instance-id ".") (subs instance-id 0 (str/index-of instance-id "."))))
@@ -190,12 +265,29 @@
   (let [response (request-fn (assoc request-headers :x-waiter-debug "true"))
         response-headers (or (:headers response) {})
         instance-id (str (get response-headers "x-waiter-backend-id"))
-        service-id (instance-id->service-id instance-id)
+        service-id (or (get response-headers "x-waiter-service-id")
+                       (instance-id->service-id instance-id))
         router-id (str (get-in response [:headers "x-waiter-router-id"]))]
     (assoc response
       :router-id router-id
       :instance-id instance-id
       :service-id service-id)))
+
+(defn response->location
+  "Get the Location header from an HTTP response.
+   Handles both HTTP v1 and v2 styles of capitalization."
+  [{:keys [headers]}]
+  (or (get headers "Location") (get headers "location")))
+
+(defn extract-acronym
+  "Shortens the name taking only the leading characters across the delimiters.
+   E.g. `(extract-acronym \"aaa.bbb-ccc/ddd#eee-fff.ggg\") -> \"abcdfg\"`"
+  [name-with-dashes]
+  (->> (str/split (str name-with-dashes) #"-|\.|/")
+    (remove str/blank?)
+    (map first)
+    (str/join "")
+    str/lower-case))
 
 (defn ensure-cid-in-headers
   [request-headers & {:keys [verbose] :or {verbose false}}]
@@ -203,10 +295,11 @@
                 (get request-headers :x-cid))]
     (if cid
       request-headers
-      (let [new-cid (str (cid/get-correlation-id) "-" (utils/unique-identifier))]
+      (let [correlation-id (cid/get-correlation-id)
+            new-cid (str "test-" (extract-acronym (current-test-name)) "-" (utils/unique-identifier))]
         (when verbose
           (log/info "Using cid" new-cid))
-        (when (str/includes? new-cid "UNKNOWN")
+        (when (str/includes? correlation-id "UNKNOWN")
           (log/info "Correlation id context unspecified")
           (when verbose
             (log/warn (RuntimeException.))))
@@ -215,7 +308,7 @@
 (defn strip-trailing-slash
   "If s ends with /, returns s with the / stripped"
   [s]
-  (cond-> s (str/ends-with? s "/") (subs 0 (- (count s) 1))))
+  (cond-> s (str/ends-with? s "/") (subs 0 (dec (count s)))))
 
 (defn parse-set-cookie-string
   "Parse the value of a single Set-Cookie header."
@@ -223,7 +316,8 @@
   (when value
     (let [cookie-list (HttpCookie/parse value)]
       (map (fn [^HttpCookie cookie]
-             {:name (.getName cookie)
+             {:max-age (.getMaxAge cookie)
+              :name (.getName cookie)
               :value (.getValue cookie)}) cookie-list))))
 
 (defn parse-cookies
@@ -236,17 +330,25 @@
 (defn make-request
   ([waiter-url path &
     {:keys [body client cookies content-type disable-auth form-params headers
-            method multipart query-params verbose]
+            method multipart protocol query-params scheme trailers-fn verbose]
      :or {body nil
-          client http-client
           cookies []
           disable-auth false
           headers {}
           method :get
           query-params {}
           verbose false}}]
-   (let [request-url (str
-                       (when-not (str/starts-with? waiter-url HTTP-SCHEME) HTTP-SCHEME)
+   (let [scheme (or scheme
+                    (some-> protocol hu/backend-proto->scheme)
+                    "http")
+         client (or client
+                    (when protocol
+                      (hu/select-http-client
+                        protocol {:http1-client http1-client :http2-client http2-client}))
+                    http1-client)
+         request-url (str
+                       (when-not (str/starts-with? waiter-url scheme)
+                         (str scheme "://"))
                        (strip-trailing-slash waiter-url)
                        path)
          request-headers (walk/stringify-keys (ensure-cid-in-headers headers))]
@@ -256,7 +358,7 @@
          (log/info "request headers:" (into (sorted-map) request-headers)))
        (let [waiter-auth-cookie (some #(= authentication/AUTH-COOKIE-NAME (:name %)) cookies)
              add-spnego-auth (and (not disable-auth) use-spnego (not waiter-auth-cookie))
-             {:keys [body headers status]}
+             {:keys [body error error-chan headers status trailers]}
              (async/<!! (http/request
                           client
                           (cond-> {:body body
@@ -265,19 +367,24 @@
                                    :method method
                                    :query-string query-params
                                    :url request-url}
-                                  multipart (assoc :multipart multipart)
-                                  add-spnego-auth (assoc :auth (spnego/spnego-authentication (URI. request-url)))
-                                  form-params (assoc :form-params form-params)
-                                  (not (str/blank? content-type)) (assoc :content-type content-type)
-                                  cookies (assoc :cookies (map (fn [c] [(:name c) (:value c)]) cookies)))))
-             response-body (if body (async/<!! body) nil)]
+                            multipart (assoc :multipart multipart)
+                            add-spnego-auth (assoc :auth (hu/spnego-authentication (URI. request-url)))
+                            form-params (assoc :form-params form-params)
+                            (not (str/blank? content-type)) (assoc :content-type content-type)
+                            cookies (assoc :cookies (map (fn [c] [(:name c) (:value c)]) cookies))
+                            trailers-fn (assoc :trailers-fn trailers-fn))))
+             response-body (when body (async/<!! body))
+             error (or error
+                       (when error-chan (async/<!! error-chan)))]
          (when verbose
            (log/info (get request-headers "x-cid") "response size:" (count (str response-body))))
          {:body response-body
           :cookies (parse-cookies (get headers "set-cookie"))
+          :error error
           :headers headers
           :request-headers request-headers
-          :status status})
+          :status status
+          :trailers (when trailers (async/<!! trailers))})
        (catch Exception e
          (when verbose
            (log/info (get request-headers "x-cid") "error in obtaining response" (.getMessage e)))
@@ -287,15 +394,21 @@
   "Asserts the response status and includes CID in failed message log"
   [response expected-status]
   `(let [response-cid# (get-in ~response [:headers "x-cid"] "unknown")
+         response-server# (get-in ~response [:headers "server"] "unknown")
          actual-status# (:status ~response)
+         expected-status# ~expected-status
+         expected-status-set# (if (set? expected-status#)
+                                expected-status#
+                                #{expected-status#})
          response-body# (:body ~response)
          response-error# (:error ~response)
-         assertion-message# (str "[CID=" response-cid# "] Expected status: " ~expected-status
-                                 ", actual: " actual-status# "\r\n Body:" response-body#
-                                 (when response-error# (str "\r\n Error: " response-error#)))]
-     (when (not= ~expected-status actual-status#)
+         assertion-message# (str "[CID=" response-cid# ", server=" response-server# "] "
+                                 "Expected status: " ~expected-status ", actual: " actual-status#
+                                 \newline "Body:" response-body#
+                                 (when response-error# (str \newline "Error: " response-error#)))]
+     (when-not (contains? expected-status-set# actual-status#)
        (log/error assertion-message#))
-     (is (= ~expected-status actual-status#) assertion-message#)))
+     (is (contains? expected-status-set# actual-status#) assertion-message#)))
 
 (defn kitchen-cmd
   ([] (kitchen-cmd ""))
@@ -304,6 +417,30 @@
      (if (str/blank? cmd)
        (throw (Exception. "Property waiter.test.kitchen.cmd is not set! (try `lein with-profile +test`)"))
        (str cmd (when-not (str/blank? args) " ") args)))))
+
+(defn courier-server-command
+  "Returns the command to launch the courier server."
+  [args]
+  (let [raw-command (System/getProperty "waiter.test.courier.cmd")]
+    (if (str/blank? raw-command)
+      (throw (Exception. "Property waiter.test.courier.cmd is not set! (try `lein with-profile +test`)"))
+      (str raw-command (when-not (str/blank? args) " ") args))))
+
+(defn nginx-server-command
+  "Returns the command to launch the nginx server."
+  [backend-proto]
+  (let [raw-command (System/getProperty "waiter.test.nginx.cmd")]
+    (if (str/blank? raw-command)
+      (throw (Exception. "Property waiter.test.nginx.cmd is not set! (try `lein with-profile +test`)"))
+      (str raw-command " " backend-proto))))
+
+(defn sediment-server-command
+  "Returns the command to launch the sediment server."
+  [args]
+  (let [raw-command (System/getProperty "waiter.test.sediment.cmd")]
+    (if (str/blank? raw-command)
+      (throw (Exception. "Property waiter.test.sediment.cmd is not set! (try `lein with-profile +test`)"))
+      (str raw-command (when-not (str/blank? args) " ") args))))
 
 (defn kitchen-params
   []
@@ -314,6 +451,8 @@
    :health-check-url "/status"
    :idle-timeout-mins 10
    :mem 256
+   :metric-group "waiter_test"
+   :min-instances 1
    :version "version-does-not-matter"})
 
 (defn kitchen-request-headers
@@ -324,7 +463,7 @@
 
 (defn make-light-request
   [waiter-url custom-headers &
-   {:keys [body cookies debug method path query-params]
+   {:keys [body cookies debug method path protocol query-params trailers-fn]
     :or {body nil cookies {} debug true method :post path "/endpoint" query-params {}}}]
   (let [headers (cond->
                   (-> {:x-waiter-cpus 0.1
@@ -341,11 +480,13 @@
                   :cookies cookies
                   :headers headers
                   :method method
-                  :query-params query-params)))
+                  :protocol protocol
+                  :query-params query-params
+                  :trailers-fn trailers-fn)))
 
 (defn make-shell-request
   [waiter-url custom-headers &
-   {:keys [body cookies debug method path query-params]
+   {:keys [body cookies debug method path protocol query-params trailers-fn]
     :or {body nil cookies {} debug true method :post path "/endpoint" query-params {}}}]
   (make-light-request
     waiter-url
@@ -358,48 +499,63 @@
     :debug debug
     :method method
     :path path
-    :query-params query-params))
+    :protocol protocol
+    :query-params query-params
+    :trailers-fn trailers-fn))
 
 (defn make-kitchen-request
-  "Makes an on-the-fly request to the Kitchen test app."
+  "Makes an on-the-fly request to the Kitchen test service."
   [waiter-url custom-headers &
-   {:keys [body cookies debug method path query-params]
+   {:keys [body cookies debug method protocol path query-params]
     :or {body nil cookies {} debug true method :post path "/endpoint" query-params {}}}]
   {:pre [(not (str/blank? waiter-url))]}
   (make-shell-request
     waiter-url
     (merge
       {:x-waiter-cmd (kitchen-cmd "-p $PORT0")
-       :x-waiter-metric-group "waiter_kitchen"}
+       :x-waiter-metric-group "waiter_test"}
       custom-headers)
     :body body
     :cookies cookies
     :debug debug
     :method method
     :path path
+    :protocol protocol
     :query-params query-params))
 
-(defn retrieve-service-id [waiter-url waiter-headers & {:keys [verbose] :or {verbose false}}]
-  (let [service-id-result (make-request waiter-url "/service-id" :headers waiter-headers)
+(defn retrieve-service-id [waiter-url waiter-headers &
+                           {:keys [cookies verbose] :or {cookies [] verbose false}}]
+  (let [service-id-result (make-request waiter-url "/service-id" :cookies cookies :headers waiter-headers)
         service-id (str (:body service-id-result))]
     (when verbose
       (log/info "service id: " service-id))
     service-id))
+
+(defn retrieve-kitchen-service-id [waiter-url waiter-headers & options]
+  (pc/mapply retrieve-service-id waiter-url (merge (kitchen-request-headers) waiter-headers) options))
 
 (defn waiter-settings [waiter-url & {:keys [cookies] :or {cookies []}}]
   (let [settings-result (make-request waiter-url "/settings" :verbose true :cookies cookies)
         settings-json (try-parse-json (:body settings-result))]
     (walk/keywordize-keys settings-json)))
 
+(defn waiter-settings-port
+  "Retrieves a Waiter port from the settings."
+  [waiter-url & {:keys [cookies] :or {cookies []}}]
+  (let [{:keys [port]} (waiter-settings waiter-url :cookies cookies)]
+    (cond-> port
+      (coll? port)
+      first)))
+
 (defn service-settings
   "Fetches and returns the service data at the /apps/<service-id> endpoint."
-  [waiter-url service-id & {:keys [keywordize-keys query-params]
-                            :or {keywordize-keys true query-params {}}}]
+  [waiter-url service-id & {:keys [cookies keywordize-keys query-params]
+                            :or {cookies [] keywordize-keys true query-params {}}}]
   (let [settings-path (str "/apps/" service-id)
-        settings-result (make-request waiter-url settings-path :query-params query-params)]
+        settings-result (make-request waiter-url settings-path :cookies cookies :query-params query-params)]
     (log/debug "service" service-id ":" settings-result)
     (cond-> (some-> settings-result :body try-parse-json)
-            keywordize-keys walk/keywordize-keys)))
+      keywordize-keys walk/keywordize-keys)))
 
 (defn service-state [waiter-url service-id & {:keys [cookies] :or {cookies {}}}]
   (let [state-result (make-request waiter-url (str "/state/" service-id) :cookies cookies)
@@ -416,7 +572,7 @@
     (try-parse-json state-body)))
 
 (defn fallback-state
-  "Fetches and returns the statsd state."
+  "Fetches and returns the fallback state."
   [waiter-url & {:keys [cookies] :or {cookies {}}}]
   (retrieve-state-helper waiter-url "/state/fallback" :cookies cookies))
 
@@ -424,6 +580,11 @@
   "Fetches and returns the interstitial state."
   [waiter-url & {:keys [cookies] :or {cookies {}}}]
   (retrieve-state-helper waiter-url "/state/interstitial" :cookies cookies))
+
+(defn jwt-authenticator-state
+  "Fetches and returns the interstitial state."
+  [waiter-url & {:keys [cookies] :or {cookies {}}}]
+  (retrieve-state-helper waiter-url "/state/jwt-authenticator" :cookies cookies))
 
 (defn kv-store-state
   "Fetches and returns the kv-store state."
@@ -442,7 +603,7 @@
     (log/debug "routers retrieved from /state:" routers-raw)
     (pc/map-vals (fn [router-url]
                    (cond-> router-url
-                           (str/starts-with? router-url HTTP-SCHEME) (str/replace HTTP-SCHEME "")))
+                     (str/starts-with? router-url HTTP-SCHEME) (str/replace HTTP-SCHEME "")))
                  routers-raw)))
 
 (defn router-endpoint
@@ -461,44 +622,45 @@
       (log/info ks "=" value))
     value))
 
+(defn retrieve-default-scheduler-name
+  "Return the name of the default 'leaf-level' scheduler"
+  [waiter-url & {:keys [settings] :or {settings nil}}]
+  (let [settings (or settings (waiter-settings waiter-url))
+        kind (get-in settings [:scheduler-config :kind])
+        default-scheduler (get-in settings [:scheduler-config (keyword kind) :default-scheduler])]
+    (or default-scheduler kind)))
+
+(defn get-scheduler-settings
+  "Return the specified scheduler's settings even if the scheduler is part of a composite scheduler."
+  [waiter-url scheduler]
+  (let [{:keys [kind] :as settings} (-> waiter-url waiter-settings :scheduler-config)]
+    (or (get-in settings [(keyword kind) :components scheduler])
+        (get-in settings [scheduler]))))
+
+(defn get-marathon-scheduler-settings
+  "Return the marathon scheduler's settings even if the scheduler is part of a composite scheduler."
+  [waiter-url]
+  (get-scheduler-settings waiter-url :marathon))
+
+(defn get-kubernetes-scheduler-settings
+  "Return the kubernetes scheduler's settings even if the scheduler is part of a composite scheduler."
+  [waiter-url]
+  (get-scheduler-settings waiter-url :kubernetes))
+
 (defn marathon-url
   "Returns the Marathon URL setting"
-  [waiter-url & {:keys [verbose] :or {verbose false}}]
-  (setting waiter-url [:scheduler-config :marathon :url] :verbose verbose))
+  [waiter-url]
+  (-> waiter-url get-marathon-scheduler-settings :url))
 
-(defn num-tasks-running [waiter-url service-id & {:keys [verbose prev-tasks-running] :or {verbose false prev-tasks-running -1}}]
+(defn num-marathon-tasks-running [waiter-url service-id & {:keys [prev-tasks-running] :or {prev-tasks-running -1}}]
   (let [http-options {:conn-timeout 10000, :socket-timeout 10000, :spnego-auth use-spnego}
-        marathon-url (marathon-url waiter-url :verbose verbose)
-        marathon-api (marathon/api-factory http-client http-options marathon-url)
+        marathon-url (marathon-url waiter-url)
+        marathon-api (marathon/api-factory http1-client http-options marathon-url)
         info-response (marathon/get-app marathon-api service-id)
         tasks-running' (get-in info-response [:app :tasksRunning])]
     (when (not= prev-tasks-running tasks-running')
       (log/debug service-id "has" tasks-running' "task(s) running."))
     (int tasks-running')))
-
-(defn active-instances
-  "Returns the active instances for the given service-id"
-  [waiter-url service-id]
-  (get-in (service-settings waiter-url service-id) [:instances :active-instances]))
-
-(defn num-instances
-  "Returns the number of active instances for the given service-id"
-  [waiter-url service-id]
-  (let [instances (count (active-instances waiter-url service-id))]
-    (log/debug service-id "has" instances "instances.")
-    instances))
-
-(defn scale-app-to [waiter-url service-id target-instances]
-  (let [marathon-url (marathon-url waiter-url)]
-    (log/info service-id "being scaled to" target-instances "task(s).")
-    (let [http-options {:conn-timeout 10000, :socket-timeout 10000, :spnego-auth use-spnego}
-          marathon-api (marathon/api-factory http-client http-options marathon-url)
-          old-descriptor (:app (marathon/get-app marathon-api service-id))
-          new-descriptor (update-in
-                           (select-keys old-descriptor [:id :cmd :mem :cpus :instances])
-                           [:instances]
-                           (fn [_] target-instances))]
-      (marathon/update-app marathon-api service-id new-descriptor))))
 
 (defn delete-service
   ([waiter-url service-id-or-waiter-headers]
@@ -507,7 +669,7 @@
                       (retrieve-service-id waiter-url service-id-or-waiter-headers))]
      (delete-service waiter-url service-id 5)))
   ([waiter-url service-id limit]
-   (when (not (str/blank? service-id))
+   (when-not (str/blank? service-id)
      (try
        ((utils/retry-strategy {:delay-multiplier 1.2, :inital-delay-ms 250, :max-retries limit})
          (fn []
@@ -520,11 +682,8 @@
              (when (and (not delete-success) (not no-such-service))
                (log/warn "Unable to delete" service-id)
                (throw (Exception. (str "Unable to delete" service-id)))))))
-       (catch Exception _
-         (try
-           (scale-app-to waiter-url service-id 0)
-           (catch Exception e
-             (log/error "Error in deleting app" service-id ":" (.getMessage e)))))))))
+       (catch Exception e
+         (log/error "Error in deleting service" service-id ":" (.getMessage e)))))))
 
 (defn await-futures
   [futures & {:keys [verbose] :or {verbose false}}]
@@ -575,10 +734,12 @@
                      (> target-count 60) 3
                      :else 2)
         checkpoints (set (map #(quot (* % target-count) num-groups) (range 1 num-groups)))
-        client http-client
+        http1-client-backup http1-client
+        http2-client-backup http2-client
         tasks (map (fn [_]
                      (retrieve-task
-                       (binding [http-client client]
+                       (binding [http1-client http1-client-backup
+                                 http2-client http2-client-backup]
                          (loop [iter-id 1
                                 result []]
                            (dosync (alter start-counter inc))
@@ -607,12 +768,11 @@
 
 (defn rand-name
   ([]
-   (let [service-name (str (or (:name (meta (first *testing-vars*))) "test-unknown-name"))]
+   (let [service-name (current-test-name)]
      (rand-name service-name)))
   ([service-name]
-   (let [username (System/getProperty "user.name")
-         test-prefix (System/getenv "WAITER_TEST_PREFIX")]
-     (str/replace (str test-prefix service-name username (rand-int 3000000)) #"-" ""))))
+   (let [test-prefix (System/getenv "WAITER_TEST_PREFIX")]
+     (str/replace (str test-prefix (extract-acronym service-name) (System/nanoTime)) #"-" ""))))
 
 (defn- token->etag
   "Returns the current etag of a token"
@@ -634,7 +794,7 @@
   [waiter-url token & {:keys [hard-delete headers] :or {hard-delete true}}]
   (log/info "deleting token" token {:hard-delete hard-delete})
   (let [headers (cond->> headers
-                         (and hard-delete (nil? headers)) (attach-token-etag waiter-url token))
+                  (and hard-delete (nil? headers)) (attach-token-etag waiter-url token))
         response (make-request waiter-url "/token"
                                :headers (assoc headers "host" token)
                                :method :delete
@@ -675,25 +835,6 @@
 
 (defn- statsd-port []
   (System/getenv "WAITER_STATSD_PORT"))
-
-(defn- git-show->branch-name [text]
-  (->
-    text
-    (str/trim)
-    (str/split #", ")
-    (last)
-    (str/replace ")" "")
-    (str/replace #"^.+/" "")))
-
-(deftest test-git-show->branch-name
-  (is (= "master" (git-show->branch-name "(HEAD, origin/master)")))
-  (is (= "foo" (git-show->branch-name " (HEAD, origin/foo, foo)"))))
-
-(defn- retrieve-git-branch []
-  (->
-    (shell/sh "git" "show" "-s" "--pretty=%d" "HEAD")
-    (:out)
-    (git-show->branch-name)))
 
 (defn- trim-port [url]
   (str/replace url #"\:[0-9]+$" ""))
@@ -783,11 +924,12 @@
 
 (defn service
   "Retrieves the service (from /apps) corresponding to the provided service-id"
-  [waiter-url service-id query-params & {:keys [interval timeout] :or {interval 2, timeout 30}}]
+  [waiter-url service-id query-params & {:keys [cookies interval timeout]
+                                         :or {cookies [] interval 2 timeout 30}}]
   ; allow time for router to receive updates from marathon
   (wait-for
     (fn []
-      (let [{:keys [body]} (make-request waiter-url "/apps" :query-params query-params)
+      (let [{:keys [body]} (make-request waiter-url "/apps" :cookies cookies :query-params query-params)
             _ (log/debug "Response body:" body)
             parsed-body (try-parse-json body)
             service (first (filter #(= service-id (get % "service-id")) parsed-body))]
@@ -800,8 +942,8 @@
 (defn service-id->metric-group
   "Retrieves the metric-group corresponding to the provided service-id"
   [waiter-url service-id]
-  (-> (service waiter-url service-id {"effective-parameters" "true"})
-      (get-in ["effective-parameters" "metric-group"])))
+  (get-in (service waiter-url service-id {"effective-parameters" "true"})
+          ["effective-parameters" "metric-group"]))
 
 (defn retrieve-debug-response-headers
   [waiter-url]
@@ -810,8 +952,8 @@
         slave-directory (get-in settings [:scheduler-config :slave-directory])]
     (cond-> ["x-waiter-backend-id" "x-waiter-backend-host" "x-waiter-backend-port" "x-waiter-backend-proto"
              "x-waiter-backend-response-ns" "x-waiter-get-available-instance-ns" "x-waiter-router-id"]
-            (and mesos-slave-port slave-directory)
-            (concat ["x-waiter-backend-directory" "x-waiter-backend-log-url"]))))
+      (and mesos-slave-port slave-directory)
+      (concat ["x-waiter-backend-directory" "x-waiter-backend-log-url"]))))
 
 (defn rand-router-url
   "Returns a random router url from the routers in the specified cluster"
@@ -827,7 +969,7 @@
   {:pre [(not (str/blank? waiter-url))]
    :post [%]}
   (let [routers (routers waiter-url)
-        settings (service-settings waiter-url service-id)
+        settings (service-settings waiter-url service-id :query-params {"include" "metrics"})
         assigned? (fn [router-id]
                     (let [slots (get-in
                                   settings
@@ -848,13 +990,13 @@
     (log/debug "router url with slots assigned:" router-url)
     router-url))
 
-(defn- scheduler-kind
+(defn scheduler-kind
   "Returns the configured :scheduler-config :kind"
   [waiter-url & {:keys [verbose] :or {verbose false}}]
   (setting waiter-url [:scheduler-config :kind] :verbose verbose))
 
 (defn service-id->grace-period
-  "Fetches from Marathon and returns the grace period in seconds for the given app"
+  "Fetches from Marathon and returns the grace period in seconds for the given service"
   [waiter-url service-id]
   (let [marathon-url (marathon-url waiter-url)
         app-info-path (str "/v2/apps/" service-id)
@@ -862,11 +1004,56 @@
         app-info-map (walk/keywordize-keys (try-parse-json (:body app-info-response)))]
     (:gracePeriodSeconds (first (:healthChecks (:app app-info-map))))))
 
+(defn using-cook?
+  "Returns true if Waiter is configured to use Cook for scheduling"
+  [waiter-url]
+  (= "cook" (retrieve-default-scheduler-name waiter-url)))
+
+(defn using-k8s?
+  "Returns true if Waiter is configured to use Kubernetes for scheduling"
+  [waiter-url]
+  (= "kubernetes" (retrieve-default-scheduler-name waiter-url)))
+
 (defn using-marathon?
   "Returns true if Waiter is configured to use Marathon for scheduling"
   [waiter-url]
-  (= "marathon" (scheduler-kind waiter-url :verbose true)))
+  (= "marathon" (retrieve-default-scheduler-name waiter-url)))
 
+(defn using-shell?
+  "Returns true if Waiter is configured to use Shell Scheduler for scheduling"
+  [waiter-url]
+  (= "shell" (retrieve-default-scheduler-name waiter-url)))
+
+(defn get-authenticator-kind
+  "Get the authenticator that Waiter is configured to use"
+  [waiter-url]
+  (get-in (waiter-settings waiter-url) [:authenticator-config :kind]))
+
+(defn using-composite-authenticator?
+  "Returns true if Waiter is configured to use the composite authenticator"
+  [waiter-url]
+  (= "composite" (get-authenticator-kind waiter-url)))
+
+(defn using-saml-authenticator?
+  "Returns true if Waiter is configured to use the saml authenticator"
+  [waiter-url]
+  (= "saml" (get-authenticator-kind waiter-url)))
+
+(defn supports-saml-authentication?
+  "Returns true if Waiter is configured to support saml authentication"
+  [waiter-url]
+  (or (using-saml-authenticator? waiter-url)
+      (and (using-composite-authenticator? waiter-url)
+           (get-in (waiter-settings waiter-url) [:authenticator-config :composite :authentication-providers :saml]))))
+
+(defn supports-token-parameter-cors?
+  "Returns true if CORS config supports getting CORS rules from token parameter"
+  [waiter-url]
+  (let [{:keys [cors-config]} (waiter-settings waiter-url)
+        cors-kind (:kind cors-config)]
+    (get-in cors-config [(keyword cors-kind) :supports-token-parameter?])))
+
+;; TODO: make this work not just for marathon
 (defn can-query-for-grace-period?
   "Returns true if Waiter supports querying for grace period"
   [waiter-url]
@@ -875,9 +1062,10 @@
 (defn post-token
   "Sends a POST request with the given token definition"
   [waiter-url {:keys [token] :as token-map} &
-   {:keys [headers query-params] :or {headers {}, query-params {}}}]
+   {:keys [cookies headers query-params] :or {cookies [] headers {} query-params {}}}]
   (make-request waiter-url "/token"
-                :body (json/write-str token-map)
+                :body (utils/clj->json token-map)
+                :cookies cookies
                 :headers (assoc headers "host" token)
                 :method :post
                 :query-params query-params))
@@ -897,10 +1085,13 @@
 (defmacro with-service-cleanup
   "Ensures a service is cleaned up."
   [service-id & body]
-  `(try
-     ~@body
-     (finally
-       (delete-service ~'waiter-url ~service-id))))
+  `(let [service-id# ~service-id]
+     (if service-id#
+       (try
+         ~@body
+         (finally
+           (delete-service ~'waiter-url ~service-id)))
+       (is false (str "service-id is false, value is " service-id#)))))
 
 (defn response->service-id
   "Gets the service-id from a response."
@@ -912,3 +1103,84 @@
   (when-let [last-request-time-str (-> (service waiter-url service-id {})
                                        (get "last-request-time"))]
     (du/str-to-date last-request-time-str)))
+
+(defn retrieve-services-on-router
+  "Returns the service-ids of services known to be running at specified router."
+  [router-url & {:keys [cookies] :or {cookies {}}}]
+  (some->> (make-request router-url "/apps" :cookies cookies)
+    :body
+    json/read-str
+    walk/keywordize-keys
+    (map :service-id)
+    set))
+
+(defn active-instances
+  "Returns the active instances for the given service-id"
+  [waiter-url service-id & {:keys [cookies] :or {cookies {}}}]
+  (get-in (service-settings waiter-url service-id :cookies cookies)
+          [:instances :active-instances]))
+
+(defn killed-instances
+  "Returns the killed instances for the given service-id"
+  [waiter-url service-id & {:keys [cookies] :or {cookies {}}}]
+  (get-in (service-settings waiter-url service-id :cookies cookies)
+          [:instances :killed-instances]))
+
+(defn num-instances
+  "Returns the number of active instances for the given service-id"
+  [waiter-url service-id & {:keys [cookies] :or {cookies {}}}]
+  (let [instances (count (active-instances waiter-url service-id :cookies cookies))]
+    (log/debug service-id "has" instances "instances.")
+    instances))
+
+(defmacro assert-service-not-on-any-routers
+  [waiter-url service-id cookies]
+  `(let [service-id# ~service-id
+         cookies# ~cookies]
+     (doseq [[_# router-url#] (routers ~waiter-url)]
+       (is (wait-for #(not (contains? (retrieve-services-on-router router-url# :cookies cookies#) service-id#)))))))
+
+(defmacro assert-service-on-all-routers
+  [waiter-url service-id cookies]
+  `(let [service-id# ~service-id
+         cookies# ~cookies]
+     (doseq [[_# router-url#] (routers ~waiter-url)]
+       (is (wait-for #(seq (active-instances router-url# service-id# :cookies cookies#)))))))
+
+(defn token->etag
+  "Retrieves the etag for a token"
+  [waiter-url token & {:keys [cookies] :or {cookies {}}}]
+  (-> (get-token waiter-url token :cookies cookies :query-params {"token" token})
+    :headers
+    (get "etag")))
+
+(defmacro assert-token-on-all-routers
+  [waiter-url token etag cookies]
+  `(let [waiter-url# ~waiter-url
+         token# ~token
+         etag# ~etag
+         cookies# ~cookies]
+     (doseq [[_# router-url#] (routers waiter-url#)]
+       (is (wait-for #(= etag# (token->etag router-url# token# :cookies cookies#)))))))
+
+(defn make-chunked-body
+  "Returns a channel that receives chunks from the input body string.
+   Introducing the delay affects the jetty behavior of converting chunked encoding to non-chunked."
+  [body-str chunk-size chunk-delay-ms]
+  (let [body-ch (async/chan 1024)
+        input-stream (ByteArrayInputStream. (.getBytes (str body-str)))]
+    (async/go
+      (loop []
+        (let [buffer-bytes (byte-array chunk-size)
+              bytes-read (.read input-stream buffer-bytes)]
+          (when (pos? bytes-read)
+            (async/put! body-ch (ByteBuffer/wrap buffer-bytes 0 bytes-read))
+            (async/<! (async/timeout chunk-delay-ms))
+            (recur))))
+      (async/close! body-ch))
+    body-ch))
+
+(defn jwt-auth-enabled?
+  "Returns true if JWT authentication is enabled."
+  [waiter-url]
+  (not= "disabled" (setting waiter-url [:authenticator-config :jwt])))

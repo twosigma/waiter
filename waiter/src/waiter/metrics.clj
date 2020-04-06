@@ -21,6 +21,7 @@
             [clojure.string :as str]
             [metrics.core :as mc]
             [metrics.counters :as counters]
+            [metrics.gauges :as gauges]
             [metrics.histograms :as histograms]
             [metrics.meters :as meters]
             [metrics.timers :as timers]
@@ -93,6 +94,11 @@
   [classifier & nested-path]
   `(counters/counter ~(metric-name (concat ["waiter" classifier "counters"] nested-path))))
 
+(defmacro waiter-gauge
+  "Creates a gauge with waiter-specific naming scheme"
+  [f classifier & nested-path]
+  `(gauges/gauge-fn ~(metric-name (concat ["waiter" classifier "counters"] nested-path)) ~f))
+
 (defmacro waiter-meter
   "Creates a waiter-meter with waiter-specific naming scheme"
   [classifier & nested-path]
@@ -113,8 +119,7 @@
                       (throw (IllegalArgumentException. (str "Please pass a Meter instance: " ~title-or-meter-end))))]
      (try
        (meters/mark! meter-start#)
-       (do
-         ~@body)
+       (do ~@body)
        (finally
          (meters/mark! meter-end#)))))
 
@@ -125,24 +130,23 @@
                     (throw (IllegalArgumentException. (str "Please pass a Counter instance: " ~title-or-counter))))]
      (try
        (counters/inc! counter#)
-       (do
-         ~@body)
+       (do ~@body)
        (finally
          (counters/dec! counter#)))))
 
-(defn get-metrics
-  "Return a nested map of metrics data."
-  ([] (get-metrics mc/default-registry MetricFilter/ALL))
-  ([^MetricRegistry registry ^MetricFilter metric-filter]
-   (utils/keys->nested-map
+(let [percentiles [0.0 0.25 0.5 0.75 0.95 0.99 0.999 1.0]]
+  (defn metric-registry->metric-filter->metric-map
+    "Unpack codahale metrics into a map of values"
+    ([] (metric-registry->metric-filter->metric-map mc/default-registry MetricFilter/ALL))
+    ([^MetricRegistry registry ^MetricFilter metric-filter & {:keys [map-keys-fn] :or {map-keys-fn str}}]
      (merge
        (pc/map-vals (fn [c] (counters/value c))
                     (.getCounters registry metric-filter))
        (pc/map-vals (fn [^Gauge m] {"value" (.getValue m)})
                     (.getGauges registry metric-filter))
        (pc/map-vals (fn [^Histogram h] {"count" (.getCount h)
-                                        "value" (->> (histograms/percentiles h [0.0 0.25 0.5 0.75 0.95 0.99 0.999 1.0])
-                                                     (pc/map-keys str))})
+                                        "value" (->> (histograms/percentiles h percentiles)
+                                                     (pc/map-keys map-keys-fn))})
                     (.getHistograms registry metric-filter))
        (pc/map-vals (fn [^Meter m] {"count" (.getCount m)
                                     "value" (meters/rate-one m)})
@@ -150,10 +154,18 @@
        (pc/map-vals (fn [^Timer t]
                       {"count" (.getCount t)
                        ; nanos -> seconds
-                       "value" (->> (timers/percentiles t [0.0 0.25 0.5 0.75 0.95 0.99 0.999 1.0])
+                       "value" (->> (timers/percentiles t percentiles)
                                     (pc/map-vals #(/ % 1e9))
-                                    (pc/map-keys str))})
-                    (.getTimers registry metric-filter)))
+                                    (pc/map-keys map-keys-fn))})
+                    (.getTimers registry metric-filter))))))
+
+(defn get-metrics
+  "Return a nested map of metrics data."
+  ([] (get-metrics MetricFilter/ALL))
+  ([^MetricFilter metric-filter] (get-metrics mc/default-registry metric-filter))
+  ([^MetricRegistry registry ^MetricFilter metric-filter]
+   (utils/keys->nested-map
+     (metric-registry->metric-filter->metric-map registry metric-filter)
      #"\.")))
 
 (defn get-core-codahale-metrics
@@ -167,17 +179,17 @@
         included-counter-names ["in-flight" "outstanding" "slots-available" "slots-in-use" "total"]
         metric-filter (reify MetricFilter
                         (matches [_ name _]
-                          (-> (and (str/starts-with? name services-string)
-                                   (str/includes? name "counters")
-                                   (some #(str/includes? name %) included-counter-names))
-                              boolean)))
+                          (boolean
+                            (and (str/starts-with? name services-string)
+                                 (str/includes? name "counters")
+                                 (some #(str/includes? name %) included-counter-names)))))
         service-id->codahale-metrics (-> (get-metrics mc/default-registry metric-filter)
                                          (get services-string))]
     (pc/map-vals (fn [metrics]
                    (let [assoc-if (fn [transient-map metrics-keys map-key]
                                     (let [value (get-in metrics metrics-keys)]
                                       (cond-> transient-map
-                                              value (assoc! map-key value))))
+                                        value (assoc! map-key value))))
                          transient-map (transient {})]
                      (-> transient-map
                          (assoc-if ["counters" "instance-counts" "slots-available"] "slots-available")
@@ -188,12 +200,27 @@
                          (persistent!))))
                  service-id->codahale-metrics)))
 
-(defn- prefix-metrics-filter
-  "Creates a MetricFilter that filters by the provided prefix"
+(defn prefix-metrics-filter
+  "Creates a MetricFilter that filters by the provided prefix on metric names."
   [prefix-string]
   (reify MetricFilter
     (matches [_ name _]
       (str/starts-with? name prefix-string))))
+
+(defn contains-metrics-filter
+  "Creates a MetricFilter that filters by the provided substring on metric names."
+  [candidate-substring]
+  (reify MetricFilter
+    (matches [_ name _]
+      (str/includes? name candidate-substring))))
+
+(defn conjunctive-metrics-filter
+  "Creates a MetricFilter that filters by the provided substring on metric names."
+  [^MetricFilter metrics-filter-left ^MetricFilter metrics-filter-right]
+  (reify MetricFilter
+    (matches [_ name metric]
+      (and (.matches metrics-filter-left name metric)
+           (.matches metrics-filter-right name metric)))))
 
 (defn get-service-metrics
   "Retrieves the metrics for a sepcific service-id available at this router."
@@ -234,7 +261,7 @@
    :slots-available (counters/value (service-counter service-id "instance-counts" "slots-available"))})
 
 (defn is-quantile-metric?
-  "Returns true if the input map represents a quantile metric (timer or historgram).
+  "Returns true if the input map represents a quantile metric (timer or histogram).
    Warning: Not foolproof."
   [value]
   (and (map? value)
@@ -248,7 +275,7 @@
               (contains? value-entry "0.75")))))
 
 (defn- merge-quantile-metrics
-  "Merges the quantile metrics (timers and historgrams) using a weighted sum reduction."
+  "Merges the quantile metrics (timers and histograms) using a weighted sum reduction."
   [& values]
   (let [non-nil-values (remove nil? values)]
     (when-not (every? is-quantile-metric? non-nil-values)
@@ -348,53 +375,48 @@
   (let [exit-chan (async/chan 1)
         query-chan (async/chan 1)
         has-metrics-except-outstanding? #(-> % (dissoc "outstanding") (not-empty))]
-    ;; launch go-block to populate service-id->metrics-chan
-    (async/go-loop [iteration 0
-                    timeout-chan (async/timeout metrics-gc-interval-ms)]
-      (let [[args channel] (async/alts! [exit-chan timeout-chan query-chan] :priority true)]
-        (condp = channel
-          exit-chan
-          (when (not= :exit args)
-            (recur (inc iteration) timeout-chan))
+    (cid/with-correlation-id
+      "transient-service-metrics-data-producer"
+      ;; launch go-block to populate service-id->metrics-chan
+      (async/go-loop [iteration 0
+                      timeout-chan (async/timeout metrics-gc-interval-ms)]
+        (let [[args channel] (async/alts! [exit-chan timeout-chan query-chan] :priority true)]
+          (condp = channel
+            exit-chan
+            (when (not= :exit args)
+              (recur (inc iteration) timeout-chan))
 
-          timeout-chan
-          (do
-            (cid/with-correlation-id
-              (str "transient-service-metrics-data-producer-" iteration)
+            timeout-chan
+            (do
               (try
                 (let [service-id->metrics (utils/filterm (fn [[_ metrics]] (has-metrics-except-outstanding? metrics))
                                                          (or (service-id->metrics-fn) {}))]
                   (log/info "writing transient metrics for" (count service-id->metrics) "services")
                   (async/>! service-id->metrics-chan service-id->metrics))
                 (catch Exception e
-                  (log/error e "unable to generate transient metrics"))))
-            (recur (inc iteration) (async/timeout metrics-gc-interval-ms)))
+                  (log/error e "unable to generate transient metrics")))
+              (recur (inc iteration) (async/timeout metrics-gc-interval-ms)))
 
-          query-chan
-          (let [{:keys [response-chan]} args]
-            (async/>! response-chan {:iteration iteration})
-            (recur iteration timeout-chan)))))
+            query-chan
+            (let [{:keys [response-chan]} args]
+              (async/>! response-chan {:iteration iteration})
+              (recur iteration timeout-chan))))))
     {:exit-chan exit-chan
      :query-chan query-chan}))
 
 (defn- transient-metrics-state-producer
-  "Retrieves the service-id->metrics from service-id->metrics-chan and scheduler state from scheduler-state-chan.
+  "Retrieves the service-id->metrics from service-id->metrics-chan and scheduler state from query-state-fn.
    It then creates the service-id->state map and propagates it into the service-id->state-chan."
-  [service-id->metrics-chan scheduler-state-chan service-id->state-chan]
+  [service-id->metrics-chan query-state-fn service-id->state-chan]
   (async/go-loop []
     (let [service-id->metrics (async/<! service-id->metrics-chan)
-          scheduler-messages (async/<! scheduler-state-chan)
-          available-service-ids (->> scheduler-messages
-                                     (filter (fn [[message-type _]] (= message-type :update-available-services)))
-                                     first
-                                     second
-                                     :available-service-ids)
+          {:keys [all-available-service-ids]} (query-state-fn)
           service-id->state (pc/map-from-keys (fn service-id->state-fn [service-id]
                                                 (-> (get service-id->metrics service-id)
                                                     (select-keys ["outstanding" "total"])
-                                                    (assoc "alive?" (contains? available-service-ids service-id))))
+                                                    (assoc "alive?" (contains? all-available-service-ids service-id))))
                                               (keys service-id->metrics))]
-      (if (or service-id->metrics scheduler-messages)
+      (if service-id->metrics
         (do
           (async/>! service-id->state-chan service-id->state)
           (recur))
@@ -422,7 +444,7 @@
    longer exist in the scheduler, i.e. not alive?, and have not received any new requests) known to the router.
    When such an idle service is found (based on the timestamp it was last updated), the metrics (except the one for
    outstanding requests) are deleted locally."
-  [scheduler-state-chan local-usage-agent service-gc-go-routine {:keys [metrics-gc-interval-ms transient-metrics-timeout-ms]}]
+  [query-state-fn local-usage-agent service-gc-go-routine {:keys [metrics-gc-interval-ms transient-metrics-timeout-ms]}]
   (let [sanitize-state-fn (fn sanitize-state [prev-service->state _] prev-service->state)
         service-id->state-fn (fn service->state [_ _ data] data)
         gc-service?-fn (fn [_ {:keys [state last-modified-time]} current-time]
@@ -441,7 +463,7 @@
         service-id->metrics-chan (au/latest-chan)
         service-id->state-chan (au/latest-chan)]
     ;; launch go-block to populate the service-id->state-chan
-    (transient-metrics-state-producer service-id->metrics-chan scheduler-state-chan service-id->state-chan)
+    (transient-metrics-state-producer service-id->metrics-chan query-state-fn service-id->state-chan)
     ;; launch go-block to perform transient metrics GC
     (assoc (service-gc-go-routine "transient-metrics-gc" service-id->state-chan metrics-gc-interval-ms
                                   sanitize-state-fn service-id->state-fn gc-service?-fn perform-gc-fn)
@@ -482,7 +504,10 @@
    :stream-onto-resp-chan (service-timer service-id "stream-onto-resp-chan")
    :stream-read-body (service-timer service-id "stream-read-body")
    :stream-request-rate (service-meter service-id "stream-request-rate")
-   :throughput-meter (service-meter service-id "stream-throughput")})
+   :throughput-iterations-meter (service-meter service-id "streaming" "response-iterations")
+   :throughput-iterations-meter-global (waiter-meter "streaming" "response-iterations")
+   :throughput-meter (service-meter service-id "stream-throughput")
+   :throughput-meter-global (waiter-meter "streaming" "response-bytes")})
 
 (defn duration-between
   "Returns the duration (interval) elapsed between the start and end times.

@@ -23,7 +23,7 @@
                    :x-waiter-mem 100}
           response (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :path "/oom-instability"))]
       (wait-for #(= "not-enough-memory" ((((service-state waiter-url (response->service-id response))
-                                           :state) :responder-state) :instability-issue)))
+                                            :state) :responder-state) :instability-issue)))
       (assert-response-status response 502)
       (is (= "not-enough-memory" ((((service-state waiter-url (response->service-id response))
                                      :state) :responder-state) :instability-issue))))))

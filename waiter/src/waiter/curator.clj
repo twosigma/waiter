@@ -47,7 +47,7 @@
   (condp = serializer
     :nippy (nippy/freeze data)
     :none data
-    :else (throw (ex-info "Unknown serializer" {:serializer serializer}))))
+    (throw (ex-info "Unknown serializer" {:serializer serializer}))))
 
 (defn deserialize
   [serializer data]
@@ -58,10 +58,9 @@
                (log/error "Error in deserializing data" (.getMessage e))
                ;; remove password from exception thrown by nippy
                (throw (ex-info (.getMessage e)
-                               (-> (ex-data e)
-                                   (update-in [:opts :password] (fn [password] (when password "***"))))))))
+                               (update-in (ex-data e) [:opts :password] (fn [password] (when password "***")))))))
     :none data
-    :else (throw (ex-info "Unknown serializer" {:serializer serializer}))))
+    (throw (ex-info "Unknown serializer" {:serializer serializer}))))
 
 (defn create-path
   ([^CuratorFramework curator path & {:keys [mode noop-on-exists? create-parent-zknodes?]
@@ -116,11 +115,11 @@
                                       :or {serializer :none nil-on-missing? false}}]
    (try
      (let [stat (Stat.)]
-       {:data (->> (.. curator
-                       (getData)
-                       (storingStatIn stat)
-                       (forPath path))
-                   (deserialize serializer))
+       {:data (deserialize serializer
+                           (.. curator
+                               (getData)
+                               (storingStatIn stat)
+                               (forPath path)))
         :stat (bean stat)})
      (catch KeeperException$NoNodeException e
        (when-not nil-on-missing?
@@ -134,8 +133,8 @@
                                            throw-exceptions true}}]
    (try
      (cond-> (.delete curator)
-             delete-children (.deletingChildrenIfNeeded)
-             true (.forPath path))
+       delete-children (.deletingChildrenIfNeeded)
+       true (.forPath path))
      {:result :success}
      (catch KeeperException$NoNodeException e
        (log/info path "does not exist!")
@@ -151,7 +150,7 @@
   "Gets the children of a ZK node."
   ([^CuratorFramework curator path & {:keys [ignore-does-not-exist]
                                       :or {ignore-does-not-exist false}}]
-   (try 
+   (try
      (.. curator
          (getChildren)
          (forPath path))
@@ -175,10 +174,10 @@
   [^CuratorFramework curator lock-path timeout-ms f]
   (let [mutex (InterProcessMutex. curator lock-path)]
     (when-not (.acquire mutex timeout-ms TimeUnit/MILLISECONDS)
-      (throw (ex-info "Could not acquire lock." 
+      (throw (ex-info "Could not acquire lock."
                       {:timeout-ms timeout-ms
                        :lock-path lock-path})))
-    (try 
+    (try
       (f)
       (catch Exception e
         (log/error e "Error during synchronized")

@@ -18,6 +18,7 @@
             [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.java.io :as io]
+            [clojure.set :as set]
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.walk :as walk]
@@ -32,10 +33,11 @@
             [waiter.service-description :as sd]
             [waiter.statsd :as statsd]
             [waiter.test-helpers :refer :all]
-            [waiter.util.async-utils :as au])
+            [waiter.util.utils :as utils])
   (:import (clojure.core.async.impl.channels ManyToManyChannel)
            (clojure.lang ExceptionInfo)
-           (java.io StringBufferInputStream StringReader)))
+           (java.io StringBufferInputStream StringReader)
+           (java.util.concurrent Executors)))
 
 (deftest test-complete-async-handler
   (testing "missing-request-id"
@@ -48,7 +50,7 @@
           async-request-terminate-fn (fn [_] (throw (Exception. "unexpected call!")))
           {:keys [body headers status]} (complete-async-handler async-request-terminate-fn request)]
       (is (= 400 status))
-      (is (= {"content-type" "application/json"} headers))
+      (is (= expected-json-response-headers headers))
       (is (str/includes? body "No request-id specified"))))
 
   (testing "missing-service-id"
@@ -61,7 +63,7 @@
           async-request-terminate-fn (fn [_] (throw (Exception. "unexpected call!")))
           {:keys [body headers status]} (complete-async-handler async-request-terminate-fn request)]
       (is (= 400 status))
-      (is (= {"content-type" "application/json"} headers))
+      (is (= expected-json-response-headers headers))
       (is (str/includes? body "No service-id specified"))))
 
   (testing "valid-request-id"
@@ -74,7 +76,7 @@
           async-request-terminate-fn (fn [in-request-id] (= request-id in-request-id))
           {:keys [body headers status]} (complete-async-handler async-request-terminate-fn request)]
       (is (= 200 status))
-      (is (= {"content-type" "application/json"} headers))
+      (is (= expected-json-response-headers headers))
       (is (= {:request-id request-id, :success true} (pc/keywordize-map (json/read-str body))))))
 
   (testing "unable-to-terminate-request"
@@ -87,7 +89,7 @@
           async-request-terminate-fn (fn [_] false)
           {:keys [body headers status]} (complete-async-handler async-request-terminate-fn request)]
       (is (= 200 status))
-      (is (= {"content-type" "application/json"} headers))
+      (is (= expected-json-response-headers headers))
       (is (= {:request-id request-id, :success false} (pc/keywordize-map (json/read-str body)))))))
 
 (deftest test-async-result-handler-errors
@@ -102,7 +104,8 @@
                              :service-id service-id})
         service-id->service-description-fn (fn [in-service-id]
                                              (is (= service-id in-service-id))
-                                             {"backend-proto" "http", "metric-group" "test-metric-group"})]
+                                             {"backend-proto" "http"
+                                              "metric-group" "test-metric-group"})]
     (testing "missing-location"
       (let [request {:headers {"accept" "application/json"}
                      :route-params (make-route-params "missing-location")}
@@ -110,7 +113,7 @@
             (async/<!!
               (async-result-handler nil nil service-id->service-description-fn request))]
         (is (= 400 status))
-        (is (= {"content-type" "application/json"} headers))
+        (is (= expected-json-response-headers headers))
         (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri"))))
 
     (testing "missing-request-id"
@@ -120,7 +123,7 @@
             (async/<!!
               (async-result-handler nil nil service-id->service-description-fn request))]
         (is (= 400 status))
-        (is (= {"content-type" "application/json"} headers))
+        (is (= expected-json-response-headers headers))
         (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri"))))
 
     (testing "missing-router-id"
@@ -130,7 +133,7 @@
             (async/<!!
               (async-result-handler nil nil service-id->service-description-fn request))]
         (is (= 400 status))
-        (is (= {"content-type" "application/json"} headers))
+        (is (= expected-json-response-headers headers))
         (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri"))))
 
     (testing "error-in-checking-backend-status"
@@ -139,12 +142,13 @@
                      :headers {"accept" "application/json"}
                      :request-method :http-method
                      :route-params (make-route-params "local")}
-            make-http-request-fn (fn [instance in-request end-route metric-group]
-                                   (is (= {:host "host" :port "port" :protocol "http" :service-id service-id}
-                                          (select-keys instance [:host :port :protocol :service-id])))
+            make-http-request-fn (fn [instance in-request end-route metric-group backend-proto]
+                                   (is (= {:host "host" :port "port" :service-id service-id}
+                                          (select-keys instance [:host :port :service-id])))
                                    (is (= request in-request))
                                    (is (= (-> request :route-params :location) end-route))
                                    (is (= "test-metric-group" metric-group))
+                                   (is (= "http" backend-proto))
                                    (async/go {:error (ex-info "backend-status-error" {:status 502})}))
             async-trigger-terminate-fn (fn [in-router-id in-service-id in-request-id]
                                          (is (= my-router-id in-router-id))
@@ -154,7 +158,7 @@
             (async/<!!
               (async-result-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))]
         (is (= 502 status))
-        (is (= {"content-type" "application/json"} headers))
+        (is (= expected-json-response-headers headers))
         (is (every? #(str/includes? body %) ["backend-status-error"]))))))
 
 (deftest test-async-result-handler-with-return-codes
@@ -170,7 +174,8 @@
                              :service-id service-id})
         service-id->service-description-fn (fn [in-service-id]
                                              (is (= service-id in-service-id))
-                                             {"backend-proto" "http", "metric-group" "test-metric-group"})
+                                             {"backend-proto" "http"
+                                              "metric-group" "test-metric-group"})
         request-id-fn (fn [router-type] (if (= router-type "local") "req-1234" "req-6789"))]
     (letfn [(execute-async-result-check
               [{:keys [request-method return-status router-type]}]
@@ -185,12 +190,13 @@
                              :headers {"accept" "application/json"}
                              :request-method request-method,
                              :route-params (make-route-params router-type)}
-                    make-http-request-fn (fn [instance in-request end-route metric-group]
-                                           (is (= {:host "host" :port "port" :protocol "http" :service-id service-id}
-                                                  (select-keys instance [:host :port :protocol :service-id])))
+                    make-http-request-fn (fn [instance in-request end-route metric-group backend-proto]
+                                           (is (= {:host "host" :port "port" :service-id service-id}
+                                                  (select-keys instance [:host :port :service-id])))
                                            (is (= request in-request))
                                            (is (= (-> request :route-params :location) end-route))
                                            (is (= "test-metric-group" metric-group))
+                                           (is (= "http" backend-proto))
                                            (async/go {:body "async-result-response", :headers {}, :status return-status}))
                     {:keys [status headers]}
                     (async/<!!
@@ -251,13 +257,14 @@
                              :service-id service-id})
         service-id->service-description-fn (fn [in-service-id]
                                              (is (= service-id in-service-id))
-                                             {"backend-proto" "http", "metric-group" "test-metric-group"})]
+                                             {"backend-proto" "http"
+                                              "metric-group" "test-metric-group"})]
     (testing "missing-code"
       (let [request {:headers {"accept" "application/json"}
                      :query-string ""}
             {:keys [body headers status]} (async/<!! (async-status-handler nil nil service-id->service-description-fn request))]
         (is (= 400 status))
-        (is (= {"content-type" "application/json"} headers))
+        (is (= expected-json-response-headers headers))
         (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri"))))
 
     (testing "missing-location"
@@ -265,7 +272,7 @@
                      :route-params (make-route-params "missing-location")}
             {:keys [body headers status]} (async/<!! (async-status-handler nil nil service-id->service-description-fn request))]
         (is (= 400 status))
-        (is (= {"content-type" "application/json"} headers))
+        (is (= expected-json-response-headers headers))
         (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri"))))
 
     (testing "missing-request-id"
@@ -273,7 +280,7 @@
                      :route-params (make-route-params "missing-request-id")}
             {:keys [body headers status]} (async/<!! (async-status-handler nil nil service-id->service-description-fn request))]
         (is (= 400 status))
-        (is (= {"content-type" "application/json"} headers))
+        (is (= expected-json-response-headers headers))
         (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri"))))
 
     (testing "missing-router-id"
@@ -281,7 +288,7 @@
                      :route-params (make-route-params "missing-router-id")}
             {:keys [body headers status]} (async/<!! (async-status-handler nil nil service-id->service-description-fn request))]
         (is (= 400 status))
-        (is (= {"content-type" "application/json"} headers))
+        (is (= expected-json-response-headers headers))
         (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri"))))
 
     (testing "error-in-checking-backend-status"
@@ -290,17 +297,18 @@
                      :headers {"accept" "application/json"}
                      :route-params (make-route-params "local")
                      :request-method :http-method}
-            make-http-request-fn (fn [instance in-request end-route metric-group]
-                                   (is (= {:host "host" :port "port" :protocol "http" :service-id service-id}
-                                          (select-keys instance [:host :port :protocol :service-id])))
+            make-http-request-fn (fn [instance in-request end-route metric-group backend-proto]
+                                   (is (= {:host "host" :port "port" :service-id service-id}
+                                          (select-keys instance [:host :port :service-id])))
                                    (is (= request in-request))
                                    (is (= (-> request :route-params :location) end-route))
                                    (is (= "test-metric-group" metric-group))
+                                   (is (= "http" backend-proto))
                                    (async/go {:error (ex-info "backend-status-error" {:status 400})}))
             async-trigger-terminate-fn nil
             {:keys [body headers status]} (async/<!! (async-status-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))]
         (is (= 400 status))
-        (is (= {"content-type" "application/json"} headers))
+        (is (= expected-json-response-headers headers))
         (is (every? #(str/includes? body %) ["backend-status-error"]))))))
 
 (deftest test-async-status-handler-with-return-codes
@@ -316,7 +324,8 @@
                              :service-id service-id})
         service-id->service-description-fn (fn [in-service-id]
                                              (is (= service-id in-service-id))
-                                             {"backend-proto" "http", "metric-group" "test-metric-group"})
+                                             {"backend-proto" "http"
+                                              "metric-group" "test-metric-group"})
         request-id-fn (fn [router-type] (if (= router-type "local") "req-1234" "req-6789"))
         result-location-fn (fn [router-type & {:keys [include-host-port] :or {include-host-port false}}]
                              (str (when include-host-port "http://www.example.com:8521")
@@ -340,12 +349,13 @@
                              :authorization/user "test-user"
                              :request-method request-method
                              :route-params (make-route-params router-type)}
-                    make-http-request-fn (fn [instance in-request end-route metric-group]
-                                           (is (= {:host "host" :port "port" :protocol "http" :service-id service-id}
-                                                  (select-keys instance [:host :port :protocol :service-id])))
+                    make-http-request-fn (fn [instance in-request end-route metric-group backend-proto]
+                                           (is (= {:host "host" :port "port" :service-id service-id}
+                                                  (select-keys instance [:host :port :service-id])))
                                            (is (= request in-request))
                                            (is (= (-> request :route-params :location) end-route))
                                            (is (= "test-metric-group" metric-group))
+                                           (is (= "http" backend-proto))
                                            (async/go {:body "status-check-response"
                                                       :headers (if (= return-status 303) {"location" (or result-location (result-location-fn router-type))} {})
                                                       :status return-status}))
@@ -407,8 +417,36 @@
 
 (deftest test-list-services-handler
   (let [test-user "test-user"
-        test-user-services ["service1" "service2" "service3"]
-        state-chan (async/chan 1)
+        test-user-services #{"service1" "service2" "service3" "service7" "service8" "service9"}
+        other-user-services #{"service4" "service5" "service6"}
+        healthy-services #{"service1" "service2" "service4" "service6" "service7" "service8" "service9"}
+        unhealthy-services #{"service2" "service3" "service5"}
+        service-id->references {"service1" {:sources [{:token "t1.org" :version "v1"} {:token "t2.com" :version "v2"}]
+                                            :type :token }
+                                "service3" {:sources [{:token "t2.com" :version "v2"} {:token "t3.edu" :version "v3"}]
+                                            :type :token }
+                                "service4" {:sources [{:token "t1.org" :version "v1"} {:token "t2.com" :version "v2"}]
+                                            :type :token }
+                                "service5" {:sources [{:token "t1.org" :version "v1"} {:token "t3.edu" :version "v3"}]
+                                            :type :token }
+                                "service7" {:sources [{:token "t1.org" :version "v2"} {:token "t2.com" :version "v1"}]
+                                            :type :token }
+                                "service9" {:sources [{:token "t2.com" :version "v3"}]
+                                            :type :token }}
+        service-id->source-tokens {"service1" [{:token "t1.org" :version "v1"} {:token "t2.com" :version "v2"}]
+                                   "service3" [{:token "t2.com" :version "v2"} {:token "t3.edu" :version "v3"}]
+                                   "service4" [{:token "t1.org" :version "v1"} {:token "t2.com" :version "v2"}]
+                                   "service5" [{:token "t1.org" :version "v1"} {:token "t3.edu" :version "v3"}]
+                                   "service7" [{:token "t1.org" :version "v2"} {:token "t2.com" :version "v1"}]
+                                   "service9" [{:token "t2.com" :version "v3"}]}
+        all-services (set/union other-user-services test-user-services)
+        query-state-fn (constantly {:all-available-service-ids all-services
+                                    :service-id->healthy-instances (pc/map-from-keys (constantly []) healthy-services)
+                                    :service-id->unhealthy-instances (pc/map-from-keys (constantly []) unhealthy-services)})
+        query-autoscaler-state-fn (constantly
+                                    (pc/map-from-keys
+                                      (fn [_] {:scale-amount (rand-nth [-1 0 1])})
+                                      test-user-services))
         request {:authorization/user test-user}
         instance-counts-present (fn [body]
                                   (let [parsed-body (-> body (str) (json/read-str) (walk/keywordize-keys))]
@@ -423,46 +461,86 @@
                                 (and (= user test-user)
                                      (= action :manage)
                                      (some #(= % service-id) test-user-services))))
-        list-services-handler (wrap-handler-json-response list-services-handler)]
-    (letfn [(service-id->service-description-fn [service-id & _]
-              {"run-as-user" (if (some #(= service-id %) test-user-services) test-user "another-user")})
-            (service-id->metrics-fn []
-              {})]
+        list-services-handler (wrap-handler-json-response list-services-handler)
+        assert-successful-json-response (fn [{:keys [body headers status]}]
+                                          (is (= 200 status))
+                                          (is (= "application/json" (get headers "content-type")))
+                                          (is (instance-counts-present body)))]
+    (letfn [(service-id->metrics-fn []
+              {})
+            (service-id->references-fn [service-id]
+              (get service-id->references service-id))
+            (service-id->service-description-fn [service-id & _]
+              (let [id (subs service-id (count "service"))]
+                {"cpus" (Integer/parseInt id)
+                 "metric-group" (str "mg" id)
+                 "run-as-user" (if (contains? test-user-services service-id) test-user "another-user")}))
+            (service-id->source-tokens-entries-fn [service-id]
+              (when (contains? service-id->source-tokens service-id)
+                (let [source-tokens (-> service-id service-id->source-tokens walk/stringify-keys)]
+                  #{source-tokens})))]
 
       (testing "list-services-handler:success-regular-user"
-        (async/>!! state-chan {:service-id->healthy-instances {"service1" []
-                                                               "service2" []
-                                                               "service3" []
-                                                               "service4" []
-                                                               "service6" []}
-                               :service-id->unhealthy-instances {"service3" []
-                                                                 "service5" []}})
-        (let [{:keys [body headers status]}
-              (list-services-handler entitlement-manager state-chan prepend-waiter-url
-                                     service-id->service-description-fn service-id->metrics-fn request)]
-          (is (= 200 status))
-          (is (= "application/json" (get headers "content-type")))
-          (is (every? #(str/includes? (str body) (str "service" %)) (range 1 4)))
-          (is (not-any? #(str/includes? (str body) (str "service" %)) (range 4 7)))
-          (is (instance-counts-present body))))
+        (let [{:keys [body] :as response}
+              (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                     service-id->service-description-fn service-id->metrics-fn
+                                     service-id->references-fn service-id->source-tokens-entries-fn request)]
+          (assert-successful-json-response response)
+          (is (= test-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set)))))
 
       (testing "list-services-handler:success-regular-user-with-filter-for-another-user"
         (let [request (assoc request :query-string "run-as-user=another-user")]
-          (async/>!! state-chan {:service-id->healthy-instances {"service1" []
-                                                                 "service2" []
-                                                                 "service3" []
-                                                                 "service4" []
-                                                                 "service6" []}
-                                 :service-id->unhealthy-instances {"service3" []
-                                                                   "service5" []}})
-          (let [{:keys [body headers status]}
-                (list-services-handler entitlement-manager state-chan prepend-waiter-url
-                                       service-id->service-description-fn service-id->metrics-fn request)]
-            (is (= 200 status))
-            (is (= "application/json" (get headers "content-type")))
-            (is (not-any? #(str/includes? (str body) (str "service" %)) (range 1 4)))
-            (is (every? #(str/includes? (str body) (str "service" %)) (range 4 7)))
-            (is (instance-counts-present body)))))
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
+            (assert-successful-json-response response)
+            (is (= other-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
+
+      (testing "list-services-handler:success-regular-user-with-filter-for-another-user"
+        (let [request (assoc request :query-string "run-as-user=another-user&run-as-user=another-user")]
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
+            (assert-successful-json-response response)
+            (is (= other-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
+
+      (testing "list-services-handler:success-regular-user-with-filter-for-another-user"
+        (let [request (assoc request :query-string "run-as-user=another-user&run-as-user=test-user")]
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
+            (assert-successful-json-response response)
+            (is (= all-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
+
+      (testing "list-services-handler:success-with-filter-for-cpus"
+        (let [request (assoc request :query-string "cpus=1")]
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
+            (assert-successful-json-response response)
+            (is (= #{"service1"} (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
+
+      (testing "list-services-handler:success-with-filter-for-metric-group"
+        (let [request (assoc request :query-string "metric-group=mg3")]
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
+            (assert-successful-json-response response)
+            (is (= #{"service3"} (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
+
+      (testing "list-services-handler:success-with-filter-for-multiple-metric-groups"
+        (let [request (assoc request :query-string "metric-group=mg1&metric-group=mg2")]
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
+            (assert-successful-json-response response)
+            (is (= #{"service1" "service2"} (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
 
       (testing "list-services-handler:success-regular-user-with-filter-for-same-user"
         (let [entitlement-manager (reify authz/EntitlementManager
@@ -470,85 +548,194 @@
                                       ; use (constantly true) for authorized? to verify that filter still applies
                                       true))
               request (assoc request :authorization/user "another-user" :query-string "run-as-user=another-user")]
-          (async/>!! state-chan {:service-id->healthy-instances {"service1" []
-                                                                 "service2" []
-                                                                 "service3" []
-                                                                 "service4" []
-                                                                 "service6" []}
-                                 :service-id->unhealthy-instances {"service3" []
-                                                                   "service5" []}})
-          (let [{:keys [body headers status]}
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
+            (assert-successful-json-response response)
+            (is (= other-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
 
-                (list-services-handler entitlement-manager state-chan prepend-waiter-url
-                                       service-id->service-description-fn service-id->metrics-fn request)]
-            (is (= 200 status))
-            (is (= "application/json" (get headers "content-type")))
-            (is (not-any? #(str/includes? (str body) (str "service" %)) (range 1 4)))
-            (is (every? #(str/includes? (str body) (str "service" %)) (range 4 7)))
-            (is (instance-counts-present body)))))
+      (testing "list-services-handler:success-regular-user-with-run-as-user-star-filter"
+        (let [entitlement-manager (reify authz/EntitlementManager
+                                    (authorized? [_ _ _ _]
+                                      ; use (constantly true) for authorized? to verify that filter still applies
+                                      true))
+              request (assoc request :authorization/user "another-user" :query-string "run-as-user=*")]
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
+            (assert-successful-json-response response)
+            (is (= all-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
+
+      (testing "list-services-handler:success-regular-user-with-run-as-user-prefix-star-filter"
+        (let [entitlement-manager (reify authz/EntitlementManager
+                                    (authorized? [_ _ _ _]
+                                      ; use (constantly true) for authorized? to verify that filter still applies
+                                      true))
+              request (assoc request :authorization/user "another-user" :query-string "run-as-user=*user")]
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
+            (assert-successful-json-response response)
+            (is (= all-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
+
+      (testing "list-services-handler:success-regular-user-with-run-as-user-suffix-star-filter"
+        (let [entitlement-manager (reify authz/EntitlementManager
+                                    (authorized? [_ _ _ _]
+                                      ; use (constantly true) for authorized? to verify that filter still applies
+                                      true))
+              request (assoc request :authorization/user "another-user" :query-string "run-as-user=another*")]
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
+            (assert-successful-json-response response)
+            (is (= other-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
+
+      (testing "list-services-handler:success-regular-user-with-different-run-as-user-star-filter"
+        (let [entitlement-manager (reify authz/EntitlementManager
+                                    (authorized? [_ _ _ _]
+                                      ; use (constantly true) for authorized? to verify that filter still applies
+                                      true))
+              request (assoc request :authorization/user test-user :query-string "run-as-user=another*")]
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
+            (assert-successful-json-response response)
+            (is (= other-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
 
       (testing "list-services-handler:failure"
-        (async/>!! state-chan {:service-id->healthy-instances {"service1" []}})
-        (let [request {:authorization/user test-user}
+        (let [query-state-fn (constantly {:all-available-service-ids #{"service1"}
+                                          :service-id->healthy-instances {"service1" []}})
+              request {:authorization/user test-user}
               exception-message "Custom message from test case"
               prepend-waiter-url (fn [_] (throw (ex-info exception-message {:status 400})))
               list-services-handler (core/wrap-error-handling
-                                      #(list-services-handler entitlement-manager state-chan prepend-waiter-url
-                                                              service-id->service-description-fn service-id->metrics-fn %))
-              {:keys [body headers status]}
-              (list-services-handler request)]
+                                      #(list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                                              service-id->service-description-fn service-id->metrics-fn
+                                                              service-id->references-fn service-id->source-tokens-entries-fn %))
+              {:keys [body headers status]} (list-services-handler request)]
           (is (= 400 status))
           (is (= "text/plain" (get headers "content-type")))
           (is (str/includes? (str body) exception-message))))
 
       (testing "list-services-handler:success-super-user-sees-all-apps"
-        (async/>!! state-chan {:service-id->healthy-instances {"service1" []
-                                                               "service2" []
-                                                               "service3" []
-                                                               "service4" []
-                                                               "service6" []}
-                               :service-id->unhealthy-instances {"service3" []
-                                                                 "service5" []}})
         (let [entitlement-manager (reify authz/EntitlementManager
                                     (authorized? [_ user action {:keys [service-id]}]
                                       (and (= user test-user)
                                            (= :manage action)
-                                           (some #(= (str "service" %) service-id) (range 1 7)))))
-              {:keys [body headers status]}
+                                           (contains? all-services service-id))))
+              {:keys [body] :as response}
               ; without a run-as-user, should return all apps
-              (list-services-handler entitlement-manager state-chan prepend-waiter-url
-                                     service-id->service-description-fn service-id->metrics-fn request)]
-          (is (= 200 status))
-          (is (= "application/json" (get headers "content-type")))
-          (is (every? #(str/includes? (str body) (str "service" %)) (range 1 7)))
-          (is (instance-counts-present body)))))))
+              (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                     service-id->service-description-fn service-id->metrics-fn
+                                     service-id->references-fn service-id->source-tokens-entries-fn request)]
+          (assert-successful-json-response response)
+          (is (= all-services (->> body json/read-str walk/keywordize-keys (map :service-id) set)))))
+
+      (testing "list-services-handler:success-filter-tokens"
+        (doseq [[query-param filter-fn]
+                {"t1.com" #(= % "t1.com")
+                 "t2.org" #(= % "t2.org")
+                 "tn.none" #(= % "tn.none")
+                 "*o*" #(str/includes? % "o")
+                 "*t*" #(str/includes? % "t")
+                 "t*" #(str/starts-with? % "t")
+                 "*com" #(str/ends-with? % "com")
+                 "*org" #(str/ends-with? % "org")}]
+          (let [request (assoc request :query-string (str "token=" query-param))
+                {:keys [body] :as response}
+                ; without a run-as-user, should return all apps
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
+            (assert-successful-json-response response)
+            (is (= (->> service-id->source-tokens
+                        (filter (fn [[_ source-tokens]]
+                                  (->> source-tokens (map :token) (some filter-fn))))
+                        keys
+                        set
+                        (set/intersection test-user-services))
+                   (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
+
+      (testing "list-services-handler:success-filter-version"
+        (doseq [[query-param filter-fn]
+                {"v1" #(= % "v1")
+                 "v2" #(= % "v2")
+                 "vn" #(= % "vn")
+                 "*v*" #(str/includes? % "v")
+                 "v*" #(str/starts-with? % "v")
+                 "*1" #(str/ends-with? % "1")
+                 "*2" #(str/ends-with? % "2")}]
+          (let [request (assoc request :query-string (str "token-version=" query-param))
+                {:keys [body] :as response}
+                ; without a run-as-user, should return all apps
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
+            (assert-successful-json-response response)
+            (is (= (->> service-id->source-tokens
+                        (filter (fn [[_ source-tokens]]
+                                  (->> source-tokens (map :version) (some filter-fn))))
+                        keys
+                        set
+                        (set/intersection test-user-services))
+                   (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
+
+      (testing "list-services-handler:success-filter-token-and-version"
+        (let [request (assoc request :query-string "token=t1&token-version=v1")
+              {:keys [body] :as response}
+              ; without a run-as-user, should return all apps
+              (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                     service-id->service-description-fn service-id->metrics-fn
+                                     service-id->references-fn service-id->source-tokens-entries-fn request)]
+          (assert-successful-json-response response)
+          (is (= (->> service-id->source-tokens
+                      (filter (fn [[_ source-tokens]]
+                                (and (->> source-tokens (map :token) (some #(= % "t1")))
+                                     (->> source-tokens (map :version) (some #(= % "v1"))))))
+                      keys
+                      set
+                      (set/intersection test-user-services))
+                 (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))))
 
 (deftest test-delete-service-handler
   (let [test-user "test-user"
         test-service-id "service-1"
         allowed-to-manage-service?-fn (fn [service-id user] (and (= test-service-id service-id) (= test-user user)))]
-    (let [core-service-description {"run-as-user" test-user}]
+    (let [core-service-description {"run-as-user" test-user}
+          scheduler-interactions-thread-pool (Executors/newFixedThreadPool 1)]
 
       (testing "delete-service-handler:success-regular-user"
         (let [scheduler (reify scheduler/ServiceScheduler
-                          (delete-app [_ service-id]
+                          (delete-service [_ service-id]
                             (is (= test-service-id service-id))
                             {:result :deleted
                              :message "Worked!"}))
               request {:authorization/user test-user}
-              {:keys [body headers status]} (delete-service-handler test-service-id core-service-description scheduler allowed-to-manage-service?-fn request)]
+              {:keys [body headers status]}
+              (async/<!!
+                (delete-service-handler test-service-id core-service-description scheduler allowed-to-manage-service?-fn
+                                        scheduler-interactions-thread-pool request))]
           (is (= 200 status))
           (is (= "application/json" (get headers "content-type")))
           (is (every? #(str/includes? (str body) (str %)) ["Worked!"]))))
 
       (testing "delete-service-handler:success-regular-user-deleting-for-another-user"
         (let [scheduler (reify scheduler/ServiceScheduler
-                          (delete-app [_ service-id]
+                          (delete-service [_ service-id]
                             (is (= test-service-id service-id))
                             {:deploymentId "good"}))
               request {:authorization/user "another-user"}]
-          (is (thrown-with-msg? ExceptionInfo #"User not allowed to delete service"
-                                (delete-service-handler test-service-id core-service-description scheduler allowed-to-manage-service?-fn request))))))))
+          (is (thrown-with-msg?
+                ExceptionInfo #"User not allowed to delete service"
+                (delete-service-handler test-service-id core-service-description scheduler allowed-to-manage-service?-fn
+                                        scheduler-interactions-thread-pool request)))))
+
+      (.shutdown scheduler-interactions-thread-pool))))
 
 (deftest test-work-stealing-handler
   (let [test-service-id "test-service-id"
@@ -630,24 +817,26 @@
     (doseq [{:keys [name request-body response-status expected-status expected-body-fragments]} test-cases]
       (testing name
         (let [instance-rpc-chan (instance-rpc-chan-factory response-status)
+              populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
               request {:uri (str "/work-stealing")
                        :request-method :post
-                       :body (StringBufferInputStream. (json/write-str (walk/stringify-keys request-body)))}
-              {:keys [status body]} (fa/<?? (work-stealing-handler instance-rpc-chan request))]
+                       :body (StringBufferInputStream. (utils/clj->json (walk/stringify-keys request-body)))}
+              {:keys [status body]} (fa/<?? (work-stealing-handler populate-maintainer-chan! request))]
           (is (= expected-status status))
           (is (every? #(str/includes? (str body) %) expected-body-fragments)))))))
 
 (deftest test-work-stealing-handler-cannot-find-channel
   (let [instance-rpc-chan (async/chan)
+        populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
         test-service-id "test-service-id"
         request {:body (StringBufferInputStream.
-                         (json/write-str
+                         (utils/clj->json
                            {"cid" "test-cid"
                             "instance" {"id" "test-instance-id", "service-id" test-service-id}
                             "request-id" "test-request-id"
                             "router-id" "test-router-id"
                             "service-id" test-service-id}))}
-        response-chan (work-stealing-handler instance-rpc-chan request)]
+        response-chan (work-stealing-handler populate-maintainer-chan! request)]
     (async/thread
       (let [{:keys [cid method response-chan service-id]} (async/<!! instance-rpc-chan)]
         (is (= :offer method))
@@ -656,51 +845,84 @@
         (is (instance? ManyToManyChannel response-chan))
         (async/close! response-chan)))
     (let [{:keys [status]} (async/<!! response-chan)]
+      (is (= 404 status)))))
+
+(deftest test-work-stealing-handler-channel-put-failed
+  (let [instance-rpc-chan (async/chan)
+        populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
+        test-service-id "test-service-id"
+        request {:body (StringBufferInputStream.
+                         (utils/clj->json
+                           {"cid" "test-cid"
+                            "instance" {"id" "test-instance-id", "service-id" test-service-id}
+                            "request-id" "test-request-id"
+                            "router-id" "test-router-id"
+                            "service-id" test-service-id}))}
+        response-chan (work-stealing-handler populate-maintainer-chan! request)]
+    (async/thread
+      (let [{:keys [cid method response-chan service-id]} (async/<!! instance-rpc-chan)
+            work-stealing-chan (async/chan)]
+        (is (= :offer method))
+        (is (= test-service-id service-id))
+        (is cid)
+        (is (instance? ManyToManyChannel response-chan))
+        (async/close! work-stealing-chan)
+        (async/put! response-chan work-stealing-chan)
+        (async/close! response-chan)))
+    (let [{:keys [status]} (async/<!! response-chan)]
       (is (= 500 status)))))
 
 (deftest test-get-router-state
-  (let [test-fn (fn [router-id state-chan request]
-                  (let [handler (wrap-async-handler-json-response get-router-state)]
-                    (-> (handler router-id state-chan request)
-                        async/<!!)))
-        router-id "test-router-id"
-        state-chan (au/latest-chan)
-        test-complete (atom false)]
+  (let [state-atom (atom nil)
+        query-state-fn (fn [] @state-atom)
+        test-fn (fn [router-id query-state-fn request]
+                  (let [handler (wrap-handler-json-response get-router-state)]
+                    (handler router-id query-state-fn request)))
+        router-id "test-router-id"]
 
-    (async/go-loop []
-      (async/>! state-chan {:state-data {}})
-      (if @test-complete
-        (async/close! state-chan)
-        (recur)))
+    (reset! state-atom {:state-data {}})
 
-    (try
-      (testing "Getting router state"
-        (testing "should handle exceptions gracefully"
-          (let [bad-request {:scheme 1} ;; integer scheme will throw error
-                {:keys [status body]} (test-fn router-id state-chan bad-request)]
-            (is (str/includes? (str body) "Internal error"))
-            (is (= 500 status))))
+    (testing "Getting router state"
+      (testing "should handle exceptions gracefully"
+        (let [bad-request {:scheme 1} ;; integer scheme will throw error
+              {:keys [status body]} (test-fn router-id query-state-fn bad-request)]
+          (is (str/includes? (str body) "Internal error"))
+          (is (= 500 status))))
 
-        (testing "display router state"
-          (let [{:keys [status body]} (test-fn router-id state-chan {})]
-            (is (every? #(str/includes? (str body) %1)
-                        ["fallback" "interstitial" "kv-store" "leader" "local-usage" "maintainer" "router-metrics"
-                         "scheduler" "statsd"])
-                (str "Body did not include necessary JSON keys:\n" body))
-            (is (= 200 status)))))
+      (testing "display router state"
+        (let [{:keys [status body]} (test-fn router-id query-state-fn {})]
+          (is (every? #(str/includes? (str body) %1)
+                      ["autoscaler" "autoscaling-multiplexer"
+                       "codahale-reporters" "fallback" "interstitial" "kv-store" "leader" "local-usage"
+                       "maintainer" "router-metrics" "scheduler" "statsd"])
+              (str "Body did not include necessary JSON keys:\n" body))
+          (is (= 200 status)))))))
 
-      (finally
-        (reset! test-complete true)))))
+(deftest test-get-query-fn-state
+  (let [router-id "test-router-id"
+        test-fn (wrap-handler-json-response get-query-fn-state)]
+    (testing "successful response"
+      (let [state {"autoscaler" "state"}
+            query-state-fn (constantly state)
+            {:keys [body status]} (test-fn router-id query-state-fn {})]
+        (is (= 200 status))
+        (is (= (json/read-str body) {"router-id" router-id, "state" state}))))
+
+    (testing "exception response"
+      (let [query-state-fn (fn [] (throw (Exception. "from test")))
+            {:keys [body status]} (test-fn router-id query-state-fn {})]
+        (is (= 500 status))
+        (is (str/includes? body "Waiter Error 500"))))))
 
 (deftest test-get-kv-store-state
   (let [router-id "test-router-id"
         test-fn (wrap-handler-json-response get-kv-store-state)]
     (testing "successful response"
       (let [kv-store (kv/new-local-kv-store {})
-            state (-> (kv/state kv-store) walk/stringify-keys)
+            state (walk/stringify-keys (kv/state kv-store))
             {:keys [body status]} (test-fn router-id kv-store {})]
         (is (= 200 status))
-        (is (= (-> body json/read-str) {"router-id" router-id, "state" state}))))
+        (is (= (json/read-str body) {"router-id" router-id, "state" state}))))
 
     (testing "exception response"
       (let [kv-store (Object.)
@@ -716,7 +938,7 @@
             last-request-time-agent (agent last-request-time-state)
             {:keys [body status]} (test-fn router-id last-request-time-agent {})]
         (is (= 200 status))
-        (is (= (-> body json/read-str) {"router-id" router-id, "state" last-request-time-state}))))
+        (is (= (json/read-str body) {"router-id" router-id, "state" last-request-time-state}))))
 
     (testing "exception response"
       (let [handler (core/wrap-error-handling #(test-fn router-id nil %))
@@ -733,7 +955,7 @@
             state {"leader?" (leader?-fn), "leader-id" (leader-id-fn)}
             {:keys [body status]} (test-fn router-id leader?-fn leader-id-fn {})]
         (is (= 200 status))
-        (is (= (-> body json/read-str) {"router-id" router-id, "state" state}))))
+        (is (= (json/read-str body) {"router-id" router-id, "state" state}))))
 
     (testing "exception response"
       (let [leader?-fn (fn [] (throw (Exception. "Test Exception")))
@@ -743,14 +965,15 @@
 
 (deftest test-get-chan-latest-state-handler
   (let [router-id "test-router-id"
-        test-fn (wrap-async-handler-json-response get-chan-latest-state-handler)]
+        test-fn (wrap-handler-json-response get-chan-latest-state-handler)]
     (testing "successful response"
-      (let [state-chan (async/promise-chan)
+      (let [state-atom (atom nil)
+            query-state-fn (fn [] @state-atom)
             state {"foo" "bar"}
-            _ (async/>!! state-chan state)
-            {:keys [body status]} (async/<!! (test-fn router-id state-chan {}))]
+            _ (reset! state-atom state)
+            {:keys [body status]} (test-fn router-id query-state-fn {})]
         (is (= 200 status))
-        (is (= (-> body json/read-str) {"router-id" router-id, "state" state}))))))
+        (is (= (json/read-str body) {"router-id" router-id, "state" state}))))))
 
 (deftest test-get-router-metrics-state
   (let [router-id "test-router-id"
@@ -761,7 +984,7 @@
             {:keys [body status]} (test-fn router-id router-metrics-state-fn {})]
         (is (= 200 status))
         (is (= {"router-id" router-id "state" state}
-               (-> body json/read-str)))))
+               (json/read-str body)))))
 
     (testing "exception response"
       (let [router-metrics-state-fn (fn [] (throw (Exception. "Test Exception")))
@@ -780,16 +1003,28 @@
                   (async/>! response-chan state)))
             {:keys [body status]} (async/<!! (test-fn router-id scheduler-chan {}))]
         (is (= 200 status))
-        (is (= (-> body json/read-str) {"router-id" router-id, "state" state}))))))
+        (is (= (json/read-str body) {"router-id" router-id, "state" state}))))))
+
+(deftest test-get-scheduler-state
+  (let [router-id "test-router-id"
+        scheduler (reify scheduler/ServiceScheduler
+                    (state [_]
+                      {:scheduler "state"}))
+        test-fn (wrap-handler-json-response get-scheduler-state)]
+    (testing "successful response"
+      (let [state (walk/stringify-keys (scheduler/state scheduler))
+            {:keys [body status]} (test-fn router-id scheduler {})]
+        (is (= 200 status))
+        (is (= (json/read-str body) {"router-id" router-id, "state" state}))))))
 
 (deftest test-get-statsd-state
   (let [router-id "test-router-id"
         test-fn (wrap-handler-json-response get-statsd-state)]
     (testing "successful response"
-      (let [state (-> (statsd/state) walk/stringify-keys)
+      (let [state (walk/stringify-keys (statsd/state))
             {:keys [body status]} (test-fn router-id {})]
         (is (= 200 status))
-        (is (= (-> body json/read-str) {"router-id" router-id, "state" state}))))))
+        (is (= (json/read-str body) {"router-id" router-id, "state" state}))))))
 
 (deftest test-get-service-state
   (let [router-id "router-id"
@@ -798,6 +1033,7 @@
     (testing "returns 400 for missing service id"
       (is (= 400 (:status (async/<!! (get-service-state router-id nil local-usage-agent "" {} {}))))))
     (let [instance-rpc-chan (async/chan 1)
+          populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
           query-state-chan (async/chan 1)
           query-work-stealing-chan (async/chan 1)
           maintainer-state-chan (async/chan 1)
@@ -825,15 +1061,18 @@
       (start-instance-rpc-fn)
       (start-query-chan-fn)
       (start-maintainer-fn)
-      (let [response (async/<!! (get-service-state router-id instance-rpc-chan local-usage-agent
-                                                   service-id {:maintainer-state maintainer-state-chan} {}))
+      (let [query-sources {:autoscaler-state (fn [{:keys [service-id]}]
+                                               {:service-id service-id :source "autoscaler"})
+                           :maintainer-state maintainer-state-chan}
+            response (async/<!! (get-service-state router-id populate-maintainer-chan! local-usage-agent service-id query-sources {}))
             service-state (json/read-str (:body response) :key-fn keyword)]
         (is (= router-id (get-in service-state [:router-id])))
         (is (= responder-state (get-in service-state [:state :responder-state])))
         (is (= {:last-request-time "foo"}
                (get-in service-state [:state :local-usage])))
         (is (= work-stealing-state (get-in service-state [:state :work-stealing-state])))
-        (is (= (assoc maintainer-state :service-id service-id) (get-in service-state [:state :maintainer-state])))))))
+        (is (= (assoc maintainer-state :service-id service-id) (get-in service-state [:state :maintainer-state])))
+        (is (= {:service-id service-id :source "autoscaler"} (get-in service-state [:state :autoscaler-state])))))))
 
 (deftest test-acknowledge-consent-handler
   (let [current-time-ms (System/currentTimeMillis)
@@ -877,7 +1116,7 @@
       (let [request {:request-method :get}
             {:keys [body headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 405 status))
-        (is (= {"content-type" "text/plain"} headers))
+        (is (= expected-text-response-headers headers))
         (is (str/includes? body "Only POST supported"))))
 
     (testing "host and origin mismatch"
@@ -885,7 +1124,7 @@
                                "origin" (str "http://" test-token)}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 400 status))
-        (is (= {"content-type" "text/plain"} headers))
+        (is (= expected-text-response-headers headers))
         (is (nil? cookie))
         (is (str/includes? body "Origin is not the same as the host"))))
 
@@ -895,7 +1134,7 @@
                                "referer" "http://www.example2.com/consent"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 400 status))
-        (is (= {"content-type" "text/plain"} headers))
+        (is (= expected-text-response-headers headers))
         (is (nil? cookie))
         (is (str/includes? body "Referer does not start with origin"))))
 
@@ -906,7 +1145,7 @@
                                "x-requested-with" "AJAX"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 400 status))
-        (is (= {"content-type" "text/plain"} headers))
+        (is (= expected-text-response-headers headers))
         (is (nil? cookie))
         (is (str/includes? body "Header x-requested-with does not match expected value"))))
 
@@ -918,7 +1157,7 @@
                      :params {"service-id" "service-id-1"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 400 status))
-        (is (= {"content-type" "text/plain"} headers))
+        (is (= expected-text-response-headers headers))
         (is (nil? cookie))
         (is (str/includes? body "Missing or invalid mode"))))
 
@@ -931,7 +1170,7 @@
                      :params {"mode" "unsupported", "service-id" "service-id-1"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 400 status))
-        (is (= {"content-type" "text/plain"} headers))
+        (is (= expected-text-response-headers headers))
         (is (nil? cookie))
         (is (str/includes? body "Missing or invalid mode"))))
 
@@ -944,7 +1183,7 @@
                      :params {"mode" "service"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 400 status))
-        (is (= {"content-type" "text/plain"} headers))
+        (is (= expected-text-response-headers headers))
         (is (nil? cookie))
         (is (str/includes? body "Missing service-id"))))
 
@@ -958,7 +1197,7 @@
                      :params {"mode" "service", "service-id" "service-id-1"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 400 status))
-        (is (= {"content-type" "text/plain"} headers))
+        (is (= expected-text-response-headers headers))
         (is (nil? cookie))
         (is (str/includes? body "Unable to load description for token"))))
 
@@ -971,7 +1210,7 @@
                      :params {"mode" "service", "service-id" "service-id-1"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 400 status))
-        (is (= {"content-type" "text/plain"} headers))
+        (is (= expected-text-response-headers headers))
         (is (nil? cookie))
         (is (str/includes? body "Invalid service-id for specified token"))))
 
@@ -1049,8 +1288,8 @@
                                                               "interstitial-secs" 10)
                                       nil)]
             (cond-> service-description
-                    (seq service-description)
-                    (assoc "source-tokens" [(sd/source-tokens-entry token service-description)]))
+              (seq service-description)
+              (assoc "source-tokens" [(sd/source-tokens-entry token service-description)]))
             service-description))
         service-description->service-id (fn [service-description]
                                           (str "service-" (count service-description) "." (count (str service-description))))
@@ -1090,7 +1329,7 @@
                      :scheme :http}
             {:keys [body headers status]} (request-consent-handler-fn request)]
         (is (= 405 status))
-        (is (= {"content-type" "text/plain"} headers))
+        (is (= expected-text-response-headers headers))
         (is (str/includes? body "Only GET supported"))))
 
     (testing "token without service description"
@@ -1102,7 +1341,7 @@
                      :scheme :http}
             {:keys [body headers status]} (request-consent-handler-fn request)]
         (is (= 404 status))
-        (is (= {"content-type" "text/plain"} headers))
+        (is (= expected-text-response-headers headers))
         (is (str/includes? body "Unable to load description for token"))))
 
     (with-redefs [io/resource io-resource-fn
@@ -1184,14 +1423,16 @@
           (is (= body "template:some-content")))))))
 
 (deftest test-blacklist-instance-cannot-find-channel
-  (let [instance-rpc-chan (async/chan)
+  (let [notify-instance-killed-fn (fn [instance] (throw (ex-info "Unexpected call" {:instance instance})))
+        instance-rpc-chan (async/chan)
+        populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
         test-service-id "test-service-id"
         request {:body (StringBufferInputStream.
-                         (json/write-str
+                         (utils/clj->json
                            {"instance" {"id" "test-instance-id", "service-id" test-service-id}
                             "period-in-ms" 1000
                             "reason" "blacklist"}))}
-        response-chan (blacklist-instance instance-rpc-chan request)]
+        response-chan (blacklist-instance notify-instance-killed-fn populate-maintainer-chan! request)]
     (async/thread
       (let [{:keys [cid method response-chan service-id]} (async/<!! instance-rpc-chan)]
         (is (= :blacklist method))
@@ -1202,10 +1443,44 @@
     (let [{:keys [status]} (async/<!! response-chan)]
       (is (= 400 status)))))
 
+(deftest test-blacklist-killed-instance
+  (let [notify-instance-chan (async/promise-chan)
+        notify-instance-killed-fn (fn [instance] (async/>!! notify-instance-chan instance))
+        instance-rpc-chan (async/chan)
+        populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
+        test-service-id "test-service-id"
+        instance {:id "test-instance-id"
+                  :service-id test-service-id
+                  :started-at nil}
+        request {:body (StringBufferInputStream.
+                         (utils/clj->json
+                           {"instance" instance
+                            "period-in-ms" 1000
+                            "reason" "killed"}))}]
+    (with-redefs []
+      (let [response-chan (blacklist-instance notify-instance-killed-fn populate-maintainer-chan! request)
+            blacklist-chan (async/promise-chan)]
+        (async/thread
+          (let [{:keys [cid method response-chan service-id]} (async/<!! instance-rpc-chan)]
+            (is (= :blacklist method))
+            (is (= test-service-id service-id))
+            (is cid)
+            (is (instance? ManyToManyChannel response-chan))
+            (async/>!! response-chan blacklist-chan)))
+        (async/thread
+          (let [[{:keys [blacklist-period-ms instance-id]} repsonse-chan] (async/<!! blacklist-chan)]
+            (is (= 1000 blacklist-period-ms))
+            (is (= (:id instance) instance-id))
+            (async/>!! repsonse-chan :blacklisted)))
+        (let [{:keys [status]} (async/<!! response-chan)]
+          (is (= 200 status))
+          (is (= instance (async/<!! notify-instance-chan))))))))
+
 (deftest test-get-blacklisted-instances-cannot-find-channel
   (let [instance-rpc-chan (async/chan)
+        populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
         test-service-id "test-service-id"
-        response-chan (get-blacklisted-instances instance-rpc-chan test-service-id {})]
+        response-chan (get-blacklisted-instances populate-maintainer-chan! test-service-id {})]
     (async/thread
       (let [{:keys [cid method response-chan service-id]} (async/<!! instance-rpc-chan)]
         (is (= :query-state method))

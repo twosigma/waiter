@@ -4,8 +4,7 @@
             [clojure.test :refer :all]
             [waiter.scheduler.shell :refer :all]
             [waiter.test-helpers :refer :all])
-  (:import (java.nio.file Files
-                          Paths)
+  (:import (java.nio.file Files Paths)
            java.nio.file.attribute.FileAttribute))
 
 (deftest ^:parallel ^:integration-fast test-kill-process

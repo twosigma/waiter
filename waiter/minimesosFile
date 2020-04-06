@@ -7,7 +7,7 @@ minimesos {
     timeout = 60
 
     agent {
-        imageName = "twosigma/kitchen"
+        imageName = "twosigma/waiter-test-apps"
         imageTag = "latest"
         loggingLevel = "# INHERIT FROM CLUSTER"
         portNumber = 5051
@@ -36,7 +36,7 @@ minimesos {
     }
 
     agent {
-        imageName = "twosigma/kitchen"
+        imageName = "twosigma/waiter-test-apps"
         imageTag = "latest"
         loggingLevel = "# INHERIT FROM CLUSTER"
         portNumber = 5051
@@ -65,7 +65,7 @@ minimesos {
     }
 
     agent {
-        imageName = "twosigma/kitchen"
+        imageName = "twosigma/waiter-test-apps"
         imageTag = "latest"
         loggingLevel = "# INHERIT FROM CLUSTER"
         portNumber = 5051
@@ -94,7 +94,7 @@ minimesos {
     }
 
     agent {
-        imageName = "twosigma/kitchen"
+        imageName = "twosigma/waiter-test-apps"
         imageTag = "latest"
         loggingLevel = "# INHERIT FROM CLUSTER"
         portNumber = 5051
@@ -125,8 +125,8 @@ minimesos {
     master {
         aclJson = null
         authenticate = false
-        imageName = "containersol/mesos-master"
-        imageTag = "1.0.0-0.1.0"
+        imageName = "twosigma/mesos-master"
+        imageTag = "1.0.0-1.0.1604"
         loggingLevel = "# INHERIT FROM CLUSTER"
     }
 

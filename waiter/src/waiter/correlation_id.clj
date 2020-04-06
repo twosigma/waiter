@@ -16,7 +16,8 @@
 (ns waiter.correlation-id
   (:require [clojure.tools.logging :as log]
             [clojure.string :as str])
-  (:import (java.util Collections)
+  (:import (clojure.lang Var)
+           (java.util Collections)
            (org.apache.log4j Appender EnhancedPatternLayout Logger PatternLayout)))
 
 ; Use lower-case to preserve consistency with Ring's representation of headers
@@ -41,16 +42,31 @@
 (def default-correlation-id "UNKNOWN")
 (def ^:dynamic dynamic-correlation-id default-correlation-id)
 
-(defmacro with-correlation-id
-  "Executes the body with the specified value of correlation-id."
-  [correlation-id & body]
-  `(binding [dynamic-correlation-id ~correlation-id]
-     ~@body))
-
 (defn get-correlation-id
   "Retrieve the value of the current correlation-id."
   []
   dynamic-correlation-id)
+
+(defmacro with-correlation-id
+  "Executes the body with the specified value of correlation-id."
+  [correlation-id & body]
+  `(let [correlation-id# ~correlation-id]
+     (binding [dynamic-correlation-id correlation-id#]
+       (let [start-thread# (Thread/currentThread)
+             start-frame# (Var/getThreadBindingFrame)
+             result# (do ~@body)
+             end-thread# (Thread/currentThread)
+             end-frame# (Var/getThreadBindingFrame)]
+         (when-not (identical? start-frame# end-frame#)
+           (log/warn "with-correlation-id binding executed in different contexts, correcting frame"
+                     {:end {:correlation-id (get-correlation-id)
+                            :thread-id (.getId end-thread#)
+                            :thread-name (.getName end-thread#)}
+                      :start {:correlation-id correlation-id#
+                              :thread-id (.getId start-thread#)
+                              :thread-name (.getName start-thread#)}})
+           (Var/resetThreadBindingFrame start-frame#))
+         result#))))
 
 
 (defmacro correlation-id->str

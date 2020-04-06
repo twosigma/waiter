@@ -18,21 +18,23 @@
             [clojure.string :as str]
             [clojure.test :refer :all]
             [waiter.auth.authentication :refer :all]
-            [waiter.cookie-support :as cs]))
+            [waiter.cookie-support :as cs])
+  (:import (waiter.auth.authentication SingleUserAuthenticator)))
 
 (deftest test-one-user-authenticator
   (let [username (System/getProperty "user.name")
-        authenticator (one-user-authenticator {:run-as-user username})]
-    (is (= :one-user (auth-type authenticator)))
+        authenticator (one-user-authenticator {:password [:cached "some-password"]
+                                               :run-as-user username})]
+    (is (instance? SingleUserAuthenticator authenticator))
     (let [request-handler (wrap-auth-handler authenticator identity)
           request {}
           expected-request (assoc request
+                             :authorization/method :single-user
                              :authorization/principal username
                              :authorization/user username)
           actual-result (request-handler request)]
       (is (= expected-request (dissoc actual-result :headers)))
-      (is (str/includes? (get-in actual-result [:headers "set-cookie"]) "x-waiter-auth="))
-      (is (nil? (check-user authenticator "user" "service-id"))))))
+      (is (str/includes? (get-in actual-result [:headers "set-cookie"]) "x-waiter-auth=")))))
 
 (deftest test-get-auth-cookie-value
   (is (= "abc123" (get-auth-cookie-value "x-waiter-auth=abc123")))
@@ -58,3 +60,26 @@
     (is (false? (decoded-auth-valid? [(rand-int 10000) "invalid-string-time"])))
     (is (false? (decoded-auth-valid? ["test-principal"])))
     (is (false? (decoded-auth-valid? [])))))
+
+(deftest test-auth-cookie-handler
+  (let [request-handler (fn [{:keys [authorization/principal authorization/user]}]
+                          {:body {:principal principal
+                                  :user user}})
+        password "test-password"
+        auth-user "test-user"
+        auth-principal (str auth-user "@test.com")]
+
+    (testing "valid auth cookie"
+      (with-redefs [decode-auth-cookie (constantly [auth-principal (+ (System/currentTimeMillis) 60000)])]
+        (let [auth-cookie-handler (wrap-auth-cookie-handler password request-handler)]
+          (is (= {:authorization/method :cookie
+                  :authorization/principal auth-principal
+                  :authorization/user auth-user
+                  :body {:principal auth-principal :user auth-user}}
+                 (auth-cookie-handler {:headers {"cookie" "x-waiter-auth=test-auth-cookie"}}))))))
+
+    (testing "invalid auth cookie"
+      (let [auth-cookie-handler (wrap-auth-cookie-handler password request-handler)]
+        (is (= {:body {:principal nil :user nil}} (auth-cookie-handler {:headers {}})))
+        (is (= {:body {:principal nil :user nil}} (auth-cookie-handler {:headers {"cookie" "foo=bar"}})))
+        (is (= {:body {:principal nil :user nil}} (auth-cookie-handler {:headers {"cookie" "x-waiter-auth=foo"}})))))))

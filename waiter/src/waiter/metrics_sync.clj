@@ -274,9 +274,9 @@
                     timeouts 0
                     timeout-chan nil]
       (let [channels (cond-> [exit-chan]
-                             (nil? timeout-chan) (conj router-state-chan)
-                             timeout-chan (conj timeout-chan)
-                             true (conj query-chan))
+                       (nil? timeout-chan) (conj router-state-chan)
+                       timeout-chan (conj timeout-chan)
+                       true (conj query-chan))
             [data channel] (async/alts! channels :priority true)]
         (condp = channel
           exit-chan
@@ -312,35 +312,42 @@
   [router-metrics-agent local-usage-agent metrics-sync-interval-ms encrypt]
   (let [exit-chan (async/chan 1)
         query-chan (async/chan 1)]
-    (async/go-loop [iteration 0
-                    timeout-chan (async/timeout metrics-sync-interval-ms)]
-      (let [[data channel] (async/alts! [exit-chan timeout-chan query-chan] :priority true)]
-        (condp = channel
-          exit-chan
-          (when (not= :exit data)
-            (recur (inc iteration) timeout-chan))
+    (cid/with-correlation-id
+      "setup-metrics-syncer"
+      (async/go-loop [iteration 0
+                      timeout-chan (async/timeout metrics-sync-interval-ms)]
+        (let [[data channel] (async/alts! [exit-chan timeout-chan query-chan] :priority true)]
+          (condp = channel
+            exit-chan
+            (when (not= :exit data)
+              (recur (inc iteration) timeout-chan))
 
-          timeout-chan
-          (do
-            (cid/with-correlation-id
-              (str "setup-metrics-syncer-" iteration)
+            timeout-chan
+            (do
               (try
-                (let [service-id->codahale-metrics (utils/filterm (fn [[_ metrics]] (some pos? (vals metrics)))
-                                                                  (metrics/get-core-codahale-metrics))
-                      service-id->usage-metrics @local-usage-agent
-                      service-id->metrics (pc/map-from-keys (fn service-id->metrics-fn [service-id]
-                                                              (merge (service-id->codahale-metrics service-id)
-                                                                     (service-id->usage-metrics service-id)))
-                                                            (keys service-id->codahale-metrics))]
+                (let [service-id->usage-metrics @local-usage-agent
+                      service-id->metrics (timers/start-stop-time!
+                                            (metrics/waiter-timer "metrics-syncer" "metrics" "computation")
+                                            (let [service-id->codahale-metrics
+                                                  (utils/filterm (fn [[_ metrics]] (some pos? (vals metrics)))
+                                                                 (metrics/get-core-codahale-metrics))]
+                                              (pc/map-from-keys
+                                                (fn service-id->metrics-fn [service-id]
+                                                  (merge (service-id->codahale-metrics service-id)
+                                                         (service-id->usage-metrics service-id)))
+                                                (keys service-id->codahale-metrics))))]
+                  (metrics/reset-counter
+                    (metrics/waiter-counter "metrics-syncer" "metrics" "services")
+                    (count service-id->metrics))
                   (send router-metrics-agent publish-router-metrics encrypt service-id->metrics "core"))
                 (catch Exception e
-                  (log/error e "error in making broadcast router metrics request" {:iteration iteration}))))
-            (recur (inc iteration) (async/timeout metrics-sync-interval-ms)))
+                  (log/error e "error in making broadcast router metrics request" {:iteration iteration})))
+              (recur (inc iteration) (async/timeout metrics-sync-interval-ms)))
 
-          query-chan
-          (let [{:keys [response-chan]} data]
-            (async/>! response-chan {:iteration iteration})
-            (recur iteration timeout-chan)))))
+            query-chan
+            (let [{:keys [response-chan]} data]
+              (async/>! response-chan {:iteration iteration})
+              (recur iteration timeout-chan))))))
     {:exit-chan exit-chan
      :query-chan query-chan}))
 

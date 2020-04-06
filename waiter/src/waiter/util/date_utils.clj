@@ -14,9 +14,9 @@
 ;; limitations under the License.
 ;;
 (ns waiter.util.date-utils
-  (:require [chime :as chime]
-            [clj-time.core :as t]
+  (:require [clj-time.core :as t]
             [clj-time.format :as f]
+            [clojure.core.async :as async]
             [clojure.tools.logging :as log])
   (:import (org.joda.time DateTime ReadablePeriod)))
 
@@ -44,6 +44,13 @@
        (log/error "unable to parse" date-str "with formatter" formatter)
        (throw ex)))))
 
+(defn str-to-date-safe
+  "nil-safe str-to-date call"
+  (^DateTime [date-str]
+   (str-to-date-safe date-str formatter-iso8601))
+  (^DateTime [date-str formatter]
+    (when date-str (str-to-date date-str formatter))))
+
 (defn time-seq
   "Returns a sequence of date-time values growing over specific period.
   Takes as input the starting value and the growing value, returning a
@@ -52,13 +59,26 @@
   (iterate (fn [^DateTime t] (.plus t period)) start))
 
 (defn start-timer-task
-  "Executes the callback functions sequentially as specified intervals. Returns
-  a function that will cancel the timer when called."
+  "Executes the callback function sequentially at specified intervals on an core.async thread.
+   Returns a function that will cancel the timer when called."
   [interval-period callback-fn & {:keys [delay-ms] :or {delay-ms 0}}]
-  (chime/chime-at
-    (time-seq (t/plus (t/now) (t/millis delay-ms)) interval-period)
-    (fn [_] (callback-fn))
-    {:error-handler (fn [ex] (log/error ex (str "Exception in timer task.")))}))
+  (let [error-handler (fn start-timer-task-error-handler [ex]
+                        (log/error ex (str "Exception in timer task.")))
+        interval-ms (t/in-millis interval-period)
+        cancel-promise (promise)]
+    (async/go
+      (when (pos? delay-ms)
+        (async/<! (async/timeout delay-ms)))
+      (loop []
+        (when-not (realized? cancel-promise)
+          (try
+            (callback-fn)
+            (catch Throwable th
+              (error-handler th)))
+          (async/<! (async/timeout interval-ms))
+          (recur))))
+    (fn cancel-timer-task []
+      (deliver cancel-promise ::cancel))))
 
 (defn older-than? [current-time duration {:keys [started-at]}]
   (if (and duration started-at)
@@ -71,3 +91,13 @@
   ;; clj-time.core doesn't have a in-nanos function.
   ;; We shouldn't need to worry about overflows here if our intervals are < 200 years.
   (-> interval t/in-millis (* 1e6)))
+
+(defn max-time
+  "Returns the max time of the two input time instances."
+  [t1 t2]
+  (cond
+    (nil? t1) t2
+    (nil? t2) t1
+    :else (if (t/after? t1 t2)
+            t1
+            t2)))

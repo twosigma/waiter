@@ -1,13 +1,17 @@
-dist: trusty
-group: deprecated-2017Q4
+dist: xenial
 language: java
-jdk: oraclejdk8
+jdk: openjdk8
 
 addons:
+  apt:
+    packages:
+    - nginx
   artifacts: true
 
 branches:
-  only: master
+  only:
+    - master
+    - /^build\/.*$/
 
 cache:
   directories:
@@ -24,34 +28,31 @@ install:
 
 matrix:
   include:
-    - env: NAME='Kitchen tests'
-      before_script: cd kitchen && ./bin/ci/setup.sh
+    - name: 'Kitchen tests'
+      language: python
+      python: "3.6"
+      before_script: cd containers/test-apps && ./bin/ci/setup.sh
       script: ./bin/ci/run.sh
 
-    - env: NAME='Token syncer tests'
+    - name: 'Token syncer tests'
       before_script: cd token-syncer
       script: ./bin/ci/run-all-tests.sh
 
-    - env: NAME='Waiter unit tests'
+    - name: 'Waiter unit tests'
       before_script: cd waiter
       script: ./bin/ci/run-unit-tests.sh
 
-    - env: "NAME='Waiter integration tests: marathon-fast'"
+    - name: 'Waiter integration tests: composite-fast'
       services: docker
       before_script: cd waiter
-      script: ./bin/ci/run-integration-tests.sh parallel-test integration-fast
+      script: ./bin/ci/run-integration-tests.sh composite eftest integration-fast
 
-    - env: "NAME='Waiter integration tests: marathon-slow'"
+    - name: 'Waiter integration tests: composite-slow'
       services: docker
       before_script: cd waiter
-      script: ./bin/ci/run-integration-tests.sh parallel-test integration-slow
+      script: ./bin/ci/run-integration-tests.sh composite eftest integration-slow
 
-    - env: "NAME='Waiter integration tests: shell-fast'"
+    - name: 'Waiter CLI integration tests'
       services: docker
-      before_script: cd waiter
-      script: ./bin/ci/run-integration-tests-shell-scheduler.sh parallel-test integration-fast
-
-    - env: "NAME='Waiter integration tests: shell-slow'"
-      services: docker
-      before_script: cd waiter
-      script: ./bin/ci/run-integration-tests-shell-scheduler.sh parallel-test integration-slow
+      before_script: cd cli && ./bin/ci/setup.sh
+      script: ./bin/ci/run-integration-tests.sh

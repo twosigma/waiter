@@ -1,0 +1,4 @@
+/latest
+/r[0-9]
+/.r[0-9].index.json
+/.waiter-container-runs

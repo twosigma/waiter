@@ -1,0 +1,151 @@
+#!/bin/bash
+
+: ${TARGET:=./bin/waiter-k8s-init}
+failures=0
+
+start_test() {
+    test_desc="$1"
+    cmd="$(cat)"
+    printf '\nTest %s' "$test_desc"
+    "$TARGET" "$cmd" &>/dev/null &
+    test_pid=$!
+    sleep 0.1
+    working_dir=r$(( $(cat .waiter-container-runs) - 1 ))
+}
+
+start_guarded_test() {
+    test_desc="$1"
+    shift
+    if test "$@"; then
+        start_test "$test_desc"
+        test_started=true
+    else
+        printf '\nSkipping Test %s' "$test_desc"
+        test_started=false
+    fi
+}
+
+send_sigterm() {
+    sleep 0.1
+    kill $test_pid
+}
+
+start_timing() {
+    started_at=$(date +%s)
+}
+
+end_timing() {
+    ended_at=$(date +%s)
+    elapsed_seconds=$(( $ended_at - $started_at ))
+}
+
+dump_stdout() {
+    cat ./$working_dir/stdout
+}
+
+failure() {
+    printf "\nFailed assertion: %s\n" "$1"
+    exit 1
+}
+
+assert() {
+    test "$@" || failure "$*"
+    echo -n .
+}
+
+assert_still_running() {
+    kill -0 $test_pid &>/dev/null
+    assert "RUNNING=$?" == "RUNNING=0"
+}
+
+await_exit_and_assert_code() {
+    wait $test_pid
+    assert "EXIT=$?" == "EXIT=$1"
+}
+
+# Clean up any old copy of the restart state file
+rm -f .waiter-container-runs
+
+# Set up the expected container $HOME value
+export HOME=$PWD/latest
+
+#
+# Ensure the script exits cleanly on normal exit.
+# The script should not block awaiting a sigterm
+# if the user's process exited normally.
+# The script should also propagate the user process's
+# exit code as the script exit code in this case.
+#
+start_test 'normal exit' <<EOF
+sh -c 'echo OK && exit 123'
+EOF
+await_exit_and_assert_code 123
+assert "$(dump_stdout)" == OK
+
+#
+# Ensure sigterm is propagated to child process.
+# The script should return 128+15=143,
+# which indicates the script exited due to a sigterm.
+#
+start_test 'immediate graceful termination' <<EOF
+sh -c 'trap "echo Terminated; exit 1" TERM; sleep 10'
+EOF
+send_sigterm
+send_sigterm
+await_exit_and_assert_code 143
+assert "$(dump_stdout)" == Terminated
+
+#
+# Ensure script waits for the user's process
+# to terminate gracefully before exiting.
+#
+start_test 'slow graceful termination' <<EOF
+sh -c 'trap "echo -n Delay; sleep 2; echo X; exit 1" TERM; sleep 10'
+EOF
+start_timing
+send_sigterm
+send_sigterm
+assert_still_running
+assert "$(dump_stdout)" == Delay
+await_exit_and_assert_code 143
+end_timing
+assert "$(dump_stdout)" == DelayX
+assert $elapsed_seconds -ge 2
+assert $elapsed_seconds -le 3
+
+#
+# Ensure script waits for both sigterm signals.
+# If the user's process terminates gracefully
+# before the second sigterm arrives,
+# the script needs to continue waiting,
+# but the script should then immediately terminate
+# after receiving the second sigterm.
+#
+start_test 'waits for second sigterm' <<EOF
+sh -c 'trap "echo Terminated; exit 1" TERM; sleep 10'
+EOF
+send_sigterm
+sleep 1
+assert "$(dump_stdout)" == Terminated
+assert_still_running
+start_timing
+send_sigterm
+await_exit_and_assert_code 143
+end_timing
+assert $elapsed_seconds -le 1
+
+#
+# Ensure that a fresh working directory is created for each run,
+# and that it is exported as $HOME to the user's process.
+#
+old_working_dir=$working_dir
+fresh_file_name=$(date +%N).txt
+start_test 'fresh $HOME for each container restart' <<EOF
+echo hello > \$HOME/$fresh_file_name
+EOF
+await_exit_and_assert_code 0
+assert $working_dir != $old_working_dir
+assert -f $working_dir/$fresh_file_name
+assert $(cat $working_dir/$fresh_file_name) == hello
+
+printf '\n\nAll tests passed\n'

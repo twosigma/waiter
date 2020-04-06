@@ -1,6 +1,10 @@
 {
  ; ---------- Cluster ----------
 
+ :cluster-config {:name #config/env "WAITER_CLUSTER_NAME"}
+
+ :waiter-principal "waiter@example.com"
+
  :zookeeper {
              ;; Use an in-process ZK (not for production use):
              :connect-string :in-process}
@@ -15,7 +19,8 @@
 
  ; ---------- Security ----------
 
- :authenticator-config {:kind :one-user
+ :authenticator-config {:jwt :disabled
+                        :kind :one-user
                         :one-user {;; The user account used to launch services:
                                    :run-as-user #config/env "WAITER_AUTH_RUN_AS_USER"}}
 
@@ -28,5 +33,5 @@
  ; ---------- CORS ----------
  :cors-config {:kind :allow-all}
 
-;; Require fewer failed health checks
-:health-check-config {:failed-check-threshold 2}}
+ ;; Require fewer failed health checks
+ :health-check-config {:failed-check-threshold 2}}

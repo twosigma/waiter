@@ -60,6 +60,10 @@
                   ;; It's best to keep this unique across clusters:
                   :service-prefix "waiter-c1-"}
 
+ ;; The principal to use for requests, e.g. async request status checks, originating in Waiter.
+ ;; It is expected to be of the format name@domain.
+ :waiter-principal "waiter@example.com"
+
  :zookeeper {
              ;; The root path to which Waiter will write data:
              :base-path "/waiter"
@@ -121,6 +125,52 @@
  :hostname ["waiter.example.com"
             "waiter-alternate.example.com"]
 
+ ;; The configuration for the Waiter server that will be launched.
+ ;; Unless specified otherwise, all the entries below are optional:
+ :server-options {;; The timeout in ms for blocking I/O operations, default 15 minutes (in millis)
+                  :blocking-timeout 900000
+
+                  ;; Whether or not to  enable secure HTTP2 transport, default false
+                  :http2? false
+
+                  ;; Whether or not to  enable HTTP2 cleartext transport, default true
+                  :http2c? true
+
+                  ;; When SSL is enabled, the keystore to use for SSL connections
+                  :keystore "/path/to/keystore.p12"
+                  ;; When SSL is enabled, the format of keystore
+                  :keystore-type "pkcs12"
+                  ;; When SSL is enabled, the password to the keystore
+                  :key-password "keystore-password"
+
+                  ;; The maximum number of threads to use (default 200)
+                  :max-threads 200
+
+                  ;; The maximum size in bytes of the request header.
+                  ;; Larger headers will allow for more and/or larger cookies plus larger form content encoded in a URL.
+                  ;; However, larger headers consume more memory and can make a server more vulnerable to denial of service attacks.
+                  :request-header-size 32768
+
+                  ;; The maximum size in bytes of the response header.
+                  ;; Larger headers will allow for more and/or larger cookies and longer HTTP headers (eg for redirection).
+                  ;; However, larger headers will also consume more memory.
+                  :response-header-size 8192
+
+                  ;; Whether to send the Date header in responses
+                  :send-date-header? false
+
+                  ;; The SSL port to listen on.
+                  ;; To disable SSL support, do not include this entry in the config.
+                  ;; Specifying a value for this port (which must be different from port above) enables SSL support.
+                  :ssl-port 9443
+
+                  ;; When SSL is enabled, the truststore to use for SSL connections
+                  :truststore "/path/to/truststore.p12"
+                  ;; When SSL is enabled, the format of trust store
+                  :truststore-type "pkcs12"
+                  ;; When SSL is enabled, the password to the truststore
+                  :trust-password "truststore-password"}
+
  ; ---------- Token Storage ----------
 
  :kv-config {
@@ -157,8 +207,57 @@
  ;; Waiter supports authenticating requests to identify the principal of the requesting user.
  ;; The principal is then used to validate access to services and also to launch services.
  :authenticator-config {
-                        ;; :kind :one-user allows anonymous access to services (for testing purposes only):
+                        ;; set :kind to one of the configured authenticators
                         :kind :one-user
+
+                        ;; :kind :composite enables using the "authentication" service parameter to
+                        ;; specify an authentication scheme. If the authentication scheme is not known or not specified
+                        ;; then the :default-scheme is used
+                        ;:kind :composite
+                        :composite {:factory-fn waiter.auth.composite/composite-authenticator
+                                    :authentication-providers {"kerberos" {;; see the :kerberos entry for configuration options
+                                                                           :todo :config}
+                                                               "saml" {;; see the :saml entry for configuration options
+                                                                       :todo :config}}
+                                    ;; The authentication scheme to use if one is not specified
+                                    :default-authentication-provider "kerberos"}
+
+                        ;; Waiter supports JWT access token-based authentication before trying the configured authenticator.
+                        ;; JWT authentication can be disabled by specifying a value of :disabled instead of configuring the map below:
+                        ;; :jwt :disabled
+                        :jwt {;; Whether JWT authentication is allowed for Waiter API requests.
+                              ;; When not configured, the value is assumed to be true.
+                              :allow-bearer-auth-api? true
+                              ;; Whether JWT authentication is the allowed for service (proxy) requests.
+                              ;; The value of USE_BEARER_AUTH environment variable of the service overrides this value.
+                              ;; When not configured, the value is assumed to be false.
+                              :allow-bearer-auth-services? false
+                              ;; JWT relies on periodically refreshing the list of available keys from a JWKS
+                              :http-options {;; The HTTP options that will be used when accessing the authorization server:
+                                             :conn-timeout 10000
+                                             :socket-timeout 10000
+                                             :spnego-auth false}
+                              ;; The issuer constraint expected on the iss field of access token claims.
+                              ;; The field can be a string, a regex pattern or a vector consisting of any mix of string or patterns.
+                              ;; The constraints in a vector are disjunctive, any matching constraint will validate a JWT iss claim.
+                              :issuer ["test.com" #config/regex "https://test.com/.*"]
+                              ;; url of the authorization server where the public keys (JWKS) are available:
+                              :jwks-url "http://127.0.0.1:8040/jwks"
+                              ;; The maximum duration from current time allowed for expiry time on the JWT claim.
+                              ;; The value defaults to 24 hours, i.e. 3600000
+                              :max-expiry-duration-ms 86400000
+                              ;; The keyword used to retrieve the subject from the access token claims
+                              :subject-key :sub
+                              ;; The regex used to validate the subject from the claims
+                              :subject-regex #config/regex "([a-zA-Z0-9]+)@([a-zA-Z0-9]+(-[a-zA-Z0-9]+)*\\.)+([a-zA-Z]{2,})$"
+                              ;; The supported algorithms while validating access tokens, must be subset of #{:eddsa :rs256}
+                              :supported-algorithms #{:eddsa}
+                              ;; The token type expected in the access token header
+                              :token-type "JWT"
+                              ;; The interval at which to refresh the keys from the authorization server:
+                              :update-interval-ms 60000}
+
+                        ;; :kind :one-user allows anonymous access to services (for testing purposes only):
                         :one-user {;; Custom implementations should specify a :factory-fn
                                    ;; that returns an instance of waiter.auth.authentication.Authenticator:
                                    :factory-fn waiter.auth.authentication/one-user-authenticator
@@ -168,12 +267,24 @@
                         ;; :kind :kerberos enables authentication using the Kerberos protocol
                         ;:kind :kerberos
                         :kerberos {:factory-fn waiter.auth.kerberos/kerberos-authenticator
-                                   ;; the minimum interval after which prestash kerberos tickets needs to refreshed
-                                   :prestash-cache-min-refresh-ms 100
-                                   ;; the maximum interval after which prestash kerberos tickets are forcibly refreshed
-                                   :prestash-cache-refresh-ms 1000
-                                   ;; The prestash query host
-                                   :prestash-query-host "www.example.com"}}
+                                   ;; the maximum number of concurrent Kerberos library (GSSLibStub) invocations allowed
+                                   :concurrency-level 20
+                                   ;; the idle time before cached threads from the invocation throttler are terminated
+                                   :keep-alive-mins 5
+                                   ;; the maximum number of request waiting for Kerberos auth before server responds
+                                   ;; with a 503 temporarily unavailable
+                                   :max-queue-length 1000}
+
+                        ;; :kind :saml enables authentication using SAML SP-initiated SSO flow
+                        ;; https://docs.pingidentity.com/bundle/pf_sm_supportedStandards_pf83/page/task/spInitiatedSsoRedirectPost.html
+                        ;:kind :saml
+                        :saml {:factory-fn waiter.auth.saml/saml-authenticator
+                               ;; resource path of the signing certificate used by the Identity Provider
+                               :idp-cert-resource-path "idp.crt"
+                               ;; URI of the signing certificate used by the Identity Provider. Used if resource path is not set
+                               :idp-cert-uri "file:///path/idp.crt"
+                               ;; URI of the Identity Provider
+                               :idp-uri "https://idp-host/idp-endpoint"}}
 
  ;; Waiter supports the run-as-requester feature to launch a service as the requesting user.
  ;; Triggering this feature without passing explicit headers requires providing an explicit consent and storing this in a cookie.
@@ -201,8 +312,16 @@
                ;; :kind :allow-all allows all cross-origin requests
                :allow-all {:factory-fn waiter.cors/allow-all-validator}
 
-               ;; The value to use for the Access-Control-Max-Age header:
-               :max-age 3600}
+               ;; Headers exposed to CORS clients for Waiter API requests
+               ;; read more at https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Access-Control-Expose-Headers
+               :exposed-headers ["etag"]
+
+               ;; The value to use for the access-control-max-age header:
+               :max-age 3600
+
+               ;; :kind :token-parameter uses allowed list that's set on the token
+               :token-parameter {:factory-fn waiter.cors/token-parameter-based-validator
+                                 :supports-token-parameter? true}}
 
  :entitlement-config {
                       ;; :kind :simple requires that the requesting user be the same as the run-as-user:
@@ -228,10 +347,220 @@
  :scheduler-config {
                     ;; :kind :marathon uses Marathon (https://mesosphere.github.io/marathon/) for scheduling instances:
                     :kind :marathon
+
+                    ;; :kind :composite uses a composite scheduler that in this example has two component
+                    ;; schedulers: kubernetes and marathon. The composite scheduler delegates to one of these
+                    ;; schedulers based on the "scheduler" service parameters.
+                    ;:kind :composite
+                    :composite {
+                                ;; Custom implementations should specify a :factory-fn
+                                ;; that returns an instance of waiter.scheduler.ServiceScheduler:
+                                :factory-fn waiter.scheduler.composite/create-composite-scheduler
+
+                                ;; The components schedulers to which the scheduler operations will be delegated.
+                                ;; The scheduler parameter in the service description must match the scheduler keys
+                                ;; for one of the component schedulers, e.g. "marathon" or "kubernetes".
+                                :components {:marathon {;; a factory function must be provided
+                                                        ;; see the :marathon entry for other configuration options
+                                                        :factory-fn waiter.scheduler.marathon/marathon-scheduler
+                                                        :todo :additional-config}
+                                             :kubernetes {;; a factory function must be provided
+                                                          ;; see the :kubernetes entry for other configuration options
+                                                          :factory-fn waiter.scheduler.kubernetes/kubernetes-scheduler
+                                                          :todo :additional-config}}
+
+                                ;; The scheduler to use by default if the service does not specify one explicitly.
+                                ;; This is an optional config and can be nil. When provided it must match one of
+                                ;; the component schedulers that have been configured.
+                                :default-scheduler :marathon}
+
+                    ;; :kind :cook uses Cook (https://github.com/twosigma/Cook) for scheduling instances:
+                    ;; support for the cook scheduler is experimental and the config is subject to changes.
+                    ;:kind :cook
+                    :cook {
+                           ;; Custom implementations should specify a :factory-fn
+                           ;; that returns an instance of waiter.scheduler.ServiceScheduler:
+                           :factory-fn waiter.scheduler.cook/cook-scheduler
+
+                           ;; The authorizer is used by the scheduler to verify that a user has the proper permissions
+                           ;; to create services on the underlying scheduler platform.
+                           ;; We specify the default no-op authorizer here.
+                           ;; See the :marathon :authorizer settings for a full example.
+                           :authorizer {:kind :default
+                                        :default {:factory-fn waiter.authorization/noop-authorizer}}
+
+                           ;; The interval (milliseconds) at which instance failed jobs will be checked:
+                           :failed-tracker-interval-ms 10000
+
+                           ;; The users who are allowed to launch services via the Cook Scheduler.
+                           :allowed-users #{"cook-user"}
+
+                           ;; The hardcoded port, when configured, to use as PORT0 for service instances
+                           :backend-port nil
+
+                           ;; The location of home directories on your Mesos agents;
+                           ;; the HOME environment variable is set by joining this and the run-as-user:
+                           :home-path-prefix "/home/"
+
+                           ;; The HTTP options that will be used when accessing Cook:
+                           :http-options {:conn-timeout 10000
+                                          :socket-timeout 10000}
+
+                           ;; The range of priorities used while launching instances
+                           ;; Instances are launched with the first available priority from max, max - delta, ..., min
+                           :instance-priorities {:delta 5
+                                                 :max 75
+                                                 :min 25}
+
+                           ;; Controls whether Cook impersonation should be enabled:
+                           :impersonate true
+
+                           ;; The port on which the mesos agents are listening.
+                           ;; This is an optional parameter.
+                           ;; When absent log directory and log url support will be disabled.
+                           :mesos-slave-port 5051
+
+                           ;; The time range to use while querying for running and waiting Cook jobs
+                           :search-interval-days 10
+
+                           ;; The URL for your Cook HTTP API:
+                           :url "http://cook.example.com:12321"}
+
+                    ;; :kind :kubernetes uses Kubernetes (https://kubernetes.io/) for scheduling Waiter services and instances:
+                    ;:kind :kubernetes
+                    :kubernetes {
+                                 ;; Custom implementations should specify a :factory-fn
+                                 ;; that returns an instance of waiter.scheduler.ServiceScheduler:
+                                 :factory-fn waiter.scheduler.kubernetes/kubernetes-scheduler
+
+                                 ;; Configuration for obtaining the credentials to authenticate with the Kubernetes API server.
+                                 ;; If authentication isn't required (e.g., using kubectl proxy), then this can be omitted.
+                                 :authentication {;; Unary function which can be called periodically (or just once if :refresh-delay-mins is omitted)
+                                                  ;; to obtain an Authorization string for use when authenticating with the Kubernetes API server.
+                                                  ;; This map is passed to the function as its single `context` argument.
+                                                  ;; The function must return a string that can be used as the value for the Authorization HTTP header.
+                                                  ;; The sample function given below simply returns the string from the WAITER_K8S_AUTH_STRING environment variable.
+                                                  :action-fn waiter.scheduler.kubernetes/authorization-from-environment
+
+                                                  ;; Number of minutes to wait between attempts to refresh the credentials.
+                                                  ;; If omitted, then the :action-fn value is only called once at Waiter startup.
+                                                  :refresh-delay-mins 15}
+
+                                 :replicaset-spec-builder {;; Factory function which creates a Kubernetes ReplicaSet spec
+                                                           ;; (with an embedded Pod spec) for the given Waiter Service.
+                                                           ;; The referenced factory function takes the current Kubernetes scheduler,
+                                                           ;; the Waiter service-id, the Waiter service description, and this context map as arguments.
+                                                           ;; Since this map is passed as the context argument to the factory function,
+                                                           ;; any additional configuration data needed for the implementation should be included here.
+                                                           :factory-fn waiter.scheduler.kubernetes/default-replicaset-builder
+                                                           ;; Vector of commands with which to prefix the user's cmd string when launching the container.
+                                                           ;; E.g., it may be necessary to delegate launching the user's command to a waiter-init script,
+                                                           ;; which is in turn launched by dumb-init for zombie process handling.
+                                                           :container-init-commands ["waiter-k8s-init"]
+                                                           ;; The default factory function accepts an option for the docker container to use in the pod.
+                                                           :default-container-image "twosigma/waiter-test-apps:latest"
+                                                           ;; The default namespace to use for Kubernetes objects created by Waiter
+                                                           :default-namespace "waiter"
+                                                           ;; Map of image aliases. One of these aliases can be specified in the `image` field and the
+                                                           ;; resolved image will be used.
+                                                           :image-aliases {"alias/sample-alias" "real/image"}}
+
+                                 ;; The authorizer is used by the scheduler to verify that a user has the proper permissions
+                                 ;; to create services on the underlying scheduler platform.
+                                 ;; We specify the default no-op authorizer here.
+                                 ;; See the :marathon :authorizer settings for a full example.
+                                 :authorizer {:kind :default
+                                              :default {:factory-fn waiter.authorization/noop-authorizer}}
+
+                                 ;; The :log-bucket-url setting is optional, but if it's non-nil, it should be the URL (string) of an S3 bucket
+                                 ;; where log files should be copied when a waiter service pod is terminated.
+                                 ;; When a :log-bucket-url is given, the pod waits up to an additional :log-bucket-sync-secs before terminating
+                                 ;; (starting after :pod-sigkill-delay-secs or the user process's graceful exit).
+                                 ;; The log-bucket-sync-secs option should be set between 0 and 300 seconds, inclusive (default is 180).
+                                 :log-bucket-sync-secs 180
+                                 :log-bucket-url "http://s3.example.com/waiter-service-logs"
+
+                                 ;; String value used to annotate Kubernetes objects that are orchestrated by this Waiter instantiation:
+                                 :cluster-name "waiter"
+
+                                 ;; Duration to wait before marking a pod as expired when it hasn't transitioned to running state (default is 90).
+                                 ;; Configure the value to 0 to disable expiring instances and removing the duration constraint on pods
+                                 ;; before they transition to the running state.
+                                 :container-running-grace-secs 90
+
+                                 ;; Configuration for creating and querying a sidecar container in each Waiter Service Instance's Kuberentes pod
+                                 ;; running a server for directory listings (in JSON) and serving file contents.
+                                 ;; Waiter expects the directory listings in the format returned by nginx's autoindex module when configured for JSON.
+                                 ;; See the behavior of the default container image below for reference.
+                                 ;; The sidecar container is only added to Waiter-managed pods if the :port number is set in this map,
+                                 ;; otherwise, the file browsing API is disabled (always returning an empty array).
+                                 ;; You must ensure that the fileserver port number does not intersect with the pod-base-port range.
+                                 :fileserver {:cmd ["/bin/fileserver-start"]
+                                              :image "twosigma/waiter-fileserver:latest"
+                                              :port 9090
+                                              :resources {:cpu 0.1 :mem 128}
+                                              :scheme "http"}
+
+                                 ;; HTTP options that will be used when accessing the Kubernetes API:
+                                 :http-options {:conn-timeout 10000
+                                                :socket-timeout 10000}
+
+                                 ;; Number of retry attempts to make when a PATCH request fails with a 409 Conflict:
+                                 :max-patch-retries 5
+
+                                 ;; Maximum number of characters allowed for a Kubernetes object name:
+                                 :max-name-length 63
+
+                                 ;; Port number used to set the $PORT0 (service port) for Waiter service instances.
+                                 ;; Waiter generates a random offset in the range [0, 990] each time it creates a service,
+                                 ;; adding that offset to the pod-base-port value to get that Waiter service's $PORT0 value.
+                                 ;; If more than one port is requested, $PORT1 thru $PORT9 will be defined sequentially after $PORT0;
+                                 ;; e.g., if pod-base-port is 31000, and the random offset was 390, then $PORT0==31390 and $PORT9==31399:
+                                 :pod-base-port 31000
+
+                                 ;; The number of seconds between the SIGTERM and SIGKILL signals sent to a pod on shutdown.
+                                 ;; This value should be placed in the terminationGracePeriodSeconds field in the pod template.
+                                 ;; Should be set between 0 and 300 seconds, inclusive.
+                                 :pod-sigkill-delay-secs 3
+
+                                 ;; The number of characters (not including the preceding dash) in the unique suffix appended to each generated Pod name in a ReplicaSet.
+                                 ;; Unless you've custom-patched your Kubernetes code, then this is probably hard-coded to 5 in the controller code.
+                                 ;; https://github.com/kubernetes/kubernetes/blob/207e9d1/staging/src/k8s.io/apiserver/pkg/storage/names/generate.go#L45
+                                 :pod-suffix-length 5
+
+                                 ;; Version string used for creating and operating on ReplicaSet objects:
+                                 :replicaset-api-version "extensions/v1beta1"
+
+                                 ;; The number of pod restart at which the instance will start being treated as expired:
+                                 :restart-expiry-threshold 2
+
+                                 ;; Base URL for accessing the Kubernetes API server.
+                                 ;; The URL used below is the default proxy URL bound to by the `kubectl proxy` command:
+                                 :url "http://localhost:8001"
+
+                                 ;; Number of times to retry a watch before falling back to a global state query.
+                                 ;; These retries only apply to a closed watch connection, not to connections returning an HTTP error code.
+                                 ;; Defaults to 0 (one attempt, no retries) if not provided.
+                                 :watch-retries 10}
+
+                    ;; :kind :marathon uses Marathon (https://mesosphere.github.io/marathon/) for scheduling instances:
+                    ;:kind :marathon
                     :marathon {
                                ;; Custom implementations should specify a :factory-fn
                                ;; that returns an instance of waiter.scheduler.ServiceScheduler:
                                :factory-fn waiter.scheduler.marathon/marathon-scheduler
+
+                               ;; The authorizer is used by the scheduler to verify that a user has the proper permissions
+                               ;; to create services on the underlying scheduler platform.
+                               :authorizer {:kind :kerberos
+                                            :kerberos {;; kerberos-prestash determines user authorization via the presence of prestashed tickets
+                                                       :factory-fn waiter.auth.kerberos/kerberos-authorizer
+                                                       ;; the minimum interval after which prestash kerberos tickets needs to refreshed
+                                                       :prestash-cache-min-refresh-ms 100
+                                                       ;; the maximum interval after which prestash kerberos tickets are forcibly refreshed
+                                                       :prestash-cache-refresh-ms 1000
+                                                       ;; the prestash query host (where to look for the tickets)
+                                                       :prestash-query-host "www.example.com"}}
 
                                ;; The location of home directories on your Mesos agents;
                                ;; the HOME environment variable is set by joining this and the run-as-user:
@@ -248,6 +577,13 @@
 
                                ;; How long (milliseconds) to cache the framework id:
                                :framework-id-ttl 900000
+
+                               :marathon-descriptor-builder {;; Factory function which creates a descriptor used by Marathon to create new apps.
+                                                             ;; Any additional configuration data needed for the implementation should be included here.
+                                                             :factory-fn waiter.scheduler.marathon/default-marathon-descriptor-builder
+                                                             ;; Vector of commands with which to prefix the user's cmd string when launching the container.
+                                                             ;; E.g., it may be necessary to delegate launching the user's command to a waiter-init script.
+                                                             :container-init-commands ["waiter-mesos-init"]}
 
                                ;; The port on which the mesos agents are listening.
                                ;; This is an optional parameter.
@@ -277,6 +613,11 @@
                     ;:kind :shell
                     :shell {
                             :factory-fn waiter.scheduler.shell/shell-scheduler
+
+                            ;; The shell scheduler can persist its state and use this state when it restarts.
+                            ;; This is an optional config, when not provided no backup state will be persisted.
+                            ;; The file in the work directory which contains the scheduler state:
+                            :backup-file-name "backup.json"
 
                             ;; The interval (milliseconds) at which instance health will be checked:
                             :health-check-interval-ms 10000
@@ -328,7 +669,17 @@
            :autoscaler-interval-ms 1000
 
            ;; Throttles the rate at which kill requests are sent to the scheduler:
-           :inter-kill-request-wait-time-ms 1000}
+           :inter-kill-request-wait-time-ms 1000
+
+           ;; The autoscaler accounts for expired (both healthy and unhealthy) instances while scaling.
+           ;; Limits the number of unhealthy expired instances taken into account by the scaling algorithm:
+           :max-expired-unhealthy-instances-to-consider 2
+
+           ;; Individual scale-up operations are throttled so that we can minimize overshoot of instances.
+           ;; The number of new instances started per scale-up is the maximum of 1 and the resource consumed
+           ;; limit calculated based on the cpus and mem specified in the quanta-constraints.
+           :quanta-constraints {:cpus 64
+                                :mem 524288}}
 
  ; ---------- Service Descriptions ----------
 
@@ -367,13 +718,17 @@
                                        "BAZ" "qux"}
                                 "expired-instance-restart-rate" 0.1
                                 "grace-period-secs" 30
+                                "health-check-authentication" "disabled"
                                 "health-check-interval-secs" 10
                                 "health-check-max-consecutive-failures" 5
+                                "health-check-port-index" 0
+                                "health-check-proto" nil
                                 "health-check-url" "/status"
                                 "idle-timeout-mins" 30
                                 "instance-expiry-mins" 7200
                                 "interstitial-secs" 0
                                 "jitter-threshold" 0.5
+                                "load-balancing" "oldest"
                                 "max-instances" 500
                                 "max-queue-length" 1000000
                                 "metadata" {}
@@ -403,15 +758,24 @@
                                ;; It makes calls to the backend instance and inspects the responses to
                                ;; decide when to treat the request as complete. A request is not
                                ;; considered complete as long as the backend keeps returning a 200
-                               ;; response. This dictates the interval (milliseconds) at which Waiter
-                               ;; will poll the backend instance:
+                               ;; response. This dictates the default value of the interval (milliseconds)
+                               ;; at which Waiter will poll the backend instance:
                                :async-check-interval-ms 3000
+
+                               ;; Waiter monitors the state of an async request at specified intervals.
+                               ;; However, using too low an async-check-interval-ms can lead to many requests
+                               ;; in short durations. We can restrict the maximum number of such status check
+                               ;; requests per async request using the following value:
+                               :async-request-max-status-checks 50
 
                                ;; After this amount of time (milliseconds) the async request will be
                                ;; considered timed out, and Waiter will release the allocated
                                ;; instance. This is the default value and can be overridden in the
                                ;; service description:
                                :async-request-timeout-ms 60000
+
+                               ;; The max time (milliseconds) a connection can be idle in the client connection pool:
+                               :client-connection-idle-timeout-ms 10000
 
                                ;; The HTTP connect timeout (milliseconds) for instance requests:
                                :connection-timeout-ms 5000
@@ -438,6 +802,9 @@
  ; ---------- Load Balancing ----------
 
  :work-stealing {
+                 ;; The maximum number of outstanding work-stealing offers per router:
+                 :max-in-flight-offers 4000
+
                  ;; The interval (milliseconds) on which Waiter makes work-stealing offers:
                  :offer-help-interval-ms 100
 
@@ -469,7 +836,11 @@
 
           ;; Waiter aggregates metrics locally and publishes
           ;; to StatsD on the following interval (milliseconds):
-          :publish-interval-ms 10000}
+          :publish-interval-ms 10000
+
+          ;; Waiter polls the router state for instances and resource
+          ;; usage on the following interval (milliseconds):
+          :sync-instances-interval-ms 5000}
 
  ;; Waiter allows a "metric group" string to be associated with a service so that related
  ;; services can be grouped together in the Waiter Stats environment. One or multiple
@@ -492,13 +863,43 @@
                   ;; for sharing metrics between routers in the cluster:
                   :inter-router-metrics-idle-timeout-ms 2000
 
-                  ;; The interval (milliesconds) on which Waiter deletes
+                  ;; The interval (milliseconds) on which Waiter deletes
                   ;; metrics for services that are no longer running:
                   :metrics-gc-interval-ms 60000
 
                   ;; Waiter periodically triggers publishing of metrics with peer routers.
                   ;; This value (milliseconds) is used to throttle the rate of sending metrics:
                   :metrics-sync-interval-ms 50
+
+                  ;; Define optional reporters for codahale metrics.
+                  ;; Each reporter must have a :factory-fn key that specifies a factory method.
+                  ;; The factory method must create and start an instance of waiter.reporter.CodahaleReporter.
+                  ;; Users can add arbitrary reporters:
+                  :codahale-reporters {
+                                       ;; Enables a reporter that writes to stdout:
+                                       :console {
+                                                 ;; Method that creates and starts an instance of com.codahale.metrics.ConsoleReporter
+                                                 :factory-fn waiter.reporter/console-reporter
+                                                 ;; A regex to filter by metric name
+                                                 :filter-regex #config/regex ".*"
+                                                 ;; Reporting period in milliseconds
+                                                 :period-ms 30000}
+                                       ;; Enables a reporter that sends to a Graphite host:
+                                       :graphite {
+                                                  ;; Method that creates and starts an instance of com.codahale.metrics.graphite.GraphiteReporter
+                                                  :factory-fn waiter.reporter/graphite-reporter
+                                                  ;; A regex to filter by metric name
+                                                  :filter-regex #config/regex ".*"
+                                                  ;; The hostname of where the Graphite server is running
+                                                  :host "graphite.example.com"
+                                                  ;; Reporting period in milliseconds
+                                                  :period-ms 30000
+                                                  ;; Flag to enable compression
+                                                  :pickled? true
+                                                  ;; Prefix for metric names
+                                                  :prefix "waiter-internal"
+                                                  ;; The port on which the Graphite server is expecting metrics submissions
+                                                  :port 1111}}
 
                   ;; The rate of listening for router state updates
                   ;; is throttled at this value (milliseconds):
@@ -509,6 +910,11 @@
                   :transient-metrics-timeout-ms 300000}
 
  ; ---------- Miscellaneous ----------
+
+ ;; Custom components allow sharing of components between the scheduler and service description builder.
+ ;; The values in the entries must contain a :factory-fn and the necessary config for the component.
+ ;; Components also get passed in the :kv-store-factory, :leader?-fn and :synchronize-fn for use in the factory.
+ :custom-components {:in-memory-kv-store {:factory-fn waiter.kv/new-local-kv-store}}
 
  ;; Certain messages that Waiter returns can be customized:
  :messages {:backend-request-failed "Request to service backend failed"
@@ -547,14 +953,30 @@
                        :failed-check-threshold 5}
 
  :token-config {
+                ;; Define the calculator that compute the root assigned to a token when they are created.
+                :cluster-calculator {;; :kind :configured create a calculator that looks up the cluster name using a configured map.
+                                     ;; When not matching entry is found in the map, the cluster is defined as :cluster-config :name
+                                     :kind :configured
+                                     :configured {:factory-fn 'waiter.token/new-configured-cluster-calculator
+                                                  ;; The map that contains supported host to cluster name mappings.
+                                                  :host->cluster {"waiter-alias.example.com" "foo"
+                                                                  "waiter-foo.example.com" "foo"}}}
+
                 ;; Configures the amount of history we store for a token.
                 ;; It must be a positive integer.
                 :history-length 5
+
+                ;; Configures the maximum number of tokens that can be stored per owner.
+                ;; It must be a positive integer.
+                :limit-per-owner 1000
 
                 ;; Default values associated with tokens while resolving the service description
                 :token-defaults {
                                  ;; The default period (minutes) for which an instance from a fallback service can be requested:
                                  "fallback-period-secs" 300
+
+                                 ;; By default, Waiter allows non-secure HTTP requests from clients to services.
+                                 "https-redirect" false
 
                                  ;; Stale services are detected by looking at the version of the
                                  ;; token used to create them, such services will have their idle timeout

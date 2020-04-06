@@ -17,13 +17,13 @@
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.data.codec.base64 :as b64]
+            [clojure.string :as str]
             [clojure.tools.logging :as log]
             [metrics.counters :as counters]
             [metrics.histograms :as histograms]
             [metrics.meters :as meters]
             [metrics.timers :as timers]
             [qbits.jet.client.websocket :as ws-client]
-            [slingshot.slingshot :refer [try+]]
             [waiter.auth.authentication :as auth]
             [waiter.cookie-support :as cookie-support]
             [waiter.correlation-id :as cid]
@@ -33,15 +33,16 @@
             [waiter.scheduler :as scheduler]
             [waiter.statsd :as statsd]
             [waiter.util.async-utils :as au]
+            [waiter.util.http-utils :as hu]
             [waiter.util.ring-utils :as ru])
   (:import (java.net HttpCookie SocketTimeoutException URLDecoder URLEncoder)
            (java.nio ByteBuffer)
-           (org.eclipse.jetty.websocket.api MessageTooLargeException UpgradeRequest)
+           (org.eclipse.jetty.websocket.api MessageTooLargeException StatusCode UpgradeRequest)
            (org.eclipse.jetty.websocket.common WebSocketSession)
            (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse)))
 
 ;; https://tools.ietf.org/html/rfc6455#section-7.4
-(def ^:const server-termination-on-unexpected-condition 1011)
+(def ^:const server-termination-on-unexpected-condition StatusCode/SERVER_ERROR)
 
 (defn request-authenticator
   "Authenticates the request using the x-waiter-auth cookie.
@@ -67,12 +68,35 @@
       (.sendError response 500 (.getMessage e))
       false)))
 
+(defn request-subprotocol-acceptor
+  "Associates a subprotocol (when present) in the request with the response.
+   Fails the upgrade connection if multiple subprotocols are provided as we are determining the
+   subprotocol without talking to the backend."
+  [^UpgradeRequest request ^ServletUpgradeResponse response]
+  (try
+    (let [sec-websocket-protocols (vec (.getHeaders request "sec-websocket-protocol"))]
+      (condp = (count sec-websocket-protocols)
+        0 (do
+            (log/info "no subprotocols provided, accepting upgrade request")
+            true)
+        1 (let [accepted-subprotocol (first sec-websocket-protocols)]
+            (log/info "accepting websocket subprotocol" accepted-subprotocol)
+            (.setAcceptedSubProtocol response accepted-subprotocol)
+            true)
+        (do
+          (log/info "rejecting websocket due to presence of multiple subprotocols" sec-websocket-protocols)
+          (.sendError response 500 (str "waiter does not yet support multiple subprotocols in websocket requests: " sec-websocket-protocols))
+          false)))
+    (catch Throwable th
+      (log/error th "error while selecting subprotocol for websocket request")
+      (.sendError response 500 (.getMessage th))
+      false)))
+
 (defn inter-router-request-middleware
   "Attaches a dummy x-waiter-auth cookie into the request to enable mimic-ing auth in inter-router websocket requests."
   [router-id password ^UpgradeRequest request]
   (let [cookie-value [(str router-id "@waiter-peer-router") (System/currentTimeMillis)]
-        auth-cookie-value (-> (cookie-support/encode-cookie cookie-value password)
-                              (URLEncoder/encode "UTF-8"))]
+        auth-cookie-value (URLEncoder/encode (cookie-support/encode-cookie cookie-value password) "UTF-8")]
     (log/info "attaching" auth-cookie-value "to websocket request")
     (-> request
         (.getCookies)
@@ -80,16 +104,24 @@
 
 (defn request-handler
   "Handler for websocket requests.
-   It populates the kerberos credentials and invokes process-request-fn."
+   When auth cookie is available, the user credentials are populated into the request.
+   It then goes ahead and invokes the process-request-fn handler."
   [password process-request-fn {:keys [headers] :as request}]
-  (let [auth-cookie (-> headers (get "cookie") str auth/get-auth-cookie-value) ;; auth-cookie is assumed to be valid
-        [auth-principal auth-time] (auth/decode-auth-cookie auth-cookie password)
-        auth-params-map (auth/auth-params-map auth-principal)
-        handler (middleware/wrap-merge process-request-fn auth-params-map)]
-    (log/info "processing websocket request" {:user auth-principal})
-    (-> request
-        (assoc :authorization/time auth-time)
-        handler)))
+  ;; auth-cookie is assumed to be valid when it is present
+  (if-let [auth-cookie (-> headers (get "cookie") str auth/get-auth-cookie-value)]
+    (let [[auth-principal auth-time] (auth/decode-auth-cookie auth-cookie password)
+          auth-params-map (auth/auth-params-map :cookie auth-principal)
+          handler (middleware/wrap-merge process-request-fn auth-params-map)
+          request' (assoc request :waiter/auth-expiry-time auth-time)]
+      (log/info "processing websocket request" {:user auth-principal})
+      (handler request'))
+    (process-request-fn request)))
+
+(defn make-request-handler
+  "Returns the handler for websocket requests."
+  [password process-request-fn]
+  (fn websocket-request-handler [request]
+    (request-handler password process-request-fn request)))
 
 (defn abort-request-callback-factory
   "Creates a callback to abort the http request."
@@ -117,26 +149,30 @@
 
 (defn make-request
   "Makes an asynchronous websocket request to the instance endpoint and returns a channel."
-  [websocket-client service-id->password-fn instance ws-request request-properties passthrough-headers end-route _]
+  [websocket-client service-id->password-fn {:keys [host port] :as instance} ws-request request-properties passthrough-headers end-route _ backend-proto proto-version]
   (let [ws-middleware (fn ws-middleware [_ ^UpgradeRequest request]
                         (let [service-password (-> instance scheduler/instance->service-id service-id->password-fn)
                               headers
                               (-> (dissoc passthrough-headers "content-length" "expect" "authorization")
-                                  (headers/dissoc-hop-by-hop-headers)
+                                  (headers/dissoc-hop-by-hop-headers proto-version)
                                   (dissoc-forbidden-headers)
                                   (assoc "Authorization" (str "Basic " (String. ^bytes (b64/encode (.getBytes (str "waiter:" service-password) "utf-8")) "utf-8")))
-                                  (headers/assoc-auth-headers (:authorization/user ws-request) (:authorization/principal ws-request)))]
+                                  (headers/assoc-auth-headers (:authorization/user ws-request) (:authorization/principal ws-request))
+                                  (assoc "x-cid" (cid/get-correlation-id)))]
                           (add-headers-to-upgrade-request! request headers)))
         response (async/promise-chan)
         ctrl-chan (async/chan)
         control-mult (async/mult ctrl-chan)
-        ws-request-properties {:async-write-timeout (:async-request-timeout-ms request-properties)
-                               :connect-timeout (:connection-timeout-ms request-properties)
-                               :ctrl (fn ctrl-factory [] ctrl-chan)
-                               :max-idle-timeout (:initial-socket-timeout-ms request-properties)
-                               :middleware ws-middleware}
-        ws-protocol (if (= "https" (:protocol instance)) "wss" "ws")
-        instance-endpoint (scheduler/end-point-url (assoc instance :protocol ws-protocol) end-route)
+        sec-websocket-protocol (get-in ws-request [:headers "sec-websocket-protocol"])
+        ws-request-properties (cond-> {:async-write-timeout (:async-request-timeout-ms request-properties)
+                                       :connect-timeout (:connection-timeout-ms request-properties)
+                                       :ctrl (fn ctrl-factory [] ctrl-chan)
+                                       :max-idle-timeout (:initial-socket-timeout-ms request-properties)
+                                       :middleware ws-middleware}
+                                (not (str/blank? sec-websocket-protocol))
+                                (assoc :subprotocols (str/split sec-websocket-protocol #",")))
+        ws-protocol (if (= "https" (hu/backend-proto->scheme backend-proto)) "wss" "ws")
+        instance-endpoint (scheduler/end-point-url ws-protocol host port end-route)
         service-id (scheduler/instance->service-id instance)
         correlation-id (cid/get-correlation-id)]
     (try
@@ -150,10 +186,8 @@
               (async/put! response {:error error})))))
       (ws-client/connect! websocket-client instance-endpoint
                           (fn [request]
-                            (cid/with-correlation-id
-                              correlation-id
-                              (log/info "successfully connected with backend")
-                              (async/put! response {:ctrl-mult control-mult, :request request})))
+                            (cid/cinfo correlation-id "successfully connected with backend")
+                            (async/put! response {:ctrl-mult control-mult, :request request}))
                           ws-request-properties)
       (let [{:keys [requests-waiting-to-stream]} (metrics/stream-metric-map service-id)]
         (counters/inc! requests-waiting-to-stream))
@@ -208,7 +242,7 @@
                     (au/timed-offer! upload-chan send-data streaming-timeout-ms))
                 (recur (+ bytes-streamed bytes-read))
                 (do
-                  (log/error "unable to stream to " dest-name {:cid (cid/get-correlation-id), :bytes-streamed bytes-streamed})
+                  (log/error "unable to stream to" dest-name {:cid (cid/get-correlation-id), :bytes-streamed bytes-streamed})
                   (meters/mark! stream-back-pressure-meter)
                   (deliver reservation-status-promise stream-error-type)
                   (async/>! request-close-chan stream-error-type))))
@@ -223,27 +257,39 @@
    It is assumed the body is an input stream.
    The function buffers bytes, and pushes byte input streams onto the channel until the body input stream is exhausted."
   [request response descriptor {:keys [streaming-timeout-ms]} reservation-status-promise request-close-chan local-usage-agent
-   {:keys [requests-streaming requests-waiting-to-stream stream-back-pressure stream-read-body stream-onto-resp-chan throughput-meter]}]
+   {:keys [requests-streaming requests-waiting-to-stream stream-back-pressure stream-read-body stream-onto-resp-chan] :as metric-map}]
   (let [{:keys [service-description service-id]} descriptor
         {:strs [metric-group]} service-description]
     (counters/dec! requests-waiting-to-stream)
     (counters/inc! requests-streaming)
     ;; launch go-block to stream data from client to instance
     (let [client-in (:in request)
-          instance-out (-> response :request :out)]
+          instance-out (-> response :request :out)
+          throughput-meter (metrics/service-meter service-id "streaming" "request-bytes")
+          throughput-meter-global (metrics/waiter-meter "streaming" "request-bytes")
+          throughput-iterations-meter (metrics/service-meter service-id "streaming" "request-iterations")
+          throughput-iterations-meter-global (metrics/waiter-meter "streaming" "request-iterations")]
       (stream-helper "client" client-in "instance" instance-out streaming-timeout-ms reservation-status-promise
                      :instance-error request-close-chan stream-read-body stream-back-pressure
                      (fn ws-bytes-uploaded [bytes-streamed]
+                       (meters/mark! throughput-meter bytes-streamed)
+                       (meters/mark! throughput-meter-global bytes-streamed)
+                       (meters/mark! throughput-iterations-meter)
+                       (meters/mark! throughput-iterations-meter-global)
                        (send local-usage-agent metrics/update-last-request-time-usage-metric service-id (t/now))
                        (histograms/update! (metrics/service-histogram service-id "request-size") bytes-streamed)
                        (statsd/inc! metric-group "request_bytes" bytes-streamed))))
     ;; launch go-block to stream data from instance to client
     (let [client-out (:out request)
-          instance-in (-> response :request :in)]
+          instance-in (-> response :request :in)
+          {:keys [throughput-iterations-meter throughput-iterations-meter-global throughput-meter throughput-meter-global]} metric-map]
       (stream-helper "instance" instance-in "client" client-out streaming-timeout-ms reservation-status-promise
                      :client-error request-close-chan stream-onto-resp-chan stream-back-pressure
                      (fn ws-bytes-downloaded [bytes-streamed]
                        (meters/mark! throughput-meter bytes-streamed)
+                       (meters/mark! throughput-meter-global bytes-streamed)
+                       (meters/mark! throughput-iterations-meter)
+                       (meters/mark! throughput-iterations-meter-global)
                        (histograms/update! (metrics/service-histogram service-id "response-size") bytes-streamed)
                        (statsd/inc! metric-group "response_bytes" bytes-streamed))))))
 
@@ -258,18 +304,27 @@
                   (when (integer? return-code-or-exception)
                     ;; Close status codes https://tools.ietf.org/html/rfc6455#section-7.4
                     (case (int return-code-or-exception)
-                      1000 "closed normally"
-                      1002 "protocol error"
-                      1003 "unsupported input data"
-                      1006 "closed abnormally"
+                      StatusCode/NORMAL "closed normally"
+                      StatusCode/SHUTDOWN "shutdown"
+                      StatusCode/PROTOCOL "protocol error"
+                      StatusCode/BAD_DATA "unsupported input data"
+                      StatusCode/ABNORMAL "closed abnormally"
+                      StatusCode/BAD_PAYLOAD "unsupported payload"
+                      StatusCode/POLICY_VIOLATION "policy violation"
                       (str "status code " return-code-or-exception))))
         (if (integer? return-code-or-exception)
           (on-close-callback return-code-or-exception)
           (on-close-callback server-termination-on-unexpected-condition))
-        (let [close-code (condp = ctrl-code
-                           nil :connection-closed
-                           :qbits.jet.websocket/close :success
-                           :qbits.jet.websocket/error
+        (let [close-code (cond
+                           (or (nil? ctrl-code)
+                               (and (integer? return-code-or-exception)
+                                    (StatusCode/isFatal return-code-or-exception)))
+                           :connection-closed
+
+                           (= ctrl-code :qbits.jet.websocket/close)
+                           :success
+
+                           (= ctrl-code :qbits.jet.websocket/error)
                            (let [error-code (cond
                                               (instance? MessageTooLargeException return-code-or-exception) :generic-error
                                               (instance? SocketTimeoutException return-code-or-exception) :socket-timeout
@@ -277,7 +332,9 @@
                              (deliver reservation-status-promise error-code)
                              (log/error return-code-or-exception "error from" (name source) "websocket request")
                              error-code)
-                           :unknown)]
+
+                           :else :unknown)]
+          (log/info (name source) "requesting close of websocket:" close-code close-message)
           (async/>! request-close-promise-chan [source close-code return-code-or-exception close-message]))))))
 
 (defn- close-client-session!
@@ -286,16 +343,15 @@
   (try
     (let [^WebSocketSession client-session (-> request :ws (.session))]
       (when (some-> client-session .isOpen)
-        (when (some-> client-session .isOpen)
-          (log/info "closing client session with code" status-code close-message)
-          (.close client-session status-code close-message))))
+        (log/info "closing client session with code" status-code close-message)
+        (.close client-session status-code close-message)))
     (catch Exception e
       (log/error e "error in explicitly closing client websocket using" status-code close-message))))
 
 (defn- successful?
   "Returns whether the status represents a successful status code."
   [status]
-  (= 1000 status))
+  (= StatusCode/NORMAL status))
 
 (defn process-response!
   "Processes a response resulting from a websocket request.
@@ -316,21 +372,21 @@
         stream-complete-rate
         (timers/start-stop-time!
           stream
-          (when-let [close-message (async/<! request-close-promise-chan)]
-            (let [[source close-code status-code-or-exception close-message] close-message]
+          (when-let [close-message-wrapper (async/<! request-close-promise-chan)]
+            (let [[source close-code status-code-or-exception close-message] close-message-wrapper]
               (log/info "websocket connections requested to be closed due to" source close-code close-message)
               (counters/dec! requests-streaming)
               ;; explicitly close the client connection if backend triggered the close
               (when (= :instance source)
                 (let [correlation-id (cid/get-correlation-id)]
                   (async/>!
-                    (-> request :out)
+                    (:out request)
                     (fn close-session [_]
                       (cid/with-correlation-id
                         correlation-id
                         (if (integer? status-code-or-exception)
                           (close-client-session! request status-code-or-exception close-message)
-                          (let [ex-message (.getMessage status-code-or-exception)]
+                          (let [ex-message (or (some-> status-code-or-exception .getMessage) close-message)]
                             (close-client-session! request server-termination-on-unexpected-condition ex-message))))))))
               ;; close client and backend channels
               (close-requests! request response request-state-chan))))))
@@ -342,20 +398,22 @@
     (->> (fn instance-on-close-callback [status]
            (counters/inc! (metrics/service-counter service-id "response-status" (str status)))
            (statsd/inc! metric-group (str "response_status_" status))
-           (if (successful? status)
-             (deliver reservation-status-promise (if (successful? status) :success :instance-error))))
-         (watch-ctrl-chan :instance (-> response :ctrl-mult) reservation-status-promise request-close-promise-chan))
+           (deliver reservation-status-promise (if (successful? status) :success :instance-error)))
+         (watch-ctrl-chan :instance (:ctrl-mult response) reservation-status-promise request-close-promise-chan))
 
     (try
       ;; stream data between client and instance
       (stream-response request response descriptor instance-request-properties reservation-status-promise
                        request-close-promise-chan local-usage-agent metrics-map)
 
-      ;; force close connection when cookie expires
-      (let [auth-time (:authorization/time request)
+      ;; force close connection
+      ;; - a day after the auth cookie expires if it is available, or
+      ;; - a day after the unauthenticated request is made
+      (let [current-time-ms (System/currentTimeMillis)
+            expiry-start-time (:waiter/auth-expiry-time request current-time-ms)
             one-day-in-millis (-> 1 t/days t/in-millis)
-            expiry-time-ms (+ auth-time one-day-in-millis)
-            time-left-ms (max (- expiry-time-ms (System/currentTimeMillis)) 0)]
+            expiry-time-ms (+ expiry-start-time one-day-in-millis)
+            time-left-ms (max (- expiry-time-ms current-time-ms) 0)]
         (async/go
           (let [timeout-ch (async/timeout time-left-ms)
                 [_ selected-chan] (async/alts! [request-close-promise-chan timeout-ch] :priority true)]
@@ -364,11 +422,11 @@
                 ;; close connections if the request is still live
                 (confirm-live-connection-with-abort)
                 (log/info "cookie has expired, triggering closing of websocket connections")
-                (async/>! request-close-promise-chan :cookie-expired)
+                (async/>! request-close-promise-chan [:cookie-expired nil nil "Cookie Expired"])
                 (catch Exception _
                   (log/debug "ignoring exception generated from closed connection")))))))
       (catch Exception e
-        (async/>!! request-close-promise-chan :process-error)
+        (async/>!! request-close-promise-chan [:process-error nil e "Unexpected error"])
         (log/error e "error while processing websocket response"))))
   ;; return an empty response map to maintain consistency with the http case
   {})
@@ -376,7 +434,7 @@
 (defn wrap-ws-close-on-error
   "Closes the out chan when the handler returns an error."
   [handler]
-  (fn [{:keys [out] :as request}]
+  (fn wrap-ws-close-on-error-handler [{:keys [out] :as request}]
     (let [response (handler request)]
       (ru/update-response response
                           (fn [response]

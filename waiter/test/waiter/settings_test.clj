@@ -79,6 +79,11 @@
   []
   (load-config-file "config-full.edn"))
 
+(defn- load-k8s-settings
+  "Loads config-k8s.edn"
+  []
+  (load-config-file "config-k8s.edn"))
+
 (defn- load-min-settings
   "Loads config-minimal.edn"
   []
@@ -93,6 +98,11 @@
   "Loads config-shell.edn"
   []
   (load-config-file "config-shell.edn"))
+
+(defn- load-composite-settings
+  "Loads config-composite.edn"
+  []
+  (load-config-file "config-composite.edn"))
 
 (deftest test-validate-minimal-settings
   (testing "Test validating minimal settings"
@@ -208,7 +218,7 @@
                                            :work-directory "scheduler"}}}
                (deep-merge-settings defaults configured)))))
 
-    (testing "should not merge sub-maps not related to the configured :kind"
+    (testing "should merge sub-maps not related to the configured :kind"
       (let [defaults {:scheduler-config {:kind :foo
                                          :foo {:bar 1
                                                :baz 2}
@@ -218,19 +228,57 @@
                                            :qux {:two "c"}
                                            :foo {:other 3}}}]
         (is (= {:scheduler-config {:kind :qux
-                                   :foo {:other 3}
+                                   :foo {:bar 1
+                                         :baz 2
+                                         :other 3}
                                    :qux {:one "a"
                                          :two "c"}}}
+               (deep-merge-settings defaults configured)))))
+
+    (testing "should merge sub-sub-maps within the configured :kind"
+      (let [defaults {:scheduler-config {:kind :foo
+                                         :foo {:bar 1
+                                               :baz {:x 2
+                                                     :y 3}}}}
+            configured {:scheduler-config {:kind :foo
+                                           :foo {:bar 1
+                                                 :baz {:y 4
+                                                       :z 4}}}}]
+        (is (= {:scheduler-config {:kind :foo
+                                   :foo {:bar 1
+                                         :baz {:x 2
+                                               :y 4
+                                               :z 4}}}}
                (deep-merge-settings defaults configured)))))))
+
+(deftest test-validate-k8s-settings
+  (testing "Test validating k8s scheduler settings"
+    (let [graphite-server-port 5555
+          port 12345
+          run-as-user "foo"]
+      (with-redefs [env (fn [name _]
+                          (case name
+                            "GRAPHITE_SERVER_PORT" (str graphite-server-port)
+                            "JWKS_SERVER_URL" "http://127.0.0.1:8040/jwks.json"
+                            "WAITER_PORT" (str port)
+                            "WAITER_AUTH_RUN_AS_USER" run-as-user
+                            (throw (ex-info "Unexpected environment variable" {:name name}))))]
+        (let [settings (load-k8s-settings)]
+          (is (nil? (s/check settings-schema settings)))
+          (is (= port (:port settings)))
+          (is (= run-as-user (get-in settings [:authenticator-config :one-user :run-as-user]))))))))
 
 (deftest test-validate-minimesos-settings
   (testing "Test validating minimesos settings"
-    (let [port 12345
+    (let [graphite-server-port 5555
+          port 12345
           run-as-user "foo"
           marathon "bar"
           zk-connect-string "qux"]
       (with-redefs [env (fn [name _]
                           (case name
+                            "GRAPHITE_SERVER_PORT" (str graphite-server-port)
+                            "JWKS_SERVER_URL" "http://127.0.0.1:8040/jwks.json"
                             "WAITER_PORT" (str port)
                             "WAITER_AUTH_RUN_AS_USER" run-as-user
                             "WAITER_MARATHON" marathon
@@ -238,6 +286,7 @@
                             (throw (ex-info "Unexpected environment variable" {:name name}))))]
         (let [settings (load-minimesos-settings)]
           (is (nil? (s/check settings-schema settings)))
+          (is (= graphite-server-port (get-in settings [:metrics-config :codahale-reporters :graphite :port])))
           (is (= port (:port settings)))
           (is (= run-as-user (get-in settings [:authenticator-config :one-user :run-as-user])))
           (is (= marathon (get-in settings [:scheduler-config :marathon :url])))
@@ -246,16 +295,44 @@
 (deftest test-validate-shell-settings
   (testing "Test validating shell scheduler settings"
     (let [port 12345
-          run-as-user "foo"]
+          run-as-user "foo"
+          cluster-name "bar"]
       (with-redefs [env (fn [name _]
                           (case name
+                            "JWKS_SERVER_URL" "http://127.0.0.1:8040/jwks.json"
                             "WAITER_PORT" (str port)
                             "WAITER_AUTH_RUN_AS_USER" run-as-user
+                            "WAITER_CLUSTER_NAME" cluster-name
                             (throw (ex-info "Unexpected environment variable" {:name name}))))]
         (let [settings (load-shell-settings)]
           (is (nil? (s/check settings-schema settings)))
           (is (= port (:port settings)))
-          (is (= run-as-user (get-in settings [:authenticator-config :one-user :run-as-user]))))))))
+          (is (= run-as-user (get-in settings [:authenticator-config :one-user :run-as-user])))
+          (is (= cluster-name (get-in settings [:cluster-config :name]))))))))
+
+(deftest test-validate-composite-settings
+  (testing "Test validating composite scheduler settings"
+    (let [graphite-server-port 5555
+          port 12345
+          run-as-user "foo"
+          saml-idp-uri "saml-idp-uri"
+          saml-idp-cert-uri "saml-idp-cert-uri"]
+      (with-redefs [env (fn [name _]
+                          (case name
+                            "GRAPHITE_SERVER_PORT" (str graphite-server-port)
+                            "JWKS_SERVER_URL" "http://127.0.0.1:8040/jwks.json"
+                            "SAML_IDP_CERT_URI" saml-idp-cert-uri
+                            "SAML_IDP_URI" saml-idp-uri
+                            "WAITER_AUTH_RUN_AS_USER" run-as-user
+                            "WAITER_PORT" (str port)
+                            (throw (ex-info "Unexpected environment variable" {:name name}))))]
+        (let [settings (load-composite-settings)]
+          (is (nil? (s/check settings-schema settings)))
+          (is (= graphite-server-port (get-in settings [:metrics-config :codahale-reporters :graphite :port])))
+          (is (= port (:port settings)))
+          (is (= run-as-user (get-in settings [:authenticator-config :composite :authentication-providers "one-user" :run-as-user])))
+          (is (= saml-idp-uri (get-in settings [:authenticator-config :composite :authentication-providers "saml" :idp-uri])))
+          (is (= saml-idp-cert-uri (get-in settings [:authenticator-config :composite :authentication-providers "saml" :idp-cert-uri]))))))))
 
 (deftest test-sanitize-settings
   (is (= {:example {:foo {:kind :test
@@ -269,9 +346,13 @@
           :scheduler-config {:cache {:ttl 100}
                              :kind :marathon
                              :marathon {:factory-fn "create-marathon-scheduler" :url "http://marathon.example.com:8080"}}
+          :server-options {:truststore "/path/to/truststore.p12"
+                           :truststore-type "pkcs12"
+                           :trust-password "<hidden>"}
           :work-stealing {:offer-help-interval-ms 100
                           :reserve-timeout-ms 1000}
-          :zookeeper {:gc-relative-path "gc-state"
+          :zookeeper {:connect-string "<hidden>"
+                      :gc-relative-path "gc-state"
                       :leader-latch-relative-path "leader-latch"}}
          (sanitize-settings {:example {:foo {:kind :test
                                              :test {:factory-fn "create-test" :param "value-test"}
@@ -287,6 +368,9 @@
                                                 :kind :marathon
                                                 :marathon {:factory-fn "create-marathon-scheduler" :url "http://marathon.example.com:8080"}
                                                 :shell {:factory-fn "create-shell-scheduler" :working-directory "/path/to/some/directory"}}
+                             :server-options {:truststore "/path/to/truststore.p12"
+                                              :truststore-type "pkcs12"
+                                              :trust-password "truststore-password"}
                              :work-stealing {:offer-help-interval-ms 100
                                              :reserve-timeout-ms 1000}
                              :zookeeper {:connect-string "test-connect-string"

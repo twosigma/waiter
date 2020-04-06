@@ -18,7 +18,6 @@
             [clj-time.format :as f]
             [clj-time.periodic :as periodic]
             [clojure.core.async :as async]
-            [clojure.core.cache :as cache]
             [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.test :refer :all]
@@ -26,12 +25,12 @@
             [full.async :refer (<?? <? go-try)]
             [waiter.password-store]
             [waiter.test-helpers :refer :all]
+            [waiter.util.cache-utils :refer :all]
             [waiter.util.date-utils :refer :all]
             [waiter.util.utils :refer :all])
   (:import clojure.lang.ExceptionInfo
            java.net.ServerSocket
            java.util.UUID
-           org.joda.time.DateTime
            waiter.cors.PatternBasedCorsValidator
            waiter.service_description.DefaultServiceDescriptionBuilder))
 
@@ -106,42 +105,48 @@
     (is (not (str/includes? actual "dest")))
     (is (not (str/includes? actual "pass")))))
 
-(deftest test-map->json-response
+(deftest test-keyword->str
+  (is (= "foo" (keyword->str :foo)))
+  (is (= "foo-bar" (keyword->str :foo-bar)))
+  (is (= "foo/bar" (keyword->str :foo/bar)))
+  (is (= "foo.bar/fuu-baz" (keyword->str :foo.bar/fuu-baz))))
+
+(deftest test-clj->json-response
   (testing "Conversion from map to JSON response"
 
     (testing "should convert empty map"
-      (let [{:keys [body headers status]} (map->json-response {})]
+      (let [{:keys [body headers status]} (clj->json-response {})]
         (is (= 200 status))
-        (is (= {"content-type" "application/json"} headers))
+        (is (= expected-json-response-headers headers))
         (is (not (nil? body)))))
 
     (testing "should convert regex patterns to strings"
-      (is (= (json/write-str {"bar" "foo"}) (:body (map->json-response {:bar #"foo"}))))
-      (is (= (json/write-str {"bar" ["foo" "baz"] "foo/bar" "baz"})
-             (:body (map->json-response {:bar [#"foo" #"baz"] :foo/bar :baz}))))
-      (is (= (json/write-str {"bar" ["foo" "baz"]}) (:body (map->json-response {:bar ["foo" #"baz"]}))))
-      (is (= (json/write-str {"bar" [["foo" "baz"]]}) (:body (map->json-response {:bar [["foo" #"baz"]]})))))))
+      (is (= (json/write-str {"bar" "foo"}) (:body (clj->json-response {:bar #"foo"}))))
+      (is (= (json/write-str {"bar" ["foo" "baz"] "foo/bar" "baz"} :escape-slash false)
+             (:body (clj->json-response {:bar [#"foo" #"baz"] :foo/bar :baz}))))
+      (is (= (json/write-str {"bar" ["foo" "baz"]}) (:body (clj->json-response {:bar ["foo" #"baz"]}))))
+      (is (= (json/write-str {"bar" [["foo" "baz"]]}) (:body (clj->json-response {:bar [["foo" #"baz"]]})))))))
 
-(deftest test-map->streaming-json-response
+(deftest test-clj->streaming-json-response
   (testing "convert empty map"
-    (let [{:keys [body headers status]} (map->streaming-json-response {})]
+    (let [{:keys [body headers status]} (clj->streaming-json-response {})]
       (is (= 200 status))
-      (is (= {"content-type" "application/json"} headers))
+      (is (= expected-json-response-headers headers))
       (is (= {} (json/read-str (json-response->str body))))))
   (testing "consumes status argument"
-    (let [{:keys [status]} (map->streaming-json-response {} :status 404)]
+    (let [{:keys [status]} (clj->streaming-json-response {} :status 404)]
       (is (= status 404))))
   (testing "converts regex patters to strings"
     (is (= {"foo" ["bar"]}
            (-> {:foo [#"bar"]}
-               map->streaming-json-response
+               clj->streaming-json-response
                :body
                json-response->str
                json/read-str))))
   (testing "converts namespaced keywords"
     (is (= {"foo/bar" "fuu/baz"}
            (-> {:foo/bar :fuu/baz}
-               map->streaming-json-response
+               clj->streaming-json-response
                :body
                json-response->str
                json/read-str)))))
@@ -158,7 +163,7 @@
               (ex-info "TestCase Exception" (map->TestResponse {:status 400}))
               (assoc-in request [:headers "accept"] "text/html"))]
         (is (= 400 status))
-        (is (= {"content-type" "text/html"} headers))
+        (is (= expected-html-response-headers headers))
         (is (str/includes? body "TestCase Exception"))))
     (testing "html response with links"
       (let [{:keys [body headers status]}
@@ -167,7 +172,7 @@
                                                                 :friendly-error-message "See http://localhost/path"}))
               (assoc-in request [:headers "accept"] "text/html"))]
         (is (= 400 status))
-        (is (= {"content-type" "text/html"} headers))
+        (is (= expected-html-response-headers headers))
         (is (str/includes? body "See <a href=\"http://localhost/path\">http://localhost/path</a>"))))
     (testing "plaintext response"
       (let [{:keys [body headers status]}
@@ -175,7 +180,7 @@
               (ex-info "TestCase Exception" (map->TestResponse {:status 400}))
               (assoc-in request [:headers "accept"] "text/plain"))]
         (is (= 400 status))
-        (is (= {"content-type" "text/plain"} headers))
+        (is (= expected-text-response-headers headers))
         (is (str/includes? body "TestCase Exception"))))
     (testing "json response"
       (let [{:keys [body headers status]}
@@ -183,7 +188,7 @@
               (ex-info "TestCase Exception" (map->TestResponse {:status 500}))
               (assoc-in request [:headers "accept"] "application/json"))]
         (is (= 500 status))
-        (is (= {"content-type" "application/json"} headers))
+        (is (= expected-json-response-headers headers))
         (is (str/includes? body "TestCase Exception"))))))
 
 (deftest test-log-and-suppress-when-exception-thrown
@@ -194,46 +199,65 @@
                                  (if (pos? cur)
                                    cur
                                    (throw (ex-info "Non-positive value found!" {})))))]
-    (is (= nil (log-and-suppress-when-exception-thrown "Error message" (get-when-positive-fn))))
+    (is (nil? (log-and-suppress-when-exception-thrown "Error message" (get-when-positive-fn))))
     (is (= 1 (log-and-suppress-when-exception-thrown "Error message" (get-when-positive-fn))))
     (is (= 2 (log-and-suppress-when-exception-thrown "Error message" (get-when-positive-fn))))))
 
 (deftest test-atom-cache-get-or-load
-  (let [cache (atom (cache/fifo-cache-factory {} :threshold 2))
-        counter-atom (atom 0)
-        get-fn #(even? (swap! counter-atom inc))]
+  (let [cache (cache-factory {:threshold 2})]
     (testing "first-new-key"
-      (is (false? (atom-cache-get-or-load cache "one" get-fn)))
-      (is (= 1 @counter-atom)))
+      (is (= 1 (cache-get-or-load cache "one" (constantly 1))))
+      (is (cache-contains? cache "one"))
+      (is (= 1 (cache-size cache))))
+
     (testing "cached-key"
-      (is (false? (atom-cache-get-or-load cache "one" get-fn)))
-      (is (= 1 @counter-atom)))
+      (is (= 1 (cache-get-or-load cache "one" (constantly 10))))
+      (is (cache-contains? cache "one"))
+      (is (= 1 (cache-size cache))))
+
     (testing "second-new-key"
-      (is (true? (atom-cache-get-or-load cache "two" get-fn)))
-      (is (= 2 @counter-atom))
-      (is (false? (atom-cache-get-or-load cache "one" get-fn)))
-      (is (= 2 @counter-atom)))
+      (is (= 2 (cache-get-or-load cache "two" (constantly 2))))
+      (is (= 1 (cache-get-or-load cache "one" (constantly 10))))
+      (is (cache-contains? cache "two"))
+      (is (cache-contains? cache "one"))
+      (is (= 2 (cache-size cache))))
+
     (testing "key-eviction"
-      (is (false? (atom-cache-get-or-load cache "three" get-fn)))
-      (is (= 3 @counter-atom))
-      (is (true? (atom-cache-get-or-load cache "two" get-fn)))
-      (is (= 3 @counter-atom))
-      (is (true? (atom-cache-get-or-load cache "one" get-fn)))
-      (is (= 4 @counter-atom))
-      (is (false? (atom-cache-get-or-load cache "three" get-fn)))
-      (is (= 4 @counter-atom))))
+      (is (= 3 (cache-get-or-load cache "three" (constantly 3))))
+      (is (not (cache-contains? cache "two")))
+      (is (cache-contains? cache "one"))
+      (is (cache-contains? cache "three"))
+      (is (= 2 (cache-size cache)))
+
+      (is (= 20 (cache-get-or-load cache "two" (constantly 20))))
+      (is (not (cache-contains? cache "one")))
+      (is (cache-contains? cache "three"))
+      (is (cache-contains? cache "two"))
+      (is (= 2 (cache-size cache)))
+
+      (is (= 10 (cache-get-or-load cache "one" (constantly 10))))
+      (is (= 30 (cache-get-or-load cache "three" (constantly 30))))
+      (is (not (cache-contains? cache "two")))
+      (is (cache-contains? cache "one"))
+      (is (cache-contains? cache "three"))
+      (is (= 2 (cache-size cache)))))
+
+  (testing "cache ttl eviction"
+    (let [cache (cache-factory {:threshold 2 :ttl 100})]
+      (is (= 10 (cache-get-or-load cache "one" (constantly 10))))
+      (is (= 10 (cache-get-or-load cache "one" (constantly 11))))
+      (is (= 1 (cache-size cache)))
+      (Thread/sleep 110)
+      (is (= 12 (cache-get-or-load cache "one" (constantly 12))))
+      (is (= 1 (cache-size cache)))))
+
   (testing "get-fn-returns-nil"
-    (let [cache (atom (cache/fifo-cache-factory {} :threshold 2))
-          counter-atom (atom 0)
-          get-fn #(do (swap! counter-atom inc) nil)]
-      (is (nil? (atom-cache-get-or-load cache "one" get-fn)))
-      (is (= 1 @counter-atom))
-      (is (nil? (atom-cache-get-or-load cache "one" get-fn)))
-      (is (= 1 @counter-atom))
-      (is (nil? (atom-cache-get-or-load cache "two" get-fn)))
-      (is (= 2 @counter-atom))
-      (is (nil? (atom-cache-get-or-load cache "one" get-fn)))
-      (is (= 2 @counter-atom)))))
+    (let [cache (cache-factory {:threshold 2})]
+      (is (nil? (cache-get-or-load cache "one" (constantly nil))))
+      (is (nil? (cache-get-or-load cache "two" (constantly nil))))
+      (is (cache-contains? cache "one"))
+      (is (cache-contains? cache "two"))
+      (is (= 2 (cache-size cache))))))
 
 (deftest test-retry-strategy
   (let [make-call-atom-and-function (fn [num-failures return-value]
@@ -320,6 +344,20 @@
             (is (= 5 @call-counter-atom))
             (let [actual-elapsed-time @actual-elapsed-time-atom
                   expected-elapsed-time (* (reduce + [1 5 25 125]) 10)]
+              (is (= expected-elapsed-time actual-elapsed-time)))))))
+    (testing "retry-strategy:max-delay-ms"
+      (let [actual-elapsed-time-atom (atom 0)]
+        (with-redefs [sleep (fn [time] (swap! actual-elapsed-time-atom + time))]
+          (let [[call-counter-atom function] (make-call-atom-and-function 5 return-value)
+                retry-config {:delay-multiplier 5
+                              :inital-delay-ms 10
+                              :max-delay-ms 100
+                              :max-retries 10}
+                actual-result ((retry-strategy retry-config) function)]
+            (is (= return-value actual-result))
+            (is (= 6 @call-counter-atom))
+            (let [actual-elapsed-time @actual-elapsed-time-atom
+                  expected-elapsed-time (reduce + [10 50 100 100 100])]
               (is (= expected-elapsed-time actual-elapsed-time)))))))))
 
 (deftest test-unique-identifier
@@ -358,7 +396,15 @@
       (is (= '(("foo" "bar") ("baz" "qux")) (stringify-elements :k [[#"foo" "bar"] [#"baz" "qux"]]))))
 
     (testing "should convert symbols to strings, inlcuding their namespace"
-      (is (= "waiter.cors/pattern-based-validator" (stringify-elements :k 'waiter.cors/pattern-based-validator))))))
+      (is (= "waiter.cors/pattern-based-validator" (stringify-elements :k 'waiter.cors/pattern-based-validator))))
+
+    (testing "NaN and Infinity"
+      (is (= "NaN" (stringify-elements :k Double/NaN)))
+      (is (= "Infinity" (stringify-elements :k Double/POSITIVE_INFINITY)))
+      (is (= "-Infinity" (stringify-elements :k Double/NEGATIVE_INFINITY)))
+      (is (= "NaN" (stringify-elements :k Float/NaN)))
+      (is (= "Infinity" (stringify-elements :k Float/POSITIVE_INFINITY)))
+      (is (= "-Infinity" (stringify-elements :k Float/NEGATIVE_INFINITY))))))
 
 (deftest test-deep-sort-map
   (let [deep-seq (fn [data] (walk/postwalk #(if (or (map? %) (seq? %)) (seq %) %) data))]
@@ -430,26 +476,6 @@
     (let [every-ten-secs (periodic/periodic-seq (t/now) (t/millis 10000))]
       (is (thrown-with-msg? ArithmeticException #"Multiplication overflows an int" (nth every-ten-secs 1000000))))))
 
-(deftest test-time-seq
-  (testing "Generation of a sequence of times"
-
-    (testing "should work for small numbers of iterations"
-      (let [start (DateTime. 1000)
-            every-milli (time-seq start (t/millis 1))
-            every-ten-secs (time-seq start (t/seconds 10))]
-        (is (= (DateTime. 1000) (first every-milli)))
-        (is (= (DateTime. 1001) (second every-milli)))
-        (is (= (DateTime. 1002) (nth every-milli 2)))
-        (is (= (map #(DateTime. %) [1000 1001 1002 1003 1004 1005 1006 1007 1008 1009])
-               (take 10 every-milli)))
-        (is (= (map #(DateTime. %) [1000 11000 21000 31000 41000 51000 61000 71000 81000 91000])
-               (take 10 every-ten-secs)))))
-
-    (testing "should work for 52 weeks worth of ten-second intervals"
-      (let [now (t/now)
-            every-ten-secs (time-seq now (t/millis 10000))]
-        (is (true? (t/equal? (t/plus now (t/weeks 52)) (nth every-ten-secs 3144960))))))))
-
 (deftest test-authority->host
   (is (nil? (authority->host nil)))
   (is (= "www.example.com" (authority->host "www.example.com")))
@@ -462,6 +488,19 @@
   (is (= "8080" (authority->port "www.example.com" :default 8080)))
   (is (= "1234" (authority->port "www.example.com:1234")))
   (is (= "80" (authority->port "www.example2.com:80"))))
+
+(deftest test-request->scheme
+  (is (= :http (request->scheme {:headers {"x-forwarded-proto" "http"}})))
+  (is (= :http (request->scheme {:headers {"x-forwarded-proto" "HTTP"}})))
+  (is (= :http (request->scheme {:headers {"x-forwarded-proto" "http"} :scheme :http})))
+  (is (= :http (request->scheme {:headers {"x-forwarded-proto" "http"} :scheme :https})))
+  (is (= :http (request->scheme {:scheme :http})))
+
+  (is (= :https (request->scheme {:headers {"x-forwarded-proto" "https"}})))
+  (is (= :https (request->scheme {:headers {"x-forwarded-proto" "HTTPS"}})))
+  (is (= :https (request->scheme {:headers {"x-forwarded-proto" "https"} :scheme :http})))
+  (is (= :https (request->scheme {:headers {"x-forwarded-proto" "https"} :scheme :https})))
+  (is (= :https (request->scheme {:scheme :https}))))
 
 (deftest test-same-origin
   (is (not (same-origin nil)))
@@ -509,10 +548,13 @@
                             (create-component {:kind :x
                                                :x {:factory-fn 'bar}}))))
 
-    (testing "should call use on namespace before attempting to resolve"
-      (is (= :bar
-             (create-component {:kind :x
-                                :x {:factory-fn 'waiter.util.utils-test-ns/foo}}))))))
+    (let [test-component {:kind :x
+                          :x {:factory-fn 'waiter.util.utils-test-ns/foo}}]
+      (testing "should call use on namespace before attempting to resolve"
+        (is (= :bar (create-component test-component))))
+
+      (testing "create-component calls should be repeatable"
+        (is (= :bar (create-component test-component)))))))
 
 (deftest test-port-available?
   (let [port (first (filter port-available? (shuffle (range 10000 11000))))]
@@ -525,7 +567,7 @@
 
 (deftest test-urls->html-links
   (testing "nil"
-    (is (= nil (urls->html-links nil))))
+    (is (nil? (urls->html-links nil))))
   (testing "http"
     (is (= "<a href=\"http://localhost\">http://localhost</a>"
            (urls->html-links "http://localhost"))))
@@ -546,7 +588,7 @@
     (is (= "text/html" (request->content-type {:headers {"accept" "text/html"}}))))
   (testing "text/plain if specified"
     (is (= "text/plain" (request->content-type {:headers {"accept" "text/plain"}}))))
-  (testing "application/json if Content-Type is application/json"
+  (testing "application/json if content-type is application/json"
     (is (= "application/json" (request->content-type {:headers {"content-type" "application/json"}}))))
   (testing "else text/plain"
     (is (= "text/plain" (request->content-type {:headers {"accept" "*/*"}})))
@@ -568,3 +610,65 @@
 (deftest test-update-exception
   (is (= {:a 1 :b 2} (ex-data (update-exception (ex-info "test" {:a 1}) #(assoc % :b 2)))))
   (is (= {:b 2} (ex-data (update-exception (RuntimeException. "test") #(assoc % :b 2))))))
+
+(deftest test-add-grpc-headers-and-trailers
+  (let [make-response (fn make-response
+                        [status]
+                        {:status status
+                         :waiter/response-source :waiter})
+        load-trailers (fn load-trailers [{:keys [trailers] :as response}]
+                        (cond-> response
+                          trailers (update :trailers async/<!!)))
+        attach-grpc-errors (fn attach-grpc-errors [response grpc-status grpc-message]
+                             (-> response
+                               load-trailers
+                               (update :headers assoc
+                                       "content-type" "application/grpc"
+                                       "grpc-message" grpc-message
+                                       "grpc-status" (str grpc-status))
+                               (update :trailers assoc
+                                       "grpc-message" grpc-message
+                                       "grpc-status" (str grpc-status))))]
+    (let [response (make-response 200)]
+      (is (= response (-> response (add-grpc-headers-and-trailers {}) load-trailers))))
+    (let [response (make-response 301)]
+      (is (= response (-> response (add-grpc-headers-and-trailers {}) load-trailers))))
+    (let [response (make-response 400)]
+      (is (= (attach-grpc-errors response 3 "Bad Request")
+             (-> response (add-grpc-headers-and-trailers {}) load-trailers))))
+    (let [response (make-response 401)]
+      (is (= (attach-grpc-errors response 16 "Unauthorized")
+             (-> response (add-grpc-headers-and-trailers {}) load-trailers))))
+    (let [response (make-response 403)]
+      (is (= (attach-grpc-errors response 7 "Permission Denied")
+             (-> response (add-grpc-headers-and-trailers {}) load-trailers))))
+    (let [response (make-response 429)]
+      (is (= (attach-grpc-errors response 14 "Too Many Requests")
+             (-> response (add-grpc-headers-and-trailers {}) load-trailers))))
+    (let [response (make-response 500)]
+      (is (= (attach-grpc-errors response 13 "Internal Server Error")
+             (-> response (add-grpc-headers-and-trailers {}) load-trailers))))
+    (let [response (make-response 502)]
+      (is (= (attach-grpc-errors response 14 "Bad Gateway")
+             (-> response (add-grpc-headers-and-trailers {}) load-trailers))))
+    (let [response (make-response 503)]
+      (is (= (attach-grpc-errors response 14 "Service Unavailable")
+             (-> response (add-grpc-headers-and-trailers {}) load-trailers))))
+    (let [response (make-response 504)]
+      (is (= (attach-grpc-errors response 4 "Gateway Timeout")
+             (-> response (add-grpc-headers-and-trailers {}) load-trailers))))))
+
+(deftest test-attach-grpc-status
+  (let [standard-response {:body "hello" :status 200}]
+    (with-redefs [add-grpc-headers-and-trailers (fn [response _]
+                                                  (assoc response :add-grpc-headers-and-trailers true))]
+      (testing "non-grpc request"
+        (is (= standard-response (attach-grpc-status standard-response {} {:headers {}})))
+        (is (= standard-response (attach-grpc-status standard-response {} {:headers {"content-type" "application/xml"}})))
+        (is (= standard-response (attach-grpc-status standard-response {} {:client-protocol "HTTP/1.1"
+                                                                           :headers {"content-type" "application/grpc"}}))))
+
+      (testing "grpc request"
+        (is (= (assoc standard-response :add-grpc-headers-and-trailers true)
+               (attach-grpc-status standard-response {} {:client-protocol "HTTP/2.0"
+                                                         :headers {"content-type" "application/grpc"}})))))))

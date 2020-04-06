@@ -61,11 +61,11 @@
   (or (service-id->interstitial-promise @interstitial-state-atom service-id)
       (loop [iteration 0
              new-interstitial-promise (promise)]
-        (->> (fn [{:keys [service-id->interstitial-promise] :as interstitial-state}]
-               (cond-> interstitial-state
-                       (not (contains? service-id->interstitial-promise service-id))
-                       (assoc-in [:service-id->interstitial-promise service-id] new-interstitial-promise)))
-             (swap! interstitial-state-atom))
+        (swap! interstitial-state-atom
+               (fn [{:keys [service-id->interstitial-promise] :as interstitial-state}]
+                 (cond-> interstitial-state
+                   (not (contains? service-id->interstitial-promise service-id))
+                   (assoc-in [:service-id->interstitial-promise service-id] new-interstitial-promise))))
         (if-let [interstitial-promise (service-id->interstitial-promise @interstitial-state-atom service-id)]
           (do
             (when (identical? new-interstitial-promise interstitial-promise)
@@ -81,12 +81,12 @@
   "Removes all resolved promises mapped against services listed in service-ids.
    It returns the services from service-ids which no longer have promises mapped against them in the interstitial state."
   [interstitial-state-atom service-ids]
-  (->> (fn [{:keys [service-id->interstitial-promise] :as interstitial-state}]
-         (->> service-ids
-              (filter #(some-> % service-id->interstitial-promise realized?))
-              (apply dissoc service-id->interstitial-promise)
-              (assoc interstitial-state :service-id->interstitial-promise)))
-       (swap! interstitial-state-atom))
+  (swap! interstitial-state-atom
+         (fn [{:keys [service-id->interstitial-promise] :as interstitial-state}]
+           (->> service-ids
+                (filter #(some-> % service-id->interstitial-promise realized?))
+                (apply dissoc service-id->interstitial-promise)
+                (assoc interstitial-state :service-id->interstitial-promise))))
   (->> @interstitial-state-atom
        :service-id->interstitial-promise
        keys
@@ -97,14 +97,15 @@
   "Processes messages from the scheduler.
    In particular, it resolves all promises for services which have healthy instances.
    It also removes from the interstitial state any resolved promises for services which are no longer available."
-  [interstitial-state-atom service-id->service-description current-available-service-ids scheduler-messages]
-  (let [{:keys [available-service-ids healthy-service-ids]} (some (fn [[message-type message-data]]
-                                                                    (when (= :update-available-services message-type)
-                                                                      message-data))
-                                                                  scheduler-messages)
-        service-ids-to-remove (set/difference current-available-service-ids available-service-ids)
+  [interstitial-state-atom service-id->service-description current-available-service-ids
+   {:keys [all-available-service-ids service-id->healthy-instances]}]
+  (let [healthy-service-ids (->> service-id->healthy-instances
+                                 (filter #(-> % second seq))
+                                 (map first)
+                                 set)
+        service-ids-to-remove (set/difference current-available-service-ids all-available-service-ids)
         removed-service-ids (remove-resolved-interstitial-promises! interstitial-state-atom service-ids-to-remove)]
-    (doseq [service-id available-service-ids]
+    (doseq [service-id all-available-service-ids]
       (let [{:strs [interstitial-secs]} (service-id->service-description service-id)]
         (when (pos? interstitial-secs)
           (ensure-service-interstitial! interstitial-state-atom service-id interstitial-secs))))
@@ -113,16 +114,16 @@
         (resolve-promise! service-id interstitial-promise :healthy-instance-found)))
     (-> current-available-service-ids
         (set/difference removed-service-ids)
-        (set/union available-service-ids)
+        (set/union all-available-service-ids)
         (set/union healthy-service-ids))))
 
 (defn interstitial-maintainer
   "Long running daemon process that listens for scheduler state updates and triggers changes in the
    interstitial state. It also responds to queries for the interstitial state."
-  [service-id->service-description scheduler-state-chan interstitial-state-atom initial-state]
+  [service-id->service-description router-state-chan interstitial-state-atom initial-state]
   (let [exit-chan (au/latest-chan)
         query-chan (async/chan 32)
-        channels [exit-chan scheduler-state-chan query-chan]]
+        channels [exit-chan router-state-chan query-chan]]
     (async/go
       (loop [{:keys [available-service-ids] :or {available-service-ids #{}} :as current-state} initial-state]
         (metrics/reset-counter
@@ -141,22 +142,21 @@
 
                     query-chan
                     (let [{:keys [response-chan service-id]} message]
-                      (->> (if service-id
-                             {:available (contains? available-service-ids service-id)
-                              :interstitial (some-> (service-id->interstitial-promise @interstitial-state-atom service-id)
-                                                    (deref 0 :not-realized))}
-                             {:interstitial (update @interstitial-state-atom :service-id->interstitial-promise
-                                                    (fn [service-id->interstitial-promise]
-                                                      (pc/map-vals #(deref % 0 :not-realized) service-id->interstitial-promise)))
-                              :maintainer current-state})
-                           (async/>! response-chan))
+                      (async/>! response-chan
+                                (if service-id
+                                  {:available (contains? available-service-ids service-id)
+                                   :interstitial (some-> (service-id->interstitial-promise @interstitial-state-atom service-id)
+                                                         (deref 0 :not-realized))}
+                                  {:interstitial (update @interstitial-state-atom :service-id->interstitial-promise
+                                                         (fn [service-id->interstitial-promise]
+                                                           (pc/map-vals #(deref % 0 :not-realized) service-id->interstitial-promise)))
+                                   :maintainer current-state}))
                       current-state)
 
-                    scheduler-state-chan
-                    (let [scheduler-messages message
-                          available-service-ids' (process-scheduler-messages
+                    router-state-chan
+                    (let [available-service-ids' (process-scheduler-messages
                                                    interstitial-state-atom service-id->service-description
-                                                   available-service-ids scheduler-messages)]
+                                                   available-service-ids message)]
                       (when-not (:initialized? @interstitial-state-atom)
                         (log/info "interstitial state has been initialized with services from the scheduler")
                         (swap! interstitial-state-atom assoc :initialized? true))
@@ -178,8 +178,7 @@
 (defn request-time->interstitial-param-value
   "Returns the interstitial parameter value."
   [request-time]
-  (-> (ct/to-long request-time)
-      (+ interstitial-bypass-timeout-ms)))
+  (+ (ct/to-long request-time) interstitial-bypass-timeout-ms))
 
 (defn request-time->interstitial-param-string
   "Returns the interstitial parameter as name=value string."
@@ -190,8 +189,7 @@
   "When the query string ends with the interstitial param, return the interstitial param value."
   [query-string]
   (when query-string
-    (-> (re-matches interstitial-param-pattern (str query-string))
-        (nth 2))))
+    (nth (re-matches interstitial-param-pattern (str query-string)) 2)))
 
 (defn strip-interstitial-param
   "Removes the interstitial param at the end from the query string."
@@ -254,7 +252,7 @@
   [{:keys [query-string request-time route-params]}]
   (let [{:keys [path]} route-params
         target-url (str "/" path "?"
-                        (when (not (str/blank? query-string))
+                        (when-not (str/blank? query-string)
                           (str query-string "&"))
                         ;; the bypass interstitial should be the last query parameter
                         (request-time->interstitial-param-string request-time))]

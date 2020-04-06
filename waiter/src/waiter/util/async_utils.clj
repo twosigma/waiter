@@ -19,8 +19,9 @@
             [clojure.tools.logging :as log]
             [metrics.core]
             [metrics.histograms :as histograms]
-            [slingshot.slingshot :refer [throw+ try+]])
-  (:import clojure.core.async.impl.channels.ManyToManyChannel))
+            [waiter.correlation-id :as cid])
+  (:import clojure.core.async.impl.channels.ManyToManyChannel
+           java.util.concurrent.ExecutorService))
 
 (defn sliding-buffer-chan [n]
   (async/chan (async/sliding-buffer n)))
@@ -29,6 +30,22 @@
   "Creates and returns a new sliding buffer channel of size 1"
   []
   (sliding-buffer-chan 1))
+
+(defn timer-chan
+  "Returns a core.async channel that 'chimes' at the specified intervals after the specified delay (default of 0 ms).
+   The go block that is triggering the chimes can be terminated by closing the returned channel."
+  ([interval-ms]
+   (timer-chan interval-ms 0))
+  ([interval-ms delay-ms]
+   (let [timer-ch (latest-chan)]
+     (async/go
+       (when (pos? delay-ms)
+         (async/<! (async/timeout delay-ms)))
+       (loop []
+         (when (async/>! timer-ch ::trigger)
+           (async/<! (async/timeout interval-ms))
+           (recur))))
+     timer-ch)))
 
 (defn on-chan-close
   "Repeatedly pulls off `c` until the channel closes.
@@ -187,3 +204,23 @@
   "Determines if v is a channel."
   [v]
   (instance? ManyToManyChannel v))
+
+(defn execute
+  "Helper function, like core.async/thread, which asynchronously executes task on a thread in the provided thread pool.
+   Returns a channel which will receive the result of the task when completed, then close."
+  [task ^ExecutorService task-thread-pool]
+  (let [task-complete-chan (async/promise-chan)
+        current-cid (cid/get-correlation-id)]
+    (.submit task-thread-pool
+             ^Runnable
+             (fn execute-task []
+               (cid/with-correlation-id
+                 current-cid
+                 (try
+                   (async/>!! task-complete-chan {:result (task)})
+                   (catch Throwable th
+                     (log/error th "error while executing task")
+                     (async/>!! task-complete-chan {:error th}))
+                   (finally
+                     (async/close! task-complete-chan))))))
+    task-complete-chan))

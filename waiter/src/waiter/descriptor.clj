@@ -43,6 +43,12 @@
   [fallback-state service-id]
   (-> fallback-state :healthy-service-ids (contains? service-id)))
 
+(defn retrieve-fallback-state-for
+  "Returns the fallback state for the provided service-ids."
+  [{:keys [available-service-ids healthy-service-ids]} service-ids]
+  {:available-service-ids (set/intersection available-service-ids service-ids)
+   :healthy-service-ids (set/intersection healthy-service-ids service-ids)})
+
 (defn missing-run-as-user?
   "Returns true if the exception is due to a missing run-as-user validation on the service description."
   [exception]
@@ -76,7 +82,7 @@
       (catch Exception e
         (if (missing-run-as-user? e)
           (let [{:keys [query-string uri]} request
-                location (str "/waiter-consent" uri (when (not (str/blank? query-string)) (str "?" query-string)))]
+                location (str "/waiter-consent" uri (when-not (str/blank? query-string) (str "?" query-string)))]
             (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "redirect"))
             (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "redirect"))
             {:headers {"location" location} :status 303})
@@ -85,13 +91,21 @@
             (meters/mark! (metrics/waiter-meter "core" "process-errors"))
             (utils/exception->response e request)))))))
 
+(defn- log-service-changes
+  "Logs changes to the tracker service ids."
+  [new-service-ids old-service-ids qualifier]
+  (when-let [old-ids-delta (seq (set/difference old-service-ids new-service-ids))]
+    (log/info "no longer" qualifier "services:" old-ids-delta))
+  (when-let [new-ids-delta (seq (set/difference new-service-ids old-service-ids))]
+    (log/info "newly" qualifier "services:" new-ids-delta)))
+
 (defn fallback-maintainer
   "Long running daemon process that listens for scheduler state updates and triggers changes in the
    fallback state. It also responds to queries for the fallback state."
-  [scheduler-state-chan fallback-state-atom]
+  [router-state-chan fallback-state-atom]
   (let [exit-chan (au/latest-chan)
         query-chan (async/chan 32)
-        channels [exit-chan scheduler-state-chan query-chan]]
+        channels [exit-chan router-state-chan query-chan]]
     (async/go
       (loop [{:keys [available-service-ids healthy-service-ids]
               :or {available-service-ids #{}
@@ -110,24 +124,26 @@
 
                     query-chan
                     (let [{:keys [response-chan service-id]} message]
-                      (->> (if service-id
-                             {:available (contains? available-service-ids service-id)
-                              :healthy (contains? healthy-service-ids service-id)
-                              :service-id service-id}
-                             {:state current-state})
-                           (async/>! response-chan))
+                      (async/>! response-chan
+                                (if service-id
+                                  {:available (contains? available-service-ids service-id)
+                                   :healthy (contains? healthy-service-ids service-id)
+                                   :service-id service-id}
+                                  {:state current-state}))
                       current-state)
 
-                    scheduler-state-chan
-                    (let [{:keys [available-service-ids healthy-service-ids]}
-                          (some (fn [[message-type message-data]]
-                                  (when (= :update-available-services message-type)
-                                    message-data))
-                                message)
+                    router-state-chan
+                    (let [{:keys [all-available-service-ids service-id->healthy-instances]} message
+                          healthy-service-ids' (->> service-id->healthy-instances
+                                                    (filter #(-> % second seq))
+                                                    (map first)
+                                                    set)
                           current-state' (assoc current-state
-                                           :available-service-ids available-service-ids
-                                           :healthy-service-ids healthy-service-ids)]
+                                           :available-service-ids all-available-service-ids
+                                           :healthy-service-ids healthy-service-ids')]
                       (reset! fallback-state-atom current-state')
+                      (log-service-changes all-available-service-ids available-service-ids "available")
+                      (log-service-changes healthy-service-ids' healthy-service-ids "healthy")
                       current-state')))
                 (catch Exception e
                   (log/error e "error in fallback-maintainer")
@@ -151,27 +167,36 @@
   [descriptor->previous-descriptor search-history-length fallback-state request-time descriptor]
   (when (-> descriptor :sources :token-sequence seq)
     (let [{{:keys [token->token-data]} :sources} descriptor
+          current-service-id (:service-id descriptor)
           fallback-period-secs (descriptor->fallback-period-secs descriptor)]
-      (when (and (pos? fallback-period-secs)
-                 (let [most-recently-modified-token (sd/retrieve-most-recently-modified-token token->token-data)
-                       token-last-update-time (get-in token->token-data [most-recently-modified-token "last-update-time"] 0)]
-                   (->> (t/seconds fallback-period-secs)
-                        (t/plus (tc/from-long token-last-update-time))
-                        (t/before? request-time))))
-        (loop [iteration 1
-               loop-descriptor descriptor]
-          (when (<= iteration search-history-length)
-            (when-let [previous-descriptor (descriptor->previous-descriptor loop-descriptor)]
-              (let [{:keys [service-id]} previous-descriptor]
-                (if (service-healthy? fallback-state service-id)
-                  (do
-                    (log/info (str "iteration-" iteration) (:service-id descriptor) "falling back to" service-id)
-                    previous-descriptor)
-                  (do
-                    (log/debug (str "iteration-" iteration) "skipping" service-id "as the fallback service"
-                               {:available (service-exists? fallback-state service-id)
-                                :healthy (service-healthy? fallback-state service-id)})
-                    (recur (inc iteration) previous-descriptor)))))))))))
+      (when (pos? fallback-period-secs)
+        (let [most-recently-modified-token (sd/retrieve-most-recently-modified-token token->token-data)
+              token-last-update-time (get-in token->token-data [most-recently-modified-token "last-update-time"] 0)]
+          (if (->> (t/seconds fallback-period-secs)
+                   (t/plus (tc/from-long token-last-update-time))
+                   (t/before? request-time))
+            (loop [iteration 1
+                   loop-descriptor descriptor
+                   attempted-service-ids #{}]
+              (if (<= iteration search-history-length)
+                (if-let [previous-descriptor (descriptor->previous-descriptor loop-descriptor)]
+                  (let [{:keys [service-id]} previous-descriptor]
+                    (if (service-healthy? fallback-state service-id)
+                      (do
+                        (log/info (str "iteration-" iteration) current-service-id "falling back to" service-id)
+                        previous-descriptor)
+                      (recur (inc iteration)
+                             previous-descriptor
+                             (conj attempted-service-ids service-id))))
+                  (log/info "no fallback service found for" current-service-id "after entire history lookup"
+                            {:attempted-service-ids attempted-service-ids
+                             :fallback-state (retrieve-fallback-state-for fallback-state attempted-service-ids)}))
+                (log/info "no fallback found for" current-service-id "after exhausting search history length"
+                          {:attempted-service-ids attempted-service-ids
+                           :fallback-state (retrieve-fallback-state-for fallback-state attempted-service-ids)})))
+            (log/info "fallback period expired for" current-service-id
+                      {:most-recently-modified-token most-recently-modified-token
+                       :token-last-update-time token-last-update-time})))))))
 
 (defn resolve-descriptor
   "Resolves the descriptor that should be used based on available healthy services.
@@ -190,12 +215,44 @@
             latest-descriptor)))))
 
 (defn request-authorized?
-  "Takes the request w/ kerberos auth info & the app headers, and returns true if the user is allowed to use "
+  "Returns true if the user is allowed to use "
   [user permitted-user]
   (log/debug "validating:" (str "permitted=" permitted-user) (str "actual=" user))
   (or (= token/ANY-USER permitted-user)
       (= ":any" (str permitted-user)) ; support ":any" for backwards compatibility
       (and (not (nil? permitted-user)) (= user permitted-user))))
+
+(defn- compute-token-source-previous-descriptor
+  "Computes the previous descriptor using token sources."
+  [token-defaults build-service-description-and-id {:keys [component->previous-descriptor-fns sources] :as descriptor}]
+  (when-let [token-sequence (-> sources :token-sequence seq)]
+    (let [{:keys [token->token-data]} sources
+          previous-token (->> token->token-data
+                           (pc/map-vals (fn [token-data] (get token-data "previous")))
+                           sd/retrieve-most-recently-modified-token)
+          previous-token-data (get-in token->token-data [previous-token "previous"])]
+      (when (seq previous-token-data)
+        (let [new-sources (->> (assoc token->token-data previous-token previous-token-data)
+                            (sd/compute-service-description-template-from-tokens token-defaults token-sequence)
+                            (merge sources))
+              token-previous-descriptor-fns (get component->previous-descriptor-fns :token)]
+          (-> (select-keys descriptor [:passthrough-headers :waiter-headers])
+            (assoc :component->previous-descriptor-fns {:token token-previous-descriptor-fns}
+                   :sources new-sources)
+            (build-service-description-and-id false)))))))
+
+(defn attach-token-fallback-source
+  "Attaches the helper functions map to retrieve previous descriptor using tokens into the
+   [:component->previous-descriptor-fns :token] key in the provided descriptor.
+   The map contains the following keys: :retrieve-last-update-time and :retrieve-previous-descriptor"
+  [descriptor token-defaults build-service-description-and-id]
+  (cond-> descriptor
+    (-> descriptor :sources :token-sequence seq)
+    (assoc-in [:component->previous-descriptor-fns :token]
+              {:retrieve-last-update-time sd/retrieve-most-recently-modified-token-update-time
+               :retrieve-previous-descriptor (fn retrieve-most-recent-token-update-descriptor [descriptor]
+                                               (compute-token-source-previous-descriptor
+                                                 token-defaults build-service-description-and-id descriptor))})))
 
 (defn compute-descriptor
   "Creates the service descriptor from the request.
@@ -203,34 +260,43 @@
    {:keys [waiter-headers passthrough-headers sources service-id service-description core-service-description suspended-state]}"
   [service-description-defaults token-defaults service-id-prefix kv-store waiter-hostnames request metric-group-mappings
    service-description-builder assoc-run-as-user-approved?]
-  (let [current-request-user (get request :authorization/user)]
-    (-> (headers/split-headers (:headers request))
-        (sd/merge-service-description-sources kv-store waiter-hostnames service-description-defaults token-defaults)
-        (sd/merge-service-description-and-id kv-store service-id-prefix current-request-user metric-group-mappings
-                                             service-description-builder assoc-run-as-user-approved?)
-        (sd/merge-suspended kv-store))))
+  (let [current-request-user (get request :authorization/user)
+        build-service-description-and-id-helper (sd/make-build-service-description-and-id-helper
+                                                  kv-store service-id-prefix current-request-user metric-group-mappings
+                                                  service-description-builder assoc-run-as-user-approved?)
+        descriptor
+        (-> (headers/split-headers (:headers request))
+          (sd/merge-service-description-sources kv-store waiter-hostnames service-description-defaults token-defaults)
+          (attach-token-fallback-source token-defaults build-service-description-and-id-helper)
+          (build-service-description-and-id-helper true))]
+    (when-let [throwable (sd/validate-service-description kv-store service-description-builder descriptor)]
+      (throw throwable))
+    descriptor))
 
 (defn descriptor->previous-descriptor
-  "Creates the service descriptor from the request.
+  "Creates a valid previous version of the descriptor from the provided descriptor.
    The result map contains the following elements:
-   {:keys [waiter-headers passthrough-headers sources service-id service-description core-service-description suspended-state]}"
-  [kv-store service-id-prefix token-defaults metric-group-mappings service-description-builder service-approved? username
-   {:keys [sources] :as descriptor}]
-  (when-let [token-sequence (-> sources :token-sequence seq)]
-    (let [{:keys [token->token-data]} sources
-          previous-token (->> token->token-data
-                              (pc/map-vals (fn [token-data] (get token-data "previous")))
-                              sd/retrieve-most-recently-modified-token)
-          previous-token-data (get-in token->token-data [previous-token "previous"])]
-      (when (seq previous-token-data)
-        (let [new-sources (->> (assoc token->token-data previous-token previous-token-data)
-                               (sd/compute-service-description-template-from-tokens token-defaults token-sequence)
-                               (merge sources))]
-          (-> (select-keys descriptor [:passthrough-headers :waiter-headers])
-              (assoc :sources new-sources)
-              (sd/merge-service-description-and-id
-                kv-store service-id-prefix username metric-group-mappings service-description-builder service-approved?)
-              (sd/merge-suspended kv-store)))))))
+   {:keys [component->previous-descriptor-fns core-service-description passthrough-headers
+           service-id service-description sources suspended-state waiter-headers]}"
+  [kv-store service-description-builder descriptor]
+  (loop [{:keys [component->previous-descriptor-fns] :as descriptor} descriptor]
+    (when-let [component-entry (and (seq component->previous-descriptor-fns)
+                                    (apply
+                                      max-key
+                                      (fn [[_ {:keys [retrieve-last-update-time]}]]
+                                        (retrieve-last-update-time descriptor))
+                                      (seq component->previous-descriptor-fns)))]
+      (let [component (key component-entry)
+            {:keys [retrieve-previous-descriptor]} (val component-entry)]
+        (if-let [previous-descriptor (retrieve-previous-descriptor descriptor)]
+          (if (or (:error previous-descriptor)
+                  (sd/validate-service-description kv-store service-description-builder previous-descriptor))
+            (recur (dissoc previous-descriptor :error))
+            (do
+              (log/info (:service-id descriptor) "has previous descriptor with service-id"
+                        (:service-id previous-descriptor) "computed using" component)
+              previous-descriptor))
+          (recur (utils/dissoc-in descriptor [:component->previous-descriptor-fns component])))))))
 
 (let [request->descriptor-timer (metrics/waiter-timer "core" "request->descriptor")]
   (defn request->descriptor
@@ -249,9 +315,7 @@
             descriptor->previous-descriptor
             (fn descriptor->previous-descriptor-fn
               [descriptor]
-              (descriptor->previous-descriptor
-                kv-store service-id-prefix token-defaults metric-group-mappings service-description-builder
-                service-approved? auth-user descriptor))
+              (descriptor->previous-descriptor kv-store service-description-builder descriptor))
             fallback-state @fallback-state-atom
             descriptor (resolve-descriptor
                          descriptor->previous-descriptor search-history-length request-time fallback-state latest-descriptor)
@@ -263,11 +327,13 @@
           (throw (ex-info "Authenticated user cannot run service"
                           {:authenticated-user auth-user
                            :run-as-user run-as-user
-                           :status 403})))
+                           :status 403
+                           :log-level :warn})))
         (when-not (request-authorized? auth-user permitted-user)
           (throw (ex-info "This user isn't allowed to invoke this service"
                           {:authenticated-user auth-user
                            :service-description service-description
-                           :status 403})))
+                           :status 403
+                           :log-level :warn})))
         {:descriptor descriptor
          :latest-descriptor latest-descriptor}))))

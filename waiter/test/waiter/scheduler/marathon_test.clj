@@ -21,11 +21,13 @@
             [clojure.test :refer :all]
             [clojure.walk :as walk]
             [slingshot.slingshot :as ss]
+            [waiter.config :as config]
             [waiter.scheduler.marathon :refer :all]
             [waiter.mesos.marathon :as marathon]
             [waiter.mesos.mesos :as mesos]
             [waiter.scheduler :as scheduler]
-            [waiter.util.date-utils :as du])
+            [waiter.util.date-utils :as du]
+            [waiter.util.utils :as utils])
   (:import waiter.scheduler.marathon.MarathonScheduler))
 
 (deftest test-response-data->service-instances
@@ -33,23 +35,17 @@
                           :name "response-data->service-instances no response"
                           :marathon-response nil
                           :expected-response {:active-instances []
-                                              :failed-instances []
-                                              :killed-instances []}
-                          :service-id->service-description {}},
+                                              :failed-instances []}},
                          {
                           :name "response-data->service-instances empty response"
                           :marathon-response {}
                           :expected-response {:active-instances []
-                                              :failed-instances []
-                                              :killed-instances []}
-                          :service-id->service-description {}},
+                                              :failed-instances []}},
                          {
                           :name "response-data->service-instances empty-app response"
                           :marathon-response {:app {}}
                           :expected-response {:active-instances []
-                                              :failed-instances []
-                                              :killed-instances []}
-                          :service-id->service-description {}},
+                                              :failed-instances []}},
                          {
                           :name "response-data->service-instances valid response with task failure"
                           :marathon-response
@@ -78,6 +74,7 @@
                                           :ports [31045],
                                           :stagedAt "2014-09-12T23:28:28.594Z",
                                           :startedAt "2014-09-13T00:24:46.959Z",
+                                          :state "TASK_RUNNING",
                                           :version "2014-09-12T23:28:21.737Z"},
                                          {
                                           :appId "/test-app-1234",
@@ -112,9 +109,9 @@
                                                   :host "10.141.141.11",
                                                   :id "test-app-1234.A",
                                                   :log-directory nil,
+                                                  :marathon/state "TASK_RUNNING"
                                                   :message nil,
                                                   :port 31045,
-                                                  :protocol "https",
                                                   :service-id "test-app-1234",
                                                   :started-at (du/str-to-date "2014-09-13T00:24:46.959Z" formatter-marathon)}),
                                                (scheduler/make-ServiceInstance
@@ -125,7 +122,6 @@
                                                   :log-directory nil,
                                                   :message nil,
                                                   :port 31234,
-                                                  :protocol "https",
                                                   :service-id "test-app-1234",
                                                   :started-at (du/str-to-date "2014-09-13T00:24:56.965Z" formatter-marathon)}),
                                                (scheduler/make-ServiceInstance
@@ -136,7 +132,6 @@
                                                   :log-directory nil,
                                                   :message nil,
                                                   :port 41234,
-                                                  :protocol "https",
                                                   :service-id "test-app-1234",
                                                   :started-at (du/str-to-date "2014-09-14T00:24:46.965Z" formatter-marathon)}))
                            :failed-instances (list
@@ -146,13 +141,11 @@
                                                   :host "10.141.141.10",
                                                   :id "test-app-1234.D",
                                                   :log-directory nil,
+                                                  :marathon/state "TASK_FAILED"
                                                   :message "Abnormal executor termination",
                                                   :port 0,
-                                                  :protocol "https",
                                                   :service-id "test-app-1234",
-                                                  :started-at (du/str-to-date "2014-09-12T23:23:41.711Z" formatter-marathon)}))
-                           :killed-instances []}
-                          :service-id->service-description {"test-app-1234" {"backend-proto" "https"}}},
+                                                  :started-at (du/str-to-date "2014-09-12T23:23:41.711Z" formatter-marathon)}))}},
                          {
                           :name "response-data->service-instances valid response without task failure"
                           :marathon-response
@@ -212,7 +205,6 @@
                                                   :log-directory "/slave-dir/S234842/frameworks/F123445/executors/test-app-1234.A/runs/latest",
                                                   :message nil,
                                                   :port 31045,
-                                                  :protocol "http",
                                                   :service-id "test-app-1234",
                                                   :started-at (du/str-to-date "2014-09-13T00:24:46.959Z" formatter-marathon)}),
                                                (scheduler/make-ServiceInstance
@@ -223,7 +215,6 @@
                                                   :log-directory nil,
                                                   :message nil,
                                                   :port 31234,
-                                                  :protocol "http",
                                                   :service-id "test-app-1234",
                                                   :started-at (du/str-to-date "2014-09-13T00:24:46.965Z" formatter-marathon)}),
                                                (scheduler/make-ServiceInstance
@@ -234,13 +225,10 @@
                                                   :log-directory "/slave-dir/S651616/frameworks/F123445/executors/test-app-1234.C/runs/latest",
                                                   :message nil,
                                                   :port 41234,
-                                                  :protocol "http",
                                                   :service-id "test-app-1234",
                                                   :started-at (du/str-to-date "2014-09-13T00:24:46.965Z" formatter-marathon)}))
-                           :failed-instances []
-                           :killed-instances []}
-                          :service-id->service-description {"test-app-1234" {"backend-proto" "http"}}})]
-    (doseq [{:keys [expected-response marathon-response name service-id->service-description]} test-cases]
+                           :failed-instances []}})]
+    (doseq [{:keys [expected-response marathon-response name]} test-cases]
       (testing (str "Test " name)
         (let [framework-id (:framework-id marathon-response)
               service-id->failed-instances-transient-store (atom {})
@@ -249,10 +237,8 @@
                                 [:app]
                                 (fn [] framework-id)
                                 {:slave-directory "/slave-dir"}
-                                service-id->failed-instances-transient-store
-                                service-id->service-description)]
+                                service-id->failed-instances-transient-store)]
           (is (= expected-response actual-response) (str name))
-          (scheduler/preserve-only-killed-instances-for-services! [])
           (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store []))))))
 
 (deftest test-response-data->service->service-instances
@@ -345,7 +331,6 @@
                          :healthy? true
                          :host "10.141.141.11"
                          :port 31045
-                         :protocol "https"
                          :started-at (du/str-to-date "2014-09-13T00:24:46.959Z" formatter-marathon)})
                       (scheduler/make-ServiceInstance
                         {:id "test-app-1234.B"
@@ -353,10 +338,8 @@
                          :healthy? true
                          :host "10.141.141.12"
                          :port 31234
-                         :protocol "https"
                          :started-at (du/str-to-date "2014-09-13T00:24:46.965Z" formatter-marathon)}))
-                    :failed-instances []
-                    :killed-instances []}
+                    :failed-instances []}
                    (scheduler/make-Service {:id "test-app-6789", :instances 3, :task-count 3})
                    {:active-instances
                     (list
@@ -366,7 +349,6 @@
                          :healthy? true
                          :host "10.141.141.11"
                          :port 31045
-                         :protocol "http"
                          :started-at (du/str-to-date "2014-09-13T00:24:46.959Z" formatter-marathon)})
                       (scheduler/make-ServiceInstance
                         {:id "test-app-6789.B"
@@ -374,7 +356,6 @@
                          :healthy? nil
                          :host "10.141.141.12"
                          :port 36789
-                         :protocol "http"
                          :started-at (du/str-to-date "2014-09-13T00:24:56.965Z" formatter-marathon)})
                       (scheduler/make-ServiceInstance
                         {:id "test-app-6789.C"
@@ -382,7 +363,6 @@
                          :healthy? false
                          :host "10.141.141.13"
                          :port 46789
-                         :protocol "http"
                          :started-at (du/str-to-date "2014-09-14T00:24:46.965Z" formatter-marathon)}))
                     :failed-instances
                     (list
@@ -392,28 +372,24 @@
                          :healthy? false
                          :host "10.141.141.10"
                          :port 0
-                         :protocol "http"
                          :started-at (du/str-to-date "2014-09-12T23:23:41.711Z" formatter-marathon)
-                         :message "Abnormal executor termination"}))
-                    :killed-instances []})
+                         :marathon/state "TASK_FAILED"
+                         :message "Abnormal executor termination"}))})
         service-id->failed-instances-transient-store (atom {})
-        service-id->service-description {"test-app-1234" {"backend-proto" "https"}
-                                         "test-app-6789" {"backend-proto" "http"}}
         actual (response-data->service->service-instances
-                 input (fn [] nil) nil service-id->failed-instances-transient-store service-id->service-description)]
+                 input (fn [] nil) nil service-id->failed-instances-transient-store)]
     (is (= expected actual))
-    (scheduler/preserve-only-killed-instances-for-services! [])
     (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store [])))
 
 (deftest test-service-id->failed-instances-transient-store
-  (let [faled-instance-response-fn (fn [service-id instance-id]
-                                     {:appId service-id,
-                                      :host (str "10.141.141." instance-id),
-                                      :message "Abnormal executor termination",
-                                      :state (str instance-id "failed"),
-                                      :taskId (str service-id "." instance-id),
-                                      :timestamp "2014-09-12T23:23:41.711Z",
-                                      :version "2014-09-12T23:28:21.737Z"})
+  (let [failed-instance-response-fn (fn [service-id instance-id]
+                                      {:appId service-id,
+                                       :host (str "10.141.141." instance-id),
+                                       :message "Abnormal executor termination",
+                                       :state (str instance-id "failed"),
+                                       :taskId (str service-id "." instance-id),
+                                       :timestamp "2014-09-12T23:23:41.711Z",
+                                       :version "2014-09-12T23:28:21.737Z"})
         framework-id "framework-id"
         health-check-url "/status"
         slave-directory "/slave"
@@ -430,53 +406,106 @@
                                   (assoc :message (str/trim message)))))
         service-id-1 "test-service-id-failed-instances-1"
         service-id-2 "test-service-id-failed-instances-2"
-        service-id->failed-instances-transient-store (atom {})]
-    (scheduler/preserve-only-killed-instances-for-services! [])
+        service-id->failed-instances-transient-store (atom {})
+        active-instances-1 []
+        active-instances-2 []
+        instance-1A (failed-instance-response-fn service-id-1 "A")
+        instance-1B (failed-instance-response-fn service-id-1 "B")
+        instance-1C (failed-instance-response-fn service-id-1 "C")
+        instance-1D (failed-instance-response-fn service-id-1 "D")
+        instance-1E (failed-instance-response-fn service-id-1 "E")
+        instance-1F (failed-instance-response-fn service-id-1 "F")
+        instance-1G (failed-instance-response-fn service-id-1 "G")
+        instance-1H (failed-instance-response-fn service-id-1 "H")
+        instance-1I (failed-instance-response-fn service-id-1 "I")
+        instance-1J (failed-instance-response-fn service-id-1 "J")
+        instance-1K (failed-instance-response-fn service-id-1 "K")
+        instance-1L (failed-instance-response-fn service-id-1 "L")
+        instance-1X (failed-instance-response-fn service-id-2 "X")
+        instance-1Y (failed-instance-response-fn service-id-2 "Y")
+        instance-1Z (failed-instance-response-fn service-id-2 "Z")]
     (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store [])
-    (is (= 0 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
-    (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "A") common-extractor-fn)
+    (is (zero? (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
+    (parse-and-store-failed-instance!
+      service-id->failed-instances-transient-store service-id-1 active-instances-1 instance-1A common-extractor-fn)
     (is (= 1 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
-    (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "A") common-extractor-fn)
+    (parse-and-store-failed-instance!
+      service-id->failed-instances-transient-store service-id-1 active-instances-1 instance-1A common-extractor-fn)
     (is (= 1 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
-    (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "B") common-extractor-fn)
+    (parse-and-store-failed-instance!
+      service-id->failed-instances-transient-store service-id-1 active-instances-1 instance-1B common-extractor-fn)
     (is (= 2 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
-    (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "A") common-extractor-fn)
+    (parse-and-store-failed-instance!
+      service-id->failed-instances-transient-store service-id-1 active-instances-1 instance-1A common-extractor-fn)
     (is (= 2 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
-    (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "B") common-extractor-fn)
+    (parse-and-store-failed-instance!
+      service-id->failed-instances-transient-store service-id-1 active-instances-1 instance-1B common-extractor-fn)
     (is (= 2 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
-    (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "C") common-extractor-fn)
+    (parse-and-store-failed-instance!
+      service-id->failed-instances-transient-store service-id-1 active-instances-1 instance-1C common-extractor-fn)
     (is (= 3 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
-    (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "D") common-extractor-fn)
+    (parse-and-store-failed-instance!
+      service-id->failed-instances-transient-store service-id-1 active-instances-1 instance-1D common-extractor-fn)
     (is (= 4 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
-    (scheduler/preserve-only-killed-instances-for-services! [])
     (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store [])
-    (is (= 0 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
-    (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "A") common-extractor-fn)
+    (is (zero? (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
+    (parse-and-store-failed-instance!
+      service-id->failed-instances-transient-store service-id-1 active-instances-1 instance-1A common-extractor-fn)
     (is (= 1 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
-    (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "B") common-extractor-fn)
+    (parse-and-store-failed-instance!
+      service-id->failed-instances-transient-store service-id-1 active-instances-1 instance-1B common-extractor-fn)
     (is (= 2 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
-    (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "A") common-extractor-fn)
+    (parse-and-store-failed-instance!
+      service-id->failed-instances-transient-store service-id-1 active-instances-1 instance-1A common-extractor-fn)
     (is (= 2 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
-    (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "A") common-extractor-fn)
+    (parse-and-store-failed-instance!
+      service-id->failed-instances-transient-store service-id-1 active-instances-1 instance-1A common-extractor-fn)
     (is (= 2 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
-    (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "C") common-extractor-fn)
+    (parse-and-store-failed-instance!
+      service-id->failed-instances-transient-store service-id-1 active-instances-1 instance-1C common-extractor-fn)
     (is (= 3 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
-    (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "D") common-extractor-fn)
-    (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "E") common-extractor-fn)
-    (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "F") common-extractor-fn)
-    (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "G") common-extractor-fn)
-    (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "H") common-extractor-fn)
-    (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "I") common-extractor-fn)
+    (parse-and-store-failed-instance!
+      service-id->failed-instances-transient-store service-id-1 active-instances-1 instance-1D common-extractor-fn)
+    (parse-and-store-failed-instance!
+      service-id->failed-instances-transient-store service-id-1 active-instances-1 instance-1E common-extractor-fn)
+    (parse-and-store-failed-instance!
+      service-id->failed-instances-transient-store service-id-1 active-instances-1 instance-1F common-extractor-fn)
+    (parse-and-store-failed-instance!
+      service-id->failed-instances-transient-store service-id-1 active-instances-1 instance-1G common-extractor-fn)
+    (parse-and-store-failed-instance!
+      service-id->failed-instances-transient-store service-id-1 active-instances-1 instance-1H common-extractor-fn)
+    (parse-and-store-failed-instance!
+      service-id->failed-instances-transient-store service-id-1 active-instances-1 instance-1I common-extractor-fn)
     (is (= 9 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
-    (is (= 0 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-2))))
-    (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-2 (faled-instance-response-fn service-id-2 "X") common-extractor-fn)
-    (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-2 (faled-instance-response-fn service-id-2 "Y") common-extractor-fn)
-    (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-2 (faled-instance-response-fn service-id-2 "Z") common-extractor-fn)
+    (parse-and-store-failed-instance!
+      service-id->failed-instances-transient-store service-id-1 active-instances-1 instance-1J common-extractor-fn)
+    (is (= 10 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
+    (parse-and-store-failed-instance!
+      service-id->failed-instances-transient-store service-id-1 active-instances-1 instance-1K common-extractor-fn)
+    (is (= 10 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
+    (let [active-instances-1b [{:id (:taskId instance-1A)} {:id (:taskId instance-1H)} {:id (:taskId instance-1I)}]]
+      (parse-and-store-failed-instance!
+        service-id->failed-instances-transient-store service-id-1 active-instances-1b instance-1I common-extractor-fn)
+      (is (= 8 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1)))))
+    (parse-and-store-failed-instance!
+      service-id->failed-instances-transient-store service-id-1 active-instances-1 instance-1I common-extractor-fn)
+    (is (= 9 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
+    (parse-and-store-failed-instance!
+      service-id->failed-instances-transient-store service-id-1 active-instances-1 instance-1L common-extractor-fn)
+    (is (= 10 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
+
+    (is (zero? (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-2))))
+    (parse-and-store-failed-instance!
+      service-id->failed-instances-transient-store service-id-2 active-instances-2 instance-1X common-extractor-fn)
+    (parse-and-store-failed-instance!
+      service-id->failed-instances-transient-store service-id-2 active-instances-2 instance-1Y common-extractor-fn)
+    (parse-and-store-failed-instance!
+      service-id->failed-instances-transient-store service-id-2 active-instances-2 instance-1Z common-extractor-fn)
     (remove-failed-instances-for-service! service-id->failed-instances-transient-store service-id-1)
-    (is (= 0 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
+    (is (zero? (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
     (is (= 3 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-2))))
     (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store [service-id-2])
-    (is (= 0 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
+    (is (zero? (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
     (is (= 3 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-2))))))
 
 (deftest test-retrieve-log-url
@@ -538,62 +567,18 @@
                                    :path "/path/to/instance2/directory/dir4"})]
         (is (= expected-result (mesos/retrieve-directory-content-from-host mesos-api host directory)))))))
 
-(deftest test-marathon-descriptor
-  (let [service-id->password-fn (fn [service-id] (str service-id "-password"))]
-    (testing "basic-test-with-defaults"
-      (let [expected {:id "test-service-1"
-                      :labels {:source "waiter"
-                               :user "test-user"}
-                      :env {"BAZ" "quux"
-                            "FOO" "bar"
-                            "HOME" "/home/path/test-user"
-                            "LOGNAME" "test-user"
-                            "USER" "test-user"
-                            "WAITER_CPUS" "1"
-                            "WAITER_MEM_MB" "1536"
-                            "WAITER_PASSWORD" "test-service-1-password"
-                            "WAITER_SERVICE_ID" "test-service-1"
-                            "WAITER_USERNAME" "waiter"}
-                      :cmd "test-command"
-                      :cpus 1
-                      :disk nil
-                      :mem 1536
-                      :healthChecks [{:protocol "HTTP"
-                                      :path "/status"
-                                      :gracePeriodSeconds 111
-                                      :intervalSeconds 10
-                                      :portIndex 0
-                                      :timeoutSeconds 20
-                                      :maxConsecutiveFailures 5}]
-                      :backoffFactor 2
-                      :ports [0 0]
-                      :user "test-user"}
-            home-path-prefix "/home/path/"
-            service-id "test-service-1"
-            service-description {"backend-proto" "http"
-                                 "cmd" "test-command"
-                                 "cpus" 1
-                                 "mem" 1536
-                                 "run-as-user" "test-user"
-                                 "ports" 2
-                                 "restart-backoff-factor" 2
-                                 "grace-period-secs" 111
-                                 "health-check-interval-secs" 10
-                                 "health-check-max-consecutive-failures" 5
-                                 "env" {"FOO" "bar"
-                                        "BAZ" "quux"}}
-            actual (marathon-descriptor home-path-prefix service-id->password-fn
-                                        {:service-id service-id, :service-description service-description})]
-        (is (= expected actual))))))
-
 (defn- create-marathon-scheduler
   [& {:as marathon-config}]
-  (-> {:force-kill-after-ms 1000
+  (-> {:authorizer {:kind :default
+                    :default {:factory-fn 'waiter.authorization/noop-authorizer}}
+       :force-kill-after-ms 1000
        :home-path-prefix "/home/path/"
-       :is-waiter-app?-fn (constantly true)
+       :is-waiter-service?-fn (constantly true)
        :marathon-api {}
        :mesos-api {}
        :retrieve-framework-id-fn (constantly nil)
+       :retrieve-syncer-state-fn (constantly {})
+       :scheduler-name "marathon"
        :service-id->failed-instances-transient-store (atom {})
        :service-id->kill-info-store (atom {})
        :service-id->out-of-sync-state-store (atom {})
@@ -602,6 +587,75 @@
        :sync-deployment-maintainer-atom (atom nil)}
       (merge marathon-config)
       map->MarathonScheduler))
+
+(deftest test-marathon-descriptor
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
+    (let [service-id->password-fn (fn [service-id] (str service-id "-password"))
+          descriptor-builder-ctx {:container-init-commands ["waiter-mesos-init"]}]
+      (testing "basic-test-with-defaults"
+        (let [expected {:id "test-service-1"
+                        :labels {:namespace "test-user"
+                                 :source "waiter"
+                                 :user "test-user"}
+                        :env {"BAZ" "quux"
+                              "FOO" "bar"
+                              "HOME" "/home/path/test-user"
+                              "LOGNAME" "test-user"
+                              "USER" "test-user"
+                              "WAITER_CLUSTER" "test-cluster"
+                              "WAITER_CONCURRENCY_LEVEL" "1"
+                              "WAITER_CPUS" "1"
+                              "WAITER_MEM_MB" "1536"
+                              "WAITER_PASSWORD" "test-service-1-password"
+                              "WAITER_SERVICE_ID" "test-service-1"
+                              "WAITER_USERNAME" "waiter"}
+                        :args ["waiter-mesos-init" "test-command"]
+                        :cpus 1
+                        :disk nil
+                        :mem 1536
+                        :healthChecks [{:protocol "HTTP"
+                                        :path "/status"
+                                        :gracePeriodSeconds 111
+                                        :intervalSeconds 10
+                                        :portIndex 0
+                                        :timeoutSeconds 20
+                                        :maxConsecutiveFailures 5}]
+                        :backoffFactor 2
+                        :ports [0 0]
+                        :user "test-user"}
+              home-path-prefix "/home/path/"
+              service-id "test-service-1"
+              service-description {"backend-proto" "http"
+                                   "cmd" "test-command"
+                                   "concurrency-level" 1
+                                   "cpus" 1
+                                   "mem" 1536
+                                   "namespace" "test-user"
+                                   "run-as-user" "test-user"
+                                   "ports" 2
+                                   "restart-backoff-factor" 2
+                                   "grace-period-secs" 111
+                                   "health-check-authentication" "disabled"
+                                   "health-check-interval-secs" 10
+                                   "health-check-max-consecutive-failures" 5
+                                   "health-check-port-index" 0
+                                   "env" {"FOO" "bar"
+                                          "BAZ" "quux"}}
+              actual (default-marathon-descriptor-builder
+                       home-path-prefix service-id->password-fn
+                       {:service-id service-id, :service-description service-description}
+                       descriptor-builder-ctx)]
+          (is (= expected actual))
+
+          (testing "health-check-port-index of 2"
+            (is (= (-> expected
+                       (assoc-in [:healthChecks 0 :portIndex] 2)
+                       (assoc :ports [0 0 0]))
+                   (default-marathon-descriptor-builder
+                     home-path-prefix service-id->password-fn
+                     (->> (assoc service-description "health-check-port-index" 2 "ports" 3)
+                          (assoc {:service-id service-id} :service-description))
+                     descriptor-builder-ctx)))))))))
 
 (deftest test-kill-instance-last-force-kill-time-store
   (let [current-time (t/now)
@@ -663,67 +717,10 @@
                              :service-id->kill-info-store (atom {service-id :kill-call-info}))
         state (scheduler/service-id->state marathon-scheduler service-id)]
     (is (= {:failed-instances [:failed-instances]
-            :killed-instances []
             :kill-info :kill-call-info
-            :out-of-sync-state nil}
+            :out-of-sync-state nil
+            :syncer {}}
            state))))
-
-(deftest test-killed-instances-transient-store
-  (let [current-time (t/now)
-        current-time-str (du/date-to-str current-time)
-        marathon-api (Object.)
-        marathon-scheduler (create-marathon-scheduler :force-kill-after-ms 60000 :marathon-api marathon-api)
-        make-instance (fn [service-id instance-id]
-                        {:id instance-id
-                         :service-id service-id})]
-    (with-redefs [marathon/kill-task (fn [in-marathon-api service-id instance-id scale-value force-value]
-                                       (is (= marathon-api in-marathon-api))
-                                       (is (= [scale-value force-value] [true false]))
-                                       {:service-id service-id, :instance-id instance-id, :killed? true, :deploymentId "12982340972"})
-                  t/now (fn [] current-time)]
-      (testing "tracking-instance-killed"
-
-        (scheduler/preserve-only-killed-instances-for-services! [])
-
-        (is (:killed? (scheduler/kill-instance marathon-scheduler (make-instance "service-1" "service-1.A"))))
-        (is (:killed? (scheduler/kill-instance marathon-scheduler (make-instance "service-2" "service-2.A"))))
-        (is (:killed? (scheduler/kill-instance marathon-scheduler (make-instance "service-1" "service-1.C"))))
-        (is (:killed? (scheduler/kill-instance marathon-scheduler (make-instance "service-1" "service-1.B"))))
-
-        (is (= [{:id "service-1.A", :service-id "service-1", :killed-at current-time-str}
-                {:id "service-1.B", :service-id "service-1", :killed-at current-time-str}
-                {:id "service-1.C", :service-id "service-1", :killed-at current-time-str}]
-               (scheduler/service-id->killed-instances "service-1")))
-        (is (= [{:id "service-2.A" :service-id "service-2", :killed-at current-time-str}]
-               (scheduler/service-id->killed-instances "service-2")))
-        (is (= [] (scheduler/service-id->killed-instances "service-3")))
-
-        (scheduler/remove-killed-instances-for-service! "service-1")
-        (is (= [] (scheduler/service-id->killed-instances "service-1")))
-        (is (= [{:id "service-2.A" :service-id "service-2", :killed-at current-time-str}]
-               (scheduler/service-id->killed-instances "service-2")))
-        (is (= [] (scheduler/service-id->killed-instances "service-3")))
-
-        (is (:killed? (scheduler/kill-instance marathon-scheduler (make-instance "service-3" "service-3.A"))))
-        (is (:killed? (scheduler/kill-instance marathon-scheduler (make-instance "service-3" "service-3.B"))))
-        (is (= [] (scheduler/service-id->killed-instances "service-1")))
-        (is (= [{:id "service-2.A" :service-id "service-2", :killed-at current-time-str}]
-               (scheduler/service-id->killed-instances "service-2")))
-        (is (= [{:id "service-3.A", :service-id "service-3", :killed-at current-time-str}
-                {:id "service-3.B", :service-id "service-3", :killed-at current-time-str}]
-               (scheduler/service-id->killed-instances "service-3")))
-
-        (scheduler/remove-killed-instances-for-service! "service-2")
-        (is (= [] (scheduler/service-id->killed-instances "service-1")))
-        (is (= [] (scheduler/service-id->killed-instances "service-2")))
-        (is (= [{:id "service-3.A", :service-id "service-3", :killed-at current-time-str}
-                {:id "service-3.B", :service-id "service-3", :killed-at current-time-str}]
-               (scheduler/service-id->killed-instances "service-3")))
-
-        (scheduler/preserve-only-killed-instances-for-services! [])
-        (is (= [] (scheduler/service-id->killed-instances "service-1")))
-        (is (= [] (scheduler/service-id->killed-instances "service-2")))
-        (is (= [] (scheduler/service-id->killed-instances "service-3")))))))
 
 (deftest test-max-failed-instances-cache
   (let [current-time (t/now)
@@ -736,6 +733,7 @@
         (parse-and-store-failed-instance!
           service-id->failed-instances-transient-store
           "service-1"
+          []
           {:taskId (str "service-1." n)
            :timestamp current-time-str}
           common-extractor-fn))
@@ -753,15 +751,28 @@
 
 (deftest test-marathon-scheduler
   (testing "Creating a MarathonScheduler"
-    (let [valid-config {:force-kill-after-ms 60000
-                        :framework-id-ttl 900000
-                        :home-path-prefix "/home/"
-                        :http-options {:conn-timeout 10000 :socket-timeout 10000}
-                        :mesos-slave-port 5051
-                        :slave-directory "/foo"
-                        :sync-deployment {:interval-ms 15000
-                                          :timeout-cycles 4}
-                        :url "url"}
+    (let [context {:is-waiter-service?-fn (constantly nil)
+                   :leader?-fn (constantly nil)
+                   :scheduler-name "marathon"
+                   :scheduler-state-chan (async/chan 4)
+                   :scheduler-syncer-interval-secs 5
+                   :service-id->password-fn (constantly nil)
+                   :service-id->service-description-fn (constantly nil)
+                   :start-scheduler-syncer-fn (constantly nil)}
+          scheduler-config {:authorizer {:kind :default
+                                         :default {:factory-fn 'waiter.authorization/noop-authorizer}}
+                            :force-kill-after-ms 60000
+                            :framework-id-ttl 900000
+                            :marathon-descriptor-builder {:factory-fn 'waiter.scheduler.marathon/default-marathon-descriptor-builder
+                                                          :container-init-commands ["waiter-mesos-init"]}
+                            :home-path-prefix "/home/"
+                            :http-options {:conn-timeout 10000 :socket-timeout 10000}
+                            :mesos-slave-port 5051
+                            :slave-directory "/foo"
+                            :sync-deployment {:interval-ms 15000
+                                              :timeout-cycles 4}
+                            :url "url"}
+          valid-config (merge context scheduler-config)
           create-marathon-scheduler (fn create-marathon-scheduler [config]
                                       (let [result (marathon-scheduler config)
                                             {:keys [sync-deployment-maintainer-atom]} result]
@@ -779,7 +790,16 @@
 
       (testing "should work with valid configuration"
         (is (instance? MarathonScheduler (create-marathon-scheduler valid-config)))
-        (is (instance? MarathonScheduler (create-marathon-scheduler (dissoc valid-config :force-kill-after-ms))))))))
+        (is (instance? MarathonScheduler (create-marathon-scheduler (dissoc valid-config :force-kill-after-ms)))))
+
+      (testing "validate service - normal"
+        (scheduler/validate-service
+          (create-marathon-scheduler (assoc valid-config :service-id->service-description-fn (constantly {}))) nil))
+      (testing "validate service - test that image can be set"
+        (scheduler/validate-service
+          (create-marathon-scheduler (assoc valid-config
+                                       :service-id->service-description-fn
+                                       (constantly {"image" "twosigma/waiter-test-apps"}))) nil)))))
 
 (deftest test-process-kill-instance-request
   (let [marathon-api (Object.)
@@ -835,23 +855,23 @@
         (is (= {:instance-id instance-id :killed? false :message "exception from test" :service-id service-id, :status 500}
                (process-kill-instance-request marathon-api service-id instance-id {})))))))
 
-(deftest test-delete-app
+(deftest test-delete-service
   (let [scheduler (create-marathon-scheduler)]
 
     (with-redefs [marathon/delete-app (constantly {:deploymentId 12345})]
       (is (= {:result :deleted
               :message "Marathon deleted with deploymentId 12345"}
-             (scheduler/delete-app scheduler "foo"))))
+             (scheduler/delete-service scheduler "foo"))))
 
     (with-redefs [marathon/delete-app (constantly {})]
       (is (= {:result :error
               :message "Marathon did not provide deploymentId for delete request"}
-             (scheduler/delete-app scheduler "foo"))))
+             (scheduler/delete-service scheduler "foo"))))
 
     (with-redefs [marathon/delete-app (fn [_ _] (ss/throw+ {:status 404}))]
       (is (= {:result :no-such-service-exists
               :message "Marathon reports service does not exist"}
-             (scheduler/delete-app scheduler "foo"))))))
+             (scheduler/delete-service scheduler "foo"))))))
 
 (deftest test-extract-deployment-info
   (let [marathon-api (Object.)
@@ -910,7 +930,7 @@
         (is (= {:affectedApps ["/waiter-app-1234"] :id "1234a" :version "v1234a"}
                (extract-service-deployment-info marathon-api "waiter-app-1234")))))))
 
-(deftest test-scale-app
+(deftest test-scale-service
   (let [marathon-api (Object.)
         marathon-scheduler (create-marathon-scheduler :force-kill-after-ms 60000 :marathon-api marathon-api)
         service-id "test-service-id"]
@@ -934,7 +954,7 @@
                                             (is (= service-id in-service-id))
                                             (is (= {:cmd "tc" :cpus 2 :id service-id :instances instances :mem 4} descriptor))
                                             (deliver updated-invoked-promise :invoked))]
-          (scheduler/scale-app marathon-scheduler service-id instances false)
+          (scheduler/scale-service marathon-scheduler service-id instances false)
           (is (= :invoked (deref updated-invoked-promise 0 :not-invoked))))))
 
     (testing "forced scale of service - fewer instances"
@@ -962,7 +982,7 @@
                                             (is (= service-id in-service-id))
                                             (is (= {:cmd "tc" :cpus 2 :id service-id :instances 15 :mem 4} descriptor))
                                             (deliver updated-invoked-promise :invoked))]
-          (scheduler/scale-app marathon-scheduler service-id instances true)
+          (scheduler/scale-service marathon-scheduler service-id instances true)
           (is (= :invoked (deref deleted-deployment-promise 0 :not-invoked)))
           (is (= :invoked (deref updated-invoked-promise 0 :not-invoked))))))
 
@@ -991,7 +1011,7 @@
                                             (is (= service-id in-service-id))
                                             (is (= {:cmd "tc" :cpus 2 :id service-id :instances instances :mem 4} descriptor))
                                             (deliver updated-invoked-promise :invoked))]
-          (scheduler/scale-app marathon-scheduler service-id instances true)
+          (scheduler/scale-service marathon-scheduler service-id instances true)
           (is (= :invoked (deref deleted-deployment-promise 0 :not-invoked)))
           (is (= :invoked (deref updated-invoked-promise 0 :not-invoked))))))))
 
@@ -1005,7 +1025,7 @@
 (let [marathon-api {:identifier (str "marathon-api-" (rand-int 10000))}
       make-marathon-scheduler (fn [service-id->out-of-sync-state-store]
                                 {:identifier (str "marathon-scheduler-" (rand-int 10000))
-                                 :is-waiter-app?-fn (fn [id] (str/starts-with? id "ws-"))
+                                 :is-waiter-service?-fn (fn [id] (str/starts-with? id "ws-"))
                                  :marathon-api marathon-api
                                  :service-id->out-of-sync-state-store service-id->out-of-sync-state-store})
       interval-ms 2000
@@ -1221,8 +1241,8 @@
                       (is (= marathon-api in-marathon-api))
                       (is (= {"embed" ["apps.deployments" "apps.tasks"]} in-query-params))
                       {:apps (deref app-entries-atom)})
-                    scheduler/scale-app (fn [_ in-service-id in-target in-force]
-                                          (swap! scheduler-operations-atom conj [in-service-id in-target in-force]))
+                    scheduler/scale-service (fn [_ in-service-id in-target in-force]
+                                              (swap! scheduler-operations-atom conj [in-service-id in-target in-force]))
                     t/now (fn [] (deref current-time-atom))]
         (let [leader-atom (atom true)
               leader?-fn (fn [] (deref leader-atom))
@@ -1272,3 +1292,104 @@
                     :service-id->out-of-sync-state {}}
                    @service-id->out-of-sync-state-store))
             (is (= [["ws-s2a" 1 false] ["ws-s4a" 2 false]] (deref scheduler-operations-atom)))))))))
+
+(deftest test-start-new-service-wrapper
+  (let [marathon-api (Object.)
+        service-id "test-service-id"
+        marathon-descriptor {:reference (Object.)}
+        deployment-error-response (->> {:deployments [{:id "d-1234"}]
+                                        :message "App is locked by one or more deployments."}
+                                       utils/clj->json
+                                       (assoc {:status 409} :body))
+        create-app-error-factory (fn [error-call-limit create-call-counter]
+                                   (fn [in-marathon-api in-marathon-descriptor]
+                                     (is (= marathon-api in-marathon-api))
+                                     (is (= marathon-descriptor in-marathon-descriptor))
+                                     (swap! create-call-counter inc)
+                                     (if (> @create-call-counter error-call-limit)
+                                       :success
+                                       (ss/throw+ deployment-error-response))))
+        delete-deployment-factory (fn [deleted-deployments]
+                                    (fn [in-marathon-api deployment-id]
+                                      (is (= marathon-api in-marathon-api))
+                                      (swap! deleted-deployments conj deployment-id)))
+        newish-version (du/date-to-str (t/minus (t/now) (t/minutes 1)) formatter-marathon)
+        outdated-version (du/date-to-str (t/minus (t/now) (t/minutes 15)) formatter-marathon)]
+
+    (testing "service starts successfully"
+      (let [create-call-counter (atom 0)]
+        (with-redefs [marathon/create-app (create-app-error-factory 0 create-call-counter)]
+          (let [result (start-new-service-wrapper marathon-api service-id marathon-descriptor)]
+            (is (= :success result))
+            (is (= 1 @create-call-counter))))))
+
+    (testing "service starts successfully despite StopApplication deployment"
+      (let [create-call-counter (atom 0)
+            deleted-deployments (atom [])]
+        (with-redefs [marathon/create-app (create-app-error-factory 1 create-call-counter)
+                      marathon/delete-deployment (delete-deployment-factory deleted-deployments)
+                      marathon/get-deployments (fn [in-marathon-api]
+                                                 (is (= marathon-api in-marathon-api))
+                                                 [{:affectedApps ["/test-service-id"]
+                                                   :currentActions [{:action "StopApplication"
+                                                                     :app "/test-service-id"}]
+                                                   :id "d-1234"
+                                                   :version outdated-version}])]
+          (is (= :success (start-new-service-wrapper marathon-api service-id marathon-descriptor)))
+          (is (= 2 @create-call-counter))
+          (is (= ["d-1234"] @deleted-deployments)))))
+
+    (testing "service starts fails due to repeated recent StopApplication deployment"
+      (let [create-call-counter (atom 0)]
+        (with-redefs [marathon/create-app (create-app-error-factory 10 create-call-counter)
+                      marathon/get-deployments (fn [in-marathon-api]
+                                                 (is (= marathon-api in-marathon-api))
+                                                 [{:affectedApps ["/test-service-id"]
+                                                   :currentActions [{:action "StopApplication"
+                                                                     :app "/test-service-id"}]
+                                                   :id "d-1234"
+                                                   :version newish-version}])]
+          (is (nil? (start-new-service-wrapper marathon-api service-id marathon-descriptor)))
+          (is (= 1 @create-call-counter)))))
+
+    (testing "service starts fails due to repeated outdated StopApplication deployment"
+      (let [create-call-counter (atom 0)
+            deleted-deployments (atom [])]
+        (with-redefs [marathon/create-app (create-app-error-factory 10 create-call-counter)
+                      marathon/delete-deployment (delete-deployment-factory deleted-deployments)
+                      marathon/get-deployments (fn [in-marathon-api]
+                                                 (is (= marathon-api in-marathon-api))
+                                                 [{:affectedApps ["/test-service-id"]
+                                                   :currentActions [{:action "StopApplication"
+                                                                     :app "/test-service-id"}]
+                                                   :id "d-1234"
+                                                   :version outdated-version}])]
+          (is (nil? (start-new-service-wrapper marathon-api service-id marathon-descriptor)))
+          (is (= 2 @create-call-counter))
+          (is (= ["d-1234"] @deleted-deployments)))))
+
+    (testing "service starts fails due to recent StopApplication deployments"
+      (let [create-call-counter (atom 0)]
+        (with-redefs [marathon/create-app (create-app-error-factory 10 create-call-counter)
+                      marathon/get-deployments (fn [in-marathon-api]
+                                                 (is (= marathon-api in-marathon-api))
+                                                 [{:affectedApps ["/test-service-id"]
+                                                   :currentActions [{:action "ScaleApplication"
+                                                                     :app "/test-service-id"}]
+                                                   :id "d-1234"
+                                                   :version newish-version}])]
+          (is (nil? (start-new-service-wrapper marathon-api service-id marathon-descriptor)))
+          (is (= 1 @create-call-counter)))))
+
+    (testing "service starts fails due to repeated conflict deployments"
+      (let [create-call-counter (atom 0)]
+        (with-redefs [marathon/create-app (create-app-error-factory 10 create-call-counter)
+                      marathon/get-deployments (fn [in-marathon-api]
+                                                 (is (= marathon-api in-marathon-api))
+                                                 [{:affectedApps ["/test-service-id"]
+                                                   :currentActions [{:action "ScaleApplication"
+                                                                     :app "/test-service-id"}]
+                                                   :id "d-1234"
+                                                   :version newish-version}])]
+          (is (nil? (start-new-service-wrapper marathon-api service-id marathon-descriptor)))
+          (is (= 1 @create-call-counter)))))))

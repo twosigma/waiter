@@ -22,8 +22,14 @@ test2junit/
 *config-local.edn
 bin/generated-nginx.conf
 
+# Persistent Key-Value store directory
+/kv-store
+
 # Shell scheduler directory
 /scheduler
 
 # Minimesos
 .minimesos
+
+# waiter test_helpers tmp dir
+.test_metrics

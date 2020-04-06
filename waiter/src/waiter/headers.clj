@@ -15,18 +15,22 @@
 ;;
 (ns waiter.headers
   (:require [cheshire.core :as json]
+            [clojure.data.codec.base64 :as b64]
             [clojure.tools.logging :as log]
             [clojure.string :as str]
             [plumbing.core :as pc]
+            [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils]))
 
 (def ^:const waiter-header-prefix "x-waiter-")
 
 ;; authentication is intentionally missing from this list as we do not support it as an on-the-fly header
-(def ^:const waiter-headers-with-str-value
-  (set (map #(str waiter-header-prefix %)
-            #{"allowed-params" "backend-proto" "cmd" "cmd-type" "distribution-scheme" "endpoint-path" "health-check-url"
-              "metric-group" "name" "permitted-user" "run-as-user" "token" "version"})))
+(def ^:const params-with-str-value
+  #{"allowed-params" "authentication" "backend-proto" "cmd" "cmd-type" "distribution-scheme" "endpoint-path"
+    "health-check-authentication" "health-check-proto" "health-check-url" "image" "load-balancing"
+    "metric-group" "name" "namespace" "permitted-user" "run-as-user" "token" "version"})
+
+(def ^:const waiter-headers-with-str-value (set (map #(str waiter-header-prefix %) params-with-str-value)))
 
 (defn get-waiter-header
   "Retrieves the waiter header value."
@@ -86,17 +90,49 @@
       (assoc truncated-headers "x-waiter-token" token)
       truncated-headers)))
 
+(defn- retrieve-proto-specific-hop-by-hop-headers
+  "Determines the protocol version specific hop-by-hop headers."
+  [request-headers proto-version]
+  (when-not (hu/grpc? request-headers proto-version)
+    ["te"]))
+
 (defn dissoc-hop-by-hop-headers
-  "Remove the hop-by-hop headers as specified in
-   https://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html#sec13.5.1"
-  [headers]
-  (dissoc headers "connection" "keep-alive" "proxy-authenticate" "proxy-authorization" "te" "trailers"
-          "transfer-encoding" "upgrade"))
+  "Proxies must remove hop-by-hop headers before forwarding messages — both requests and responses.
+   Remove the hop-by-hop headers (except te) specified in:
+   https://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html#sec13.5.1
+   The te header is not removed for HTTP/2.0 requests as it is needed by grpc to detect incompatible proxies:
+   https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-HTTP2.md"
+  [{:strs [connection] :as headers} proto-version]
+  (let [force-remove-headers (retrieve-proto-specific-hop-by-hop-headers headers proto-version)
+        connection-headers (map str/trim (str/split (str connection) #","))]
+    (cond-> (dissoc headers "connection" "keep-alive" "proxy-authenticate" "proxy-authorization"
+                    "trailers" "transfer-encoding" "upgrade")
+      (seq force-remove-headers) (as-> $ (apply dissoc $ force-remove-headers))
+      (seq connection-headers) (as-> $ (apply dissoc $ connection-headers)))))
 
 (defn assoc-auth-headers
   "`assoc`s the x-waiter-auth-principal and x-waiter-authenticated-principal headers if the
    username and principal are non-nil, respectively."
-  [headers username principal]
-  (cond-> headers
-          username (assoc "x-waiter-auth-principal" username)
-          principal (assoc "x-waiter-authenticated-principal" principal)))
+  ([headers principal]
+   (let [username (first (str/split principal #"@" 2))]
+     (assoc-auth-headers headers username principal)))
+  ([headers username principal]
+   (cond-> headers
+     username (assoc "x-waiter-auth-principal" username)
+     principal (assoc "x-waiter-authenticated-principal" principal))))
+
+(defn basic-auth-header
+  "Constructs the basic auth header for the provided username and password."
+  [username password]
+  (->> (str username ":" password)
+    (.getBytes)
+    (b64/encode)
+    (utils/bytes->str)
+    (str "Basic ")))
+
+(defn retrieve-basic-auth-headers
+  "Constructs the waiter authentication headers for request to a backend."
+  [waiter-username service-password request-principal]
+  (assoc-auth-headers
+    {"authorization" (basic-auth-header waiter-username service-password)}
+    request-principal))

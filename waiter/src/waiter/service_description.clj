@@ -18,13 +18,16 @@
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
+            [clojure.walk :as walk]
             [digest]
+            [metrics.meters :as meters]
             [plumbing.core :as pc]
             [schema.core :as s]
             [slingshot.slingshot :as sling]
             [waiter.authorization :as authz]
             [waiter.headers :as headers]
             [waiter.kv :as kv]
+            [waiter.metrics :as metrics]
             [waiter.schema :as schema]
             [waiter.util.utils :as utils])
   (:import (java.util.regex Pattern)
@@ -34,6 +37,8 @@
 
 (def ^:const default-health-check-path "/status")
 
+(def ^:const minimum-min-instances 1)
+
 (def reserved-environment-vars #{"HOME" "LOGNAME" "USER"})
 
 (defn reserved-environment-variable? [name]
@@ -41,7 +46,7 @@
       (str/starts-with? name "MARATHON_")
       (str/starts-with? name "MESOS_")
       (re-matches #"^PORT\d*$" name)
-      (str/starts-with? name "WAITER_")))
+      (and (str/starts-with? name "WAITER_") (not (str/starts-with? name "WAITER_CONFIG_")))))
 
 (def environment-variable-schema
   (s/both (s/constrained s/Str #(<= 1 (count %) 512))
@@ -57,36 +62,43 @@
    (s/required-key "version") schema/non-empty-string
    ;; Optional
    (s/optional-key "allowed-params") #{environment-variable-schema}
-   (s/optional-key "authentication") schema/valid-authentication
+   (s/optional-key "authentication") schema/non-empty-string
    (s/optional-key "backend-proto") schema/valid-backend-proto
    (s/optional-key "cmd-type") schema/non-empty-string
    (s/optional-key "distribution-scheme") (s/enum "balanced" "simple")
    ; Marathon imposes a 512 character limit on environment variable keys and values
    (s/optional-key "env") (s/constrained {environment-variable-schema (s/constrained s/Str #(<= 1 (count %) 512))}
                                          #(< (count %) 100))
+   (s/optional-key "image") schema/non-empty-string
    (s/optional-key "metadata") (s/constrained {(s/both schema/valid-string-length #"^[a-z][a-z0-9\\-]*$")
                                                schema/valid-string-length}
                                               #(< (count %) 100))
    (s/optional-key "metric-group") schema/valid-metric-group
    (s/optional-key "name") schema/non-empty-string
+   (s/optional-key "namespace") schema/non-empty-string
    (s/optional-key "permitted-user") schema/non-empty-string
    (s/optional-key "ports") schema/valid-number-of-ports
    ; start-up related
    (s/optional-key "grace-period-secs") (s/both s/Int (s/pred #(<= 1 % (t/in-seconds (t/minutes 60))) 'at-most-60-minutes))
+   (s/optional-key "health-check-authentication") schema/valid-health-check-authentication
    (s/optional-key "health-check-interval-secs") (s/both s/Int (s/pred #(<= 5 % 60) 'between-5-seconds-and-1-minute))
    (s/optional-key "health-check-max-consecutive-failures") (s/both s/Int (s/pred #(<= 1 % 15) 'at-most-fifteen))
+   (s/optional-key "health-check-port-index") schema/valid-health-check-port-index
+   (s/optional-key "health-check-proto") schema/valid-health-check-proto
    (s/optional-key "health-check-url") schema/non-empty-string
    (s/optional-key "idle-timeout-mins") (s/both s/Int (s/pred #(<= 1 % (t/in-minutes (t/days 30))) 'between-1-minute-and-30-days))
    (s/optional-key "interstitial-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/minutes 60))) 'at-most-60-minutes))
    (s/optional-key "restart-backoff-factor") schema/positive-number-greater-than-or-equal-to-1
+   (s/optional-key "scheduler") schema/non-empty-string
    ; auto-scaling related
    (s/optional-key "concurrency-level") (s/both s/Int (s/pred #(<= 1 % 10000) 'between-one-and-10000))
    (s/optional-key "expired-instance-restart-rate") schema/positive-fraction-less-than-or-equal-to-1
    (s/optional-key "instance-expiry-mins") (s/constrained s/Int #(<= 0 %))
    (s/optional-key "jitter-threshold") schema/greater-than-or-equal-to-0-less-than-1
-   (s/optional-key "max-instances") (s/both s/Int (s/pred #(<= 1 % 1000) 'between-one-and-1000))
-   (s/optional-key "min-instances") (s/both s/Int (s/pred #(<= 0 % 2) 'between-zero-and-two))
-   (s/optional-key "scale-factor") schema/positive-fraction-less-than-or-equal-to-1
+   (s/optional-key "load-balancing") schema/valid-load-balancing
+   (s/optional-key "max-instances") (s/both s/Int (s/pred #(<= minimum-min-instances % 1000) 'between-one-and-1000))
+   (s/optional-key "min-instances") (s/both s/Int (s/pred #(<= minimum-min-instances % 4) 'between-one-and-four))
+   (s/optional-key "scale-factor") schema/positive-fraction-less-than-or-equal-to-2
    (s/optional-key "scale-down-factor") schema/positive-fraction-less-than-1
    (s/optional-key "scale-up-factor") schema/positive-fraction-less-than-1
    ; per-request related
@@ -95,7 +107,12 @@
    s/Str s/Any})
 
 (def user-metadata-schema
-  {(s/optional-key "fallback-period-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/hours 1))) 'at-most-1-hour))
+  {(s/optional-key "cors-rules") [{(s/required-key "origin-regex") schema/regex-pattern
+                                   (s/optional-key "target-path-regex") schema/regex-pattern
+                                   (s/optional-key "methods") (s/both (s/pred not-empty) [schema/http-method])}]
+   (s/optional-key "fallback-period-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/days 1))) 'at-most-1-day))
+   (s/optional-key "https-redirect") s/Bool
+   (s/optional-key "owner") schema/non-empty-string
    (s/optional-key "stale-timeout-mins") (s/both s/Int (s/pred #(<= 0 % (t/in-minutes (t/hours 4))) 'at-most-4-hours))
    s/Str s/Any})
 
@@ -107,19 +124,22 @@
 (def ^:const service-override-keys
   #{"authentication" "blacklist-on-503" "concurrency-level" "distribution-scheme" "expired-instance-restart-rate"
     "grace-period-secs" "health-check-interval-secs" "health-check-max-consecutive-failures"
-    "idle-timeout-mins" "instance-expiry-mins" "interstitial-secs" "jitter-threshold" "max-queue-length" "min-instances"
-    "max-instances" "restart-backoff-factor" "scale-down-factor" "scale-factor" "scale-up-factor"})
+    "idle-timeout-mins" "instance-expiry-mins" "interstitial-secs" "jitter-threshold"
+    "load-balancing" "max-queue-length" "min-instances" "max-instances" "restart-backoff-factor"
+    "scale-down-factor" "scale-factor" "scale-up-factor"})
 
 (def ^:const service-non-override-keys
-  #{"allowed-params" "backend-proto" "cmd" "cmd-type" "cpus" "env" "health-check-url" "mem" "metadata"
-    "metric-group" "name" "permitted-user" "ports" "run-as-user" "version"})
+  #{"allowed-params" "backend-proto" "cmd" "cmd-type" "cpus" "env"
+    "health-check-authentication" "health-check-port-index" "health-check-proto" "health-check-url"
+    "image" "mem" "metadata" "metric-group" "name" "namespace" "permitted-user" "ports" "run-as-user"
+    "scheduler" "version"})
 
 ; keys used as parameters in the service description
 (def ^:const service-parameter-keys
   (set/union service-override-keys service-non-override-keys))
 
 ; keys allowed in service description metadata, these need to be distinct from service parameter keys
-(def ^:const service-metadata-keys #{"source-tokens"})
+(def ^:const service-metadata-keys #{})
 
 ; keys used in computing the service-id from the service description
 (def ^:const service-description-keys (set/union service-parameter-keys service-metadata-keys))
@@ -130,13 +150,16 @@
 (def ^:const on-the-fly-service-description-keys (set/union service-parameter-keys #{"token"}))
 
 ; keys allowed in system metadata for tokens, these need to be distinct from service description keys
-(def ^:const system-metadata-keys #{"deleted" "last-update-time" "last-update-user" "owner" "previous" "root"})
+(def ^:const system-metadata-keys #{"cluster" "deleted" "last-update-time" "last-update-user" "previous" "root"})
 
 ; keys allowed in user metadata for tokens, these need to be distinct from service description keys
-(def ^:const user-metadata-keys #{"fallback-period-secs" "stale-timeout-mins"})
+(def ^:const user-metadata-keys #{"cors-rules" "fallback-period-secs" "https-redirect" "owner" "stale-timeout-mins"})
 
 ; keys allowed in metadata for tokens, these need to be distinct from service description keys
 (def ^:const token-metadata-keys (set/union system-metadata-keys user-metadata-keys))
+
+; keys editable by users in the token data
+(def ^:const token-user-editable-keys (set/union service-parameter-keys user-metadata-keys))
 
 ; keys allowed in the token data
 (def ^:const token-data-keys (set/union service-parameter-keys token-metadata-keys))
@@ -145,27 +168,27 @@
   "Converts allowed-params comma-separated string in the service-description to a set."
   [service-description]
   (cond-> service-description
-          (contains? service-description "allowed-params")
-          (update "allowed-params"
-                  (fn [allowed-params]
-                    (when-not (string? allowed-params)
-                      (throw (ex-info "Provided allowed-params is not a string"
-                                      {:allowed-params allowed-params :status 400})))
-                    (if-not (str/blank? allowed-params)
-                      (set (str/split allowed-params #","))
-                      #{})))))
+    (contains? service-description "allowed-params")
+    (update "allowed-params"
+            (fn [allowed-params]
+              (when-not (string? allowed-params)
+                (throw (ex-info "Provided allowed-params is not a string"
+                                {:allowed-params allowed-params :status 400})))
+              (if-not (str/blank? allowed-params)
+                (set (str/split allowed-params #","))
+                #{})))))
 
 (defn transform-allowed-params-token-entry
   "Converts allowed-params vector in the service-description to a set."
   [service-description]
   (cond-> service-description
-          (contains? service-description "allowed-params")
-          (update "allowed-params"
-                  (fn [allowed-params]
-                    (when-not (coll? allowed-params)
-                      (throw (ex-info "Provided allowed-params is not a vector"
-                                      {:allowed-params allowed-params :status 400})))
-                    (set allowed-params)))))
+    (contains? service-description "allowed-params")
+    (update "allowed-params"
+            (fn [allowed-params]
+              (when-not (coll? allowed-params)
+                (throw (ex-info "Provided allowed-params is not a vector"
+                                {:allowed-params allowed-params :status 400})))
+              (set allowed-params)))))
 
 (defn map-validation-helper [issue key]
   (when-let [error (get issue key)]
@@ -177,8 +200,8 @@
                                 (map #(str/join ": " %)))
             bad-keys (filter #(instance? ValidationError %) (keys error))]
         (cond-> {}
-                (not-empty keys-with-bad-values) (assoc :bad-key-values bad-key-values)
-                (not-empty bad-keys) (assoc :bad-keys bad-keys)))
+          (not-empty keys-with-bad-values) (assoc :bad-key-values bad-key-values)
+          (not-empty bad-keys) (assoc :bad-keys bad-keys)))
       (instance? ValidationError error)
       (let [provided (.value ^ValidationError error)]
         (cond
@@ -263,15 +286,25 @@
   "Filter for descriptors which resolves the metric group"
   [{:strs [name metric-group] :as service-description} mappings]
   (cond-> service-description
-          (nil? metric-group)
-          (assoc "metric-group" (or (name->metric-group mappings name)
-                                    "other"))))
+    (nil? metric-group)
+    (assoc "metric-group" (or (name->metric-group mappings name)
+                              "other"))))
 
 (defn merge-defaults
   "Merges the defaults into the existing service description."
   [service-description-without-defaults service-description-defaults metric-group-mappings]
   (->
-    service-description-defaults
+    (let [provided-max-instances (get service-description-without-defaults "max-instances")
+          provided-min-instances (get service-description-without-defaults "min-instances")
+          default-min-instances (get service-description-defaults "min-instances")]
+      (cond-> service-description-defaults
+        ;; adjust the min-instances if the max-instances is provided without min-instances and
+        ;; the max-instances is smaller than the default min-instances
+        (and (integer? provided-max-instances)
+             (nil? provided-min-instances)
+             (integer? default-min-instances)
+             (> default-min-instances provided-max-instances))
+        (assoc "min-instances" (max provided-max-instances minimum-min-instances))))
     (merge service-description-without-defaults)
     (metric-group-filter metric-group-mappings)))
 
@@ -279,7 +312,7 @@
   "Merges the overrides into the service description."
   [service-description-without-overrides service-description-overrides]
   (cond-> service-description-without-overrides
-          service-description-overrides (merge service-description-overrides)))
+    service-description-overrides (merge service-description-overrides)))
 
 (defn sanitize-service-description
   "Sanitizes the service description by removing unsupported keys."
@@ -331,9 +364,8 @@
   ; sanitize before sending to marathon, limit to lower-case letters and digits
   (let [{:strs [name]} service-description
         prefix (cond-> service-id-prefix
-                       name (str (str/replace (str/lower-case name) #"[^a-z0-9]" "") "-"))
-        service-hash (-> (select-keys service-description service-description-keys)
-                         parameters->id)]
+                 name (str (str/replace (str/lower-case name) #"[^a-z0-9]" "") "-"))
+        service-hash (parameters->id (select-keys service-description service-description-keys))]
     (str prefix service-hash)))
 
 (defn required-keys-present?
@@ -341,6 +373,17 @@
    Note: It does not perform any validation on the values stored against the parameters."
   [service-description]
   (every? #(contains? service-description %) service-required-keys))
+
+(defmacro attach-error-message-for-parameter
+  "Helper function that attaches a parameter error message to the parameter->error-message map
+   if an issue exists for that parameter."
+  [parameter->error-message parameter->issues parameter error-message-body]
+  `(let [parameter->issues# ~parameter->issues
+         parameter-key# ~parameter
+         parameter-name# (name parameter-key#)]
+     (cond-> ~parameter->error-message
+       (contains? parameter->issues# parameter-name#)
+       (assoc parameter-key# (do ~error-message-body)))))
 
 (defn validate-schema
   "Validates the provided service description template.
@@ -360,19 +403,87 @@
                                              :message exception-message
                                              :service-description service-description-template
                                              :status 400
-                                             :issue issue}
-                                            (not-empty friendly-error-message) (assoc :friendly-error-message friendly-error-message))
+                                             :issue issue
+                                             :log-level :warn}
+                                      (not (str/blank? friendly-error-message))
+                                      (assoc :friendly-error-message friendly-error-message))
                                     e))]
     (try
       (s/validate service-description-schema service-description-to-use)
       (catch Exception e
-        (let [issue (s/check service-description-schema service-description-to-use)
-              friendly-error-message (utils/filterm
-                                       val
-                                       {:allowed-params (generate-friendly-allowed-params-error-message issue)
-                                        :env (generate-friendly-environment-variable-error-message issue)
-                                        :metadata (generate-friendly-metadata-error-message issue)})]
-          (throw-error e (dissoc issue "allowed-params" "env" "metadata") friendly-error-message))))
+        (let [parameter->issues (s/check service-description-schema service-description-to-use)
+              parameter->error-message (-> {}
+                                           (attach-error-message-for-parameter
+                                             parameter->issues
+                                             :allowed-params
+                                             (generate-friendly-allowed-params-error-message parameter->issues))
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :cmd "cmd must be a non-empty string.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :authentication
+                                             (str "authentication must be 'disabled', 'standard', "
+                                                  "or the specific authentication scheme if supported by the configured authenticator, e.g. 'saml'."))
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :backend-proto "backend-proto must be one of h2, h2c, http, or https.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :concurrency-level
+                                             "concurrency-level must be an integer in the range [1, 10000].")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :cpus "cpus must be a positive number.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :distribution-scheme
+                                             "distribution-scheme must be one of balanced or simple.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues
+                                             :env
+                                             (generate-friendly-environment-variable-error-message parameter->issues))
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :grace-period-secs
+                                             "grace-period-secs must be an integer in the range [1, 3600].")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :health-check-authentication
+                                             "health-check-authentication must be one of standard or disabled.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :health-check-port-index
+                                             "health-check-port-index must be an integer in the range [0, 9].")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :health-check-proto
+                                             "health-check-proto, when provided, must be one of h2, h2c, http, or https.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :health-check-url "health-check-url must be a non-empty string.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :idle-timeout-mins
+                                             "idle-timeout-mins must be an integer in the range [1, 43200].")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :load-balancing
+                                             (str "load-balancing must be one of 'oldest', 'youngest' or 'random'."))
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :max-instances "max-instances must be between 1 and 1000.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :mem "mem must be a positive number.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues
+                                             :metadata
+                                             (generate-friendly-metadata-error-message parameter->issues))
+                                           (attach-error-message-for-parameter
+                                             parameter->issues
+                                             :metric-group
+                                             (str "The metric-group must be be between 2 and 32 characters; "
+                                                  "only contain lowercase letters, numbers, dashes, and underscores; "
+                                                  "start with a lowercase letter; and "
+                                                  "only use dash and/or underscore as separators between alphanumeric portions."))
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :min-instances "min-instances must be between 1 and 4.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :name "name must be a non-empty string.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :ports "ports must be an integer in the range [1, 10].")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :version "version must be a non-empty string."))
+              unresolved-parameters (set/difference (-> parameter->issues keys set)
+                                                    (->> parameter->error-message keys (map name) set))
+              friendly-error-message (str/join (str \newline) (vals parameter->error-message))]
+          (throw-error e (select-keys parameter->issues unresolved-parameters) friendly-error-message))))
 
     (try
       (s/validate max-constraints-schema service-description-to-use)
@@ -385,8 +496,11 @@
                                         .pred-name
                                         (str/replace "limit-" "")))
               param->message (fn [param]
-                               (str param " is " (get service-description-to-use param) " but the max allowed is "
-                                    (issue->param->limit issue param)))
+                               (let [value (get service-description-to-use param)
+                                     limit (issue->param->limit issue param)]
+                                 (if (contains? headers/params-with-str-value param)
+                                   (str param " must be at most " limit " characters")
+                                   (str param " is " value " but the max allowed is " limit))))
               friendly-error-message (str "The following fields exceed their allowed limits: "
                                           (str/join ", " (->> issue
                                                               keys
@@ -398,19 +512,37 @@
     (let [{:strs [min-instances max-instances]} service-description-to-use]
       (when (and (integer? min-instances) (integer? max-instances))
         (when (> min-instances max-instances)
-          (sling/throw+ {:type :service-description-error
-                         :message exception-message
-                         :friendly-error-message (str "Minimum instances (" min-instances
-                                                      ") must be <= Maximum instances ("
-                                                      max-instances ")")
-                         :status 400}))))
+          (let [error-message (str "min-instances (" min-instances ") must be less than or equal to max-instances (" max-instances ")")]
+            (sling/throw+ {:type :service-description-error
+                           :message exception-message
+                           :friendly-error-message error-message
+                           :status 400
+                           :log-level :warn})))))
 
     ; Validate the cmd-type field
     (let [cmd-type (service-description-to-use "cmd-type")]
       (when (and (not (str/blank? cmd-type)) (not ((:valid-cmd-types args-map) cmd-type)))
         (sling/throw+ {:type :service-description-error
                        :friendly-error-message (str "Command type " cmd-type " is not supported")
-                       :status 400})))))
+                       :status 400})))
+
+    ; validate the health-check-port-index
+    (let [{:strs [health-check-port-index ports]} service-description-to-use]
+      (when (and health-check-port-index ports (>= health-check-port-index ports))
+        (sling/throw+ {:type :service-description-error
+                       :friendly-error-message (str "The health check port index (" health-check-port-index ") "
+                                                    "must be smaller than ports (" ports ")")
+                       :status 400
+                       :log-level :warn})))
+
+    ;; currently, if manually specified, the namespace *must* match the run-as-user
+    ;; (but we expect the common case to be falling back to the default)
+    (let [{:strs [namespace run-as-user]} service-description-to-use]
+      (when (and (some? namespace) (not= namespace run-as-user))
+        (sling/throw+ {:type :service-description-error
+                       :friendly-error-message "Service namespace must either be omitted or match the run-as-user."
+                       :status 400
+                       :log-level :warn})))))
 
 (defprotocol ServiceDescriptionBuilder
   "A protocol for constructing a service description from the various sources. Implementations
@@ -418,6 +550,13 @@
 
   (build [this core-service-description args-map]
     "Returns a map of {:service-id ..., :service-description ..., :core-service-description...}")
+
+  (retrieve-reference-type->stale-fn [this context]
+    "Returns a map of reference type to stale function for references of the specified type.
+     The values are functions that have the following signature (fn reference-entry)")
+
+  (state [this]
+    "Returns the global (i.e. non-service-specific) state the service description builder is maintaining")
 
   (validate [this service-description args-map]
     "Throws if the provided service-description is not valid"))
@@ -428,11 +567,21 @@
   [service-description username]
   (assoc service-description "run-as-user" username "permitted-user" username))
 
+(defn service-token-references-stale?
+  "Returns true if every token used to access a service has been updated."
+  [token->token-hash source-tokens]
+  (and (seq source-tokens)
+       ;; safe assumption mark a service stale when every token used to access it is stale
+       (every? (fn [{:keys [token version]}]
+                 (not= (token->token-hash token) version))
+               source-tokens)))
+
 (defrecord DefaultServiceDescriptionBuilder [max-constraints-schema]
   ServiceDescriptionBuilder
 
   (build [_ user-service-description
-          {:keys [assoc-run-as-user-approved? defaults kv-store metric-group-mappings service-id-prefix username]}]
+          {:keys [assoc-run-as-user-approved? component->previous-descriptor-fns defaults kv-store
+                  metric-group-mappings reference-type->entry service-id-prefix source-tokens username]}]
     (let [core-service-description (if (get user-service-description "run-as-user")
                                      user-service-description
                                      (let [candidate-service-description (assoc-run-as-requester-fields user-service-description username)
@@ -444,13 +593,24 @@
                                          user-service-description)))
           service-id (service-description->service-id service-id-prefix core-service-description)
           service-description (default-and-override core-service-description metric-group-mappings
-                                                    kv-store defaults service-id)]
-      {:core-service-description core-service-description
+                                                    kv-store defaults service-id)
+          reference-type->entry (cond-> (or reference-type->entry {})
+                                  (seq source-tokens)
+                                  (assoc :token {:sources (map walk/keywordize-keys source-tokens)}))]
+      {:component->previous-descriptor-fns component->previous-descriptor-fns
+       :core-service-description core-service-description
+       :reference-type->entry reference-type->entry
        :service-description service-description
        :service-id service-id}))
 
+  (retrieve-reference-type->stale-fn [_ {:keys [token->token-hash]}]
+    {:token (fn [{:keys [sources]}] (service-token-references-stale? token->token-hash sources))})
+
+  (state [_]
+    {})
+
   (validate [_ service-description args-map]
-    (->> (merge-with set/union args-map {:valid-cmd-types #{"shell"}})
+    (->> (merge-with set/union args-map {:valid-cmd-types #{"docker" "shell"}})
          (validate-schema service-description max-constraints-schema))))
 
 (defn extract-max-constraints
@@ -463,11 +623,14 @@
 (defn create-default-service-description-builder
   "Returns a new DefaultServiceDescriptionBuilder which uses the specified resource limits."
   [{:keys [constraints]}]
-  (let [max-constraints-schema (-> (->> constraints
-                                        extract-max-constraints
-                                        (pc/map-keys s/optional-key)
-                                        (pc/map-vals (fn [v] (s/pred #(<= % v) (symbol (str "limit-" v))))))
-                                   (assoc s/Str s/Any))]
+  (let [max-constraints-schema (->> constraints
+                                    extract-max-constraints
+                                    (map (fn [[k v]]
+                                           (let [string-param? (contains? headers/params-with-str-value k)]
+                                             [(s/optional-key k)
+                                              (s/pred #(<= (if string-param? (count %) %) v)
+                                                      (symbol (str "limit-" v)))])))
+                                    (into {s/Str s/Any}))]
     (->DefaultServiceDescriptionBuilder max-constraints-schema)))
 
 (defn service-description->health-check-url
@@ -486,16 +649,34 @@
                            (dissoc "previous")
                            parameters->id)))))
 
+(let [valid-token-re #"[a-zA-Z]([a-zA-Z0-9\-_$\.])+"]
+  (defn validate-token
+    "Validate token name against regex and throw an exception if not valid."
+    [token]
+    (when-not (re-matches valid-token-re token)
+      (throw (ex-info
+               "Token must match pattern"
+               {:status 400 :token token :pattern (str valid-token-re) :log-level :warn})))))
+
 (defn- token->token-data
   "Retrieves the data stored against the token in the kv-store."
   [kv-store ^String token allowed-keys error-on-missing include-deleted]
-  (let [{:strs [deleted run-as-user] :as token-data} (when token (kv/fetch kv-store token))
+  (let [{:strs [deleted run-as-user] :as token-data}
+        (when token
+          (try
+            (kv/fetch kv-store token)
+            (catch Exception e
+              (if error-on-missing
+                (do
+                  (log/info e "Error in kv-store fetch")
+                  (throw (ex-info (str "Token not found: " token) {:status 400 :log-level :warn} e)))
+                (log/info e "Ignoring kv-store fetch exception")))))
         token-data (when (seq token-data) ; populate token owner for backwards compatibility
                      (-> token-data
                          (utils/assoc-if-absent "owner" run-as-user)
                          (utils/assoc-if-absent "previous" {})))]
     (when (and error-on-missing (not token-data))
-      (throw (ex-info (str "Token not found: " token) {:status 400})))
+      (throw (ex-info (str "Token not found: " token) {:status 400 :log-level :warn})))
     (log/debug "Extracted data for" token "is" token-data)
     (when (or (not deleted) include-deleted)
       (select-keys token-data allowed-keys))))
@@ -503,8 +684,7 @@
 (defn token->token-hash
   "Retrieves the hash for a token"
   [kv-store token]
-  (-> (token->token-data kv-store token token-data-keys false false)
-      token-data->token-hash))
+  (token-data->token-hash (token->token-data kv-store token token-data-keys false false)))
 
 (defn token-data->token-description
   "Retrieves the token description for the given token when the raw kv data (merged value of service
@@ -517,27 +697,18 @@
 (defn token->token-description
   "Retrieves the token description for the given token."
   [kv-store ^String token & {:keys [include-deleted] :or {include-deleted false}}]
-  (-> (token->token-data kv-store token token-data-keys false include-deleted)
-      token-data->token-description))
+  (token-data->token-description (token->token-data kv-store token token-data-keys false include-deleted)))
 
 (defn token->service-parameter-template
   "Retrieves the service description template for the given token containing only the service parameters."
   [kv-store ^String token & {:keys [error-on-missing] :or {error-on-missing true}}]
   (token->token-data kv-store token service-parameter-keys error-on-missing false))
 
-(defn source-tokens-entry
-  "Creates an entry for the source-tokens field"
-  [token token-data]
-  {"token" token "version" (token-data->token-hash token-data)})
-
 (defn token->service-description-template
   "Retrieves the service description template for the given token including the service metadata values."
   [kv-store ^String token & {:keys [error-on-missing] :or {error-on-missing true}}]
-  (let [token-data (token->token-data kv-store token token-data-keys error-on-missing false)
-        service-parameter-template (select-keys token-data service-parameter-keys)]
-    (cond-> service-parameter-template
-            (seq service-parameter-template)
-            (assoc "source-tokens" [(source-tokens-entry token token-data)]))))
+  (let [token-data (token->token-data kv-store token token-data-keys error-on-missing false)]
+    (select-keys token-data service-parameter-keys)))
 
 (defn token->token-metadata
   "Retrieves the token metadata for the given token."
@@ -585,18 +756,20 @@
              remaining-tokens)
       loop-token-data)))
 
+(defn source-tokens-entry
+  "Creates an entry for the source-tokens field"
+  [token token-data]
+  {"token" token "version" (token-data->token-hash token-data)})
+
 (defn compute-service-description-template-from-tokens
   "Computes the service description, preauthorization and authentication data using the token-sequence and token-data."
   [token-defaults token-sequence token->token-data]
-  (let [merged-token-data (->> (token-sequence->merged-data token->token-data token-sequence)
-                               (merge token-defaults))
-        service-parameter-template (select-keys merged-token-data service-parameter-keys)
-        service-description-template (cond-> service-parameter-template
-                                             (seq service-parameter-template)
-                                             (assoc "source-tokens"
-                                                    (mapv #(source-tokens-entry % (token->token-data %)) token-sequence)))]
+  (let [merged-token-data (merge token-defaults (token-sequence->merged-data token->token-data token-sequence))
+        service-description-template (select-keys merged-token-data service-parameter-keys)
+        source-tokens (mapv #(source-tokens-entry % (token->token-data %)) token-sequence)]
     {:fallback-period-secs (get merged-token-data "fallback-period-secs")
      :service-description-template service-description-template
+     :source-tokens source-tokens
      :token->token-data token->token-data
      :token-authentication-disabled (and (= 1 (count token-sequence))
                                          (token-authentication-disabled? service-description-template))
@@ -643,11 +816,26 @@
   (defn fetch-core
     "Loads the service description for the specified service-id from the key-value store."
     [kv-store ^String service-id & {:keys [refresh nil-on-missing?] :or {refresh false nil-on-missing? true}}]
+    (when refresh
+      (log/info "force fetching core service description for" service-id))
     (let [service-description (kv/fetch kv-store (service-id->key service-id) :refresh refresh)]
       (if (map? service-description)
         service-description
         (when-not nil-on-missing?
           (throw (ex-info "No description found!" {:service-id service-id})))))))
+
+(defn refresh-service-descriptions
+  "Refreshes missing service descriptions for the specified service ids.
+   Returns the set of service-ids which have valid service descriptions."
+  [kv-store service-ids]
+  (->> service-ids
+       (filter
+         (fn [service-id]
+           (or (fetch-core kv-store service-id :refresh false)
+               (log/info "refreshing the service description for" service-id)
+               (fetch-core kv-store service-id :refresh true)
+               (log/warn "filtering" service-id "as no matching service description was found"))))
+       set))
 
 (let [service-id->key #(str "^STATUS#" %)]
   (defn suspend-service
@@ -670,7 +858,7 @@
     [{:keys [service-id] :as descriptor} kv-store]
     (let [suspended-state (service-id->suspended-state kv-store service-id)]
       (cond-> descriptor
-              suspended-state (assoc :suspended-state suspended-state)))))
+        suspended-state (assoc :suspended-state suspended-state)))))
 
 (defn- parse-env-map-headers
   "Parses headers into an environment map.
@@ -731,7 +919,8 @@
 (let [error-message-map-fn (fn [passthrough-headers waiter-headers]
                              {:status 400
                               :non-waiter-headers (dissoc passthrough-headers "authorization")
-                              :x-waiter-headers waiter-headers})]
+                              :x-waiter-headers waiter-headers
+                              :log-level :warn})]
   (defn compute-service-description
     "Computes the service description applying any processing rules,
      It also validates the services description.
@@ -743,9 +932,9 @@
      If a non-param on-the-fly header is provided, the username is included as the run-as-user in on-the-fly headers.
      If after the merge a run-as-user is not available, then `username` becomes the run-as-user.
      If after the merge a permitted-user is not available, then `username` becomes the permitted-user."
-    [{:keys [defaults headers service-description-template token-authentication-disabled token-preauthorized]}
-     waiter-headers passthrough-headers kv-store service-id-prefix username metric-group-mappings
-     service-description-builder assoc-run-as-user-approved?]
+    [{:keys [defaults headers service-description-template source-tokens token-authentication-disabled token-preauthorized]}
+     waiter-headers passthrough-headers component->previous-descriptor-fns kv-store service-id-prefix username
+     metric-group-mappings assoc-run-as-user-approved? service-description-builder]
     (let [headers-without-params (dissoc headers "param")
           header-params (get headers "param")
           ; any change with the on-the-fly must change the run-as-user if it doesn't already exist
@@ -757,7 +946,7 @@
                            (do
                              (when-not (every? #(contains? allowed-params %) (keys header-params))
                                (throw (ex-info "Some params cannot be configured"
-                                               {:allowed-params allowed-params :params header-params :status 400})))
+                                               {:allowed-params allowed-params :params header-params :status 400 :log-level :warn})))
                              (-> service-description
                                  (update "env" merge header-params)
                                  (dissoc "param")))
@@ -766,60 +955,107 @@
                                                                         service-description-based-on-headers)
                                                                  ; param headers need to update the environment
                                                                  merge-params)
+          raw-run-as-user (get service-description-from-headers-and-token-sources "run-as-user")
+          raw-namespace (get service-description-from-headers-and-token-sources "namespace")
           sanitized-service-description-from-sources (cond-> service-description-from-headers-and-token-sources
-                                                             ;; * run-as-user is the same as a missing run-as-user
-                                                             (= "*" (get service-description-from-headers-and-token-sources "run-as-user"))
-                                                             (dissoc service-description-from-headers-and-token-sources "run-as-user"))
+                                                       ;; * run-as-user is the same as a missing run-as-user
+                                                       (= "*" raw-run-as-user)
+                                                       (dissoc "run-as-user")
+                                                       ;; * namespace means match the current user (for use with run-as-requester)
+                                                       (= "*" raw-namespace)
+                                                       (assoc "namespace" username))
+          sanitized-run-as-user (get sanitized-service-description-from-sources "run-as-user")
           sanitized-metadata-description (sanitize-metadata sanitized-service-description-from-sources)
           ; run-as-user will not be set if description-from-headers or the token description contains it.
           ; else rely on presence of x-waiter headers to set the run-as-user
-          contains-waiter-header? (headers/contains-waiter-header waiter-headers on-the-fly-service-description-keys)
+          on-the-fly? (headers/contains-waiter-header waiter-headers on-the-fly-service-description-keys)
           contains-service-parameter-header? (headers/contains-waiter-header waiter-headers service-parameter-keys)
           user-service-description (cond-> sanitized-metadata-description
-                                           (and (not (contains? sanitized-metadata-description "run-as-user")) contains-waiter-header?)
-                                           ; can only set the run-as-user if some on-the-fly-service-description-keys waiter header was provided
-                                           (assoc-run-as-requester-fields username)
-                                           contains-service-parameter-header?
-                                           ; can only set the permitted-user if some service-description-keys waiter header was provided
-                                           (assoc "permitted-user" (or (get headers "permitted-user") username)))]
+                                     (and (not (contains? sanitized-metadata-description "run-as-user")) on-the-fly?)
+                                     ; can only set the run-as-user if some on-the-fly-service-description-keys waiter header was provided
+                                     (assoc-run-as-requester-fields username)
+                                     contains-service-parameter-header?
+                                     ; can only set the permitted-user if some service-description-keys waiter header was provided
+                                     (assoc "permitted-user" (or (get headers "permitted-user") username)))]
       (when-not (seq user-service-description)
         (throw (ex-info (utils/message :cannot-identify-service)
                         (error-message-map-fn passthrough-headers waiter-headers))))
+      (when (and (= "*" raw-run-as-user) raw-namespace (not= "*" raw-namespace))
+        (throw (ex-info "Cannot use run-as-requester with a specific namespace"
+                        {:namespace raw-namespace :run-as-user raw-run-as-user :status 400 :log-level :warn})))
       (sling/try+
-        (let [{:keys [core-service-description service-description service-id]}
-              (build service-description-builder user-service-description
-                     {:assoc-run-as-user-approved? assoc-run-as-user-approved?
-                      :defaults defaults
-                      :kv-store kv-store
-                      :metric-group-mappings metric-group-mappings
-                      :service-id-prefix service-id-prefix
-                      :username username})
+        (let [build-map (build service-description-builder user-service-description
+                               {:assoc-run-as-user-approved? assoc-run-as-user-approved?
+                                :component->previous-descriptor-fns component->previous-descriptor-fns
+                                :defaults defaults
+                                :kv-store kv-store
+                                :metric-group-mappings metric-group-mappings
+                                :reference-type->entry {}
+                                :service-id-prefix service-id-prefix
+                                :source-tokens source-tokens
+                                :username username})
               service-preauthorized (and token-preauthorized (empty? service-description-based-on-headers))
-              service-authentication-disabled (and token-authentication-disabled (empty? service-description-based-on-headers))
-              stored-service-description? (fetch-core kv-store service-id)]
-          ; Validating is expensive, so avoid validating if we've validated before, relying on the fact
-          ; that we'll only store validated service descriptions
-          (when-not stored-service-description?
-            (validate service-description-builder core-service-description {:allow-missing-required-fields? false})
-            (validate service-description-builder service-description {:allow-missing-required-fields? false}))
-          {:core-service-description core-service-description
-           :on-the-fly? contains-waiter-header?
-           :service-authentication-disabled service-authentication-disabled
-           :service-description service-description
-           :service-id service-id
-           :service-preauthorized service-preauthorized})
+              service-authentication-disabled (and token-authentication-disabled (empty? service-description-based-on-headers))]
+          (-> build-map
+            (select-keys [:component->previous-descriptor-fns :core-service-description :reference-type->entry
+                          :service-description :service-id])
+            (assoc :on-the-fly? on-the-fly?
+                   :service-authentication-disabled service-authentication-disabled
+                   :service-preauthorized service-preauthorized
+                   :source-tokens source-tokens)))
         (catch [:type :service-description-error] ex-data
           (throw (ex-info (:message ex-data)
-                          (merge (error-message-map-fn passthrough-headers waiter-headers) (dissoc ex-data :message))
-                          (:throwable &throw-context))))))))
+                          (merge (error-message-map-fn passthrough-headers waiter-headers) ex-data)
+                          (:throwable &throw-context)))))))
+
+  (defn validate-service-description
+    "Returns nil if the provided descriptor contains a valid service description.
+     Else it returns an instance of Throwable that reflects the validation error."
+    [kv-store service-description-builder
+     {:keys [core-service-description passthrough-headers service-description service-id waiter-headers]}]
+    (sling/try+
+      (let [stored-service-description (fetch-core kv-store service-id)]
+        ; Validating is expensive, so avoid validating if we've validated before, relying on the fact
+        ; that we'll only store validated service descriptions
+        (when-not (seq stored-service-description)
+          (validate service-description-builder core-service-description {:allow-missing-required-fields? false})
+          (validate service-description-builder service-description {:allow-missing-required-fields? false}))
+        nil)
+      (catch [:type :service-description-error] ex-data
+        (ex-info (:message ex-data)
+                 (merge (error-message-map-fn passthrough-headers waiter-headers) ex-data)
+                 (:throwable &throw-context)))
+      (catch Throwable th
+        th))))
 
 (defn merge-service-description-and-id
   "Populates the descriptor with the service-description and service-id."
-  [{:keys [passthrough-headers sources waiter-headers] :as descriptor} kv-store service-id-prefix username
-   metric-group-mappings service-description-builder assoc-run-as-user-approved?]
-  (->> (compute-service-description sources waiter-headers passthrough-headers kv-store service-id-prefix username
-                                    metric-group-mappings service-description-builder assoc-run-as-user-approved?)
+  [{:keys [component->previous-descriptor-fns passthrough-headers sources waiter-headers] :as descriptor}
+   kv-store service-id-prefix username metric-group-mappings service-description-builder assoc-run-as-user-approved?]
+  (->> (compute-service-description
+         sources waiter-headers passthrough-headers component->previous-descriptor-fns kv-store service-id-prefix
+         username metric-group-mappings assoc-run-as-user-approved? service-description-builder)
        (merge descriptor)))
+
+(defn make-build-service-description-and-id-helper
+  "Factory function to return the function used to complete creating a descriptor using the builder."
+  [kv-store service-id-prefix current-request-user metric-group-mappings service-description-builder
+   assoc-run-as-user-approved?]
+  (fn build-service-description-and-id-helper
+    ;; If there is an error in attaching the service description or id and throw-exception? is false,
+    ;; the descriptor is returned with the exception in the :error key.
+    [descriptor throw-exception?]
+    (try
+      (-> descriptor
+        (merge-service-description-and-id kv-store service-id-prefix current-request-user metric-group-mappings
+                                          service-description-builder assoc-run-as-user-approved?)
+        (merge-suspended kv-store))
+      (catch Throwable ex
+        (if throw-exception?
+          (throw ex)
+          (do
+            (log/info ex "error in building service-description")
+            (assoc descriptor :error ex)))))))
 
 (defn retrieve-most-recently-modified-token
   "Computes the most recently modified token from the token->token-data map."
@@ -828,19 +1064,31 @@
        (apply max-key (fn [[_ {:strs [last-update-time]}]] (or last-update-time 0)))
        first))
 
+(defn retrieve-most-recently-modified-token-update-time
+  "Computes the last-update-time of the most recently modified token from the descriptor."
+  [descriptor]
+  (or
+    (some->> descriptor
+      :sources
+      :token->token-data
+      (pc/map-vals (fn [{:strs [last-update-time]}] (or last-update-time 0)))
+      vals
+      (apply max))
+    0))
+
 (defn service-id->service-description
   "Loads the service description for the specified service-id including any overrides."
-  [kv-store service-id service-description-defaults metric-group-mappings &
-   {:keys [effective? nil-on-missing? refresh] :or {effective? true nil-on-missing? true refresh false}}]
-  (cond-> (fetch-core kv-store service-id :nil-on-missing? nil-on-missing? :refresh refresh)
-          effective? (default-and-override metric-group-mappings kv-store service-description-defaults service-id)))
+  [kv-store service-id service-description-defaults metric-group-mappings & {:keys [effective?] :or {effective? true}}]
+  (cond-> (fetch-core kv-store service-id :refresh false)
+    effective? (default-and-override metric-group-mappings kv-store service-description-defaults service-id)))
 
 (defn can-manage-service?
   "Returns whether the `username` is allowed to modify the specified service description."
   [kv-store entitlement-manager service-id username]
-  ; the stored service description should already have a run-as-user
-  (let [service-description (service-id->service-description kv-store service-id {} [])]
-    (authz/manage-service? entitlement-manager username service-id service-description)))
+  ;; the stored service description should already have a run-as-user
+  ;; none of the overridden parameters should affect who can manage a service
+  (let [core-service-description (fetch-core kv-store service-id :refresh false)]
+    (authz/manage-service? entitlement-manager username service-id core-service-description)))
 
 (defn consent-cookie-value
   "Creates the consent cookie value vector based on the mode.
@@ -869,24 +1117,138 @@
       (> (+ auth-timestamp (-> consent-expiry-days t/days t/in-millis))
          (.getMillis ^DateTime (clock))))))
 
+(defn source-tokens->idle-timeout
+  "Computes the idle timeout of the service using token parameters and defaults."
+  [token->token-metadata token-defaults source-tokens-seq]
+  (->> source-tokens-seq
+    (map (fn source-tokens->idle-timeout [source-tokens]
+           (let [{:strs [fallback-period-secs stale-timeout-mins]}
+                 (->> source-tokens
+                   (map #(some-> % :token token->token-metadata))
+                   (reduce merge token-defaults))]
+             (+ (-> (+ fallback-period-secs (dec (-> 1 t/minutes t/in-seconds))) ;; ceiling
+                  t/seconds
+                  t/in-minutes)
+                stale-timeout-mins))))
+    (reduce max)))
+
+(defn stale-reference?
+  "Returns true if the any entry in the reference has gone stale.
+   An empty, i.e. directly accessible, reference is never stale."
+  [reference-type->stale-fn reference]
+  (some (fn [[type entry]]
+          (when-let [stale-fn (reference-type->stale-fn type)]
+            (stale-fn entry)))
+        (seq reference)))
+
+(defn service-references-stale?
+  "Returns true if every entry in the references has gone stale."
+  [reference-type->stale-fn references]
+  (every? (fn [reference] (stale-reference? reference-type->stale-fn reference)) references))
+
 (defn service-id->idle-timeout
   "Computes the idle timeout, in minutes, for a given service.
    If the service is active or was created by on-the-fly, the idle timeout is retrieved from the service description.
    Else, the idle timeout is the sum of the fallback period seconds and the stale service timeout."
-  [service-id->service-description-fn token->token-hash token->token-metadata token-defaults service-id]
-  (let [{:strs [idle-timeout-mins source-tokens]} (service-id->service-description-fn service-id)]
-    (if (and (seq source-tokens)
-             (some (fn [{:strs [token version]}]
-                     (not= (token->token-hash token) version))
-                   source-tokens))
-      (do
-        (log/info service-id "that uses tokens" (mapv #(get % "token") source-tokens) "is stale")
-        (let [{:strs [fallback-period-secs stale-timeout-mins]}
-              (->> source-tokens
-                   (map #(token->token-metadata (get % "token")))
-                   (reduce merge token-defaults))]
-          (+ (-> (+ fallback-period-secs (dec (-> 1 t/minutes t/in-seconds))) ;; ceiling
-                 t/seconds
-                 t/in-minutes)
-             stale-timeout-mins)))
+  [service-id->service-description-fn service-id->references-fn token->token-metadata reference-type->stale-fn
+   token-defaults service-id]
+  (let [{:strs [idle-timeout-mins]} (service-id->service-description-fn service-id)
+        references (service-id->references-fn service-id)]
+    (if (service-references-stale? reference-type->stale-fn references)
+      (let [{:strs [stale-timeout-mins]} token-defaults]
+        (log/info service-id "that uses tokens is stale")
+        (if-let [source-tokens (->> references (map :token) (remove nil?) (map :sources) seq)]
+          (source-tokens->idle-timeout token->token-metadata token-defaults source-tokens)
+          ;; use the default token stale timeout for a stale service built without tokens
+          stale-timeout-mins))
       idle-timeout-mins)))
+
+(let [service-id->key #(str "^REFERENCES#" %)]
+
+  (defn service-id->references
+    "Retrieves the reference entries (as a set) for a service from the key-value store."
+    [kv-store service-id & {:keys [refresh] :or {refresh false}}]
+    (let [keys (service-id->key service-id)]
+      (kv/fetch kv-store keys :refresh refresh)))
+
+  (defn store-reference!
+    "Stores the reference entries in the key-value store against a service."
+    [synchronize-fn kv-store service-id reference]
+    (when-not (-> (service-id->references kv-store service-id)
+                (or #{})
+                (contains? reference))
+      (let [reference-lock-prefix "REFERENCES-LOCK-"
+            bucket (-> service-id hash int (Math/abs) (mod 16))
+            reference-lock (str reference-lock-prefix bucket)]
+        (meters/mark! (metrics/waiter-meter "core" "reference" "store" "all"))
+        (meters/mark! (metrics/waiter-meter "core" "reference" "store" (str "bucket-" bucket)))
+        (synchronize-fn
+          reference-lock
+          (fn inner-store-reference! []
+            (let [existing-entries (or (service-id->references kv-store service-id :refresh true) #{})]
+              (if-not (contains? existing-entries reference)
+                (do
+                  (meters/mark! (metrics/waiter-meter "core" "reference" "store" "new-entry"))
+                  (log/info "storing new reference for" service-id reference)
+                  (kv/store kv-store (service-id->key service-id) (conj existing-entries reference))
+                  ;; refresh the entry
+                  (service-id->references kv-store service-id :refresh true))
+                (log/debug "reference already associated with" service-id reference)))))))))
+
+(let [service-id->key #(str "^SOURCE-TOKENS#" %)]
+
+  (defn service-id->source-tokens-entries
+    "Retrieves the source-tokens entries (as a set) for a service from the key-value store."
+    [kv-store service-id & {:keys [refresh] :or {refresh false}}]
+    (let [keys (service-id->key service-id)]
+      (kv/fetch kv-store keys :refresh refresh)))
+
+  (defn- has-source-tokens?
+    "Returns true if the source-tokens are already mapped against the service-id."
+    [kv-store service-id source-tokens]
+    (-> (service-id->source-tokens-entries kv-store service-id)
+        (or #{})
+        (contains? source-tokens)))
+
+  (defn store-source-tokens!
+    "Stores a source-tokens entry in the key-value store against a service."
+    [synchronize-fn kv-store service-id source-tokens]
+    (when (and (seq source-tokens)
+               ;; guard to avoid relatively expensive synchronize-fn invocation
+               (not (has-source-tokens? kv-store service-id source-tokens)))
+      (let [source-tokens-lock-prefix "SOURCE-TOKENS-LOCK-"
+            bucket (-> service-id hash int (Math/abs) (mod 16))
+            source-tokens-lock (str source-tokens-lock-prefix bucket)]
+        (meters/mark! (metrics/waiter-meter "core" "source-tokens" "store" "all"))
+        (meters/mark! (metrics/waiter-meter "core" "source-tokens" "store" (str "bucket-" bucket)))
+        (synchronize-fn
+          source-tokens-lock
+          (fn inner-store-source-tokens! []
+            (let [existing-entries (-> (service-id->source-tokens-entries kv-store service-id :refresh true)
+                                       (or #{}))]
+              (if-not (contains? existing-entries source-tokens)
+                (do
+                  (log/info "associating" source-tokens "with" service-id "source-tokens entries")
+                  (kv/store kv-store (service-id->key service-id) (conj existing-entries source-tokens))
+                  ;; refresh the entry
+                  (service-id->source-tokens-entries kv-store service-id :refresh true))
+                (do
+                  (meters/mark! (metrics/waiter-meter "core" "source-tokens" "store" "no-op"))
+                  (log/info source-tokens "source-tokens already associated with" service-id))))))))))
+
+(defn discover-service-parameters
+  "Processing the request headers to identify the Waiter service parameters.
+   Returns a map of the waiter and passthrough headers, the identified token, and
+   the service parameter template from the token."
+  [kv-store token-defaults waiter-hostnames headers]
+  (let [{:keys [passthrough-headers waiter-headers]} (headers/split-headers headers)
+        {:keys [token]} (retrieve-token-from-service-description-or-hostname waiter-headers passthrough-headers waiter-hostnames)
+        service-parameter-template (and token (token->service-parameter-template kv-store token :error-on-missing false))
+        token-metadata (and token
+                            (->> (token->token-metadata kv-store token :error-on-missing false)
+                                 (merge token-defaults)))]
+    {:passthrough-headers passthrough-headers
+     :service-parameter-template service-parameter-template
+     :token token
+     :token-metadata token-metadata
+     :waiter-headers waiter-headers}))

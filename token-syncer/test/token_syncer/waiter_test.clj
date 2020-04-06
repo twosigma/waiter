@@ -28,7 +28,7 @@
          (async/put! body-chan))
     (cond-> {:body body-chan
              :headers (or headers {})}
-            status (assoc :status status))))
+      status (assoc :status status))))
 
 (deftest test-make-http-request
   (let [http-client-wrapper (Object.)
@@ -72,8 +72,8 @@
                                             (update :headers dissoc "x-cid"))))
                                  (let [response-chan (async/promise-chan)
                                        response (cond-> {}
-                                                        (not (:auth in-options))
-                                                        (assoc :status 401 :headers {"www-authenticate" "Negotiate"}))]
+                                                  (not (:auth in-options))
+                                                  (assoc :status 401 :headers {"www-authenticate" "Negotiate"}))]
                                    (async/put! response-chan response)
                                    response-chan))]
           (make-http-request http-client-wrapper test-endpoint
@@ -90,7 +90,7 @@
       (let [error (Exception. "exception from test")]
         (with-redefs [make-http-request (fn [in-http-client-wrapper in-endopint-url & in-options]
                                           (is (= http-client-wrapper in-http-client-wrapper))
-                                          (is (= (str test-cluster-url "/token")) in-endopint-url)
+                                          (is (= (str test-cluster-url "/tokens") in-endopint-url))
                                           (is (= [:headers {"accept" "application/json"}
                                                   :query-params {"include" ["deleted" "metadata"]}]
                                                  in-options))
@@ -104,7 +104,7 @@
                             {"last-update-time" 3000, "owner" "test-3", "token" "token-3"}]]
         (with-redefs [make-http-request (fn [in-http-client-wrapper in-endopint-url & in-options]
                                           (is (= http-client-wrapper in-http-client-wrapper))
-                                          (is (= (str test-cluster-url "/token")) in-endopint-url)
+                                          (is (= (str test-cluster-url "/tokens") in-endopint-url))
                                           (is (= [:headers {"accept" "application/json"}
                                                   :query-params {"include" ["deleted" "metadata"]}]
                                                  in-options))
@@ -123,7 +123,7 @@
       (let [error (Exception. "exception from test")]
         (with-redefs [make-http-request (fn [in-http-client-wrapper in-endopint-url & in-options]
                                           (is (= http-client-wrapper in-http-client-wrapper))
-                                          (is (= (str test-cluster-url "/token")) in-endopint-url)
+                                          (is (= (str test-cluster-url "/token") in-endopint-url))
                                           (is (= expected-options (apply hash-map in-options)))
                                           (throw error))]
           (is (= {:error error}
@@ -137,7 +137,7 @@
             last-modified-str current-time-ms]
         (with-redefs [make-http-request (fn [in-http-client-wrapper in-endopint-url & in-options]
                                           (is (= http-client-wrapper in-http-client-wrapper))
-                                          (is (= (str test-cluster-url "/token")) in-endopint-url)
+                                          (is (= (str test-cluster-url "/token") in-endopint-url))
                                           (is (= expected-options (apply hash-map in-options)))
                                           (send-json-response token-response
                                                               :headers {"etag" last-modified-str}
@@ -166,7 +166,7 @@
       (let [error (Exception. "exception from test")]
         (with-redefs [make-http-request (fn [in-http-client-wrapper in-endopint-url & in-options]
                                           (is (= http-client-wrapper in-http-client-wrapper))
-                                          (is (= (str test-cluster-url "/token")) in-endopint-url)
+                                          (is (= (str test-cluster-url "/token") in-endopint-url))
                                           (is (= expected-options (apply hash-map in-options)))
                                           (throw error))]
           (is (thrown-with-msg? Exception #"exception from test"
@@ -177,7 +177,7 @@
       (let [token-response {"message" "failed"}]
         (with-redefs [make-http-request (fn [in-http-client-wrapper in-endopint-url & in-options]
                                           (is (= http-client-wrapper in-http-client-wrapper))
-                                          (is (= (str test-cluster-url "/token")) in-endopint-url)
+                                          (is (= (str test-cluster-url "/token") in-endopint-url))
                                           (is (= expected-options (apply hash-map in-options)))
                                           (send-json-response token-response :status 300))]
           (is (thrown-with-msg? Exception #"Token store failed"
@@ -188,7 +188,7 @@
       (let [token-response {"message" "success"}]
         (with-redefs [make-http-request (fn [in-http-client-wrapper in-endopint-url & in-options]
                                           (is (= http-client-wrapper in-http-client-wrapper))
-                                          (is (= (str test-cluster-url "/token")) in-endopint-url)
+                                          (is (= (str test-cluster-url "/token") in-endopint-url))
                                           (is (= expected-options (apply hash-map in-options)))
                                           (send-json-response token-response :status 200))]
           (is (= {:body token-response, :headers {}, :status 200}
@@ -210,7 +210,7 @@
       (let [error (Exception. "exception from test")]
         (with-redefs [make-http-request (fn [in-http-client-wrapper in-endopint-url & in-options]
                                           (is (= http-client-wrapper in-http-client-wrapper))
-                                          (is (= (str test-cluster-url "/token")) in-endopint-url)
+                                          (is (= (str test-cluster-url "/token") in-endopint-url))
                                           (is (= expected-options (apply hash-map in-options)))
                                           (throw error))]
           (is (thrown-with-msg? Exception #"exception from test"
@@ -221,7 +221,7 @@
       (let [token-response {"message" "failed"}]
         (with-redefs [make-http-request (fn [in-http-client-wrapper in-endopint-url & in-options]
                                           (is (= http-client-wrapper in-http-client-wrapper))
-                                          (is (= (str test-cluster-url "/token")) in-endopint-url)
+                                          (is (= (str test-cluster-url "/token") in-endopint-url))
                                           (is (= expected-options (apply hash-map in-options)))
                                           (send-json-response token-response :status 300))]
           (is (thrown-with-msg? Exception #"Token hard-delete failed"
@@ -232,8 +232,89 @@
       (let [token-response {"message" "success"}]
         (with-redefs [make-http-request (fn [in-http-client-wrapper in-endopint-url & in-options]
                                           (is (= http-client-wrapper in-http-client-wrapper))
-                                          (is (= (str test-cluster-url "/token")) in-endopint-url)
+                                          (is (= (str test-cluster-url "/token") in-endopint-url))
                                           (is (= expected-options (apply hash-map in-options)))
                                           (send-json-response token-response :status 200))]
           (is (= {:body token-response, :headers {}, :status 200}
                  (hard-delete-token http-client-wrapper test-cluster-url test-token test-token-etag))))))))
+
+(deftest test-health-check-token
+  (let [http-client-wrapper (Object.)
+        test-cluster-url "http://www.test.com:1234"
+        test-token "lorem-ipsum"
+        queue-timeout-ms 120000
+        expected-options {:headers {"x-waiter-queue-timeout" queue-timeout-ms
+                                    "x-waiter-token" test-token}
+                          :method :get
+                          :query-params {}}]
+
+    (testing "error in loading token"
+      (let [error (Exception. "exception from test")]
+        (with-redefs [load-token (fn [in-http-client-wrapper in-cluster-url in-token]
+                                   (is (= http-client-wrapper in-http-client-wrapper))
+                                   (is (= test-cluster-url in-cluster-url))
+                                   (is (= test-token in-token))
+                                   (throw error))
+                      make-http-request (fn [& _]
+                                          (throw (Exception. "unexpected call")))]
+          (is (thrown-with-msg? Exception #"exception from test"
+                                (health-check-token http-client-wrapper test-cluster-url test-token queue-timeout-ms))))))
+
+    (testing "deleted token"
+      (let [error (Exception. "exception from test")]
+        (with-redefs [load-token (fn [in-http-client-wrapper in-cluster-url in-token]
+                                   (is (= http-client-wrapper in-http-client-wrapper))
+                                   (is (= test-cluster-url in-cluster-url))
+                                   (is (= test-token in-token))
+                                   {"deleted" true
+                                    "health-check-url" "/health-check"})
+                      make-http-request (fn [& _]
+                                          (throw (Exception. "unexpected call")))]
+          (is (nil? (health-check-token http-client-wrapper test-cluster-url test-token queue-timeout-ms))))))
+
+    (testing "error in health check"
+      (let [error (Exception. "exception from test")]
+        (with-redefs [load-token (fn [in-http-client-wrapper in-cluster-url in-token]
+                                   (is (= http-client-wrapper in-http-client-wrapper))
+                                   (is (= test-cluster-url in-cluster-url))
+                                   (is (= test-token in-token))
+                                   {:description {"health-check-url" "/health-check"}})
+                      make-http-request (fn [in-http-client-wrapper in-endopint-url & in-options]
+                                          (is (= http-client-wrapper in-http-client-wrapper))
+                                          (is (= (str test-cluster-url "/health-check") in-endopint-url))
+                                          (is (= expected-options (apply hash-map in-options)))
+                                          (throw error))]
+          (is (thrown-with-msg? Exception #"exception from test"
+                                (health-check-token http-client-wrapper test-cluster-url test-token queue-timeout-ms))))))
+
+    (testing "error in status code"
+      (with-redefs [load-token (fn [in-http-client-wrapper in-cluster-url in-token]
+                                 (is (= http-client-wrapper in-http-client-wrapper))
+                                 (is (= test-cluster-url in-cluster-url))
+                                 (is (= test-token in-token))
+                                 {:description {"health-check-url" "/health-check"}})
+                    make-http-request (fn [in-http-client-wrapper in-endopint-url & in-options]
+                                        (is (= http-client-wrapper in-http-client-wrapper))
+                                        (is (= (str test-cluster-url "/health-check") in-endopint-url))
+                                        (is (= expected-options (apply hash-map in-options)))
+                                        (send-json-response {"message" "failed"} :status 400))]
+        (is (= {:body "{\"message\":\"failed\"}"
+                :headers {}
+                :status 400}
+               (health-check-token http-client-wrapper test-cluster-url test-token queue-timeout-ms)))))
+
+    (testing "successful response"
+      (with-redefs [load-token (fn [in-http-client-wrapper in-cluster-url in-token]
+                                 (is (= http-client-wrapper in-http-client-wrapper))
+                                 (is (= test-cluster-url in-cluster-url))
+                                 (is (= test-token in-token))
+                                 {:description {"health-check-url" "/health-check"}})
+                    make-http-request (fn [in-http-client-wrapper in-endopint-url & in-options]
+                                        (is (= http-client-wrapper in-http-client-wrapper))
+                                        (is (= (str test-cluster-url "/health-check") in-endopint-url))
+                                        (is (= expected-options (apply hash-map in-options)))
+                                        (send-json-response {"message" "success"} :status 200))]
+        (is (= {:body "{\"message\":\"success\"}"
+                :headers {}
+                :status 200}
+               (health-check-token http-client-wrapper test-cluster-url test-token queue-timeout-ms)))))))

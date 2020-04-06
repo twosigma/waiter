@@ -77,14 +77,14 @@
         (is (every? #(not (nil? (.forPath (.checkExists curator) (str services-base-path "/" %)))) paths-to-work-on))
         (doseq [service-id paths-to-work-on]
           (is (= {:service-id service-id}
-                 (->> (read-path curator (str services-base-path "/" service-id) :serializer serializer) (:data)))
+                 (:data (read-path curator (str services-base-path "/" service-id) :serializer serializer)))
               (str "Data not equal for " service-id)))
         (doseq [service-id paths-to-work-on]
           (write-path curator (str services-base-path "/" service-id) {:service-id service-id, :pass 2} :serializer serializer))
         (is (every? #(not (nil? (.forPath (.checkExists curator) (str services-base-path "/" %)))) paths-to-work-on))
         (doseq [service-id paths-to-work-on]
           (is (= {:service-id service-id, :pass 2}
-                 (->> (read-path curator (str services-base-path "/" service-id) :serializer serializer) (:data)))
+                 (:data (read-path curator (str services-base-path "/" service-id) :serializer serializer)))
               (str "Data not equal for " service-id))))
 
       (testing "write-on-new-nested-paths"
@@ -94,7 +94,7 @@
         (is (every? #(not (nil? (.forPath (.checkExists curator) (str services-base-path "/" %)))) paths-to-work-on))
         (doseq [service-id paths-to-work-on]
           (is (= {:service-id service-id}
-                 (->> (read-path curator (str services-base-path "/new/" service-id) :serializer serializer) (:data)))
+                 (:data (read-path curator (str services-base-path "/new/" service-id) :serializer serializer)))
               (str "Data not equal for " service-id))))
       (finally
         (.close curator)
@@ -133,7 +133,8 @@
                         (fn [_]
                           (async/thread
                             (dotimes [_ calls-per-thread]
-                              (synchronize curator "/lock" 100000
+                              (synchronize
+                                curator "/lock" 100000
                                 (fn []
                                   (reset! counter (inc @counter)))))))
                         (range num-threads))]
@@ -152,13 +153,15 @@
       (.start curator)
       (testing "synchronize-fail-to-acquire-lock"
         (is (thrown-with-msg?
-              clojure.lang.ExceptionInfo 
+              clojure.lang.ExceptionInfo
               #"^Could not acquire lock.$"
-              (let [chan (async/chan)
-                    locking-thread (async/thread 
-                                     (synchronize curator "/lock-fail" 100 (fn [] 
-                                                                             (async/>!! chan :go)
-                                                                             (Thread/sleep 1000))))]
+              (let [chan (async/promise-chan)]
+                (async/thread
+                  (synchronize
+                    curator "/lock-fail" 100
+                    (fn []
+                      (async/>!! chan :go)
+                      (Thread/sleep 1000))))
                 ; wait for lock to be acquired
                 (async/<!! chan)
                 (synchronize curator "/lock-fail" 100 nil)))))

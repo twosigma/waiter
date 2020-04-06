@@ -1,0 +1,63 @@
+#!/bin/bash
+
+# send logs to S3 (if enabled)
+if [ -z "$WAITER_LOG_BUCKET_URL" ]; then
+    echo 'S3 log backups disabled'
+    exit 0
+fi
+
+# Detect graceful shutdown of main container in pod
+await_graceful_shutdown() {
+    # We wait an extra 500ms after the grace period to ensure that
+    # the waiter-k8s-init script has had sufficient time to finish.
+    grace_millis=$(( ${WAITER_GRACE_SECS:-3} * 1000 + 500 ))
+    for (( t=0; t<grace_millis; t+=100 )); do
+        [ -f './latest/.waiter_cmd_exited' ] && break
+        sleep 0.1
+    done
+    graceful_shutdown_complete=true
+    last_run=$(( $(readlink ./latest | sed 's|^.*/r||') ))
+}
+graceful_shutdown_complete=false
+trap await_graceful_shutdown SIGTERM
+
+# Extract this pod's name from the (short) hostname
+# this is used to create a unique path in S3
+pod_name=$(hostname -s)
+base_url="$WAITER_LOG_BUCKET_URL/$pod_name"
+
+waiter_log_files='stdout stderr'
+
+sandbox_backup() {
+    local sandbox_dir=$1
+    [ -d $sandbox_dir ] || return
+    echo "Starting S3 backups for $sandbox_dir"
+    for f in $waiter_log_files; do
+        logfile="$sandbox_dir/$f"
+        # Using the -T option with curl PUTs the target file to the given URL,
+        # and avoids loading the full file into memory when sending the payload.
+        # Enabling Kerberos/SPNEGO when the bucket is not kerberized does not
+        # cause an error, and the extra flags are ignored on non-kerberized systems.
+        curl -s --anyauth -u: -T "$logfile" "$base_url/$logfile"
+    done
+    echo "Finished S3 backups for $sandbox_dir"
+}
+
+run_completed() {
+    local run_number=$1
+    # Either the presence of the sentinal file or the next run's directory
+    # are each sufficient to determine that the current run was completed.
+    [[ -f "./r${run_number}/.waiter_cmd_exited" || -d "./r$((run_number+1))" ]]
+}
+
+cd "${1:-/srv/www}"
+# For each ./r* directory created by a container restart,
+# we upload the stdout and stderr to the target directory in the S3 bucket.
+i=0
+while ! $graceful_shutdown_complete || (( i <= last_run )); do
+    while ! run_completed $i && ! $graceful_shutdown_complete; do
+        sleep 0.1
+    done
+    sandbox_backup "./r$i"
+    (( i++ ))
+done

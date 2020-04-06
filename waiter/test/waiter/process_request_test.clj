@@ -26,51 +26,12 @@
             [waiter.metrics :as metrics]
             [waiter.descriptor :as descriptor]
             [waiter.process-request :refer :all]
-            [waiter.statsd :as statsd])
-  (:import (java.io ByteArrayOutputStream)
-           (org.eclipse.jetty.client HttpClient)))
-
-(defn request
-  [resource request-method & params]
-  {:request-method request-method :uri resource :params (first params)})
-
-(deftest test-request->endpoint-without-headers
-  (let [legacy-endpoints #{"/secrun"}
-        passthrough-endpoints #{"/foo" "/baz/bar" "/load/balancer" "/auto/scale/1/2/3"}
-        waiter-headers {}
-        test-endpoints (clojure.set/union legacy-endpoints passthrough-endpoints)]
-    (doseq [item test-endpoints]
-      (testing (str "Test retrieve endpoint without headers: " item)
-        (let [dummy-request (request item :post {:a 1 :b 2})
-              expected-endpoint (if (contains? legacy-endpoints item) "/req" item)]
-          (is (= expected-endpoint
-                 (request->endpoint dummy-request waiter-headers))))))))
-
-(deftest test-request->endpoint-with-headers
-  (let [legacy-endpoints #{"/secrun"}
-        passthrough-endpoints #{"/foo" "/baz/bar" "/load/balancer" "/auto/scale/1/2/3"}
-        custom-legacy-endpoint "/custom/endpoint"
-        waiter-headers {(str headers/waiter-header-prefix "endpoint-path") custom-legacy-endpoint}
-        test-endpoints (clojure.set/union legacy-endpoints passthrough-endpoints)]
-    (doseq [item test-endpoints]
-      (testing (str "Test retrieve endpoint with headers: " item)
-        (let [dummy-request (request item :post {:a 1 :b 2})
-              expected-endpoint (if (contains? legacy-endpoints item) custom-legacy-endpoint item)]
-          (is (= expected-endpoint
-                 (request->endpoint dummy-request waiter-headers))))))))
-
-(deftest test-request->endpoint-with-headers-and-query-string
-  (let [legacy-endpoints #{"/secrun"}
-        passthrough-endpoints #{"/foo" "/baz/bar" "/load/balancer" "/auto/scale/1/2/3"}
-        custom-legacy-endpoint "/custom/endpoint"
-        waiter-headers {(str headers/waiter-header-prefix "endpoint-path") custom-legacy-endpoint}
-        test-endpoints (clojure.set/union legacy-endpoints passthrough-endpoints)]
-    (doseq [item test-endpoints]
-      (testing (str "Test retrieve endpoint with headers and query string: " item)
-        (let [dummy-request (assoc (request item :post {:a 1 :b 2}) :query-string "foo=bar&baz=1234")
-              expected-endpoint (if (contains? legacy-endpoints item) custom-legacy-endpoint item)]
-          (is (= expected-endpoint
-                 (request->endpoint dummy-request waiter-headers))))))))
+            [waiter.statsd :as statsd]
+            [waiter.test-helpers :refer :all])
+  (:import (java.io ByteArrayOutputStream IOException)
+           (java.util.concurrent TimeoutException)
+           (org.eclipse.jetty.client HttpClient)
+           (org.eclipse.jetty.io EofException)))
 
 (deftest test-prepare-request-properties
   (let [test-cases (list
@@ -143,6 +104,11 @@
                       :input {:request-properties {:fie "foe", :async-check-interval-ms 100, :async-request-timeout-ms 200}
                               :waiter-headers {"async-check-interval" 50, "async-request-timeout" 250}}
                       :expected {:fie "foe", :async-check-interval-ms 50, :async-request-timeout-ms 250, :initial-socket-timeout-ms nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      }
+                     {:name "test-prepare-request-properties:too-large-async-request-timeout-header"
+                      :input {:request-properties {:fie "foe", :async-check-interval-ms 100, :async-request-timeout-ms 200}
+                              :waiter-headers {"async-request-timeout" (+ one-hour-in-millis 1000)}}
+                      :expected {:fie "foe", :async-check-interval-ms 100, :async-request-timeout-ms one-hour-in-millis, :initial-socket-timeout-ms nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
                       })]
     (doseq [{:keys [name input expected]} test-cases]
       (testing (str "Test " name)
@@ -306,7 +272,8 @@
             "http://www.example.com:1234/query/for/status")))))
 
 (deftest test-make-request
-  (let [instance {:service-id "test-service-id", :host "example.com", :port 8080, :protocol "proto"}
+  (let [instance {:service-id "test-service-id", :host "example.com", :port 8080}
+        backend-proto "http"
         request {:authorization/principal "test-user@test.com"
                  :authorization/user "test-user"
                  :body "body"}
@@ -335,6 +302,7 @@
                              "pragma" "no-cache"
                              "proxy-authenticate" "proxy-authenticate value"
                              "proxy-authorization" "proxy-authorization value"
+                             "proxy-connection" "keep-alive"
                              "referer" "http://www.test-referer.com"
                              "te" "trailers, deflate"
                              "trailers" "trailer-name-1, trailer-name-2"
@@ -346,39 +314,67 @@
                              "x-http-method-override" "DELETE"}
         end-route "/end-route"
         app-password "test-password"]
-    (testing "make-request:headers"
-      (let [expected-endpoint "proto://example.com:8080/end-route"
-            make-basic-auth-fn (fn make-basic-auth-fn [endpoint username password]
-                                 (is (= expected-endpoint endpoint))
-                                 (is (= username "waiter"))
-                                 (is (= app-password password))
-                                 (Object.))
-            service-id->password-fn (fn service-id->password-fn [service-id]
-                                      (is (= "test-service-id" service-id))
-                                      app-password)
-            http-client (http/client)
-            request-method-fn-call-counter (atom 0)]
-        (with-redefs [http/request
-                      (fn [^HttpClient _ request-config]
-                        (swap! request-method-fn-call-counter inc)
-                        (is (= expected-endpoint (:url request-config)))
-                        (is (= :bytes (:as request-config)))
-                        (is (:auth request-config))
-                        (is (= "body" (:body request-config)))
-                        (is (= 654321 (:idle-timeout request-config)))
-                        (is (= (-> (dissoc passthrough-headers "expect" "authorization"
-                                           "connection" "keep-alive" "proxy-authenticate" "proxy-authorization"
-                                           "te" "trailers" "transfer-encoding" "upgrade")
-                                   (merge {"x-waiter-auth-principal" "test-user"
-                                           "x-waiter-authenticated-principal" "test-user@test.com"}))
-                               (:headers request-config))))]
-          (make-request http-client make-basic-auth-fn service-id->password-fn instance request request-properties passthrough-headers end-route nil)
-          (is (= 1 @request-method-fn-call-counter)))))))
+    (let [expected-endpoint "http://example.com:8080/end-route"
+          make-basic-auth-fn (fn make-basic-auth-fn [endpoint username password]
+                               (is (= expected-endpoint endpoint))
+                               (is (= username "waiter"))
+                               (is (= app-password password))
+                               (Object.))
+          service-id->password-fn (fn service-id->password-fn [service-id]
+                                    (is (= "test-service-id" service-id))
+                                    app-password)
+          http-clients {:http1-client (http/client)}
+          http-request-mock-factory (fn [passthrough-headers request-method-fn-call-counter proto-version]
+                                      (fn [^HttpClient _ request-config]
+                                        (swap! request-method-fn-call-counter inc)
+                                        (is (= expected-endpoint (:url request-config)))
+                                        (is (= :bytes (:as request-config)))
+                                        (is (:auth request-config))
+                                        (is (= "body" (:body request-config)))
+                                        (is (= 654321 (:idle-timeout request-config)))
+                                        (is (= (-> passthrough-headers
+                                                   (dissoc "expect" "authorization"
+                                                           "connection" "keep-alive" "proxy-authenticate" "proxy-authorization"
+                                                           "te" "trailers" "transfer-encoding" "upgrade")
+                                                   (merge {"x-waiter-auth-principal" "test-user"
+                                                           "x-waiter-authenticated-principal" "test-user@test.com"}))
+                                               (:headers request-config)))
+                                        (is (= proto-version (:version request-config)))))]
+      (testing "make-request:headers:HTTP/1.0"
+        (let [proto-version "HTTP/1.0"
+              request-method-fn-call-counter (atom 0)]
+          (with-redefs [http/request (http-request-mock-factory passthrough-headers request-method-fn-call-counter proto-version)]
+            (make-request http-clients make-basic-auth-fn service-id->password-fn instance request request-properties
+                          passthrough-headers end-route nil backend-proto proto-version)
+            (is (= 1 @request-method-fn-call-counter)))))
+
+      (testing "make-request:headers:HTTP/2.0"
+        (let [proto-version "HTTP/2.0"
+              request-method-fn-call-counter (atom 0)]
+          (with-redefs [http/request (http-request-mock-factory passthrough-headers request-method-fn-call-counter proto-version)]
+            (make-request http-clients make-basic-auth-fn service-id->password-fn instance request request-properties
+                          passthrough-headers end-route nil backend-proto proto-version)
+            (is (= 1 @request-method-fn-call-counter)))))
+
+      (testing "make-request:headers-long-content-length"
+        (let [proto-version "HTTP/1.0"
+              request-method-fn-call-counter (atom 0)
+              passthrough-headers (assoc passthrough-headers "content-length" "1234123412341234")
+              statsd-inc-call-value (promise)]
+          (with-redefs [http/request (http-request-mock-factory passthrough-headers request-method-fn-call-counter proto-version)
+                        statsd/inc!
+                        (fn [metric-group metric value]
+                          (is (nil? metric-group))
+                          (is (= "request_content_length" metric))
+                          (deliver statsd-inc-call-value value))]
+            (make-request http-clients make-basic-auth-fn service-id->password-fn instance request request-properties
+                          passthrough-headers end-route nil backend-proto proto-version)
+            (is (= 1 @request-method-fn-call-counter))
+            (is (= 1234123412341234 (deref statsd-inc-call-value 0 :statsd-inc-not-called)))))))))
 
 (deftest test-wrap-suspended-service
   (testing "returns error for suspended app"
-    (let [handler (-> (fn [_] {:status 200})
-                      wrap-suspended-service)
+    (let [handler (wrap-suspended-service (fn [_] {:status 200}))
           request {:descriptor {:service-id "service-id-1"
                                 :suspended-state {:suspended true
                                                   :last-updated-by "test-user"
@@ -389,8 +385,7 @@
       (is (str/includes? body "test-user"))))
 
   (testing "passes apps by default"
-    (let [handler (-> (fn [_] {:status 200})
-                      wrap-suspended-service)
+    (let [handler (wrap-suspended-service (fn [_] {:status 200}))
           request {}
           {:keys [status]} (handler request)]
       (is (= 200 status)))))
@@ -401,8 +396,7 @@
           counter (metrics/service-counter service-id "request-counts" "waiting-for-available-instance")]
       (counters/clear! counter)
       (counters/inc! counter 10)
-      (let [handler (-> (fn [_] {:status 200})
-                        wrap-too-many-requests)
+      (let [handler (wrap-too-many-requests (fn [_] {:status 200}))
             request {:descriptor {:service-id service-id
                                   :service-description {"max-queue-length" 5}}}
             {:keys [status body]} (handler request)]
@@ -414,8 +408,7 @@
           counter (metrics/service-counter service-id "request-counts" "waiting-for-available-instance")]
       (counters/clear! counter)
       (counters/inc! counter 3)
-      (let [handler (-> (fn [_] {:status 200})
-                        wrap-too-many-requests)
+      (let [handler (wrap-too-many-requests (fn [_] {:status 200}))
             request {:descriptor {:service-id service-id
                                   :service-description {"max-queue-length" 10}}}
             {:keys [status]} (handler request)]
@@ -429,8 +422,7 @@
                                                               :x-waiter-headers {"queue-length" 100}})))
         start-new-service-fn (constantly nil)
         fallback-state-atom (atom {})
-        handler (-> (fn [_] {:status 200})
-                    (descriptor/wrap-descriptor request->descriptor-fn start-new-service-fn fallback-state-atom))]
+        handler (descriptor/wrap-descriptor (fn [_] {:status 200}) request->descriptor-fn start-new-service-fn fallback-state-atom)]
     (testing "with-query-params"
       (let [request {:headers {"host" "www.example.com:1234"}, :query-string "a=b&c=d", :uri "/path"}
             {:keys [headers status]} (handler request)]
@@ -453,8 +445,7 @@
   (let [request->descriptor-fn (fn [_] (throw (Exception. "Exception message")))
         start-new-service-fn (constantly nil)
         fallback-state-atom (atom {})
-        handler (-> (fn [_] {:status 200})
-                    (descriptor/wrap-descriptor request->descriptor-fn start-new-service-fn fallback-state-atom))
+        handler (descriptor/wrap-descriptor (fn [_] {:status 200}) request->descriptor-fn start-new-service-fn fallback-state-atom)
         request {}
         {:keys [body headers status]} (handler request)]
     (is (= 500 status))
@@ -466,8 +457,7 @@
   (let [request->descriptor-fn (fn [_] (throw (ex-info "Error message for user" {:status 404})))
         start-new-service-fn (constantly nil)
         fallback-state-atom (atom {})
-        handler (-> (fn [_] {:status 200})
-                    (descriptor/wrap-descriptor request->descriptor-fn start-new-service-fn fallback-state-atom))
+        handler (descriptor/wrap-descriptor (fn [_] {:status 200}) request->descriptor-fn start-new-service-fn fallback-state-atom)
         request {}
         {:keys [body headers status]} (handler request)]
     (is (= 404 status))
@@ -484,3 +474,29 @@
     (is (= [4 -103] (determine-priority position-generator-atom {"x-waiter-foo" "2", "x-waiter-priority" "4"})))
     (is (nil? (determine-priority position-generator-atom {"priority" 1})))
     (is (= 103 @position-generator-atom))))
+
+(deftest test-classify-error
+  (is (= [:generic-error "Test Exception" 500 "clojure.lang.ExceptionInfo"]
+         (classify-error (ex-info "Test Exception" {:source :test}))))
+  (is (= [:test-error "Test Exception" 500 "clojure.lang.ExceptionInfo"]
+         (classify-error (ex-info "Test Exception" {:error-cause :test-error :source :test}))))
+  (is (= [:generic-error "Test Exception" 400 "clojure.lang.ExceptionInfo"]
+         (classify-error (ex-info "Test Exception" {:source :test :status 400}))))
+  (is (= [:instance-error nil 502 "java.io.IOException"]
+         (classify-error (ex-info "Test Exception" {:source :test :status 400} (IOException. "Test")))))
+  (is (= [:instance-error nil 502 "java.io.IOException"]
+         (classify-error (IOException. "Test"))))
+  (is (= [:client-error "Client action means stream is no longer needed" 400 "java.io.IOException"]
+         (classify-error (ex-info "Test Exception" {:source :test :status 400} (IOException. "cancel_stream_error")))))
+  (is (= [:client-error "Client action means stream is no longer needed" 400 "java.io.IOException"]
+         (classify-error (IOException. "cancel_stream_error"))))
+  (is (= [:client-error "Connection unexpectedly closed while streaming request" 400 "org.eclipse.jetty.io.EofException"]
+         (classify-error (ex-info "Test Exception" {:source :test :status 400} (EofException. "Test")))))
+  (is (= [:client-eagerly-closed "Connection eagerly closed by client" 400 "org.eclipse.jetty.io.EofException"]
+         (classify-error (ex-info "Test Exception" {:source :test :status 400} (EofException. "reset")))))
+  (is (= [:client-eagerly-closed "Connection eagerly closed by client" 400 "org.eclipse.jetty.io.EofException"]
+         (classify-error (EofException. "reset"))))
+  (is (= [:instance-error nil 504 "java.util.concurrent.TimeoutException"]
+         (classify-error (TimeoutException. "timeout"))))
+  (is (= [:instance-error nil 502 "java.lang.Exception"]
+         (classify-error (Exception. "Test Exception")))))

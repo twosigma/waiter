@@ -1,0 +1,3 @@
+{:issuer "test.com"
+ :subject-key :sub
+ :token-type "JWT"}

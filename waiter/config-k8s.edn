@@ -1,0 +1,69 @@
+{
+ ; ---------- Cluster ----------
+
+ :waiter-principal "waiter@example.com"
+
+ :zookeeper {;; Use an in-process ZK (not for production use):
+             :connect-string :in-process}
+
+ ; ---------- Metrics - Internal ----------
+
+ :metrics-config {
+                  :codahale-reporters {
+                                       :graphite {
+                                                  :factory-fn waiter.reporter/graphite-reporter
+                                                  :filter-regex #config/regex "^jvm.*|^waiter.*"
+                                                  :host "localhost"
+                                                  :period-ms 6000
+                                                  :pickled? true
+                                                  :prefix "waiter-internal"
+                                                  :port #config/env-int "GRAPHITE_SERVER_PORT"}}}
+
+ ; ---------- Network ----------
+
+ ;; Set the bind address to a specific IP:
+ :host "127.0.0.1"
+
+ ;; Set the port:
+ :port #config/env-int "WAITER_PORT"
+
+ ; ---------- Security ----------
+
+ :authenticator-config {:jwt {:http-options {:conn-timeout 10000
+                                             :socket-timeout 10000
+                                             :spnego-auth false}
+                              :issuer "test.com"
+                              :jwks-url #config/env "JWKS_SERVER_URL"
+                              :subject-key :sub
+                              :supported-algorithms #{:eddsa :rs256}
+                              :token-type "JWT"
+                              :update-interval-ms 60000}
+                        :kind :one-user
+                        :one-user {;; The user account used to launch services:
+                                   :run-as-user #config/env "WAITER_AUTH_RUN_AS_USER"}}
+
+ ; ---------- Scheduling ----------
+
+ :scheduler-config {:kind :kubernetes
+                    :kubernetes {:authorizer {:kind :sanity-check
+                                              :sanity-check {:factory-fn waiter.authorization/sanity-check-authorizer}}
+                                 :container-running-grace-secs 90
+                                 :fileserver {:port 591}
+                                 :log-bucket-sync-secs 5
+                                 :log-bucket-url #config/env-default ["WAITER_S3_BUCKET" nil]
+                                 :pod-sigkill-delay-secs 1
+                                 :replicaset-spec-builder {:default-container-image "twosigma/waiter-test-apps"
+                                                           :default-namespace "waiter"
+                                                           :image-aliases {"alias/integration" "twosigma/integration"}}
+                                 :restart-expiry-threshold 2
+                                 :url "http://localhost:8001"}}
+
+ ; ---------- Error Handling ----------
+
+ :deployment-error-config {:min-hosts 1}
+
+ :scheduler-gc-config {:broken-service-min-hosts 1}
+
+ ; ---------- CORS ----------
+
+ :cors-config {:kind :allow-all}}

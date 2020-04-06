@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.cookie-support-test
-  (:require [clojure.core.async :as async]
+  (:require [clj-time.core :as t]
+            [clojure.core.async :as async]
             [clojure.data.codec.base64 :as b64]
             [clojure.test :refer :all]
             [taoensso.nippy :as nippy]
@@ -25,7 +26,7 @@
 (deftest test-url-decode
   (is (= "testtest" (url-decode "testtest")))
   (is (= "test test" (url-decode "test%20test")))
-  (is (= nil (url-decode nil))))
+  (is (nil? (url-decode nil))))
 
 (deftest test-cookie-value
   (let [cookie-string "user=john; mode=test; product-name=waiter; special=\"quotes\"abound\""]
@@ -42,24 +43,25 @@
   (is (= "bar=\"x-waiter-auth=this is a real cookie\"" (remove-cookie "x-waiter-auth=auth-value; bar=\"x-waiter-auth=this is a real cookie\""
                                                                       "x-waiter-auth")))
   (is (= "bar=x-waiter-auth=this is a real cookie" (remove-cookie "x-waiter-auth=auth-value; bar=x-waiter-auth=this is a real cookie"
-                                                                      "x-waiter-auth")))
+                                                                  "x-waiter-auth")))
   (is (= "a=b; c=d" (remove-cookie "a=b; x-waiter-auth=auth; c=d" "x-waiter-auth"))))
 
 (deftest test-add-encoded-cookie
   (let [cookie-attrs ";Max-Age=864000;Path=/;HttpOnly=true"
+        max-age-sec (-> 10 t/days t/in-seconds)
         user-cookie (str "user=" (UrlEncoded/encodeString "data:john") cookie-attrs)]
     (with-redefs [b64/encode (fn [^String data-string] (.getBytes data-string))
                   nippy/freeze (fn [input _] (str "data:" input))]
       (is (= {:headers {"set-cookie" user-cookie}}
-             (add-encoded-cookie {} [:cached "password"] "user" "john" 10)))
+             (add-encoded-cookie {} [:cached "password"] "user" "john" max-age-sec)))
       (is (= {:headers {"set-cookie" ["foo=bar" user-cookie]}}
-             (add-encoded-cookie {:headers {"set-cookie" "foo=bar"}} [:cached "password"] "user" "john" 10)))
+             (add-encoded-cookie {:headers {"set-cookie" "foo=bar"}} [:cached "password"] "user" "john" max-age-sec)))
       (is (= {:headers {"set-cookie" ["foo=bar" "baz=quux" user-cookie]}}
-             (add-encoded-cookie {:headers {"set-cookie" ["foo=bar" "baz=quux"]}} [:cached "password"] "user" "john" 10)))
+             (add-encoded-cookie {:headers {"set-cookie" ["foo=bar" "baz=quux"]}} [:cached "password"] "user" "john" max-age-sec)))
       (let [response-chan (async/promise-chan)]
         (async/>!! response-chan {})
         (is (= {:headers {"set-cookie" user-cookie}}
-               (async/<!! (add-encoded-cookie response-chan [:cached "password"] "user" "john" 10))))))))
+               (async/<!! (add-encoded-cookie response-chan [:cached "password"] "user" "john" max-age-sec))))))))
 
 (deftest test-decode-cookie
   (with-redefs [b64/decode (fn [value-bytes] (String. ^bytes value-bytes "utf-8"))

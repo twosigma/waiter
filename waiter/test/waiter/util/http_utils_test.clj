@@ -15,11 +15,11 @@
 ;;
 (ns waiter.util.http-utils-test
   (:require [clojure.core.async :as async]
-            [clojure.data.json :as json]
             [clojure.test :refer :all]
             [qbits.jet.client.http :as http]
-            [waiter.util.http-utils :refer :all])
-  (:import clojure.lang.ExceptionInfo))
+            [waiter.util.http-utils :refer :all]
+            [waiter.util.utils :as utils])
+  (:import (clojure.lang ExceptionInfo)))
 
 (deftest test-http-request
   (testing "successful-response"
@@ -30,7 +30,7 @@
       (with-redefs [http/request (constantly
                                    (let [response-chan (async/promise-chan)
                                          body-chan (async/promise-chan)]
-                                     (async/>!! body-chan (json/write-str expected-body))
+                                     (async/>!! body-chan (utils/clj->json expected-body))
                                      (async/>!! response-chan {:body body-chan, :status 200})
                                      response-chan))]
         (is (= expected-body (http-request http-client "some-url"))))))
@@ -53,7 +53,7 @@
       (with-redefs [http/request (constantly
                                    (let [response-chan (async/promise-chan)
                                          body-chan (async/promise-chan)]
-                                     (async/>!! body-chan (json/write-str expected-body))
+                                     (async/>!! body-chan (utils/clj->json expected-body))
                                      (async/>!! response-chan {:body body-chan, :status 400})
                                      response-chan))]
         (is (= expected-body (http-request http-client "some-url" :throw-exceptions false))))))
@@ -63,7 +63,74 @@
       (with-redefs [http/request (constantly
                                    (let [response-chan (async/promise-chan)
                                          body-chan (async/promise-chan)]
-                                     (async/>!! body-chan (json/write-str {}))
+                                     (async/>!! body-chan (utils/clj->json {:error :response}))
                                      (async/>!! response-chan {:body body-chan, :status 400})
                                      response-chan))]
-        (is (thrown? ExceptionInfo (http-request http-client "some-url")))))))
+        (try
+          (http-request http-client "some-url")
+          (is false "exception not thrown")
+          (catch ExceptionInfo ex
+            (is (= {:body "{\"error\":\"response\"}" :status 400} (ex-data ex)))))))))
+
+(deftest test-backend-protocol->http-version
+  (is (= "HTTP/2.0" (backend-protocol->http-version "h2")))
+  (is (= "HTTP/2.0" (backend-protocol->http-version "h2c")))
+  (is (= "HTTP/1.1" (backend-protocol->http-version "http")))
+  (is (= "HTTP/1.1" (backend-protocol->http-version "https"))))
+
+(deftest test-backend-proto->scheme
+  (is (= "http" (backend-proto->scheme "http")))
+  (is (= "http" (backend-proto->scheme "h2c")))
+  (is (= "https" (backend-proto->scheme "https")))
+  (is (= "https" (backend-proto->scheme "h2")))
+  (is (= "ws" (backend-proto->scheme "ws")))
+  (is (= "wss" (backend-proto->scheme "wss")))
+  (is (= "zzz" (backend-proto->scheme "zzz"))))
+
+(deftest test-grpc?
+  (is (grpc? {"content-type" "application/grpc"} "HTTP/2.0"))
+  (is (not (grpc? {"content-type" "application/grpc"} "HTTP/1.1")))
+  (is (not (grpc? {"content-type" "application/grpc"} nil)))
+  (is (not (grpc? nil "HTTP/2.0")))
+  (is (not (grpc? {"content-type" "application/xml"} "HTTP/2.0")))
+  (is (not (grpc? {"content-type" "text/grpc"} "HTTP/2.0")))
+  (is (not (grpc? {"content-type" "text/grpc"} "HTTP/1.1")))
+  (is (not (grpc? {"accept" "application/grpc"} "HTTP/2.0"))))
+
+(deftest test-service-unavailable?
+  (is (service-unavailable? {:client-protocol "HTTP/0.9"} {:status 503}))
+  (is (service-unavailable? {:client-protocol "HTTP/1.0"} {:status 503}))
+  (is (service-unavailable? {:client-protocol "HTTP/1.1"} {:status 503}))
+  (is (service-unavailable? {:client-protocol "HTTP/2.0"} {:status 503}))
+
+  (is (not (service-unavailable? {:client-protocol "HTTP/0.9"} {:status 502})))
+  (is (not (service-unavailable? {:client-protocol "HTTP/1.0"} {:status 502})))
+  (is (not (service-unavailable? {:client-protocol "HTTP/1.1"} {:status 502})))
+  (is (not (service-unavailable? {:client-protocol "HTTP/2.0"} {:status 502})))
+
+  (is (not (service-unavailable? {:client-protocol "HTTP/0.9"} {:status 401})))
+  (is (not (service-unavailable? {:client-protocol "HTTP/1.0"} {:status 401})))
+  (is (not (service-unavailable? {:client-protocol "HTTP/1.1"} {:status 401})))
+  (is (not (service-unavailable? {:client-protocol "HTTP/2.0"} {:status 401})))
+
+  (is (service-unavailable?
+        {:client-protocol "HTTP/2.0" :headers {"content-type" "application/grpc"}}
+        {:headers {"grpc-status" "14"} :status 200}))
+  (is (service-unavailable?
+        {:client-protocol "HTTP/2.0" :headers {"content-type" "application/grpc"}}
+        {:headers {"grpc-status" "14"} :status 500}))
+  (is (not (service-unavailable?
+             {:client-protocol "HTTP/2.0" :headers {"content-type" "application/grpc"}}
+             {:headers {"grpc-status" "12"} :status 200})))
+  (is (not (service-unavailable?
+             {:client-protocol "HTTP/2.0" :headers {"content-type" "application/xml"}}
+             {:headers {"grpc-status" "14"} :status 200})))
+  (is (not (service-unavailable?
+             {:client-protocol "HTTP/1.1" :headers {"content-type" "application/grpc"}}
+             {:headers {"grpc-status" "14"} :status 200})))
+  (is (not (service-unavailable?
+             {:client-protocol "HTTP/2.0" :headers {"content-type" "application/grpc"}}
+             {:headers {"grpc-status" "13"} :status 200})))
+  (is (not (service-unavailable?
+             {:client-protocol "HTTP/2.0" :headers {"content-type" "application/grpc"}}
+             {:headers {"grpc-status" 14} :status 200}))))

@@ -1,0 +1,89 @@
+{
+ ; ---------- Cluster ----------
+
+ :waiter-principal "waiter@example.com"
+
+ :zookeeper {
+             ;; Use an in-process ZK (not for production use):
+             :connect-string :in-process}
+
+ ; ---------- Metrics - Internal ----------
+
+ :metrics-config {
+                  :codahale-reporters {
+                                       :graphite {
+                                                  :factory-fn waiter.reporter/graphite-reporter
+                                                  :filter-regex #config/regex "^jvm.*|^waiter.*"
+                                                  :host "localhost"
+                                                  :period-ms 6000
+                                                  :pickled? true
+                                                  :prefix "waiter-internal"
+                                                  :port #config/env-int "GRAPHITE_SERVER_PORT"}}}
+
+ ; ---------- Network ----------
+
+ ;; Set the bind address to a specific IP:
+ :host "127.0.0.1"
+
+ ;; Set the port:
+ :port #config/env-int "WAITER_PORT"
+
+ ; ---------- Token Storage ----------
+
+ :kv-config {:kind :file
+             :file {:factory-fn waiter.kv/new-file-based-kv-store
+                    :target-file "kv-store/store.bin"}}
+
+ ; ---------- Security ----------
+
+ :authenticator-config {:jwt {:http-options {:conn-timeout 10000
+                                             :socket-timeout 10000
+                                             :spnego-auth false}
+                              :issuer "test.com"
+                              :jwks-url #config/env "JWKS_SERVER_URL"
+                              :subject-key :sub
+                              :supported-algorithms #{:eddsa :rs256}
+                              :token-type "JWT"
+                              :update-interval-ms 60000}
+                        :kind :composite
+                        :composite {:factory-fn waiter.auth.composite/composite-authenticator
+                                    :authentication-providers {"one-user" {:factory-fn waiter.auth.authentication/one-user-authenticator
+                                                                           ;; The user account used to launch services:
+                                                                           :run-as-user #config/env "WAITER_AUTH_RUN_AS_USER"}
+                                                               "saml" {:factory-fn waiter.auth.saml/saml-authenticator
+                                                                       :idp-cert-uri #config/env "SAML_IDP_CERT_URI"
+                                                                       :idp-uri #config/env "SAML_IDP_URI"}}
+                                    :default-authentication-provider "one-user"}}
+
+ ; ---------- Scheduling ----------
+
+ :scheduler-config {
+                    ;; :kind :composite simply uses a shell scheduler that schedules instances
+                    ;; on your local machine (for testing purposes only):
+                    :kind :composite
+                    :composite {:factory-fn waiter.scheduler.composite/create-composite-scheduler
+                                ;; two shell schedulers that have reserved comparatively high and low ports
+                                :components {:shell-high {:factory-fn waiter.scheduler.shell/shell-scheduler
+                                                          :failed-instance-retry-interval-ms 5000
+                                                          :health-check-interval-ms 10000
+                                                          :health-check-timeout-ms 200
+                                                          :port-grace-period-ms 120000
+                                                          :port-range [10500 10999]
+                                                          :work-directory "scheduler/shell-high"}
+                                             :shell-low {:factory-fn waiter.scheduler.shell/shell-scheduler
+                                                         :failed-instance-retry-interval-ms 5000
+                                                         :health-check-interval-ms 5000
+                                                         :health-check-timeout-ms 200
+                                                         :port-grace-period-ms 120000
+                                                         :port-range [10000 10299]
+                                                         :work-directory "scheduler/shell-low"}}
+                                :default-scheduler :shell-high}}
+
+ ; ---------- Service Descriptions ----------
+ :service-description-defaults {"min-instances" 2}
+
+ ; ---------- CORS ----------
+ :cors-config {:kind :allow-all}
+
+ ;; Require fewer failed health checks
+ :health-check-config {:failed-check-threshold 2}}

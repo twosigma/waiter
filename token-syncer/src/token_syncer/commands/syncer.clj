@@ -74,15 +74,17 @@
 (defn sync-token-on-clusters
   "Syncs a given token description on all clusters.
    If the cluster-url->token-data says that a given token was not successfully loaded, it is skipped.
-   Token sync-ing is also skipped if the roots of the tokens are different."
+   Token sync-ing is also skipped if the tokens are active and the roots are different."
   [{:keys [store-token]} cluster-urls token latest-token-description cluster-url->token-data]
   (pc/map-from-keys
     (fn [cluster-url]
-      (let [cluster-result
+      (let [ignored-root-mismatch-equality-comparison-keys ["cluster" "last-update-time" "last-update-user" "previous" "root"]
+            system-metadata-keys (conj ignored-root-mismatch-equality-comparison-keys "deleted")
+            cluster-result
             (try
               (let [{:keys [description error status] :as token-data} (get cluster-url->token-data cluster-url)
-                    latest-root (get latest-token-description "root")
-                    cluster-root (get description "root")]
+                    {latest-root "root" latest-update-user "last-update-user"} latest-token-description
+                    {cluster-root "root" cluster-update-user "last-update-user"} description]
                 (cond
                   error
                   {:code :error/token-read
@@ -96,7 +98,31 @@
                   {:code :error/token-read
                    :details {:message "token root missing from latest token description"}}
 
-                  (and (seq description) (not= latest-root cluster-root))
+                  (and latest-root
+                       (= latest-token-description description))
+                  {:code :success/token-match}
+
+                  ;; deleted on both clusters, irrespective of remaining values
+                  (and (get latest-token-description "deleted")
+                       (get description "deleted"))
+                  {:code :error/tokens-deleted
+                   :details {:message "soft-deleted tokens should have already been hard-deleted"}}
+
+                  ;; active token, content the same irrespective of system metadata keys but roots different
+                  (and (seq description)
+                       (not= latest-root cluster-root)
+                       (not (get latest-token-description "deleted"))
+                       (not (get description "deleted"))
+                       (= (apply dissoc latest-token-description system-metadata-keys)
+                          (apply dissoc description system-metadata-keys)))
+                  {:code :skip/token-sync}
+
+                  ;; token user-specified content, last update user, and root different
+                  (and (seq description)
+                       (not= latest-root cluster-root)
+                       (not= latest-update-user cluster-update-user)
+                       (not= (apply dissoc description ignored-root-mismatch-equality-comparison-keys)
+                             (apply dissoc latest-token-description ignored-root-mismatch-equality-comparison-keys)))
                   {:code :error/root-mismatch
                    :details {:cluster description
                              :latest latest-token-description}}
@@ -131,16 +157,11 @@
         (let [{:keys [cluster-url description]} (token->latest-description token)
               token-etag (get-in token->url->token-data [token cluster-url :token-etag])
               remaining-cluster-urls (disj cluster-urls cluster-url)
-              all-tokens-match (every? (fn all-tokens-match-pred [cluster-url]
-                                         (= description (get-in token->url->token-data
-                                                                [token cluster-url :description])))
-                                       remaining-cluster-urls)
               all-soft-deleted (every? (fn soft-delete-pred [[_ token-data]]
                                          (get-in token-data [:description "deleted"]))
                                        (token->url->token-data token))]
-          (log/info "syncing" token "with token description from" cluster-url
-                    {:all-soft-deleted all-soft-deleted, :all-tokens-match all-tokens-match})
-          (let [sync-result (if (and all-tokens-match all-soft-deleted)
+          (log/info "syncing" token "with token description from" cluster-url {:all-soft-deleted all-soft-deleted})
+          (let [sync-result (if all-soft-deleted
                               (hard-delete-token-on-all-clusters waiter-api cluster-urls token token-etag)
                               (sync-token-on-clusters waiter-api remaining-cluster-urls token description
                                                       (token->url->token-data token)))]

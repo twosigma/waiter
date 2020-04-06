@@ -22,12 +22,12 @@ Please visit the `waiter` subproject first to get started.
 
 ## Quickstart
 
-The quickest way to get Mesos, Marathon, and Waiter running locally is with [docker](https://www.docker.com/) and [minimesos](https://minimesos.org/). 
+The quickest way to get Mesos, Marathon, and Waiter running locally is with [docker](https://www.docker.com/) and [minimesos](https://minimesos.org/).
 
 1. Install `docker`
 1. Install `minimesos`
 1. Clone down this repo
-1. Run `kitchen/bin/build-docker-image.sh` to build the minimesos agent image with kitchen baked in
+1. Run `containers/bin/build-docker-images.sh` to build the minimesos agent image with kitchen and other test apps baked in
 1. `cd waiter`
 1. Run `minimesos up` to start Mesos, ZooKeeper, and Marathon
 1. Run `bin/run-using-minimesos.sh` to start Waiter
@@ -35,7 +35,7 @@ The quickest way to get Mesos, Marathon, and Waiter running locally is with [doc
 
 ## Quickstart (local shell scheduling)
 
-Waiter can also be run without Mesos and Marathon, using the "shell scheduler". Note that this scheduler should only be used for testing purposes, not in production. 
+Waiter can also be run without Mesos and Marathon, using the "shell scheduler". Note that this scheduler should only be used for testing purposes, not in production.
 
 1. Clone down this repo
 1. `cd waiter`
@@ -50,4 +50,4 @@ In order to accept your code contributions, please fill out the appropriate Cont
 
 Apache Mesos is a trademark of The Apache Software Foundation. The Apache Software Foundation is not affiliated, endorsed, connected, sponsored or otherwise associated in any way to Two Sigma, Waiter, or this website in any manner.
 
-© Two Sigma Open Source, LLC
+© 2017-2019 Two Sigma Open Source, LLC

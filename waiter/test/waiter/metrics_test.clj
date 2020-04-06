@@ -26,7 +26,7 @@
             [plumbing.core :as pc]
             [waiter.core :as core]
             [waiter.metrics :refer :all]
-            [waiter.test-helpers :as test-helpers]
+            [waiter.test-helpers :refer :all]
             [waiter.util.async-utils :as au]
             [waiter.util.utils :as utils])
   (:import (com.codahale.metrics MetricFilter)
@@ -57,74 +57,60 @@
   (is (= '(.concat (.concat "a." b) ".c.d") (metric-name ["a" 'b "c" "d"]))))
 
 (deftest test-service-counter
-  (let [all-metrics-match-filter (reify MetricFilter (matches [_ _ _] true))]
-    (.removeMatching mc/default-registry all-metrics-match-filter)
+  (with-isolated-registry
     (service-counter "service-id" "foo")
     (service-counter "service-id" "foo" "bar")
     (service-counter "service-id" "fee" "fie")
     (is (every? #(str/starts-with? % "services.service-id.") (.getNames mc/default-registry)))
-    (is (= 3 (count (.getCounters mc/default-registry all-metrics-match-filter))))
-    (.removeMatching mc/default-registry all-metrics-match-filter)))
+    (is (= 3 (count (.getCounters mc/default-registry all-metrics-match-filter))))))
 
 (deftest test-service-histogram
-  (let [all-metrics-match-filter (reify MetricFilter (matches [_ _ _] true))]
-    (.removeMatching mc/default-registry all-metrics-match-filter)
+  (with-isolated-registry
     (service-histogram "service-id" "foo")
     (service-histogram "service-id" "foo" "bar")
     (service-histogram "service-id" "fee" "fie")
     (is (every? #(str/starts-with? % "services.service-id.") (.getNames mc/default-registry)))
-    (is (= 3 (count (.getHistograms mc/default-registry all-metrics-match-filter))))
-    (.removeMatching mc/default-registry all-metrics-match-filter)))
+    (is (= 3 (count (.getHistograms mc/default-registry all-metrics-match-filter))))))
 
 (deftest test-service-timer
-  (let [all-metrics-match-filter (reify MetricFilter (matches [_ _ _] true))]
-    (.removeMatching mc/default-registry all-metrics-match-filter)
+  (with-isolated-registry
     (service-timer "service-id" "foo")
     (service-timer "service-id" "foo" "bar")
     (service-timer "service-id" "fee" "fie")
     (is (every? #(str/starts-with? % "services.service-id.") (.getNames mc/default-registry)))
-    (is (= 3 (count (.getTimers mc/default-registry all-metrics-match-filter))))
-    (.removeMatching mc/default-registry all-metrics-match-filter)))
+    (is (= 3 (count (.getTimers mc/default-registry all-metrics-match-filter))))))
 
 (deftest test-service-meter
-  (let [all-metrics-match-filter (reify MetricFilter (matches [_ _ _] true))]
-    (.removeMatching mc/default-registry all-metrics-match-filter)
+  (with-isolated-registry
     (service-meter "service-id" "foo")
     (service-meter "service-id" "foo" "bar")
     (service-meter "service-id" "fee" "fie")
     (is (every? #(str/starts-with? % "services.service-id.") (.getNames mc/default-registry)))
-    (is (= 3 (count (.getMeters mc/default-registry all-metrics-match-filter))))
-    (.removeMatching mc/default-registry all-metrics-match-filter)))
+    (is (= 3 (count (.getMeters mc/default-registry all-metrics-match-filter))))))
 
 (deftest test-waiter-counter
-  (let [all-metrics-match-filter (reify MetricFilter (matches [_ _ _] true))]
-    (.removeMatching mc/default-registry all-metrics-match-filter)
+  (with-isolated-registry
     (waiter-counter "core" "foo")
     (waiter-counter "core" "foo" "bar")
     (waiter-counter "core" "fee" "fie")
     (is (every? #(str/starts-with? % "waiter.core.") (.getNames mc/default-registry)))
-    (is (= 3 (count (.getCounters mc/default-registry all-metrics-match-filter))))
-    (.removeMatching mc/default-registry all-metrics-match-filter)))
+    (is (= 3 (count (.getCounters mc/default-registry all-metrics-match-filter))))))
 
 (deftest test-waiter-meter
-  (let [all-metrics-match-filter (reify MetricFilter (matches [_ _ _] true))]
-    (.removeMatching mc/default-registry all-metrics-match-filter)
+  (with-isolated-registry
     (waiter-meter "core" "foo")
     (waiter-meter "core" "foo" "bar")
     (waiter-meter "core" "fee" "fie")
     (is (every? #(str/starts-with? % "waiter.core.") (.getNames mc/default-registry)))
-    (is (= 3 (count (.getMeters mc/default-registry all-metrics-match-filter))))
-    (.removeMatching mc/default-registry all-metrics-match-filter)))
+    (is (= 3 (count (.getMeters mc/default-registry all-metrics-match-filter))))))
 
 (deftest test-waiter-timer
-  (let [all-metrics-match-filter (reify MetricFilter (matches [_ _ _] true))]
-    (.removeMatching mc/default-registry all-metrics-match-filter)
+  (with-isolated-registry
     (waiter-timer "core" "foo")
     (waiter-timer "core" "foo" "bar")
     (waiter-timer "core" "fee" "fie")
     (is (every? #(str/starts-with? % "waiter.core.") (.getNames mc/default-registry)))
-    (is (= 3 (count (.getTimers mc/default-registry all-metrics-match-filter))))
-    (.removeMatching mc/default-registry all-metrics-match-filter)))
+    (is (= 3 (count (.getTimers mc/default-registry all-metrics-match-filter))))))
 
 (deftest test-update-counter
   (let [test-cases [{:name "nil-inputs", :input {:old nil, :new nil}, :expected 0}
@@ -136,17 +122,18 @@
                     {:name "non-empty-inputs-c", :input {:old [:a :b], :new [:b :c :d :e], :initial 3}, :expected 5}
                     {:name "non-empty-inputs-d", :input {:old [:a :b :c], :new [:d], :initial 3}, :expected 1}]]
     (doseq [test-case test-cases]
-      (let [{:keys [name input expected]} test-case
-            title ["waiter" "test" name]
-            counter (counters/counter title)]
-        (testing (str "Test " name)
-          (if (:initial input)
-            (do
-              (counters/clear! counter)
-              (counters/inc! counter (:initial input))))
-          (update-counter counter (:old input) (:new input))
-          (let [actual-value (counters/value counter)]
-            (is (= expected actual-value))))))))
+      (with-isolated-registry
+        (let [{:keys [name input expected]} test-case
+              title ["waiter" "test" name]
+              counter (counters/counter title)]
+          (testing (str "Test " name)
+            (if (:initial input)
+              (do
+                (counters/clear! counter)
+                (counters/inc! counter (:initial input))))
+            (update-counter counter (:old input) (:new input))
+            (let [actual-value (counters/value counter)]
+              (is (= expected actual-value)))))))))
 
 (deftest test-reset-counter
   (let [test-cases [{:name "nil-inputs", :initial nil, :input nil, :expected 0}
@@ -156,14 +143,29 @@
                     {:name "old-counter-nil-input", :initial 2, :input nil, :expected 0}]]
     (doseq [{:keys [name initial input expected]} test-cases]
       (testing (str "Test " name)
-        (let [title ["waiter" "test" name]
-              the-counter (counters/counter title)]
-          (when initial
-            (counters/clear! the-counter)
-            (counters/inc! the-counter initial))
-          (reset-counter the-counter input)
-          (let [actual-value (counters/value the-counter)]
-            (is (= expected actual-value))))))))
+        (with-isolated-registry
+          (let [title ["waiter" "test" name]
+                the-counter (counters/counter title)]
+            (when initial
+              (counters/clear! the-counter)
+              (counters/inc! the-counter initial))
+            (reset-counter the-counter input)
+            (let [actual-value (counters/value the-counter)]
+              (is (= expected actual-value)))))))))
+
+(deftest test-prefix-and-contains-metrics-filter
+  (with-isolated-registry
+    (doseq [service-id ["service-id-1" "service-id-2"]]
+      (service-counter service-id "foo")
+      (service-counter service-id "foo" "bar")
+      (service-counter service-id "fee" "fie"))
+    (is (every? #(str/starts-with? % "services.service-id-") (.getNames mc/default-registry)))
+    (is (= 3 (count (.getCounters mc/default-registry (prefix-metrics-filter "services.service-id-1")))))
+    (is (= 3 (count (.getCounters mc/default-registry (prefix-metrics-filter "services.service-id-2")))))
+    (is (= 3 (count (.getCounters mc/default-registry (contains-metrics-filter "service-id-1")))))
+    (is (= 3 (count (.getCounters mc/default-registry (contains-metrics-filter "service-id-2")))))
+    (is (= 2 (count (.getCounters mc/default-registry (contains-metrics-filter "fee")))))
+    (is (= 4 (count (.getCounters mc/default-registry (contains-metrics-filter "foo")))))))
 
 (deftest test-get-service-metrics
   (let [metrics-registry mc/default-registry
@@ -187,19 +189,20 @@
                                                   ["nested" "test-throughput"]
                                                   ["foo" "bar"]
                                                   ["outstanding" "fum"]]))]
-    (testing "retrieving metrics for specified services"
-      (.removeMatching metrics-registry (reify MetricFilter (matches [_ _ _] true)))
-      (is (zero? (count (.getMetrics metrics-registry))))
-      (create-metrics "test-service-1")
-      (is (all-service-metrics-available? (retrieve-service-metrics "test-service-1")))
-      (is (zero? (count (retrieve-service-metrics "test-service-2"))))
-      (is (zero? (count (retrieve-service-metrics "test-service-3"))))
-      (create-metrics "test-service-2")
-      (create-metrics "test-service-3")
-      (is (all-service-metrics-available? (retrieve-service-metrics "test-service-1")))
-      (is (all-service-metrics-available? (retrieve-service-metrics "test-service-2")))
-      (is (all-service-metrics-available? (retrieve-service-metrics "test-service-3")))
-      (.removeMatching metrics-registry (reify MetricFilter (matches [_ _ _] true))))))
+    (with-isolated-registry
+      (testing "retrieving metrics for specified services"
+        (.removeMatching metrics-registry (reify MetricFilter (matches [_ _ _] true)))
+        (is (zero? (count (.getMetrics metrics-registry))))
+        (create-metrics "test-service-1")
+        (is (all-service-metrics-available? (retrieve-service-metrics "test-service-1")))
+        (is (zero? (count (retrieve-service-metrics "test-service-2"))))
+        (is (zero? (count (retrieve-service-metrics "test-service-3"))))
+        (create-metrics "test-service-2")
+        (create-metrics "test-service-3")
+        (is (all-service-metrics-available? (retrieve-service-metrics "test-service-1")))
+        (is (all-service-metrics-available? (retrieve-service-metrics "test-service-2")))
+        (is (all-service-metrics-available? (retrieve-service-metrics "test-service-3")))
+        (.removeMatching metrics-registry (reify MetricFilter (matches [_ _ _] true)))))))
 
 (deftest test-get-waiter-metrics
   (let [metrics-registry mc/default-registry
@@ -222,14 +225,15 @@
                                                  ["nested" "test-throughput"]
                                                  ["foo" "bar"]
                                                  ["outstanding" "fum"]]))]
-    (testing "retrieving metrics for specified services"
-      (.removeMatching metrics-registry (reify MetricFilter (matches [_ _ _] true)))
-      (is (zero? (count (.getMetrics metrics-registry))))
-      (create-metrics "services.test-service-1")
-      (create-metrics "waiter")
-      (create-metrics "services.test-service-2")
-      (is (all-waiter-metrics-available? (get-waiter-metrics)))
-      (.removeMatching metrics-registry (reify MetricFilter (matches [_ _ _] true))))))
+    (with-isolated-registry
+      (testing "retrieving metrics for specified services"
+        (.removeMatching metrics-registry (reify MetricFilter (matches [_ _ _] true)))
+        (is (zero? (count (.getMetrics metrics-registry))))
+        (create-metrics "services.test-service-1")
+        (create-metrics "waiter")
+        (create-metrics "services.test-service-2")
+        (is (all-waiter-metrics-available? (get-waiter-metrics)))
+        (.removeMatching metrics-registry (reify MetricFilter (matches [_ _ _] true)))))))
 
 (deftest test-aggregate-router-codahale-metrics
   (let [router->metrics {"router-a" {"counters" {"instance-counts" {"a" 10, "b" 20 "in-use" 2 "my-instances" 1
@@ -290,51 +294,58 @@
     (is (= expected actual))))
 
 (deftest test-remove-and-check-metrics-except-outstanding
-  (let [metrics-registry mc/default-registry
-        create-metrics (fn [service-id]
-                         (histograms/update! (histograms/histogram ["services" service-id "test-histogram1"]) (hash service-id))
-                         (histograms/update! (histograms/histogram ["services" service-id "instance" "test-histogram2"]) (hash service-id))
-                         (timers/start-stop-time! (timers/timer ["services" service-id "test-response-duration"]))
-                         (timers/start-stop-time! (timers/timer ["services" service-id "nested" "test-response-duration"]))
-                         (meters/mark! (meters/meter ["services" service-id "test-throughput"]))
-                         (meters/mark! (meters/meter ["services" service-id "nested" "test-throughput"]))
-                         (counters/inc! (counters/counter ["services" service-id "foo" "bar"]))
-                         (counters/inc! (counters/counter ["services" service-id "outstanding" "fum"])))
-        metrics-per-service 8
-        has-metrics-except-outstanding? (fn has-metrics-except-outstanding? [service-id]
-                                          (let [metric-filter (reify MetricFilter
-                                                                (matches [_ name _]
-                                                                  (and (str/includes? name service-id)
-                                                                       (not (str/includes? name "outstanding")))))]
-                                            (or (not-empty (.getCounters metrics-registry metric-filter))
-                                                (not-empty (.getHistograms metrics-registry metric-filter))
-                                                (not-empty (.getMeters metrics-registry metric-filter))
-                                                (not-empty (.getTimers metrics-registry metric-filter)))))]
-    (testing "Delete metrics for specified services"
-      (.removeMatching metrics-registry (reify MetricFilter (matches [_ _ _] true)))
-      (is (zero? (count (.getMetrics metrics-registry))))
-      (create-metrics "test-service-1")
-      (create-metrics "test-service-2")
-      (create-metrics "test-service-3")
-      (is (= (* 3 metrics-per-service) (count (.getMetrics metrics-registry))))
-      (create-metrics "test-service-2")
-      (is (= (* 3 metrics-per-service) (count (.getMetrics metrics-registry))))
-      (create-metrics "test-service-1")
-      (is (= (* 3 metrics-per-service) (count (.getMetrics metrics-registry))))
-      (is (has-metrics-except-outstanding? "test-service-1"))
-      (is (has-metrics-except-outstanding? "test-service-2"))
-      (is (has-metrics-except-outstanding? "test-service-3"))
-      (remove-metrics-except-outstanding metrics-registry "test-service-1")
-      (is (= (+ (* 1 1) (* 2 metrics-per-service)) (count (.getMetrics metrics-registry))))
-      (is (not (has-metrics-except-outstanding? "test-service-1")))
-      (is (has-metrics-except-outstanding? "test-service-2"))
-      (is (has-metrics-except-outstanding? "test-service-3"))
-      (remove-metrics-except-outstanding metrics-registry "test-service-2")
-      (is (= (+ (* 2 1) (* 1 metrics-per-service)) (count (.getMetrics metrics-registry))))
-      (is (not (has-metrics-except-outstanding? "test-service-1")))
-      (is (not (has-metrics-except-outstanding? "test-service-2")))
-      (is (has-metrics-except-outstanding? "test-service-3"))
-      (.removeMatching metrics-registry (reify MetricFilter (matches [_ _ _] true))))))
+  (with-isolated-registry
+    (let [metrics-registry mc/default-registry
+          create-metrics (fn [service-id]
+                           (histograms/update! (histograms/histogram ["services" service-id "test-histogram1"]) (hash service-id))
+                           (histograms/update! (histograms/histogram ["services" service-id "instance" "test-histogram2"]) (hash service-id))
+                           (timers/start-stop-time! (timers/timer ["services" service-id "test-response-duration"]))
+                           (timers/start-stop-time! (timers/timer ["services" service-id "nested" "test-response-duration"]))
+                           (meters/mark! (meters/meter ["services" service-id "test-throughput"]))
+                           (meters/mark! (meters/meter ["services" service-id "nested" "test-throughput"]))
+                           (counters/inc! (counters/counter ["services" service-id "foo" "bar"]))
+                           (counters/inc! (counters/counter ["services" service-id "outstanding" "fum"])))
+          metrics-per-service 8
+          has-metrics-except-outstanding? (fn has-metrics-except-outstanding? [service-id]
+                                            (let [metric-filter (reify MetricFilter
+                                                                  (matches [_ name _]
+                                                                    (and (str/includes? name service-id)
+                                                                         (not (str/includes? name "outstanding")))))]
+                                              (or (not-empty (.getCounters metrics-registry metric-filter))
+                                                  (not-empty (.getHistograms metrics-registry metric-filter))
+                                                  (not-empty (.getMeters metrics-registry metric-filter))
+                                                  (not-empty (.getTimers metrics-registry metric-filter)))))]
+      (testing "Delete metrics for specified services"
+        (.removeMatching metrics-registry (reify MetricFilter (matches [_ _ _] true)))
+        (let [metrics-items (.getMetrics metrics-registry)]
+          (is (zero? (count metrics-items)) (str metrics-items)))
+        (create-metrics "test-service-1")
+        (create-metrics "test-service-2")
+        (create-metrics "test-service-3")
+        (let [metrics-items (.getMetrics metrics-registry)]
+          (is (= (* 3 metrics-per-service) (count metrics-items)) (str metrics-items)))
+        (create-metrics "test-service-2")
+        (let [metrics-items (.getMetrics metrics-registry)]
+          (is (= (* 3 metrics-per-service) (count metrics-items)) (str metrics-items)))
+        (create-metrics "test-service-1")
+        (let [metrics-items (.getMetrics metrics-registry)]
+          (is (= (* 3 metrics-per-service) (count metrics-items)) (str metrics-items)))
+        (is (has-metrics-except-outstanding? "test-service-1"))
+        (is (has-metrics-except-outstanding? "test-service-2"))
+        (is (has-metrics-except-outstanding? "test-service-3"))
+        (remove-metrics-except-outstanding metrics-registry "test-service-1")
+        (let [metrics-items (.getMetrics metrics-registry)]
+          (is (= (+ (* 1 1) (* 2 metrics-per-service)) (count metrics-items)) (str metrics-items)))
+        (is (not (has-metrics-except-outstanding? "test-service-1")))
+        (is (has-metrics-except-outstanding? "test-service-2"))
+        (is (has-metrics-except-outstanding? "test-service-3"))
+        (remove-metrics-except-outstanding metrics-registry "test-service-2")
+        (let [metrics-items (.getMetrics metrics-registry)]
+          (is (= (+ (* 2 1) (* 1 metrics-per-service)) (count metrics-items)) (str metrics-items)))
+        (is (not (has-metrics-except-outstanding? "test-service-1")))
+        (is (not (has-metrics-except-outstanding? "test-service-2")))
+        (is (has-metrics-except-outstanding? "test-service-3"))
+        (.removeMatching metrics-registry (reify MetricFilter (matches [_ _ _] true)))))))
 
 (deftest test-transient-metrics-data-producer
   (let [service-id->metrics-atom (atom {})
@@ -354,9 +365,9 @@
                                            {:keys [iteration]} (async/<!! response-chan)]
                                        iteration))
                 initial-iteration (retrieve-iteration)]
-            (test-helpers/wait-for #(> (retrieve-iteration) initial-iteration)
-                                   :interval metrics-gc-interval-ms
-                                   :unit-multiplier 1)))]
+            (wait-for #(> (retrieve-iteration) initial-iteration)
+                      :interval metrics-gc-interval-ms
+                      :unit-multiplier 1)))]
     (testing "Transient Data producer"
       (reset! service-id->metrics-atom {})
       (create-metrics "test-service-1")
@@ -410,15 +421,16 @@
           (let [transient-metrics-timeout-ms 10
                 metrics-gc-interval-ms 1
                 scheduler-state-chan (async/chan)
-                result-chans (transient-metrics-gc scheduler-state-chan local-usage-agent service-gc-go-routine
+                query-state-fn (fn [] (async/<!! scheduler-state-chan))
+                result-chans (transient-metrics-gc query-state-fn local-usage-agent service-gc-go-routine
                                                    {:transient-metrics-timeout-ms transient-metrics-timeout-ms
                                                     :metrics-gc-interval-ms metrics-gc-interval-ms})
                 service-id->metrics-chan (:service-id->metrics-chan result-chans)]
             (async/thread
               (while (not @exit-flag-atom)
                 (let [available-service-ids (set (remove #(str/includes? % (str @remove-target-atom)) @available-services-atom))
-                      scheduler-messages [[:update-available-services {:available-service-ids available-service-ids}]]]
-                  (async/>!! scheduler-state-chan scheduler-messages)))
+                      router-state {:all-available-service-ids available-service-ids}]
+                  (async/>!! scheduler-state-chan router-state)))
               (async/close! scheduler-state-chan))
             (async/thread
               (while (not @exit-flag-atom)

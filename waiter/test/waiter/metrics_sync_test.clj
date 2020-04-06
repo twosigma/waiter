@@ -359,7 +359,7 @@
           (let [raw-data (cond-> {:router-metrics {"s1" {:iteration iteration}, "s2" {:iteration iteration}},
                                   :source-router-id source-router-id,
                                   :time (str "time-" iteration)}
-                                 (= iteration iteration-limit) (assoc :release-chan release-chan))]
+                           (= iteration iteration-limit) (assoc :release-chan release-chan))]
             (async/>! (:in ws-request) (encrypt raw-data)))
           (when (< iteration iteration-limit)
             (recur (inc iteration))))

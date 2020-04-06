@@ -15,7 +15,6 @@
 ;;
 (ns waiter.service
   (:require [clj-time.core :as t]
-            [clojure.core.cache :as cache]
             [clojure.core.async :as async]
             [clojure.tools.logging :as log]
             [metrics.counters :as counters]
@@ -27,24 +26,11 @@
             [waiter.scheduler :as scheduler]
             [waiter.statsd :as statsd]
             [waiter.util.async-utils :as au]
+            [waiter.util.cache-utils :as cu]
             [waiter.util.utils :as utils])
   (:import java.util.concurrent.ExecutorService))
 
 (def ^:const status-check-path "/status")
-
-(defn extract-health-check-url
-  "Extract the health-check-url from App Info"
-  [app-info default-url]
-  (let [health-check-data-list (get-in app-info [:app :healthChecks])
-        health-check-data (first health-check-data-list)]
-    (:path health-check-data default-url)))
-
-(defn annotate-tasks-with-health-url
-  "Introduce the health-check-url into the task metadata"
-  [app-info]
-  (let [health-check-url (extract-health-check-url app-info status-check-path)
-        map-assoc-health-check-func (fn [x] (map #(assoc % :health-check-url health-check-url) x))]
-    (update-in app-info [:app :tasks] map-assoc-health-check-func)))
 
 ;;; Service instance blacklisting, work-stealing, access and creation
 
@@ -52,14 +38,14 @@
 (defmacro blacklist-instance!
   "Sends a rpc to the router state to blacklist the given instance.
    Throws an exception if a blacklist channel cannot be found for the specfied service."
-  [instance-rpc-chan service-id instance-id blacklist-period-ms response-chan]
+  [populate-maintainer-chan! service-id instance-id blacklist-period-ms response-chan]
   `(let [response-chan# (async/promise-chan)]
      (log/info "Requesting blacklist channel for" ~service-id)
      (->> {:cid (cid/get-correlation-id)
            :method :blacklist
            :response-chan response-chan#
            :service-id ~service-id}
-          (async/put! ~instance-rpc-chan))
+          (~populate-maintainer-chan!))
      (if-let [blacklist-chan# (async/<! response-chan#)]
        (do
          (log/info "Received blacklist channel, making blacklist request.")
@@ -77,60 +63,64 @@
 
 (defn blacklist-instance-go
   "Sends a rpc to the router state to blacklist the lock on the given instance."
-  [instance-rpc-chan service-id instance-id blacklist-period-ms response-chan]
+  [populate-maintainer-chan! service-id instance-id blacklist-period-ms response-chan]
   (async/go
     (try
-      (blacklist-instance! instance-rpc-chan service-id instance-id blacklist-period-ms response-chan)
+      (blacklist-instance! populate-maintainer-chan! service-id instance-id blacklist-period-ms response-chan)
       (catch Exception e
         (log/error e "Error while blacklisting instance" instance-id)))))
 
 ;; Offer instances obtained via work-stealing mechanism
 (defmacro offer-instance!
   "Sends a rpc to the proxy state to offer the given instance.
-   Throws an exception if a work-stealing channel cannot be found for the specfied service."
-  [instance-rpc-chan service-id offer-params]
-  `(let [response-chan# (async/promise-chan)]
+   Throws an exception if a work-stealing channel cannot be found for the specified service."
+  [populate-maintainer-chan! service-id offer-params]
+  `(let [offer-params# ~offer-params
+         response-chan# (async/promise-chan)]
      (log/debug "Requesting offer channel for" ~service-id)
      (->> {:cid (cid/get-correlation-id)
            :method :offer
            :response-chan response-chan#
            :service-id ~service-id}
-          (async/put! ~instance-rpc-chan))
+          (~populate-maintainer-chan!))
      (if-let [work-stealing-chan# (async/<! response-chan#)]
        (do
-         (log/info "Received offer channel, making offer request.")
-         (when-not (au/offer! work-stealing-chan# ~offer-params)
-           (throw (ex-info "Unable to put instance on work-stealing-chan."
-                           {:offer-params ~offer-params, :service-id ~service-id}))))
+         (log/info "received offer channel, making offer request.")
+         (when-not (au/offer! work-stealing-chan# offer-params#)
+           (log/error "unable to put instance on work-stealing-chan"
+                      {:offer-params offer-params# :service-id ~service-id})
+           (when-let [offer-response-chan# (:response-chan offer-params#)]
+             (async/put! offer-response-chan# :channel-put-failed))))
        (do
-         (log/error "Unable to find work-stealing-chan for service" ~service-id)
-         (throw (ex-info "Unable to find work-stealing-chan."
-                         {:offer-params ~offer-params, :service-id ~service-id}))))))
+         (log/info "unable to find work-stealing-chan"
+                   {:offer-params offer-params# :service-id ~service-id})
+         (when-let [offer-response-chan# (:response-chan offer-params#)]
+           (async/put! offer-response-chan# :channel-not-found))))))
 
 (defn offer-instance-go
   "Sends a rpc to the proxy state to offer the lock on the given instance."
-  [instance-rpc-chan service-id offer-params]
+  [populate-maintainer-chan! service-id offer-params]
   (async/go
     (try
-      (offer-instance! instance-rpc-chan service-id offer-params)
+      (offer-instance! populate-maintainer-chan! service-id offer-params)
       (catch Exception e
         (log/error e "Error while offering instance to service" {:service-id service-id, :offer-params offer-params})))))
 
 ;; Query Service State
 (defmacro query-maintainer-channel-map!
   "Sends a rpc to retrieve the channel on which to query the state of the given service."
-  [instance-rpc-chan service-id response-chan query-type]
+  [populate-maintainer-chan! service-id response-chan query-type]
   `(->> {:cid (cid/get-correlation-id)
          :method ~query-type
          :response-chan ~response-chan
          :service-id ~service-id}
-        (async/put! ~instance-rpc-chan)))
+        (~populate-maintainer-chan!)))
 
 (defmacro query-maintainer-channel-map-with-timeout!
   "Sends a rpc to retrieve the channel on which to query the state of the given service."
-  [instance-rpc-chan service-id timeout-ms query-type]
+  [populate-maintainer-chan! service-id timeout-ms query-type]
   `(let [response-chan# (async/promise-chan)]
-     (query-maintainer-channel-map! ~instance-rpc-chan ~service-id response-chan# ~query-type)
+     (query-maintainer-channel-map! ~populate-maintainer-chan! ~service-id response-chan# ~query-type)
      (async/alt!
        response-chan# ([result-channel#] result-channel#)
        (async/timeout ~timeout-ms) ([ignore#] {:message "Request timed-out!"})
@@ -139,9 +129,9 @@
 (defmacro query-instance!
   "Sends a rpc to the router state to query the state of the given service.
    Throws an exception if a query channel cannot be found for the specfied service."
-  [instance-rpc-chan service-id response-chan]
+  [populate-maintainer-chan! service-id response-chan]
   `(let [response-chan# (async/promise-chan)]
-     (query-maintainer-channel-map! ~instance-rpc-chan ~service-id response-chan# :query-state)
+     (query-maintainer-channel-map! ~populate-maintainer-chan! ~service-id response-chan# :query-state)
      (if-let [query-state-chan# (async/<! response-chan#)]
        (when-not (au/offer! query-state-chan# {:cid (cid/get-correlation-id)
                                                :response-chan ~response-chan
@@ -155,10 +145,10 @@
 
 (defn query-instance-go
   "Sends a rpc to the router state to query the state of the given service."
-  [instance-rpc-chan service-id response-chan]
+  [populate-maintainer-chan! service-id response-chan]
   (async/go
     (try
-      (query-instance! instance-rpc-chan service-id response-chan)
+      (query-instance! populate-maintainer-chan! service-id response-chan)
       (catch Exception e
         (log/error e "Error while querying state of" service-id)))))
 
@@ -166,38 +156,66 @@
 (defmacro release-instance!
   "Sends a rpc to the router state to release the lock on the given instance.
    Throws an exception if a release channel cannot be found for the specified service."
-  [instance-rpc-chan instance reservation-result]
+  [populate-maintainer-chan! instance reservation-result]
   `(let [response-chan# (async/promise-chan)
          service-id# (scheduler/instance->service-id ~instance)]
      (->> {:cid (cid/get-correlation-id)
            :method :release
            :response-chan response-chan#
            :service-id service-id#}
-          (async/put! ~instance-rpc-chan))
+          (~populate-maintainer-chan!))
      (if-let [release-chan# (async/<! response-chan#)]
        (when-not (au/offer! release-chan# [~instance ~reservation-result])
          (throw (ex-info "Unable to put instance on release-chan."
                          {:instance ~instance})))
        (do
-         (log/error "Unable to find release-chan for service" service-id#)
          (throw (ex-info "Unable to find release-chan."
-                         {:instance ~instance}))))))
+                         {:instance ~instance :service-id service-id#}))))))
 
 (defn release-instance-go
   "Sends a rpc to the router state to release the lock on the given instance."
-  [instance-rpc-chan instance reservation-result]
+  [populate-maintainer-chan! instance reservation-result]
   (async/go
     (try
-      (release-instance! instance-rpc-chan instance reservation-result)
+      (release-instance! populate-maintainer-chan! instance reservation-result)
       (catch Exception e
         (log/error e "Error while releasing instance" instance)))))
+
+(defmacro notify-scaling-state!
+  "Sends a rpc to the router state to notify the scaling mode of a service.
+   Throws an exception if a release channel cannot be found for the specified service."
+  [populate-maintainer-chan! service-id scaling-state]
+  `(let [response-chan# (async/promise-chan)
+         service-id# ~service-id
+         scaling-state# ~scaling-state]
+     (->> {:cid (cid/get-correlation-id)
+           :method :scaling-state
+           :response-chan response-chan#
+           :service-id service-id#}
+       (~populate-maintainer-chan!))
+     (if-let [release-chan# (async/<! response-chan#)]
+       (when-not (au/offer! release-chan# {:scaling-state scaling-state#})
+         (throw (ex-info "Unable to put scaling-state on release-chan."
+                         {:scaling-state scaling-state# :service-id service-id#})))
+       (do
+         (throw (ex-info "Unable to find release-chan."
+                         {:scaling-state scaling-state# :service-id service-id#}))))))
+
+(defn notify-scaling-state-go
+  "Sends a rpc to the router state to notify the scaling mode of a service."
+  [populate-maintainer-chan! service-id scaling-state]
+  (async/go
+    (try
+      (notify-scaling-state! populate-maintainer-chan! service-id scaling-state)
+      (catch Exception e
+        (log/error e "Error while notifying scaling mode" service-id scaling-state)))))
 
 (defmacro get-rand-inst
   "Requests a random instance from the service-chan-responder.
 
    Will return an instance if the service exists and an instance is available,
    will return nil if the service is unknown or no instances are available"
-  [instance-rpc-chan service-id reason-map exclude-ids-set timeout-in-millis]
+  [populate-maintainer-chan! service-id reason-map exclude-ids-set timeout-in-millis]
   `(timers/start-stop-time!
      (metrics/service-timer ~service-id "get-task")
      (let [response-chan# (async/promise-chan)
@@ -211,7 +229,7 @@
              :method method#
              :response-chan response-chan#
              :service-id ~service-id}
-            (async/put! ~instance-rpc-chan))
+            (~populate-maintainer-chan!))
        (when-let [service-chan# (async/<! response-chan#)]
          (log/debug "found reservation channel for" ~service-id)
          (timers/start-stop-time!
@@ -227,88 +245,104 @@
   "Starts a `clojure.core.async/go` block to query the router state to get an
    available instance to send a request. It will continue to query the state until
    an instance is available."
-  [instance-rpc-chan service-id reason-map app-not-found-fn queue-timeout-ms metric-group]
+  [populate-maintainer-chan! service-id {:keys [cid] :as reason-map} service-not-found-fn queue-timeout-ms metric-group]
   (async/go
-    (cid/with-correlation-id
-      (:cid reason-map)
-      (try
-        (counters/inc! (metrics/service-counter service-id "request-counts" "waiting-for-available-instance"))
-        (statsd/gauge-delta! metric-group "request_waiting_for_instance" +1)
-        (let [expiry-time (t/plus (t/now) (t/millis queue-timeout-ms))]
-          (loop [iterations 1]
-            (let [instance (get-rand-inst instance-rpc-chan service-id reason-map #{} queue-timeout-ms)]
-              (if-not (nil? (:id instance)) ; instance is nil or :no-matching-instance-found
-                (do
-                  (histograms/update!
-                    (metrics/service-histogram service-id "iterations-to-find-available-instance")
-                    iterations)
-                  instance)
-                (if (and instance (not= instance :no-matching-instance-found))
-                  ; instance is a deployment error if it (1) does not have an :id tag, (2) is not nil, and (3) does not equal :no-matching-instance-found
-                  (ex-info (str "Deployment error: " (utils/message instance)) {:service-id service-id :status 503})
-                  (if-not (t/before? (t/now) expiry-time)
-                    (do
-                      ;; No instances were started in a reasonable amount of time
-                      (meters/mark! (metrics/service-meter service-id "no-available-instance-timeout"))
-                      (statsd/inc! metric-group "no_instance_timeout")
-                      (let [outstanding-requests (counters/value (metrics/service-counter service-id "request-counts" "outstanding"))
-                            requests-waiting-to-stream (counters/value (metrics/service-counter service-id "request-counts" "waiting-to-stream"))
-                            waiting-for-available-instance (counters/value (metrics/service-counter service-id "request-counts" "waiting-for-available-instance"))
-                            healthy-instances (counters/value (metrics/service-counter service-id "instance-counts" "healthy")) 
-                            unhealthy-instances (counters/value (metrics/service-counter service-id "instance-counts" "unhealthy"))
-                            failed-instances (counters/value (metrics/service-counter service-id "instance-counts" "failed"))]
-                        (ex-info (str "After " (t/in-seconds (t/millis queue-timeout-ms))
-                                      " seconds, no instance available to handle request."
-                                      (when (and (zero? healthy-instances) (or (pos? unhealthy-instances) (pos? failed-instances)))
-                                        " Check that your service is able to start properly!")
-                                      (when (and (pos? outstanding-requests) (pos? healthy-instances))
-                                        " Check that your service is able to scale properly!"))
-                                 {:service-id service-id
-                                  :outstanding-requests outstanding-requests
-                                  :requests-waiting-to-stream requests-waiting-to-stream
-                                  :waiting-for-available-instance waiting-for-available-instance
-                                  :slots-assigned (counters/value (metrics/service-counter service-id "instance-counts" "slots-assigned"))
-                                  :slots-available (counters/value (metrics/service-counter service-id "instance-counts" "slots-available"))
-                                  :slots-in-use (counters/value (metrics/service-counter service-id "instance-counts" "slots-in-use"))
-                                  :work-stealing-offers-received (counters/value (metrics/service-counter service-id "work-stealing" "received-from" "in-flight"))
-                                  :work-stealing-offers-sent (counters/value (metrics/service-counter service-id "work-stealing" "sent-to" "in-flight"))
-                                  :status 503})))
-                    (do
-                      (app-not-found-fn)
-                      (async/<! (async/timeout 1500))
-                      (recur (inc iterations)))))))))
-        (catch Exception e
-          (log/error e "Error in get-available-instance")
-          e)
-        (finally
-          (counters/dec! (metrics/service-counter service-id "request-counts" "waiting-for-available-instance"))
-          (statsd/gauge-delta! metric-group "request_waiting_for_instance" -1))))))
+    (try
+      (counters/inc! (metrics/service-counter service-id "request-counts" "waiting-for-available-instance"))
+      (statsd/gauge-delta! metric-group "request_waiting_for_instance" +1)
+      (let [expiry-time (t/plus (t/now) (t/millis queue-timeout-ms))]
+        (loop [iterations 1]
+          (let [instance (get-rand-inst populate-maintainer-chan! service-id reason-map #{} queue-timeout-ms)]
+            (if-not (nil? (:id instance)) ; instance is nil or :no-matching-instance-found
+              (do
+                (histograms/update!
+                  (metrics/service-histogram service-id "iterations-to-find-available-instance")
+                  iterations)
+                instance)
+              (if (and instance (not= instance :no-matching-instance-found))
+                ; instance is a deployment error if it (1) does not have an :id tag, (2) is not nil, and (3) does not equal :no-matching-instance-found
+                (ex-info (str "Deployment error: " (utils/message instance)) {:service-id service-id :status 503})
+                (if-not (t/before? (t/now) expiry-time)
+                  (do
+                    ;; No instances were started in a reasonable amount of time
+                    (meters/mark! (metrics/service-meter service-id "no-available-instance-timeout"))
+                    (statsd/inc! metric-group "no_instance_timeout")
+                    (let [outstanding-requests (counters/value (metrics/service-counter service-id "request-counts" "outstanding"))
+                          requests-waiting-to-stream (counters/value (metrics/service-counter service-id "request-counts" "waiting-to-stream"))
+                          waiting-for-available-instance (counters/value (metrics/service-counter service-id "request-counts" "waiting-for-available-instance"))
+                          healthy-instances (counters/value (metrics/service-counter service-id "instance-counts" "healthy"))
+                          unhealthy-instances (counters/value (metrics/service-counter service-id "instance-counts" "unhealthy"))
+                          failed-instances (counters/value (metrics/service-counter service-id "instance-counts" "failed"))]
+                      (ex-info (str "After " (t/in-seconds (t/millis queue-timeout-ms))
+                                    " seconds, no instance available to handle request."
+                                    (when (and (zero? healthy-instances) (or (pos? unhealthy-instances) (pos? failed-instances)))
+                                      " Check that your service is able to start properly!")
+                                    (when (and (pos? outstanding-requests) (pos? healthy-instances))
+                                      " Check that your service is able to scale properly!"))
+                               {:service-id service-id
+                                :outstanding-requests outstanding-requests
+                                :requests-waiting-to-stream requests-waiting-to-stream
+                                :waiting-for-available-instance waiting-for-available-instance
+                                :slots-assigned (counters/value (metrics/service-counter service-id "instance-counts" "slots-assigned"))
+                                :slots-available (counters/value (metrics/service-counter service-id "instance-counts" "slots-available"))
+                                :slots-in-use (counters/value (metrics/service-counter service-id "instance-counts" "slots-in-use"))
+                                :work-stealing-offers-received (counters/value (metrics/service-counter service-id "work-stealing" "received-from" "in-flight"))
+                                :work-stealing-offers-sent (counters/value (metrics/service-counter service-id "work-stealing" "sent-to" "in-flight"))
+                                :status 503})))
+                  (do
+                    (cid/with-correlation-id cid (service-not-found-fn))
+                    (async/<! (async/timeout 1500))
+                    (recur (inc iterations)))))))))
+      (catch Throwable e
+        (cid/cerror cid e "Error in get-available-instance")
+        e)
+      (finally
+        (counters/dec! (metrics/service-counter service-id "request-counts" "waiting-for-available-instance"))
+        (statsd/gauge-delta! metric-group "request_waiting_for_instance" -1)))))
 
 ;; Create service helpers
 
 (defn start-new-service
-  "Sends a call to the scheduler to start an app with the descriptor.
+  "Sends a call to the scheduler to start a service with the descriptor.
    Cached to prevent too many duplicate requests going to the scheduler."
-  [scheduler descriptor cache-atom ^ExecutorService start-app-threadpool
+  [scheduler {:keys [service-id] :as descriptor} start-service-cache ^ExecutorService start-service-thread-pool
    & {:keys [pre-start-fn start-fn] :or {pre-start-fn nil, start-fn nil}}]
-  (let [cache-key (:service-id descriptor)]
-    (when-not (cache/has? @cache-atom cache-key)
-      (let [my-value (Object.)
-            cache (swap! cache-atom
-                         (fn [c]
-                           (if (cache/has? c cache-key)
-                             (cache/hit c cache-key)
-                             (cache/miss c cache-key my-value))))
-            cache-value (cache/lookup cache cache-key)]
-        (when (identical? my-value cache-value)
-          (let [correlation-id (cid/get-correlation-id)
-                start-fn (or start-fn
-                             (fn []
-                               (try
-                                 (when pre-start-fn
-                                   (pre-start-fn))
-                                 (scheduler/create-app-if-new scheduler descriptor)
-                                 (catch Exception e
-                                   (log/warn e "Error starting new app")))))]
-            (.submit start-app-threadpool
-                     ^Runnable (fn [] (cid/with-correlation-id correlation-id (start-fn))))))))))
+  (let [my-value (Object.)
+        cache-value (cu/cache-get-or-load start-service-cache service-id
+                                          (fn []
+                                            (log/info "setting" service-id "to" my-value "in start service cache")
+                                            my-value))]
+    (if (identical? my-value cache-value)
+      (let [correlation-id (cid/get-correlation-id)
+            start-fn (or start-fn
+                         (fn new-service-start-fn []
+                           (try
+                             (when pre-start-fn
+                               (pre-start-fn))
+                             (scheduler/create-service-if-new scheduler descriptor)
+                             (catch Exception e
+                               (log/warn e "error starting new service")))))]
+        (.submit start-service-thread-pool
+                 ^Runnable (fn [] (cid/with-correlation-id correlation-id (start-fn)))))
+      (log/info service-id "has been started on another thread" cache-value))))
+
+(defn resolve-service-status
+  "Determines the service status at any point in time.
+   A service can be one of the following states:
+   - Starting: the service has no healthy instances and is starting one up,
+   - Running: the service is running successfully with at least one healthy instance,
+   - Failing: the service has instances failing to start,
+   - Inactive: the service has no scheduled and running tasks."
+  [deployment-error {:keys [healthy requested scheduled] :or {healthy 0 requested 0 scheduled 0}}]
+  (cond
+    deployment-error :service-state-failing
+    (and (zero? requested) (zero? scheduled)) :service-state-inactive
+    (zero? healthy) :service-state-starting
+    :else :service-state-running))
+
+(defn retrieve-service-status-label
+  "Returns the status of the specified service."
+  [service-id {:keys [service-id->deployment-error service-id->instance-counts]}]
+  (let [deployment-error (get service-id->deployment-error service-id)
+        instance-counts (get service-id->instance-counts service-id)]
+    (utils/message (resolve-service-status deployment-error instance-counts))))

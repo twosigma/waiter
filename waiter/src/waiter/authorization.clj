@@ -13,7 +13,8 @@
 ;; See the License for the specific language governing permissions and
 ;; limitations under the License.
 ;;
-(ns waiter.authorization)
+(ns waiter.authorization
+  (:require [clojure.string :as str]))
 
 (defprotocol EntitlementManager
   "Security related methods"
@@ -54,10 +55,45 @@
 (defn administer-token?
   "Returns whether the auth-user is allowed to administer the specified token."
   [entitlement-manager auth-user token token-metadata]
-    (authorized? entitlement-manager auth-user :admin (make-token-resource token token-metadata)))
+  (authorized? entitlement-manager auth-user :admin (make-token-resource token token-metadata)))
 
 (defn run-as?
   "Helper function that checks the whether the auth-user has privileges to run as the run-as-user."
   [entitlement-manager auth-user run-as-user]
   (and auth-user run-as-user
        (authorized? entitlement-manager auth-user :run-as {:resource-type :credential, :user run-as-user})))
+
+(defprotocol Authorizer
+  (check-user [this ^String user ^String service-id]
+    "Checks if the user is set up correctly to successfully launch
+     a service using the authentication scheme. Throws an exception if not.")
+  (state [this]
+    "Returns the state of the authorizer"))
+
+;; Default Authorizer implementation that never throws an exception
+;; (i.e., all checks are authorized).
+(defrecord NoOpAuthorizer []
+  Authorizer
+  (check-user [_ _ _]
+    (comment "do nothing"))
+  (state [_]
+    {:type :no-op}))
+
+(defn noop-authorizer [context]
+  "Factory function for the default (no-op) authorizer."
+  (->NoOpAuthorizer))
+
+;; Authorizer implementation that only checks for non-blank arguments.
+;; We use this implementation for integration testing.
+(defrecord SanityCheckAuthorizer []
+  Authorizer
+  (check-user [_ user service-id]
+    (assert (not (str/blank? user)))
+    (assert (not (str/blank? service-id)))
+    (comment "ok"))
+  (state [_]
+    {:type :sanity-check}))
+
+(defn sanity-check-authorizer [context]
+  "Factory function for the sanity-check authorizer."
+  (->SanityCheckAuthorizer))

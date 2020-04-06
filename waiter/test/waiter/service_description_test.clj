@@ -22,258 +22,100 @@
             [schema.core :as s]
             [waiter.authorization :as authz]
             [waiter.kv :as kv]
-            [waiter.service-description :refer :all])
+            [waiter.service-description :refer :all]
+            [waiter.util.cache-utils :as cu])
   (:import (clojure.lang ExceptionInfo)
            (org.joda.time DateTime)))
 
 (deftest test-validate-service-description-schema
-  (is (nil? (s/check service-description-schema {"cpus" 1
-                                                 "mem" 1
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "run-as-user" "test-user"})))
-  (is (nil? (s/check service-description-schema {"cpus" 1.5
-                                                 "mem" 1.5
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "run-as-user" "test-user"})))
-  (is (nil? (s/check service-description-schema {"cpus" 1
-                                                 "mem" 1
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "run-as-user" "test-user"
-                                                 "name" "testname123"
-                                                 "health-check-url" "http://www.example.com/test/status"
-                                                 "permitted-user" "testuser2"
-                                                 "disk" 1
-                                                 "ports" 1})))
-  (is (nil? (s/check service-description-schema {"cpus" 1
-                                                 "mem" 1
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "run-as-user" "test-user"
-                                                 "name" "testname123"
-                                                 "health-check-url" "http://www.example.com/test/status"
-                                                 "permitted-user" "testuser2"
-                                                 "disk" 1
-                                                 "ports" 5})))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "name" "testname123"
-                                                      "health-check-url" "http://www.example.com/test/status"
-                                                      "permitted-user" "testuser2"
-                                                      "disk" 1
-                                                      "ports" 11}))))
-  (is (not (nil? (s/check service-description-schema {"mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 0
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" -1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" "1"
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 0
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" -1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" "1"
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" ""
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1, "mem" 1, "cmd" "test command", "version" "v123"}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" ""}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "name" ""}))))
-  (is (nil? (s/check service-description-schema {"cpus" 1
-                                                 "mem" 1
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "run-as-user" "test-user"
-                                                 "name" "testName123"})))
-  (is (nil? (s/check service-description-schema {"cpus" 1
-                                                 "mem" 1
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "run-as-user" "test-user"
-                                                 "name" "test.name"})))
-  (is (nil? (s/check service-description-schema {"cpus" 1
-                                                 "mem" 1
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "run-as-user" "test-user"
-                                                 "name" "test.n&me"})))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "grace-period-secs" (t/in-seconds (t/minutes 75))}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "grace-period-secs" -1}))))
-  (is (nil? (s/check service-description-schema {"cpus" 1
-                                                 "mem" 1
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "run-as-user" "test-user"
-                                                 "grace-period-secs" 5})))
-  (is (nil? (s/check service-description-schema {"cpus" 1
-                                                 "mem" 1
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "cmd-type" "shell"
-                                                 "run-as-user" "test-user"})))
-  (is (nil? (s/check service-description-schema {"cpus" 1
-                                                 "mem" 1
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "cmd-type" "shell"
-                                                 "run-as-user" "test-user"})))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "cmd-type" ""
-                                                      "run-as-user" "test-user"}))))
-  (is (nil? (s/check service-description-schema {"cpus" 1
-                                                 "mem" 1
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "run-as-user" "test-user"
-                                                 "metadata" {"a" "b", "c-e" "d"}})))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "metadata" {"a" "b", "c" {"d" "e"}}}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "metadata" {"a" "b", "c" 1}}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "metadata" {"a" "b", "1c" "e"}}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "metadata" (zipmap (take 400 (iterate #(str % "a") "a"))
-                                                                         (take 400 (iterate #(str % "a") "a")))}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "concurrency-level" -1}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "concurrency-level" 20000000}))))
-  (is (nil? (s/check service-description-schema {"cpus" 1
-                                                 "mem" 1
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "run-as-user" "test-user"
-                                                 "concurrency-level" 5})))
-  (is (nil? (s/check service-description-schema {"cpus" 1
-                                                 "mem" 1
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "run-as-user" "test-user"
-                                                 "env" {"MY_VAR" "1", "MY_VAR_2" "2"}})))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "env" {"2MY_VAR" "1", "MY_OTHER_VAR" "2"}}))))
-  (is (nil? (s/check service-description-schema {"cpus" 1
-                                                 "mem" 1
-                                                 "cmd" "test command"
-                                                 "version" "v123"
-                                                 "run-as-user" "test-user"
-                                                 "env" {"MY_VAR" "1", "MY_other_VAR" "2"}})))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "env" {"MY_VAR" 1, "MY_other_VAR" "2"}}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "env" {(str/join (take 513 (repeat "A"))) "A"
-                                                             "MY_other_VAR" "2"}}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "env" {"MY_VAR" (str/join (take 513 (repeat "A")))
-                                                             "MY_other_VAR" "2"}}))))
-  (is (not (nil? (s/check service-description-schema {"cpus" 1
-                                                      "mem" 1
-                                                      "cmd" "test command"
-                                                      "version" "v123"
-                                                      "run-as-user" "test-user"
-                                                      "env" (zipmap (take 150 (iterate #(str % "A") "a"))
-                                                                    (take 150 (iterate #(str % "A") "a")))})))))
+  (let [basic-description {"cpus" 1
+                           "mem" 1
+                           "cmd" "test command"
+                           "version" "v123"
+                           "run-as-user" "test-user"}]
+    (is (nil? (s/check service-description-schema basic-description)))
+    (is (nil? (s/check service-description-schema (assoc basic-description "cpus" 1.5 "mem" 1.5))))
+
+    (is (nil? (s/check service-description-schema (assoc basic-description "backend-proto" "http"))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "backend-proto" "https"))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "backend-proto" "h2c"))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "backend-proto" "h2"))))
+    (is (s/check service-description-schema (assoc basic-description "backend-proto" ["http"])))
+    (is (s/check service-description-schema (assoc basic-description "backend-proto" "foo")))
+
+    (is (s/check service-description-schema (dissoc basic-description "cmd")))
+    (is (s/check service-description-schema (assoc basic-description "cmd" "")))
+
+    (is (nil? (s/check service-description-schema (assoc basic-description "cmd-type" "shell"))))
+    (is (s/check service-description-schema (assoc basic-description "cmd-type" "")))
+
+    (is (nil? (s/check service-description-schema (assoc basic-description "concurrency-level" 5))))
+    (is (s/check service-description-schema (assoc basic-description "concurrency-level" -1)))
+    (is (s/check service-description-schema (assoc basic-description "concurrency-level" 20000000)))
+
+    (is (s/check service-description-schema (dissoc basic-description "cpus")))
+    (is (s/check service-description-schema (assoc basic-description "cpus" 0)))
+    (is (s/check service-description-schema (assoc basic-description "cpus" -1)))
+    (is (s/check service-description-schema (assoc basic-description "cpus" "1")))
+
+    (is (nil? (s/check service-description-schema (assoc basic-description "env" {}))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "env" {"MY_VAR" "1", "MY_VAR_2" "2"}))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "env" {"MY_VAR" "1", "MY_other_VAR" "2"}))))
+    (is (s/check service-description-schema (assoc basic-description "env" {"2MY_VAR" "1", "MY_OTHER_VAR" "2"})))
+    (is (s/check service-description-schema (assoc basic-description "env" {(str/join (take 513 (repeat "A"))) "A"
+                                                                            "MY_other_VAR" "2"})))
+    (is (not (nil? (s/check service-description-schema (assoc basic-description "env" {"MY_VAR" (str/join (take 513 (repeat "A")))
+                                                                                       "MY_other_VAR" "2"})))))
+    (is (not (nil? (s/check service-description-schema (assoc basic-description "env" (zipmap (take 150 (iterate #(str % "A") "a"))
+                                                                                              (take 150 (iterate #(str % "A") "a"))))))))
+
+    (is (nil? (s/check service-description-schema (assoc basic-description "disk" 1))))
+
+    (is (nil? (s/check service-description-schema (assoc basic-description "grace-period-secs" 5))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "grace-period-secs" 11))))
+    (is (s/check service-description-schema (assoc basic-description "grace-period-secs" -1)))
+    (is (s/check service-description-schema (assoc basic-description "grace-period-secs" (t/in-seconds (t/minutes 75)))))
+
+    (is (nil? (s/check service-description-schema (assoc basic-description "health-check-authentication" "disabled"))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "health-check-authentication" "standard"))))
+    (is (not (nil? (s/check service-description-schema (assoc basic-description "health-check-authentication" "jwt")))))
+    (is (not (nil? (s/check service-description-schema (assoc basic-description "health-check-authentication" "saml")))))
+
+    (is (nil? (s/check service-description-schema (assoc basic-description "health-check-port-index" 0))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "health-check-port-index" 1))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "health-check-port-index" 9))))
+    (is (not (nil? (s/check service-description-schema (assoc basic-description "health-check-port-index" -1)))))
+    (is (not (nil? (s/check service-description-schema (assoc basic-description "health-check-port-index" 10)))))
+    (is (not (nil? (s/check service-description-schema (assoc basic-description "health-check-port-index" "0")))))
+
+    (is (nil? (s/check service-description-schema (assoc basic-description "health-check-url" "http://www.example.com/test/status"))))
+
+    (is (s/check service-description-schema (dissoc basic-description "mem")))
+    (is (s/check service-description-schema (assoc basic-description "mem" 0)))
+    (is (s/check service-description-schema (assoc basic-description "mem" -1)))
+    (is (s/check service-description-schema (assoc basic-description "mem" "1")))
+
+    (is (nil? (s/check service-description-schema (assoc basic-description "metadata" {}))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "metadata" {"a" "b", "c-e" "d"}))))
+    (is (not (nil? (s/check service-description-schema (assoc basic-description "metadata" {"a" "b", "1c" "e"})))))
+    (is (not (nil? (s/check service-description-schema (assoc basic-description "metadata" {"a" "b", "c" 1})))))
+    (is (not (nil? (s/check service-description-schema (assoc basic-description "metadata" {"a" "b", "c" {"d" "e"}})))))
+    (is (not (nil? (s/check service-description-schema (assoc basic-description "metadata" (zipmap (take 400 (iterate #(str % "a") "a"))
+                                                                                                   (take 400 (iterate #(str % "a") "a"))))))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "name" "testname123"))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "name" "testName123"))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "name" "test.name"))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "name" "test.n&me"))))
+    (is (s/check service-description-schema (assoc basic-description "name" "")))
+
+    (is (nil? (s/check service-description-schema (assoc basic-description "permitted-user" "testuser2"))))
+
+    (is (nil? (s/check service-description-schema (assoc basic-description "ports" 1))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "ports" 5))))
+    (is (s/check service-description-schema (assoc basic-description "ports" 11)))
+
+    (is (s/check service-description-schema (dissoc basic-description "run-as-user")))
+    (is (s/check service-description-schema (assoc basic-description "run-as-user" "")))))
 
 (deftest test-retrieve-token-from-service-description-or-hostname
   (let [test-cases (list
@@ -389,12 +231,12 @@
                                        "owner" "token-owner"
                                        "previous" {}
                                        "version" "token"}
-                                      (str/includes? token "allowed") (assoc "allowed-params" #{"BAR" "FOO"})
-                                      (str/includes? token "cpus") (assoc "cpus" "1")
-                                      (str/includes? token "fall") (assoc "fallback-period-secs" 600)
-                                      (str/includes? token "mem") (assoc "mem" "2")
-                                      (str/includes? token "per") (assoc "permitted-user" "puser")
-                                      (str/includes? token "run") (assoc "run-as-user" "ruser"))
+                                (str/includes? token "allowed") (assoc "allowed-params" #{"BAR" "FOO"})
+                                (str/includes? token "cpus") (assoc "cpus" "1")
+                                (str/includes? token "fall") (assoc "fallback-period-secs" 600)
+                                (str/includes? token "mem") (assoc "mem" "2")
+                                (str/includes? token "per") (assoc "permitted-user" "puser")
+                                (str/includes? token "run") (assoc "run-as-user" "ruser"))
                               {}))
         build-source-tokens (fn [& tokens]
                               (mapv (fn [token] (source-tokens-entry token (create-token-data token))) tokens))]
@@ -424,8 +266,8 @@
                                                "run-as-user" test-user}
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-host"
-                                                                    "source-tokens" (build-source-tokens "test-host")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-host")
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
@@ -449,6 +291,7 @@
                                                "version" "test-version"
                                                "run-as-user" test-user}
                                      :service-description-template {},
+                                     :source-tokens []
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -473,8 +316,8 @@
                                                "run-as-user" test-user}
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-host"
-                                                                    "source-tokens" (build-source-tokens "test-host")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-host")
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
@@ -497,6 +340,7 @@
                                                "version" "test-version"
                                                "run-as-user" test-user}
                                      :service-description-template {},
+                                     :source-tokens []
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -512,8 +356,8 @@
                                      :headers {}
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-host"
-                                                                    "source-tokens" (build-source-tokens "test-host")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-host")
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
@@ -529,8 +373,8 @@
                                      :headers {}
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-token"
-                                                                    "source-tokens" (build-source-tokens "test-token")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-token")
                                      :token->token-data {"test-token" (create-token-data "test-token")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
@@ -547,8 +391,8 @@
                                      :headers {}
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-token2"
-                                                                    "source-tokens" (build-source-tokens "test-token" "test-token2")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-token" "test-token2")
                                      :token->token-data {"test-token" (create-token-data "test-token")
                                                          "test-token2" (create-token-data "test-token2")}
                                      :token-authentication-disabled false
@@ -566,8 +410,8 @@
                                                                     "cpus" "1"
                                                                     "mem" "2"
                                                                     "name" "test-mem-token"
-                                                                    "source-tokens" (build-source-tokens "test-token" "test-token2" "test-cpus-token" "test-mem-token")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-token" "test-token2" "test-cpus-token" "test-mem-token")
                                      :token->token-data {"test-cpus-token" (create-token-data "test-cpus-token")
                                                          "test-mem-token" (create-token-data "test-mem-token")
                                                          "test-token" (create-token-data "test-token")
@@ -585,8 +429,8 @@
                                      :headers {}
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-host"
-                                                                    "source-tokens" (build-source-tokens "test-host")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-host")
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
@@ -601,8 +445,8 @@
                                      :headers {}
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-host"
-                                                                    "source-tokens" (build-source-tokens "test-host")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-host")
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -618,8 +462,8 @@
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-token-run"
                                                                     "run-as-user" "ruser"
-                                                                    "source-tokens" (build-source-tokens "test-token-run")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-token-run")
                                      :token->token-data {"test-token-run" (create-token-data "test-token-run")}
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -634,8 +478,8 @@
                                      :headers {}
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-token-per-fall"
-                                                                    "source-tokens" (build-source-tokens "test-token-per-fall")
                                                                     "version" "token" "permitted-user" "puser"}
+                                     :source-tokens (build-source-tokens "test-token-per-fall")
                                      :token->token-data {"test-token-per-fall" (create-token-data "test-token-per-fall")}
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -652,8 +496,8 @@
                                                                     "name" "test-token-per-run"
                                                                     "permitted-user" "puser"
                                                                     "run-as-user" "ruser"
-                                                                    "source-tokens" (build-source-tokens "test-token-per-run")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-token-per-run")
                                      :token->token-data {"test-token-per-run" (create-token-data "test-token-per-run")}
                                      :token-authentication-disabled false
                                      :token-preauthorized true
@@ -671,8 +515,8 @@
                                                                     "name" "test-cpus-token"
                                                                     "permitted-user" "puser"
                                                                     "run-as-user" "ruser"
-                                                                    "source-tokens" (build-source-tokens "test-token-per-run" "test-cpus-token")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-token-per-run" "test-cpus-token")
                                      :token->token-data {"test-cpus-token" (create-token-data "test-cpus-token")
                                                          "test-token-per-run" (create-token-data "test-token-per-run")}
                                      :token-authentication-disabled false
@@ -690,6 +534,7 @@
                                                            "baz" "quux"}
                                                "cpus" "1"}
                                      :service-description-template {},
+                                     :source-tokens []
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -706,6 +551,7 @@
                                                       "FOO_BAR" "bar"}
                                                "cpus" "1"}
                                      :service-description-template {},
+                                     :source-tokens []
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -726,8 +572,8 @@
                                                                     "name" "test-host-allowed-cpus-mem-per-run"
                                                                     "permitted-user" "puser"
                                                                     "run-as-user" "ruser"
-                                                                    "source-tokens" (build-source-tokens "test-host-allowed-cpus-mem-per-run")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-host-allowed-cpus-mem-per-run")
                                      :token->token-data {"test-host-allowed-cpus-mem-per-run" (create-token-data "test-host-allowed-cpus-mem-per-run")}
                                      :token-authentication-disabled false
                                      :token-preauthorized true
@@ -750,8 +596,8 @@
                                                                     "name" "test-host-allowed-cpus-mem-per-run"
                                                                     "permitted-user" "puser"
                                                                     "run-as-user" "ruser"
-                                                                    "source-tokens" (build-source-tokens "test-host-allowed-cpus-mem-per-run")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-host-allowed-cpus-mem-per-run")
                                      :token->token-data {"test-host-allowed-cpus-mem-per-run" (create-token-data "test-host-allowed-cpus-mem-per-run")}
                                      :token-authentication-disabled false
                                      :token-preauthorized true
@@ -773,8 +619,8 @@
                                                                     "name" "test-host-allowed-cpus-mem-per-run"
                                                                     "permitted-user" "puser"
                                                                     "run-as-user" "ruser"
-                                                                    "source-tokens" (build-source-tokens "test-host-allowed-cpus-mem-per-run")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-host-allowed-cpus-mem-per-run")
                                      :token->token-data {"test-host-allowed-cpus-mem-per-run" (create-token-data "test-host-allowed-cpus-mem-per-run")}
                                      :token-authentication-disabled false
                                      :token-preauthorized true
@@ -791,6 +637,7 @@
                                                "param" {"BAZ" "quux"
                                                         "FOO_BAR" "bar"}}
                                      :service-description-template {},
+                                     :source-tokens []
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -811,6 +658,7 @@
                                                "param" {"BAZ" "quux"
                                                         "FOO_BAR" "bar"}}
                                      :service-description-template {},
+                                     :source-tokens []
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -831,6 +679,7 @@
                                                "param" {"BAZ" "quux"
                                                         "FOO_BAR" "bar2"}}
                                      :service-description-template {},
+                                     :source-tokens []
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -847,6 +696,7 @@
                                                "env" {"1" "quux"
                                                       "FOO-BAR" "bar"}}
                                      :service-description-template {},
+                                     :source-tokens []
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -894,9 +744,8 @@
                 expected {:defaults service-description-defaults
                           :fallback-period-secs 300
                           :headers {}
-                          :service-description-template (-> token-data
-                                                            (select-keys service-parameter-keys)
-                                                            (assoc "source-tokens" [(source-tokens-entry test-token token-data)]))
+                          :service-description-template (select-keys token-data service-parameter-keys)
+                          :source-tokens [(source-tokens-entry test-token token-data)]
                           :token->token-data {test-token token-data}
                           :token-authentication-disabled true
                           :token-preauthorized true
@@ -927,9 +776,8 @@
                 expected {:defaults service-description-defaults
                           :fallback-period-secs 300
                           :headers {}
-                          :service-description-template (-> token-data
-                                                            (select-keys service-parameter-keys)
-                                                            (assoc "source-tokens" [(source-tokens-entry test-token token-data)]))
+                          :service-description-template (select-keys token-data service-parameter-keys)
+                          :source-tokens [(source-tokens-entry test-token token-data)]
                           :token->token-data {test-token token-data}
                           :token-authentication-disabled false
                           :token-preauthorized true
@@ -937,15 +785,21 @@
             (is (= expected actual))))))))
 
 (defn- compute-service-description-helper
-  ([sources & {:keys [assoc-run-as-user-approved? kv-store waiter-headers]}]
+  ([sources & {:keys [assoc-run-as-user-approved? component->previous-descriptor-fns kv-store waiter-headers]}]
    (with-redefs [metric-group-filter (fn [sd _] sd)
                  service-description-schema {s/Str s/Any}]
      (let [assoc-run-as-user-approved? (or assoc-run-as-user-approved? (constantly false))
+           component->previous-descriptor-fns (or component->previous-descriptor-fns {})
            kv-store (or kv-store (kv/->LocalKeyValueStore (atom {})))
-           waiter-headers (or waiter-headers {})]
-       (compute-service-description sources waiter-headers {} kv-store "test-service-" "current-request-user"
-                                    [] (create-default-service-description-builder {})
-                                    assoc-run-as-user-approved?)))))
+           waiter-headers (or waiter-headers {})
+           passthrough-headers {}
+           metric-group-mappings []
+           service-id-prefix "test-service-"
+           current-user "current-request-user"
+           service-description-builder (create-default-service-description-builder {})]
+       (compute-service-description
+         sources waiter-headers passthrough-headers component->previous-descriptor-fns kv-store service-id-prefix
+         current-user metric-group-mappings assoc-run-as-user-approved? service-description-builder)))))
 
 (defn- service-description
   ([sources & {:keys [assoc-run-as-user-approved? kv-store waiter-headers]}]
@@ -968,6 +822,17 @@
     (is (nil? (compute-on-the-fly {"cmd" "on-the-fly-cmd", "run-as-user" "on-the-fly-ru"})))
     (is (compute-on-the-fly {"x-waiter-cmd" "on-the-fly-cmd", "x-waiter-run-as-user" "on-the-fly-ru"}))
     (is (compute-on-the-fly {"x-waiter-token" "value-does-not-matter"}))))
+
+(deftest test-compute-service-description-source-tokens
+  (let [defaults {"health-check-url" "/ping", "permitted-user" "bob"}
+        source-tokens [:foo-bar]
+        sources {:defaults defaults
+                 :service-description-template {"cmd" "token-cmd"}
+                 :source-tokens source-tokens}
+        compute-source-tokens (fn compute-source-tokens [waiter-headers]
+                                (-> (compute-service-description-helper sources :waiter-headers waiter-headers)
+                                    :source-tokens))]
+    (is (= source-tokens (compute-source-tokens {})))))
 
 (deftest test-compute-service-description
   (testing "Service description computation"
@@ -1421,9 +1286,10 @@
             basic-service-id
             "current-request-user"
             {"scale-factor" 0.3})
-          (is (= (-> basic-service-description
-                     (dissoc "source-tokens")
-                     (assoc "health-check-url" "/ping" "permitted-user" "bob" "scale-factor" 0.3))
+          (is (= (assoc basic-service-description
+                   "health-check-url" "/ping"
+                   "permitted-user" "bob"
+                   "scale-factor" 0.3)
                  (service-description {:defaults {"health-check-url" "/ping"
                                                   "permitted-user" "bob"
                                                   "scale-factor" 1}
@@ -1436,9 +1302,9 @@
             kv-store
             basic-service-id
             "current-request-user")
-          (is (= (-> basic-service-description
-                     (dissoc "source-tokens")
-                     (assoc "health-check-url" "/ping" "permitted-user" "bob"))
+          (is (= (assoc basic-service-description
+                   "health-check-url" "/ping"
+                   "permitted-user" "bob")
                  (service-description {:defaults {"health-check-url" "/ping"
                                                   "permitted-user" "bob"}
                                        :headers {"cmd" "on-the-fly-cmd"
@@ -1518,120 +1384,109 @@
 (deftest test-compute-service-description-error-scenarios
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
         service-id-prefix "test-service-"
-        test-user "test-header-user"]
+        test-user "test-header-user"
+        waiter-headers {}
+        passthrough-headers {}
+        component->previous-descriptor-fns {}
+        metric-group-mappings []
+        assoc-run-as-user-approved? (constantly false)
+        service-description-builder (create-default-service-description-builder {})
+        run-compute-service-description
+        (fn run-compute-service-description [descriptor]
+          (let [result-descriptor
+                (compute-service-description
+                  descriptor waiter-headers passthrough-headers component->previous-descriptor-fns kv-store service-id-prefix
+                  test-user metric-group-mappings assoc-run-as-user-approved? service-description-builder)
+                result-errors (validate-service-description kv-store service-description-builder result-descriptor)]
+            (when result-errors
+              (throw result-errors))
+            result-descriptor))]
     (is (thrown? Exception
-                 (compute-service-description {:defaults {"health-check-url" "/ping"}
-                                               :headers {}
-                                               :service-description-template {"cmd" "test command"
-                                                                              "cpus" "one"
-                                                                              "mem" 200
-                                                                              "version" "a1b2c3"
-                                                                              "run-as-user" test-user}}
-                                              {} {} kv-store service-id-prefix test-user []
-                                              (create-default-service-description-builder {})
-                                              (constantly false))))
+                 (run-compute-service-description {:defaults {"health-check-url" "/ping"}
+                                                   :headers {}
+                                                   :service-description-template {"cmd" "test command"
+                                                                                  "cpus" "one"
+                                                                                  "mem" 200
+                                                                                  "version" "a1b2c3"
+                                                                                  "run-as-user" test-user}})))
     (is (thrown? Exception
-                 (compute-service-description {:defaults {"health-check-url" 1}
-                                               :headers {}
-                                               :service-description-template {"cmd" "test command"
-                                                                              "cpus" 1
-                                                                              "mem" 200
-                                                                              "version" "a1b2c3"
-                                                                              "run-as-user" test-user}}
-                                              {} {} kv-store service-id-prefix test-user []
-                                              (create-default-service-description-builder {})
-                                              (constantly false))))
+                 (run-compute-service-description {:defaults {"health-check-url" 1}
+                                                   :headers {}
+                                                   :service-description-template {"cmd" "test command"
+                                                                                  "cpus" 1
+                                                                                  "mem" 200
+                                                                                  "version" "a1b2c3"
+                                                                                  "run-as-user" test-user}})))
     (is (thrown? Exception
-                 (compute-service-description {:defaults {"health-check-url" 1}
-                                               :headers {}
-                                               :service-description-template {}}
-                                              {} {} kv-store service-id-prefix test-user []
-                                              (create-default-service-description-builder {})
-                                              (constantly false))))
+                 (run-compute-service-description {:defaults {"health-check-url" 1}
+                                                   :headers {}
+                                                   :service-description-template {}})))
     (is (thrown? Exception
-                 (compute-service-description {:defaults {"health-check-url" "/health"}
-                                               :service-description-template {"cmd" "cmd for missing run-as-user"
-                                                                              "cpus" 1
-                                                                              "mem" 200
-                                                                              "version" "a1b2c3"}}
-                                              {} {} kv-store service-id-prefix test-user []
-                                              (create-default-service-description-builder {})
-                                              (constantly false))))
+                 (run-compute-service-description {:defaults {"health-check-url" "/health"}
+                                                   :service-description-template {"cmd" "cmd for missing run-as-user"
+                                                                                  "cpus" 1
+                                                                                  "mem" 200
+                                                                                  "version" "a1b2c3"}})))
 
     (testing "invalid allowed params - reserved"
       (is (thrown? Exception
-                   (compute-service-description {:defaults {"health-check-url" "/ping"
-                                                            "permitted-user" "bob"}
-                                                 :headers {}
-                                                 :service-description-template {"allowed-params" #{"HOME" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
-                                                                                "cmd" "token-cmd"
-                                                                                "cpus" 1
-                                                                                "mem" 200
-                                                                                "run-as-user" "test-user"
-                                                                                "version" "a1b2c3"}}
-                                                {} {} kv-store service-id-prefix test-user []
-                                                (create-default-service-description-builder {})
-                                                (constantly false)))))
+                   (run-compute-service-description {:defaults {"health-check-url" "/ping"
+                                                                "permitted-user" "bob"}
+                                                     :headers {}
+                                                     :service-description-template {"allowed-params" #{"HOME" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                                                                    "cmd" "token-cmd"
+                                                                                    "cpus" 1
+                                                                                    "mem" 200
+                                                                                    "run-as-user" "test-user"
+                                                                                    "version" "a1b2c3"}}))))
 
     (testing "invalid allowed params - bad naming"
       (is (thrown? Exception
-                   (compute-service-description {:defaults {"health-check-url" "/ping"
-                                                            "permitted-user" "bob"}
-                                                 :headers {}
-                                                 :service-description-template {"allowed-params" #{"VAR.1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
-                                                                                "cmd" "token-cmd"
-                                                                                "cpus" 1
-                                                                                "mem" 200
-                                                                                "run-as-user" "test-user"
-                                                                                "version" "a1b2c3"}}
-                                                {} {} kv-store service-id-prefix test-user []
-                                                (create-default-service-description-builder {})
-                                                (constantly false)))))
+                   (run-compute-service-description {:defaults {"health-check-url" "/ping"
+                                                                "permitted-user" "bob"}
+                                                     :headers {}
+                                                     :service-description-template {"allowed-params" #{"VAR.1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                                                                    "cmd" "token-cmd"
+                                                                                    "cpus" 1
+                                                                                    "mem" 200
+                                                                                    "run-as-user" "test-user"
+                                                                                    "version" "a1b2c3"}}))))
 
     (testing "invalid allowed params - reserved and bad naming"
       (is (thrown? Exception
-                   (compute-service-description {:defaults {"health-check-url" "/ping"
-                                                            "permitted-user" "bob"}
-                                                 :headers {}
-                                                 :service-description-template {"allowed-params" #{"USER" "VAR.1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
-                                                                                "cmd" "token-cmd"
-                                                                                "cpus" 1
-                                                                                "mem" 200
-                                                                                "run-as-user" "test-user"
-                                                                                "version" "a1b2c3"}}
-                                                {} {} kv-store service-id-prefix test-user []
-                                                (create-default-service-description-builder {})
-                                                (constantly false)))))
+                   (run-compute-service-description {:defaults {"health-check-url" "/ping"
+                                                                "permitted-user" "bob"}
+                                                     :headers {}
+                                                     :service-description-template {"allowed-params" #{"USER" "VAR.1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                                                                    "cmd" "token-cmd"
+                                                                                    "cpus" 1
+                                                                                    "mem" 200
+                                                                                    "run-as-user" "test-user"
+                                                                                    "version" "a1b2c3"}}))))
 
     (testing "token + disallowed param header - on-the-fly"
       (is (thrown? Exception
-                   (compute-service-description {:defaults {"health-check-url" "/ping"
-                                                            "permitted-user" "bob"}
-                                                 :headers {"param" {"VAR_1" "VALUE-1"
-                                                                    "ANOTHER_VAR_2" "VALUE-2"}
-                                                           "version" "on-the-fly-version"}
-                                                 :service-description-template {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
-                                                                                "cmd" "token-cmd"
-                                                                                "concurrency-level" 5
-                                                                                "run-as-user" "test-user"}}
-                                                {} {} kv-store service-id-prefix test-user []
-                                                (create-default-service-description-builder {})
-                                                (constantly false)))))
+                   (run-compute-service-description {:defaults {"health-check-url" "/ping"
+                                                                "permitted-user" "bob"}
+                                                     :headers {"param" {"VAR_1" "VALUE-1"
+                                                                        "ANOTHER_VAR_2" "VALUE-2"}
+                                                               "version" "on-the-fly-version"}
+                                                     :service-description-template {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                                                                    "cmd" "token-cmd"
+                                                                                    "concurrency-level" 5
+                                                                                    "run-as-user" "test-user"}}))))
 
     (testing "token + no allowed params - on-the-fly"
       (is (thrown? Exception
-                   (compute-service-description {:defaults {"health-check-url" "/ping"
-                                                            "permitted-user" "bob"}
-                                                 :headers {"param" {"VAR_1" "VALUE-1"
-                                                                    "VAR_2" "VALUE-2"}
-                                                           "version" "on-the-fly-version"}
-                                                 :service-description-template {"allowed-params" #{}
-                                                                                "cmd" "token-cmd"
-                                                                                "concurrency-level" 5
-                                                                                "run-as-user" "test-user"}}
-                                                {} {} kv-store service-id-prefix test-user []
-                                                (create-default-service-description-builder {})
-                                                (constantly false)))))
+                   (run-compute-service-description {:defaults {"health-check-url" "/ping"
+                                                                "permitted-user" "bob"}
+                                                     :headers {"param" {"VAR_1" "VALUE-1"
+                                                                        "VAR_2" "VALUE-2"}
+                                                               "version" "on-the-fly-version"}
+                                                     :service-description-template {"allowed-params" #{}
+                                                                                    "cmd" "token-cmd"
+                                                                                    "concurrency-level" 5
+                                                                                    "run-as-user" "test-user"}}))))
 
     (testing "instance-expiry-mins"
       (let [core-service-description {"cmd" "cmd for missing run-as-user"
@@ -1639,15 +1494,12 @@
                                       "mem" 200
                                       "run-as-user" test-user
                                       "version" "a1b2c3"}
-            run-compute-service-description (fn [service-description]
-                                              (compute-service-description {:defaults {"health-check-url" "/health"}
-                                                                            :service-description-template service-description}
-                                                                           {} {} kv-store service-id-prefix test-user []
-                                                                           (create-default-service-description-builder {})
-                                                                           (constantly false)))]
-        (is (thrown? Exception (run-compute-service-description (assoc core-service-description "instance-expiry-mins" -1))))
-        (is (run-compute-service-description (assoc core-service-description "instance-expiry-mins" 0)))
-        (is (run-compute-service-description (assoc core-service-description "instance-expiry-mins" 1)))))))
+            run-compute-service-description-helper (fn [service-description]
+                                                     (run-compute-service-description {:defaults {"health-check-url" "/health"}
+                                                                                       :service-description-template service-description}))]
+        (is (thrown? Exception (run-compute-service-description-helper (assoc core-service-description "instance-expiry-mins" -1))))
+        (is (run-compute-service-description-helper (assoc core-service-description "instance-expiry-mins" 0)))
+        (is (run-compute-service-description-helper (assoc core-service-description "instance-expiry-mins" 1)))))))
 
 (deftest test-compute-service-description-service-preauthorized-and-authentication-disabled
   (letfn [(execute-test [service-description-template header-parameters]
@@ -1725,6 +1577,14 @@
         (is (thrown? ExceptionInfo (token->service-parameter-template kv-store "invalid-token")))
         (is (nil? (kv/fetch kv-store service-id))))
 
+      (testing "error-on-token-invalid-format"
+        (with-redefs [kv/fetch (fn [in-kv-store in-token]
+                                 (is (= kv-store in-kv-store))
+                                 (is (= "invalid-format/token" in-token))
+                                 (kv/validate-zk-key in-token))]
+          (is (empty? (token->service-parameter-template kv-store "invalid-format/token" :error-on-missing false)))
+          (is (thrown-with-msg? ExceptionInfo #"Token not found: invalid-format/token" (token->service-parameter-template kv-store "invalid-format/token")))))
+
       (testing "test:token->service-description-2"
         (let [{:keys [service-parameter-template token-metadata]} (token->token-description kv-store token)
               service-description-template-2 (token->service-parameter-template kv-store token)]
@@ -1747,6 +1607,107 @@
           (is (empty? service-description-template-2))
           (is (= (select-keys in-service-description service-description-keys) service-parameter-template))
           (is (= {"deleted" true, "owner" "tu3", "previous" {}} token-metadata)))))))
+
+(deftest test-fetch-core
+  (let [service-id "test-service-1"
+        service-key (str "^SERVICE-ID#" service-id)]
+
+    (testing "no data available"
+      (let [kv-store (kv/->LocalKeyValueStore (atom {}))]
+        (is (nil? (kv/fetch kv-store service-key)))
+        (is (nil? (fetch-core kv-store service-id :refresh false)))
+        (is (nil? (kv/fetch kv-store service-key)))))
+
+    (testing "data without refresh"
+      (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+            service-description {"cmd" "tc" "cpus" 1 "mem" 200 "version" "a1b2c3"}]
+        (is (nil? (kv/fetch kv-store service-key)))
+        (kv/store kv-store service-key service-description)
+        (is (= service-description (fetch-core kv-store service-id :refresh false)))
+        (is (= service-description (kv/fetch kv-store service-key)))))
+
+    (testing "cached empty data"
+      (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+            cache (cu/cache-factory {:threshold 10})
+            cache-kv-store (kv/->CachedKeyValueStore kv-store cache)
+            service-id "test-service-1"
+            service-description {"cmd" "tc" "cpus" 1 "mem" 200 "version" "a1b2c3"}]
+        (is (nil? (fetch-core kv-store service-id :refresh false)))
+        (is (nil? (fetch-core cache-kv-store service-id :refresh false)))
+        (kv/store kv-store service-key service-description)
+        (is (nil? (kv/fetch cache-kv-store (str "^SERVICE-ID#" service-id))))
+        (is (nil? (fetch-core cache-kv-store service-id :refresh false)))
+        (is (nil? (kv/fetch cache-kv-store (str "^SERVICE-ID#" service-id))))
+        (is (= service-description (fetch-core cache-kv-store service-id :refresh true)))
+        (is (= service-description (kv/fetch cache-kv-store (str "^SERVICE-ID#" service-id))))))))
+
+(deftest test-refresh-service-descriptions
+  (let [raw-kv-store (kv/->LocalKeyValueStore (atom {}))
+        cache (cu/cache-factory {:threshold 10})
+        cache-kv-store (kv/->CachedKeyValueStore raw-kv-store cache)
+        service-id->key (fn [service-id] (str "^SERVICE-ID#" service-id))
+        service-id->service-description (fn [service-id] {"cmd" "tc" "cpus" 1 "mem" 200 "version" service-id})
+        service-id-1 "service-id-1"
+        service-id-2 "service-id-2"
+        service-id-3 "service-id-3"
+        service-id-4 "service-id-4"]
+    (is (nil? (kv/fetch cache-kv-store (service-id->key service-id-1))))
+    (is (nil? (kv/fetch cache-kv-store (service-id->key service-id-3))))
+
+    (kv/store raw-kv-store (service-id->key service-id-1) (service-id->service-description service-id-1))
+    (kv/store raw-kv-store (service-id->key service-id-2) (service-id->service-description service-id-2))
+    (kv/store raw-kv-store (service-id->key service-id-3) (service-id->service-description service-id-3))
+    (kv/store raw-kv-store (service-id->key service-id-4) (service-id->service-description service-id-4))
+
+    (is (nil? (kv/fetch cache-kv-store (service-id->key service-id-1))))
+    (is (= (service-id->service-description service-id-2) (kv/fetch cache-kv-store (service-id->key service-id-2))))
+    (is (nil? (kv/fetch cache-kv-store (service-id->key service-id-3))))
+    (is (= (service-id->service-description service-id-4) (kv/fetch cache-kv-store (service-id->key service-id-4))))
+
+    (let [service-ids #{service-id-1 service-id-2 service-id-3 service-id-4}
+          service-ids-in (conj service-ids "service-id-unknown1" "service-id-unknown2")
+          service-ids-out (refresh-service-descriptions cache-kv-store service-ids-in)]
+      (is (= service-ids service-ids-out)))
+
+    (is (= (service-id->service-description service-id-1) (kv/fetch cache-kv-store (service-id->key service-id-1))))
+    (is (= (service-id->service-description service-id-2) (kv/fetch cache-kv-store (service-id->key service-id-2))))
+    (is (= (service-id->service-description service-id-3) (kv/fetch cache-kv-store (service-id->key service-id-3))))
+    (is (= (service-id->service-description service-id-4) (kv/fetch cache-kv-store (service-id->key service-id-4))))))
+
+(deftest test-service-id->service-description
+  (let [service-id "test-service-1"
+        service-key (str "^SERVICE-ID#" service-id)
+        fetch-service-description (fn [kv-store]
+                                    (service-id->service-description kv-store service-id {} [] :effective? false))]
+
+    (testing "no data available"
+      (let [kv-store (kv/->LocalKeyValueStore (atom {}))]
+        (is (nil? (kv/fetch kv-store service-key)))
+        (is (nil? (fetch-service-description kv-store)))
+        (is (nil? (kv/fetch kv-store service-key)))))
+
+    (testing "data without refresh"
+      (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+            service-description {"cmd" "tc" "cpus" 1 "mem" 200 "version" "a1b2c3"}]
+        (is (nil? (kv/fetch kv-store service-key)))
+        (kv/store kv-store service-key service-description)
+        (is (= service-description (fetch-service-description kv-store)))
+        (is (= service-description (kv/fetch kv-store service-key)))))
+
+    (testing "cached empty data"
+      (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+            cache (cu/cache-factory {:threshold 10})
+            cache-kv-store (kv/->CachedKeyValueStore kv-store cache)
+            service-id "test-service-1"
+            service-description {"cmd" "tc" "cpus" 1 "mem" 200 "version" "a1b2c3"}]
+        (is (nil? (fetch-service-description cache-kv-store)))
+        (kv/store kv-store service-key service-description)
+        (is (nil? (kv/fetch cache-kv-store (str "^SERVICE-ID#" service-id))))
+        (is (nil? (fetch-service-description cache-kv-store)))
+        (is (nil? (kv/fetch cache-kv-store (str "^SERVICE-ID#" service-id))))
+        (is (= service-description (kv/fetch cache-kv-store (str "^SERVICE-ID#" service-id) :refresh true)))
+        (is (= service-description (fetch-service-description cache-kv-store)))
+        (is (= service-description (kv/fetch cache-kv-store (str "^SERVICE-ID#" service-id))))))))
 
 (deftest test-service-suspend-resume
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -1810,7 +1771,7 @@
         (validate-schema (assoc service-description "metadata" {"a" "b" "c" 1}) {s/Str s/Any} nil)
         (is false "Exception should have been thrown for invalid service description.")
         (catch ExceptionInfo ex
-          (let [friendly-message (get-in (ex-data ex) [:friendly-error-message :metadata])]
+          (let [friendly-message (-> ex ex-data :friendly-error-message)]
             (is (str/includes? friendly-message "Metadata values must be strings.") friendly-message)
             (is (str/includes? friendly-message "did not have string values: c: 1.") friendly-message)))))
     (testing "too many metadata keys"
@@ -1846,7 +1807,7 @@
         (validate-schema (assoc service-description "env" {"abc" "def", "ABC" 1}) {s/Str s/Any} nil)
         (is false "Exception should have been thrown for invalid service description")
         (catch ExceptionInfo ex
-          (let [friendly-message (get-in (ex-data ex) [:friendly-error-message :env])]
+          (let [friendly-message (-> ex ex-data :friendly-error-message)]
             (is (str/includes? friendly-message "values must be strings") friendly-message)
             (is (str/includes? friendly-message "did not have string values: ABC: 1.") friendly-message)))))
 
@@ -1894,6 +1855,70 @@
         (is (str/includes? error-msg "reserved") error-msg)
         (is (not (str/includes? error-msg "upper case")) error-msg)))))
 
+(defmacro run-validate-schema-test
+  [valid-description constraints-schema config error-message]
+  `(let [error-message# ~error-message]
+     (try
+       (validate-schema ~valid-description ~constraints-schema ~config)
+       (is false "Fail as exception was not thrown!")
+       (catch ExceptionInfo ex#
+         (let [exception-data# (ex-data ex#)
+               actual-error-message# (:friendly-error-message exception-data#)]
+           (is (str/includes? (str actual-error-message#) (str error-message#))))))))
+
+(deftest test-validate-schema
+  (let [valid-description {"cpus" 1
+                           "mem" 1
+                           "cmd" "default-cmd"
+                           "version" "default-version"
+                           "run-as-user" "default-run-as-user"}
+        constraints-schema {(s/optional-key "cmd") (s/pred #(<= (count %) 100) (symbol "limit-100"))
+                            s/Str s/Any}
+        config {:allow-missing-required-fields? false}]
+    (is (nil? (validate-schema valid-description constraints-schema config)))
+
+    (testing (str "testing empty cmd")
+      (run-validate-schema-test
+        (assoc valid-description "cmd" "")
+        constraints-schema config "cmd must be a non-empty string"))
+
+    (testing (str "testing long cmd")
+      (run-validate-schema-test
+        (assoc valid-description "cmd" (str/join "" (repeat 150 "c")))
+        constraints-schema config "cmd must be at most 100 characters"))
+
+    (testing (str "testing instance counts")
+      (run-validate-schema-test
+        (assoc valid-description "max-instances" 0)
+        constraints-schema config "max-instances must be between 1 and 1000")
+      (run-validate-schema-test
+        (assoc valid-description "max-instances" 1001)
+        constraints-schema config "max-instances must be between 1 and 1000")
+      (run-validate-schema-test
+        (assoc valid-description "min-instances" 0)
+        constraints-schema config "min-instances must be between 1 and 4")
+      (run-validate-schema-test
+        (assoc valid-description "min-instances" 5)
+        constraints-schema config "min-instances must be between 1 and 4")
+      (run-validate-schema-test
+        (assoc valid-description "max-instances" 2 "min-instances" 3)
+        constraints-schema config "min-instances (3) must be less than or equal to max-instances (2)"))
+
+    (testing (str "testing invalid health check port index")
+      (run-validate-schema-test
+        (assoc valid-description "health-check-port-index" 1 "ports" 1)
+        constraints-schema config
+        "The health check port index (1) must be smaller than ports (1)")
+      (run-validate-schema-test
+        (assoc valid-description "health-check-port-index" 5 "ports" 3)
+        constraints-schema config
+        "The health check port index (5) must be smaller than ports (3)"))
+
+    (testing (str "testing invalid metric-group")
+      (run-validate-schema-test
+        (assoc valid-description "metric-group" (str/join "" (repeat 100 "m")))
+        constraints-schema config "The metric-group must be be between 2 and 32 characters"))))
+
 (deftest test-service-description-schema
   (testing "Service description schema"
     (testing "should validate user-provided metric groups"
@@ -1918,17 +1943,10 @@
       (testing "should use mapping when metric group not specified"
         (is (= "mapped" (mg-filter {"name" "foo"}))))
 
-      (testing "should ignore source-tokens when single token specified"
-        (is (= "other" (mg-filter {"cpus" 1 "source-tokens" [{"token" "example-1.app.com" "version" "hash-1"}]}))))
+      (testing "should use 'other' when metric group not specified and name not mapped - 1"
+        (is (= "other" (mg-filter {"cpus" 1 "mem" 1024}))))
 
-      (testing "should use other when token in source-tokens does not validate"
-        (is (= "other" (mg-filter {"cpus" 1 "source-tokens" [{"token" "example-1@app.com" "version" "hash-1"}]}))))
-
-      (testing "should use other when source-tokens has multiple tokens"
-        (is (= "other" (mg-filter {"cpus" 1 "source-tokens" [{"token" "example-1.app.com" "version" "hash-1"}
-                                                             {"token" "example-2.app.com" "version" "hash-2"}]}))))
-
-      (testing "should use 'other' when metric group not specified and name not mapped"
+      (testing "should use 'other' when metric group not specified and name not mapped - 2"
         (is (= "other" (mg-filter {})))))))
 
 (deftest test-name->metric-group
@@ -1945,8 +1963,27 @@
 (deftest test-merge-defaults-into-service-description
   (testing "Merging defaults into service description"
     (testing "should incorporate metric group mappings"
-      (is (= {"name" "foo", "metric-group" "bar"}
-             (merge-defaults {"name" "foo"} {} [[#"f.." "bar"]]))))))
+      (is (= {"metric-group" "bar"
+              "name" "foo"}
+             (merge-defaults {"name" "foo"} {} [[#"f.." "bar"]]))))
+    (testing "min-instances default missing but only max-instances provided"
+      (is (= {"max-instances" 2
+              "metric-group" "other"}
+             (merge-defaults {"max-instances" 2} {} [[#"f.." "bar"]]))))
+    (testing "min-instances should be updated when not provided"
+      (is (= {"max-instances" 2
+              "metric-group" "other"
+              "min-instances" 2}
+             (merge-defaults {"max-instances" 2} {"min-instances" 3} [[#"f.." "bar"]]))))
+    (testing "min-instances should not be updated when provided without max-instances"
+      (is (= {"metric-group" "other"
+              "min-instances" 4}
+             (merge-defaults {"min-instances" 4} {"min-instances" 3} [[#"f.." "bar"]]))))
+    (testing "min-instances should not be updated when provided with max-instances"
+      (is (= {"max-instances" 2
+              "metric-group" "other"
+              "min-instances" 4}
+             (merge-defaults {"max-instances" 2 "min-instances" 4} {"min-instances" 3} [[#"f.." "bar"]]))))))
 
 (deftest test-validate-cmd-type
   (testing "DefaultServiceDescriptionBuilder validation"
@@ -1961,7 +1998,7 @@
   (let [current-time (t/now)
         current-time-ms (.getMillis ^DateTime current-time)
         clock (constantly current-time)]
-    (is (= nil (consent-cookie-value clock nil nil nil nil)))
+    (is (nil? (consent-cookie-value clock nil nil nil nil)))
     (is (= ["unsupported" current-time-ms] (consent-cookie-value clock "unsupported" nil nil nil)))
     (is (= ["service" current-time-ms] (consent-cookie-value clock "service" nil nil nil)))
     (is (= ["service" current-time-ms "service-id"] (consent-cookie-value clock "service" "service-id" nil nil)))
@@ -2040,6 +2077,7 @@
                      "mem" {:max (* 32 1024)}}
         builder (create-default-service-description-builder {:constraints constraints})
         basic-service-description {"cpus" 1, "mem" 1, "cmd" "foo", "version" "bar", "run-as-user" "*"}
+        some-user-service-description (assoc basic-service-description "run-as-user" "some-user")
         validation-settings {:allow-missing-required-fields? false}]
 
     (testing "validate-service-description-within-limits"
@@ -2051,10 +2089,11 @@
           (validate builder service-description validation-settings)
           (is false)
           (catch ExceptionInfo ex
-            (is (= {:issue {"cpus" 'missing-required-key}
+            (is (= {:friendly-error-message "cpus must be a positive number."
+                    :issue {}
                     :status 400
                     :type :service-description-error}
-                   (select-keys (ex-data ex) [:issue :status :type])))))))
+                   (select-keys (ex-data ex) [:friendly-error-message :issue :status :type])))))))
 
     (testing "validate-service-description-cpus-outside-limits"
       (let [service-description (assoc basic-service-description "cpus" 200)]
@@ -2079,7 +2118,29 @@
                                                  "mem is 40960 but the max allowed is 32768")
                     :status 400
                     :type :service-description-error}
-                   (select-keys (ex-data ex) [:friendly-error-message :status :type])))))))))
+                   (select-keys (ex-data ex) [:friendly-error-message :status :type])))))))
+
+    (testing "validate-service-description-namespace-run-as-requester"
+      (is (nil? (validate builder basic-service-description validation-settings)))
+      (is (nil? (validate builder
+                          (assoc basic-service-description "namespace" "*")
+                          validation-settings)))
+      (is (thrown? Exception #"Cannot use run-as-requester with a specific namespace"
+                   (validate builder
+                             (assoc basic-service-description
+                                    "namespace" "some-user")
+                             validation-settings))))
+
+    (testing "validate-service-description-namespace-some-user"
+      (is (nil? (validate builder some-user-service-description validation-settings)))
+      (is (nil? (validate builder
+                          (assoc some-user-service-description "namespace" "some-user")
+                          validation-settings)))
+      (is (thrown? Exception #"Service namespace must either be omitted or match the run-as-user"
+                   (validate builder
+                             (assoc basic-service-description
+                                    "namespace" "some-other-user")
+                             validation-settings))))))
 
 (deftest test-retrieve-most-recently-modified-token
   (testing "all tokens have last-update-time"
@@ -2123,82 +2184,293 @@
         token-defaults {"fallback-period-secs" fallback-period-secs
                         "stale-timeout-mins" stale-timeout-mins}
         idle-timeout-mins 25
-        service-id "test-service-id"
+        service-id "test-service-id-"
+        service-id->service-description-fn (fn [in-service-id]
+                                             (is (str/starts-with? in-service-id service-id))
+                                             {"idle-timeout-mins" idle-timeout-mins})
         token->token-hash (fn [in-token] (str in-token ".hash1"))
-        token->token-metadata-fn (fn [token->token-data]
-                                   (fn token->token-metadata [in-token]
-                                     (-> in-token
-                                         token->token-data
-                                         (select-keys token-metadata-keys))))]
+        reference-type->stale-fn {:token #(service-token-references-stale? token->token-hash (:sources %))}
+        token->token-metadata-factory (fn [token->token-data]
+                                        (fn [in-token]
+                                          (-> in-token token->token-data (select-keys token-metadata-keys))))]
+
     (testing "service with single token is active"
       (let [token->token-data {"t1" {"cpus" 1}}
-            service-id->service-description-fn (fn [in-service-id]
-                                                 (is (= service-id in-service-id))
-                                                 {"idle-timeout-mins" idle-timeout-mins
-                                                  "source-tokens" [{"token" "t1" "version" "t1.hash1"}]})
-            token->token-metadata (token->token-metadata-fn token->token-data)]
+            service-id->references-fn (fn [in-service-id]
+                                        (is (= in-service-id (str service-id "s1")))
+                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"}]}}})
+            token->token-metadata (token->token-metadata-factory token->token-data)]
         (is (= idle-timeout-mins
                (service-id->idle-timeout
-                 service-id->service-description-fn token->token-hash token->token-metadata
-                 token-defaults service-id)))))
+                 service-id->service-description-fn service-id->references-fn token->token-metadata reference-type->stale-fn
+                 token-defaults (str service-id "s1"))))))
+
+    (testing "direct access service is active"
+      (let [token->token-data {"t1" {"cpus" 1}}
+            service-id->references-fn (fn [in-service-id]
+                                        (is (= in-service-id (str service-id "s2")))
+                                        #{{}})
+            token->token-metadata (token->token-metadata-factory token->token-data)]
+        (is (= idle-timeout-mins
+               (service-id->idle-timeout
+                 service-id->service-description-fn service-id->references-fn token->token-metadata reference-type->stale-fn
+                 token-defaults (str service-id "s2"))))))
 
     (testing "service with multiple tokens is active"
       (let [token->token-data {"t1" {"cpus" 1}
                                "t2" {"mem" 2048}}
-            service-id->service-description-fn (fn [in-service-id]
-                                                 (is (= service-id in-service-id))
-                                                 {"idle-timeout-mins" idle-timeout-mins
-                                                  "source-tokens" [{"token" "t1" "version" "t1.hash1"}
-                                                                   {"token" "t2" "version" "t2.hash1"}]})
-            token->token-metadata (token->token-metadata-fn token->token-data)]
+            service-id->references-fn (fn [in-service-id]
+                                        (is (= in-service-id (str service-id "s3")))
+                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"} {:token "t2" :version "t2.hash1"}]}}})
+            token->token-metadata (token->token-metadata-factory token->token-data)]
         (is (= idle-timeout-mins
                (service-id->idle-timeout
-                 service-id->service-description-fn token->token-hash token->token-metadata
-                 token-defaults service-id)))))
+                 service-id->service-description-fn service-id->references-fn token->token-metadata reference-type->stale-fn
+                 token-defaults (str service-id "s3"))))))
 
     (testing "service outdated but fallback not configured"
       (let [token->token-data {"t1" {"cpus" 1}
                                "t2" {"mem" 2048}}
-            service-id->service-description-fn (fn [in-service-id]
-                                                 (is (= service-id in-service-id))
-                                                 {"idle-timeout-mins" idle-timeout-mins
-                                                  "source-tokens" [{"token" "t1" "version" "t1.hash0"}]})
-            token->token-metadata (token->token-metadata-fn token->token-data)]
+            service-id->references-fn (fn [in-service-id]
+                                        (is (= in-service-id (str service-id "s4")))
+                                        #{{:token {:sources [{:token "t1" :version "t1.hash0"}]}}})
+            token->token-metadata (token->token-metadata-factory token->token-data)]
         (is (= (-> (+ fallback-period-secs (dec (-> 1 t/minutes t/in-seconds)))
-                   t/seconds
-                   t/in-minutes
-                   (+ stale-timeout-mins))
+                 t/seconds
+                 t/in-minutes
+                 (+ stale-timeout-mins))
                (service-id->idle-timeout
-                 service-id->service-description-fn token->token-hash token->token-metadata
-                 token-defaults service-id)))))
+                 service-id->service-description-fn service-id->references-fn token->token-metadata reference-type->stale-fn
+                 token-defaults (str service-id "s4"))))))
+
+    (testing "service outdated with tokens but direct access possible"
+      (let [token->token-data {"t1" {"cpus" 1}
+                               "t2" {"mem" 2048}}
+            service-id->references-fn (fn [in-service-id]
+                                        (is (= in-service-id (str service-id "s5")))
+                                        #{{:token {:sources [{:token "t1" :version "t1.hash0"}]}}
+                                          {}})
+            token->token-metadata (token->token-metadata-factory token->token-data)]
+        (is (= idle-timeout-mins
+               (service-id->idle-timeout
+                 service-id->service-description-fn service-id->references-fn token->token-metadata reference-type->stale-fn
+                 token-defaults (str service-id "s5"))))))
 
     (testing "service outdated and fallback configured on one token"
       (let [token->token-data {"t1" {"cpus" 1 "fallback-period-secs" 300}
                                "t2" {"mem" 2048}}
-            service-id->service-description-fn (fn [in-service-id]
-                                                 (is (= service-id in-service-id))
-                                                 {"idle-timeout-mins" idle-timeout-mins
-                                                  "source-tokens" [{"token" "t1" "version" "t1.hash1"}
-                                                                   {"token" "t2" "version" "t2.hash0"}]})
-            token->token-metadata (token->token-metadata-fn token->token-data)]
-        (is (= (-> 300 t/seconds t/in-minutes (+ stale-timeout-mins))
+            service-id->references-fn (fn [in-service-id]
+                                        (is (= in-service-id (str service-id "s6")))
+                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"} {:token "t2" :version "t2.hash0"}]}}})
+            token->token-metadata (token->token-metadata-factory token->token-data)]
+        (is (= idle-timeout-mins
                (service-id->idle-timeout
-                 service-id->service-description-fn token->token-hash token->token-metadata
-                 token-defaults service-id)))))
+                 service-id->service-description-fn service-id->references-fn token->token-metadata reference-type->stale-fn
+                 token-defaults (str service-id "s6"))))))
 
-    (testing "service outdated and fallback and timeout configured on all tokens"
+    (testing "service outdated on some tokens and fallback and timeout configured on all tokens"
       (let [stale-timeout-mins 45
             token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300}
                                "t2" {"cmd" "tc" "fallback-period-secs" 600 "stale-timeout-mins" stale-timeout-mins}
                                "t3" {"cmd" "tc" "fallback-period-secs" 900}}
-            service-id->service-description-fn (fn [in-service-id]
-                                                 (is (= service-id in-service-id))
-                                                 {"idle-timeout-mins" idle-timeout-mins
-                                                  "source-tokens" [{"token" "t1" "version" "t1.hash1"}
-                                                                   {"token" "t2" "version" "t2.hash0"}
-                                                                   {"token" "t3" "version" "t3.hash0"}]})
-            token->token-metadata (token->token-metadata-fn token->token-data)]
+            service-id->references-fn (fn [in-service-id]
+                                        (is (= in-service-id (str service-id "s7")))
+                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"}
+                                                             {:token "t2" :version "t2.hash0"}
+                                                             {:token "t3" :version "t3.hash0"}]}}})
+            token->token-metadata (token->token-metadata-factory token->token-data)]
+        (is (= idle-timeout-mins
+               (service-id->idle-timeout
+                 service-id->service-description-fn service-id->references-fn token->token-metadata reference-type->stale-fn
+                 token-defaults (str service-id "s7"))))))
+
+    (testing "service outdated on every token and fallback and timeout configured on all tokens"
+      (let [stale-timeout-mins 45
+            token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300}
+                               "t2" {"cmd" "tc" "fallback-period-secs" 600 "stale-timeout-mins" stale-timeout-mins}
+                               "t3" {"cmd" "tc" "fallback-period-secs" 900}}
+            service-id->references-fn (fn [in-service-id]
+                                        (is (= in-service-id (str service-id "s8")))
+                                        #{{:token {:sources [{:token "t1" :version "t1.hash0"}
+                                                             {:token "t2" :version "t2.hash0"}
+                                                             {:token "t3" :version "t3.hash0"}]}}})
+            token->token-metadata (token->token-metadata-factory token->token-data)]
         (is (= (-> 900 t/seconds t/in-minutes (+ stale-timeout-mins))
                (service-id->idle-timeout
-                 service-id->service-description-fn token->token-hash token->token-metadata
-                 token-defaults service-id)))))))
+                 service-id->service-description-fn service-id->references-fn token->token-metadata reference-type->stale-fn
+                 token-defaults (str service-id "s8"))))))
+
+    (testing "service using latest of one partial token among many"
+      (let [stale-timeout-mins 45
+            token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300}
+                               "t2" {"cmd" "tc" "fallback-period-secs" 600 "stale-timeout-mins" stale-timeout-mins}
+                               "t3" {"cmd" "tc" "fallback-period-secs" 900}
+                               "t4" {"fallback-period-secs" 1200 "stale-timeout-mins" (+ stale-timeout-mins 15)}}
+            service-id->references-fn (fn [in-service-id]
+                                        (is (= in-service-id (str service-id "s9")))
+                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"} {:token "t2" :version "t2.hash0"}]}}
+                                          {:token {:sources [{:token "t3" :version "t3.hash0"} {:token "t4" :version "t4.hash0"}]}}})
+            token->token-metadata (token->token-metadata-factory token->token-data)]
+        (is (= idle-timeout-mins
+               (service-id->idle-timeout
+                 service-id->service-description-fn service-id->references-fn token->token-metadata reference-type->stale-fn
+                 token-defaults (str service-id "s9"))))))
+
+    (testing "service using latest versions of multiple tokens"
+      (let [stale-timeout-mins 45
+            token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300}
+                               "t2" {"cmd" "tc" "fallback-period-secs" 600 "stale-timeout-mins" stale-timeout-mins}
+                               "t3" {"cmd" "tc" "fallback-period-secs" 900}
+                               "t4" {"fallback-period-secs" 1200 "stale-timeout-mins" (+ stale-timeout-mins 15)}}
+            service-id->references-fn (fn [in-service-id]
+                                        (is (= in-service-id (str service-id "s10")))
+                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"} {:token "t2" :version "t2.hash1"}]}}
+                                          {:token {:sources [{:token "t3" :version "t3.hash1"} {:token "t4" :version "t4.hash1"}]}}})
+            token->token-metadata (token->token-metadata-factory token->token-data)]
+        (is (= idle-timeout-mins
+               (service-id->idle-timeout
+                 service-id->service-description-fn service-id->references-fn token->token-metadata reference-type->stale-fn
+                 token-defaults (str service-id "s10"))))))
+
+    (testing "service using latest of one set of token entries"
+      (let [stale-timeout-mins 45
+            token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300}
+                               "t2" {"cmd" "tc" "fallback-period-secs" 600 "stale-timeout-mins" stale-timeout-mins}
+                               "t3" {"cmd" "tc" "fallback-period-secs" 900}
+                               "t4" {"fallback-period-secs" 1200 "stale-timeout-mins" (+ stale-timeout-mins 15)}}
+            service-id->references-fn (fn [in-service-id]
+                                        (is (= in-service-id (str service-id "s11")))
+                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"} {:token "t2" :version "t2.hash1"}]}}
+                                          {:token {:sources [{:token "t3" :version "t3.hash0"} {:token "t4" :version "t4.hash0"}]}}})
+            token->token-metadata (token->token-metadata-factory token->token-data)]
+        (is (= idle-timeout-mins
+               (service-id->idle-timeout
+                 service-id->service-description-fn service-id->references-fn token->token-metadata reference-type->stale-fn
+                 token-defaults (str service-id "s11"))))))
+
+    (testing "service outdated and fallback and timeout configured on multiple source tokens"
+      (let [stale-timeout-mins 45
+            token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300}
+                               "t2" {"cmd" "tc" "fallback-period-secs" 600 "stale-timeout-mins" stale-timeout-mins}
+                               "t3" {"cmd" "tc" "fallback-period-secs" 900}
+                               "t4" {"fallback-period-secs" 1200 "stale-timeout-mins" (+ stale-timeout-mins 15)}}
+            service-id->references-fn (fn [in-service-id]
+                                        (is (= in-service-id (str service-id "s12")))
+                                        #{{:token {:sources [{:token "t1" :version "t1.hash0"} {:token "t2" :version "t2.hash0"}]}}
+                                          {:token {:sources [{:token "t3" :version "t3.hash0"} {:token "t4" :version "t4.hash0"}]}}})
+            token->token-metadata (token->token-metadata-factory token->token-data)]
+        (is (= (max (-> 900 t/seconds t/in-minutes (+ stale-timeout-mins))
+                    (-> 1200 t/seconds t/in-minutes (+ stale-timeout-mins 15)))
+               (service-id->idle-timeout
+                 service-id->service-description-fn service-id->references-fn token->token-metadata reference-type->stale-fn
+                 token-defaults (str service-id "s12"))))))))
+
+(defn- synchronize-fn
+  [lock f]
+  (locking lock
+    (f)))
+
+(deftest test-store-source-tokens!
+  (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+        service-id "test-service-id"
+        token-data-1 {"cmd" "ls" "cpus" 1 "mem" 32}
+        token-data-2 {"run-as-user" "ru1" "version" "foo"}
+        token-data-3 {"mem" 64 "run-as-user2" "ru" "version" "foo"}
+        source-tokens-1 [(source-tokens-entry "token-1" token-data-1)
+                         (source-tokens-entry "token-2" token-data-2)]
+        source-tokens-2 [(source-tokens-entry "token-1" token-data-1)
+                         (source-tokens-entry "token-2" token-data-2)]
+        source-tokens-3 [(source-tokens-entry "token-3" token-data-3)
+                         (source-tokens-entry "token-2" token-data-2)]
+        source-tokens-4 [(source-tokens-entry "token-2" token-data-2)
+                         (source-tokens-entry "token-3" token-data-3)]]
+
+    (store-source-tokens! synchronize-fn kv-store service-id source-tokens-1)
+    (is (= #{source-tokens-1}
+           (service-id->source-tokens-entries kv-store service-id)))
+
+    (store-source-tokens! synchronize-fn kv-store service-id source-tokens-2)
+    (is (= #{source-tokens-1}
+           (service-id->source-tokens-entries kv-store service-id)))
+
+    (store-source-tokens! synchronize-fn kv-store service-id source-tokens-3)
+    (is (= #{source-tokens-1 source-tokens-3}
+           (service-id->source-tokens-entries kv-store service-id)))
+
+    (store-source-tokens! synchronize-fn kv-store service-id source-tokens-1)
+    (is (= #{source-tokens-1 source-tokens-3}
+           (service-id->source-tokens-entries kv-store service-id)))
+
+    (store-source-tokens! synchronize-fn kv-store service-id source-tokens-4)
+    (is (= #{source-tokens-1 source-tokens-3 source-tokens-4}
+           (service-id->source-tokens-entries kv-store service-id)))))
+
+(deftest test-store-reference!
+  (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+        service-id "test-service-id"
+        references-1 {:token {:sources [{:token "token-1" :version "v1"}]}}
+        references-1-copy {:sources [{:token "token-1" :version "v1"}]
+                           :type :token}
+        references-2 {:token {:sources [{:token "token-1" :version "v1"}
+                                        {:token "token-2" :version "v2"}]}}
+        references-3 {:token {:sources [{:token "token-3" :version "v3"}
+                                        {:token "token-2" :version "v2"}]}}
+        references-3-copy {:token {:sources [{:token "token-3" :version "v3"}
+                                             {:token "token-2" :version "v2"}]}}
+        references-4 {:token {:sources [{:token "token-2" :version "v2"}
+                                        {:token "token-3" :version "v3"}]}}]
+
+    (store-reference! synchronize-fn kv-store service-id references-1)
+    (is (contains? (service-id->references kv-store service-id) references-1))
+
+    (store-reference! synchronize-fn kv-store service-id references-1-copy)
+    (is (contains? (service-id->references kv-store service-id) references-1))
+
+    (store-reference! synchronize-fn kv-store service-id references-1)
+    (is (contains? (service-id->references kv-store service-id) references-1))
+
+    (store-reference! synchronize-fn kv-store service-id references-2)
+    (is (contains? (service-id->references kv-store service-id) references-1))
+    (is (contains? (service-id->references kv-store service-id) references-2))
+
+    (store-reference! synchronize-fn kv-store service-id references-3)
+    (is (contains? (service-id->references kv-store service-id) references-1))
+    (is (contains? (service-id->references kv-store service-id) references-2))
+    (is (contains? (service-id->references kv-store service-id) references-3))
+
+    (store-reference! synchronize-fn kv-store service-id references-1)
+    (is (contains? (service-id->references kv-store service-id) references-1))
+    (is (contains? (service-id->references kv-store service-id) references-2))
+    (is (contains? (service-id->references kv-store service-id) references-3))
+
+    (store-reference! synchronize-fn kv-store service-id references-3-copy)
+    (is (contains? (service-id->references kv-store service-id) references-1))
+    (is (contains? (service-id->references kv-store service-id) references-2))
+    (is (contains? (service-id->references kv-store service-id) references-3))
+
+    (store-reference! synchronize-fn kv-store service-id references-4)
+    (is (contains? (service-id->references kv-store service-id) references-1))
+    (is (contains? (service-id->references kv-store service-id) references-2))
+    (is (contains? (service-id->references kv-store service-id) references-3))
+    (is (contains? (service-id->references kv-store service-id) references-4))))
+
+(deftest test-service-description-builder-state
+  (is {} (state (create-default-service-description-builder {}))))
+
+(deftest test-retrieve-most-recently-modified-token-update-time
+  (let [descriptor {:sources {:token->token-data {}}}]
+    (is (= 0 (retrieve-most-recently-modified-token-update-time descriptor))))
+  (let [descriptor {:sources {:token->token-data {"t1" {}}}}]
+    (is (= 0 (retrieve-most-recently-modified-token-update-time descriptor))))
+  (let [descriptor {:sources {:token->token-data {"t1" {"last-update-time" 100}}}}]
+    (is (= 100 (retrieve-most-recently-modified-token-update-time descriptor))))
+  (let [descriptor {:sources {:token->token-data {"t1" {"last-update-time" 200}
+                                                  "t2" {}}}}]
+    (is (= 200 (retrieve-most-recently-modified-token-update-time descriptor))))
+  (let [descriptor {:sources {:token->token-data {"t1" {"last-update-time" 200}
+                                                  "t2" {"last-update-time" 150}}}}]
+    (is (= 200 (retrieve-most-recently-modified-token-update-time descriptor))))
+  (let [descriptor {:sources {:token->token-data {"t1" {"last-update-time" 200}
+                                                  "t2" {"last-update-time" 150}
+                                                  "t3" {"last-update-time" 250}}}}]
+    (is (= 250 (retrieve-most-recently-modified-token-update-time descriptor)))))

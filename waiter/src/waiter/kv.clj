@@ -15,14 +15,17 @@
 ;;
 (ns waiter.kv
   (:require [clj-time.core :as t]
-            [clojure.core.cache :as cache]
+            [clojure.java.io :as io]
+            [clojure.string :as str]
             [clojure.tools.logging :as log]
             [digest]
             [metrics.meters :as meters]
+            [metrics.timers :as timers]
             [taoensso.nippy :as nippy]
             [taoensso.nippy.compression :as compression]
             [waiter.curator :as curator]
             [waiter.metrics :as metrics]
+            [waiter.util.cache-utils :as cu]
             [waiter.util.utils :as utils])
   (:import java.util.Arrays
            org.apache.curator.framework.CuratorFramework))
@@ -49,7 +52,7 @@
 
 (defn fetch
   "Wrapper to work around Clojure's limitation of not supporting variable argument lists in defprotocol.
-  This method supports optional arguments and delegates to the protocl retrieve method."
+  This method supports optional arguments and delegates to the protocol retrieve method."
   [kv-protocol key & {:keys [refresh] :or {refresh false}}]
   (retrieve kv-protocol key refresh))
 
@@ -101,17 +104,17 @@
 (defn zk-keys
   "Create a lazy sequence of keys."
   ([curator base-path]
-   (lazy-seq 
+   (lazy-seq
      (let [buckets (seq (curator/children curator base-path :ignore-does-not-exist true))]
        (zk-keys curator base-path buckets))))
   ([curator base-path buckets]
-   (lazy-seq 
+   (lazy-seq
      (when (seq buckets)
        (let [ks (seq (curator/children curator (str base-path "/" (first buckets))))]
          (zk-keys curator base-path (rest buckets) ks)))))
   ([curator base-path buckets [f & r]]
-   (lazy-seq 
-     (if f 
+   (lazy-seq
+     (if f
        (cons f (zk-keys curator base-path buckets r))
        (zk-keys curator base-path buckets)))))
 
@@ -123,32 +126,40 @@
     (meters/mark! (metrics/waiter-meter "core" "kv-zk" "retrieve"))
     (let [path (key->zk-path base-path key)]
       (when refresh
-        (let [response-promise (promise)]
-          (log/debug "(zk) SYNC" path)
-          (.sync curator-client path response-promise)
-          (log/debug "awaiting response from sync call")
-          (let [response (deref response-promise sync-timeout-ms :unrealized)]
-            (log/info "proceeding past sync() call with" response))))
-      (let [{:keys [data]} (curator/read-path curator-client path
-                                              :nil-on-missing? true
-                                              :serializer :nippy)]
-        (log/debug "(zk) FETCH" path "=>" (hashcode data))
-        data)))
+        (timers/start-stop-time!
+          (metrics/waiter-timer "core" "kv-zk" "refresh")
+          (let [response-promise (promise)]
+            (log/debug "(zk) SYNC" path)
+            (.sync curator-client path response-promise)
+            (log/debug "awaiting response from sync call")
+            (let [response (deref response-promise sync-timeout-ms :unrealized)]
+              (log/info "proceeding past sync() call with" response)))))
+      (timers/start-stop-time!
+        (metrics/waiter-timer "core" "kv-zk" "retrieve")
+        (let [{:keys [data]} (curator/read-path curator-client path
+                                                :nil-on-missing? true
+                                                :serializer :nippy)]
+          (log/debug "(zk) FETCH" path "=>" (hashcode data))
+          data))))
   (store [_ key value]
     (validate-zk-key key)
     (meters/mark! (metrics/waiter-meter "core" "kv-zk" "store"))
-    (let [path (key->zk-path base-path key)]
-      (log/debug "(zk) STORE" path "=>" (hashcode value))
-      (curator/write-path curator-client path value
-                          :serializer :nippy
-                          :mode :persistent
-                          :create-parent-zknodes? true)))
+    (timers/start-stop-time!
+      (metrics/waiter-timer "core" "kv-zk" "store")
+      (let [path (key->zk-path base-path key)]
+        (log/debug "(zk) STORE" path "=>" (hashcode value))
+        (curator/write-path curator-client path value
+                            :serializer :nippy
+                            :mode :persistent
+                            :create-parent-zknodes? true))))
   (delete [_ key]
     (validate-zk-key key)
     (meters/mark! (metrics/waiter-meter "core" "kv-zk" "delete"))
-    (let [path (key->zk-path base-path key)]
-      (log/debug "(zk) DELETE" path)
-      (curator/delete-path curator-client path :ignore-does-not-exist true)))
+    (timers/start-stop-time!
+      (metrics/waiter-timer "core" "kv-zk" "delete")
+      (let [path (key->zk-path base-path key)]
+        (log/debug "(zk) DELETE" path)
+        (curator/delete-path curator-client path :ignore-does-not-exist true))))
   (state [_]
     {:base-path base-path, :variant "zookeeper"}))
 
@@ -157,34 +168,73 @@
   [{:keys [curator base-path sync-timeout-ms]}]
   {:pre [(instance? CuratorFramework curator)
          (string? base-path)
-         (utils/pos-int? sync-timeout-ms)]}
+         (pos-int? sync-timeout-ms)]}
   (->ZooKeeperKeyValueStore curator base-path sync-timeout-ms))
+
+;; File-based persistent KV store
+
+(defrecord FileBasedKeyValueStore [target-file store]
+  KeyValueStore
+  (retrieve [_ key _]
+    (validate-zk-key (str key)) ;; to maintain same behavior as ZK kv-store
+    (@store key))
+  (store [_ key value]
+    (validate-zk-key (str key)) ;; to maintain same behavior as ZK kv-store
+    (locking store
+      (swap! store assoc key value)
+      (log/info "writing latest data after store to" target-file)
+      (nippy/freeze-to-file target-file @store)))
+  (delete [_ key]
+    (validate-zk-key (str key)) ;; to maintain same behavior as ZK kv-store
+    (locking store
+      (swap! store dissoc key)
+      (log/info "writing latest data after delete to" target-file)
+      (nippy/freeze-to-file target-file @store)))
+  (state [_]
+    (let [store-data @store]
+      {:store {:count (count store-data)
+               :data store-data}
+       :variant "file-based"})))
+
+(defn new-file-based-kv-store [{:keys [target-file]}]
+  (let [store (atom {})]
+    (io/make-parents target-file)
+    (when (-> target-file io/as-file .exists)
+      (log/info "loading existing data from" target-file)
+      (reset! store (nippy/thaw-from-file target-file)))
+    (FileBasedKeyValueStore. target-file store)))
 
 ;; Encryption KV store that uses another KV store as its backing data source
 (defrecord EncryptedKeyValueStore [inner-kv-store passwords]
   KeyValueStore
   (retrieve [_ key refresh]
     (when-let [encrypted-value (retrieve inner-kv-store key refresh)]
-      ;; Here, we're trying to decrypt the data with each password in turn
-      (some #(try
-               (nippy/thaw encrypted-value {:password %
-                                            :compressor compression/lzma2-compressor
-                                            :v1-compatibility? false})
-               (catch Exception _
-                 (log/warn "Failed to decrypt hash:" (Arrays/hashCode ^bytes encrypted-value) "for" key)
-                 nil))
-            passwords)))
+      (timers/start-stop-time!
+        (metrics/waiter-timer "core" "kv-crypt" "thaw")
+        ;; Here, we're trying to decrypt the data with each password in turn
+        (some #(try
+                 (nippy/thaw encrypted-value {:password %
+                                              :compressor compression/lzma2-compressor
+                                              :v1-compatibility? false})
+                 (catch Exception _
+                   (log/warn "Failed to decrypt hash:" (Arrays/hashCode ^bytes encrypted-value) "for" key)
+                   nil))
+              passwords))))
   (store [_ key value]
     (let [password (first passwords)
-          encrypted-value (nippy/freeze value {:password password
-                                               :compressor compression/lzma2-compressor})]
+          encrypted-value (timers/start-stop-time!
+                            (metrics/waiter-timer "core" "kv-crypt" "freeze")
+                            (nippy/freeze value {:password password
+                                                 :compressor compression/lzma2-compressor}))]
       (store inner-kv-store key encrypted-value)))
   (delete [_ key]
     (delete inner-kv-store key))
   (state [_]
     {:inner-state (state inner-kv-store), :variant "encrypted"}))
 
-(defn new-encrypted-kv-store [passwords kv-store]
+(defn new-encrypted-kv-store
+  "Returns a new key/value store that decorates the provided kv-store with encryption/decryption of values."
+  [passwords kv-store]
   (if (or (empty? passwords) (some empty? passwords))
     (throw (.IllegalArgumentException "Passwords should not be empty!"))
     (EncryptedKeyValueStore. kv-store passwords)))
@@ -194,31 +244,34 @@
   KeyValueStore
   (retrieve [_ key refresh]
     (when refresh
-      (if (cache/has? @cache key)
+      (if (cu/cache-contains? cache key)
         (do
           (log/info "evicting entry for" key "from cache")
-          (utils/atom-cache-evict cache key))
+          (cu/cache-evict cache key))
         (log/info "refresh is a no-op as cache does not contain" key)))
-    (utils/atom-cache-get-or-load cache key #(retrieve inner-kv-store key refresh)))
+    (cu/cache-get-or-load cache key #(retrieve inner-kv-store key refresh)))
   (store [_ key value]
-    (utils/atom-cache-evict cache key)
+    (cu/cache-evict cache key)
     (store inner-kv-store key value))
   (delete [_ key]
     (log/info "evicting deleted entry" key "from cache")
-    (utils/atom-cache-evict cache key)
+    (cu/cache-evict cache key)
     (delete inner-kv-store key))
   (state [_]
-    (let [cache-data (into (hash-map) @cache)]
-      {:cache {:count (count cache-data), :data cache-data}
-       :inner-state (state inner-kv-store)
-       :variant "cache"})))
+    {:cache {:count (cu/cache-size cache)
+             :data (cu/cache->map cache)}
+     :inner-state (state inner-kv-store)
+     :variant "cache"}))
 
-(defn new-cached-kv-store [{:keys [threshold ttl]} kv-store]
-  (CachedKeyValueStore. kv-store
-                        (-> {}
-                            (cache/fifo-cache-factory :threshold threshold)
-                            (cache/ttl-cache-factory :ttl (-> ttl t/seconds t/in-millis))
-                            atom)))
+(defn new-cached-kv-store
+  "Returns a new key/value store that decorates the provided kv-store with a cache."
+  [{:keys [threshold ttl]} kv-store]
+  {:pre [(pos? threshold)
+         (pos? ttl)]}
+  (->> {:threshold threshold
+        :ttl (-> ttl t/seconds t/in-millis)}
+       cu/cache-factory
+       (CachedKeyValueStore. kv-store)))
 
 (defn- conditional-kv-wrapper
   "Decorator pattern around the given kv-impl"
@@ -232,6 +285,8 @@
 (defn new-kv-store
   "Returns a new key/value store using the given configuration"
   [{:keys [cache encrypt relative-path] :as config} curator base-path passwords]
+  {:pre [(not (str/blank? base-path))
+         (not (str/blank? relative-path))]}
   (let [kv-base-path (str base-path "/" relative-path)
         kv-context {:base-path kv-base-path, :curator curator}
         kv-impl (utils/create-component config :context kv-context)]
