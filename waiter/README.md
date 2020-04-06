@@ -58,6 +58,10 @@ $ lein test :integration-slow
 $ WAITER_TEST_REQUEST_LATENCY_MAX_INSTANCES=30 APACHE_BENCH_DIR=/usr/bin lein test :perf
 ```
 
+## Code Walkthrough
+
+For more information on how Waiter is set up, check out this [code walkthrough](https://usecodeflow.com/tutorials/view/twosigma/waiter/tree/cb1000/ck8diy2g500000ul4s0b6l4zb).
+
 ## What is Waiter
 
 Waiter is a web service platform that runs, manages and automatically scales services without human intervention.
