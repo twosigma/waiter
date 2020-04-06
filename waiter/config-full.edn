@@ -438,8 +438,10 @@
                                  :authentication {;; Unary function which can be called periodically (or just once if :refresh-delay-mins is omitted)
                                                   ;; to obtain an Authorization string for use when authenticating with the Kubernetes API server.
                                                   ;; This map is passed to the function as its single `context` argument.
-                                                  ;; The function must return a string that can be used as the value for the Authorization HTTP header.
-                                                  ;; The sample function given below simply returns the string from the WAITER_K8S_AUTH_STRING environment variable.
+                                                  ;; The function must return a map with an entry for :auth-token which maps
+                                                  ;; to a string that can be used as the value for the Authorization HTTP header.
+                                                  ;; The sample function given below simply returns the string from the
+                                                  ;; WAITER_K8S_AUTH_STRING environment variable.
                                                   :action-fn waiter.scheduler.kubernetes/authorization-from-environment
 
                                                   ;; Number of minutes to wait between attempts to refresh the credentials.
