@@ -28,7 +28,7 @@
 (def ^:const params-with-str-value
   #{"allowed-params" "authentication" "backend-proto" "cmd" "cmd-type" "distribution-scheme" "endpoint-path"
     "health-check-authentication" "health-check-proto" "health-check-url" "image" "load-balancing"
-    "metric-group" "name" "namespace" "permitted-user" "run-as-user" "token" "version"})
+    "metric-group" "name" "namespace" "permitted-user" "profile" "run-as-user" "token" "version"})
 
 (def ^:const waiter-headers-with-str-value (set (map #(str waiter-header-prefix %) params-with-str-value)))
 

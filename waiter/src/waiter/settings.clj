@@ -92,6 +92,7 @@
    ;; TODO port belongs in server-options?
    (s/required-key :port) (s/either schema/positive-int
                                     [schema/positive-int])
+   (s/required-key :profile-config) {schema/non-empty-string schema/profile-definition}
    (s/required-key :router-id-prefix) s/Str
    (s/required-key :router-syncer) {(s/required-key :delay-ms) schema/positive-int
                                     (s/required-key :interval-ms) schema/positive-int}
@@ -330,6 +331,8 @@
                            :configured {:factory-fn 'waiter.password-store/configured-provider
                                         :passwords ["open-sesame"]}}
    :port 9091
+   :profile-config {"webapp" {:service-parameters {"concurrency-level" 120
+                                                   "load-balancing" "random"}}}
    :router-id-prefix ""
    :router-syncer {:delay-ms 750
                    :interval-ms 1500}

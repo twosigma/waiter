@@ -701,6 +701,11 @@
                       _ (password-store/check-empty-passwords passwords)
                       processed-passwords (mapv #(vector :cached %) passwords)]
                   processed-passwords))
+   :profile->defaults (pc/fnk [[:settings profile-config service-description-defaults]]
+                        (let [custom-profiles (pc/for-map [[profile {:keys [service-parameters]}] profile-config]
+                                                  (name profile)
+                                                  (merge service-description-defaults service-parameters))]
+                          (assoc custom-profiles "" service-description-defaults)))
    :query-service-maintainer-chan (pc/fnk [] (au/latest-chan)) ; TODO move to service-chan-maintainer
    :router-metrics-agent (pc/fnk [router-id] (metrics-sync/new-router-metrics-agent router-id {}))
    :router-id (pc/fnk [[:settings router-id-prefix]]
@@ -837,12 +842,12 @@
                                  (digest/md5 (str service-id (first passwords)))))
    ; This function is only included here for initializing the scheduler above.
    ; Prefer accessing the non-starred version of this function through the routines map.
-   :service-id->service-description-fn* (pc/fnk [[:settings service-description-defaults metric-group-mappings]
-                                                 [:state kv-store]]
+   :service-id->service-description-fn* (pc/fnk [[:settings metric-group-mappings]
+                                                 [:state kv-store profile->defaults]]
                                           (fn service-id->service-description
                                             [service-id & {:keys [effective?] :or {effective? true}}]
                                             (sd/service-id->service-description
-                                              kv-store service-id service-description-defaults
+                                              kv-store service-id profile->defaults
                                               metric-group-mappings :effective? effective?)))
    :start-scheduler-syncer-fn (pc/fnk [[:settings [:health-check-config health-check-timeout-ms failed-check-threshold]]
                                        [:state clock user-agent-version]
@@ -977,14 +982,15 @@
    :refresh-service-descriptions-fn (pc/fnk [[:state kv-store]]
                                       (fn refresh-service-descriptions-fn [service-ids]
                                         (sd/refresh-service-descriptions kv-store service-ids)))
-   :request->descriptor-fn (pc/fnk [[:settings [:token-config history-length token-defaults] metric-group-mappings service-description-defaults]
-                                    [:state fallback-state-atom kv-store service-description-builder service-id-prefix waiter-hostnames]
+   :request->descriptor-fn (pc/fnk [[:settings [:token-config history-length token-defaults] metric-group-mappings]
+                                    [:state fallback-state-atom kv-store profile->defaults
+                                     service-description-builder service-id-prefix waiter-hostnames]
                                     assoc-run-as-user-approved? can-run-as?-fn store-reference-fn store-source-tokens-fn]
                              (fn request->descriptor-fn [request]
                                (let [{:keys [latest-descriptor] :as result}
                                      (descriptor/request->descriptor
                                        assoc-run-as-user-approved? can-run-as?-fn fallback-state-atom kv-store metric-group-mappings
-                                       history-length service-description-builder service-description-defaults service-id-prefix
+                                       history-length service-description-builder profile->defaults service-id-prefix
                                        token-defaults waiter-hostnames request)
                                      {:keys [reference-type->entry service-id source-tokens]} latest-descriptor]
                                  (when (seq source-tokens)
@@ -1067,7 +1073,7 @@
                             (fn token->token-metadata [token]
                               (sd/token->token-metadata kv-store token :error-on-missing false)))
    :validate-service-description-fn (pc/fnk [[:settings service-description-defaults]
-                                             [:state authenticator service-description-builder]]
+                                             [:state authenticator profile->defaults service-description-builder]]
                                       (let [authentication-providers (into #{"disabled" "standard"} (auth/get-authentication-providers authenticator))
                                             default-authentication (get service-description-defaults "authentication")]
                                         (fn validate-service-description [service-description]
@@ -1076,7 +1082,8 @@
                                               (throw (ex-info (str "authentication must be one of: '"
                                                                    (str/join "', '" (sort authentication-providers)) "'")
                                                               {:authentication authentication :status 400}))))
-                                          (sd/validate service-description-builder service-description {}))))
+                                          (sd/validate service-description-builder service-description
+                                                       {:profile->defaults profile->defaults}))))
    :waiter-request?-fn (pc/fnk [[:state waiter-hostnames]]
                          (let [local-router (InetAddress/getLocalHost)
                                waiter-router-hostname (.getCanonicalHostName local-router)
