@@ -375,16 +375,18 @@
   [{:keys [started-at] :as instance} grace-period-secs port->reservation-atom port-grace-period-ms]
   (if (unhealthy? instance)
     (let [current-time (t/now)]
-      (if (>= (t/in-seconds (t/interval started-at current-time)) grace-period-secs)
-        (do (log/info "unhealthy instance exceeded its grace period, killing instance"
-                      {:instance instance :start-time started-at :current-time current-time :grace-period-secs grace-period-secs})
-            (kill-process! instance port->reservation-atom port-grace-period-ms)
-            (assoc instance
-              :failed? true
-              :flags #{:never-passed-health-checks}
-              :killed? true
-              :message (str "Exceeded grace period of " grace-period-secs " seconds")
-              :shell-scheduler/process nil))
+      (if (and (pos? grace-period-secs)
+               (>= (t/in-seconds (t/interval started-at current-time)) grace-period-secs))
+        (do
+          (log/info "unhealthy instance exceeded its grace period, killing instance"
+                    {:instance instance :start-time started-at :current-time current-time :grace-period-secs grace-period-secs})
+          (kill-process! instance port->reservation-atom port-grace-period-ms)
+          (assoc instance
+            :failed? true
+            :flags #{:never-passed-health-checks}
+            :killed? true
+            :message (str "Exceeded grace period of " grace-period-secs " seconds")
+            :shell-scheduler/process nil))
         instance))
     instance))
 

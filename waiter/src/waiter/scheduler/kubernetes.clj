@@ -859,17 +859,6 @@
                                               :env env
                                               :image (compute-image image default-container-image image-aliases)
                                               :imagePullPolicy "IfNotPresent"
-                                              :livenessProbe (-> (prepare-health-check-probe
-                                                                   service-id->password-fn service-id
-                                                                   health-check-authentication health-check-scheme
-                                                                   health-check-url health-check-port
-                                                                   health-check-interval-secs)
-                                                               (assoc
-                                                                 ;; We increment the threshold value to match Marathon behavior.
-                                                                 ;; Marathon treats this as a retry count,
-                                                                 ;; whereas Kubernetes treats it as a run count.
-                                                                 :failureThreshold (inc health-check-max-consecutive-failures)
-                                                                 :initialDelaySeconds grace-period-secs))
                                               :name "waiter-app"
                                               :ports [{:containerPort port0}]
                                               :readinessProbe (-> (prepare-health-check-probe
@@ -887,6 +876,21 @@
                                 :volumes [{:name "user-home"
                                            :emptyDir {}}]
                                 :terminationGracePeriodSeconds total-sigkill-delay-secs}}}}
+      ;; enable liveness only if positive grace-period-secs is specified
+      (pos? grace-period-secs)
+      (update-in
+        [:spec :template :spec :containers 0]
+        assoc :livenessProbe (-> (prepare-health-check-probe
+                                   service-id->password-fn service-id
+                                   health-check-authentication health-check-scheme
+                                   health-check-url health-check-port
+                                   health-check-interval-secs)
+                               (assoc
+                                 ;; We increment the threshold value to match Marathon behavior.
+                                 ;; Marathon treats this as a retry count,
+                                 ;; whereas Kubernetes treats it as a run count.
+                                 :failureThreshold (inc health-check-max-consecutive-failures)
+                                 :initialDelaySeconds grace-period-secs)))
       ;; Optional fileserver sidecar container
       (integer? (:port fileserver))
       (update-in

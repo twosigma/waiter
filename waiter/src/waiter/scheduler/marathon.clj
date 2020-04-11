@@ -275,7 +275,8 @@
      :cpus cpus
      :healthChecks [{:protocol (-> (or health-check-proto backend-proto) hu/backend-proto->scheme str/upper-case)
                      :path health-check-url
-                     :gracePeriodSeconds grace-period-secs
+                     ;; configure grace period even when it is 0 as the value defaults to 300 when unspecified
+                     :gracePeriodSeconds (max grace-period-secs 1)
                      :intervalSeconds health-check-interval-secs
                      :portIndex health-check-port-index
                      :timeoutSeconds 20

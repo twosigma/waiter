@@ -258,6 +258,22 @@
           (let [service-account (get-pod-service-account waiter-url current-user)]
             (is (= current-user service-account))))))))
 
+(deftest ^:parallel ^:integration-fast test-kubernetes-grace-period-disabled
+  (testing-using-waiter-url
+    (when (using-k8s? waiter-url)
+      (let [{:keys [service-id] :as response}
+            (make-request-with-debug-info
+              {:x-waiter-grace-period-secs 0
+               :x-waiter-name (rand-name)}
+              #(make-kitchen-request waiter-url % :method :get :path "/"))]
+        (with-service-cleanup
+          service-id
+          (assert-response-status response 200)
+          (let [{:keys [grace-period-secs] :as service-description}
+                (service-id->service-description waiter-url service-id)]
+            (is (zero? grace-period-secs) (str {:service-description service-description
+                                                :service-id service-id}))))))))
+
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-kubernetes-pod-expiry-failing-instance
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
@@ -278,8 +294,8 @@
                 (fn []
                   (let [{:keys [active-instances failed-instances]} (:instances (service-settings waiter-url service-id))
                         pod-ids (->> (concat active-instances failed-instances)
-                                     (map :k8s/pod-name)
-                                     (into #{}))]
+                                  (map :k8s/pod-name)
+                                  (into #{}))]
                     (log/info pod-ids)
                     (< 1 (count pod-ids)))))))))))
 

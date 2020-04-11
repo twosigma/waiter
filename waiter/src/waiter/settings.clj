@@ -138,7 +138,7 @@
                                                    (s/required-key "distribution-scheme") (s/enum "balanced" "simple")
                                                    (s/required-key "env") {s/Str s/Str}
                                                    (s/required-key "expired-instance-restart-rate") schema/positive-fraction-less-than-or-equal-to-1
-                                                   (s/required-key "grace-period-secs") schema/positive-int
+                                                   (s/required-key "grace-period-secs") schema/non-negative-int
                                                    (s/required-key "health-check-authentication") schema/valid-health-check-authentication
                                                    (s/required-key "health-check-interval-secs") schema/positive-int
                                                    (s/required-key "health-check-max-consecutive-failures") schema/positive-int

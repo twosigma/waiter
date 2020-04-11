@@ -71,6 +71,7 @@
 
     (is (nil? (s/check service-description-schema (assoc basic-description "disk" 1))))
 
+    (is (nil? (s/check service-description-schema (assoc basic-description "grace-period-secs" 0))))
     (is (nil? (s/check service-description-schema (assoc basic-description "grace-period-secs" 5))))
     (is (nil? (s/check service-description-schema (assoc basic-description "grace-period-secs" 11))))
     (is (s/check service-description-schema (assoc basic-description "grace-period-secs" -1)))

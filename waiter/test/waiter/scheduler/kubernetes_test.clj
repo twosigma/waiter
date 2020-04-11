@@ -131,6 +131,33 @@
               :waiter/service-id "test-service-id"}
              (get-in replicaset-spec [:spec :template :metadata :annotations]))))))
 
+(deftest replicaset-spec-liveness-nd-readiness
+  (let [basic-probe {:failureThreshold 1
+               :httpGet {:path "/status" :port 8330 :scheme "HTTP"}
+               :periodSeconds 10
+               :timeoutSeconds 1}]
+    (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
+                  config/retrieve-waiter-principal (constantly "waiter@test.com")]
+
+      (testing "liveness enabled"
+        (let [service-description dummy-service-description
+              scheduler (make-dummy-scheduler ["test-service-id"]
+                                              {:service-id->service-description-fn (constantly service-description)})
+              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description)
+              waiter-app-container (get-in replicaset-spec [:spec :template :spec :containers 0])]
+          (is (= (assoc basic-probe :failureThreshold 3 :initialDelaySeconds 7)
+                 (:livenessProbe waiter-app-container)))
+          (is (= basic-probe (:readinessProbe waiter-app-container)))))
+
+      (testing "liveness disabled"
+        (let [service-description (assoc dummy-service-description "grace-period-secs" 0)
+              scheduler (make-dummy-scheduler ["test-service-id"]
+                                              {:service-id->service-description-fn (constantly service-description)})
+              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description)
+              waiter-app-container (get-in replicaset-spec [:spec :template :spec :containers 0])]
+          (is (not (contains? waiter-app-container :livenessProbe)))
+          (is (= basic-probe (:readinessProbe waiter-app-container))))))))
+
 (deftest replicaset-spec-namespace
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
                 config/retrieve-waiter-principal (constantly "waiter@test.com")]
