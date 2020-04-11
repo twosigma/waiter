@@ -253,7 +253,7 @@
   (let [health-check-url (sd/service-description->health-check-url service-description)
         {:strs [backend-proto cmd cmd-type cpus disk grace-period-secs health-check-authentication
                 health-check-interval-secs health-check-max-consecutive-failures health-check-port-index
-                health-check-proto mem namespace ports restart-backoff-factor run-as-user]} service-description
+                health-check-proto instance-expiry-mins mem namespace ports restart-backoff-factor run-as-user]} service-description
         home-path (str home-path-prefix run-as-user)]
     (when (= "docker" cmd-type)
       (throw (ex-info "Unsupported command type on service"
@@ -275,8 +275,9 @@
      :cpus cpus
      :healthChecks [{:protocol (-> (or health-check-proto backend-proto) hu/backend-proto->scheme str/upper-case)
                      :path health-check-url
-                     ;; configure grace period even when it is 0 as the value defaults to 300 when unspecified
-                     :gracePeriodSeconds (max grace-period-secs 1)
+                     :gracePeriodSeconds (if (pos? grace-period-secs)
+                                           grace-period-secs
+                                           (-> instance-expiry-mins t/minutes t/in-seconds))
                      :intervalSeconds health-check-interval-secs
                      :portIndex health-check-port-index
                      :timeoutSeconds 20
