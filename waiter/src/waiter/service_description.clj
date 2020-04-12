@@ -347,7 +347,7 @@
 (defn- compute-valid-profiles-str
   "Computes the string representation of valid custom profiles"
   [profile->defaults]
-  (let [supported-profiles-str (->> profile->defaults keys sort (remove str/blank?) (str/join ", "))]
+  (let [supported-profiles-str (->> profile->defaults keys (remove keyword?) sort (str/join ", "))]
     (if (str/blank? supported-profiles-str)
       ", there are no supported profiles"
       (str ", supported profile(s) are " supported-profiles-str))))
@@ -369,7 +369,7 @@
    Throws an error if the profile is not supported."
   [profile->defaults profile]
   (validate-profile-parameter profile->defaults profile)
-  (get profile->defaults (or profile "")))
+  (get profile->defaults (or profile :default)))
 
 (defn parameters->id
   "Generates a deterministic ID from the input parameter map."

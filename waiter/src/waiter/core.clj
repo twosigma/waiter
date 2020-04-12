@@ -705,7 +705,7 @@
                         (let [custom-profiles (pc/for-map [[profile {:keys [service-parameters]}] profile-config]
                                                   (name profile)
                                                   (merge service-description-defaults service-parameters))]
-                          (assoc custom-profiles "" service-description-defaults)))
+                          (assoc custom-profiles :default service-description-defaults)))
    :query-service-maintainer-chan (pc/fnk [] (au/latest-chan)) ; TODO move to service-chan-maintainer
    :router-metrics-agent (pc/fnk [router-id] (metrics-sync/new-router-metrics-agent router-id {}))
    :router-id (pc/fnk [[:settings router-id-prefix]]
