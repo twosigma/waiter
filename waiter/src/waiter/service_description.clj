@@ -663,17 +663,22 @@
        (filter (fn [[_ constraint]] (contains? constraint :max)))
        (pc/map-vals :max)))
 
+(defn extract-max-constraints-schema
+  "Extracts the max limit constraints from the set of all constraints."
+  [constraints]
+  (->> constraints
+    extract-max-constraints
+    (map (fn [[k v]]
+           (let [string-param? (contains? headers/params-with-str-value k)]
+             [(s/optional-key k)
+              (s/pred #(<= (if string-param? (count %) %) v)
+                      (symbol (str "limit-" v)))])))
+    (into {s/Str s/Any})))
+
 (defn create-default-service-description-builder
   "Returns a new DefaultServiceDescriptionBuilder which uses the specified resource limits."
   [{:keys [constraints]}]
-  (let [max-constraints-schema (->> constraints
-                                    extract-max-constraints
-                                    (map (fn [[k v]]
-                                           (let [string-param? (contains? headers/params-with-str-value k)]
-                                             [(s/optional-key k)
-                                              (s/pred #(<= (if string-param? (count %) %) v)
-                                                      (symbol (str "limit-" v)))])))
-                                    (into {s/Str s/Any}))]
+  (let [max-constraints-schema (extract-max-constraints-schema constraints)]
     (->DefaultServiceDescriptionBuilder max-constraints-schema)))
 
 (defn service-description->health-check-url
