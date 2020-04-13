@@ -244,7 +244,8 @@
     (with-redefs [kv/fetch (fn [in-kv-store token]
                              (is (= kv-store in-kv-store))
                              (create-token-data token))]
-      (let [profile->defaults {:default {"name" "default-name" "health-check-url" "/ping"}}
+      (let [service-description-defaults {"name" "default-name" "health-check-url" "/ping"}
+            profile->overrides {"webapp" {"concurrency-level" 120}}
             token-defaults {"fallback-period-secs" 300}
             test-cases (list
                          {:name "prepare-service-description-sources:WITH Service Desc specific Waiter Headers except run-as-user"
@@ -263,8 +264,6 @@
                                                "cmd" "test-cmd"
                                                "version" "test-version"
                                                "run-as-user" test-user}
-                                     :profile->defaults {:default {"name" "default-name"
-                                                                   "health-check-url" "/ping"}}
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-host"
                                                                     "version" "token"}
@@ -289,8 +288,6 @@
                                                "cmd" "test-cmd"
                                                "version" "test-version"
                                                "run-as-user" test-user}
-                                     :profile->defaults {:default {"name" "default-name"
-                                                                   "health-check-url" "/ping"}}
                                      :service-description-template {},
                                      :source-tokens []
                                      :token->token-data {},
@@ -313,8 +310,6 @@
                                                "cmd" "test-cmd"
                                                "version" "test-version"
                                                "run-as-user" test-user}
-                                     :profile->defaults {:default {"name" "default-name"
-                                                                   "health-check-url" "/ping"}}
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-host"
                                                                     "version" "token"}
@@ -338,8 +333,6 @@
                                                "cmd" "test-cmd"
                                                "version" "test-version"
                                                "run-as-user" test-user}
-                                     :profile->defaults {:default {"name" "default-name"
-                                                                   "health-check-url" "/ping"}}
                                      :service-description-template {},
                                      :source-tokens []
                                      :token->token-data {},
@@ -353,8 +346,6 @@
                                                 "fee" "foe"}
                           :expected {:fallback-period-secs 300
                                      :headers {}
-                                     :profile->defaults {:default {"name" "default-name"
-                                                                   "health-check-url" "/ping"}}
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-host"
                                                                     "version" "token"}
@@ -370,8 +361,6 @@
                           :passthrough-headers {"host" "test-host" "fee" "foe"}
                           :expected {:fallback-period-secs 300
                                      :headers {}
-                                     :profile->defaults {:default {"name" "default-name"
-                                                                   "health-check-url" "/ping"}}
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-token"
                                                                     "version" "token"}
@@ -388,8 +377,6 @@
                                                 "fee" "foe"}
                           :expected {:fallback-period-secs 300
                                      :headers {}
-                                     :profile->defaults {:default {"name" "default-name"
-                                                                   "health-check-url" "/ping"}}
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-token2"
                                                                     "version" "token"}
@@ -406,7 +393,6 @@
                           :passthrough-headers {"host" "test-host" "fee" "foe"}
                           :expected {:fallback-period-secs 300
                                      :headers {}
-                                     :profile->defaults {:default {"name" "default-name" "health-check-url" "/ping"}}
                                      :service-description-template {"cmd" "token-user"
                                                                     "cpus" "1"
                                                                     "mem" "2"
@@ -426,8 +412,6 @@
                                                 "fee" "foe"}
                           :expected {:fallback-period-secs 300
                                      :headers {}
-                                     :profile->defaults {:default {"name" "default-name"
-                                                                   "health-check-url" "/ping"}}
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-host"
                                                                     "version" "token"}
@@ -442,8 +426,6 @@
                                                 "fee" "foe"}
                           :expected {:fallback-period-secs 300
                                      :headers {}
-                                     :profile->defaults {:default {"name" "default-name"
-                                                                   "health-check-url" "/ping"}}
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-host"
                                                                     "version" "token"}
@@ -458,8 +440,6 @@
                                                 "fee" "foe"}
                           :expected {:fallback-period-secs 300
                                      :headers {}
-                                     :profile->defaults {:default {"name" "default-name"
-                                                                   "health-check-url" "/ping"}}
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-token-run"
                                                                     "run-as-user" "ruser"
@@ -475,8 +455,6 @@
                                                 "fee" "foe"}
                           :expected {:fallback-period-secs 600
                                      :headers {}
-                                     :profile->defaults {:default {"name" "default-name"
-                                                                   "health-check-url" "/ping"}}
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-token-per-fall"
                                                                     "version" "token" "permitted-user" "puser"}
@@ -491,8 +469,6 @@
                                                 "fee" "foe"}
                           :expected {:fallback-period-secs 300
                                      :headers {}
-                                     :profile->defaults {:default {"name" "default-name"
-                                                                   "health-check-url" "/ping"}}
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-token-per-run"
                                                                     "permitted-user" "puser"
@@ -509,8 +485,6 @@
                                                 "fee" "foe"}
                           :expected {:fallback-period-secs 300
                                      :headers {}
-                                     :profile->defaults {:default {"name" "default-name"
-                                                                   "health-check-url" "/ping"}}
                                      :service-description-template {"cmd" "token-user"
                                                                     "cpus" "1"
                                                                     "name" "test-cpus-token"
@@ -532,8 +506,6 @@
                                      :headers {"metadata" {"foo" "bar"
                                                            "baz" "quux"}
                                                "cpus" "1"}
-                                     :profile->defaults {:default {"name" "default-name"
-                                                                   "health-check-url" "/ping"}}
                                      :service-description-template {},
                                      :source-tokens []
                                      :token->token-data {},
@@ -549,8 +521,6 @@
                                      :headers {"env" {"BAZ" "quux"
                                                       "FOO_BAR" "bar"}
                                                "cpus" "1"}
-                                     :profile->defaults {:default {"name" "default-name"
-                                                                   "health-check-url" "/ping"}}
                                      :service-description-template {},
                                      :source-tokens []
                                      :token->token-data {},
@@ -564,8 +534,6 @@
                           :expected {:fallback-period-secs 300
                                      :headers {"param" {"BAR" "bar-value"
                                                         "FOO" "foo-value"}}
-                                     :profile->defaults {:default {"health-check-url" "/ping"
-                                                                   "name" "default-name"}}
                                      :service-description-template {"allowed-params" #{"BAR" "FOO"}
                                                                     "cmd" "token-user"
                                                                     "cpus" "1"
@@ -588,8 +556,6 @@
                                      :headers {"cpus" "20"
                                                "param" {"BAR" "bar-value"
                                                         "FOO" "foo-value"}}
-                                     :profile->defaults {:default {"health-check-url" "/ping"
-                                                                   "name" "default-name"}}
                                      :service-description-template {"allowed-params" #{"BAR" "FOO"}
                                                                     "cmd" "token-user"
                                                                     "cpus" "1"
@@ -611,8 +577,6 @@
                           :expected {:fallback-period-secs 300
                                      :headers {"param" {"BAR" "bar-value"
                                                         "FOO" "foo-value"}}
-                                     :profile->defaults {:default {"health-check-url" "/ping"
-                                                                   "name" "default-name"}}
                                      :service-description-template {"allowed-params" #{"BAR" "FOO"}
                                                                     "cmd" "token-user"
                                                                     "cpus" "1"
@@ -635,8 +599,6 @@
                                      :headers {"cpus" "1"
                                                "param" {"BAZ" "quux"
                                                         "FOO_BAR" "bar"}}
-                                     :profile->defaults {:default {"name" "default-name"
-                                                                   "health-check-url" "/ping"}}
                                      :service-description-template {},
                                      :source-tokens []
                                      :token->token-data {},
@@ -656,8 +618,6 @@
                                                       "FOO_BAR" "bar"}
                                                "param" {"BAZ" "quux"
                                                         "FOO_BAR" "bar"}}
-                                     :profile->defaults {:default {"name" "default-name"
-                                                                   "health-check-url" "/ping"}}
                                      :service-description-template {},
                                      :source-tokens []
                                      :token->token-data {},
@@ -677,8 +637,6 @@
                                                       "FOO_BAR" "bar1"}
                                                "param" {"BAZ" "quux"
                                                         "FOO_BAR" "bar2"}}
-                                     :profile->defaults {:default {"name" "default-name"
-                                                                   "health-check-url" "/ping"}}
                                      :service-description-template {},
                                      :source-tokens []
                                      :token->token-data {},
@@ -694,8 +652,6 @@
                                      :headers {"cpus" "1"
                                                "env" {"1" "quux"
                                                       "FOO-BAR" "bar"}}
-                                     :profile->defaults {:default {"name" "default-name"
-                                                                   "health-check-url" "/ping"}}
                                      :service-description-template {},
                                      :source-tokens []
                                      :token->token-data {},
@@ -708,7 +664,10 @@
             (let [actual (prepare-service-description-sources
                            {:passthrough-headers passthrough-headers
                             :waiter-headers waiter-headers}
-                           kv-store waiter-hostnames profile->defaults token-defaults)]
+                           kv-store waiter-hostnames service-description-defaults profile->overrides token-defaults)
+                  expected (merge {:profile->overrides profile->overrides
+                                   :service-description-defaults service-description-defaults}
+                                  expected)]
               (when (not= expected actual)
                 (println name)
                 (println "Expected: " (into (sorted-map) expected))
@@ -719,7 +678,8 @@
   (let [kv-store (Object.)
         waiter-hostname "waiter-hostname.app.example.com"
         test-token "test-token-name"
-        profile->defaults {:default {"name" "default-name" "health-check-url" "/ping"}}
+        service-description-defaults {"name" "default-name" "health-check-url" "/ping"}
+        profile->overrides {"webapp" {"concurrency-level" 120}}
         token-defaults {"fallback-period-secs" 300}]
     (testing "authentication-disabled token"
       (let [token-data {"authentication" "disabled"
@@ -741,10 +701,11 @@
                 actual (prepare-service-description-sources
                          {:waiter-headers waiter-headers
                           :passthrough-headers passthrough-headers}
-                         kv-store waiter-hostname profile->defaults token-defaults)
+                         kv-store waiter-hostname service-description-defaults profile->overrides token-defaults)
                 expected {:fallback-period-secs 300
                           :headers {}
-                          :profile->defaults profile->defaults
+                          :profile->overrides profile->overrides
+                          :service-description-defaults service-description-defaults
                           :service-description-template (select-keys token-data service-parameter-keys)
                           :source-tokens [(source-tokens-entry test-token token-data)]
                           :token->token-data {test-token token-data}
@@ -773,10 +734,11 @@
                 actual (prepare-service-description-sources
                          {:waiter-headers waiter-headers
                           :passthrough-headers passthrough-headers}
-                         kv-store waiter-hostname profile->defaults token-defaults)
+                         kv-store waiter-hostname service-description-defaults profile->overrides token-defaults)
                 expected {:fallback-period-secs 300
                           :headers {}
-                          :profile->defaults profile->defaults
+                          :profile->overrides profile->overrides
+                          :service-description-defaults service-description-defaults
                           :service-description-template (select-keys token-data service-parameter-keys)
                           :source-tokens [(source-tokens-entry test-token token-data)]
                           :token->token-data {test-token token-data}
@@ -814,11 +776,11 @@
 
 (deftest test-compute-service-description-on-the-fly?
   (let [defaults {"health-check-url" "/ping", "permitted-user" "bob"}
-        sources {:profile->defaults {:default defaults}
+        sources {:profile->overrides {:default defaults}
                  :service-description-template {"cmd" "token-cmd"}}
         compute-on-the-fly (fn compute-on-the-fly [waiter-headers]
                              (-> (compute-service-description-helper sources :waiter-headers waiter-headers)
-                                 :on-the-fly?))]
+                               :on-the-fly?))]
     (is (nil? (compute-on-the-fly {})))
     (is (nil? (compute-on-the-fly {"x-waiter-dummy" "value-does-not-matter"})))
     (is (nil? (compute-on-the-fly {"cmd" "on-the-fly-cmd", "run-as-user" "on-the-fly-ru"})))
@@ -828,12 +790,12 @@
 (deftest test-compute-service-description-source-tokens
   (let [defaults {"health-check-url" "/ping", "permitted-user" "bob"}
         source-tokens [:foo-bar]
-        sources {:profile->defaults {:default defaults}
+        sources {:profile->overrides {:default defaults}
                  :service-description-template {"cmd" "token-cmd"}
                  :source-tokens source-tokens}
         compute-source-tokens (fn compute-source-tokens [waiter-headers]
                                 (-> (compute-service-description-helper sources :waiter-headers waiter-headers)
-                                    :source-tokens))]
+                                  :source-tokens))]
     (is (= source-tokens (compute-source-tokens {})))))
 
 (deftest test-compute-service-description
@@ -843,14 +805,16 @@
       (is (= {"cmd" "token-cmd"
               "health-check-url" "/ping"
               "permitted-user" "bob"}
-             (service-description {:profile->defaults {:default {"health-check-url" "/ping"
-                                                                 "permitted-user" "bob"}}
+             (service-description {:profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"
+                                                                  "permitted-user" "bob"}
                                    :service-description-template {"cmd" "token-cmd"}}))))
 
     (testing "only token from host without permitted-user in defaults"
       (is (= {"cmd" "token-cmd"
               "health-check-url" "/ping"}
-             (service-description {:profile->defaults {:default {"health-check-url" "/ping"}}
+             (service-description {:profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"}
                                    :service-description-template {"cmd" "token-cmd"}}))))
 
     (testing "only token from header without permitted-user"
@@ -858,8 +822,9 @@
               "health-check-url" "/ping"
               "permitted-user" "current-request-user"
               "run-as-user" "current-request-user"}
-             (service-description {:profile->defaults {:default {"health-check-url" "/ping"
-                                                                 "permitted-user" "bob"}}
+             (service-description {:profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"
+                                                                  "permitted-user" "bob"}
                                    :service-description-template {"cmd" "token-cmd"}}
                                   :waiter-headers {"x-waiter-token" "value-does-not-matter"}))))
 
@@ -868,8 +833,9 @@
               "health-check-url" "/ping"
               "permitted-user" "token-user"
               "run-as-user" "token-user"}
-             (service-description {:profile->defaults {:default {"health-check-url" "/ping"
-                                                                 "permitted-user" "bob"}}
+             (service-description {:profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"
+                                                                  "permitted-user" "bob"}
                                    :service-description-template {"cmd" "token-cmd"
                                                                   "permitted-user" "token-user"
                                                                   "run-as-user" "token-user"}}
@@ -880,8 +846,9 @@
               "health-check-url" "/ping"
               "permitted-user" "current-request-user"
               "run-as-user" "on-the-fly-ru"}
-             (service-description {:profile->defaults {:default {"health-check-url" "/ping"
-                                                                 "permitted-user" "bob"}}
+             (service-description {:profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"
+                                                                  "permitted-user" "bob"}
                                    :headers {"run-as-user" "on-the-fly-ru"}
                                    :service-description-template {"cmd" "token-cmd"
                                                                   "permitted-user" "token-user"
@@ -892,7 +859,8 @@
     (testing "only token from host with defaults missing permitted user"
       (is (= {"cmd" "token-cmd"
               "health-check-url" "/ping"}
-             (service-description {:profile->defaults {:default {"health-check-url" "/ping"}}
+             (service-description {:profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"}
                                    :service-description-template {"cmd" "token-cmd"}}))))
 
     (testing "only token from header with defaults missing permitted user"
@@ -900,14 +868,16 @@
               "health-check-url" "/ping"
               "permitted-user" "current-request-user"
               "run-as-user" "current-request-user"}
-             (service-description {:profile->defaults {:default {"health-check-url" "/ping"}}
+             (service-description {:profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"}
                                    :service-description-template {"cmd" "token-cmd"}}
                                   :waiter-headers {"x-waiter-token" "value-does-not-matter"}))))
 
     (testing "only token from host with dummy header"
       (is (= {"cmd" "token-cmd"
               "health-check-url" "/ping"}
-             (service-description {:profile->defaults {:default {"health-check-url" "/ping"}}
+             (service-description {:profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"}
                                    :service-description-template {"cmd" "token-cmd"}}
                                   :waiter-headers {"x-waiter-dummy" "value-does-not-matter"}))))
 
@@ -917,8 +887,9 @@
               "permitted-user" "bob"
               "run-as-user" "current-request-user"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"}
-                                   :profile->defaults {:default {"health-check-url" "/ping"
-                                                                 "permitted-user" "bob"}}}))))
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"
+                                                                  "permitted-user" "bob"}}))))
 
     (testing "token host with non-intersecting values"
       (is (= {"cmd" "token-cmd"
@@ -927,8 +898,9 @@
               "run-as-user" "current-request-user"
               "version" "on-the-fly-version"}
              (service-description {:headers {"version" "on-the-fly-version"}
-                                   :profile->defaults {:default {"health-check-url" "/ping"
-                                                                 "permitted-user" "bob"}}
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"
+                                                                  "permitted-user" "bob"}
                                    :service-description-template {"cmd" "token-cmd"}}))))
 
     (testing "token header with non-intersecting values"
@@ -939,8 +911,9 @@
               "run-as-user" "current-request-user"
               "version" "on-the-fly-version"}
              (service-description {:headers {"version" "on-the-fly-version"}
-                                   :profile->defaults {:default {"health-check-url" "/ping"
-                                                                 "permitted-user" "bob"}}
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"
+                                                                  "permitted-user" "bob"}
                                    :service-description-template {"cmd" "token-cmd"
                                                                   "concurrency-level" 5}}))))
 
@@ -957,8 +930,9 @@
              (service-description {:headers {"param" {"VAR_1" "VALUE-1"
                                                       "VAR_2" "VALUE-2"}
                                              "version" "on-the-fly-version"}
-                                   :profile->defaults {:default {"health-check-url" "/ping"
-                                                                 "permitted-user" "bob"}}
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"
+                                                                  "permitted-user" "bob"}
                                    :service-description-template {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
                                                                   "cmd" "token-cmd"
                                                                   "concurrency-level" 5
@@ -979,8 +953,9 @@
              (service-description {:headers {"param" {"VAR_3" "VALUE-3p"
                                                       "VAR_4" "VALUE-4p"}
                                              "version" "on-the-fly-version"}
-                                   :profile->defaults {:default {"health-check-url" "/ping"
-                                                                 "permitted-user" "bob"}}
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"
+                                                                  "permitted-user" "bob"}
                                    :service-description-template {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
                                                                   "cmd" "token-cmd"
                                                                   "concurrency-level" 5
@@ -1002,8 +977,9 @@
              (service-description {:headers {"param" {"VAR_2" "VALUE-2p"
                                                       "VAR_3" "VALUE-3p"}
                                              "version" "on-the-fly-version"}
-                                   :profile->defaults {:default {"health-check-url" "/ping"
-                                                                 "permitted-user" "bob"}}
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"
+                                                                  "permitted-user" "bob"}
                                    :service-description-template {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
                                                                   "cmd" "token-cmd"
                                                                   "concurrency-level" 5
@@ -1022,8 +998,9 @@
               "run-as-user" "test-user"}
              (service-description {:headers {"param" {"VAR_1" "VALUE-1"
                                                       "VAR_2" "VALUE-2"}}
-                                   :profile->defaults {:default {"health-check-url" "/ping"
-                                                                 "permitted-user" "bob"}}
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"
+                                                                  "permitted-user" "bob"}
                                    :service-description-template {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
                                                                   "cmd" "token-cmd"
                                                                   "concurrency-level" 5
@@ -1042,8 +1019,9 @@
               "run-as-user" "test-user"}
              (service-description {:headers {"param" {"VAR_3" "VALUE-3p"
                                                       "VAR_4" "VALUE-4p"}}
-                                   :profile->defaults {:default {"health-check-url" "/ping"
-                                                                 "permitted-user" "bob"}}
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"
+                                                                  "permitted-user" "bob"}
                                    :service-description-template {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
                                                                   "cmd" "token-cmd"
                                                                   "concurrency-level" 5
@@ -1063,8 +1041,9 @@
               "run-as-user" "test-user"}
              (service-description {:headers {"param" {"VAR_2" "VALUE-2p"
                                                       "VAR_3" "VALUE-3p"}}
-                                   :profile->defaults {:default {"health-check-url" "/ping"
-                                                                 "permitted-user" "bob"}}
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"
+                                                                  "permitted-user" "bob"}
                                    :service-description-template {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
                                                                   "cmd" "token-cmd"
                                                                   "concurrency-level" 5
@@ -1080,8 +1059,9 @@
               "run-as-user" "current-request-user"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"
                                              "concurrency-level" 6}
-                                   :profile->defaults {:default {"health-check-url" "/ping"
-                                                                 "permitted-user" "bob"}}
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"
+                                                                  "permitted-user" "bob"}
                                    :service-description-template {"cmd" "token-cmd"}}))))
 
     (testing "token header with intersecting values"
@@ -1090,8 +1070,9 @@
               "permitted-user" "bob"
               "run-as-user" "current-request-user"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"}
-                                   :profile->defaults {:default {"health-check-url" "/ping"
-                                                                 "permitted-user" "bob"}}
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"
+                                                                  "permitted-user" "bob"}
                                    :service-description-template {"cmd" "token-cmd"}}))))
 
     (testing "intersecting values with additional fields"
@@ -1103,8 +1084,9 @@
               "version" "on-the-fly-version"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"
                                              "version" "on-the-fly-version"}
-                                   :profile->defaults {:default {"health-check-url" "/ping"
-                                                                 "permitted-user" "bob"}}
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"
+                                                                  "permitted-user" "bob"}
                                    :service-description-template {"cmd" "token-cmd"
                                                                   "name" "token-name"}}))))
 
@@ -1114,7 +1096,8 @@
               "permitted-user" "token-pu"
               "run-as-user" "current-request-user"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"}
-                                   :profile->defaults {:default {"health-check-url" "/ping"}}
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"}
                                    :service-description-template {"permitted-user" "token-pu"}}))))
 
     (testing "permitted user from on-the-fly"
@@ -1124,7 +1107,8 @@
               "run-as-user" "current-request-user"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"
                                              "permitted-user" "on-the-fly-pu"}
-                                   :profile->defaults {:default {"health-check-url" "/ping"}}}))))
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"}}))))
 
     (testing "permitted user intersecting"
       (is (= {"cmd" "on-the-fly-cmd"
@@ -1133,7 +1117,8 @@
               "run-as-user" "current-request-user"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"
                                              "permitted-user" "on-the-fly-pu"}
-                                   :profile->defaults {:default {"health-check-url" "/ping"}}
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"}
                                    :service-description-template {"permitted-user" "token-pu"}}))))
 
     (testing "run as user and permitted user only in token"
@@ -1142,7 +1127,8 @@
               "permitted-user" "token-pu"
               "run-as-user" "current-request-user"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"}
-                                   :profile->defaults {:default {"health-check-url" "/ping"}}
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"}
                                    :service-description-template {"run-as-user" "token-ru"
                                                                   "permitted-user" "token-pu"}}))))
 
@@ -1151,7 +1137,8 @@
               "health-check-url" "/ping"
               "permitted-user" "token-pu"
               "run-as-user" "token-ru"}
-             (service-description {:profile->defaults {:default {"health-check-url" "/ping"}}
+             (service-description {:profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"}
                                    :service-description-template {"cmd" "token-cmd"
                                                                   "run-as-user" "token-ru"
                                                                   "permitted-user" "token-pu"}}))))
@@ -1161,8 +1148,9 @@
               "health-check-url" "/ping"
               "permitted-user" "bob"
               "run-as-user" "token-ru"}
-             (service-description {:profile->defaults {:default {"health-check-url" "/ping"
-                                                                 "permitted-user" "bob"}}
+             (service-description {:profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"
+                                                                  "permitted-user" "bob"}
                                    :service-description-template {"cmd" "token-cmd"
                                                                   "run-as-user" "token-ru"}}))))
 
@@ -1173,8 +1161,9 @@
               "run-as-user" "on-the-fly-ru"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"
                                              "run-as-user" "on-the-fly-ru"}
-                                   :profile->defaults {:default {"health-check-url" "/ping"
-                                                                 "permitted-user" "bob"}}}
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"
+                                                                  "permitted-user" "bob"}}
                                   :waiter-headers {"x-waiter-cmd" "on-the-fly-cmd"
                                                    "x-waiter-run-as-user" "on-the-fly-ru"}))))
 
@@ -1185,8 +1174,9 @@
               "run-as-user" "on-the-fly-ru"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"
                                              "run-as-user" "on-the-fly-ru"}
-                                   :profile->defaults {:default {"health-check-url" "/ping"
-                                                                 "permitted-user" "bob"}}
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"
+                                                                  "permitted-user" "bob"}
                                    :service-description-template {"run-as-user" "token-ru"}}
                                   :waiter-headers {"x-waiter-cmd" "on-the-fly-cmd"
                                                    "x-waiter-run-as-user" "on-the-fly-ru"}))))
@@ -1197,8 +1187,9 @@
               "permitted-user" "current-request-user"
               "run-as-user" "chris"}
              (service-description {:headers {"run-as-user" "chris"}
-                                   :profile->defaults {:default {"health-check-url" "/ping"
-                                                                 "permitted-user" "bob"}}
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"
+                                                                  "permitted-user" "bob"}
                                    :service-description-template {"cmd" "token-cmd"
                                                                   "run-as-user" "alice"}}
                                   :waiter-headers {"x-waiter-run-as-user" "chris"}))))
@@ -1209,8 +1200,9 @@
               "permitted-user" "current-request-user"
               "run-as-user" "current-request-user"}
              (service-description {:headers {"run-as-user" "*"}
-                                   :profile->defaults {:default {"health-check-url" "/ping"
-                                                                 "permitted-user" "bob"}}
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"
+                                                                  "permitted-user" "bob"}
                                    :service-description-template {"cmd" "token-cmd"
                                                                   "run-as-user" "alice"}}
                                   :waiter-headers {"x-waiter-run-as-user" "*"}))))
@@ -1220,8 +1212,9 @@
               "health-check-url" "/ping"
               "permitted-user" "bob"}
              (service-description {:headers {}
-                                   :profile->defaults {:default {"health-check-url" "/ping"
-                                                                 "permitted-user" "bob"}}
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"
+                                                                  "permitted-user" "bob"}
                                    :service-description-template {"cmd" "token-cmd"
                                                                   "run-as-user" "*"}}
                                   :waiter-headers {}))))
@@ -1232,8 +1225,9 @@
               "permitted-user" "current-request-user"
               "run-as-user" "current-request-user"}
              (service-description {:headers {}
-                                   :profile->defaults {:default {"health-check-url" "/ping"
-                                                                 "permitted-user" "bob"}}
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"
+                                                                  "permitted-user" "bob"}
                                    :service-description-template {"cmd" "token-cmd", "run-as-user" "*"}}
                                   :waiter-headers {"x-waiter-token" "on-the-fly-token"}))))
 
@@ -1244,7 +1238,9 @@
               "run-as-user" "current-request-user"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"
                                              "run-as-user" "*"}
-                                   :profile->defaults {:default {"health-check-url" "/ping", "permitted-user" "bob"}}
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"
+                                                                  "permitted-user" "bob"}
                                    :service-description-template {"run-as-user" "token-ru"}}
                                   :waiter-headers {"x-waiter-cmd" "on-the-fly-cmd"
                                                    "x-waiter-run-as-user" "*"}))))
@@ -1257,8 +1253,9 @@
              (service-description {:headers {"cmd" "on-the-fly-cmd"
                                              "permitted-user" "alice"
                                              "run-as-user" "*"}
-                                   :profile->defaults {:default {"health-check-url" "/ping"
-                                                                 "permitted-user" "bob"}}
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"
+                                                                  "permitted-user" "bob"}
                                    :service-description-template {"run-as-user" "token-ru"}}
                                   :waiter-headers {"x-waiter-cmd" "on-the-fly-cmd"
                                                    "x-waiter-permitted-user" "alice"
@@ -1270,7 +1267,8 @@
               "permitted-user" "current-request-user"
               "run-as-user" "header-user"}
              (service-description {:headers {"run-as-user" "header-user"}
-                                   :profile->defaults {:default {"health-check-url" "/ping"}}
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"}
                                    :service-description-template {"run-as-user" "*"
                                                                   "permitted-user" "*"
                                                                   "cmd" "token-cmd"}}
@@ -1294,9 +1292,10 @@
                    "scale-factor" 0.3)
                  (service-description {:headers {"cmd" "on-the-fly-cmd"
                                                  "run-as-user" "on-the-fly-ru"}
-                                       :profile->defaults {:default {"health-check-url" "/ping"
-                                                                     "permitted-user" "bob"
-                                                                     "scale-factor" 1}}}
+                                       :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                       :service-description-defaults {"health-check-url" "/ping"
+                                                                      "permitted-user" "bob"
+                                                                      "scale-factor" 1}}
                                       :kv-store kv-store))))
 
         (testing "inactive"
@@ -1309,8 +1308,9 @@
                    "permitted-user" "bob")
                  (service-description {:headers {"cmd" "on-the-fly-cmd"
                                                  "run-as-user" "on-the-fly-ru"}
-                                       :profile->defaults {:default {"health-check-url" "/ping"
-                                                                     "permitted-user" "bob"}}}
+                                       :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                       :service-description-defaults {"health-check-url" "/ping"
+                                                                      "permitted-user" "bob"}}
                                       :kv-store kv-store))))))
 
     (testing "override token metadata from headers"
@@ -1320,8 +1320,9 @@
               "run-as-user" "current-request-user"
               "metadata" {"e" "f"}}
              (service-description {:headers {"metadata" {"e" "f"}}
-                                   :profile->defaults {:default {"health-check-url" "/ping"
-                                                                 "permitted-user" "bob"}}
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"
+                                                                  "permitted-user" "bob"}
                                    :service-description-template {"cmd" "token-cmd"
                                                                   "metadata" {"a" "b", "c" "d"}}}))))
 
@@ -1331,7 +1332,8 @@
               "permitted-user" "current-request-user"
               "run-as-user" "current-request-user"
               "metadata" {"abc" "DEF"}}
-             (service-description {:profile->defaults {:default {"health-check-url" "/ping"}}
+             (service-description {:profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/ping"}
                                    :service-description-template {"cmd" "token-cmd"
                                                                   "metadata" {"Abc" "DEF"}}}
                                   :waiter-headers {"x-waiter-token" "value-does-not-matter"}))))
@@ -1342,7 +1344,8 @@
               "run-as-user" "current-request-user"
               "metric-group" "token-mg"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"}
-                                   :profile->defaults {:default {"health-check-url" "/health"}}
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/health"}
                                    :service-description-template {"metric-group" "token-mg"}}))))
 
     (testing "metric group from on-the-fly"
@@ -1352,7 +1355,8 @@
               "metric-group" "on-the-fly-mg"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"
                                              "metric-group" "on-the-fly-mg"}
-                                   :profile->defaults {:default {"health-check-url" "/health"}}}))))
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/health"}}))))
 
     (testing "metric group intersecting"
       (is (= {"cmd" "on-the-fly-cmd"
@@ -1361,7 +1365,8 @@
               "metric-group" "on-the-fly-mg"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"
                                              "metric-group" "on-the-fly-mg"}
-                                   :profile->defaults {:default {"health-check-url" "/health"}}
+                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/health"}
                                    :service-description-template {"metric-group" "token-mg"}}))))
 
     (testing "auto-populate run-as-user"
@@ -1370,7 +1375,8 @@
               "run-as-user" "current-request-user"
               "permitted-user" "current-request-user"
               "metric-group" "token-mg"}
-             (service-description {:profile->defaults {:default {"health-check-url" "/health"}}
+             (service-description {:profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/health"}
                                    :service-description-template {"cmd" "some-cmd"
                                                                   "metric-group" "token-mg"}}
                                   :assoc-run-as-user-approved? (constantly true)))))
@@ -1379,52 +1385,57 @@
       (is (= {"cmd" "some-cmd"
               "health-check-url" "/health"
               "instance-expiry-mins" 0}
-             (service-description {:profile->defaults {:default {"health-check-url" "/health"}}
+             (service-description {:profile->overrides {"webapp" {"concurrency-level" 120}}
+                                   :service-description-defaults {"health-check-url" "/health"}
                                    :service-description-template {"cmd" "some-cmd"
                                                                   "instance-expiry-mins" 0}}))))
 
     (testing "profile parameter"
-      (let [profile->defaults {:default {"cmd" "default-cmd"
-                                         "health-check-url" "/ping"}
-                               "webapp" {"cmd" "web-cmd"
-                                         "health-check-url" "/status"}}]
+      (let [service-description-defaults {"cmd" "default-cmd"
+                                          "health-check-url" "/ping"}
+            profile->overrides {"webapp" {"cmd" "web-cmd"}}]
         (testing "from token"
           (is (= {"cmd" "web-cmd"
-                  "health-check-url" "/status"
+                  "health-check-url" "/ping"
                   "profile" "webapp"}
                  (service-description {:headers {}
-                                       :profile->defaults profile->defaults
+                                       :profile->overrides profile->overrides
+                                       :service-description-defaults service-description-defaults
                                        :service-description-template {"profile" "webapp"}})))
           (is (= {"cmd" "token-cmd"
-                  "health-check-url" "/status"
+                  "health-check-url" "/ping"
                   "profile" "webapp"}
                  (service-description {:headers {}
-                                       :profile->defaults profile->defaults
+                                       :profile->overrides profile->overrides
+                                       :service-description-defaults service-description-defaults
                                        :service-description-template {"cmd" "token-cmd"
                                                                       "profile" "webapp"}})))
           (is (= {"cmd" "on-the-fly-cmd"
-                  "health-check-url" "/status"
+                  "health-check-url" "/ping"
                   "profile" "webapp"
                   "run-as-user" "current-request-user"}
                  (service-description {:headers {"cmd" "on-the-fly-cmd"}
-                                       :profile->defaults profile->defaults
+                                       :profile->overrides profile->overrides
+                                       :service-description-defaults service-description-defaults
                                        :service-description-template {"cmd" "token-cmd"
                                                                       "profile" "webapp"}}))))
 
         (testing "from on-the-fly"
           (is (= {"cmd" "web-cmd"
-                  "health-check-url" "/status"
+                  "health-check-url" "/ping"
                   "profile" "webapp"
                   "run-as-user" "current-request-user"}
                  (service-description {:headers {"profile" "webapp"}
-                                       :profile->defaults profile->defaults})))
+                                       :profile->overrides profile->overrides
+                                       :service-description-defaults service-description-defaults})))
           (is (= {"cmd" "on-the-fly-cmd"
-                  "health-check-url" "/status"
+                  "health-check-url" "/ping"
                   "profile" "webapp"
                   "run-as-user" "current-request-user"}
                  (service-description {:headers {"cmd" "on-the-fly-cmd"
                                                  "profile" "webapp"}
-                                       :profile->defaults profile->defaults}))))))))
+                                       :profile->overrides profile->overrides
+                                       :service-description-defaults service-description-defaults}))))))))
 
 (deftest test-compute-service-description-error-scenarios
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -1448,7 +1459,8 @@
             result-descriptor))]
     (is (thrown? Exception
                  (run-compute-service-description {:headers {}
-                                                   :profile->defaults {:default {"health-check-url" "/ping"}}
+                                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                                   :service-description-defaults {"health-check-url" "/ping"}
                                                    :service-description-template {"cmd" "test command"
                                                                                   "cpus" "one"
                                                                                   "mem" 200
@@ -1456,7 +1468,8 @@
                                                                                   "run-as-user" test-user}})))
     (is (thrown? Exception
                  (run-compute-service-description {:headers {}
-                                                   :profile->defaults {:default {"health-check-url" 1}}
+                                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                                   :service-description-defaults {"health-check-url" 1}
                                                    :service-description-template {"cmd" "test command"
                                                                                   "cpus" 1
                                                                                   "mem" 200
@@ -1464,10 +1477,12 @@
                                                                                   "run-as-user" test-user}})))
     (is (thrown? Exception
                  (run-compute-service-description {:headers {}
-                                                   :profile->defaults {:default {"health-check-url" 1}}
+                                                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                                   :service-description-defaults {"health-check-url" 1}
                                                    :service-description-template {}})))
     (is (thrown? Exception
-                 (run-compute-service-description {:profile->defaults {:default {"health-check-url" "/health"}}
+                 (run-compute-service-description {:profile->overrides {"webapp" {"concurrency-level" 120}}
+                                                   :service-description-defaults {"health-check-url" "/health"}
                                                    :service-description-template {"cmd" "cmd for missing run-as-user"
                                                                                   "cpus" 1
                                                                                   "mem" 200
@@ -1476,8 +1491,9 @@
     (testing "invalid allowed params - reserved"
       (is (thrown? Exception
                    (run-compute-service-description {:headers {}
-                                                     :profile->defaults {:default {"health-check-url" "/ping"
-                                                                                   "permitted-user" "bob"}}
+                                                     :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                                     :service-description-defaults {"health-check-url" "/ping"
+                                                                                    "permitted-user" "bob"}
                                                      :service-description-template {"allowed-params" #{"HOME" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
                                                                                     "cmd" "token-cmd"
                                                                                     "cpus" 1
@@ -1488,8 +1504,9 @@
     (testing "invalid allowed params - bad naming"
       (is (thrown? Exception
                    (run-compute-service-description {:headers {}
-                                                     :profile->defaults {:default {"health-check-url" "/ping"
-                                                                                   "permitted-user" "bob"}}
+                                                     :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                                     :service-description-defaults {"health-check-url" "/ping"
+                                                                                    "permitted-user" "bob"}
                                                      :service-description-template {"allowed-params" #{"VAR.1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
                                                                                     "cmd" "token-cmd"
                                                                                     "cpus" 1
@@ -1500,8 +1517,9 @@
     (testing "invalid allowed params - reserved and bad naming"
       (is (thrown? Exception
                    (run-compute-service-description {:headers {}
-                                                     :profile->defaults {:default {"health-check-url" "/ping"
-                                                                                   "permitted-user" "bob"}}
+                                                     :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                                     :service-description-defaults {"health-check-url" "/ping"
+                                                                                    "permitted-user" "bob"}
                                                      :service-description-template {"allowed-params" #{"USER" "VAR.1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
                                                                                     "cmd" "token-cmd"
                                                                                     "cpus" 1
@@ -1514,8 +1532,9 @@
                    (run-compute-service-description {:headers {"param" {"VAR_1" "VALUE-1"
                                                                         "ANOTHER_VAR_2" "VALUE-2"}
                                                                "version" "on-the-fly-version"}
-                                                     :profile->defaults {:default {"health-check-url" "/ping"
-                                                                                   "permitted-user" "bob"}}
+                                                     :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                                     :service-description-defaults {"health-check-url" "/ping"
+                                                                                    "permitted-user" "bob"}
                                                      :service-description-template {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
                                                                                     "cmd" "token-cmd"
                                                                                     "concurrency-level" 5
@@ -1526,8 +1545,9 @@
                    (run-compute-service-description {:headers {"param" {"VAR_1" "VALUE-1"
                                                                         "VAR_2" "VALUE-2"}
                                                                "version" "on-the-fly-version"}
-                                                     :profile->defaults {:default {"health-check-url" "/ping"
-                                                                                   "permitted-user" "bob"}}
+                                                     :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                                     :service-description-defaults {"health-check-url" "/ping"
+                                                                                    "permitted-user" "bob"}
                                                      :service-description-template {"allowed-params" #{}
                                                                                     "cmd" "token-cmd"
                                                                                     "concurrency-level" 5
@@ -1540,7 +1560,8 @@
                                       "run-as-user" test-user
                                       "version" "a1b2c3"}
             run-compute-service-description-helper (fn [service-description]
-                                                     (run-compute-service-description {:profile->defaults {:default {"health-check-url" "/health"}}
+                                                     (run-compute-service-description {:profile->overrides {"webapp" {"concurrency-level" 120}}
+                                                                                       :service-description-defaults {"health-check-url" "/healthy"}
                                                                                        :service-description-template service-description}))]
         (is (thrown? Exception (run-compute-service-description-helper (assoc core-service-description "instance-expiry-mins" -1))))
         (is (run-compute-service-description-helper (assoc core-service-description "instance-expiry-mins" 0)))
@@ -1550,7 +1571,8 @@
   (letfn [(execute-test [service-description-template header-parameters]
             (let [{:keys [service-authentication-disabled service-preauthorized]}
                   (compute-service-description-helper {:headers header-parameters
-                                                       :profile->defaults {:default {}}
+                                                       :profile->overrides {"webapp" {"concurrency-level" 120}}
+                                                       :service-description-defaults {}
                                                        :service-description-template service-description-template
                                                        :token-authentication-disabled (token-authentication-disabled? service-description-template)
                                                        :token-preauthorized (token-preauthorized? service-description-template)})]
@@ -1637,8 +1659,8 @@
           (is (= service-parameter-template service-description-template-2))
           (is (= (select-keys in-service-description service-description-keys) service-parameter-template))
           (is (= (-> in-service-description
-                     (assoc "previous" {})
-                     (select-keys token-metadata-keys))
+                   (assoc "previous" {})
+                   (select-keys token-metadata-keys))
                  token-metadata))))
 
       (testing "test:deleted:token->service-description-2"
@@ -1723,10 +1745,13 @@
 (deftest test-service-id->service-description
   (let [service-id "test-service-1"
         service-key (str "^SERVICE-ID#" service-id)
-        profile->defaults {:default {}}
-        fetch-service-description (fn [kv-store]
-                                    (service-id->service-description kv-store service-id profile->defaults []
-                                                                     :effective? false))]
+        fetch-service-description (fn [kv-store & {:keys [effective? profile->overrides service-description-defaults]
+                                                   :or {effective? false
+                                                        profile->overrides {"webapp" {"concurrency-level" 120}}
+                                                        service-description-defaults {}}}]
+                                    (service-id->service-description
+                                      kv-store service-id service-description-defaults profile->overrides []
+                                      :effective? effective?))]
 
     (testing "no data available"
       (let [kv-store (kv/->LocalKeyValueStore (atom {}))]
@@ -1740,6 +1765,28 @@
         (is (nil? (kv/fetch kv-store service-key)))
         (kv/store kv-store service-key service-description)
         (is (= service-description (fetch-service-description kv-store)))
+        (is (= service-description (kv/fetch kv-store service-key)))))
+
+    (testing "data with profile"
+      (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+            service-description {"cmd" "tc" "cpus" 1 "mem" 200 "profile" "webapp" "version" "a1b2c3"}
+            profile->overrides {"webapp" {"concurrency-level" 120}}
+            service-description-defaults {"metric-group" "webapp"}]
+        (is (nil? (kv/fetch kv-store service-key)))
+        (kv/store kv-store service-key service-description)
+        (is (= service-description
+               (fetch-service-description
+                 kv-store
+                 :profile->overrides profile->overrides
+                 :service-description-defaults service-description-defaults)))
+        (is (= (merge service-description
+                      service-description-defaults
+                      (get profile->overrides "webapp"))
+               (fetch-service-description
+                 kv-store
+                 :effective? true
+                 :profile->overrides profile->overrides
+                 :service-description-defaults service-description-defaults)))
         (is (= service-description (kv/fetch kv-store service-key)))))
 
     (testing "cached empty data"
@@ -1922,10 +1969,9 @@
                            "run-as-user" "default-run-as-user"}
         constraints-schema {(s/optional-key "cmd") (s/pred #(<= (count %) 100) (symbol "limit-100"))
                             s/Str s/Any}
-        profile->defaults {:default {"name" "default-name"}
-                           "web-app" {"name" "web-app-name"}}
+        profile->overrides {"web-app" {"name" "web-app-name"}}
         config {:allow-missing-required-fields? false
-                :profile->defaults profile->defaults}]
+                :profile->overrides profile->overrides}]
     (is (nil? (validate-schema valid-description constraints-schema config)))
 
     (testing (str "testing empty cmd")
@@ -1979,7 +2025,7 @@
         constraints-schema config "Unsupported profile: web-service, supported profile(s) are web-app")
 
       (let [config {:allow-missing-required-fields? false
-                    :profile->defaults (dissoc profile->defaults "web-app")}]
+                    :profile->overrides (dissoc profile->overrides "web-app")}]
         (run-validate-schema-test
           (assoc valid-description "profile" 1234)
           constraints-schema config (str "profile must be a non-empty string, there are no supported profiles"))
@@ -2196,7 +2242,7 @@
       (is (thrown? Exception #"Cannot use run-as-requester with a specific namespace"
                    (validate builder
                              (assoc basic-service-description
-                                    "namespace" "some-user")
+                               "namespace" "some-user")
                              validation-settings))))
 
     (testing "validate-service-description-namespace-some-user"
@@ -2207,7 +2253,7 @@
       (is (thrown? Exception #"Service namespace must either be omitted or match the run-as-user"
                    (validate builder
                              (assoc basic-service-description
-                                    "namespace" "some-other-user")
+                               "namespace" "some-other-user")
                              validation-settings))))))
 
 (deftest test-retrieve-most-recently-modified-token

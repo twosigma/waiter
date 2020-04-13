@@ -345,19 +345,19 @@
       (merge-overrides (:overrides (service-id->overrides kv-store service-id)))))
 
 (defn- compute-valid-profiles-str
-  "Computes the string representation of valid custom profiles"
-  [profile->defaults]
-  (let [supported-profiles-str (->> profile->defaults keys (remove keyword?) sort (str/join ", "))]
+  "Computes the string representation of supported profiles"
+  [profile->overrides]
+  (let [supported-profiles-str (->> profile->overrides keys sort (str/join ", "))]
     (if (str/blank? supported-profiles-str)
       ", there are no supported profiles"
       (str ", supported profile(s) are " supported-profiles-str))))
 
 (defn validate-profile-parameter
   "Throws an exception when the profile parameter is provided but does not map to a supported profile."
-  [profile->defaults profile]
+  [profile->overrides profile]
   (when (some? profile)
-    (when-not (contains? profile->defaults profile)
-      (let [supported-profiles-str (compute-valid-profiles-str profile->defaults)]
+    (when-not (contains? profile->overrides profile)
+      (let [supported-profiles-str (compute-valid-profiles-str profile->overrides)]
         (sling/throw+ {:type :service-description-error
                        :friendly-error-message (str "Unsupported profile: " profile supported-profiles-str)
                        :status 400
@@ -365,11 +365,13 @@
 
 (defn compute-profile-defaults
   "Returns the default service parameters for the specified profile.
-   The 'default' profile is chosen if no profile is provided.
-   Throws an error if the profile is not supported."
-  [profile->defaults profile]
-  (validate-profile-parameter profile->defaults profile)
-  (get profile->defaults (or profile :default)))
+   Throws an error if the profile is not supported.
+   The service-description-defaults are overridden with overrides from a specified profile."
+  [service-description-defaults profile->overrides profile]
+  (validate-profile-parameter profile->overrides profile)
+  (cond-> service-description-defaults
+    (contains? profile->overrides profile)
+    (merge (get profile->overrides profile))))
 
 (defn parameters->id
   "Generates a deterministic ID from the input parameter map."
@@ -417,7 +419,7 @@
   "Validates the provided service description template.
    When requested to do so, it populates required fields to ensure validation does not fail for missing required fields."
   [service-description-template max-constraints-schema
-   {:keys [allow-missing-required-fields? profile->defaults]
+   {:keys [allow-missing-required-fields? profile->overrides]
     :or {allow-missing-required-fields? true}
     :as args-map}]
   (let [default-valid-service-description (when allow-missing-required-fields?
@@ -511,7 +513,7 @@
                                            (attach-error-message-for-parameter
                                              parameter->issues :profile
                                              (str "profile must be a non-empty string"
-                                                  (compute-valid-profiles-str profile->defaults)))
+                                                  (compute-valid-profiles-str profile->overrides)))
                                            (attach-error-message-for-parameter
                                              parameter->issues :version "version must be a non-empty string."))
               unresolved-parameters (set/difference (-> parameter->issues keys set)
@@ -581,7 +583,7 @@
     ; validate the profile when it is configured
     (let [{:strs [profile]} service-description-to-use]
       (when-not (str/blank? profile)
-        (validate-profile-parameter profile->defaults profile)))))
+        (validate-profile-parameter profile->overrides profile)))))
 
 (defprotocol ServiceDescriptionBuilder
   "A protocol for constructing a service description from the various sources. Implementations
@@ -619,8 +621,8 @@
   ServiceDescriptionBuilder
 
   (build [_ user-service-description
-          {:keys [assoc-run-as-user-approved? component->previous-descriptor-fns kv-store profile->defaults
-                  metric-group-mappings reference-type->entry service-id-prefix source-tokens username]}]
+          {:keys [assoc-run-as-user-approved? component->previous-descriptor-fns kv-store service-description-defaults
+                  profile->overrides metric-group-mappings reference-type->entry service-id-prefix source-tokens username]}]
     (let [{:strs [profile] :as core-service-description}
           (if (get user-service-description "run-as-user")
             user-service-description
@@ -632,7 +634,7 @@
                   candidate-service-description)
                 user-service-description)))
           service-id (service-description->service-id service-id-prefix core-service-description)
-          defaults (compute-profile-defaults profile->defaults profile)
+          defaults (compute-profile-defaults service-description-defaults profile->overrides profile)
           service-description (default-and-override core-service-description metric-group-mappings
                                                     kv-store defaults service-id)
           reference-type->entry (cond-> (or reference-type->entry {})
@@ -927,7 +929,8 @@
         (assoc sanitized-service-description "metadata" renamed-metadata-map)))))
 
 (defn prepare-service-description-sources
-  [{:keys [waiter-headers passthrough-headers]} kv-store waiter-hostnames profile->defaults token-defaults]
+  [{:keys [waiter-headers passthrough-headers]} kv-store waiter-hostnames
+   service-description-defaults profile->overrides token-defaults]
   "Prepare the service description sources from the current request.
    Populates the service description for on-the-fly waiter-specific headers.
    Also populates for the service description for a token (first looked in headers and then using the host name).
@@ -942,13 +945,14 @@
     (-> (prepare-service-description-template-from-tokens
           waiter-headers passthrough-headers kv-store waiter-hostnames token-defaults)
         (assoc :headers service-description-template-from-headers
-               :profile->defaults profile->defaults))))
+               :profile->overrides profile->overrides
+               :service-description-defaults service-description-defaults))))
 
 (defn merge-service-description-sources
-  [descriptor kv-store waiter-hostnames profile->defaults token-defaults]
+  [descriptor kv-store waiter-hostnames service-description-defaults profile->overrides token-defaults]
   "Merges the sources for a service-description into the descriptor."
   (->> (prepare-service-description-sources
-         descriptor kv-store waiter-hostnames profile->defaults token-defaults)
+         descriptor kv-store waiter-hostnames service-description-defaults profile->overrides token-defaults)
        (assoc descriptor :sources)))
 
 (defn- sanitize-metadata [{:strs [metadata] :as service-description}]
@@ -973,7 +977,8 @@
      If a non-param on-the-fly header is provided, the username is included as the run-as-user in on-the-fly headers.
      If after the merge a run-as-user is not available, then `username` becomes the run-as-user.
      If after the merge a permitted-user is not available, then `username` becomes the permitted-user."
-    [{:keys [headers profile->defaults service-description-template source-tokens token-authentication-disabled token-preauthorized]}
+    [{:keys [headers profile->overrides service-description-defaults service-description-template source-tokens
+             token-authentication-disabled token-preauthorized]}
      waiter-headers passthrough-headers component->previous-descriptor-fns kv-store service-id-prefix username
      metric-group-mappings assoc-run-as-user-approved? service-description-builder]
     (let [headers-without-params (dissoc headers "param")
@@ -1030,7 +1035,8 @@
                                 :component->previous-descriptor-fns component->previous-descriptor-fns
                                 :kv-store kv-store
                                 :metric-group-mappings metric-group-mappings
-                                :profile->defaults profile->defaults
+                                :profile->overrides profile->overrides
+                                :service-description-defaults service-description-defaults
                                 :reference-type->entry {}
                                 :service-id-prefix service-id-prefix
                                 :source-tokens source-tokens
@@ -1059,13 +1065,13 @@
         ; Validating is expensive, so avoid validating if we've validated before, relying on the fact
         ; that we'll only store validated service descriptions
         (when-not (seq stored-service-description)
-          (let [{:keys [profile->defaults]} sources]
+          (let [{:keys [profile->overrides]} sources]
             (validate service-description-builder core-service-description
                       {:allow-missing-required-fields? false
-                       :profile->defaults profile->defaults})
+                       :profile->overrides profile->overrides})
             (validate service-description-builder service-description
                       {:allow-missing-required-fields? false
-                       :profile->defaults profile->defaults})))
+                       :profile->overrides profile->overrides})))
         nil)
       (catch [:type :service-description-error] ex-data
         (ex-info (:message ex-data)
@@ -1124,9 +1130,10 @@
 
 (defn service-id->service-description
   "Loads the service description for the specified service-id including any overrides."
-  [kv-store service-id profile->defaults metric-group-mappings & {:keys [effective?] :or {effective? true}}]
+  [kv-store service-id service-description-defaults profile->overrides metric-group-mappings
+   & {:keys [effective?] :or {effective? true}}]
   (let [{:strs [profile] :as core-service-description} (fetch-core kv-store service-id :refresh false)
-        service-description-defaults (compute-profile-defaults profile->defaults profile)]
+        service-description-defaults (compute-profile-defaults service-description-defaults profile->overrides profile)]
     (cond-> core-service-description
       effective? (default-and-override metric-group-mappings kv-store service-description-defaults service-id))))
 
