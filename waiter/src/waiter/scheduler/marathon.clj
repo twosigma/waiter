@@ -277,6 +277,8 @@
                      :path health-check-url
                      :gracePeriodSeconds (if (pos? grace-period-secs)
                                            grace-period-secs
+                                           ;; Marathon's gracePeriodSeconds has a default value of 300. 
+                                           ;; 2x the instance expiry is effectively an infinite grace period.
                                            (-> instance-expiry-mins t/minutes t/in-seconds (* 2)))
                      :intervalSeconds health-check-interval-secs
                      :portIndex health-check-port-index
