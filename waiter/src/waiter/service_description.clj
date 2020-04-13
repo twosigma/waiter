@@ -79,7 +79,7 @@
    (s/optional-key "permitted-user") schema/non-empty-string
    (s/optional-key "ports") schema/valid-number-of-ports
    ; start-up related
-   (s/optional-key "grace-period-secs") (s/both s/Int (s/pred #(<= 1 % (t/in-seconds (t/minutes 60))) 'at-most-60-minutes))
+   (s/optional-key "grace-period-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/minutes 60))) 'at-most-60-minutes))
    (s/optional-key "health-check-authentication") schema/valid-health-check-authentication
    (s/optional-key "health-check-interval-secs") (s/both s/Int (s/pred #(<= 5 % 60) 'between-5-seconds-and-1-minute))
    (s/optional-key "health-check-max-consecutive-failures") (s/both s/Int (s/pred #(<= 1 % 15) 'at-most-fifteen))
@@ -439,7 +439,7 @@
                                              (generate-friendly-environment-variable-error-message parameter->issues))
                                            (attach-error-message-for-parameter
                                              parameter->issues :grace-period-secs
-                                             "grace-period-secs must be an integer in the range [1, 3600].")
+                                             "grace-period-secs must be an integer in the range [0, 3600].")
                                            (attach-error-message-for-parameter
                                              parameter->issues :health-check-authentication
                                              "health-check-authentication must be one of standard or disabled.")

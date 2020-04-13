@@ -278,8 +278,8 @@
                 (fn []
                   (let [{:keys [active-instances failed-instances]} (:instances (service-settings waiter-url service-id))
                         pod-ids (->> (concat active-instances failed-instances)
-                                     (map :k8s/pod-name)
-                                     (into #{}))]
+                                  (map :k8s/pod-name)
+                                  (into #{}))]
                     (log/info pod-ids)
                     (< 1 (count pod-ids)))))))))))
 

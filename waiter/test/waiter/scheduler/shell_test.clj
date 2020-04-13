@@ -598,9 +598,11 @@
 (deftest test-enforce-grace-period
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
     (let [scheduler-config (common-scheduler-config)
-          scheduler (create-shell-scheduler scheduler-config)]
+          scheduler (create-shell-scheduler scheduler-config)
+          grace-period-secs 1]
       (is (= {:success true, :result :created, :message "Created foo"}
-             (create-test-service scheduler "foo" {"cmd" "sleep 10000" "grace-period-secs" 0})))
+             (create-test-service scheduler "foo" {"cmd" "sleep 10000" "grace-period-secs" grace-period-secs})))
+      (-> grace-period-secs t/seconds t/in-millis inc Thread/sleep)
       ;; Instance should be marked as unhealthy and failed
       (with-redefs [perform-health-check (constantly false)]
         (force-update-service-health scheduler scheduler-config))

@@ -1195,3 +1195,32 @@
                                          p)
                 response (make-request waiter-url-for-port "/")]
             (assert-response-status response 200)))))))
+
+(deftest ^:parallel ^:integration-slow test-grace-period-disabled
+  (testing-using-waiter-url
+    (let [{:keys [cookies request-headers service-id] :as response}
+          (make-request-with-debug-info
+            {:x-waiter-cmd (kitchen-cmd "--enable-status-change -p $PORT0")
+             :x-waiter-grace-period-secs 0
+             :x-waiter-instance-expiry-mins 30
+             :x-waiter-max-instances 1
+             :x-waiter-name (rand-name)}
+            #(make-kitchen-request waiter-url % :method :get :path "/"))]
+      (with-service-cleanup
+        service-id
+        (assert-response-status response 200)
+        (let [{:keys [grace-period-secs] :as service-description}
+              (service-id->service-description waiter-url service-id)]
+          (is (zero? grace-period-secs) (str {:service-description service-description
+                                              :service-id service-id})))
+        (assert-service-on-all-routers waiter-url service-id cookies)
+        (let [request-headers (assoc request-headers
+                                :x-kitchen-default-status-timeout 600000
+                                :x-kitchen-default-status-value 400)
+              response (make-kitchen-request waiter-url request-headers :path "/hello")]
+          (assert-response-status response 400))
+        (assert-service-unhealthy-on-all-routers waiter-url service-id cookies)
+        (let [request-headers (assoc request-headers
+                                :x-waiter-queue-timeout 5000)
+              response (make-kitchen-request waiter-url request-headers :path "/hello")]
+          (assert-response-status response 503))))))

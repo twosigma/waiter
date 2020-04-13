@@ -629,6 +629,7 @@
                                    "cmd" "test-command"
                                    "concurrency-level" 1
                                    "cpus" 1
+                                   "instance-expiry-mins" 10
                                    "mem" 1536
                                    "namespace" "test-user"
                                    "run-as-user" "test-user"
@@ -649,12 +650,21 @@
 
           (testing "health-check-port-index of 2"
             (is (= (-> expected
-                       (assoc-in [:healthChecks 0 :portIndex] 2)
-                       (assoc :ports [0 0 0]))
+                     (assoc-in [:healthChecks 0 :portIndex] 2)
+                     (assoc :ports [0 0 0]))
                    (default-marathon-descriptor-builder
                      home-path-prefix service-id->password-fn
                      (->> (assoc service-description "health-check-port-index" 2 "ports" 3)
-                          (assoc {:service-id service-id} :service-description))
+                       (assoc {:service-id service-id} :service-description))
+                     descriptor-builder-ctx))))
+
+          (testing "grace-period-secs of 0"
+            (is (= (-> expected
+                     (assoc-in [:healthChecks 0 :gracePeriodSeconds] 1200))
+                   (default-marathon-descriptor-builder
+                     home-path-prefix service-id->password-fn
+                     (->> (assoc service-description "grace-period-secs" 0)
+                       (assoc {:service-id service-id} :service-description))
                      descriptor-builder-ctx)))))))))
 
 (deftest test-kill-instance-last-force-kill-time-store
