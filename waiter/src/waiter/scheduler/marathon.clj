@@ -277,7 +277,7 @@
                      :path health-check-url
                      :gracePeriodSeconds (if (pos? grace-period-secs)
                                            grace-period-secs
-                                           (-> instance-expiry-mins t/minutes t/in-seconds))
+                                           (-> instance-expiry-mins t/minutes t/in-seconds (* 2)))
                      :intervalSeconds health-check-interval-secs
                      :portIndex health-check-port-index
                      :timeoutSeconds 20
