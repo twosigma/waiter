@@ -331,8 +331,7 @@
                            :configured {:factory-fn 'waiter.password-store/configured-provider
                                         :passwords ["open-sesame"]}}
    :port 9091
-   :profile-config {"webapp" {:service-parameters {"concurrency-level" 120
-                                                   "load-balancing" "random"}}}
+   :profile-config {}
    :router-id-prefix ""
    :router-syncer {:delay-ms 750
                    :interval-ms 1500}
