@@ -1147,6 +1147,15 @@
      (doseq [[_# router-url#] (routers ~waiter-url)]
        (is (wait-for #(seq (active-instances router-url# service-id# :cookies cookies#)))))))
 
+(defmacro assert-service-unhealthy-on-all-routers
+  [waiter-url service-id cookies]
+  `(let [service-id# ~service-id
+         cookies# ~cookies]
+     (doseq [[_# router-url#] (routers ~waiter-url)]
+       (is (wait-for #(let [instances# (active-instances router-url# service-id# :cookies cookies#)]
+                        (log/info "instances:" instances#)
+                        (and (seq instances#) (every? (comp not :healthy?) instances#))))))))
+
 (defn token->etag
   "Retrieves the etag for a token"
   [waiter-url token & {:keys [cookies] :or {cookies {}}}]
