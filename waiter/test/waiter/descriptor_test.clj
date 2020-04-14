@@ -240,13 +240,15 @@
         run-request->descriptor
         (fn run-request->descriptor
           [request &
-           {:keys [assoc-run-as-user-approved? can-run-as? fallback-state-atom kv-store metric-group-mappings search-history-length
-                   service-description-builder service-description-defaults service-id-prefix token-defaults waiter-hostnames]
+           {:keys [assoc-run-as-user-approved? can-run-as? fallback-state-atom kv-store metric-group-mappings profile->overrides
+                   search-history-length service-description-builder service-description-defaults service-id-prefix token-defaults
+                   waiter-hostnames]
             :or {assoc-run-as-user-approved? (fn [_ _] false)
                  can-run-as? #(= %1 %2)
                  fallback-state-atom (atom {})
                  kv-store (kv/->LocalKeyValueStore (atom {}))
                  metric-group-mappings []
+                 profile->overrides {}
                  search-history-length default-search-history-length
                  service-description-builder (sd/create-default-service-description-builder {})
                  service-description-defaults {}
@@ -255,8 +257,8 @@
                  waiter-hostnames ["waiter-hostname.app.example.com"]}}]
           (request->descriptor
             assoc-run-as-user-approved? can-run-as? fallback-state-atom kv-store metric-group-mappings
-            search-history-length service-description-builder service-description-defaults service-id-prefix token-defaults
-            waiter-hostnames request))]
+            search-history-length service-description-builder service-description-defaults profile->overrides
+            service-id-prefix token-defaults waiter-hostnames request))]
 
     (testing "missing user in request"
       (let [request {}
@@ -476,8 +478,8 @@
                                                 assoc-run-as-user-approved?)]
 
   (deftest test-descriptor->previous-descriptor-no-token
-    (let [sources {:defaults {"permitted-user" "*"}
-                   :headers {}
+    (let [sources {:headers {}
+                   :profile->defaults {:default {"permitted-user" "*"}}
                    :service-description-template {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru" "version" "foo"}
                    :token->token-data {}
                    :token-authentication-disabled false
@@ -493,8 +495,8 @@
 
   (deftest test-descriptor->previous-descriptor-single-token-without-previous
     (let [service-description-1 {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru" "version" "foo"}
-          sources {:defaults {"permitted-user" "*"}
-                   :headers {}
+          sources {:headers {}
+                   :profile->defaults {:default {"permitted-user" "*"}}
                    :service-description-template service-description-1
                    :token->token-data {"token-1" {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru" "version" "foo"}}
                    :token-authentication-disabled false
@@ -647,8 +649,9 @@
           service-description-1 token-data-1
           token-data-2 {"cmd" "ls" "cpus" 2 "mem" 64 "previous" token-data-1 "run-as-user" "ru" "version" "foo2"}
           service-description-2 token-data-2
-          sources {:defaults {"metric-group" "other" "permitted-user" "*"}
-                   :headers {}
+          sources {:headers {}
+                   :profile->overrides {}
+                   :service-description-defaults {"metric-group" "other" "permitted-user" "*"}
                    :service-description-template service-description-2
                    :token->token-data {test-token token-data-2}
                    :token-authentication-disabled false
@@ -668,7 +671,50 @@
               :passthrough-headers passthrough-headers
               :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-1)]}}
               :service-authentication-disabled false
-              :service-description (merge (:defaults sources) service-description-1)
+              :service-description (merge (:service-description-defaults sources) service-description-1)
+              :service-id (sd/service-description->service-id service-id-prefix service-description-1)
+              :service-preauthorized false
+              :source-tokens [(sd/source-tokens-entry test-token token-data-1)]
+              :sources (assoc sources
+                         :fallback-period-secs 300
+                         :service-description-template service-description-1
+                         :source-tokens [(sd/source-tokens-entry test-token token-data-1)]
+                         :token->token-data {test-token token-data-1})
+              :waiter-headers waiter-headers}
+             previous-descriptor))
+      (is (nil? (descriptor->previous-descriptor kv-store builder previous-descriptor)))))
+
+  (deftest test-descriptor->previous-descriptor-single-token-with-profile-in-previous
+    (let [test-token "test-token"
+          token-data-1 {"cmd" "ls" "cpus" 1 "mem" 32 "profile" "webapp" "run-as-user" "ru" "version" "foo1"}
+          service-description-1 token-data-1
+          token-data-2 {"cmd" "ls" "cpus" 2 "mem" 64 "previous" token-data-1 "run-as-user" "ru" "version" "foo2"}
+          service-description-2 token-data-2
+          sources {:headers {}
+                   :profile->overrides {"webapp" {"concurrency-level" 120}}
+                   :service-description-defaults {"metric-group" "other" "permitted-user" "*"}
+                   :service-description-template service-description-2
+                   :token->token-data {test-token token-data-2}
+                   :token-authentication-disabled false
+                   :token-preauthorized false
+                   :token-sequence [test-token]}
+          passthrough-headers {}
+          waiter-headers {}
+          current-descriptor (-> {:passthrough-headers passthrough-headers
+                                  :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-2)]}}
+                                  :sources sources
+                                  :waiter-headers waiter-headers}
+                               (attach-token-fallback-source token-defaults build-service-description-and-id-helper))
+          previous-descriptor (descriptor->previous-descriptor kv-store builder current-descriptor)]
+      (is (= {:component->previous-descriptor-fns (:component->previous-descriptor-fns current-descriptor)
+              :core-service-description service-description-1
+              :on-the-fly? nil
+              :passthrough-headers passthrough-headers
+              :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-1)]}}
+              :service-authentication-disabled false
+              :service-description (merge (:service-description-defaults sources)
+                                          (get-in sources [:profile->overrides "webapp"])
+                                          service-description-1)
               :service-id (sd/service-description->service-id service-id-prefix service-description-1)
               :service-preauthorized false
               :source-tokens [(sd/source-tokens-entry test-token token-data-1)]
@@ -688,8 +734,9 @@
           token-data-2 {"cmd" 1234 "cpus" 2 "mem" 64 "previous" token-data-1 "run-as-user" 9876 "version" "foo2"}
           token-data-3 {"cmd" "ls" "cpus" 2 "mem" 64 "previous" token-data-2 "run-as-user" "ru" "version" "foo2"}
           service-description-3 token-data-3
-          sources {:defaults {"metric-group" "other" "permitted-user" "*"}
-                   :headers {}
+          sources {:headers {}
+                   :profile->overrides {}
+                   :service-description-defaults {"metric-group" "other" "permitted-user" "*"}
                    :service-description-template service-description-3
                    :token->token-data {test-token token-data-3}
                    :token-authentication-disabled false
@@ -709,7 +756,7 @@
               :passthrough-headers passthrough-headers
               :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-1)]}}
               :service-authentication-disabled false
-              :service-description (merge (:defaults sources) service-description-1)
+              :service-description (merge (:service-description-defaults sources) service-description-1)
               :service-id (sd/service-description->service-id service-id-prefix service-description-1)
               :service-preauthorized false
               :source-tokens [(sd/source-tokens-entry test-token token-data-1)]
@@ -729,8 +776,9 @@
           token-data-2 {"cmd" 1234 "cpus" 2 "mem" 64 "previous" token-data-1 "run-as-user" 9876 "version" "foo2"}
           token-data-3 {"cmd" "ls" "cpus" 2 "mem" 64 "previous" token-data-2 "run-as-user" "ru" "version" "foo2"}
           service-description-3 token-data-3
-          sources {:defaults {"metric-group" "other" "permitted-user" "*"}
-                   :headers {}
+          sources {:headers {}
+                   :profile->overrides {}
+                   :service-description-defaults {"metric-group" "other" "permitted-user" "*"}
                    :service-description-template service-description-3
                    :token->token-data {test-token token-data-3}
                    :token-authentication-disabled false
@@ -760,7 +808,7 @@
               :passthrough-headers passthrough-headers
               :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-1)]}}
               :service-authentication-disabled false
-              :service-description (merge (:defaults sources) service-description-1)
+              :service-description (merge (:service-description-defaults sources) service-description-1)
               :service-id (sd/service-description->service-id service-id-prefix service-description-1)
               :service-preauthorized false
               :source-tokens [(sd/source-tokens-entry test-token token-data-1)]
@@ -780,8 +828,9 @@
           token-data-2 {"cpus" 2 "mem" 64 "previous" token-data-1 "run-as-user" "ru" "version" "foo2"}
           token-data-3 {"cmd" "ls-3" "cpus" 3 "mem" 128 "previous" token-data-2 "run-as-user" "ru" "version" "foo3"}
           service-description-3 token-data-2
-          sources {:defaults {"metric-group" "other" "permitted-user" "*"}
-                   :headers {}
+          sources {:headers {}
+                   :profile->overrides {}
+                   :service-description-defaults {"metric-group" "other" "permitted-user" "*"}
                    :service-description-template service-description-3
                    :token->token-data {test-token token-data-3}
                    :token-authentication-disabled false
@@ -801,7 +850,7 @@
               :passthrough-headers passthrough-headers
               :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-1)]}}
               :service-authentication-disabled false
-              :service-description (merge (:defaults sources) service-description-1)
+              :service-description (merge (:service-description-defaults sources) service-description-1)
               :service-id (sd/service-description->service-id service-id-prefix service-description-1)
               :service-preauthorized false
               :source-tokens [(sd/source-tokens-entry test-token token-data-1)]
@@ -820,9 +869,10 @@
           service-description-1 token-data-1
           token-data-2 {"cmd" "ls" "cpus" 2 "mem" 64 "previous" token-data-1 "run-as-user" "ru2" "version" "foo2"}
           service-description-2 token-data-2
-          sources {:defaults {"metric-group" "other" "permitted-user" "*"}
-                   :headers {"cpus" 20}
-                   :on-the-fly? nil ;; invalid value to check if it is ignored and generated in the fallback
+          sources {:headers {"cpus" 20}
+                   :on-the-fly? nil
+                   :profile->overrides {}
+                   :service-description-defaults {"metric-group" "other" "permitted-user" "*"}
                    :service-description-template service-description-2
                    :token->token-data {test-token token-data-2}
                    :token-authentication-disabled false
@@ -843,7 +893,7 @@
                 :passthrough-headers passthrough-headers
                 :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-1)]}}
                 :service-authentication-disabled false
-                :service-description (merge (:defaults sources) expected-core-service-description)
+                :service-description (merge (:service-description-defaults sources) expected-core-service-description)
                 :service-id (sd/service-description->service-id service-id-prefix expected-core-service-description)
                 :service-preauthorized false
                 :source-tokens [(sd/source-tokens-entry test-token token-data-1)]
@@ -859,8 +909,9 @@
     (let [test-token "test-token"
           service-description-1 {"cmd" "ls" "cpus" 1 "mem" 32}
           service-description-2 {"run-as-user" "ru" "version" "foo"}
-          sources {:defaults {"permitted-user" "*"}
-                   :headers {}
+          sources {:headers {}
+                   :profile->overrides {}
+                   :service-description-defaults {"permitted-user" "*"}
                    :service-description-template (merge service-description-1 service-description-2)
                    :token->token-data {test-token service-description-1
                                        "token-2" service-description-2}
@@ -885,8 +936,9 @@
           token-data-2p {"last-update-time" 2000 "run-as-user" "rup" "version" "foo"}
           service-description-2p token-data-2p
           token-data-2 {"previous" token-data-2p "run-as-user" "ru" "version" "foo"}
-          sources {:defaults {"metric-group" "other" "permitted-user" "*"}
-                   :headers {}
+          sources {:headers {}
+                   :profile->overrides {}
+                   :service-description-defaults {"metric-group" "other" "permitted-user" "*"}
                    :service-description-template (merge service-description-1 service-description-2p)
                    :source-tokens [(sd/source-tokens-entry test-token-1 token-data-1)
                                    (sd/source-tokens-entry test-token-2 token-data-2)]
@@ -912,7 +964,7 @@
                 :reference-type->entry {:token {:sources [(reference-tokens-entry test-token-1 token-data-1)
                                                           (reference-tokens-entry test-token-2 token-data-2p)]}}
                 :service-authentication-disabled false
-                :service-description (merge (:defaults sources) expected-core-service-description)
+                :service-description (merge (:service-description-defaults sources) expected-core-service-description)
                 :service-id (sd/service-description->service-id service-id-prefix expected-core-service-description)
                 :service-preauthorized false
                 :source-tokens [(sd/source-tokens-entry test-token-1 token-data-1)
@@ -938,7 +990,7 @@
                   :reference-type->entry {:token {:sources [(reference-tokens-entry test-token-1 token-data-1p)
                                                             (reference-tokens-entry test-token-2 token-data-2p)]}}
                   :service-authentication-disabled false
-                  :service-description (merge (:defaults sources) expected-core-service-description)
+                  :service-description (merge (:service-description-defaults sources) expected-core-service-description)
                   :service-id (sd/service-description->service-id service-id-prefix expected-core-service-description)
                   :service-preauthorized false
                   :source-tokens [(sd/source-tokens-entry test-token-1 token-data-1p)

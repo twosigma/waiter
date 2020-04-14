@@ -1644,3 +1644,33 @@
                   (is (= service-id-1 (:service-id response-2))))))))
         (finally
           (delete-token-and-assert waiter-url token))))))
+
+(deftest ^:parallel ^:integration-fast test-profile-inside-token
+  (testing-using-waiter-url
+    (let [{:keys [profile-config]} (waiter-settings waiter-url)
+          base-description {:cmd "will-not-work"
+                            :cmd-type "shell"
+                            :cpus 1
+                            :health-check-url "/ping"
+                            :mem 100
+                            :metric-group "waiter_test"
+                            :name "test-profile-inside-token"
+                            :permitted-user "*"
+                            :run-as-user (retrieve-username)
+                            :version "1"}]
+      (doseq [profile (keys profile-config)]
+        (let [token (rand-name)
+              token-description (assoc base-description
+                                  :profile (name profile)
+                                  :token token)
+              register-response (post-token waiter-url token-description)]
+          (try
+            (assert-response-status register-response 200)
+            (let [{:keys [body]} (get-token waiter-url token)]
+              (is (= (:profile token-description) (-> body str json/read-str (get "profile"))))
+              (let [service-id (retrieve-service-id waiter-url {"x-waiter-token" token})
+                    _ (is service-id "No service created by using token!")
+                    service-description (service-id->service-description waiter-url service-id)]
+                (is (= service-description (dissoc token-description :token)))))
+            (finally
+              (delete-token-and-assert waiter-url token))))))))

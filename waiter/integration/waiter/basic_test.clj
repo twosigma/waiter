@@ -54,12 +54,41 @@
           (doseq [[k v] service-description-defaults]
             (let [parameter-key (str "x-waiter-" (name k))]
               (when-not (or (contains? request-headers parameter-key)
+                            (nil? v)
                             (map? v)
                             (vector? v))
                 (let [new-request-headers (assoc request-headers parameter-key v)
-                      new-service-id (retrieve-service-id waiter-url new-request-headers)]
+                      new-service-id (retrieve-service-id waiter-url new-request-headers)
+                      service-description (service-id->service-description waiter-url new-service-id)]
+                  (is (= (str v) (str (get service-description k)))
+                      (str {:service-description service-description :service-id new-service-id}))
                   (is (not= service-id new-service-id)
                       (str {:new-parameter [k v] :request-headers request-headers}))))))))
+
+      (testing "explicitly specifying profile parameter resolves to different service"
+        (let [{:keys [profile-config service-description-defaults]} (waiter-settings waiter-url)
+              request-headers (walk/stringify-keys request-headers)
+              base-service-description (service-id->service-description waiter-url service-id)]
+          (doseq [[profile {:keys [service-parameters]}] profile-config]
+            (let [new-request-headers (assoc request-headers "x-waiter-profile" (name profile))
+                  new-service-id (retrieve-service-id waiter-url new-request-headers)
+                  service-settings (service-settings waiter-url new-service-id
+                                                     :query-params {"effective-parameters" "true"})
+                  new-service-description (get service-settings :service-description)
+                  effective-service-description (get service-settings :effective-parameters)]
+              (is (= (assoc base-service-description :profile (name profile))
+                     new-service-description)
+                  (str {:base-service-description base-service-description
+                        :service-description new-service-description
+                        :service-id new-service-id}))
+              (is (= (merge service-description-defaults service-parameters
+                            base-service-description {:profile (name profile)})
+                     effective-service-description)
+                  (str {:service-description effective-service-description
+                        :service-id new-service-id
+                        :service-parameters service-parameters}))
+              (is (not= service-id new-service-id)
+                  (str {:profile profile :request-headers request-headers}))))))
 
       (testing "empty-body"
         (log/info "Basic test for empty body in request")
@@ -525,7 +554,7 @@
 
           (testing "should provide effective service description when requested"
             (let [service (service waiter-url service-id {"effective-parameters" "true"})]
-              (is (= (disj sd/service-parameter-keys "image" "namespace" "scheduler")
+              (is (= (disj sd/service-parameter-keys "image" "namespace" "profile" "scheduler")
                      (set (keys (get service "effective-parameters")))))))))
 
       (let [{:keys [cookies service-id]} (make-request-with-debug-info
