@@ -418,8 +418,8 @@
 (defn validate-schema
   "Validates the provided service description template.
    When requested to do so, it populates required fields to ensure validation does not fail for missing required fields."
-  [service-description-template max-constraints-schema
-   {:keys [allow-missing-required-fields? profile->overrides]
+  [service-description-template max-constraints-schema profile->overrides
+   {:keys [allow-missing-required-fields?]
     :or {allow-missing-required-fields? true}
     :as args-map}]
   (let [default-valid-service-description (when allow-missing-required-fields?
@@ -617,12 +617,13 @@
                  (not= (token->token-hash token) version))
                source-tokens)))
 
-(defrecord DefaultServiceDescriptionBuilder [max-constraints-schema]
+(defrecord DefaultServiceDescriptionBuilder [max-constraints-schema metric-group-mappings profile->overrides
+                                             service-description-defaults]
   ServiceDescriptionBuilder
 
   (build [_ user-service-description
-          {:keys [assoc-run-as-user-approved? component->previous-descriptor-fns kv-store service-description-defaults
-                  profile->overrides metric-group-mappings reference-type->entry service-id-prefix source-tokens username]}]
+          {:keys [assoc-run-as-user-approved? component->previous-descriptor-fns kv-store reference-type->entry
+                  service-id-prefix source-tokens username]}]
     (let [{:strs [profile] :as core-service-description}
           (if (get user-service-description "run-as-user")
             user-service-description
@@ -654,7 +655,7 @@
 
   (validate [_ service-description args-map]
     (->> (merge-with set/union args-map {:valid-cmd-types #{"docker" "shell"}})
-         (validate-schema service-description max-constraints-schema))))
+         (validate-schema service-description max-constraints-schema profile->overrides))))
 
 (defn extract-max-constraints
   "Extracts the max constraints from the generic constraints definition."
@@ -677,9 +678,10 @@
 
 (defn create-default-service-description-builder
   "Returns a new DefaultServiceDescriptionBuilder which uses the specified resource limits."
-  [{:keys [constraints]}]
+  [{:keys [constraints metric-group-mappings profile->overrides service-description-defaults]}]
   (let [max-constraints-schema (extract-max-constraints-schema constraints)]
-    (->DefaultServiceDescriptionBuilder max-constraints-schema)))
+    (->DefaultServiceDescriptionBuilder
+      max-constraints-schema metric-group-mappings profile->overrides service-description-defaults)))
 
 (defn service-description->health-check-url
   "Returns the configured health check Url or a default value (available in `default-health-check-path`)"
@@ -934,8 +936,7 @@
         (assoc sanitized-service-description "metadata" renamed-metadata-map)))))
 
 (defn prepare-service-description-sources
-  [{:keys [waiter-headers passthrough-headers]} kv-store waiter-hostnames
-   service-description-defaults profile->overrides token-defaults]
+  [{:keys [waiter-headers passthrough-headers]} kv-store waiter-hostnames token-defaults]
   "Prepare the service description sources from the current request.
    Populates the service description for on-the-fly waiter-specific headers.
    Also populates for the service description for a token (first looked in headers and then using the host name).
@@ -949,15 +950,12 @@
                                                       (sanitize-service-description service-description-from-header-keys))]
     (-> (prepare-service-description-template-from-tokens
           waiter-headers passthrough-headers kv-store waiter-hostnames token-defaults)
-        (assoc :headers service-description-template-from-headers
-               :profile->overrides profile->overrides
-               :service-description-defaults service-description-defaults))))
+        (assoc :headers service-description-template-from-headers))))
 
 (defn merge-service-description-sources
-  [descriptor kv-store waiter-hostnames service-description-defaults profile->overrides token-defaults]
+  [descriptor kv-store waiter-hostnames token-defaults]
   "Merges the sources for a service-description into the descriptor."
-  (->> (prepare-service-description-sources
-         descriptor kv-store waiter-hostnames service-description-defaults profile->overrides token-defaults)
+  (->> (prepare-service-description-sources descriptor kv-store waiter-hostnames token-defaults)
        (assoc descriptor :sources)))
 
 (defn- sanitize-metadata [{:strs [metadata] :as service-description}]
@@ -982,10 +980,9 @@
      If a non-param on-the-fly header is provided, the username is included as the run-as-user in on-the-fly headers.
      If after the merge a run-as-user is not available, then `username` becomes the run-as-user.
      If after the merge a permitted-user is not available, then `username` becomes the permitted-user."
-    [{:keys [headers profile->overrides service-description-defaults service-description-template source-tokens
-             token-authentication-disabled token-preauthorized]}
+    [{:keys [headers service-description-template source-tokens token-authentication-disabled token-preauthorized]}
      waiter-headers passthrough-headers component->previous-descriptor-fns kv-store service-id-prefix username
-     metric-group-mappings assoc-run-as-user-approved? service-description-builder]
+     assoc-run-as-user-approved? service-description-builder]
     (let [headers-without-params (dissoc headers "param")
           header-params (get headers "param")
           ; any change with the on-the-fly must change the run-as-user if it doesn't already exist
@@ -1039,9 +1036,6 @@
                                {:assoc-run-as-user-approved? assoc-run-as-user-approved?
                                 :component->previous-descriptor-fns component->previous-descriptor-fns
                                 :kv-store kv-store
-                                :metric-group-mappings metric-group-mappings
-                                :profile->overrides profile->overrides
-                                :service-description-defaults service-description-defaults
                                 :reference-type->entry {}
                                 :service-id-prefix service-id-prefix
                                 :source-tokens source-tokens
@@ -1091,7 +1085,7 @@
    kv-store service-id-prefix username metric-group-mappings service-description-builder assoc-run-as-user-approved?]
   (->> (compute-service-description
          sources waiter-headers passthrough-headers component->previous-descriptor-fns kv-store service-id-prefix
-         username metric-group-mappings assoc-run-as-user-approved? service-description-builder)
+         username assoc-run-as-user-approved? service-description-builder)
        (merge descriptor)))
 
 (defn make-build-service-description-and-id-helper

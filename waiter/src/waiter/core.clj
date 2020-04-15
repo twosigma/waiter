@@ -704,11 +704,11 @@
    :profile->overrides (pc/fnk [[:settings profile-config service-description-constraints]]
                          (pc/for-map [[profile {:keys [service-parameters]}] profile-config]
                            (name profile)
-                           (let [max-constraints-schema (sd/extract-max-constraints-schema service-description-constraints)]
+                           (let [max-constraints-schema (sd/extract-max-constraints-schema service-description-constraints)
+                                 initial-profile->overrides {}]
                              ;; validate the profile's service parameters
-                             (sd/validate-schema service-parameters max-constraints-schema
-                                                 {:allow-missing-required-fields? true
-                                                  :profile->overrides {}})
+                             (sd/validate-schema service-parameters max-constraints-schema initial-profile->overrides
+                                                 {:allow-missing-required-fields? true})
                              service-parameters)))
    :query-service-maintainer-chan (pc/fnk [] (au/latest-chan)) ; TODO move to service-chan-maintainer
    :router-metrics-agent (pc/fnk [router-id] (metrics-sync/new-router-metrics-agent router-id {}))
@@ -726,8 +726,9 @@
    :scheduler-state-chan (pc/fnk [] (au/latest-chan))
    :server-name (pc/fnk [[:settings git-version]] (str "waiter/" (str/join (take 7 git-version))))
    :service-description-builder (pc/fnk [[:curator synchronize-fn]
-                                         [:settings service-description-builder-config service-description-constraints]
-                                         custom-components kv-store-factory leader?-fn]
+                                         [:settings metric-group-mappings service-description-builder-config
+                                          service-description-constraints service-description-defaults]
+                                         custom-components kv-store-factory leader?-fn profile->overrides]
                                   (when-let [unknown-keys (-> service-description-constraints
                                                             keys
                                                             set
@@ -740,6 +741,9 @@
                                                  :custom-components custom-components
                                                  :kv-store-factory kv-store-factory
                                                  :leader?-fn leader?-fn
+                                                 :metric-group-mappings metric-group-mappings
+                                                 :profile->overrides profile->overrides
+                                                 :service-description-defaults service-description-defaults
                                                  :synchronize-fn synchronize-fn}]
                                     (utils/create-component service-description-builder-config :context context)))
    :service-id-prefix (pc/fnk [[:settings [:cluster-config service-prefix]]] service-prefix)
@@ -995,8 +999,8 @@
                                (let [{:keys [latest-descriptor] :as result}
                                      (descriptor/request->descriptor
                                        assoc-run-as-user-approved? can-run-as?-fn fallback-state-atom kv-store metric-group-mappings
-                                       history-length service-description-builder service-description-defaults profile->overrides
-                                       service-id-prefix token-defaults waiter-hostnames request)
+                                       history-length service-description-builder service-id-prefix token-defaults waiter-hostnames
+                                       request)
                                      {:keys [reference-type->entry service-id source-tokens]} latest-descriptor]
                                  (when (seq source-tokens)
                                    (store-source-tokens-fn service-id source-tokens))
@@ -1087,8 +1091,7 @@
                                               (throw (ex-info (str "authentication must be one of: '"
                                                                    (str/join "', '" (sort authentication-providers)) "'")
                                                               {:authentication authentication :status 400}))))
-                                          (sd/validate service-description-builder service-description
-                                                       {:profile->overrides profile->overrides}))))
+                                          (sd/validate service-description-builder service-description {}))))
    :waiter-request?-fn (pc/fnk [[:state waiter-hostnames]]
                          (let [local-router (InetAddress/getLocalHost)
                                waiter-router-hostname (.getCanonicalHostName local-router)
