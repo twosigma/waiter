@@ -418,16 +418,23 @@
 (defn validate-schema
   "Validates the provided service description template.
    When requested to do so, it populates required fields to ensure validation does not fail for missing required fields."
-  [service-description-template max-constraints-schema profile->defaults
+  [{:strs [profile] :as service-description-template} max-constraints-schema profile->defaults
    {:keys [allow-missing-required-fields?]
     :or {allow-missing-required-fields? true}
     :as args-map}]
-  (let [default-valid-service-description (when allow-missing-required-fields?
-                                            {"cpus" 1
-                                             "mem" 1
-                                             "cmd" "default-cmd"
-                                             "version" "default-version"
-                                             "run-as-user" "default-run-as-user"})
+  (let [default-valid-service-description (cond-> nil
+                                            allow-missing-required-fields?
+                                            (merge {"cpus" 1
+                                                    "mem" 1
+                                                    "cmd" "default-cmd"
+                                                    "version" "default-version"
+                                                    "run-as-user" "default-run-as-user"})
+                                            ;; handle scenario where profile provides defaults for required keys
+                                            ;; Since the results of validation are memoized, this implies that once
+                                            ;; a profile provides defaults for required keys, future modifications
+                                            ;; of the profile may not remove values for those keys.
+                                            profile
+                                            (merge (select-keys (get profile->defaults profile) service-required-keys)))
         service-description-to-use (merge default-valid-service-description service-description-template)
         exception-message (utils/message :invalid-service-description)
         throw-error (fn throw-error [e issue friendly-error-message]

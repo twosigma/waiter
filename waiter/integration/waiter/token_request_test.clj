@@ -1658,11 +1658,10 @@
                             :permitted-user "*"
                             :run-as-user (retrieve-username)
                             :version "1"}]
-      (doseq [profile (keys profile-config)]
+      (doseq [[profile {:keys [service-parameters]}] (seq profile-config)]
         (let [token (rand-name)
-              token-description (assoc base-description
-                                  :profile (name profile)
-                                  :token token)
+              token-description (-> (apply dissoc base-description (keys service-parameters))
+                                  (assoc :profile (name profile) :token token))
               register-response (post-token waiter-url token-description)]
           (try
             (assert-response-status register-response 200)
