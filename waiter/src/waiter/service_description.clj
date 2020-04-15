@@ -1082,7 +1082,7 @@
 (defn merge-service-description-and-id
   "Populates the descriptor with the service-description and service-id."
   [{:keys [component->previous-descriptor-fns passthrough-headers sources waiter-headers] :as descriptor}
-   kv-store service-id-prefix username metric-group-mappings service-description-builder assoc-run-as-user-approved?]
+   kv-store service-id-prefix username service-description-builder assoc-run-as-user-approved?]
   (->> (compute-service-description
          sources waiter-headers passthrough-headers component->previous-descriptor-fns kv-store service-id-prefix
          username assoc-run-as-user-approved? service-description-builder)
@@ -1090,7 +1090,7 @@
 
 (defn make-build-service-description-and-id-helper
   "Factory function to return the function used to complete creating a descriptor using the builder."
-  [kv-store service-id-prefix current-request-user metric-group-mappings service-description-builder
+  [kv-store service-id-prefix current-request-user service-description-builder
    assoc-run-as-user-approved?]
   (fn build-service-description-and-id-helper
     ;; If there is an error in attaching the service description or id and throw-exception? is false,
@@ -1098,7 +1098,7 @@
     [descriptor throw-exception?]
     (try
       (-> descriptor
-        (merge-service-description-and-id kv-store service-id-prefix current-request-user metric-group-mappings
+        (merge-service-description-and-id kv-store service-id-prefix current-request-user
                                           service-description-builder assoc-run-as-user-approved?)
         (merge-suspended kv-store))
       (catch Throwable ex

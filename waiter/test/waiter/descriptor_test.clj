@@ -260,9 +260,8 @@
                                                    :profile->defaults profile->defaults
                                                    :service-description-defaults service-description-defaults}))]
             (request->descriptor
-              assoc-run-as-user-approved? can-run-as? fallback-state-atom kv-store metric-group-mappings
-              search-history-length service-description-builder service-id-prefix token-defaults waiter-hostnames
-              request)))]
+              assoc-run-as-user-approved? can-run-as? fallback-state-atom kv-store search-history-length
+              service-description-builder service-id-prefix token-defaults waiter-hostnames request)))]
 
     (testing "missing user in request"
       (let [request {}
@@ -483,8 +482,7 @@
                                                               :service-description-defaults service-description-defaults})
       assoc-run-as-user-approved? (constantly false)
       build-service-description-and-id-helper (sd/make-build-service-description-and-id-helper
-                                                kv-store service-id-prefix username metric-group-mappings builder
-                                                assoc-run-as-user-approved?)]
+                                                kv-store service-id-prefix username builder assoc-run-as-user-approved?)]
 
   (deftest test-descriptor->previous-descriptor-no-token
     (let [sources {:headers {}

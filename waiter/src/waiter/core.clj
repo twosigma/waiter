@@ -991,17 +991,16 @@
    :refresh-service-descriptions-fn (pc/fnk [[:state kv-store]]
                                       (fn refresh-service-descriptions-fn [service-ids]
                                         (sd/refresh-service-descriptions kv-store service-ids)))
-   :request->descriptor-fn (pc/fnk [[:settings [:token-config history-length token-defaults]
-                                     metric-group-mappings]
+   :request->descriptor-fn (pc/fnk [[:settings [:token-config history-length token-defaults]]
                                     [:state fallback-state-atom kv-store service-description-builder
                                      service-id-prefix waiter-hostnames]
                                     assoc-run-as-user-approved? can-run-as?-fn store-reference-fn store-source-tokens-fn]
                              (fn request->descriptor-fn [request]
                                (let [{:keys [latest-descriptor] :as result}
                                      (descriptor/request->descriptor
-                                       assoc-run-as-user-approved? can-run-as?-fn fallback-state-atom kv-store metric-group-mappings
-                                       history-length service-description-builder service-id-prefix token-defaults waiter-hostnames
-                                       request)
+                                       assoc-run-as-user-approved? can-run-as?-fn fallback-state-atom kv-store
+                                       history-length service-description-builder service-id-prefix token-defaults
+                                       waiter-hostnames request)
                                      {:keys [reference-type->entry service-id source-tokens]} latest-descriptor]
                                  (when (seq source-tokens)
                                    (store-source-tokens-fn service-id source-tokens))

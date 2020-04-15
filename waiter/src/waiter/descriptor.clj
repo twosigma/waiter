@@ -258,11 +258,11 @@
   "Creates the service descriptor from the request.
    The result map contains the following elements:
    {:keys [waiter-headers passthrough-headers sources service-id service-description core-service-description suspended-state]}"
-  [token-defaults service-id-prefix kv-store waiter-hostnames request metric-group-mappings service-description-builder
+  [token-defaults service-id-prefix kv-store waiter-hostnames request service-description-builder
    assoc-run-as-user-approved?]
   (let [current-request-user (get request :authorization/user)
         build-service-description-and-id-helper (sd/make-build-service-description-and-id-helper
-                                                  kv-store service-id-prefix current-request-user metric-group-mappings
+                                                  kv-store service-id-prefix current-request-user
                                                   service-description-builder assoc-run-as-user-approved?)
         descriptor
         (-> (headers/split-headers (:headers request))
@@ -302,15 +302,15 @@
   (defn request->descriptor
     "Extract the service descriptor from a request.
      It also performs the necessary authorization."
-    [assoc-run-as-user-approved? can-run-as? fallback-state-atom kv-store metric-group-mappings
-     search-history-length service-description-builder service-id-prefix token-defaults waiter-hostnames
+    [assoc-run-as-user-approved? can-run-as? fallback-state-atom kv-store search-history-length
+     service-description-builder service-id-prefix token-defaults waiter-hostnames
      {:keys [request-time] :as request}]
     (timers/start-stop-time!
       request->descriptor-timer
       (let [auth-user (:authorization/user request)
             service-approved? (fn service-approved? [service-id] (assoc-run-as-user-approved? request service-id))
             latest-descriptor (compute-descriptor
-                                token-defaults service-id-prefix kv-store waiter-hostnames request metric-group-mappings
+                                token-defaults service-id-prefix kv-store waiter-hostnames request
                                 service-description-builder service-approved?)
             descriptor->previous-descriptor
             (fn descriptor->previous-descriptor-fn
