@@ -102,6 +102,7 @@
                      "favicon.ico" :favicon-handler-fn
                      "metrics" :metrics-request-handler-fn
                      "service-id" :service-id-handler-fn
+                     "profiles" :profile-list-handler-fn
                      "settings" :display-settings-handler-fn
                      "sim" :sim-request-handler
                      "state" [["" :state-all-handler-fn]
@@ -1455,6 +1456,11 @@
                                      wrap-auth-bypass-fn
                                      wrap-https-redirect-fn
                                      wrap-service-discovery-fn)))
+   :profile-list-handler-fn (pc/fnk [[:state profile->overrides]
+                                     wrap-secure-request-fn]
+                              (wrap-secure-request-fn
+                                (fn profile-list-handler-fn [request]
+                                  (handler/display-profiles-handler profile->overrides request))))
    :router-metrics-handler-fn (pc/fnk [[:routines crypt-helpers]
                                        [:settings [:metrics-config metrics-sync-interval-ms]]
                                        [:state router-metrics-agent]]

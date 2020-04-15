@@ -1006,3 +1006,15 @@
           utils/clj->json-response))
     (catch Throwable th
       (utils/exception->response th request))))
+
+(defn display-profiles-handler
+  "Responds with a list of profiles"
+  [profile->overrides request]
+  (try
+    (utils/clj->json-response
+      (map (fn [[profile overrides]]
+             {:name profile
+              :overrides overrides})
+           (seq profile->overrides)))
+    (catch Throwable th
+      (utils/exception->response th request))))

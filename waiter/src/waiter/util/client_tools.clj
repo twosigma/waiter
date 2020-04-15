@@ -534,6 +534,11 @@
 (defn retrieve-kitchen-service-id [waiter-url waiter-headers & options]
   (pc/mapply retrieve-service-id waiter-url (merge (kitchen-request-headers) waiter-headers) options))
 
+(defn waiter-profiles [waiter-url & {:keys [cookies] :or {cookies []}}]
+  (let [profiles-result (make-request waiter-url "/profiles" :verbose true :cookies cookies)
+        profiles-json (try-parse-json (:body profiles-result))]
+    (walk/keywordize-keys profiles-json)))
+
 (defn waiter-settings [waiter-url & {:keys [cookies] :or {cookies []}}]
   (let [settings-result (make-request waiter-url "/settings" :verbose true :cookies cookies)
         settings-json (try-parse-json (:body settings-result))]
