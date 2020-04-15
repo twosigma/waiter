@@ -1012,9 +1012,9 @@
   [profile->overrides request]
   (try
     (utils/clj->json-response
-      (map (fn [[profile overrides]]
-             {:name profile
-              :overrides overrides})
+      (map (fn [[profile defaults]]
+             {:defaults defaults
+              :name profile})
            (seq profile->overrides)))
     (catch Throwable th
       (utils/exception->response th request))))

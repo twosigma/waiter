@@ -75,14 +75,14 @@
                    {:profile-config profile-config
                     :profile-list profile-list}))
           (doseq [[profile {:keys [service-parameters]}] profile-config]
-            (let [profile-overrides (->> profile-list
-                                      (filter #(= (name profile) (:name %)))
-                                      first
-                                      :overrides)
-                  _ (is (= service-parameters profile-overrides)
+            (let [profile-defaults (->> profile-list
+                                     (filter #(= (name profile) (:name %)))
+                                     first
+                                     :defaults)
+                  _ (is (= service-parameters profile-defaults)
                         (str "Profile configuration and API output do not match!"
                              {:profile profile
-                              :profile-overrides profile-overrides
+                              :profile-defaults profile-defaults
                               :service-parameters service-parameters}))
                   new-request-headers (assoc request-headers "x-waiter-profile" (name profile))
                   new-service-id (retrieve-service-id waiter-url new-request-headers)
