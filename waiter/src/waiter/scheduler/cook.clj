@@ -492,7 +492,7 @@
 
   (state [_ include-flags]
     (cond-> {:supported-include-params ["authorizer" "failed-instances" "syncer"]
-             :type "CookScheduler"}
+             :type "Cook"}
       (and authorizer (contains? include-flags "authorizer"))
       (assoc :authorizer (authz/state authorizer))
       (contains? include-flags "failed-instances")

@@ -365,7 +365,7 @@
                   :components {"ipsum" {:operation :scheduler-state :scheduler-name "ipsum"}
                                "lorem" {:operation :scheduler-state :scheduler-name "lorem"}}
                   :supported-include-params ["aggregator" "components"]
-                  :type "CompositeScheduler"}
+                  :type "Composite"}
                  (scheduler/state composite-scheduler #{"aggregator" "components"}))))))
 
     (async/close! component-channel)

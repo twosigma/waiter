@@ -688,7 +688,7 @@
 
   (state [_ include-flags]
     (cond-> {:supported-include-params ["port-reservation" "services" "syncer"]
-             :type "ShellScheduler"}
+             :type "Shell"}
       (contains? include-flags "port-reservation")
       (assoc :port->reservation @port->reservation-atom)
       (contains? include-flags "services")

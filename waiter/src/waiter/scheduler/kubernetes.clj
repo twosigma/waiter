@@ -740,7 +740,7 @@
 
   (state [_ include-flags]
     (cond-> {:supported-include-params ["auth-token-renewer" "authorizer" "failed-instances" "syncer" "watch-state"]
-             :type "KubernetesScheduler"}
+             :type "Kubernetes"}
       (contains? include-flags "auth-token-renewer")
       (assoc :auth-token-renewer (retrieve-auth-token-state-fn))
       (and authorizer (contains? include-flags "authorizer"))
