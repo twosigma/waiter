@@ -1058,19 +1058,16 @@
     "Returns nil if the provided descriptor contains a valid service description.
      Else it returns an instance of Throwable that reflects the validation error."
     [kv-store service-description-builder
-     {:keys [core-service-description passthrough-headers service-description service-id sources waiter-headers]}]
+     {:keys [core-service-description passthrough-headers service-description service-id waiter-headers]}]
     (sling/try+
       (let [stored-service-description (fetch-core kv-store service-id)]
         ; Validating is expensive, so avoid validating if we've validated before, relying on the fact
         ; that we'll only store validated service descriptions
         (when-not (seq stored-service-description)
-          (let [{:keys [profile->defaults]} sources]
-            (validate service-description-builder core-service-description
-                      {:allow-missing-required-fields? false
-                       :profile->defaults profile->defaults})
-            (validate service-description-builder service-description
-                      {:allow-missing-required-fields? false
-                       :profile->defaults profile->defaults})))
+          (validate service-description-builder core-service-description
+                    {:allow-missing-required-fields? false})
+          (validate service-description-builder service-description
+                    {:allow-missing-required-fields? false}))
         nil)
       (catch [:type :service-description-error] ex-data
         (ex-info (:message ex-data)
