@@ -346,18 +346,18 @@
 
 (defn- compute-valid-profiles-str
   "Computes the string representation of supported profiles"
-  [profile->overrides]
-  (let [supported-profiles-str (->> profile->overrides keys sort (str/join ", "))]
+  [profile->defaults]
+  (let [supported-profiles-str (->> profile->defaults keys sort (str/join ", "))]
     (if (str/blank? supported-profiles-str)
       ", there are no supported profiles"
       (str ", supported profile(s) are " supported-profiles-str))))
 
 (defn validate-profile-parameter
   "Throws an exception when the profile parameter is provided but does not map to a supported profile."
-  [profile->overrides profile]
+  [profile->defaults profile]
   (when (some? profile)
-    (when-not (contains? profile->overrides profile)
-      (let [supported-profiles-str (compute-valid-profiles-str profile->overrides)]
+    (when-not (contains? profile->defaults profile)
+      (let [supported-profiles-str (compute-valid-profiles-str profile->defaults)]
         (sling/throw+ {:type :service-description-error
                        :friendly-error-message (str "Unsupported profile: " profile supported-profiles-str)
                        :status 400
@@ -367,11 +367,11 @@
   "Returns the default service parameters for the specified profile.
    Throws an error if the profile is not supported.
    The service-description-defaults are overridden with overrides from a specified profile."
-  [service-description-defaults profile->overrides profile]
-  (validate-profile-parameter profile->overrides profile)
+  [service-description-defaults profile->defaults profile]
+  (validate-profile-parameter profile->defaults profile)
   (cond-> service-description-defaults
-    (contains? profile->overrides profile)
-    (merge (get profile->overrides profile))))
+    (contains? profile->defaults profile)
+    (merge (get profile->defaults profile))))
 
 (defn parameters->id
   "Generates a deterministic ID from the input parameter map."
@@ -418,7 +418,7 @@
 (defn validate-schema
   "Validates the provided service description template.
    When requested to do so, it populates required fields to ensure validation does not fail for missing required fields."
-  [service-description-template max-constraints-schema profile->overrides
+  [service-description-template max-constraints-schema profile->defaults
    {:keys [allow-missing-required-fields?]
     :or {allow-missing-required-fields? true}
     :as args-map}]
@@ -513,7 +513,7 @@
                                            (attach-error-message-for-parameter
                                              parameter->issues :profile
                                              (str "profile must be a non-empty string"
-                                                  (compute-valid-profiles-str profile->overrides)))
+                                                  (compute-valid-profiles-str profile->defaults)))
                                            (attach-error-message-for-parameter
                                              parameter->issues :version "version must be a non-empty string."))
               unresolved-parameters (set/difference (-> parameter->issues keys set)
@@ -583,7 +583,7 @@
     ; validate the profile when it is configured
     (let [{:strs [profile]} service-description-to-use]
       (when-not (str/blank? profile)
-        (validate-profile-parameter profile->overrides profile)))))
+        (validate-profile-parameter profile->defaults profile)))))
 
 (defprotocol ServiceDescriptionBuilder
   "A protocol for constructing a service description from the various sources. Implementations
@@ -617,7 +617,7 @@
                  (not= (token->token-hash token) version))
                source-tokens)))
 
-(defrecord DefaultServiceDescriptionBuilder [max-constraints-schema metric-group-mappings profile->overrides
+(defrecord DefaultServiceDescriptionBuilder [max-constraints-schema metric-group-mappings profile->defaults
                                              service-description-defaults]
   ServiceDescriptionBuilder
 
@@ -635,7 +635,7 @@
                   candidate-service-description)
                 user-service-description)))
           service-id (service-description->service-id service-id-prefix core-service-description)
-          defaults (compute-profile-defaults service-description-defaults profile->overrides profile)
+          defaults (compute-profile-defaults service-description-defaults profile->defaults profile)
           service-description (default-and-override core-service-description metric-group-mappings
                                                     kv-store defaults service-id)
           reference-type->entry (cond-> (or reference-type->entry {})
@@ -655,7 +655,7 @@
 
   (validate [_ service-description args-map]
     (->> (merge-with set/union args-map {:valid-cmd-types #{"docker" "shell"}})
-         (validate-schema service-description max-constraints-schema profile->overrides))))
+         (validate-schema service-description max-constraints-schema profile->defaults))))
 
 (defn extract-max-constraints
   "Extracts the max constraints from the generic constraints definition."
@@ -678,10 +678,10 @@
 
 (defn create-default-service-description-builder
   "Returns a new DefaultServiceDescriptionBuilder which uses the specified resource limits."
-  [{:keys [constraints metric-group-mappings profile->overrides service-description-defaults]}]
+  [{:keys [constraints metric-group-mappings profile->defaults service-description-defaults]}]
   (let [max-constraints-schema (extract-max-constraints-schema constraints)]
     (->DefaultServiceDescriptionBuilder
-      max-constraints-schema metric-group-mappings profile->overrides service-description-defaults)))
+      max-constraints-schema metric-group-mappings profile->defaults service-description-defaults)))
 
 (defn service-description->health-check-url
   "Returns the configured health check Url or a default value (available in `default-health-check-path`)"
@@ -1064,13 +1064,13 @@
         ; Validating is expensive, so avoid validating if we've validated before, relying on the fact
         ; that we'll only store validated service descriptions
         (when-not (seq stored-service-description)
-          (let [{:keys [profile->overrides]} sources]
+          (let [{:keys [profile->defaults]} sources]
             (validate service-description-builder core-service-description
                       {:allow-missing-required-fields? false
-                       :profile->overrides profile->overrides})
+                       :profile->defaults profile->defaults})
             (validate service-description-builder service-description
                       {:allow-missing-required-fields? false
-                       :profile->overrides profile->overrides})))
+                       :profile->defaults profile->defaults})))
         nil)
       (catch [:type :service-description-error] ex-data
         (ex-info (:message ex-data)
@@ -1129,10 +1129,10 @@
 
 (defn service-id->service-description
   "Loads the service description for the specified service-id including any overrides."
-  [kv-store service-id service-description-defaults profile->overrides metric-group-mappings
+  [kv-store service-id service-description-defaults profile->defaults metric-group-mappings
    & {:keys [effective?] :or {effective? true}}]
   (let [{:strs [profile] :as core-service-description} (fetch-core kv-store service-id :refresh false)
-        service-description-defaults (compute-profile-defaults service-description-defaults profile->overrides profile)]
+        service-description-defaults (compute-profile-defaults service-description-defaults profile->defaults profile)]
     (cond-> core-service-description
       effective? (default-and-override metric-group-mappings kv-store service-description-defaults service-id))))
 

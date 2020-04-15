@@ -1009,12 +1009,12 @@
 
 (defn display-profiles-handler
   "Responds with a list of profiles"
-  [profile->overrides request]
+  [profile->defaults request]
   (try
     (utils/clj->json-response
       (map (fn [[profile defaults]]
              {:defaults defaults
               :name profile})
-           (seq profile->overrides)))
+           (seq profile->defaults)))
     (catch Throwable th
       (utils/exception->response th request))))

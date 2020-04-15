@@ -702,15 +702,15 @@
                       _ (password-store/check-empty-passwords passwords)
                       processed-passwords (mapv #(vector :cached %) passwords)]
                   processed-passwords))
-   :profile->overrides (pc/fnk [[:settings profile-config service-description-constraints]]
-                         (pc/for-map [[profile {:keys [service-parameters]}] profile-config]
-                           (name profile)
-                           (let [max-constraints-schema (sd/extract-max-constraints-schema service-description-constraints)
-                                 initial-profile->overrides {}]
-                             ;; validate the profile's service parameters
-                             (sd/validate-schema service-parameters max-constraints-schema initial-profile->overrides
-                                                 {:allow-missing-required-fields? true})
-                             service-parameters)))
+   :profile->defaults (pc/fnk [[:settings profile-config service-description-constraints]]
+                        (pc/for-map [[profile {:keys [service-parameters]}] profile-config]
+                          (name profile)
+                          (let [max-constraints-schema (sd/extract-max-constraints-schema service-description-constraints)
+                                initial-profile->defaults {}]
+                            ;; validate the profile's service parameters
+                            (sd/validate-schema service-parameters max-constraints-schema initial-profile->defaults
+                                                {:allow-missing-required-fields? true})
+                            service-parameters)))
    :query-service-maintainer-chan (pc/fnk [] (au/latest-chan)) ; TODO move to service-chan-maintainer
    :router-metrics-agent (pc/fnk [router-id] (metrics-sync/new-router-metrics-agent router-id {}))
    :router-id (pc/fnk [[:settings router-id-prefix]]
@@ -729,7 +729,7 @@
    :service-description-builder (pc/fnk [[:curator synchronize-fn]
                                          [:settings metric-group-mappings service-description-builder-config
                                           service-description-constraints service-description-defaults]
-                                         custom-components kv-store-factory leader?-fn profile->overrides]
+                                         custom-components kv-store-factory leader?-fn profile->defaults]
                                   (when-let [unknown-keys (-> service-description-constraints
                                                             keys
                                                             set
@@ -743,7 +743,7 @@
                                                  :kv-store-factory kv-store-factory
                                                  :leader?-fn leader?-fn
                                                  :metric-group-mappings metric-group-mappings
-                                                 :profile->overrides profile->overrides
+                                                 :profile->defaults profile->defaults
                                                  :service-description-defaults service-description-defaults
                                                  :synchronize-fn synchronize-fn}]
                                     (utils/create-component service-description-builder-config :context context)))
@@ -852,11 +852,11 @@
    ; This function is only included here for initializing the scheduler above.
    ; Prefer accessing the non-starred version of this function through the routines map.
    :service-id->service-description-fn* (pc/fnk [[:settings metric-group-mappings service-description-defaults]
-                                                 [:state kv-store profile->overrides]]
+                                                 [:state kv-store profile->defaults]]
                                           (fn service-id->service-description
                                             [service-id & {:keys [effective?] :or {effective? true}}]
                                             (sd/service-id->service-description
-                                              kv-store service-id service-description-defaults profile->overrides
+                                              kv-store service-id service-description-defaults profile->defaults
                                               metric-group-mappings :effective? effective?)))
    :start-scheduler-syncer-fn (pc/fnk [[:settings [:health-check-config health-check-timeout-ms failed-check-threshold]]
                                        [:state clock user-agent-version]
@@ -992,9 +992,9 @@
                                       (fn refresh-service-descriptions-fn [service-ids]
                                         (sd/refresh-service-descriptions kv-store service-ids)))
    :request->descriptor-fn (pc/fnk [[:settings [:token-config history-length token-defaults]
-                                     metric-group-mappings service-description-defaults]
-                                    [:state fallback-state-atom kv-store profile->overrides
-                                     service-description-builder service-id-prefix waiter-hostnames]
+                                     metric-group-mappings]
+                                    [:state fallback-state-atom kv-store service-description-builder
+                                     service-id-prefix waiter-hostnames]
                                     assoc-run-as-user-approved? can-run-as?-fn store-reference-fn store-source-tokens-fn]
                              (fn request->descriptor-fn [request]
                                (let [{:keys [latest-descriptor] :as result}
@@ -1083,7 +1083,7 @@
                             (fn token->token-metadata [token]
                               (sd/token->token-metadata kv-store token :error-on-missing false)))
    :validate-service-description-fn (pc/fnk [[:settings service-description-defaults]
-                                             [:state authenticator profile->overrides service-description-builder]]
+                                             [:state authenticator service-description-builder]]
                                       (let [authentication-providers (into #{"disabled" "standard"} (auth/get-authentication-providers authenticator))
                                             default-authentication (get service-description-defaults "authentication")]
                                         (fn validate-service-description [service-description]
@@ -1456,11 +1456,11 @@
                                      wrap-auth-bypass-fn
                                      wrap-https-redirect-fn
                                      wrap-service-discovery-fn)))
-   :profile-list-handler-fn (pc/fnk [[:state profile->overrides]
+   :profile-list-handler-fn (pc/fnk [[:state profile->defaults]
                                      wrap-secure-request-fn]
                               (wrap-secure-request-fn
                                 (fn profile-list-handler-fn [request]
-                                  (handler/display-profiles-handler profile->overrides request))))
+                                  (handler/display-profiles-handler profile->defaults request))))
    :router-metrics-handler-fn (pc/fnk [[:routines crypt-helpers]
                                        [:settings [:metrics-config metrics-sync-interval-ms]]
                                        [:state router-metrics-agent]]
