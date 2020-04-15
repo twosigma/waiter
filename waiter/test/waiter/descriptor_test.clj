@@ -240,7 +240,7 @@
         run-request->descriptor
         (fn run-request->descriptor
           [request &
-           {:keys [assoc-run-as-user-approved? can-run-as? fallback-state-atom kv-store metric-group-mappings profile->overrides
+           {:keys [assoc-run-as-user-approved? can-run-as? fallback-state-atom kv-store metric-group-mappings profile->defaults
                    search-history-length service-description-builder service-description-defaults service-id-prefix token-defaults
                    waiter-hostnames]
             :or {assoc-run-as-user-approved? (fn [_ _] false)
@@ -248,7 +248,7 @@
                  fallback-state-atom (atom {})
                  kv-store (kv/->LocalKeyValueStore (atom {}))
                  metric-group-mappings []
-                 profile->overrides {}
+                 profile->defaults {}
                  search-history-length default-search-history-length
                  service-description-defaults {}
                  service-id-prefix "service-prefix-"
@@ -257,12 +257,11 @@
           (let [service-description-builder (or service-description-builder
                                                 (sd/create-default-service-description-builder
                                                   {:metric-group-mappings metric-group-mappings
-                                                   :profile->overrides profile->overrides
+                                                   :profile->defaults profile->defaults
                                                    :service-description-defaults service-description-defaults}))]
             (request->descriptor
-              assoc-run-as-user-approved? can-run-as? fallback-state-atom kv-store metric-group-mappings
-              search-history-length service-description-builder service-id-prefix token-defaults waiter-hostnames
-              request)))]
+              assoc-run-as-user-approved? can-run-as? fallback-state-atom kv-store search-history-length
+              service-description-builder service-id-prefix token-defaults waiter-hostnames request)))]
 
     (testing "missing user in request"
       (let [request {}
@@ -474,17 +473,16 @@
       token-defaults {"fallback-period-secs" 300}
       username "test-user"
       metric-group-mappings []
-      profile->overrides {"webapp" {"concurrency-level" 120}}
+      profile->defaults {"webapp" {"concurrency-level" 120}}
       service-description-defaults {"metric-group" "other" "permitted-user" "*"}
       constraints {"cpus" {:max 100} "mem" {:max 1024}}
       builder (sd/create-default-service-description-builder {:constraints constraints
                                                               :metric-group-mappings metric-group-mappings
-                                                              :profile->overrides profile->overrides
+                                                              :profile->defaults profile->defaults
                                                               :service-description-defaults service-description-defaults})
       assoc-run-as-user-approved? (constantly false)
       build-service-description-and-id-helper (sd/make-build-service-description-and-id-helper
-                                                kv-store service-id-prefix username metric-group-mappings builder
-                                                assoc-run-as-user-approved?)]
+                                                kv-store service-id-prefix username builder assoc-run-as-user-approved?)]
 
   (deftest test-descriptor->previous-descriptor-no-token
     (let [sources {:headers {}
@@ -717,7 +715,7 @@
               :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-1)]}}
               :service-authentication-disabled false
               :service-description (merge service-description-defaults
-                                          (get profile->overrides "webapp")
+                                          (get profile->defaults "webapp")
                                           service-description-1)
               :service-id (sd/service-description->service-id service-id-prefix service-description-1)
               :service-preauthorized false

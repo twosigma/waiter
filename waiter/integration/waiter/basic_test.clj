@@ -67,10 +67,24 @@
 
       (testing "explicitly specifying profile parameter resolves to different service"
         (let [{:keys [profile-config service-description-defaults]} (waiter-settings waiter-url)
+              profile-list (waiter-profiles waiter-url)
               request-headers (walk/stringify-keys request-headers)
               base-service-description (service-id->service-description waiter-url service-id)]
+          (is (= (count profile-config) (count profile-list))
+              (str "Number of profiles in config and API output do not match!"
+                   {:profile-config profile-config
+                    :profile-list profile-list}))
           (doseq [[profile {:keys [service-parameters]}] profile-config]
-            (let [new-request-headers (assoc request-headers "x-waiter-profile" (name profile))
+            (let [profile-defaults (->> profile-list
+                                     (filter #(= (name profile) (:name %)))
+                                     first
+                                     :defaults)
+                  _ (is (= service-parameters profile-defaults)
+                        (str "Profile configuration and API output do not match!"
+                             {:profile profile
+                              :profile-defaults profile-defaults
+                              :service-parameters service-parameters}))
+                  new-request-headers (assoc request-headers "x-waiter-profile" (name profile))
                   new-service-id (retrieve-service-id waiter-url new-request-headers)
                   service-settings (service-settings waiter-url new-service-id
                                                      :query-params {"effective-parameters" "true"})
