@@ -862,20 +862,20 @@
     (is (= {:failed-instances [:failed-instances]
             :syncer {:last-update-time :time}}
            (scheduler/service-id->state cook-scheduler service-id)))
-    (is (= {:supported-include-params ["authorizer" "failed-instances" "syncer"]
+    (is (= {:supported-include-params ["authorizer" "service-id->failed-instances" "syncer"]
             :type "Cook"}
            (scheduler/state cook-scheduler #{})))
-    (is (= {:supported-include-params ["authorizer" "failed-instances" "syncer"]
+    (is (= {:supported-include-params ["authorizer" "service-id->failed-instances" "syncer"]
             :syncer {:last-update-time :time
                      :service-id->health-check-context {}}
             :type "Cook"}
            (scheduler/state cook-scheduler #{"syncer"})))
-    (is (= {:service-id->failed-instances-transient-store {"service-id" [:failed-instances]}
-            :supported-include-params ["authorizer" "failed-instances" "syncer"]
+    (is (= {:service-id->failed-instances {"service-id" [:failed-instances]}
+            :supported-include-params ["authorizer" "service-id->failed-instances" "syncer"]
             :syncer {:last-update-time :time
                      :service-id->health-check-context {}}
             :type "Cook"}
-           (scheduler/state cook-scheduler #{"authorizer" "failed-instances" "syncer"})))))
+           (scheduler/state cook-scheduler #{"authorizer" "service-id->failed-instances" "syncer"})))))
 
 (deftest test-cook-scheduler
   (testing "Creating a CookScheduler"

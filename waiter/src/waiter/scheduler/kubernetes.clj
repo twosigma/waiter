@@ -739,13 +739,14 @@
      :syncer (retrieve-syncer-state-fn service-id)})
 
   (state [_ include-flags]
-    (cond-> {:supported-include-params ["auth-token-renewer" "authorizer" "failed-instances" "syncer" "watch-state"]
+    (cond-> {:supported-include-params ["auth-token-renewer" "authorizer" "service-id->failed-instances"
+                                        "syncer" "watch-state"]
              :type "Kubernetes"}
       (contains? include-flags "auth-token-renewer")
       (assoc :auth-token-renewer (retrieve-auth-token-state-fn))
       (and authorizer (contains? include-flags "authorizer"))
       (assoc :authorizer (authz/state authorizer))
-      (contains? include-flags "failed-instances")
+      (contains? include-flags "service-id->failed-instances")
       (assoc :service-id->failed-instances @service-id->failed-instances-transient-store)
       (contains? include-flags "syncer")
       (assoc :syncer (retrieve-syncer-state-fn))

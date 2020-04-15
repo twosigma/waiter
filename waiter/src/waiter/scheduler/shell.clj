@@ -687,12 +687,12 @@
       :syncer (retrieve-syncer-state-fn service-id)))
 
   (state [_ include-flags]
-    (cond-> {:supported-include-params ["port-reservation" "services" "syncer"]
+    (cond-> {:supported-include-params ["id->service" "port->reservation" "syncer"]
              :type "Shell"}
-      (contains? include-flags "port-reservation")
-      (assoc :port->reservation @port->reservation-atom)
-      (contains? include-flags "services")
+      (contains? include-flags "id->service")
       (assoc :id->service @id->service-agent)
+      (contains? include-flags "port->reservation")
+      (assoc :port->reservation @port->reservation-atom)
       (contains? include-flags "syncer")
       (assoc :syncer (retrieve-syncer-state-fn))))
 

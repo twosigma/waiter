@@ -491,12 +491,12 @@
      :syncer (retrieve-syncer-state-fn service-id)})
 
   (state [_ include-flags]
-    (cond-> {:supported-include-params ["authorizer" "failed-instances" "syncer"]
+    (cond-> {:supported-include-params ["authorizer" "service-id->failed-instances" "syncer"]
              :type "Cook"}
       (and authorizer (contains? include-flags "authorizer"))
       (assoc :authorizer (authz/state authorizer))
-      (contains? include-flags "failed-instances")
-      (assoc :service-id->failed-instances-transient-store @service-id->failed-instances-transient-store)
+      (contains? include-flags "service-id->failed-instances")
+      (assoc :service-id->failed-instances @service-id->failed-instances-transient-store)
       (contains? include-flags "syncer")
       (assoc :syncer (retrieve-syncer-state-fn))))
 
