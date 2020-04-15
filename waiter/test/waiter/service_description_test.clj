@@ -1972,7 +1972,7 @@
                            "run-as-user" "default-run-as-user"}
         constraints-schema {(s/optional-key "cmd") (s/pred #(<= (count %) 100) (symbol "limit-100"))
                             s/Str s/Any}
-        profile->defaults {"web-app" {"name" "web-app-name"}}
+        profile->defaults {"webapp" {"name" "webapp-name"}}
         config {:allow-missing-required-fields? false}]
     (is (nil? (validate-schema valid-description constraints-schema profile->defaults config)))
 
@@ -2023,14 +2023,14 @@
       (run-validate-schema-test
         (assoc valid-description "profile" 1234)
         constraints-schema profile->defaults config
-        "profile must be a non-empty string, supported profile(s) are web-app")
+        "profile must be a non-empty string, supported profile(s) are webapp")
       (run-validate-schema-test
         (assoc valid-description "profile" "web-service")
         constraints-schema profile->defaults config
-        "Unsupported profile: web-service, supported profile(s) are web-app")
+        "Unsupported profile: web-service, supported profile(s) are webapp")
 
       (let [config {:allow-missing-required-fields? false}
-            profile->defaults (dissoc profile->defaults "web-app")]
+            profile->defaults (dissoc profile->defaults "webapp")]
         (run-validate-schema-test
           (assoc valid-description "profile" 1234)
           constraints-schema profile->defaults config
@@ -2038,7 +2038,25 @@
         (run-validate-schema-test
           (assoc valid-description "profile" "web-service")
           constraints-schema profile->defaults config
-          "Unsupported profile: web-service, there are no supported profiles")))))
+          "Unsupported profile: web-service, there are no supported profiles"))
+
+      (let [profile->defaults {"webapp" {"cpus" 1 "mem" 2048 "name" "webapp-name"}}
+            service-description (dissoc valid-description "cpus" "mem")
+            profile-description (assoc service-description "profile" "webapp")]
+
+        (run-validate-schema-test
+          service-description constraints-schema profile->defaults
+          {:allow-missing-required-fields? false}
+          "cpus must be a positive number")
+        (run-validate-schema-test
+          service-description constraints-schema profile->defaults
+          {:allow-missing-required-fields? false}
+          "mem must be a positive number")
+
+        (is (nil? (validate-schema profile-description constraints-schema profile->defaults
+                                   {:allow-missing-required-fields? true})))
+        (is (nil? (validate-schema profile-description constraints-schema profile->defaults
+                                   {:allow-missing-required-fields? false})))))))
 
 (deftest test-service-description-schema
   (testing "Service description schema"
