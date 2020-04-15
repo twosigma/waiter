@@ -764,7 +764,9 @@
 (defn get-scheduler-state
   "Outputs the scheduler state."
   [router-id scheduler request]
-  (get-function-state #(scheduler/state scheduler) router-id request))
+  (let [{:strs [include]} (-> request ru/query-params-request :query-params)
+        include-flags (if (string? include) #{include} (set include))]
+    (get-function-state #(scheduler/state scheduler include-flags) router-id request)))
 
 (defn get-statsd-state
   "Outputs the statsd state."

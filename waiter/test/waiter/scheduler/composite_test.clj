@@ -80,7 +80,7 @@
   (service-id->state [_ service-id]
     {:identifier service-id :operation :service-state :scheduler-name scheduler-name})
 
-  (state [_]
+  (state [_ _]
     {:operation :scheduler-state :scheduler-name scheduler-name}))
 
 (deftest test-service-id->scheduler
@@ -363,8 +363,10 @@
                                :scheduler-id->sync-time {}
                                :scheduler-id->type->messages {}}
                   :components {"ipsum" {:operation :scheduler-state :scheduler-name "ipsum"}
-                               "lorem" {:operation :scheduler-state :scheduler-name "lorem"}}}
-                 (scheduler/state composite-scheduler))))))
+                               "lorem" {:operation :scheduler-state :scheduler-name "lorem"}}
+                  :supported-include-params ["aggregator" "components"]
+                  :type "CompositeScheduler"}
+                 (scheduler/state composite-scheduler #{"aggregator" "components"}))))))
 
     (async/close! component-channel)
     (async/close! scheduler-state-chan)))

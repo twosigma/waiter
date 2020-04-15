@@ -15,7 +15,10 @@
     (when (using-k8s? waiter-url)
       (let [cookies (all-cookies waiter-url)
             router-url (-> waiter-url routers first val)
-            {:keys [body] :as response} (make-request router-url "/state/scheduler" :method :get :cookies cookies)
+            {:keys [body] :as response} (make-request router-url "/state/scheduler"
+                                                      :cookies cookies
+                                                      :method :get
+                                                      :query-params {"include" ["components" "watch-state"]})
             _ (assert-response-status response 200)
             body-json (-> body str try-parse-json)
             watch-state-json (get-watch-state body-json)
@@ -28,7 +31,10 @@
                                    #(make-kitchen-request waiter-url % :path "/hello"))]
         (with-service-cleanup
           service-id
-          (let [{:keys [body] :as response} (make-request router-url "/state/scheduler" :method :get :cookies cookies)
+          (let [{:keys [body] :as response} (make-request router-url "/state/scheduler"
+                                                          :cookies cookies
+                                                          :method :get
+                                                          :query-params {"include" ["components" "watch-state"]})
                 _ (assert-response-status response 200)
                 body-json (-> body str try-parse-json)
                 watch-state-json (get-watch-state body-json)
@@ -176,7 +182,10 @@
                       error)))
     (with-service-cleanup
       service-id
-      (let [{:keys [body] :as response} (make-request router-url "/state/scheduler" :method :get :cookies cookies)
+      (let [{:keys [body] :as response} (make-request router-url "/state/scheduler"
+                                                      :cookies cookies
+                                                      :method :get
+                                                      :query-params {"include" ["components" "watch-state"]})
             _ (assert-response-status response 200)
             body-json (-> body str try-parse-json)
             watch-state-json (get-watch-state body-json)
