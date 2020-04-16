@@ -145,6 +145,16 @@
        (is (= "DEADLINE_EXCEEDED" (-> status# .getCode str)) assertion-message#)
        (is (str/includes? (.getDescription status#) "deadline exceeded after") assertion-message#))))
 
+(defmacro assert-grpc-unauthenticated-status
+  "Asserts that the status represents a grpc UNAUTHENTICATED status."
+  [status assertion-message]
+  `(let [status# ~status
+         assertion-message# ~assertion-message]
+     (is status# assertion-message#)
+     (when status#
+       (is (= "UNAUTHENTICATED" (some-> status# .getCode str)))
+       (is (= "Unauthorized" (some-> status# .getDescription))))))
+
 (defmacro assert-grpc-server-exit-status
   "Asserts that the status represents a grpc OK status."
   [status assertion-message]
@@ -276,6 +286,24 @@
                                                str)))]
       (with-service-cleanup
         service-id
+
+        (testing "authentication failure"
+          (if-not use-spnego
+            (log/info "skipping authentication failure test")
+            (let [correlation-id (rand-name)
+                  request-headers (-> request-headers
+                                    (dissoc "cookie")
+                                    (assoc "x-cid" correlation-id))
+                  grpc-client (initialize-grpc-client correlation-id host h2c-port)
+                  sleep-ms 1000
+                  deadline-ms 10000
+                  rpc-result (.sendPackage grpc-client request-headers id from content sleep-ms deadline-ms)
+                  ^CourierReply reply (.result rpc-result)
+                  ^Status status (.status rpc-result)
+                  assertion-message (grpc-result->assertion-message correlation-id rpc-result)]
+              (assert-grpc-unauthenticated-status status assertion-message)
+              (is (nil? reply) assertion-message))))
+
         (testing "small request and reply"
           (log/info "starting small request and reply test")
           (let [correlation-id (rand-name)
@@ -447,12 +475,39 @@
         service-id
         (doseq [max-message-length [1000 50000]]
           (let [num-messages 120
-                messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))]
+                messages (doall (repeatedly num-messages #(rand-str (inc (rand-int max-message-length)))))
+                cancel-threshold (inc num-messages)]
+
+            (testing "authentication failure"
+              (if-not use-spnego
+                (log/info "skipping authentication failure test")
+                (let [correlation-id (rand-name)
+                      request-headers (-> request-headers
+                                        (dissoc "cookie")
+                                        (assoc "x-cid" correlation-id))
+                      grpc-client (initialize-grpc-client correlation-id host h2c-port)
+                      from (rand-name "f")
+                      ids (map #(str "unauth-" %) (range num-messages))
+                      rpc-result (.collectPackages grpc-client request-headers ids from messages 10 false
+                                                   cancel-threshold cancel-policy-none 60000)
+                      summaries (.result rpc-result)
+                      ^Status status (.status rpc-result)
+                      assertion-message (->> (cond-> {:correlation-id correlation-id
+                                                      :service-id service-id
+                                                      :summaries (map (fn [^CourierSummary s]
+                                                                        {:num-messages (.getNumMessages s)
+                                                                         :total-length (.getTotalLength s)})
+                                                                      summaries)}
+                                               status (assoc :status {:code (-> status .getCode str)
+                                                                      :description (.getDescription status)}))
+                                          (into (sorted-map))
+                                          str)]
+                  (assert-grpc-unauthenticated-status status assertion-message)
+                  (is (zero? (count summaries)) assertion-message))))
 
             (testing (str "independent mode " max-message-length " messages completion")
               (log/info "starting streaming to and from server - independent mode test")
-              (let [cancel-threshold (inc num-messages)
-                    from (rand-name "f")
+              (let [from (rand-name "f")
                     correlation-id (str correlation-id-prefix "-in-" max-message-length)
                     request-headers (assoc request-headers "x-cid" correlation-id)
                     ids (map #(str "id-inde-" %) (range num-messages))
@@ -483,8 +538,7 @@
 
             (testing (str "lock-step mode " max-message-length " messages completion")
               (log/info "starting streaming to and from server - lock-step mode test")
-              (let [cancel-threshold (inc num-messages)
-                    from (rand-name "f")
+              (let [from (rand-name "f")
                     correlation-id (str correlation-id-prefix "-ls-" max-message-length)
                     request-headers (assoc request-headers "x-cid" correlation-id)
                     ids (map #(str "id-lock-" %) (range num-messages))

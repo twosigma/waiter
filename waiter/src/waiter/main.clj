@@ -33,6 +33,7 @@
             [waiter.request-log :as rlog]
             [waiter.settings :as settings]
             [waiter.util.date-utils :as du]
+            [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
   (:import clojure.core.async.impl.channels.ManyToManyChannel
            java.io.IOException
@@ -56,17 +57,21 @@
       (log/error e "version unavailable")
       "n/a")))
 
-(defn- consume-request-stream [handler]
+(defn- consume-request-stream
+  "Consumes, when appropriate, the request stream before sending the response.
+   HTTP/2 request support bidirectional streaming and are not subject to the consuming of the stream."
+  [handler]
   (fn [{:keys [body] :as request}]
-    (let [resp (handler request)]
-      (if (and (instance? ServletInputStream body)
-               (not (.isFinished ^ServletInputStream body))
-               (not (instance? ManyToManyChannel resp)))
+    (let [{:keys [internal-protocol] :as response} (handler request)]
+      (when (and (instance? ServletInputStream body)
+                 (not (.isFinished ^ServletInputStream body))
+                 (not (instance? ManyToManyChannel response))
+                 (not (hu/http2? internal-protocol)))
         (try
           (slurp body)
           (catch IOException e
             (log/error e "Unable to consume request stream"))))
-      resp)))
+      response)))
 
 (defn- initialize-server-metrics
   "Initializes the gauge metrics for the server instance."

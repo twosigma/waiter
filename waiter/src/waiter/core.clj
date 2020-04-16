@@ -257,14 +257,19 @@
   "Attaches request info to the request."
   [handler router-id support-info]
   (fn wrap-request-info-fn [{:keys [servlet-request] :as request}]
-    (-> request
-      (assoc :client-protocol (request->protocol request)
-             :internal-protocol (some-> servlet-request .getProtocol)
-             :request-id (str (utils/unique-identifier) "-" (-> request utils/request->scheme name))
-             :request-time (t/now)
-             :router-id router-id
-             :support-info support-info)
-      handler)))
+    (let [client-protocol (request->protocol request)
+          internal-protocol (some-> servlet-request .getProtocol)]
+      (-> request
+        (assoc :client-protocol client-protocol
+               :internal-protocol internal-protocol
+               :request-id (str (utils/unique-identifier) "-" (-> request utils/request->scheme name))
+               :request-time (t/now)
+               :router-id router-id
+               :support-info support-info)
+        handler
+        (ru/update-response
+          (fn wrap-request-protocols-into-response [response]
+            (assoc response :internal-protocol internal-protocol)))))))
 
 (defn wrap-debug
   "Attaches debugging headers to requests when enabled.
