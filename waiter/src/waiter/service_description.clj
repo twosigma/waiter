@@ -363,15 +363,25 @@
                        :status 400
                        :log-level :warn})))))
 
-(defn compute-profile-defaults
+(defn- compute-profile-defaults
+  "Returns the default parameters for the specified allowed-keys in the profile.
+   Throws an error if the profile is not supported.
+   The config-defaults are overridden with overrides from the specified profile."
+  [allowed-keys config-defaults profile->defaults profile]
+  (validate-profile-parameter profile->defaults profile)
+  (if-not (contains? profile->defaults profile)
+    config-defaults
+    (let [profile-defaults (get profile->defaults profile)
+          profile-parameters (select-keys profile-defaults allowed-keys)]
+      (merge config-defaults profile-parameters))))
+
+(defn compute-service-defaults
   "Returns the default service parameters for the specified profile.
    Throws an error if the profile is not supported.
    The service-description-defaults are overridden with overrides from a specified profile."
   [service-description-defaults profile->defaults profile]
-  (validate-profile-parameter profile->defaults profile)
-  (cond-> service-description-defaults
-    (contains? profile->defaults profile)
-    (merge (get profile->defaults profile))))
+  (compute-profile-defaults
+    service-parameter-keys service-description-defaults profile->defaults profile))
 
 (defn parameters->id
   "Generates a deterministic ID from the input parameter map."
@@ -642,7 +652,7 @@
                   candidate-service-description)
                 user-service-description)))
           service-id (service-description->service-id service-id-prefix core-service-description)
-          defaults (compute-profile-defaults service-description-defaults profile->defaults profile)
+          defaults (compute-service-defaults service-description-defaults profile->defaults profile)
           service-description (default-and-override core-service-description metric-group-mappings
                                                     kv-store defaults service-id)
           reference-type->entry (cond-> (or reference-type->entry {})
@@ -1136,7 +1146,7 @@
   [kv-store service-id service-description-defaults profile->defaults metric-group-mappings
    & {:keys [effective?] :or {effective? true}}]
   (let [{:strs [profile] :as core-service-description} (fetch-core kv-store service-id :refresh false)
-        service-description-defaults (compute-profile-defaults service-description-defaults profile->defaults profile)]
+        service-description-defaults (compute-service-defaults service-description-defaults profile->defaults profile)]
     (cond-> core-service-description
       effective? (default-and-override metric-group-mappings kv-store service-description-defaults service-id))))
 
