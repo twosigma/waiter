@@ -738,12 +738,20 @@
     {:failed-instances (vals (get @service-id->failed-instances-transient-store service-id))
      :syncer (retrieve-syncer-state-fn service-id)})
 
-  (state [_]
-    {:auth-token-renewer (retrieve-auth-token-state-fn)
-     :authorizer (when authorizer (authz/state authorizer))
-     :service-id->failed-instances @service-id->failed-instances-transient-store
-     :syncer (retrieve-syncer-state-fn)
-     :watch-state @watch-state})
+  (state [_ include-flags]
+    (cond-> {:supported-include-params ["auth-token-renewer" "authorizer" "service-id->failed-instances"
+                                        "syncer" "watch-state"]
+             :type "KubernetesScheduler"}
+      (contains? include-flags "auth-token-renewer")
+      (assoc :auth-token-renewer (retrieve-auth-token-state-fn))
+      (and authorizer (contains? include-flags "authorizer"))
+      (assoc :authorizer (authz/state authorizer))
+      (contains? include-flags "service-id->failed-instances")
+      (assoc :service-id->failed-instances @service-id->failed-instances-transient-store)
+      (contains? include-flags "syncer")
+      (assoc :syncer (retrieve-syncer-state-fn))
+      (contains? include-flags "watch-state")
+      (assoc :watch-state @watch-state)))
 
   (validate-service [this service-id]
     (let [{:strs [run-as-user]} (retrieve-service-description this service-id)]

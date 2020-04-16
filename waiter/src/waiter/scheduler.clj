@@ -118,7 +118,7 @@
   (service-id->state [this ^String service-id]
     "Retrieves the state the scheduler is maintaining for the given service-id.")
 
-  (state [this]
+  (state [this include-flags]
     "Returns the global (i.e. non-service-specific) state the scheduler is maintaining")
 
   (validate-service [this ^String service-id]

@@ -686,10 +686,15 @@
     (assoc (get @id->service-agent service-id)
       :syncer (retrieve-syncer-state-fn service-id)))
 
-  (state [_]
-    {:id->service @id->service-agent
-     :port->reservation @port->reservation-atom
-     :syncer (retrieve-syncer-state-fn)})
+  (state [_ include-flags]
+    (cond-> {:supported-include-params ["id->service" "port->reservation" "syncer"]
+             :type "ShellScheduler"}
+      (contains? include-flags "id->service")
+      (assoc :id->service @id->service-agent)
+      (contains? include-flags "port->reservation")
+      (assoc :port->reservation @port->reservation-atom)
+      (contains? include-flags "syncer")
+      (assoc :syncer (retrieve-syncer-state-fn))))
 
   (validate-service [_ service-id]
     (let [{:strs [image]} (service-id->service-description-fn service-id)]

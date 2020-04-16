@@ -460,12 +460,20 @@
      :out-of-sync-state (get @service-id->out-of-sync-state-store service-id)
      :syncer (retrieve-syncer-state-fn service-id)})
 
-  (state [_]
-    {:authorizer (when authorizer (authz/state authorizer))
-     :service-id->failed-instances-transient-store @service-id->failed-instances-transient-store
-     :service-id->kill-info-store @service-id->kill-info-store
-     :service-id->out-of-sync-state-store @service-id->out-of-sync-state-store
-     :syncer (retrieve-syncer-state-fn)})
+  (state [_ include-flags]
+    (cond-> {:supported-include-params ["authorizer" "service-id->failed-instances" "service-id->kill-info"
+                                        "service-id->out-of-sync-state" "syncer"]
+             :type "MarathonScheduler"}
+      (and authorizer (contains? include-flags "authorizer"))
+      (assoc :authorizer (authz/state authorizer))
+      (contains? include-flags "service-id->failed-instances")
+      (assoc :service-id->failed-instances @service-id->failed-instances-transient-store)
+      (contains? include-flags "service-id->kill-info")
+      (assoc :service-id->kill-info @service-id->kill-info-store)
+      (contains? include-flags "service-id->out-of-sync-state")
+      (assoc :service-id->out-of-sync-state @service-id->out-of-sync-state-store)
+      (contains? include-flags "syncer")
+      (assoc :syncer (retrieve-syncer-state-fn))))
 
   (validate-service [_ service-id]
     (let [{:strs [run-as-user]} (service-id->service-description-fn service-id)]

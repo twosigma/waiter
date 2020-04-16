@@ -99,9 +99,13 @@
         service-id->scheduler
         (scheduler/service-id->state service-id)))
 
-  (state [_]
-    {:aggregator (query-aggregator-state-fn)
-     :components (pc/map-vals scheduler/state scheduler-id->scheduler)})
+  (state [_ include-flags]
+    (cond-> {:supported-include-params ["aggregator" "components"]
+             :type "CompositeScheduler"}
+      (contains? include-flags "aggregator")
+      (assoc :aggregator (query-aggregator-state-fn))
+      (contains? include-flags "components")
+      (assoc :components (pc/map-vals #(scheduler/state % include-flags) scheduler-id->scheduler))))
 
   (validate-service [_ service-id]
     (-> service-id
