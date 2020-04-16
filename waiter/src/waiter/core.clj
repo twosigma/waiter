@@ -720,7 +720,7 @@
                             ;; validate the profile's service parameters
                             (sd/validate-schema defaults max-constraints-schema initial-profile->defaults
                                                 {:allow-missing-required-fields? true})
-                            ;; validate the profile's service parameters
+                            ;; validate the profile's token parameters
                             (token/validate-token-parameters defaults)
                             defaults)))
    :query-service-maintainer-chan (pc/fnk [] (au/latest-chan)) ; TODO move to service-chan-maintainer
