@@ -51,6 +51,13 @@
                        :status 412
                        :token-metadata token-metadata})))))
 
+(defn validate-token-parameters
+  "Validates whether the user-specified token parameters are valid."
+  [user-metadata]
+  (when-let [user-metadata-check (s/check sd/user-metadata-schema user-metadata)]
+    (throw (ex-info "Validation failed for user metadata on token"
+                    {:failed-check (str user-metadata-check) :status 400 :log-level :warn}))))
+
 ;; We'd like to maintain an index of tokens by their owner.
 ;; We'll store an index in the key "^TOKEN_OWNERS" that maintains
 ;; a map of owner to another key, in which we'll store the tokens
@@ -394,9 +401,7 @@
       (throw (ex-info (str "No parameters provided for " token) {:status 400 :log-level :warn})))
     (sd/validate-token token)
     (validate-service-description-fn new-service-parameter-template)
-    (when-let [user-metadata-check (s/check sd/user-metadata-schema new-user-metadata)]
-      (throw (ex-info "User metadata validation failed"
-                      {:failed-check (str user-metadata-check) :status 400 :token token :log-level :warn})))
+    (validate-token-parameters new-user-metadata)
     (let [unknown-keys (-> new-token-data
                            keys
                            set

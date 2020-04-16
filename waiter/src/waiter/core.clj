@@ -707,9 +707,21 @@
                           (name profile)
                           (let [max-constraints-schema (sd/extract-max-constraints-schema service-description-constraints)
                                 initial-profile->defaults {}]
+                            ;; validate the profile's entries
+                            (when-let [unsupported-keys (-> defaults
+                                                          keys
+                                                          set
+                                                          (set/difference sd/token-user-editable-keys)
+                                                          seq)]
+                              (throw (ex-info "Profile has unsupported entries in defaults"
+                                              {:name profile
+                                               :profile-defaults defaults
+                                               :unsupported-keys unsupported-keys})))
                             ;; validate the profile's service parameters
                             (sd/validate-schema defaults max-constraints-schema initial-profile->defaults
                                                 {:allow-missing-required-fields? true})
+                            ;; validate the profile's service parameters
+                            (token/validate-token-parameters defaults)
                             defaults)))
    :query-service-maintainer-chan (pc/fnk [] (au/latest-chan)) ; TODO move to service-chan-maintainer
    :router-metrics-agent (pc/fnk [router-id] (metrics-sync/new-router-metrics-agent router-id {}))
