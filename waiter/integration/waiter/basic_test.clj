@@ -96,8 +96,10 @@
                   (str {:base-service-description base-service-description
                         :service-description new-service-description
                         :service-id new-service-id}))
-              (is (= (merge service-description-defaults profile-config-defaults
-                            base-service-description {:profile (name profile)})
+              (is (= (merge service-description-defaults
+                            (select-keys profile-config-defaults (map keyword sd/service-parameter-keys))
+                            base-service-description
+                            {:profile (name profile)})
                      effective-service-description)
                   (str {:profile-config-defaults profile-config-defaults
                         :service-description effective-service-description
