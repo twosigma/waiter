@@ -355,25 +355,25 @@
 (defn validate-profile-parameter
   "Throws an exception when the profile parameter is provided but does not map to a supported profile."
   [profile->defaults profile]
-  (when (some? profile)
-    (when-not (contains? profile->defaults profile)
-      (let [supported-profiles-str (compute-valid-profiles-str profile->defaults)]
-        (sling/throw+ {:type :service-description-error
-                       :friendly-error-message (str "Unsupported profile: " profile supported-profiles-str)
-                       :status 400
-                       :log-level :warn})))))
+  (when-not (contains? profile->defaults profile)
+    (let [supported-profiles-str (compute-valid-profiles-str profile->defaults)]
+      (sling/throw+ {:type :service-description-error
+                     :friendly-error-message (str "Unsupported profile: " profile supported-profiles-str)
+                     :status 400
+                     :log-level :warn}))))
 
 (defn- compute-profile-defaults
   "Returns the default parameters for the specified allowed-keys in the profile.
    Throws an error if the profile is not supported.
    The config-defaults are overridden with overrides from the specified profile."
   [allowed-keys config-defaults profile->defaults profile]
-  (validate-profile-parameter profile->defaults profile)
-  (if-not (contains? profile->defaults profile)
+  (if (nil? profile)
     config-defaults
-    (let [profile-defaults (get profile->defaults profile)
-          profile-parameters (select-keys profile-defaults allowed-keys)]
-      (merge config-defaults profile-parameters))))
+    (do
+      (validate-profile-parameter profile->defaults profile)
+      (let [profile-defaults (get profile->defaults profile)
+            profile-parameters (select-keys profile-defaults allowed-keys)]
+        (merge config-defaults profile-parameters)))))
 
 (defn compute-service-defaults
   "Returns the default service parameters for the specified profile.
@@ -382,6 +382,14 @@
   [service-description-defaults profile->defaults profile]
   (compute-profile-defaults
     service-parameter-keys service-description-defaults profile->defaults profile))
+
+(defn compute-token-defaults
+  "Returns the default token parameters for the specified profile.
+   Throws an error if the profile is not supported.
+   The token-defaults are overridden with overrides from a specified profile."
+  [token-defaults profile->defaults profile]
+  (compute-profile-defaults
+    user-metadata-keys token-defaults profile->defaults profile))
 
 (defn parameters->id
   "Generates a deterministic ID from the input parameter map."
@@ -771,6 +779,11 @@
   [kv-store ^String token & {:keys [error-on-missing] :or {error-on-missing true}}]
   (token->token-data kv-store token service-parameter-keys error-on-missing false))
 
+(defn token->token-parameters
+  "Retrieves the template for the given token containing only the token data parameters."
+  [kv-store ^String token & {:keys [error-on-missing] :or {error-on-missing true}}]
+  (token->token-data kv-store token token-data-keys error-on-missing false))
+
 (defn token->service-description-template
   "Retrieves the service description template for the given token including the service metadata values."
   [kv-store ^String token & {:keys [error-on-missing] :or {error-on-missing true}}]
@@ -828,10 +841,18 @@
   [token token-data]
   {"token" token "version" (token-data->token-hash token-data)})
 
+(defn attach-token-defaults
+  "Attaches token defaults into the token parameters."
+  [{:strs [profile] :as token-parameters} token-defaults profile->defaults]
+  (merge
+    (compute-token-defaults token-defaults profile->defaults profile)
+    token-parameters))
+
 (defn compute-service-description-template-from-tokens
   "Computes the service description, preauthorization and authentication data using the token-sequence and token-data."
-  [token-defaults token-sequence token->token-data]
-  (let [merged-token-data (merge token-defaults (token-sequence->merged-data token->token-data token-sequence))
+  [attach-token-defaults-fn token-sequence token->token-data]
+  (let [merged-token-data (attach-token-defaults-fn
+                            (token-sequence->merged-data token->token-data token-sequence))
         service-description-template (select-keys merged-token-data service-parameter-keys)
         source-tokens (mapv #(source-tokens-entry % (token->token-data %)) token-sequence)]
     {:fallback-period-secs (get merged-token-data "fallback-period-secs")
@@ -846,14 +867,14 @@
 
 (defn- prepare-service-description-template-from-tokens
   "Prepares the service description using the token(s)."
-  [waiter-headers request-headers kv-store waiter-hostnames token-defaults]
+  [waiter-headers request-headers kv-store waiter-hostnames attach-token-defaults-fn]
   (let [{:keys [token source]}
         (retrieve-token-from-service-description-or-hostname waiter-headers request-headers waiter-hostnames)]
     (cond
       (= source :host-header)
       (let [token-data (token->token-data kv-store token token-data-keys false false)]
         (compute-service-description-template-from-tokens
-          token-defaults
+          attach-token-defaults-fn
           (if (seq token-data) [token] [])
           (if (seq token-data) {token token-data} {})))
 
@@ -864,10 +885,11 @@
           (if loop-token
             (let [token-data (token->token-data kv-store loop-token token-data-keys true false)]
               (recur (assoc loop-token->token-data loop-token token-data) remaining-tokens))
-            (compute-service-description-template-from-tokens token-defaults token-sequence loop-token->token-data))))
+            (compute-service-description-template-from-tokens
+              attach-token-defaults-fn token-sequence loop-token->token-data))))
 
       :else
-      (compute-service-description-template-from-tokens token-defaults [] {}))))
+      (compute-service-description-template-from-tokens attach-token-defaults-fn [] {}))))
 
 (let [service-id->key #(str "^SERVICE-ID#" %)]
   (defn store-core
@@ -953,7 +975,7 @@
         (assoc sanitized-service-description "metadata" renamed-metadata-map)))))
 
 (defn prepare-service-description-sources
-  [{:keys [waiter-headers passthrough-headers]} kv-store waiter-hostnames token-defaults]
+  [{:keys [waiter-headers passthrough-headers]} kv-store waiter-hostnames attach-token-defaults-fn]
   "Prepare the service description sources from the current request.
    Populates the service description for on-the-fly waiter-specific headers.
    Also populates for the service description for a token (first looked in headers and then using the host name).
@@ -966,13 +988,13 @@
                                                       transform-allowed-params-header
                                                       (sanitize-service-description service-description-from-header-keys))]
     (-> (prepare-service-description-template-from-tokens
-          waiter-headers passthrough-headers kv-store waiter-hostnames token-defaults)
+          waiter-headers passthrough-headers kv-store waiter-hostnames attach-token-defaults-fn)
         (assoc :headers service-description-template-from-headers))))
 
 (defn merge-service-description-sources
-  [descriptor kv-store waiter-hostnames token-defaults]
+  [descriptor kv-store waiter-hostnames attach-token-defaults-fn]
   "Merges the sources for a service-description into the descriptor."
-  (->> (prepare-service-description-sources descriptor kv-store waiter-hostnames token-defaults)
+  (->> (prepare-service-description-sources descriptor kv-store waiter-hostnames attach-token-defaults-fn)
        (assoc descriptor :sources)))
 
 (defn- sanitize-metadata [{:strs [metadata] :as service-description}]
@@ -1187,13 +1209,14 @@
 
 (defn source-tokens->idle-timeout
   "Computes the idle timeout of the service using token parameters and defaults."
-  [token->token-metadata token-defaults source-tokens-seq]
+  [token->token-parameters attach-token-defaults-fn source-tokens-seq]
   (->> source-tokens-seq
     (map (fn source-tokens->idle-timeout [source-tokens]
            (let [{:strs [fallback-period-secs stale-timeout-mins]}
                  (->> source-tokens
-                   (map #(some-> % :token token->token-metadata))
-                   (reduce merge token-defaults))]
+                   (map #(some-> % :token token->token-parameters))
+                   (reduce merge {})
+                   (attach-token-defaults-fn))]
              (+ (-> (+ fallback-period-secs (dec (-> 1 t/minutes t/in-seconds))) ;; ceiling
                   t/seconds
                   t/in-minutes)
@@ -1218,15 +1241,15 @@
   "Computes the idle timeout, in minutes, for a given service.
    If the service is active or was created by on-the-fly, the idle timeout is retrieved from the service description.
    Else, the idle timeout is the sum of the fallback period seconds and the stale service timeout."
-  [service-id->service-description-fn service-id->references-fn token->token-metadata reference-type->stale-fn
-   token-defaults service-id]
+  [service-id->service-description-fn service-id->references-fn token->token-parameters reference-type->stale-fn
+   attach-token-defaults-fn service-id]
   (let [{:strs [idle-timeout-mins]} (service-id->service-description-fn service-id)
         references (service-id->references-fn service-id)]
     (if (service-references-stale? reference-type->stale-fn references)
-      (let [{:strs [stale-timeout-mins]} token-defaults]
+      (let [{:strs [stale-timeout-mins]} (attach-token-defaults-fn {})]
         (log/info service-id "that uses tokens is stale")
         (if-let [source-tokens (->> references (map :token) (remove nil?) (map :sources) seq)]
-          (source-tokens->idle-timeout token->token-metadata token-defaults source-tokens)
+          (source-tokens->idle-timeout token->token-parameters attach-token-defaults-fn source-tokens)
           ;; use the default token stale timeout for a stale service built without tokens
           stale-timeout-mins))
       idle-timeout-mins)))
@@ -1308,13 +1331,14 @@
   "Processing the request headers to identify the Waiter service parameters.
    Returns a map of the waiter and passthrough headers, the identified token, and
    the service parameter template from the token."
-  [kv-store token-defaults waiter-hostnames headers]
+  [kv-store attach-token-defaults-fn waiter-hostnames headers]
   (let [{:keys [passthrough-headers waiter-headers]} (headers/split-headers headers)
         {:keys [token]} (retrieve-token-from-service-description-or-hostname waiter-headers passthrough-headers waiter-hostnames)
         service-parameter-template (and token (token->service-parameter-template kv-store token :error-on-missing false))
         token-metadata (and token
-                            (->> (token->token-metadata kv-store token :error-on-missing false)
-                                 (merge token-defaults)))]
+                            (-> (token->token-parameters kv-store token :error-on-missing false)
+                              (attach-token-defaults-fn)
+                              (select-keys token-metadata-keys)))]
     {:passthrough-headers passthrough-headers
      :service-parameter-template service-parameter-template
      :token token

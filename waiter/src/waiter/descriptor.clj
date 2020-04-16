@@ -224,7 +224,8 @@
 
 (defn- compute-token-source-previous-descriptor
   "Computes the previous descriptor using token sources."
-  [token-defaults build-service-description-and-id {:keys [component->previous-descriptor-fns sources] :as descriptor}]
+  [attach-token-defaults-fn build-service-description-and-id
+   {:keys [component->previous-descriptor-fns sources] :as descriptor}]
   (when-let [token-sequence (-> sources :token-sequence seq)]
     (let [{:keys [token->token-data]} sources
           previous-token (->> token->token-data
@@ -233,7 +234,7 @@
           previous-token-data (get-in token->token-data [previous-token "previous"])]
       (when (seq previous-token-data)
         (let [new-sources (->> (assoc token->token-data previous-token previous-token-data)
-                            (sd/compute-service-description-template-from-tokens token-defaults token-sequence)
+                            (sd/compute-service-description-template-from-tokens attach-token-defaults-fn token-sequence)
                             (merge sources))
               token-previous-descriptor-fns (get component->previous-descriptor-fns :token)]
           (-> (select-keys descriptor [:passthrough-headers :waiter-headers])
@@ -245,20 +246,20 @@
   "Attaches the helper functions map to retrieve previous descriptor using tokens into the
    [:component->previous-descriptor-fns :token] key in the provided descriptor.
    The map contains the following keys: :retrieve-last-update-time and :retrieve-previous-descriptor"
-  [descriptor token-defaults build-service-description-and-id]
+  [descriptor attach-token-defaults-fn build-service-description-and-id]
   (cond-> descriptor
     (-> descriptor :sources :token-sequence seq)
     (assoc-in [:component->previous-descriptor-fns :token]
               {:retrieve-last-update-time sd/retrieve-most-recently-modified-token-update-time
                :retrieve-previous-descriptor (fn retrieve-most-recent-token-update-descriptor [descriptor]
                                                (compute-token-source-previous-descriptor
-                                                 token-defaults build-service-description-and-id descriptor))})))
+                                                 attach-token-defaults-fn build-service-description-and-id descriptor))})))
 
 (defn compute-descriptor
   "Creates the service descriptor from the request.
    The result map contains the following elements:
    {:keys [waiter-headers passthrough-headers sources service-id service-description core-service-description suspended-state]}"
-  [token-defaults service-id-prefix kv-store waiter-hostnames request service-description-builder
+  [attach-token-defaults-fn service-id-prefix kv-store waiter-hostnames request service-description-builder
    assoc-run-as-user-approved?]
   (let [current-request-user (get request :authorization/user)
         build-service-description-and-id-helper (sd/make-build-service-description-and-id-helper
@@ -266,8 +267,8 @@
                                                   service-description-builder assoc-run-as-user-approved?)
         descriptor
         (-> (headers/split-headers (:headers request))
-          (sd/merge-service-description-sources kv-store waiter-hostnames token-defaults)
-          (attach-token-fallback-source token-defaults build-service-description-and-id-helper)
+          (sd/merge-service-description-sources kv-store waiter-hostnames attach-token-defaults-fn)
+          (attach-token-fallback-source attach-token-defaults-fn build-service-description-and-id-helper)
           (build-service-description-and-id-helper true))]
     (when-let [throwable (sd/validate-service-description kv-store service-description-builder descriptor)]
       (throw throwable))
@@ -302,15 +303,15 @@
   (defn request->descriptor
     "Extract the service descriptor from a request.
      It also performs the necessary authorization."
-    [assoc-run-as-user-approved? can-run-as? fallback-state-atom kv-store search-history-length
-     service-description-builder service-id-prefix token-defaults waiter-hostnames
+    [assoc-run-as-user-approved? can-run-as? attach-token-defaults-fn fallback-state-atom kv-store 
+     search-history-length service-description-builder service-id-prefix waiter-hostnames
      {:keys [request-time] :as request}]
     (timers/start-stop-time!
       request->descriptor-timer
       (let [auth-user (:authorization/user request)
             service-approved? (fn service-approved? [service-id] (assoc-run-as-user-approved? request service-id))
             latest-descriptor (compute-descriptor
-                                token-defaults service-id-prefix kv-store waiter-hostnames request
+                                attach-token-defaults-fn service-id-prefix kv-store waiter-hostnames request
                                 service-description-builder service-approved?)
             descriptor->previous-descriptor
             (fn descriptor->previous-descriptor-fn

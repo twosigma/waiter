@@ -55,10 +55,11 @@
   "Preflight request handling middleware.
   This middleware needs to precede any authentication middleware since CORS preflight
   requests do not support authentication."
-  [handler cors-validator max-age kv-store token-defaults waiter-hostnames]
+  [handler cors-validator max-age kv-store attach-token-defaults-fn waiter-hostnames]
   (fn wrap-cors-preflight-fn [{:keys [headers] :as request}]
     (if (preflight-request? request)
-      (let [discovered-parameters (sd/discover-service-parameters kv-store token-defaults waiter-hostnames headers)]
+      (let [discovered-parameters (sd/discover-service-parameters
+                                    kv-store attach-token-defaults-fn waiter-hostnames headers)]
         (counters/inc! (metrics/waiter-counter "requests" "cors-preflight"))
         (let [{:keys [headers request-method]} request
               {:strs [origin]} headers]
