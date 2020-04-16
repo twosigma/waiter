@@ -708,14 +708,26 @@
                       processed-passwords (mapv #(vector :cached %) passwords)]
                   processed-passwords))
    :profile->defaults (pc/fnk [[:settings profile-config service-description-constraints]]
-                        (pc/for-map [[profile {:keys [service-parameters]}] profile-config]
+                        (pc/for-map [[profile {:keys [defaults]}] profile-config]
                           (name profile)
                           (let [max-constraints-schema (sd/extract-max-constraints-schema service-description-constraints)
                                 initial-profile->defaults {}]
+                            ;; validate the profile's entries
+                            (when-let [unsupported-keys (-> defaults
+                                                          keys
+                                                          set
+                                                          (set/difference sd/token-user-editable-keys)
+                                                          seq)]
+                              (throw (ex-info "Profile has unsupported entries in defaults"
+                                              {:name profile
+                                               :profile-defaults defaults
+                                               :unsupported-keys unsupported-keys})))
                             ;; validate the profile's service parameters
-                            (sd/validate-schema service-parameters max-constraints-schema initial-profile->defaults
+                            (sd/validate-schema defaults max-constraints-schema initial-profile->defaults
                                                 {:allow-missing-required-fields? true})
-                            service-parameters)))
+                            ;; validate the profile's token parameters
+                            (token/validate-token-parameters defaults)
+                            defaults)))
    :query-service-maintainer-chan (pc/fnk [] (au/latest-chan)) ; TODO move to service-chan-maintainer
    :router-metrics-agent (pc/fnk [router-id] (metrics-sync/new-router-metrics-agent router-id {}))
    :router-id (pc/fnk [[:settings router-id-prefix]]
@@ -910,6 +922,10 @@
                                  (fn async-trigger-terminate-fn [target-router-id service-id request-id]
                                    (async-req/async-trigger-terminate
                                      async-request-terminate-fn make-inter-router-requests-sync-fn router-id target-router-id service-id request-id)))
+   :attach-token-defaults-fn (pc/fnk [[:settings [:token-config token-defaults]]
+                                      [:state profile->defaults]]
+                               (fn attach-token-defaults-fn [token-parameters]
+                                 (sd/attach-token-defaults token-parameters token-defaults profile->defaults)))
    :authentication-method-wrapper-fn (pc/fnk [[:state authenticator jwt-authenticator passwords]]
                                        (fn authentication-method-wrapper [request-handler]
                                          (let [auth-handler (auth/wrap-auth-handler authenticator request-handler)
@@ -996,16 +1012,17 @@
    :refresh-service-descriptions-fn (pc/fnk [[:state kv-store]]
                                       (fn refresh-service-descriptions-fn [service-ids]
                                         (sd/refresh-service-descriptions kv-store service-ids)))
-   :request->descriptor-fn (pc/fnk [[:settings [:token-config history-length token-defaults]]
+   :request->descriptor-fn (pc/fnk [[:settings [:token-config history-length]]
                                     [:state fallback-state-atom kv-store service-description-builder
                                      service-id-prefix waiter-hostnames]
-                                    assoc-run-as-user-approved? can-run-as?-fn store-reference-fn store-source-tokens-fn]
+                                    assoc-run-as-user-approved? attach-token-defaults-fn can-run-as?-fn
+                                    store-reference-fn store-source-tokens-fn]
                              (fn request->descriptor-fn [request]
                                (let [{:keys [latest-descriptor] :as result}
                                      (descriptor/request->descriptor
-                                       assoc-run-as-user-approved? can-run-as?-fn fallback-state-atom kv-store
-                                       history-length service-description-builder service-id-prefix token-defaults
-                                       waiter-hostnames request)
+                                       assoc-run-as-user-approved? can-run-as?-fn attach-token-defaults-fn
+                                       fallback-state-atom kv-store history-length service-description-builder
+                                       service-id-prefix waiter-hostnames request)
                                      {:keys [reference-type->entry service-id source-tokens]} latest-descriptor]
                                  (when (seq source-tokens)
                                    (store-source-tokens-fn service-id source-tokens))
@@ -1022,16 +1039,15 @@
    :service-description->service-id (pc/fnk [[:state service-id-prefix]]
                                       (fn service-description->service-id [service-description]
                                         (sd/service-description->service-id service-id-prefix service-description)))
-   :service-id->idle-timeout (pc/fnk [[:settings [:token-config token-defaults]]
-                                      [:state service-description-builder]
-                                      service-id->service-description-fn service-id->references-fn
-                                      token->token-hash token->token-metadata]
+   :service-id->idle-timeout (pc/fnk [[:state service-description-builder]
+                                      attach-token-defaults-fn service-id->service-description-fn service-id->references-fn
+                                      token->token-hash token->token-parameters]
                                (let [context {:token->token-hash token->token-hash}
                                      reference-type->stale-fn (sd/retrieve-reference-type->stale-fn service-description-builder context)]
                                  (fn service-id->idle-timeout [service-id]
                                    (sd/service-id->idle-timeout
-                                     service-id->service-description-fn service-id->references-fn token->token-metadata
-                                     reference-type->stale-fn token-defaults service-id))))
+                                     service-id->service-description-fn service-id->references-fn token->token-parameters
+                                     reference-type->stale-fn attach-token-defaults-fn service-id))))
    :service-id->password-fn (pc/fnk [[:scheduler service-id->password-fn*]]
                               service-id->password-fn*)
    :service-id->references-fn (pc/fnk [[:state kv-store]]
@@ -1086,6 +1102,9 @@
    :token->token-metadata (pc/fnk [[:state kv-store]]
                             (fn token->token-metadata [token]
                               (sd/token->token-metadata kv-store token :error-on-missing false)))
+   :token->token-parameters (pc/fnk [[:state kv-store]]
+                              (fn token->token-parameters [token]
+                                (sd/token->token-parameters kv-store token :error-on-missing false)))
    :validate-service-description-fn (pc/fnk [[:settings service-description-defaults]
                                              [:state authenticator service-description-builder]]
                                       (let [authentication-providers (into #{"disabled" "standard"} (auth/get-authentication-providers authenticator))
@@ -1106,8 +1125,8 @@
    :websocket-request-auth-cookie-attacher (pc/fnk [[:state passwords router-id]]
                                              (fn websocket-request-auth-cookie-attacher [request]
                                                (ws/inter-router-request-middleware router-id (first passwords) request)))
-   :websocket-request-acceptor (pc/fnk [[:settings [:token-config token-defaults]]
-                                        [:state kv-store passwords server-name waiter-hostnames]]
+   :websocket-request-acceptor (pc/fnk [[:state kv-store passwords server-name waiter-hostnames]
+                                        attach-token-defaults-fn]
                                  (fn websocket-request-acceptor [^ServletUpgradeRequest request ^ServletUpgradeResponse response]
                                    (let [request-headers (->> (.getHeaders request)
                                                            (pc/map-vals #(str/join "," %))
@@ -1126,7 +1145,8 @@
                                                   :uri (some-> request .getRequestURI .getPath)})
                                        (.setHeader response "server" server-name)
                                        (.setHeader response "x-cid" correlation-id)
-                                       (let [waiter-discovery (sd/discover-service-parameters kv-store token-defaults waiter-hostnames request-headers)]
+                                       (let [waiter-discovery (sd/discover-service-parameters
+                                                                kv-store attach-token-defaults-fn waiter-hostnames request-headers)]
                                          (process-authentication-parameter
                                            waiter-discovery
                                            (fn [status message]
@@ -1832,11 +1852,12 @@
                                    (fn inner-wrap-secure-request-fn [{:keys [uri] :as request}]
                                      (log/debug "secure request received at" uri)
                                      (handler request))))))
-   :wrap-service-discovery-fn (pc/fnk [[:settings [:token-config token-defaults]]
+   :wrap-service-discovery-fn (pc/fnk [[:routines attach-token-defaults-fn]
                                        [:state kv-store waiter-hostnames]]
                                 (fn wrap-service-discovery-fn
                                   [handler]
                                   (fn [{:keys [headers] :as request}]
                                     ;; TODO optimization opportunity to avoid this re-computation later in the chain
-                                    (let [discovered-parameters (sd/discover-service-parameters kv-store token-defaults waiter-hostnames headers)]
+                                    (let [discovered-parameters (sd/discover-service-parameters
+                                                                  kv-store attach-token-defaults-fn waiter-hostnames headers)]
                                       (handler (assoc request :waiter-discovery discovered-parameters))))))})

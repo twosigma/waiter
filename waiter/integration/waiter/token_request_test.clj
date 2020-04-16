@@ -1658,9 +1658,9 @@
                             :permitted-user "*"
                             :run-as-user (retrieve-username)
                             :version "1"}]
-      (doseq [[profile {:keys [service-parameters]}] (seq profile-config)]
+      (doseq [[profile {:keys [defaults]}] (seq profile-config)]
         (let [token (rand-name)
-              token-description (-> (apply dissoc base-description (keys service-parameters))
+              token-description (-> (apply dissoc base-description (keys defaults))
                                   (assoc :profile (name profile) :token token))
               register-response (post-token waiter-url token-description)]
           (try

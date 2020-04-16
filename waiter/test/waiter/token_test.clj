@@ -1599,7 +1599,7 @@
           (is (= 400 status))
           (is (not (str/includes? body "clojure")))
           (is (str/includes? (str details) "fallback-period-secs") body)
-          (is (str/includes? message "User metadata validation failed") body)))
+          (is (str/includes? message "Validation failed for user metadata on token") body)))
 
       (testing "post:new-user-metadata:fallback-period-secs-limit-exceeded"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -1617,7 +1617,7 @@
           (is (= 400 status))
           (is (not (str/includes? body "clojure")))
           (is (str/includes? (str details) "fallback-period-secs") body)
-          (is (str/includes? message "User metadata validation failed") body)))
+          (is (str/includes? message "Validation failed for user metadata on token") body)))
 
       (testing "post:new-service-description:token-limit-reached"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -1696,7 +1696,7 @@
           (is (str/includes? (str details) "origin-regex\\\" (throws? (is-a-valid-regular-expression?") body)
           (is (str/includes? (str details) "methods\\\" [(not (is-an-http-method?") body)
           (is (str/includes? (str details) "target-schemes\\\" disallowed-key") body)
-          (is (str/includes? message "User metadata validation failed") body)))
+          (is (str/includes? message "Validation failed for user metadata on token") body)))
 
       (testing "post:new-service-description-cors-rules-2"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -1720,7 +1720,7 @@
           (is (str/includes? (str details) "origin-regex\\\" (throws? (is-a-valid-regular-expression?") body)
           (is (str/includes? (str details) "methods\\\" (not (not-empty []") body)
           (is (str/includes? (str details) "target-schemes\\\" disallowed-key") body)
-          (is (str/includes? message "User metadata validation failed") body)))
+          (is (str/includes? message "Validation failed for user metadata on token") body)))
 
       (testing "post:new-service-description-cors-rules-2"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -1739,7 +1739,7 @@
               {{:strs [details message]} "waiter-error"} (json/read-str body)]
           (is (= 400 status))
           (is (str/includes? (str details) "cors-rules\\\" (not (sequential?") body)
-          (is (str/includes? message "User metadata validation failed") body))))))
+          (is (str/includes? message "Validation failed for user metadata on token") body))))))
 
 (deftest test-store-service-description
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))

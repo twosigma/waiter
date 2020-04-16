@@ -258,10 +258,11 @@
                                                 (sd/create-default-service-description-builder
                                                   {:metric-group-mappings metric-group-mappings
                                                    :profile->defaults profile->defaults
-                                                   :service-description-defaults service-description-defaults}))]
+                                                   :service-description-defaults service-description-defaults}))
+                attach-token-defaults-fn #(sd/attach-token-defaults % token-defaults profile->defaults)]
             (request->descriptor
-              assoc-run-as-user-approved? can-run-as? fallback-state-atom kv-store search-history-length
-              service-description-builder service-id-prefix token-defaults waiter-hostnames request)))]
+              assoc-run-as-user-approved? can-run-as? attach-token-defaults-fn fallback-state-atom kv-store
+              search-history-length service-description-builder service-id-prefix waiter-hostnames request)))]
 
     (testing "missing user in request"
       (let [request {}
@@ -471,9 +472,11 @@
 (let [kv-store (kv/->LocalKeyValueStore (atom {}))
       service-id-prefix "service-prefix-"
       token-defaults {"fallback-period-secs" 300}
+      profile->defaults {"webapp" {"concurrency-level" 120
+                                   "fallback-period-secs" 100}}
+      attach-token-defaults-fn #(sd/attach-token-defaults % token-defaults profile->defaults)
       username "test-user"
       metric-group-mappings []
-      profile->defaults {"webapp" {"concurrency-level" 120}}
       service-description-defaults {"metric-group" "other" "permitted-user" "*"}
       constraints {"cpus" {:max 100} "mem" {:max 1024}}
       builder (sd/create-default-service-description-builder {:constraints constraints
@@ -514,7 +517,7 @@
                   (-> {:passthrough-headers passthrough-headers
                        :sources sources
                        :waiter-headers waiter-headers}
-                    (attach-token-fallback-source token-defaults build-service-description-and-id-helper)))))))
+                    (attach-token-fallback-source attach-token-defaults-fn build-service-description-and-id-helper)))))))
 
   (deftest test-descriptor->previous-descriptor-multiple-sources
     (let [service-description-1 {"cmd" "ls1" "cpus" 1 "mem" 32 "run-as-user" "ru" "version" "foo"}
@@ -667,7 +670,7 @@
                                   :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-2)]}}
                                   :sources sources
                                   :waiter-headers waiter-headers}
-                               (attach-token-fallback-source token-defaults build-service-description-and-id-helper))
+                               (attach-token-fallback-source attach-token-defaults-fn build-service-description-and-id-helper))
           previous-descriptor (descriptor->previous-descriptor kv-store builder current-descriptor)]
       (is (= {:component->previous-descriptor-fns (:component->previous-descriptor-fns current-descriptor)
               :core-service-description service-description-1
@@ -706,7 +709,7 @@
                                   :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-2)]}}
                                   :sources sources
                                   :waiter-headers waiter-headers}
-                               (attach-token-fallback-source token-defaults build-service-description-and-id-helper))
+                               (attach-token-fallback-source attach-token-defaults-fn build-service-description-and-id-helper))
           previous-descriptor (descriptor->previous-descriptor kv-store builder current-descriptor)]
       (is (= {:component->previous-descriptor-fns (:component->previous-descriptor-fns current-descriptor)
               :core-service-description service-description-1
@@ -714,14 +717,14 @@
               :passthrough-headers passthrough-headers
               :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-1)]}}
               :service-authentication-disabled false
-              :service-description (merge service-description-defaults
-                                          (get profile->defaults "webapp")
+              :service-description (merge (sd/compute-service-defaults
+                                            service-description-defaults profile->defaults "webapp")
                                           service-description-1)
               :service-id (sd/service-description->service-id service-id-prefix service-description-1)
               :service-preauthorized false
               :source-tokens [(sd/source-tokens-entry test-token token-data-1)]
               :sources (assoc sources
-                         :fallback-period-secs 300
+                         :fallback-period-secs 100
                          :service-description-template service-description-1
                          :source-tokens [(sd/source-tokens-entry test-token token-data-1)]
                          :token->token-data {test-token token-data-1})
@@ -748,7 +751,7 @@
                                   :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-3)]}}
                                   :sources sources
                                   :waiter-headers waiter-headers}
-                               (attach-token-fallback-source token-defaults build-service-description-and-id-helper))
+                               (attach-token-fallback-source attach-token-defaults-fn build-service-description-and-id-helper))
           previous-descriptor (descriptor->previous-descriptor kv-store builder current-descriptor)]
       (is (= {:component->previous-descriptor-fns (:component->previous-descriptor-fns current-descriptor)
               :core-service-description service-description-1
@@ -788,7 +791,7 @@
                                   :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-3)]}}
                                   :sources sources
                                   :waiter-headers waiter-headers}
-                               (attach-token-fallback-source token-defaults build-service-description-and-id-helper))
+                               (attach-token-fallback-source attach-token-defaults-fn build-service-description-and-id-helper))
           current-service-description->service-id sd/service-description->service-id
           exception-thrown-promise (promise)
           previous-descriptor (with-redefs [sd/service-description->service-id
@@ -838,7 +841,7 @@
                                   :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-3)]}}
                                   :sources sources
                                   :waiter-headers waiter-headers}
-                               (attach-token-fallback-source token-defaults build-service-description-and-id-helper))
+                               (attach-token-fallback-source attach-token-defaults-fn build-service-description-and-id-helper))
           previous-descriptor (descriptor->previous-descriptor kv-store builder current-descriptor)]
       (is (= {:component->previous-descriptor-fns (:component->previous-descriptor-fns current-descriptor)
               :core-service-description service-description-1
@@ -878,7 +881,7 @@
                                   :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-2)]}}
                                   :sources sources
                                   :waiter-headers waiter-headers}
-                               (attach-token-fallback-source token-defaults build-service-description-and-id-helper))
+                               (attach-token-fallback-source attach-token-defaults-fn build-service-description-and-id-helper))
           previous-descriptor (descriptor->previous-descriptor kv-store builder current-descriptor)]
       (let [expected-core-service-description (assoc service-description-1 "cpus" 20 "permitted-user" username "run-as-user" username)]
         (is (= {:component->previous-descriptor-fns (:component->previous-descriptor-fns current-descriptor)
@@ -915,7 +918,7 @@
           current-descriptor (-> {:passthrough-headers passthrough-headers
                                   :sources sources
                                   :waiter-headers waiter-headers}
-                               (attach-token-fallback-source token-defaults build-service-description-and-id-helper))]
+                               (attach-token-fallback-source attach-token-defaults-fn build-service-description-and-id-helper))]
       (is (nil? (descriptor->previous-descriptor kv-store builder current-descriptor)))))
 
   (deftest test-descriptor->previous-descriptor-multiple-tokens-with-previous
@@ -943,7 +946,7 @@
                                   :reference-type->entry {:token {:sources (:source-tokens sources)}}
                                   :sources sources
                                   :waiter-headers waiter-headers}
-                               (attach-token-fallback-source token-defaults build-service-description-and-id-helper))
+                               (attach-token-fallback-source attach-token-defaults-fn build-service-description-and-id-helper))
           previous-descriptor (descriptor->previous-descriptor kv-store builder current-descriptor)]
       (let [expected-core-service-description (-> (merge service-description-1 service-description-2p)
                                                 (select-keys sd/service-parameter-keys))]

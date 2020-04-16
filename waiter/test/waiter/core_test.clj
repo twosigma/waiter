@@ -1082,15 +1082,19 @@
 
 (deftest test-wrap-auth-bypass
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+        profile->defaults {"webapp" {"concurrency-level" 120
+                                     "fallback-period-secs" 100}}
         token-defaults {"fallback-period-secs" 300
                         "https-redirect" false}
+        attach-token-defaults-fn #(sd/attach-token-defaults % token-defaults profile->defaults)
         waiter-hostnames #{"www.waiter-router.com"}
         configuration {}
         wrap-auth-bypass-fn ((:wrap-auth-bypass-fn request-handlers) configuration)
         handler-response (Object.)
         execute-request (fn execute-request-fn [{:keys [headers] :as in-request}]
-                          (let [test-request (->> (sd/discover-service-parameters kv-store token-defaults waiter-hostnames headers)
-                                                  (assoc in-request :waiter-discovery))
+                          (let [test-request (->> (sd/discover-service-parameters
+                                                    kv-store attach-token-defaults-fn waiter-hostnames headers)
+                                               (assoc in-request :waiter-discovery))
                                 request-handler-argument-atom (atom nil)
                                 test-request-handler (fn request-handler-fn [request]
                                                        (reset! request-handler-argument-atom request)
@@ -1101,6 +1105,9 @@
 
     (kv/store kv-store "www.token-1.com" {"cpu" 1
                                           "mem" 2048})
+    (kv/store kv-store "www.token-1p.com" {"cpu" 1
+                                           "mem" 2048
+                                           "profile" "webapp"})
     (kv/store kv-store "www.token-2.com" {"authentication" "standard"
                                           "cpu" 1
                                           "mem" 2048})
@@ -1145,6 +1152,20 @@
                                                       :service-parameter-template {"mem" 2048}
                                                       :token "www.token-1.com"
                                                       :token-metadata (assoc token-defaults "owner" nil "previous" {})
+                                                      :waiter-headers {}})
+               handled-request))
+        (is (= handler-response response)))
+
+      (let [test-request {:headers {"host" "www.token-1p.com"}}
+            {:keys [handled-request response]} (execute-request test-request)]
+        (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.token-1p.com"}
+                                                      :service-parameter-template {"mem" 2048 "profile" "webapp"}
+                                                      :token "www.token-1p.com"
+                                                      :token-metadata (merge {"owner" nil "previous" {}}
+                                                                             token-defaults
+                                                                             (select-keys
+                                                                               (get profile->defaults "webapp")
+                                                                               sd/user-metadata-keys))
                                                       :waiter-headers {}})
                handled-request))
         (is (= handler-response response))))

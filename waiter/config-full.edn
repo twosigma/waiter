@@ -690,8 +690,8 @@
  ;; In the example below:
  ;; - the 'webapp' profile overrides the default configuration defined in :service-description-defaults
  ;;   by increasing the concurrency-level and changing the load balancing scheme to random
- :profile-config {"webapp" {:service-parameters {"concurrency-level" 120
-                                                 "load-balancing" "random"}}}
+ :profile-config {"webapp" {:defaults {"concurrency-level" 120
+                                       "load-balancing" "random"}}}
 
  :service-description-builder-config {
                                       ;; :kind :default invokes the DefaultServiceDescriptionBuilder
