@@ -136,4 +136,4 @@
 
 (def profile-definition
   "Validator for profile parameters."
-  {(s/required-key :service-parameters) {non-empty-string s/Any}})
+  {(s/required-key :defaults) {non-empty-string s/Any}})

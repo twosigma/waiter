@@ -703,14 +703,14 @@
                       processed-passwords (mapv #(vector :cached %) passwords)]
                   processed-passwords))
    :profile->defaults (pc/fnk [[:settings profile-config service-description-constraints]]
-                        (pc/for-map [[profile {:keys [service-parameters]}] profile-config]
+                        (pc/for-map [[profile {:keys [defaults]}] profile-config]
                           (name profile)
                           (let [max-constraints-schema (sd/extract-max-constraints-schema service-description-constraints)
                                 initial-profile->defaults {}]
                             ;; validate the profile's service parameters
-                            (sd/validate-schema service-parameters max-constraints-schema initial-profile->defaults
+                            (sd/validate-schema defaults max-constraints-schema initial-profile->defaults
                                                 {:allow-missing-required-fields? true})
-                            service-parameters)))
+                            defaults)))
    :query-service-maintainer-chan (pc/fnk [] (au/latest-chan)) ; TODO move to service-chan-maintainer
    :router-metrics-agent (pc/fnk [router-id] (metrics-sync/new-router-metrics-agent router-id {}))
    :router-id (pc/fnk [[:settings router-id-prefix]]

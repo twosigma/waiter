@@ -74,16 +74,17 @@
               (str "Number of profiles in config and API output do not match!"
                    {:profile-config profile-config
                     :profile-list profile-list}))
-          (doseq [[profile {:keys [service-parameters]}] profile-config]
-            (let [profile-defaults (->> profile-list
-                                     (filter #(= (name profile) (:name %)))
-                                     first
-                                     :defaults)
-                  _ (is (= service-parameters profile-defaults)
+          (doseq [[profile {:keys [defaults]}] profile-config]
+            (let [profile-config-defaults defaults
+                  profile-api-defaults (->> profile-list
+                                         (filter #(= (name profile) (:name %)))
+                                         first
+                                         :defaults)
+                  _ (is (= profile-config-defaults profile-api-defaults)
                         (str "Profile configuration and API output do not match!"
                              {:profile profile
-                              :profile-defaults profile-defaults
-                              :service-parameters service-parameters}))
+                              :profile-api-defaults profile-api-defaults
+                              :profile-config-defaults profile-config-defaults}))
                   new-request-headers (assoc request-headers "x-waiter-profile" (name profile))
                   new-service-id (retrieve-service-id waiter-url new-request-headers)
                   service-settings (service-settings waiter-url new-service-id
@@ -95,12 +96,12 @@
                   (str {:base-service-description base-service-description
                         :service-description new-service-description
                         :service-id new-service-id}))
-              (is (= (merge service-description-defaults service-parameters
+              (is (= (merge service-description-defaults profile-config-defaults
                             base-service-description {:profile (name profile)})
                      effective-service-description)
-                  (str {:service-description effective-service-description
-                        :service-id new-service-id
-                        :service-parameters service-parameters}))
+                  (str {:profile-config-defaults profile-config-defaults
+                        :service-description effective-service-description
+                        :service-id new-service-id}))
               (is (not= service-id new-service-id)
                   (str {:profile profile :request-headers request-headers}))))))
 
