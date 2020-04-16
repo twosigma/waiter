@@ -688,7 +688,7 @@
 
   (state [_ include-flags]
     (cond-> {:supported-include-params ["id->service" "port->reservation" "syncer"]
-             :type "Shell"}
+             :type "ShellScheduler"}
       (contains? include-flags "id->service")
       (assoc :id->service @id->service-agent)
       (contains? include-flags "port->reservation")

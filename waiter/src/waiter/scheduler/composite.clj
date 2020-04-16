@@ -101,7 +101,7 @@
 
   (state [_ include-flags]
     (cond-> {:supported-include-params ["aggregator" "components"]
-             :type "Composite"}
+             :type "CompositeScheduler"}
       (contains? include-flags "aggregator")
       (assoc :aggregator (query-aggregator-state-fn))
       (contains? include-flags "components")

@@ -463,7 +463,7 @@
   (state [_ include-flags]
     (cond-> {:supported-include-params ["authorizer" "service-id->failed-instances" "service-id->kill-info"
                                         "service-id->out-of-sync-state" "syncer"]
-             :type "Marathon"}
+             :type "MarathonScheduler"}
       (and authorizer (contains? include-flags "authorizer"))
       (assoc :authorizer (authz/state authorizer))
       (contains? include-flags "service-id->failed-instances")
