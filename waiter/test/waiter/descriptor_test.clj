@@ -23,6 +23,7 @@
             [waiter.descriptor :refer :all]
             [waiter.kv :as kv]
             [waiter.service-description :as sd]
+            [waiter.status-codes :refer :all]
             [waiter.token :as token]
             [waiter.util.async-utils :as au])
   (:import (clojure.lang ExceptionInfo)
@@ -31,7 +32,7 @@
 (deftest test-wrap-descriptor
   (let [latest-service-id "latest-service-id"
         fallback-service-id "fallback-service-id"
-        default-handler (fn [_] {:status 200})
+        default-handler (fn [_] {:status http-200-ok})
         latest-descriptor {:service-id latest-service-id}]
     (testing "latest-service-request"
       (let [request {:request-id (str "req-" (rand-int 1000))}
@@ -47,7 +48,7 @@
             fallback-state-atom (atom {:available-service-ids #{} :healthy-service-ids #{}})
             handler (wrap-descriptor default-handler request->descriptor-fn start-new-service-fn fallback-state-atom)
             response (handler request)]
-        (is (= {:descriptor descriptor :latest-service-id latest-service-id :status 200} response))
+        (is (= {:descriptor descriptor :latest-service-id latest-service-id :status http-200-ok} response))
         (is (= :no-service (deref started-service-id-promise 0 :no-service)))))
 
     (testing "fallback-with-latest-service-exists"
@@ -64,7 +65,7 @@
             fallback-state-atom (atom {:available-service-ids #{latest-service-id} :healthy-service-ids #{}})
             handler (wrap-descriptor default-handler request->descriptor-fn start-new-service-fn fallback-state-atom)
             response (handler request)]
-        (is (= {:descriptor descriptor :latest-service-id latest-service-id :status 200} response))
+        (is (= {:descriptor descriptor :latest-service-id latest-service-id :status http-200-ok} response))
         (is (= :no-service (deref started-service-id-promise 0 :no-service)))))
 
     (testing "fallback-with-latest-service-does-not-exist"
@@ -80,7 +81,7 @@
             fallback-state-atom (atom {:available-service-ids #{} :healthy-service-ids #{}})
             handler (wrap-descriptor default-handler request->descriptor-fn start-new-service-fn fallback-state-atom)
             response (handler request)]
-        (is (= {:descriptor descriptor :latest-service-id latest-service-id :status 200} response))
+        (is (= {:descriptor descriptor :latest-service-id latest-service-id :status http-200-ok} response))
         (is (= latest-service-id (deref started-service-id-promise 0 :no-service)))))))
 
 (deftest test-fallback-maintainer

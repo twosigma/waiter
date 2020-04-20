@@ -26,6 +26,7 @@
             [digest]
             [taoensso.nippy :as nippy]
             [taoensso.nippy.compression :as compression]
+            [waiter.status-codes :refer :all]
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu])
   (:import clojure.core.async.impl.channels.ManyToManyChannel
@@ -162,7 +163,7 @@
 
 (defn clj->json-response
   "Convert the input data into a json response."
-  [data-map & {:keys [headers status] :or {headers {} status 200}}]
+  [data-map & {:keys [headers status] :or {headers {} status http-200-ok }}]
   (attach-waiter-source
     {:body (clj->json data-map)
      :status status
@@ -171,7 +172,7 @@
 
 (defn clj->streaming-json-response
   "Converts the data into a json response which can be streamed back to the client."
-  [data-map & {:keys [status] :or {status 200}}]
+  [data-map & {:keys [status] :or {status http-200-ok }}]
   (let [data-map (doall data-map)]
     (attach-waiter-source
       {:status status
@@ -281,25 +282,25 @@
   "Finds and attaches the equivalent grpc status codes for the provided http status code."
   [{:keys [headers status] :as response} {:keys [message]}]
   (if-let [grpc-status-data (cond
-                              (= status 400) ["3" "Bad Request"]
-                              (= status 401) ["16" "Unauthorized"]
-                              (= status 403) ["7" "Permission Denied"]
-                              (= status 429) ["14" "Too Many Requests"]
-                              (= status 500) ["13" "Internal Server Error"]
-                              (= status 502) ["14" "Bad Gateway"]
-                              (= status 503) ["14" "Service Unavailable"]
-                              (= status 504) ["4" "Gateway Timeout"])]
+                              (= status http-400-bad-request) [grpc-3-invalid-argument "Bad Request"]
+                              (= status http-401-unauthorized) [grpc-16-unauthenticated "Unauthorized"]
+                              (= status http-403-forbidden) [grpc-7-permission-denied "Permission Denied"]
+                              (= status http-429-too-many-requests) [grpc-14-unavailable "Too Many Requests"]
+                              (= status http-500-internal-server-error) [grpc-13-internal "Internal Server Error"]
+                              (= status http-502-bad-gateway) [grpc-14-unavailable "Bad Gateway"]
+                              (= status http-503-service-unavailable) [grpc-14-unavailable "Service Unavailable"]
+                              (= status http-504-gateway-timeout) [grpc-4-deadline-exceeded "Gateway Timeout"])]
     (let [[grpc-status standard-message] grpc-status-data
           grpc-message (if (string? message) (str/replace message #"\n" "; ") standard-message)
           new-headers (assoc headers
                         "content-type" "application/grpc"
                         "grpc-message" grpc-message
-                        "grpc-status" grpc-status)
+                        "grpc-status" (str grpc-status))
           ;; when only headers are provided jetty terminates the request with an empty data frame,
           ;; we work around that limitation by sending trailers that carry the same grpc error message.
           trailers-ch (async/promise-chan)
           trailers-data {"grpc-message" grpc-message
-                         "grpc-status" grpc-status}]
+                         "grpc-status" (str grpc-status)}]
       (async/>!! trailers-ch trailers-data)
       (assoc response
         :headers new-headers
@@ -322,7 +323,7 @@
 (defn data->error-response
   "Converts the provided data map into a ring response.
    The data map is expected to contain the following keys: details, headers, message, and status."
-  [{:keys [details headers status] :or {status 400} :as data-map} request]
+  [{:keys [details headers status] :or {status http-400-bad-request} :as data-map} request]
   (let [error-context (build-error-context data-map request)
         content-type (request->content-type request)]
     (-> {:body (case content-type
@@ -345,7 +346,7 @@
   (let [{:keys [status] :as error-data} (ex-data ex)]
     (if status
       ex
-      (ex-info (str "Internal error: " (.getMessage ex)) (assoc error-data :status 500) ex))))
+      (ex-info (str "Internal error: " (.getMessage ex)) (assoc error-data :status http-500-internal-server-error) ex))))
 
 (defn exception->response
   "Converts an exception into a ring response."

@@ -15,6 +15,7 @@
 ;;
 (ns waiter.instability-test
   (:require [clojure.test :refer :all]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]))
 
 (deftest ^:parallel ^:integration-fast ^:explicit test-oom-instability
@@ -24,6 +25,6 @@
           response (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :path "/oom-instability"))]
       (wait-for #(= "not-enough-memory" ((((service-state waiter-url (response->service-id response))
                                             :state) :responder-state) :instability-issue)))
-      (assert-response-status response 502)
+      (assert-response-status response http-502-bad-gateway)
       (is (= "not-enough-memory" ((((service-state waiter-url (response->service-id response))
                                      :state) :responder-state) :instability-issue))))))

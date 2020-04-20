@@ -15,13 +15,14 @@
 ;;
 (ns waiter.reporters-integration-test
   (:require [clojure.test :refer :all]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
             [waiter.util.date-utils :as du]))
 
 (defn- get-graphite-reporter-state
   [waiter-url cookies]
   (let [{:keys [body] :as response} (make-request waiter-url "/state/codahale-reporters" :method :get :cookies cookies)]
-    (assert-response-status response 200)
+    (assert-response-status response http-200-ok)
     (-> body str try-parse-json (get-in ["state" "graphite"]))))
 
 (defn- wait-for-period

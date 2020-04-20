@@ -19,6 +19,7 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [plumbing.core :as pc]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]))
 
 (deftest ^:parallel ^:integration-fast test-202-response-without-location-header
@@ -32,7 +33,7 @@
           (make-request-with-debug-info async-request-headers
                                         #(make-kitchen-request waiter-url % :method :get :path "/async/request"))
           status-location (get (pc/map-keys str/lower-case headers) "location")]
-      (assert-response-status response 202)
+      (assert-response-status response http-202-accepted)
       (is (str/blank? status-location))
       (with-service-cleanup
         service-id
@@ -88,7 +89,7 @@
           {:keys [cookies request-headers response service-id status-location]}
           (make-async-request waiter-url (-> processing-time-secs t/seconds t/in-millis))
           async-request-cid (get-in response [:headers "x-cid"] "")]
-      (assert-response-status response 202)
+      (assert-response-status response http-202-accepted)
       (is (not (str/blank? status-location)))
       (is (str/starts-with? (str status-location) "/waiter-async/status/") (str status-location))
       (log/info async-request-cid "status-location:" status-location)
@@ -109,20 +110,20 @@
           (testing "validating-status"
             (doseq [router (seq routers)]
               (let [{:keys [response result-location]} (async-status router status-location cookies)]
-                (assert-response-status response 200)
+                (assert-response-status response http-200-ok)
                 (is (nil? result-location)))))
 
           ;; wait for async request to complete processing
           (wait-for
             #(let [router-entry (rand-nth (seq routers))
                    {:keys [response result-location]} (async-status router-entry status-location cookies)]
-               (and result-location (= 303 (:status response))))
+               (and result-location (= http-303-see-other (:status response))))
             :interval 1 :timeout (inc processing-time-secs))
 
           (testing "validate-complete-status"
             (doseq [router-entry (seq routers)]
               (let [{:keys [response result-location]} (async-status router-entry status-location cookies)]
-                (assert-response-status response 303)
+                (assert-response-status response http-303-see-other)
                 (is result-location))))
 
           (testing "validate-303-does-not-reset-in-flight-request-counters"
@@ -142,7 +143,7 @@
               (is (str/includes? (str result-location) service-id) (str result-location))
               (log/info "validating async result from router" router-id "at" endpoint-url)
               (let [{:keys [body] :as response} (make-request endpoint-url result-location :headers request-headers :cookies cookies)]
-                (assert-response-status response 200)
+                (assert-response-status response http-200-ok)
                 ;; kitchen response includes the original CID
                 (is (str/includes? (str body) async-request-cid) (str body))))))
 
@@ -161,17 +162,17 @@
     (let [processing-time-ms 15000
           {:keys [cookies response service-id status-location]}
           (make-async-request waiter-url processing-time-ms)]
-      (assert-response-status response 202)
+      (assert-response-status response http-202-accepted)
       (is (not (str/blank? status-location)))
       (is (str/starts-with? (str status-location) "/waiter-async/status/") (str status-location))
       (with-service-cleanup
         service-id
         (let [routers (routers waiter-url)]
           (let [response (cancel-async-request waiter-url status-location true cookies)]
-            (assert-response-status response 204))
+            (assert-response-status response http-204-no-content))
           (doseq [router (seq routers)]
             (let [{:keys [response result-location]} (async-status router status-location cookies)]
-              (assert-response-status response 410)
+              (assert-response-status response http-410-gone)
               (is (nil? result-location)))))))))
 
 (deftest ^:parallel ^:integration-fast test-cancel-unsupported-async-request
@@ -179,16 +180,16 @@
     (let [processing-time-ms 15000
           {:keys [cookies response service-id status-location]}
           (make-async-request waiter-url processing-time-ms)]
-      (assert-response-status response 202)
+      (assert-response-status response http-202-accepted)
       (is (not (str/blank? status-location)))
       (with-service-cleanup
         service-id
         (let [routers (routers waiter-url)]
           (let [response (cancel-async-request waiter-url status-location false cookies)]
-            (assert-response-status response 405))
+            (assert-response-status response http-405-method-not-allowed))
           (doseq [router (seq routers)]
             (let [{:keys [response]} (async-status router status-location cookies)]
-              (assert-response-status response 200))))))))
+              (assert-response-status response http-200-ok))))))))
 
 ; Marked explicit because it's flaky. Disabled tests are documented and will be fixed
 (deftest ^:parallel ^:integration-slow ^:resource-heavy ^:explicit test-multiple-async-requests
@@ -218,7 +219,7 @@
                             :verbose true)
           status-locations (for [{:keys [headers] :as response} async-responses]
                              (let [status-location (get (pc/map-keys str/lower-case headers) "location")]
-                               (assert-response-status response 202)
+                               (assert-response-status response http-202-accepted)
                                (is (not (str/blank? status-location)))
                                status-location))]
 
@@ -241,7 +242,7 @@
                                                               :cookies cookies
                                                               :headers kitchen-delete-headers
                                                               :method :delete)]
-                (assert-response-status response 200)
+                (assert-response-status response http-200-ok)
                 (is (str/includes? body "Deleted request-id")))))
           (Thread/sleep inter-router-metrics-interval-ms) ;; allow routers to sync metrics
           (let [{:keys [async outstanding] :as request-counts}
@@ -255,7 +256,7 @@
           (fn []
             (every? (fn [status-location]
                       (let [{:keys [status]} (make-request waiter-url status-location :cookies cookies)]
-                        (not= 200 status)))
+                        (not= http-200-ok status)))
                     status-locations))
           :interval 5, :timeout 70)
 
@@ -264,12 +265,12 @@
             (doseq [status-location status-locations]
               (let [[router-id endpoint-url] (rand-nth (seq routers))
                     {:keys [result-location response]} (async-status [router-id endpoint-url] status-location cookies)]
-                (when (not= 410 (:status response))
+                (when (not= http-410-gone (:status response))
                   (is (str/starts-with? (str result-location) "/waiter-async/result/") (str result-location))
                   (is (str/includes? (str result-location) service-id) (str result-location))
                   (log/info "validating async result via router" router-id "at" endpoint-url)
                   (let [response (make-request endpoint-url result-location :cookies cookies :method :get)]
-                    (assert-response-status response 200))))))
+                    (assert-response-status response http-200-ok))))))
 
           (testing "validate-completed-request-counters"
             (Thread/sleep inter-router-metrics-interval-ms) ;; allow routers to sync metrics

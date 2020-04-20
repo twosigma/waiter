@@ -20,7 +20,8 @@
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
             [qbits.jet.client.http :as http]
-            [slingshot.slingshot :as ss])
+            [slingshot.slingshot :as ss]
+            [waiter.status-codes :refer :all])
   (:import (java.net URI)
            (java.net URI)
            (java.util ArrayList)
@@ -57,6 +58,12 @@
         (catch Exception e
           (log/warn e "failure during spnego authentication"))))))
 
+(defn status-2XX?
+  "Returns true if the status is in the range [200, 299]."
+  [status]
+  (and (integer? status)
+       (<= http-200-ok status 299)))
+
 (defn http-request
   "Wrapper over the qbits.jet.client.http/request function.
    It performs a blocking read on the response and the response body.
@@ -79,7 +86,7 @@
     (when error
       (throw error))
     (let [response (update response :body async/<!!)]
-      (when (and throw-exceptions (not (<= 200 status 299)))
+      (when (and throw-exceptions (not (status-2XX? status)))
         (ss/throw+ response))
       (let [{:keys [body]} response]
         (try
@@ -175,6 +182,6 @@
   "Returns true if the response represents the service is unavailable.
    This means either the response status is 503 or the grpc response status is UNAVAILABLE, i.e. 14."
   [request response]
-  (or (= 503 (:status response))
+  (or (= http-503-service-unavailable (:status response))
       (and (grpc? (:headers request) (:client-protocol request))
            (= "14" (get-in response [:headers "grpc-status"])))))

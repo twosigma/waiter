@@ -37,6 +37,7 @@
             [waiter.scheduler :as scheduler]
             [waiter.service :as service]
             [waiter.statsd :as statsd]
+            [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
@@ -74,23 +75,23 @@
                                (let [[error-cause message status error-class] (classify-error ex-info-cause)
                                      error-cause (or (-> error ex-data :error-cause) error-cause)]
                                  [error-cause message status error-class])
-                               (let [error-status (or (-> error ex-data :status) 500)
+                               (let [error-status (or (-> error ex-data :status) http-500-internal-server-error)
                                      error-cause (or (-> error ex-data :error-cause) :generic-error)]
                                  [error-cause error-message error-status error-class]))
                              (instance? IllegalStateException error)
-                             [:generic-error error-message 400 error-class]
+                             [:generic-error error-message http-400-bad-request error-class]
                              ;; cancel_stream_error is used to indicate that the stream is no longer needed
                              (and (instance? IOException error) (= "cancel_stream_error" error-message))
-                             [:client-error "Client action means stream is no longer needed" 400 error-class]
+                             [:client-error "Client action means stream is no longer needed" http-400-bad-request error-class]
                              ;; connection has already been closed by the client
                              (and (instance? EofException error) (= "reset" error-message))
-                             [:client-eagerly-closed "Connection eagerly closed by client" 400 error-class]
+                             [:client-eagerly-closed "Connection eagerly closed by client" http-400-bad-request error-class]
                              (instance? EofException error)
-                             [:client-error "Connection unexpectedly closed while streaming request" 400 error-class]
+                             [:client-error "Connection unexpectedly closed while streaming request" http-400-bad-request error-class]
                              (instance? TimeoutException error)
-                             [:instance-error (utils/message :backend-request-timed-out) 504 error-class]
+                             [:instance-error (utils/message :backend-request-timed-out) http-504-gateway-timeout error-class]
                              :else
-                             [:instance-error (utils/message :backend-request-failed) 502 error-class])
+                             [:instance-error (utils/message :backend-request-failed) http-502-bad-gateway error-class])
         error-cause (first classification)]
     (log/info error-class error-message "identified as" error-cause)
     classification))
@@ -270,7 +271,7 @@
         (let [byte-buffer (ByteBuffer/wrap buffer-bytes 0 bytes-read)]
           (when-not (au/timed-offer!! body-ch byte-buffer streaming-timeout-ms)
             (let [description-map {:bytes-pending bytes-read
-                                   :status 503
+                                   :status http-503-service-unavailable
                                    :streaming-timeout-ms streaming-timeout-ms}]
               (log/error "unable to stream request bytes" description-map)
               (error-handler-fn (ex-info "unable to stream request bytes" description-map))))))
@@ -448,7 +449,7 @@
   "Helper function that inspects the response and returns the location and query-string if the response
    has a status code is 202 and contains a location header with a base path."
   [{:keys [headers status]} endpoint]
-  (when (= status 202)
+  (when (= status http-202-accepted)
     (let [location-header (str (get headers "location"))
           [endpoint _] (str/split endpoint #"\?" 2)
           [location-header query-string] (str/split location-header #"\?" 2)
@@ -645,7 +646,7 @@
         proto-version (hu/backend-protocol->http-version backend-proto)]
     (when (and (hu/grpc? request-headers proto-version)
                (not (str/blank? grpc-status))
-               (not= "0" grpc-status)
+               (not= (str grpc-0-ok) grpc-status)
                (au/chan? body))
       (log/info "eagerly closing response body as grpc status is" grpc-status)
       ;; mark the request as successful, grpc failures are reported in the headers
@@ -839,7 +840,7 @@
                            (not (str/blank? last-updated-by)) (assoc :last-updated-by last-updated-by))]
         (log/info "service has been suspended" response-map)
         (meters/mark! (metrics/service-meter service-id "response-rate" "error" "suspended"))
-        (-> {:details response-map, :message "Service has been suspended", :status 503}
+        (-> {:details response-map, :message "Service has been suspended", :status http-503-service-unavailable}
             (utils/data->error-response request)))
       (handler request))))
 
@@ -857,7 +858,7 @@
                             :service-id service-id}]
           (log/info "max queue length exceeded" response-map)
           (meters/mark! (metrics/service-meter service-id "response-rate" "error" "queue-length"))
-          (-> {:details response-map, :message "Max queue length exceeded", :status 503}
+          (-> {:details response-map, :message "Max queue length exceeded", :status http-503-service-unavailable}
               (utils/data->error-response request)))
         (handler request)))))
 

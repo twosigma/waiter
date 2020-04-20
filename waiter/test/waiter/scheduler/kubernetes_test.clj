@@ -27,6 +27,7 @@
             [waiter.config :as config]
             [waiter.scheduler :as scheduler]
             [waiter.scheduler.kubernetes :refer :all]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :as ct]
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
@@ -667,44 +668,44 @@
           (is (= (assoc partial-expected
                    :killed? true
                    :message "Successfully killed instance"
-                   :status 200)
+                   :status http-200-ok)
                  actual))))
       (testing "unsuccessful-delete: forbidden"
         (let [actual (with-redefs [api-request (fn mocked-api-request [_ _ & {:keys [request-method]}]
                                                  (when (= request-method :delete)
-                                                   (ss/throw+ {:status 403})))]
+                                                   (ss/throw+ {:status http-403-forbidden})))]
                        (scheduler/kill-instance dummy-scheduler instance))]
           (is (= (assoc partial-expected
                    :message "Error while killing instance"
-                   :status 500)
+                   :status http-500-internal-server-error)
                  actual))))
       (testing "unsuccessful-delete: no such instance"
         (let [error-msg "Instance not found"
               actual (with-redefs [api-request (fn mocked-api-request [_ _ & {:keys [request-method]}]
                                                  (when (= request-method :delete)
-                                                   (ss/throw+ {:status 404})))]
+                                                   (ss/throw+ {:status http-404-not-found})))]
                        (scheduler/kill-instance dummy-scheduler instance))]
           (is (= (assoc partial-expected
                    :message error-msg
-                   :status 404)
+                   :status http-404-not-found)
                  actual))))
       (testing "successful-delete: terminated, but had patch conflict"
         (log/info "Expecting 409 patch-conflict error when deleting service instance...")
         (let [actual (with-redefs [api-request (fn mocked-api-request [_ _ & {:keys [request-method]}]
                                                  (when (= request-method :patch)
-                                                   (ss/throw+ {:status 409})))]
+                                                   (ss/throw+ {:status http-409-conflict})))]
                        (scheduler/kill-instance dummy-scheduler instance))]
           (is (= (assoc partial-expected
                    :killed? true
                    :message "Successfully killed instance"
-                   :status 200)
+                   :status http-200-ok)
                  actual))))
       (testing "unsuccessful-delete: internal error"
         (let [actual (with-redefs [api-request (fn [& _] (throw-exception))]
                        (scheduler/kill-instance dummy-scheduler instance))]
           (is (= (assoc partial-expected
                    :message "Error while killing instance"
-                   :status 500)
+                   :status http-500-internal-server-error)
                  actual)))))))
 
 (deftest test-scheduler-service-exists?
@@ -760,12 +761,12 @@
                     service-id->service (constantly nil)]
         (testing "unsuccessful-create: forbidden"
           (let [actual (with-redefs [api-request (fn mocked-api-request [& _]
-                                                   (ss/throw+ {:status 403}))]
+                                                   (ss/throw+ {:status http-403-forbidden}))]
                          (scheduler/create-service-if-new dummy-scheduler descriptor))]
             (is (nil? actual))))
         (testing "unsuccessful-create: service creation conflict (already running)"
           (let [actual (with-redefs [api-request (fn mocked-api-request [& _]
-                                                   (ss/throw+ {:status 409}))]
+                                                   (ss/throw+ {:status http-409-conflict}))]
                          (scheduler/create-service-if-new dummy-scheduler descriptor))]
             (is (nil? actual))))
         (testing "unsuccessful-create: internal error"
@@ -811,7 +812,7 @@
       (testing "unsuccessful-delete: forbidden"
         (let [actual (with-redefs [api-request (fn mocked-api-request [_ _ & {:keys [request-method]}]
                                                  (when (= request-method :delete)
-                                                   (ss/throw+ {:status 403})))]
+                                                   (ss/throw+ {:status http-403-forbidden})))]
                        (scheduler/delete-service dummy-scheduler service-id))]
           (is (= {:message "Internal error while deleting service"
                   :result :error}
@@ -819,7 +820,7 @@
       (testing "unsuccessful-delete: service not found"
         (let [actual (with-redefs [api-request (fn mocked-api-request [_ _ & {:keys [request-method]}]
                                                  (when (= request-method :delete)
-                                                   (ss/throw+ {:status 404})))]
+                                                   (ss/throw+ {:status http-404-not-found})))]
                        (scheduler/delete-service dummy-scheduler service-id))]
           (is (= {:message "Kubernetes reports service does not exist"
                   :result :no-such-service-exists}
@@ -842,7 +843,7 @@
         (let [actual (with-redefs [api-request (constantly {:status "OK"})]
                        (scheduler/scale-service dummy-scheduler service-id instances' false))]
           (is (= {:success true
-                  :status 200
+                  :status http-200-ok
                   :result :scaled
                   :message (str "Scaled to " instances')}
                  actual))))
@@ -850,23 +851,23 @@
         (let [actual (with-redefs [service-id->service (constantly nil)]
                        (scheduler/scale-service dummy-scheduler service-id instances' false))]
           (is (= {:success false
-                  :status 404
+                  :status http-404-not-found
                   :result :no-such-service-exists
                   :message "Failed to scale missing service"}
                  actual))))
       (testing "unsuccessful-scale: forbidden"
-        (let [actual (with-redefs [api-request (fn [& _] (ss/throw+ {:status 403}))]
+        (let [actual (with-redefs [api-request (fn [& _] (ss/throw+ {:status http-403-forbidden}))]
                        (scheduler/scale-service dummy-scheduler service-id instances' false))]
           (is (= {:success false
-                  :status 500
+                  :status http-500-internal-server-error
                   :result :failed
                   :message "Error while scaling waiter service"}
                  actual))))
       (testing "unsuccessful-scale: patch conflict"
-        (let [actual (with-redefs [api-request (fn [& _] (ss/throw+ {:status 409}))]
+        (let [actual (with-redefs [api-request (fn [& _] (ss/throw+ {:status http-409-conflict}))]
                        (scheduler/scale-service dummy-scheduler service-id instances' false))]
           (is (= {:success false
-                  :status 409
+                  :status http-409-conflict
                   :result :conflict
                   :message "Scaling failed due to repeated patch conflicts"}
                  actual))))
@@ -874,7 +875,7 @@
         (let [actual (with-redefs [api-request (fn [& _] (throw-exception))]
                        (scheduler/scale-service dummy-scheduler service-id instances' false))]
           (is (= {:success false
-                  :status 500
+                  :status http-500-internal-server-error
                   :result :failed
                   :message "Error while scaling waiter service"}
                  actual)))))))

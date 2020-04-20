@@ -19,6 +19,7 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [plumbing.core :as pc]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]))
 
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-delegate-kill-instance
@@ -38,7 +39,7 @@
                        (make-request-with-debug-info extra-headers #(make-kitchen-request waiter-url %)))
           _ (log/info "making canary request")
           {:keys [service-id] :as canary-response} (request-fn)]
-      (assert-response-status canary-response 200)
+      (assert-response-status canary-response http-200-ok)
       (with-service-cleanup
         service-id
         (future (parallelize-requests parallelism requests-per-thread #(request-fn)
@@ -52,9 +53,9 @@
   (let [{:keys [instance-id] :as response}
         (make-request-with-debug-info
           request-headers
-          #(make-kitchen-request target-url % :cookies cookies :path "/bad-status" :query-params {"status" 503}))]
+          #(make-kitchen-request target-url % :cookies cookies :path "/bad-status" :query-params {"status" http-503-service-unavailable}))]
     (log/info "triggered blacklisting of instance" instance-id "on" target-url)
-    (assert-response-status response 503)
+    (assert-response-status response http-503-service-unavailable)
     instance-id))
 
 (defn- instance-blacklisted-by-router? [router-url service-id instance-id cookies]
@@ -82,7 +83,7 @@
                               (make-request-with-debug-info
                                 extra-headers #(make-kitchen-request waiter-url %)))
             {:keys [cookies request-headers instance-id service-id] :as response} (make-request-fn)]
-        (assert-response-status response 200)
+        (assert-response-status response http-200-ok)
         (log/info "canary instance-id:" instance-id)
         (with-service-cleanup
           service-id

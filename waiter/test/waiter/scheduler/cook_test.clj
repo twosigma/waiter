@@ -19,9 +19,10 @@
             [clojure.string :as str]
             [clojure.test :refer :all]
             [waiter.config :as config]
-            [waiter.scheduler.cook :refer :all]
             [waiter.mesos.mesos :as mesos]
             [waiter.scheduler :as scheduler]
+            [waiter.scheduler.cook :refer :all]
+            [waiter.status-codes :refer :all]
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
@@ -693,7 +694,7 @@
         (is (= {:killed? true :message "Killed foo.1A" :result :killed :success true}
                (scheduler/kill-instance scheduler test-instance))))
 
-      (with-redefs [delete-jobs (fn [_ _] (throw (ex-info "Delete error" {:status 400})))]
+      (with-redefs [delete-jobs (fn [_ _] (throw (ex-info "Delete error" {:status http-400-bad-request})))]
         (is (= {:killed? false :message "Unable to kill foo.1A" :result :failed :success false}
                (scheduler/kill-instance scheduler test-instance))))
 
@@ -758,7 +759,7 @@
         (is (= {:message "Deleted foo" :result :deleted :success true}
                (scheduler/delete-service scheduler "foo"))))
 
-      (with-redefs [delete-jobs (fn [_ _] (throw (ex-info "Delete error" {:status 400})))]
+      (with-redefs [delete-jobs (fn [_ _] (throw (ex-info "Delete error" {:status http-400-bad-request})))]
         (is (= {:message "Unable to delete foo" :result :failed :success false}
                (scheduler/delete-service scheduler "foo"))))
 

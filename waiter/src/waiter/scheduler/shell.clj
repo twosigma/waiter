@@ -29,6 +29,7 @@
             [schema.core :as s]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
+            [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
@@ -323,7 +324,7 @@
                                       instance health-check-proto health-check-port-index health-check-path)
           {:keys [status error]} (async/<!! (http/get http-client instance-health-check-url))]
       (scheduler/log-health-check-issues instance instance-health-check-url status error)
-      (and (not error) (<= 200 status 299)))
+      (and (not error) (hu/status-2XX? status)))
     false))
 
 (defn- update-instance-health

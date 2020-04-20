@@ -32,6 +32,7 @@
             [waiter.scheduler :as scheduler]
             [waiter.schema :as schema]
             [waiter.service-description :as sd]
+            [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
@@ -311,7 +312,7 @@
         {:keys [body error status] :as response} (clj-http/get url request-options)]
     (when error
       (throw error))
-    (when-not (<= 200 status 299)
+    (when-not (hu/status-2XX? status)
       (ss/throw+ response))
     (-> body
         InputStreamReader.
@@ -346,7 +347,7 @@
                                 (and (not content-type) body) (assoc :content-type "application/json"))))]
       (scheduler/log "response from K8s API server:" result)
       result)
-    (catch [:status 400] response
+    (catch [:status http-400-bad-request] response
       (log/error "malformed K8s API request: " url options response))
     (catch [:client http-client] response
       (log/error "request to K8s API server failed: " url options body response)
@@ -416,7 +417,7 @@
   [patch-cmd retry-condition retry-cmd]
   `(let [patch-result# (ss/try+
                          ~patch-cmd
-                         (catch [:status 409] _#
+                         (catch [:status http-409-conflict] _#
                            (with-meta
                              `conflict
                              {:throw-context ~'&throw-context})))]
@@ -544,7 +545,7 @@
     (when-not replicaset-url
       (throw (ex-info "could not find service to delete"
                       {:service service
-                       :status 404})))
+                       :status http-404-not-found})))
     (api-request replicaset-url scheduler :request-method :delete :body kill-json)
     {:message (str "Kubernetes deleted ReplicaSet for " id)
      :result :deleted}))
@@ -597,32 +598,32 @@
          :killed? true
          :message "Successfully killed instance"
          :service-id service-id
-         :status 200})
-      (catch [:status 404] _
+         :status http-200-ok })
+      (catch [:status http-404-not-found] _
         {:instance-id id
          :killed? false
          :message "Instance not found"
          :service-id service-id
-         :status 404})
+         :status http-404-not-found})
       (catch Object ex
         (log/error ex "error while killing instance")
         {:instance-id id
          :killed? false
          :message "Error while killing instance"
          :service-id service-id
-         :status 500})))
+         :status http-500-internal-server-error})))
 
   (service-exists? [this service-id]
     (ss/try+
       (some? (service-id->service this service-id))
-      (catch [:status 404] _
+      (catch [:status http-404-not-found] _
         (comment "App does not exist."))))
 
   (create-service-if-new [this {:keys [service-id] :as descriptor}]
     (when-not (scheduler/service-exists? this service-id)
       (ss/try+
         (create-service descriptor this)
-        (catch [:status 409] _
+        (catch [:status http-409-conflict] _
           (log/error "conflict status when trying to start app. Is app starting up?"
                      descriptor))
         (catch Object ex
@@ -634,7 +635,7 @@
             delete-result (delete-service this service)]
         (swap! service-id->failed-instances-transient-store dissoc service-id)
         delete-result)
-      (catch [:status 404] _
+      (catch [:status http-404-not-found] _
         (log/warn "service does not exist:" service-id)
         {:result :no-such-service-exists
          :message "Kubernetes reports service does not exist"})
@@ -654,24 +655,24 @@
         (do
           (scale-service-up-to this service scale-to-instances)
           {:success true
-           :status 200
+           :status http-200-ok
            :result :scaled
            :message (str "Scaled to " scale-to-instances)})
         (do
           (log/error "cannot scale missing service" service-id)
           {:success false
-           :status 404
+           :status http-404-not-found
            :result :no-such-service-exists
            :message "Failed to scale missing service"}))
-      (catch [:status 409] _
+      (catch [:status http-409-conflict] _
         {:success false
-         :status 409
+         :status http-409-conflict
          :result :conflict
          :message "Scaling failed due to repeated patch conflicts"})
       (catch Object ex
         (log/error ex "error while scaling waiter service" service-id)
         {:success false
-         :status 500
+         :status http-500-internal-server-error
          :result :failed
          :message "Error while scaling waiter service"})))
 

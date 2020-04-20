@@ -26,6 +26,7 @@
             [metrics.meters :as meters]
             [plumbing.core :as pc]
             [waiter.metrics :as metrics]
+            [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]))
 
 (defn- service-id->interstitial-promise
@@ -240,7 +241,7 @@
           (meters/mark! (metrics/waiter-meter "interstitial" "redirect"))
           {:headers {"location" location
                      "x-waiter-interstitial" "true"}
-           :status 303})))))
+           :status http-303-see-other})))))
 
 (let [interstitial-template-fn (template/fn [{:keys [target-url]}] (slurp (io/resource "web/interstitial.html")))]
   (defn render-interstitial-template
@@ -257,4 +258,4 @@
                         ;; the bypass interstitial should be the last query parameter
                         (request-time->interstitial-param-string request-time))]
     {:body (render-interstitial-template {:target-url target-url})
-     :status 200}))
+     :status http-200-ok }))

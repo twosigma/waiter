@@ -17,6 +17,7 @@
   (:require [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
             [waiter.util.utils :as utils]))
 
@@ -97,10 +98,10 @@
           (is (= num-requests (count @responses)))
           (log/info "response statuses:" (map :status @responses))
           (log/info "response bodies:" (map :body @responses))
-          (let [responses-with-503 (filter #(= 503 (:status %)) @responses)]
-            (is (not (empty? responses-with-503)))
-            (is (< (count responses-with-503) num-requests))
+          (let [responses-with-http-503-service-unavailable (filter #(= http-503-service-unavailable (:status %)) @responses)]
+            (is (not (empty? responses-with-http-503-service-unavailable)))
+            (is (< (count responses-with-http-503-service-unavailable) num-requests))
             (is (every? (fn [{body :body}]
                           (every? #(str/includes? (str body) (str %))
                                   ["Max queue length exceeded" service-id]))
-                        responses-with-503))))))))
+                        responses-with-http-503-service-unavailable))))))))

@@ -35,6 +35,7 @@
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.service-description :as sd]
+            [waiter.status-codes :refer :all]
             [waiter.test-helpers :refer :all]
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
@@ -80,7 +81,7 @@
                                           (is (= instance-id (:id instance)))
                                           (is (= "blacklist-reason" reason))
                                           (is (= endpoint in-dest-endpoint))
-                                          (if (str/includes? in-dest-router-id "fail") {:status 400} {:status 200}))
+                                          (if (str/includes? in-dest-router-id "fail") {:status http-400-bad-request} {:status http-200-ok}))
               actual-result (peers-acknowledged-blacklist-requests?
                               {:id instance-id, :service-id service-id} short-circuit router-ids endpoint
                               make-blacklist-request-fn "blacklist-reason")]
@@ -194,25 +195,25 @@
             request {:uri (str "/apps/" test-service-id "/suspend")
                      :authorization/user user}
             {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-        (is (= 200 status))
+        (is (= http-200-ok status))
         (is (every? #(str/includes? (str body) %) ["true" test-service-id "suspend"])))
       (let [user "tu1"
             request {:uri (str "/apps/" test-service-id "/resume")
                      :authorization/user user}
             {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-        (is (= 200 status))
+        (is (= http-200-ok status))
         (is (every? #(str/includes? (str body) %) ["true" test-service-id "resume"])))
       (let [user "tu2"
             request {:uri (str "/apps/" test-service-id "/suspend")
                      :authorization/user user}
             {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-        (is (= 403 status))
+        (is (= http-403-forbidden status))
         (is (every? #(str/includes? (str body) %) ["not allowed" test-service-id])))
       (let [user "tu2"
             request {:uri (str "/apps/" test-service-id "/resume")
                      :authorization/user user}
             {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-        (is (= 403 status))
+        (is (= http-403-forbidden status))
         (is (every? #(str/includes? (str body) %) ["not allowed" test-service-id]))))))
 
 (deftest test-override-service-handler
@@ -240,7 +241,7 @@
                      :request-method :post
                      :uri (str "/apps/" test-service-id "/override")}
             {:keys [status body]} (request-handler request)]
-        (is (= 200 status))
+        (is (= http-200-ok status))
         (is (every? #(str/includes? (str body) %) ["true" test-service-id "success"]))
         (is (= {"scale-factor" 0.3} (:overrides (sd/service-id->overrides kv-store test-service-id)))))
       (let [user "tu1"
@@ -249,7 +250,7 @@
                      :request-method :get
                      :uri (str "/apps/" test-service-id "/override")}
             {:keys [status body]} (request-handler request)]
-        (is (= 200 status))
+        (is (= http-200-ok status))
         (is (= {:scale-factor 0.3} (-> body json/read-str walk/keywordize-keys :overrides)))
         (is (= test-service-id (-> body json/read-str walk/keywordize-keys :service-id))))
       (let [user "tu1"
@@ -258,7 +259,7 @@
                      :request-method :delete
                      :uri (str "/apps/" test-service-id "/override")}
             {:keys [status body]} (request-handler request)]
-        (is (= 200 status))
+        (is (= http-200-ok status))
         (is (every? #(str/includes? (str body) %) ["true" test-service-id "success"]))
         (is (= {} (:overrides (sd/service-id->overrides kv-store test-service-id)))))
       (let [user "tu2"
@@ -266,28 +267,28 @@
                      :request-method :post
                      :uri (str "/apps/" test-service-id "/override")}
             {:keys [status body]} (request-handler request)]
-        (is (= 403 status))
+        (is (= http-403-forbidden status))
         (is (every? #(str/includes? (str body) %) ["not allowed" test-service-id])))
       (let [user "tu2"
             request {:authorization/user user
                      :request-method :get
                      :uri (str "/apps/" test-service-id "/override")}
             {:keys [status body]} (request-handler request)]
-        (is (= 403 status))
+        (is (= http-403-forbidden status))
         (is (every? #(str/includes? (str body) %) ["not allowed" test-service-id])))
       (let [user "tu2"
             request {:authorization/user user
                      :request-method :delete
                      :uri (str "/apps/" test-service-id "/override")}
             {:keys [status body]} (request-handler request)]
-        (is (= 403 status))
+        (is (= http-403-forbidden status))
         (is (every? #(str/includes? (str body) %) ["not allowed" test-service-id])))
       (let [user "tu2"
             request {:authorization/user user
                      :request-method :put
                      :uri (str "/apps/" test-service-id "/override")}
             {:keys [status]} (request-handler request)]
-        (is (= 405 status))))))
+        (is (= http-405-method-not-allowed status))))))
 
 (deftest test-service-view-logs-handler
   (let [scheduler (marathon/map->MarathonScheduler
@@ -321,7 +322,7 @@
                      :uri (str "/apps/" test-service-id "/logs")}
             {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)
             json-body (json/read-str body)]
-        (is (= status 400))
+        (is (= status http-400-bad-request))
         (is (= "Missing instance-id parameter" (get-in json-body ["waiter-error" "message"])))))
 
     (testing "Missing host"
@@ -332,7 +333,7 @@
                      :uri (str "/apps/" test-service-id "/logs")}
             {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)
             json-body (json/read-str body)]
-        (is (= status 400))
+        (is (= status http-400-bad-request))
         (is (= "Missing host parameter" (get-in json-body ["waiter-error" "message"])))))
 
     (with-redefs [mesos/list-directory-content
@@ -371,7 +372,7 @@
                        :uri (str "/apps/" test-service-id "/logs")}
               {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)
               json-body (json/read-str body)]
-          (is (= status 200))
+          (is (= status http-200-ok))
           (is (= [{"name" "fil1"
                    "size" 1000
                    "type" "file"
@@ -397,7 +398,7 @@
                        :request-method :get
                        :uri (str "/apps/" test-service-id "/logs")}
               {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-          (is (= 200 status) body)
+          (is (= http-200-ok status) body)
           (is (every? #(str/includes? body %) ["test.host.com" "5051" "file" "directory" "name" "url" "download"])))))))
 
 (deftest test-service-handler-delete
@@ -438,7 +439,7 @@
       (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
               {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (= expected-json-response-headers headers))
           (is (= {"success" true, "service-id" service-id, "result" "deleted"} (json/read-str body))))))
 
@@ -447,7 +448,7 @@
       (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
               {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (= expected-json-response-headers headers))
           (is (= {"success" false, "service-id" service-id} (json/read-str body))))))
 
@@ -459,7 +460,7 @@
                        :request-method :delete
                        :uri (str "/apps/" service-id)}
               {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-          (is (= 403 status))
+          (is (= http-403-forbidden status))
           (is (= expected-json-response-headers headers))
           (is (str/includes? body "User not allowed to delete service")))))
 
@@ -468,7 +469,7 @@
       (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
               {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
-          (is (= 404 status))
+          (is (= http-404-not-found status))
           (is (= expected-json-response-headers headers))
           (is (= {"result" "no-such-service-exists", "service-id" service-id, "success" false} (json/read-str body))))))
 
@@ -482,7 +483,7 @@
               {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)
               {{message "message"
                 {:strs [service-id]} "details"} "waiter-error"} (json/read-str body)]
-          (is (= 404 status))
+          (is (= http-404-not-found status))
           (is (= expected-json-response-headers headers))
           (is (= "Service not found" message))
           (is (= "test-service-1" service-id)))))
@@ -495,7 +496,7 @@
                        :request-method :delete
                        :uri (str "/apps/" service-id)}
               {:keys [headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
-          (is (= 500 status))
+          (is (= http-500-internal-server-error status))
           (is (= expected-json-response-headers headers)))))
 
     (.shutdown scheduler-interactions-thread-pool)))
@@ -533,7 +534,7 @@
                        :request-method :get
                        :uri (str "/apps/" service-id)}
               {:keys [body headers status]} (ring-handler request)]
-          (is (= 404 status))
+          (is (= http-404-not-found status))
           (is (= expected-json-response-headers headers))
           (let [{{message "message"
                   {:strs [service-id]} "details"} "waiter-error"} (json/read-str (str body))]
@@ -554,7 +555,7 @@
                        :request-method :get
                        :uri (str "/apps/" service-id)}
               {:keys [body headers status]} (ring-handler request)]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (= expected-json-response-headers headers))
           (let [body-json (json/read-str (str body))]
             (is (= {"active-instances" [{"id" (str service-id ".A")
@@ -582,7 +583,7 @@
                        :request-method :get
                        :uri (str "/apps/" service-id)}
               {:keys [body headers status]} (ring-handler request)]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (= expected-json-response-headers headers))
           (let [body-json (json/read-str (str body))]
             (is (= {"active-instances" [{"id" (str service-id ".A")
@@ -697,7 +698,7 @@
                                              body-chan (async/promise-chan)]
                                          (if (str/includes? body "error")
                                            (throw (ex-info (str body) {}))
-                                           (async/>!! response-chan {:body body-chan, :status 200}))
+                                           (async/>!! response-chan {:body body-chan, :status http-200-ok}))
                                          (async/>!! body-chan body)
                                          response-chan))]
       (testing "error-in-response"
@@ -706,7 +707,7 @@
 
       (testing "successful-response"
         (let [body-string "successful-response"]
-          (is (= {:body body-string, :status 200}
+          (is (= {:body body-string, :status http-200-ok}
                  (make-request-sync http-client idle-timeout method endpoint-url auth body-string config))))))))
 
 (deftest test-waiter-request?-factory
@@ -748,7 +749,7 @@
           handlers {:status-handler-fn ((:status-handler-fn request-handlers) {})
                     :waiter-request?-fn (constantly true)}
           {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-      (is (= 200 status))
+      (is (= http-200-ok status))
       (is (= expected-json-response-headers headers))
       (is (= {"status" "ok"} (json/read-str body))))))
 
@@ -806,7 +807,7 @@
                        :request-method :get
                        :uri "/metrics"}
               {:keys [body headers status]} (ring-handler request)]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (= expected-json-response-headers headers))
           (is (str/includes? (str body) "metrics-from-get-metrics")))))
 
@@ -816,14 +817,14 @@
                        :request-method :get
                        :uri "/metrics"}
               {:keys [headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-          (is (= 500 status))
+          (is (= http-500-internal-server-error status))
           (is (= expected-json-response-headers headers)))))
 
     (testing "metrics-request-handler:waiter-metrics"
       (with-redefs [metrics/get-waiter-metrics (fn get-waiter-metrics-fn [] {:data (str "metrics-for-waiter")})]
         (let [request {:request-method :get, :uri "/metrics", :query-string "exclude-services=true"}
               {:keys [body headers status]} (ring-handler request)]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (= expected-json-response-headers headers))
           (is (str/includes? (str body) "metrics-for-waiter")))))
 
@@ -831,7 +832,7 @@
       (with-redefs [metrics/get-service-metrics (fn get-service-metrics [service-id] {:data (str "metrics-for-" service-id)})]
         (let [request {:request-method :get, :uri "/metrics", :query-string "service-id=abcd"}
               {:keys [body headers status]} (ring-handler request)]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (= expected-json-response-headers headers))
           (is (str/includes? (str body) "metrics-for-abcd")))))
 
@@ -842,7 +843,7 @@
                        :query-string "service-id=abcd"
                        :uri "/metrics"}
               {:keys [headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-          (is (= 500 status))
+          (is (= http-500-internal-server-error status))
           (is (= expected-json-response-headers headers)))))))
 
 (deftest test-async-result-handler-call
@@ -1040,7 +1041,7 @@
                                             (swap! make-kill-instance-request-count-atom inc)
                                             (is (= (str "waiter-kill-instance/" service-id) dest-endpoint))
                                             (when (= 1 @make-kill-instance-request-count-atom)
-                                              {:status 200}))]
+                                              {:status http-200-ok}))]
         (is (delegate-instance-kill-request service-id router-ids make-kill-instance-request-fn))
         (is (= 1 @make-kill-instance-request-count-atom))))
 
@@ -1051,7 +1052,7 @@
                                             (swap! make-kill-instance-request-count-atom inc)
                                             (is (= (str "waiter-kill-instance/" service-id) dest-endpoint))
                                             (when (= (count router-ids) @make-kill-instance-request-count-atom)
-                                              {:status 200}))]
+                                              {:status http-200-ok}))]
         (is (delegate-instance-kill-request service-id router-ids make-kill-instance-request-fn))
         (is (= (count router-ids) @make-kill-instance-request-count-atom))))))
 
@@ -1189,7 +1190,7 @@
             {:keys [handled-request response]} (execute-request test-request)]
         (is (nil? handled-request))
         (is (= (utils/clj->json-response {:error "An authentication disabled token may not be combined with on-the-fly headers"}
-                                         :status 400)
+                                         :status http-400-bad-request)
                response))))
 
     (testing "request-without-existing-non-auth-named-token"
@@ -1211,7 +1212,7 @@
             {:keys [handled-request response]} (execute-request test-request)]
         (is (nil? handled-request))
         (is (= (utils/clj->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
-                                         :status 400)
+                                         :status http-400-bad-request)
                response))))
 
     (testing "request-without-existing-auth-disabled-named-token"
@@ -1235,7 +1236,7 @@
             {:keys [handled-request response]} (execute-request test-request)]
         (is (nil? handled-request))
         (is (= (utils/clj->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
-                                         :status 400)
+                                         :status http-400-bad-request)
                response))))
 
     (testing "request-without-existing-auth-disabled-named-token-with-on-the-fly-headers"
@@ -1245,7 +1246,7 @@
             {:keys [handled-request response]} (execute-request test-request)]
         (is (nil? handled-request))
         (is (= (utils/clj->json-response {:error "An authentication disabled token may not be combined with on-the-fly headers"}
-                                         :status 400)
+                                         :status http-400-bad-request)
                response))))
 
     (testing "request-without-existing-auth-default-named-token"
@@ -1268,7 +1269,7 @@
             {:keys [handled-request response]} (execute-request test-request)]
         (is (nil? handled-request))
         (is (= (utils/clj->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
-                                         :status 400)
+                                         :status http-400-bad-request)
                response))))
     (testing "request-without-existing-auth-default-named-token-with-authentication-header-2"
       (let [test-request {:headers {"host" "www.service.com"
@@ -1276,7 +1277,7 @@
             {:keys [handled-request response]} (execute-request test-request)]
         (is (nil? handled-request))
         (is (= (utils/clj->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
-                                         :status 400)
+                                         :status http-400-bad-request)
                response))))
 
     (testing "request-without-existing-auth-default-named-token-with-on-the-fly-headers"
@@ -1363,22 +1364,22 @@
       (is (not (waiter-request?-fn {:headers {"host" "waiter-host-1"}}))))))
 
 (deftest test-wrap-error-handling
-  (let [handler-sync (fn [_] {:status 200})
-        handler-async (fn [_] (async/go {:status 200}))
-        handler-sync-error (fn [_] (throw (ex-info "" {:status 400})))
-        handler-async-error (fn [_] (async/go (ex-info "" {:status 400})))]
+  (let [handler-sync (fn [_] {:status http-200-ok})
+        handler-async (fn [_] (async/go {:status http-200-ok}))
+        handler-sync-error (fn [_] (throw (ex-info "" {:status http-400-bad-request})))
+        handler-async-error (fn [_] (async/go (ex-info "" {:status http-400-bad-request})))]
     (testing "sync, no error"
       (let [{:keys [status]} ((wrap-error-handling handler-sync) {})]
-        (is (= 200 status))))
+        (is (= http-200-ok status))))
     (testing "async, no error"
       (let [{:keys [status]} (async/<!! ((wrap-error-handling handler-async) {}))]
-        (is (= 200 status))))
+        (is (= http-200-ok status))))
     (testing "sync, error"
       (let [{:keys [status]} ((wrap-error-handling handler-sync-error) {})]
-        (is (= 400 status))))
+        (is (= http-400-bad-request status))))
     (testing "async, error"
       (let [{:keys [status]} (async/<!! ((wrap-error-handling handler-async-error) {}))]
-        (is (= 400 status))))))
+        (is (= http-400-bad-request status))))))
 
 (deftest test-wrap-https-redirect
   (let [configuration {}
@@ -1495,7 +1496,7 @@
           (is (nil? handled-request))
           (is (= {:body ""
                   :headers {"Location" "https://token.localtest.me"}
-                  :status 307
+                  :status http-307-temporary-redirect
                   :waiter/response-source :waiter}
                  response))))
 
@@ -1513,7 +1514,7 @@
           (is (nil? handled-request))
           (is (= {:body ""
                   :headers {"Location" "https://token.localtest.me"}
-                  :status 301
+                  :status http-301-moved-permanently
                   :waiter/response-source :waiter}
                  response)))))))
 

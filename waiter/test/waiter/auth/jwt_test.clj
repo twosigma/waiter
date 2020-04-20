@@ -24,6 +24,7 @@
             [plumbing.core :as pc]
             [waiter.auth.authentication :as auth]
             [waiter.auth.jwt :refer :all]
+            [waiter.status-codes :refer :all]
             [waiter.test-helpers :refer :all]
             [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
@@ -409,48 +410,48 @@
                                        keys password max-expiry-duration-ms request))))))
 
     (testing "error scenario 401 - downstream 200 from backend"
-      (let [request-handler (fn [request] (assoc request :source ::request-handler :status 200))
-            ex (ex-info (str "Test Exception " (rand-int 10000)) {:status 401})
+      (let [request-handler (fn [request] (assoc request :source ::request-handler :status http-200-ok))
+            ex (ex-info (str "Test Exception " (rand-int 10000)) {:status http-401-unauthorized})
             request {:headers {"authorization" "Bearer foo.bar.baz"}
                      :request-id (rand-int 10000)}]
         (with-redefs [validate-access-token (fn [& _] (throw ex))]
-          (is (= (assoc request :source ::request-handler :status 200)
+          (is (= (assoc request :source ::request-handler :status http-200-ok)
                  (authenticate-request request-handler token-type issuer-constraints subject-key subject-regex supported-algorithms
                                        keys password max-expiry-duration-ms request))))))
 
     (testing "error scenario 401 - downstream 200 from waiter"
-      (let [request-handler (fn [request] (-> request (dissoc :headers) (assoc :source ::request-handler :status 200) utils/attach-waiter-source))
-            ex (ex-info (str "Test Exception " (rand-int 10000)) {:status 401})
+      (let [request-handler (fn [request] (-> request (dissoc :headers) (assoc :source ::request-handler :status http-200-ok) utils/attach-waiter-source))
+            ex (ex-info (str "Test Exception " (rand-int 10000)) {:status http-401-unauthorized})
             request {:headers {"authorization" "Bearer foo.bar.baz"}
                      :request-id (rand-int 10000)}]
         (with-redefs [validate-access-token (fn [& _] (throw ex))]
           (is (= (-> request
                    (dissoc :headers)
-                   (assoc :source ::request-handler :status 200)
+                   (assoc :source ::request-handler :status http-200-ok)
                    utils/attach-waiter-source)
                  (authenticate-request request-handler token-type issuer-constraints subject-key subject-regex supported-algorithms
                                        keys password max-expiry-duration-ms request))))))
 
     (testing "error scenario 401 - downstream 401 from backend"
-      (let [request-handler (fn [request] (assoc request :source ::request-handler :status 401))
-            ex (ex-info (str "Test Exception " (rand-int 10000)) {:status 401})
+      (let [request-handler (fn [request] (assoc request :source ::request-handler :status http-401-unauthorized))
+            ex (ex-info (str "Test Exception " (rand-int 10000)) {:status http-401-unauthorized})
             request {:headers {"authorization" "Bearer foo.bar.baz"}
                      :request-id (rand-int 10000)}]
         (with-redefs [validate-access-token (fn [& _] (throw ex))]
-          (is (= (assoc request :source ::request-handler :status 401)
+          (is (= (assoc request :source ::request-handler :status http-401-unauthorized)
                  (authenticate-request request-handler token-type issuer-constraints subject-key subject-regex supported-algorithms
                                        keys password max-expiry-duration-ms request))))))
 
     (testing "error scenario 401 - downstream 401 from waiter"
-      (let [request-handler (fn [request] (-> request (dissoc :headers) (assoc :source ::request-handler :status 401) utils/attach-waiter-source))
-            ex (ex-info (str "Test Exception " (rand-int 10000)) {:status 401})
+      (let [request-handler (fn [request] (-> request (dissoc :headers) (assoc :source ::request-handler :status http-401-unauthorized) utils/attach-waiter-source))
+            ex (ex-info (str "Test Exception " (rand-int 10000)) {:status http-401-unauthorized})
             request {:headers {"authorization" "Bearer foo.bar.baz"
                                "host" "www.test.com"}
                      :request-id (rand-int 10000)}
             auth-header (str bearer-prefix "realm=\"www.test.com\"")]
         (with-redefs [validate-access-token (fn [& _] (throw ex))]
           (is (= (-> request
-                   (assoc :headers {"www-authenticate" auth-header} :source ::request-handler :status 401)
+                   (assoc :headers {"www-authenticate" auth-header} :source ::request-handler :status http-401-unauthorized)
                    utils/attach-waiter-source)
                  (authenticate-request request-handler token-type issuer-constraints subject-key subject-regex supported-algorithms
                                        keys password max-expiry-duration-ms request))))))

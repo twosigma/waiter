@@ -19,6 +19,7 @@
             [clojure.data.json :as json]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all])
   (:import (java.io EOFException InputStreamReader)
            (org.apache.http ConnectionClosedException)))
@@ -38,7 +39,7 @@
                             :x-kitchen-response-size response-size
                             :x-waiter-debug true)
               {:keys [headers] :as response} (make-request waiter-url "/gzip" :headers req-headers)]
-          (assert-response-status response 200)
+          (assert-response-status response http-200-ok)
           (is (= (get headers "content-type") "text/plain") (str headers))
           (is (= (get headers "content-encoding") "gzip") (str headers))
           ;; ideally (is (= (get headers "transfer-encoding") "chunked") (str headers))
@@ -47,7 +48,7 @@
           (let [{:keys [body] :as response}
                 (make-request waiter-url "/gzip" :headers req-headers :decompress-body true :verbose true)
                 body-length (count (bytes (byte-array (map (comp byte int) (str body)))))]
-            (assert-response-status response 200)
+            (assert-response-status response http-200-ok)
             (is (= response-size body-length))))))))
 
 (deftest ^:parallel ^:integration-fast test-support-failed-chunked-gzip-response
@@ -84,7 +85,7 @@
                             :x-kitchen-response-size response-size
                             :x-waiter-debug true)
               {:keys [headers] :as response} (make-request waiter-url "/gzip" :headers req-headers :verbose true)]
-          (assert-response-status response 200)
+          (assert-response-status response http-200-ok)
           (is (= (get headers "content-type") "text/plain") (str headers))
           (is (= (get headers "content-encoding") "gzip") (str headers))
           (is (nil? (get headers "transfer-encoding")) (str headers))
@@ -93,7 +94,7 @@
           (let [{:keys [body] :as response}
                 (make-request waiter-url "/gzip" :headers req-headers :decompress-body true :verbose true)
                 body-length (count (bytes (byte-array (map (comp byte int) (str body)))))]
-            (assert-response-status response 200)
+            (assert-response-status response http-200-ok)
             (is (= response-size body-length))))))))
 
 (deftest ^:parallel ^:integration-fast test-support-failed-gzip-response
@@ -127,7 +128,7 @@
                             :x-waiter-debug true)
               {:keys [body headers] :as response} (make-request waiter-url "/chunked" :headers req-headers :verbose true)
               body-length (count (bytes (byte-array (map (comp byte int) (str body)))))]
-          (assert-response-status response 200)
+          (assert-response-status response http-200-ok)
           (is (== 100000 body-length))
           (is (= (get headers "content-type") "text/plain") (str headers))
           (is (nil? (get headers "content-encoding")) (str headers))
@@ -147,7 +148,7 @@
                             :x-waiter-debug true)
               {:keys [body headers] :as response} (make-request waiter-url "/chunked" :headers req-headers :verbose true)
               body-length (count (bytes (byte-array (map (comp byte int) (str body)))))]
-          (assert-response-status response 200)
+          (assert-response-status response http-200-ok)
           (is (< body-length 100000))
           (is (= (get headers "content-type") "text/plain") (str headers))
           (is (nil? (get headers "content-encoding")) (str headers))
@@ -168,7 +169,7 @@
                               :x-waiter-debug true)
                 {:keys [body headers] :as response} (make-request waiter-url "/unchunked" :headers req-headers :verbose true)
                 body-length (count (bytes (byte-array (map (comp byte int) (str body)))))]
-            (assert-response-status response 200)
+            (assert-response-status response http-200-ok)
             (is (== 100000 body-length))
             (is (= (get headers "content-type") "text/plain") (str headers))
             (is (nil? (get headers "content-encoding")) (str headers))

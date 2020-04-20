@@ -16,6 +16,7 @@
 (ns waiter.statsd-support-test
   (:require [clojure.test :refer :all]
             [clojure.tools.logging :as log]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]))
 
 (deftest ^:parallel ^:integration-fast test-header-metric-group
@@ -24,7 +25,7 @@
                    :x-waiter-metric-group "waiter_test_foo"}
           {:keys [service-id] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
           value (:metric-group (response->service-description waiter-url response))]
-      (assert-response-status response 200)
+      (assert-response-status response http-200-ok)
       (is (= "waiter_test_foo" value))
       (delete-service waiter-url service-id))))
 
@@ -43,15 +44,15 @@
                   :x-waiter-name (rand-name)
                   :x-waiter-metric-group metric-group}
          {:keys [service-id] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
-        (assert-response-status response 200)
+        (assert-response-status response http-200-ok)
         (with-service-cleanup
           service-id
           ;; ensure all routers know about the service
-          (assert-response-status response 200)
+          (assert-response-status response http-200-ok)
           ;; verify metric groups when statsd is enabled
           (doseq [[_ router-url] router-id->router-url]
             (let [response (make-request-with-debug-info headers #(make-kitchen-request router-url % :cookies cookies))]
-              (assert-response-status response 200)
+              (assert-response-status response http-200-ok)
               (is (= service-id (:service-id response)))))
           (let [{:keys [metric-group]} (response->service-description waiter-url response)
                 metric-group-keyword (keyword metric-group)
@@ -74,15 +75,15 @@
             make-request (fn [url]
                            (make-request-with-debug-info headers #(make-kitchen-request url % :cookies cookies)))
             {:keys [router-id service-id status] :as response} (make-request waiter-url)]
-        (assert-response-status response 200)
+        (assert-response-status response http-200-ok)
         (with-service-cleanup
           service-id
-          (when (= 200 status)
+          (when (= http-200-ok status)
             (let [router-url (router-endpoint waiter-url router-id)
                   cancellation-token (atom false)
                   background-requests (future
                                         (while (not @cancellation-token)
-                                          (is (= 200 (:status (make-request router-url)))))
+                                          (is (= http-200-ok (:status (make-request router-url)))))
                                         (log/debug "Done sending background requests"))]
               (try
                 (let [state (router-statsd-state waiter-url router-id)]

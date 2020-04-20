@@ -28,6 +28,7 @@
             [waiter.correlation-id :as cid]
             [waiter.mesos.marathon :as marathon]
             [waiter.statsd :as statsd]
+            [waiter.status-codes :refer :all]
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
@@ -748,7 +749,7 @@
                                     ", target:" target-count))
         num-groups (cond
                      (> target-count 300) 6
-                     (> target-count 200) 5
+                     (> target-count 200 ) 5
                      (> target-count 100) 4
                      (> target-count 60) 3
                      :else 2)
@@ -818,7 +819,7 @@
                                :headers (assoc headers "host" token)
                                :method :delete
                                :query-params (if hard-delete {"hard-delete" true} {}))]
-    (assert-response-status response 200)))
+    (assert-response-status response http-200-ok )))
 
 (defn wait-for
   "Invoke predicate every interval (default 10) seconds until it returns true,

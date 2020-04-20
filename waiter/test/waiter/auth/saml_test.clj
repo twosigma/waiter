@@ -21,6 +21,7 @@
             [taoensso.nippy :as nippy]
             [waiter.auth.authentication :as auth]
             [waiter.auth.saml :refer :all]
+            [waiter.status-codes :refer :all]
             [waiter.util.utils :as utils])
   (:import (java.io StringBufferInputStream)))
 
@@ -87,7 +88,7 @@
                                          (get-idp-redirect-original idp-url "saml-request" "relay-state"))]
           (is (= {:body ""
                   :headers {"Location" "https://idp-host/idp-endpoint?SAMLRequest=saml-request&RelayState=relay-state"}
-                  :status 302}
+                  :status http-302-moved-temporarily}
                  (wrapped-handler dummy-request))))))))
 
 (deftest test-auth-redirect-endpoint
@@ -119,7 +120,7 @@
                   :body ""
                   :headers {"location" "redirect-url"
                             "set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000%5D;Max-Age=86400;Path=/;HttpOnly=true"}
-                  :status 303}
+                  :status http-303-see-other}
                  (saml-auth-redirect-handler saml-authenticator dummy-request'))))))
     (testing "has saml-auth-data no expiry"
       (with-redefs [b64/decode identity
@@ -139,7 +140,7 @@
                   :body ""
                   :headers {"location" "redirect-url"
                             "set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000%5D;Max-Age=86400;Path=/;HttpOnly=true"}
-                  :status 303}
+                  :status http-303-see-other}
                  (saml-auth-redirect-handler saml-authenticator dummy-request'))))))
     (testing "has saml-auth-data short expiry"
       (with-redefs [b64/decode identity
@@ -159,7 +160,7 @@
                   :body ""
                   :headers {"location" "redirect-url"
                             "set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000%5D;Max-Age=3600;Path=/;HttpOnly=true"}
-                  :status 303}
+                  :status http-303-see-other}
                  (saml-auth-redirect-handler saml-authenticator dummy-request'))))))))
 
 (defn- saml-response-from-xml
@@ -181,7 +182,7 @@
                                         :saml-auth-data {:min-session-not-on-or-after expiry-time
                                                          :redirect-url "request-url"
                                                          :saml-principal "user1@example.com"}}
-                                 :status 200}]
+                                 :status http-200-ok}]
     (with-redefs [nippy/freeze (fn [data _] (.getBytes (str data)))
                   t/now (fn [] test-time)
                   render-authenticated-redirect-template identity

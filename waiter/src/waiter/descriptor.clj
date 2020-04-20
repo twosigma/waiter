@@ -29,6 +29,7 @@
             [waiter.metrics :as metrics]
             [waiter.middleware :as middleware]
             [waiter.service-description :as sd]
+            [waiter.status-codes :refer :all]
             [waiter.token :as token]
             [waiter.util.async-utils :as au]
             [waiter.util.utils :as utils]))
@@ -85,7 +86,7 @@
                 location (str "/waiter-consent" uri (when-not (str/blank? query-string) (str "?" query-string)))]
             (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "redirect"))
             (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "redirect"))
-            {:headers {"location" location} :status 303})
+            {:headers {"location" location} :status http-303-see-other})
           (do
             ; For consistency with historical data, count errors looking up the descriptor as a "process error"
             (meters/mark! (metrics/waiter-meter "core" "process-errors"))
@@ -328,13 +329,13 @@
           (throw (ex-info "Authenticated user cannot run service"
                           {:authenticated-user auth-user
                            :run-as-user run-as-user
-                           :status 403
+                           :status http-403-forbidden
                            :log-level :warn})))
         (when-not (request-authorized? auth-user permitted-user)
           (throw (ex-info "This user isn't allowed to invoke this service"
                           {:authenticated-user auth-user
                            :service-description service-description
-                           :status 403
+                           :status http-403-forbidden
                            :log-level :warn})))
         {:descriptor descriptor
          :latest-descriptor latest-descriptor}))))

@@ -18,7 +18,8 @@
             [clojure.test :refer :all]
             [waiter.core :as core]
             [waiter.cors :refer :all]
-            [waiter.schema :as schema])
+            [waiter.schema :as schema]
+            [waiter.status-codes :refer :all])
   (:import waiter.cors.PatternBasedCorsValidator))
 
 (defn create-request-with-origin
@@ -157,18 +158,18 @@
     (testing "cors request denied"
       (let [deny-all (deny-all-validator {})
             request {:headers {"origin" "doesnt.matter"}}
-            handler (-> (fn [_] {:status 200})
+            handler (-> (fn [_] {:status http-200-ok})
                       (wrap-cors-request deny-all waiter-request? exposed-headers)
                       (core/wrap-error-handling))
             {:keys [status]} (handler request)]
-        (is (= 403 status))))
+        (is (= http-403-forbidden status))))
 
     (testing "cors request allowed"
       (let [allow-all (allow-all-validator {})
             request {:headers {"origin" "doesnt.matter"}}
-            handler (wrap-cors-request (fn [_] {:status 200}) allow-all waiter-request? exposed-headers)
+            handler (wrap-cors-request (fn [_] {:status http-200-ok}) allow-all waiter-request? exposed-headers)
             {:keys [headers status]} (handler request)]
-        (is (= 200 status))
+        (is (= http-200-ok status))
         (is (= "doesnt.matter" (get headers "access-control-allow-origin")))
         (is (= "true" (get headers "access-control-allow-credentials")))
         (is (nil? (get headers "access-control-expose-headers")))))
@@ -178,9 +179,9 @@
             exposed-headers ["foo" "bar"]
             allow-all (allow-all-validator {})
             request {:headers {"origin" "doesnt.matter"}}
-            handler (wrap-cors-request (fn [_] {:status 200}) allow-all waiter-request? exposed-headers)
+            handler (wrap-cors-request (fn [_] {:status http-200-ok}) allow-all waiter-request? exposed-headers)
             {:keys [headers status]} (handler request)]
-        (is (= 200 status))
+        (is (= http-200-ok status))
         (is (= "doesnt.matter" (get headers "access-control-allow-origin")))
         (is (= "true" (get headers "access-control-allow-credentials")))
         (is (= "foo, bar" (get headers "access-control-expose-headers")))))
@@ -192,9 +193,9 @@
             request {:headers {"host" "does.matter"
                                "origin" "http://does.matter"}
                      :scheme "http"}
-            handler (wrap-cors-request (fn [_] {:status 200}) allow-all waiter-request? exposed-headers)
+            handler (wrap-cors-request (fn [_] {:status http-200-ok}) allow-all waiter-request? exposed-headers)
             {:keys [headers status]} (handler request)]
-        (is (= 200 status))
+        (is (= http-200-ok status))
         (is (= "http://does.matter" (get headers "access-control-allow-origin")))
         (is (= "true" (get headers "access-control-allow-credentials")))
         (is (nil? (get headers "access-control-expose-headers")))))
@@ -204,9 +205,9 @@
             exposed-headers []
             allow-all (allow-all-validator {})
             request {:headers {"origin" "doesnt.matter"}}
-            handler (wrap-cors-request (fn [_] {:status 200}) allow-all waiter-request? exposed-headers)
+            handler (wrap-cors-request (fn [_] {:status http-200-ok}) allow-all waiter-request? exposed-headers)
             {:keys [headers status]} (handler request)]
-        (is (= 200 status))
+        (is (= http-200-ok status))
         (is (= "doesnt.matter" (get headers "access-control-allow-origin")))
         (is (= "true" (get headers "access-control-allow-credentials")))
         (is (nil? (get headers "access-control-expose-headers")))))))
@@ -236,20 +237,20 @@
           max-age 100
           request (assoc (create-request-with-origin "doesnt.matter" "DELETE" "x-test-header")
                     :request-method :options)
-          handler (-> (fn [_] {:status 200})
+          handler (-> (fn [_] {:status http-200-ok})
                     (wrap-cors-preflight deny-all max-age nil nil nil)
                     (core/wrap-error-handling))
           {:keys [status]} (handler request)]
-      (is (= 403 status))))
+      (is (= http-403-forbidden status))))
 
   (testing "cors preflight request allowed"
     (let [allow-all (allow-all-validator {})
           max-age 100
           request (assoc (create-request-with-origin "doesnt.matter" "DELETE" "x-test-header")
                     :request-method :options)
-          handler (wrap-cors-preflight (fn [_] {:status 200}) allow-all max-age nil nil nil)
+          handler (wrap-cors-preflight (fn [_] {:status http-200-ok}) allow-all max-age nil nil nil)
           {:keys [headers status]} (handler request)]
-      (is (= 200 status))
+      (is (= http-200-ok status))
       (is (= "doesnt.matter" (get headers "access-control-allow-origin")))
       (is (= "x-test-header" (get headers "access-control-allow-headers")))
       (is (= (str/join ", " schema/http-methods) (get headers "access-control-allow-methods")))

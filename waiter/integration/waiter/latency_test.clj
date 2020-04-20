@@ -17,6 +17,7 @@
   (:require [clojure.java.shell :as shell]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]))
 
 (use-fixtures :once statsd-test-fixture)
@@ -92,7 +93,7 @@
             endpoint "/endpoint"
             _ (log/info (str "Making canary request..."))
             canary-response (make-request waiter-url endpoint :headers headers)
-            _ (assert-response-status canary-response 200)
+            _ (assert-response-status canary-response http-200-ok)
             service-id (retrieve-service-id waiter-url (:request-headers canary-response))
             run-apache-bench #(apache-bench waiter-url endpoint headers client-concurrency-level %)
             warm-up-requests (/ total-requests 10)

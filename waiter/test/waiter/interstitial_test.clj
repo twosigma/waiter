@@ -24,6 +24,7 @@
             [plumbing.core :as pc]
             [waiter.interstitial :refer :all]
             [waiter.metrics :as metrics]
+            [waiter.status-codes :refer :all]
             [waiter.test-helpers :refer :all]
             [waiter.util.async-utils :as au]
             [waiter.util.client-tools :as ct])
@@ -235,7 +236,7 @@
       (is (wait-for #(zero? (counters/value (metrics/waiter-counter "interstitial" "resolution" "interstitial-timeout"))))))))
 
 (deftest test-wrap-interstitial
-  (let [handler (fn [request] (assoc (select-keys request [:query-string :request-id]) :status 201))
+  (let [handler (fn [request] (assoc (select-keys request [:query-string :request-id]) :status http-201-created))
         service-id (str "test-service-id-" (rand-int 100000))]
 
     (testing "zero interstitial secs"
@@ -244,7 +245,7 @@
                                   :service-id service-id}
                      :request-id :interstitial-disabled}
             response ((wrap-interstitial handler interstitial-state-atom) request)]
-        (is (= {:query-string nil :request-id :interstitial-disabled :status 201} response))))
+        (is (= {:query-string nil :request-id :interstitial-disabled :status http-201-created} response))))
 
     (testing "non-html accept"
       (let [interstitial-state-atom (atom {:initialized? false})
@@ -253,7 +254,7 @@
                      :headers {"accept" "text/css"}
                      :request-id :non-html-accept}
             response ((wrap-interstitial handler interstitial-state-atom) request)]
-        (is (= {:query-string nil :request-id :non-html-accept :status 201} response))))
+        (is (= {:query-string nil :request-id :non-html-accept :status http-201-created} response))))
 
     (testing "interstitial state not initialized"
       (let [interstitial-state-atom (atom {:initialized? false})
@@ -262,7 +263,7 @@
                      :headers {"accept" "text/html"}
                      :request-id :interstitial-not-initialized}
             response ((wrap-interstitial handler interstitial-state-atom) request)]
-        (is (= {:query-string nil :request-id :interstitial-not-initialized :status 201} response))))
+        (is (= {:query-string nil :request-id :interstitial-not-initialized :status http-201-created} response))))
 
     (testing "interstitial promise resolved"
       (let [interstitial-promise (promise)
@@ -274,7 +275,7 @@
                      :headers {"accept" "text/html", "host" "www.example.com"}
                      :request-id :interstitial-promise-resolved}
             response ((wrap-interstitial handler interstitial-state-atom) request)]
-        (is (= {:query-string nil :request-id :interstitial-promise-resolved :status 201} response))))
+        (is (= {:query-string nil :request-id :interstitial-promise-resolved :status http-201-created} response))))
 
     (testing "on-the-fly request"
       (let [interstitial-promise (promise)
@@ -286,7 +287,7 @@
                      :headers {"accept" "text/html", "host" "www.example.com", "x-waiter-cpus" "1"}
                      :request-id :interstitial-promise-resolved}
             response ((wrap-interstitial handler interstitial-state-atom) request)]
-        (is (= {:query-string nil :request-id :interstitial-promise-resolved :status 201} response))))
+        (is (= {:query-string nil :request-id :interstitial-promise-resolved :status http-201-created} response))))
 
     (testing "interstitial promise absent"
       (let [interstitial-state-atom (atom {:initialized? true
@@ -301,7 +302,7 @@
             response ((wrap-interstitial handler interstitial-state-atom) request)]
         (is (= {:headers {"location" (str "/waiter-interstitial/test")
                           "x-waiter-interstitial" "true"}
-                :status 303}
+                :status http-303-see-other}
                response))
         (is (some-> @interstitial-state-atom
                     :service-id->interstitial-promise
@@ -324,7 +325,7 @@
                            :request-id :interstitial-bypass
                            :request-time request-time}
                   response ((wrap-interstitial handler interstitial-state-atom) request)]
-              (is (= {:query-string "" :request-id :interstitial-bypass :status 201} response))))
+              (is (= {:query-string "" :request-id :interstitial-bypass :status http-201-created} response))))
 
           (testing "some-custom-params"
             (let [request {:descriptor {:service-description {"interstitial-secs" 10}
@@ -334,7 +335,7 @@
                            :request-id :interstitial-bypass
                            :request-time request-time}
                   response ((wrap-interstitial handler interstitial-state-atom) request)]
-              (is (= {:query-string "a=b&c=d" :request-id :interstitial-bypass :status 201} response)))))
+              (is (= {:query-string "a=b&c=d" :request-id :interstitial-bypass :status http-201-created} response)))))
 
         (testing "trigger interstitial"
           (let [request {:descriptor {:service-description {"interstitial-secs" 10}
@@ -347,7 +348,7 @@
                 response ((wrap-interstitial handler interstitial-state-atom) request)]
             (is (= {:headers {"location" (str "/waiter-interstitial?a=b")
                               "x-waiter-interstitial" "true"}
-                    :status 303}
+                    :status http-303-see-other}
                    response)))
 
           (let [request {:descriptor {:service-description {"interstitial-secs" 10}
@@ -360,7 +361,7 @@
                 response ((wrap-interstitial handler interstitial-state-atom) request)]
             (is (= {:headers {"location" (str "/waiter-interstitial?c=d&x-waiter-bypass-interstitial=1&a=b")
                               "x-waiter-interstitial" "true"}
-                    :status 303}
+                    :status http-303-see-other}
                    response)))
 
           (let [request {:descriptor {:service-description {"interstitial-secs" 10}
@@ -373,7 +374,7 @@
                 response ((wrap-interstitial handler interstitial-state-atom) request)]
             (is (= {:headers {"location" (str "/waiter-interstitial/test")
                               "x-waiter-interstitial" "true"}
-                    :status 303}
+                    :status http-303-see-other}
                    response))))))))
 
 (deftest test-display-interstitial-handler
@@ -384,12 +385,12 @@
                      :route-params {:path "test"}}
             response (display-interstitial-handler request)]
         (is (= {:body {:target-url (str "/test?" (request-time->interstitial-param-string request-time))}
-                :status 200}
+                :status http-200-ok}
                response)))
       (let [request {:query-string "a=b&c=d"
                      :request-time request-time
                      :route-params {:path "test"}}
             response (display-interstitial-handler request)]
         (is (= {:body {:target-url (str "/test?a=b&c=d&" (request-time->interstitial-param-string request-time))}
-                :status 200}
+                :status http-200-ok}
                response))))))

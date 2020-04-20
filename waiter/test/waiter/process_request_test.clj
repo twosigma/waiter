@@ -27,6 +27,7 @@
             [waiter.descriptor :as descriptor]
             [waiter.process-request :refer :all]
             [waiter.statsd :as statsd]
+            [waiter.status-codes :refer :all]
             [waiter.test-helpers :refer :all])
   (:import (java.io ByteArrayOutputStream IOException)
            (java.util.concurrent TimeoutException)
@@ -218,57 +219,57 @@
   (testing "202-missing-location-header"
     (is (nil?
           (extract-async-request-response-data
-            {:status 202 :headers {}}
+            {:status http-202-accepted :headers {}}
             "http://www.example.com:1234/query/for/status"))))
   (testing "200-not-async"
     (is (nil?
           (extract-async-request-response-data
-            {:status 200, :headers {"location" "/result/location"}}
+            {:status http-200-ok, :headers {"location" "/result/location"}}
             "http://www.example.com:1234/query/for/status"))))
   (testing "303-not-async"
     (is (nil?
           (extract-async-request-response-data
-            {:status 303, :headers {"location" "/result/location"}}
+            {:status http-303-see-other, :headers {"location" "/result/location"}}
             "http://www.example.com:1234/query/for/status"))))
   (testing "404-not-async"
     (is (nil?
           (extract-async-request-response-data
-            {:status 404, :headers {"location" "/result/location"}}
+            {:status http-404-not-found, :headers {"location" "/result/location"}}
             "http://www.example.com:1234/query/for/status"))))
   (testing "202-absolute-location"
     (is (= {:location "/result/location" :query-string nil}
            (extract-async-request-response-data
-             {:status 202 :headers {"location" "/result/location"}}
+             {:status http-202-accepted :headers {"location" "/result/location"}}
              "http://www.example.com:1234/query/for/status"))))
   (testing "202-relative-location-1"
     (is (= {:location "/query/result/location" :query-string nil}
            (extract-async-request-response-data
-             {:status 202 :headers {"location" "../result/location"}}
+             {:status http-202-accepted :headers {"location" "../result/location"}}
              "http://www.example.com:1234/query/for/status"))))
   (testing "202-relative-location-2"
     (is (= {:location "/query/for/result/location" :query-string nil}
            (extract-async-request-response-data
-             {:status 202 :headers {"location" "result/location"}}
+             {:status http-202-accepted :headers {"location" "result/location"}}
              "http://www.example.com:1234/query/for/status"))))
   (testing "202-relative-location-two-levels"
     (is (= {:location "/result/location" :query-string "p=q&r=s|t"}
            (extract-async-request-response-data
-             {:status 202 :headers {"location" "../../result/location?p=q&r=s|t"}}
+             {:status http-202-accepted :headers {"location" "../../result/location?p=q&r=s|t"}}
              "http://www.example.com:1234/query/for/status?u=v&w=x|y|z"))))
   (testing "202-absolute-url-same-host-port"
     (is (= {:location "/retrieve/result/location" :query-string nil}
            (extract-async-request-response-data
-             {:status 202 :headers {"location" "http://www.example.com:1234/retrieve/result/location"}}
+             {:status http-202-accepted :headers {"location" "http://www.example.com:1234/retrieve/result/location"}}
              "http://www.example.com:1234/query/for/status"))))
   (testing "202-absolute-url-different-host"
     (is (nil?
           (extract-async-request-response-data
-            {:status 202 :headers {"location" "http://www.example2.com:1234/retrieve/result/location"}}
+            {:status http-202-accepted :headers {"location" "http://www.example2.com:1234/retrieve/result/location"}}
             "http://www.example.com:1234/query/for/status"))))
   (testing "202-absolute-url-different-port"
     (is (nil?
           (extract-async-request-response-data
-            {:status 202 :headers {"location" "http://www.example.com:5678/retrieve/result/location"}}
+            {:status http-202-accepted :headers {"location" "http://www.example.com:5678/retrieve/result/location"}}
             "http://www.example.com:1234/query/for/status")))))
 
 (deftest test-make-request
@@ -374,21 +375,21 @@
 
 (deftest test-wrap-suspended-service
   (testing "returns error for suspended app"
-    (let [handler (wrap-suspended-service (fn [_] {:status 200}))
+    (let [handler (wrap-suspended-service (fn [_] {:status http-200-ok}))
           request {:descriptor {:service-id "service-id-1"
                                 :suspended-state {:suspended true
                                                   :last-updated-by "test-user"
                                                   :time (t/now)}}}
           {:keys [status body]} (handler request)]
-      (is (= 503 status))
+      (is (= http-503-service-unavailable status))
       (is (str/includes? body "Service has been suspended"))
       (is (str/includes? body "test-user"))))
 
   (testing "passes apps by default"
-    (let [handler (wrap-suspended-service (fn [_] {:status 200}))
+    (let [handler (wrap-suspended-service (fn [_] {:status http-200-ok}))
           request {}
           {:keys [status]} (handler request)]
-      (is (= 200 status)))))
+      (is (= http-200-ok status)))))
 
 (deftest test-wrap-too-many-requests
   (testing "returns error for too many requests"
@@ -396,11 +397,11 @@
           counter (metrics/service-counter service-id "request-counts" "waiting-for-available-instance")]
       (counters/clear! counter)
       (counters/inc! counter 10)
-      (let [handler (wrap-too-many-requests (fn [_] {:status 200}))
+      (let [handler (wrap-too-many-requests (fn [_] {:status http-200-ok}))
             request {:descriptor {:service-id service-id
                                   :service-description {"max-queue-length" 5}}}
             {:keys [status body]} (handler request)]
-        (is (= 503 status))
+        (is (= http-503-service-unavailable status))
         (is (str/includes? body "Max queue length")))))
 
   (testing "passes service with fewer requests"
@@ -408,11 +409,11 @@
           counter (metrics/service-counter service-id "request-counts" "waiting-for-available-instance")]
       (counters/clear! counter)
       (counters/inc! counter 3)
-      (let [handler (wrap-too-many-requests (fn [_] {:status 200}))
+      (let [handler (wrap-too-many-requests (fn [_] {:status http-200-ok}))
             request {:descriptor {:service-id service-id
                                   :service-description {"max-queue-length" 10}}}
             {:keys [status]} (handler request)]
-        (is (= 200 status))))))
+        (is (= http-200-ok status))))))
 
 (deftest test-redirect-on-process-error
   (let [request->descriptor-fn (fn [_]
@@ -422,45 +423,45 @@
                                                               :x-waiter-headers {"queue-length" 100}})))
         start-new-service-fn (constantly nil)
         fallback-state-atom (atom {})
-        handler (descriptor/wrap-descriptor (fn [_] {:status 200}) request->descriptor-fn start-new-service-fn fallback-state-atom)]
+        handler (descriptor/wrap-descriptor (fn [_] {:status http-200-ok}) request->descriptor-fn start-new-service-fn fallback-state-atom)]
     (testing "with-query-params"
       (let [request {:headers {"host" "www.example.com:1234"}, :query-string "a=b&c=d", :uri "/path"}
             {:keys [headers status]} (handler request)]
-        (is (= 303 status))
+        (is (= http-303-see-other status))
         (is (= "/waiter-consent/path?a=b&c=d" (get headers "location")))))
 
     (testing "with-query-params-and-default-port"
       (let [request {:headers {"host" "www.example.com"}, :query-string "a=b&c=d", :uri "/path"}
             {:keys [headers status]} (handler request)]
-        (is (= 303 status))
+        (is (= http-303-see-other status))
         (is (= "/waiter-consent/path?a=b&c=d" (get headers "location")))))
 
     (testing "without-query-params"
       (let [request {:headers {"host" "www.example.com:1234"}, :uri "/path"}
             {:keys [headers status]} (handler request)]
-        (is (= 303 status))
+        (is (= http-303-see-other status))
         (is (= "/waiter-consent/path" (get headers "location")))))))
 
 (deftest test-no-redirect-on-process-error
   (let [request->descriptor-fn (fn [_] (throw (Exception. "Exception message")))
         start-new-service-fn (constantly nil)
         fallback-state-atom (atom {})
-        handler (descriptor/wrap-descriptor (fn [_] {:status 200}) request->descriptor-fn start-new-service-fn fallback-state-atom)
+        handler (descriptor/wrap-descriptor (fn [_] {:status http-200-ok}) request->descriptor-fn start-new-service-fn fallback-state-atom)
         request {}
         {:keys [body headers status]} (handler request)]
-    (is (= 500 status))
+    (is (= http-500-internal-server-error status))
     (is (nil? (get headers "location")))
     (is (= "text/plain" (get headers "content-type")))
     (is (str/includes? (str body) "Internal error"))))
 
 (deftest test-message-reaches-user-on-process-error
-  (let [request->descriptor-fn (fn [_] (throw (ex-info "Error message for user" {:status 404})))
+  (let [request->descriptor-fn (fn [_] (throw (ex-info "Error message for user" {:status http-404-not-found})))
         start-new-service-fn (constantly nil)
         fallback-state-atom (atom {})
-        handler (descriptor/wrap-descriptor (fn [_] {:status 200}) request->descriptor-fn start-new-service-fn fallback-state-atom)
+        handler (descriptor/wrap-descriptor (fn [_] {:status http-200-ok}) request->descriptor-fn start-new-service-fn fallback-state-atom)
         request {}
         {:keys [body headers status]} (handler request)]
-    (is (= 404 status))
+    (is (= http-404-not-found status))
     (is (= "text/plain" (get headers "content-type")))
     (is (str/includes? (str body) "Error message for user"))))
 
@@ -476,27 +477,27 @@
     (is (= 103 @position-generator-atom))))
 
 (deftest test-classify-error
-  (is (= [:generic-error "Test Exception" 500 "clojure.lang.ExceptionInfo"]
+  (is (= [:generic-error "Test Exception" http-500-internal-server-error "clojure.lang.ExceptionInfo"]
          (classify-error (ex-info "Test Exception" {:source :test}))))
-  (is (= [:test-error "Test Exception" 500 "clojure.lang.ExceptionInfo"]
+  (is (= [:test-error "Test Exception" http-500-internal-server-error "clojure.lang.ExceptionInfo"]
          (classify-error (ex-info "Test Exception" {:error-cause :test-error :source :test}))))
-  (is (= [:generic-error "Test Exception" 400 "clojure.lang.ExceptionInfo"]
-         (classify-error (ex-info "Test Exception" {:source :test :status 400}))))
-  (is (= [:instance-error nil 502 "java.io.IOException"]
-         (classify-error (ex-info "Test Exception" {:source :test :status 400} (IOException. "Test")))))
-  (is (= [:instance-error nil 502 "java.io.IOException"]
+  (is (= [:generic-error "Test Exception" http-400-bad-request "clojure.lang.ExceptionInfo"]
+         (classify-error (ex-info "Test Exception" {:source :test :status http-400-bad-request}))))
+  (is (= [:instance-error nil http-502-bad-gateway "java.io.IOException"]
+         (classify-error (ex-info "Test Exception" {:source :test :status http-400-bad-request} (IOException. "Test")))))
+  (is (= [:instance-error nil http-502-bad-gateway "java.io.IOException"]
          (classify-error (IOException. "Test"))))
-  (is (= [:client-error "Client action means stream is no longer needed" 400 "java.io.IOException"]
-         (classify-error (ex-info "Test Exception" {:source :test :status 400} (IOException. "cancel_stream_error")))))
-  (is (= [:client-error "Client action means stream is no longer needed" 400 "java.io.IOException"]
+  (is (= [:client-error "Client action means stream is no longer needed" http-400-bad-request "java.io.IOException"]
+         (classify-error (ex-info "Test Exception" {:source :test :status http-400-bad-request} (IOException. "cancel_stream_error")))))
+  (is (= [:client-error "Client action means stream is no longer needed" http-400-bad-request "java.io.IOException"]
          (classify-error (IOException. "cancel_stream_error"))))
-  (is (= [:client-error "Connection unexpectedly closed while streaming request" 400 "org.eclipse.jetty.io.EofException"]
-         (classify-error (ex-info "Test Exception" {:source :test :status 400} (EofException. "Test")))))
-  (is (= [:client-eagerly-closed "Connection eagerly closed by client" 400 "org.eclipse.jetty.io.EofException"]
-         (classify-error (ex-info "Test Exception" {:source :test :status 400} (EofException. "reset")))))
-  (is (= [:client-eagerly-closed "Connection eagerly closed by client" 400 "org.eclipse.jetty.io.EofException"]
+  (is (= [:client-error "Connection unexpectedly closed while streaming request" http-400-bad-request "org.eclipse.jetty.io.EofException"]
+         (classify-error (ex-info "Test Exception" {:source :test :status http-400-bad-request} (EofException. "Test")))))
+  (is (= [:client-eagerly-closed "Connection eagerly closed by client" http-400-bad-request "org.eclipse.jetty.io.EofException"]
+         (classify-error (ex-info "Test Exception" {:source :test :status http-400-bad-request} (EofException. "reset")))))
+  (is (= [:client-eagerly-closed "Connection eagerly closed by client" http-400-bad-request "org.eclipse.jetty.io.EofException"]
          (classify-error (EofException. "reset"))))
-  (is (= [:instance-error nil 504 "java.util.concurrent.TimeoutException"]
+  (is (= [:instance-error nil http-504-gateway-timeout "java.util.concurrent.TimeoutException"]
          (classify-error (TimeoutException. "timeout"))))
-  (is (= [:instance-error nil 502 "java.lang.Exception"]
+  (is (= [:instance-error nil http-502-bad-gateway "java.lang.Exception"]
          (classify-error (Exception. "Test Exception")))))

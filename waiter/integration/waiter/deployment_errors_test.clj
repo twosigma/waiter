@@ -18,6 +18,7 @@
             [clojure.string :as str]
             [clojure.test :refer :all]
             [plumbing.core :as pc]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]))
 
 (defn get-router->service-state
@@ -50,7 +51,7 @@
   `(let [response# ~response
          body# (:body response#)
          service-id# (response->service-id response#)]
-     (assert-response-status response# 503)
+     (assert-response-status response# http-503-service-unavailable)
      (is (str/includes? body# (deployment-error->str ~'waiter-url ~deployment-error))
          (formatted-service-state ~'waiter-url service-id#))
      (testing "status is reported as failing"

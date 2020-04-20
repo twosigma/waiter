@@ -4,6 +4,7 @@
             [clojure.walk :as walk]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]))
 
 (defn- get-watch-state [state-json]
@@ -19,7 +20,7 @@
                                                       :cookies cookies
                                                       :method :get
                                                       :query-params {"include" ["components" "watch-state"]})
-            _ (assert-response-status response 200)
+            _ (assert-response-status response http-200-ok)
             body-json (-> body str try-parse-json)
             watch-state-json (get-watch-state body-json)
             initial-pods-snapshot-version (get-in watch-state-json ["pods-metadata" "version" "snapshot"])
@@ -35,7 +36,7 @@
                                                           :cookies cookies
                                                           :method :get
                                                           :query-params {"include" ["components" "watch-state"]})
-                _ (assert-response-status response 200)
+                _ (assert-response-status response http-200-ok)
                 body-json (-> body str try-parse-json)
                 watch-state-json (get-watch-state body-json)
                 pods-snapshot-version' (get-in watch-state-json ["pods-metadata" "version" "snapshot"])
@@ -60,7 +61,7 @@
            :x-waiter-cmd "echo -n $INTEGRATION_TEST_SENTINEL_VALUE > index.html && python3 -m http.server $PORT0"
            :x-waiter-health-check-url "/"}
           #(make-kitchen-request waiter-url % :method :get :path "/"))]
-    (assert-response-status response 200)
+    (assert-response-status response http-200-ok)
     (is (= "Integration Test Sentinel Value" body))
     (delete-service waiter-url service-id)))
 
@@ -108,7 +109,7 @@
             (let [active-instances (active-instances router-url service-id :cookies cookies)
                   log-url (:log-url (first active-instances))
                   {:keys [body] :as logs-response} (make-request-fn log-url)
-                  _ (assert-response-status logs-response 200)
+                  _ (assert-response-status logs-response http-200-ok)
                   log-files-list (walk/keywordize-keys (json/read-str body))
                   stdout-file-link (:url (first (filter #(= (:name %) "stdout") log-files-list)))
                   stderr-file-link (:url (first (filter #(= (:name %) "stderr") log-files-list)))]
@@ -116,7 +117,7 @@
                   (str "Live directory listing is missing entries: stderr and stdout, got response: " logs-response))
               (doseq [file-link [stderr-file-link stdout-file-link]]
                 (if (str/starts-with? (str file-link) "http")
-                  (assert-response-status (make-request-fn file-link) 200)
+                  (assert-response-status (make-request-fn file-link) http-200-ok)
                   (log/warn "test-s3-logs did not verify file link:" file-link))))
 
             ;; Get a service with at least one killed instance.
@@ -127,14 +128,14 @@
                                                (make-request-with-debug-info async-create-headers)))
                   async-responses (->> async-request-fn (repeatedly 2) vec)
                   instance-ids (->> async-responses (map :instance-id) set)]
-              (assert-response-status (first async-responses) 202)
-              (assert-response-status (second async-responses) 202)
+              (assert-response-status (first async-responses) http-202-accepted)
+              (assert-response-status (second async-responses) http-202-accepted)
               (is (> (count instance-ids) 1) (str instance-ids))
               ;; Canceling both of the async requests should scale down to 1 by killing 1 instance.
               (doseq [async-response async-responses]
                 (let [status-endpoint (response->location async-response)
                       cancel-response (make-kitchen-request waiter-url headers :method :delete :path status-endpoint)]
-                  (assert-response-status cancel-response 204))))
+                  (assert-response-status cancel-response http-204-no-content))))
 
             (log/info "waiting for at least one killed instance on target router")
             (is (wait-for #(seq (killed-instances router-url service-id :cookies cookies))
@@ -153,7 +154,7 @@
                             :interval 5 :timeout 300)
                           (str "Log URL never pointed to S3 bucket " log-bucket-url)))
                   {:keys [body] :as logs-response} (make-request-fn log-url)
-                  _ (assert-response-status logs-response 200)
+                  _ (assert-response-status logs-response http-200-ok)
                   log-files-list (walk/keywordize-keys (json/read-str body))
                   stdout-file-link (:url (first (filter #(= (:name %) "stdout") log-files-list)))
                   stderr-file-link (:url (first (filter #(= (:name %) "stderr") log-files-list)))]
@@ -163,7 +164,7 @@
                   (str "Killed directory listing is missing entries: stderr and stdout, got response: " logs-response))
               (doseq [file-link [stderr-file-link stdout-file-link]]
                 (if (str/starts-with? (str file-link) "http")
-                  (assert-response-status (make-request file-link "" :verbose true) 200)
+                  (assert-response-status (make-request file-link "" :verbose true) http-200-ok)
                   (log/warn "test-s3-logs did not verify file link:" file-link))))))))))
 
 (defn- check-pod-namespace
@@ -175,7 +176,7 @@
         (make-request-with-debug-info
           (merge {:x-waiter-name (str (rand-name) "-" testing-suffix)} headers)
           #(make-kitchen-request waiter-url % :path "/hello"))]
-    (when-not (= 200 status)
+    (when-not (= http-200-ok status)
       (throw (ex-info "Failed to create service"
                       {:response-body body
                        :response-status status}
@@ -186,7 +187,7 @@
                                                       :cookies cookies
                                                       :method :get
                                                       :query-params {"include" ["components" "watch-state"]})
-            _ (assert-response-status response 200)
+            _ (assert-response-status response http-200-ok)
             body-json (-> body str try-parse-json)
             watch-state-json (get-watch-state body-json)
             pod-spec (-> watch-state-json (get-in ["service-id->pod-id->pod" service-id]) first val)
@@ -247,7 +248,7 @@
             namespace-arg
             (assoc :x-waiter-namespace namespace-arg))
           #(make-kitchen-request waiter-url % :path "/environment"))]
-    (when-not (= 200 status)
+    (when-not (= http-200-ok status)
       (throw (ex-info "Failed to create service"
                       {:response-body body
                        :response-status status}
@@ -277,11 +278,11 @@
               #(make-kitchen-request waiter-url % :method :get :path "/"))]
         (with-service-cleanup
           service-id
-          (assert-response-status response 200)
+          (assert-response-status response http-200-ok)
           (dotimes [_ 5]
             (let [request-headers (assoc request-headers :x-kitchen-delay-ms 1000)
                   response (make-kitchen-request waiter-url request-headers :path "/die")]
-              (assert-response-status response #{502 503})))
+              (assert-response-status response #{http-502-bad-gateway http-503-service-unavailable})))
           ;; assert that more than one pod was created
           (is (wait-for
                 (fn []

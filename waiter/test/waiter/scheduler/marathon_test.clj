@@ -26,6 +26,7 @@
             [waiter.mesos.marathon :as marathon]
             [waiter.mesos.mesos :as mesos]
             [waiter.scheduler :as scheduler]
+            [waiter.status-codes :refer :all]
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
   (:import waiter.scheduler.marathon.MarathonScheduler))
@@ -822,7 +823,7 @@
                                          (is (= instance-id in-instance-id))
                                          (is (= [scale-value force-value] [true false]))
                                          {:deploymentId "12982340972"})]
-        (is (= {:instance-id instance-id :killed? true :message "Successfully killed instance" :service-id service-id, :status 200}
+        (is (= {:instance-id instance-id :killed? true :message "Successfully killed instance" :service-id service-id, :status http-200-ok}
                (process-kill-instance-request marathon-api service-id instance-id {})))))
 
     (testing "unsuccessful-delete"
@@ -832,7 +833,7 @@
                                          (is (= instance-id in-instance-id))
                                          (is (= [scale-value force-value] [true false]))
                                          {:failed true})]
-        (is (= {:instance-id instance-id :killed? false :message "Unable to kill instance" :service-id service-id, :status 500}
+        (is (= {:instance-id instance-id :killed? false :message "Unable to kill instance" :service-id service-id, :status http-500-internal-server-error}
                (process-kill-instance-request marathon-api service-id instance-id {})))))
 
     (testing "deployment-conflict"
@@ -841,8 +842,8 @@
                                          (is (= service-id in-service-id))
                                          (is (= instance-id in-instance-id))
                                          (is (= [scale-value force-value] [true false]))
-                                         (ss/throw+ {:status 409}))]
-        (is (= {:instance-id instance-id :killed? false :message "Locked by one or more deployments" :service-id service-id, :status 409}
+                                         (ss/throw+ {:status http-409-conflict}))]
+        (is (= {:instance-id instance-id :killed? false :message "Locked by one or more deployments" :service-id service-id, :status http-409-conflict}
                (process-kill-instance-request marathon-api service-id instance-id {})))))
 
     (testing "marathon-404"
@@ -851,8 +852,8 @@
                                          (is (= service-id in-service-id))
                                          (is (= instance-id in-instance-id))
                                          (is (= [scale-value force-value] [true false]))
-                                         (ss/throw+ {:body "Not Found", :status 404}))]
-        (is (= {:instance-id instance-id :killed? false :message "Not Found" :service-id service-id, :status 404}
+                                         (ss/throw+ {:body "Not Found", :status http-404-not-found}))]
+        (is (= {:instance-id instance-id :killed? false :message "Not Found" :service-id service-id, :status http-404-not-found}
                (process-kill-instance-request marathon-api service-id instance-id {})))))
 
     (testing "exception-while-killing"
@@ -862,7 +863,7 @@
                                          (is (= instance-id in-instance-id))
                                          (is (= [scale-value force-value] [true false]))
                                          (throw (Exception. "exception from test")))]
-        (is (= {:instance-id instance-id :killed? false :message "exception from test" :service-id service-id, :status 500}
+        (is (= {:instance-id instance-id :killed? false :message "exception from test" :service-id service-id, :status http-500-internal-server-error}
                (process-kill-instance-request marathon-api service-id instance-id {})))))))
 
 (deftest test-delete-service
@@ -878,7 +879,7 @@
               :message "Marathon did not provide deploymentId for delete request"}
              (scheduler/delete-service scheduler "foo"))))
 
-    (with-redefs [marathon/delete-app (fn [_ _] (ss/throw+ {:status 404}))]
+    (with-redefs [marathon/delete-app (fn [_ _] (ss/throw+ {:status http-404-not-found}))]
       (is (= {:result :no-such-service-exists
               :message "Marathon reports service does not exist"}
              (scheduler/delete-service scheduler "foo"))))))
@@ -1310,7 +1311,7 @@
         deployment-error-response (->> {:deployments [{:id "d-1234"}]
                                         :message "App is locked by one or more deployments."}
                                        utils/clj->json
-                                       (assoc {:status 409} :body))
+                                       (assoc {:status http-409-conflict} :body))
         create-app-error-factory (fn [error-call-limit create-call-counter]
                                    (fn [in-marathon-api in-marathon-descriptor]
                                      (is (= marathon-api in-marathon-api))

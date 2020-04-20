@@ -23,6 +23,7 @@
             [waiter.authorization :as authz]
             [waiter.auth.spnego :as spnego]
             [waiter.metrics :as metrics]
+            [waiter.status-codes :refer :all]
             [waiter.util.utils :as utils])
   (:import (java.util.concurrent LinkedBlockingQueue ThreadPoolExecutor TimeUnit)))
 
@@ -100,7 +101,7 @@
         (throw (ex-info "No prestashed tickets available"
                         {:message (utils/message :prestashed-tickets-not-available)
                          :service-id service-id
-                         :status 403
+                         :status http-403-forbidden
                          :user run-as-user
                          :log-level :warn}))))))
 

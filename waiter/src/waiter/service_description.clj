@@ -29,6 +29,7 @@
             [waiter.kv :as kv]
             [waiter.metrics :as metrics]
             [waiter.schema :as schema]
+            [waiter.status-codes :refer :all]
             [waiter.util.utils :as utils])
   (:import (java.util.regex Pattern)
            (org.joda.time DateTime)
@@ -174,7 +175,7 @@
             (fn [allowed-params]
               (when-not (string? allowed-params)
                 (throw (ex-info "Provided allowed-params is not a string"
-                                {:allowed-params allowed-params :status 400})))
+                                {:allowed-params allowed-params :status http-400-bad-request})))
               (if-not (str/blank? allowed-params)
                 (set (str/split allowed-params #","))
                 #{})))))
@@ -188,7 +189,7 @@
             (fn [allowed-params]
               (when-not (coll? allowed-params)
                 (throw (ex-info "Provided allowed-params is not a vector"
-                                {:allowed-params allowed-params :status 400})))
+                                {:allowed-params allowed-params :status http-400-bad-request})))
               (set allowed-params)))))
 
 (defn map-validation-helper [issue key]
@@ -359,7 +360,7 @@
     (let [supported-profiles-str (compute-valid-profiles-str profile->defaults)]
       (sling/throw+ {:type :service-description-error
                      :friendly-error-message (str "Unsupported profile: " profile supported-profiles-str)
-                     :status 400
+                     :status http-400-bad-request
                      :log-level :warn}))))
 
 (defn- compute-profile-defaults
@@ -459,7 +460,7 @@
                       (sling/throw+ (cond-> {:type :service-description-error
                                              :message exception-message
                                              :service-description service-description-template
-                                             :status 400
+                                             :status http-400-bad-request
                                              :issue issue
                                              :log-level :warn}
                                       (not (str/blank? friendly-error-message))
@@ -577,7 +578,7 @@
             (sling/throw+ {:type :service-description-error
                            :message exception-message
                            :friendly-error-message error-message
-                           :status 400
+                           :status http-400-bad-request
                            :log-level :warn})))))
 
     ; Validate the cmd-type field
@@ -585,7 +586,7 @@
       (when (and (not (str/blank? cmd-type)) (not ((:valid-cmd-types args-map) cmd-type)))
         (sling/throw+ {:type :service-description-error
                        :friendly-error-message (str "Command type " cmd-type " is not supported")
-                       :status 400})))
+                       :status http-400-bad-request})))
 
     ; validate the health-check-port-index
     (let [{:strs [health-check-port-index ports]} service-description-to-use]
@@ -593,7 +594,7 @@
         (sling/throw+ {:type :service-description-error
                        :friendly-error-message (str "The health check port index (" health-check-port-index ") "
                                                     "must be smaller than ports (" ports ")")
-                       :status 400
+                       :status http-400-bad-request
                        :log-level :warn})))
 
     ;; currently, if manually specified, the namespace *must* match the run-as-user
@@ -602,7 +603,7 @@
       (when (and (some? namespace) (not= namespace run-as-user))
         (sling/throw+ {:type :service-description-error
                        :friendly-error-message "Service namespace must either be omitted or match the run-as-user."
-                       :status 400
+                       :status http-400-bad-request
                        :log-level :warn})))
 
     ; validate the profile when it is configured
@@ -731,7 +732,7 @@
     (when-not (re-matches valid-token-re token)
       (throw (ex-info
                "Token must match pattern"
-               {:status 400 :token token :pattern (str valid-token-re) :log-level :warn})))))
+               {:status http-400-bad-request :token token :pattern (str valid-token-re) :log-level :warn})))))
 
 (defn- token->token-data
   "Retrieves the data stored against the token in the kv-store."
@@ -744,14 +745,14 @@
               (if error-on-missing
                 (do
                   (log/info e "Error in kv-store fetch")
-                  (throw (ex-info (str "Token not found: " token) {:status 400 :log-level :warn} e)))
+                  (throw (ex-info (str "Token not found: " token) {:status http-400-bad-request :log-level :warn} e)))
                 (log/info e "Ignoring kv-store fetch exception")))))
         token-data (when (seq token-data) ; populate token owner for backwards compatibility
                      (-> token-data
                          (utils/assoc-if-absent "owner" run-as-user)
                          (utils/assoc-if-absent "previous" {})))]
     (when (and error-on-missing (not token-data))
-      (throw (ex-info (str "Token not found: " token) {:status 400 :log-level :warn})))
+      (throw (ex-info (str "Token not found: " token) {:status http-400-bad-request :log-level :warn})))
     (log/debug "Extracted data for" token "is" token-data)
     (when (or (not deleted) include-deleted)
       (select-keys token-data allowed-keys))))
@@ -1004,7 +1005,7 @@
     service-description))
 
 (let [error-message-map-fn (fn [passthrough-headers waiter-headers]
-                             {:status 400
+                             {:status http-400-bad-request
                               :non-waiter-headers (dissoc passthrough-headers "authorization")
                               :x-waiter-headers waiter-headers
                               :log-level :warn})]
@@ -1033,7 +1034,7 @@
                            (do
                              (when-not (every? #(contains? allowed-params %) (keys header-params))
                                (throw (ex-info "Some params cannot be configured"
-                                               {:allowed-params allowed-params :params header-params :status 400 :log-level :warn})))
+                                               {:allowed-params allowed-params :params header-params :status http-400-bad-request :log-level :warn})))
                              (-> service-description
                                  (update "env" merge header-params)
                                  (dissoc "param")))
@@ -1069,7 +1070,7 @@
                         (error-message-map-fn passthrough-headers waiter-headers))))
       (when (and (= "*" raw-run-as-user) raw-namespace (not= "*" raw-namespace))
         (throw (ex-info "Cannot use run-as-requester with a specific namespace"
-                        {:namespace raw-namespace :run-as-user raw-run-as-user :status 400 :log-level :warn})))
+                        {:namespace raw-namespace :run-as-user raw-run-as-user :status http-400-bad-request :log-level :warn})))
       (sling/try+
         (let [build-map (build service-description-builder user-service-description
                                {:assoc-run-as-user-approved? assoc-run-as-user-approved?

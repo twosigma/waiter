@@ -20,6 +20,7 @@
             [clojure.tools.logging :as log]
             [waiter.cookie-support :as cookie-support]
             [waiter.middleware :as middleware]
+            [waiter.status-codes :refer :all]
             [waiter.util.utils :as utils]))
 
 (def ^:const AUTH-COOKIE-NAME "x-waiter-auth")
@@ -48,7 +49,7 @@
   Object
   (process-callback [this _]
     (throw (ex-info (str this " does not support authentication callbacks.")
-                    {:status 400}))))
+                    {:status http-400-bad-request}))))
 
 (defn- add-cached-auth
   [response password principal age-in-seconds]
@@ -159,13 +160,13 @@
             (handle-request-auth request-handler request :single-user run-as-user password)
             (= "unauthorized" auth-path)
             (utils/attach-waiter-source
-              {:headers {"www-authenticate" "SingleUser"} :status 401})
+              {:headers {"www-authenticate" "SingleUser"} :status http-401-unauthorized})
             (= "forbidden" auth-path)
             (utils/attach-waiter-source
-              {:headers {} :status 403})
+              {:headers {} :status http-403-forbidden})
             :else
             (utils/attach-waiter-source
-              {:headers {"x-waiter-single-user" (str "unknown operation: " auth-path)} :status 400})))))))
+              {:headers {"x-waiter-single-user" (str "unknown operation: " auth-path)} :status http-400-bad-request})))))))
 
 (defn one-user-authenticator
   "Factory function for creating single-user authenticator"

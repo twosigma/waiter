@@ -23,6 +23,7 @@
             [plumbing.core :as pc]
             [waiter.headers :as headers]
             [waiter.service-description :as sd]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils]
@@ -64,14 +65,14 @@
                                                                    :permitted-user "*"
                                                                    :run-as-user (retrieve-username)
                                                                    :token token})]
-                              (assert-response-status response 200)))
+                              (assert-response-status response http-200-ok)))
           validate-token-fn (fn [cmd num-threads num-iter]
                               (parallelize-requests
                                 num-threads
                                 num-iter
                                 (fn []
                                   (let [{:keys [body] :as response} (get-token waiter-url token)]
-                                    (assert-response-status response 200)
+                                    (assert-response-status response http-200-ok)
                                     (is (every? #(str/includes? (str body) (str %)) [service-id-prefix "1250" cmd "/ping"]))
                                     (is (not-any? #(str/includes? (str body) (str %)) ["invalid"]))))))
           update-and-validate-token-fn (fn [cmd]
@@ -126,7 +127,7 @@
   ([response token-root token-cluster service-id-prefix deleted include-metadata]
    `(let [body# (:body ~response)
           token-description# (parse-token-description body#)]
-      (assert-response-status ~response 200)
+      (assert-response-status ~response http-200-ok)
       (when ~include-metadata
         (is (contains? token-description# :cluster))
         (is (contains? token-description# :last-update-time))
@@ -156,25 +157,25 @@
       (log/info "creating token without parameters should fail")
       (let [token (str service-id-prefix ".empty")
             {:keys [body] :as response} (post-token waiter-url {:token token})]
-        (assert-response-status response 400)
+        (assert-response-status response http-400-bad-request)
         (is (str/includes? (str body) (str "No parameters provided for " token)) (str body)))
 
       (testing "creating and deleting token with only metadata should succeed"
         (let [token (str service-id-prefix ".fallback-period-secs")
               {:keys [body] :as response} (post-token waiter-url {:fallback-period-secs 60 :token token})]
-          (assert-response-status response 200)
+          (assert-response-status response http-200-ok)
           (is (str/includes? (str body) (str "Successfully created " token)) (str body))
           (let [{:keys [body] :as response}  (get-token waiter-url token :cookies cookies :query-params {"token" token})]
-            (assert-response-status response 200)
+            (assert-response-status response http-200-ok)
             (is (= {"fallback-period-secs" 60 "owner" (retrieve-username)} (json/read-str body)) (str body)))
           (delete-token-and-assert waiter-url token))
 
         (let [token (str service-id-prefix ".https-redirect")
               {:keys [body] :as response} (post-token waiter-url {:https-redirect true :token token})]
-          (assert-response-status response 200)
+          (assert-response-status response http-200-ok)
           (is (str/includes? (str body) (str "Successfully created " token)) (str body))
           (let [{:keys [body] :as response}  (get-token waiter-url token :cookies cookies :query-params {"token" token})]
-            (assert-response-status response 200)
+            (assert-response-status response http-200-ok)
             (is (= {"https-redirect" true "owner" (retrieve-username)} (json/read-str body)) (str body)))
           (delete-token-and-assert waiter-url token)))
 
@@ -183,7 +184,7 @@
         (let [response (post-token waiter-url {:health-check-url "/check"
                                                :name service-id-prefix
                                                :token token})]
-          (assert-response-status response 200)
+          (assert-response-status response http-200-ok)
           (is (str/includes? (:body response) (str "Successfully created " token)))))
 
       (testing "update without etags"
@@ -191,7 +192,7 @@
           (let [response (post-token waiter-url {:health-check-url "/health"
                                                  :name service-id-prefix
                                                  :token token})]
-            (assert-response-status response 200)
+            (assert-response-status response http-200-ok)
             (is (str/includes? (:body response) (str "Successfully updated " token))))))
 
       (testing "update with etags"
@@ -204,7 +205,7 @@
                                       (assoc :health-check-url "/probe"
                                              :token token))
                 response (post-token waiter-url token-description :headers {"if-match" (get headers "etag")})]
-            (assert-response-status response 200)
+            (assert-response-status response http-200-ok)
             (is (str/includes? (:body response) (str "Successfully updated " token))))))
 
       (testing "update without changes"
@@ -217,7 +218,7 @@
                                       (assoc :token token))
                 current-etag (get headers "etag")
                 response (post-token waiter-url token-description :headers {"if-match" current-etag})]
-            (assert-response-status response 200)
+            (assert-response-status response http-200-ok)
             (is (str/includes? (:body response) (str "No changes detected for " token)))
             (is (= current-etag (get-in response [:headers "etag"]))))))
 
@@ -230,7 +231,7 @@
                                                                            "token" token}
                                                             :request-headers {})
                   actual-etag (get headers "etag")]
-              (assert-response-status response 200)
+              (assert-response-status response http-200-ok)
               (let [token-description (-> response :body json/read-str)]
                 (is (= {"health-check-url" "/check", "name" service-id-prefix}
                        (-> token-description (get-in (repeat 2 "previous")) (select-keys sd/service-parameter-keys))))
@@ -240,7 +241,7 @@
           (testing "via x-waiter-token header"
             (let [{:keys [body headers] :as response} (get-token waiter-url token :cookies cookies)
                   actual-etag (get headers "etag")]
-              (assert-response-status response 200)
+              (assert-response-status response http-200-ok)
               (is actual-etag)
               (when actual-etag
                 (let [convert-last-update-time (fn [{:strs [last-update-time] :as service-description}]
@@ -266,7 +267,7 @@
           (let [{:keys [body] :as tokens-response}
                 (list-tokens router-url current-user cookies {"include" ["deleted" "metadata"]})
                 tokens (json/read-str body)]
-            (assert-response-status tokens-response 200)
+            (assert-response-status tokens-response http-200-ok)
             (is (every? (fn [token-entry] (contains? token-entry "deleted")) tokens))
             (is (every? (fn [token-entry] (contains? token-entry "etag")) tokens))
             (is (some (fn [token-entry] (= token (get token-entry "token"))) tokens)))))
@@ -284,7 +285,7 @@
             (is (nil? token-cache-data)
                 (str token " data not nil (" token-cache-data ") on " router-id ", cache data =" cache-data)))
           (let [{:keys [body] :as response} (get-token router-url token :cookies cookies)]
-            (assert-response-status response 404)
+            (assert-response-status response http-404-not-found)
             (is (str/includes? (str body) "Couldn't find token") (str body)))
           (-> (get-token router-url token
                          :cookies cookies
@@ -293,14 +294,14 @@
           (let [{:keys [body] :as tokens-response}
                 (list-tokens router-url current-user cookies {"include" ["metadata"]})
                 tokens (json/read-str body)]
-            (assert-response-status tokens-response 200)
+            (assert-response-status tokens-response http-200-ok)
             (is (every? (fn [token-entry] (contains? token-entry "deleted")) tokens))
             (is (every? (fn [token-entry] (contains? token-entry "etag")) tokens))
             (is (not-any? (fn [token-entry] (= token (get token-entry "token"))) tokens)))
           (let [{:keys [body] :as tokens-response}
                 (list-tokens router-url current-user cookies {"include" ["deleted" "metadata"]})
                 tokens (json/read-str body)]
-            (assert-response-status tokens-response 200)
+            (assert-response-status tokens-response http-200-ok)
             (is (every? (fn [token-entry] (contains? token-entry "deleted")) tokens))
             (is (every? (fn [token-entry] (contains? token-entry "etag")) tokens))
             (is (some (fn [token-entry] (= token (get token-entry "token"))) tokens)))))
@@ -310,12 +311,12 @@
         (delete-token-and-assert waiter-url token)
         (doseq [[_ router-url] (routers waiter-url)]
           (let [{:keys [body] :as response} (get-token router-url token :cookies cookies)]
-            (assert-response-status response 404)
+            (assert-response-status response http-404-not-found)
             (is (str/includes? (str body) "Couldn't find token") (str {:body body :token token})))
           (let [{:keys [body] :as tokens-response}
                 (list-tokens router-url current-user cookies {"include" ["deleted" "metadata"]})
                 token-entries (json/read-str body)]
-            (assert-response-status tokens-response 200)
+            (assert-response-status tokens-response http-200-ok)
             (is (every? (fn [token-entry] (contains? token-entry "deleted")) token-entries))
             (is (every? (fn [token-entry] (contains? token-entry "etag")) token-entries))))
         ;; the token must be removed from at least one router (others may have temporarily cached values)
@@ -333,7 +334,7 @@
           (let [{:keys [body] :as response} (get-token router-url token
                                                        :cookies cookies
                                                        :query-params {"include" "deleted"})]
-            (assert-response-status response 404)
+            (assert-response-status response http-404-not-found)
             (is (str/includes? (str body) "Couldn't find token") (str body))))))))
 
 (deftest ^:parallel ^:integration-fast ^:resource-heavy test-service-list-filtering
@@ -358,14 +359,14 @@
                                        :token token
                                        :version (str service-name "." version-suffix)})
                   {:keys [headers] :as response} (post-token waiter-url token-description)]
-              (assert-response-status response 200)
+              (assert-response-status response http-200-ok)
               (let [token-etag (get headers "etag")]
                 (log/info token "->" token-etag)
                 (is (-> token-etag str/blank? not))
                 (let [{:keys [service-id] :as response} (make-request-with-debug-info
                                                           {:x-waiter-token token}
                                                           #(make-request waiter-url "/environment" :headers %))]
-                  (assert-response-status response 200)
+                  (assert-response-status response http-200-ok)
                   (is (-> service-id str/blank? not))
                   (swap! service-ids-atom conj service-id)
                   ;; ensure all routers know about the service
@@ -373,7 +374,7 @@
                     (let [response (make-request-with-debug-info
                                      {:x-waiter-token token}
                                      #(make-request router-url "/environment" :headers % :cookies cookies))]
-                      (assert-response-status response 200)
+                      (assert-response-status response http-200-ok)
                       (is (= service-id (:service-id response))))))
                 (swap! token->version->etag-atom assoc-in [token version-suffix] token-etag)))))
         (is (= (* (count all-tokens) (count all-version-suffixes)) (count @service-ids-atom))
@@ -395,7 +396,7 @@
                                              flatten
                                              (map :token)))
                                          services)]
-              (assert-response-status response 200)
+              (assert-response-status response http-200-ok)
               (is (= (count @service-ids-atom) (count service-tokens))
                   (str {:query-params query-params
                         :router-url router-url
@@ -415,7 +416,7 @@
                                              flatten
                                              (map :token)))
                                          services)]
-              (assert-response-status response 200)
+              (assert-response-status response http-200-ok)
               (is (= 3 (count service-tokens))
                   (str {:query-params query-params
                         :router-url router-url
@@ -436,7 +437,7 @@
                                                        flatten
                                                        (map :version)))
                                                    services)]
-                (assert-response-status response 200)
+                (assert-response-status response http-200-ok)
                 (is (= 1 (count service-token-versions))
                     (str {:query-params query-params
                           :router-url router-url
@@ -476,7 +477,7 @@
                                             :metadata {"id" token-prefix}
                                             :name service-id-prefix
                                             :token token})]
-                (when (not= 200 status)
+                (when (not= http-200-ok status)
                   (log/info "error:" body)
                   (is (not body))))
               (log/info "created configuration using token" token)
@@ -501,7 +502,7 @@
                     path "/foo"
                     response (make-request waiter-url path :headers request-headers)
                     service-id (retrieve-service-id waiter-url (:request-headers response))]
-                (assert-response-status response 200)
+                (assert-response-status response http-200-ok)
                 (is (= token-prefix (name-from-service-description waiter-url service-id)))
                 (is (= #{(make-source-tokens-entries waiter-url token)}
                        (service-id->source-tokens-entries waiter-url service-id)))
@@ -514,7 +515,7 @@
                     path "/foo"
                     response (make-request waiter-url path :headers request-headers)
                     service-id (retrieve-service-id waiter-url (:request-headers response))]
-                (assert-response-status response 200)
+                (assert-response-status response http-200-ok)
                 (is (= token-prefix (name-from-service-description waiter-url service-id)))
                 (is (= #{(make-source-tokens-entries waiter-url token)}
                        (service-id->source-tokens-entries waiter-url service-id)))
@@ -529,7 +530,7 @@
                     path "/foo"
                     response (make-request waiter-url path :headers request-headers)
                     service-id (retrieve-service-id waiter-url (:request-headers response))]
-                (assert-response-status response 200)
+                (assert-response-status response http-200-ok)
                 (is (= token-prefix (name-from-service-description waiter-url service-id)))
                 (is (= #{(make-source-tokens-entries waiter-url token)}
                        (service-id->source-tokens-entries waiter-url service-id)))
@@ -540,7 +541,7 @@
                 (testing "backend request headers"
                   (let [{:keys [body] :as response} (make-request waiter-url "/request-info" :headers request-headers)
                         {:strs [headers]} (json/read-str (str body))]
-                    (assert-response-status response 200)
+                    (assert-response-status response http-200-ok)
                     (is (contains? headers "x-waiter-auth-principal"))
                     (is (contains? headers "x-waiter-authenticated-principal"))))
 
@@ -555,14 +556,14 @@
                     {:keys [body] :as response} (make-request waiter-url path :headers request-headers)]
                 (is (some #(str/includes? body %) ["cmd must be a non-empty string" "Invalid command or version"])
                     (str "response body was: " response))
-                (assert-response-status response 400))
+                (assert-response-status response http-400-bad-request))
 
               (log/info "request with hostname token and x-waiter-debug token" token "along with x-waiter headers")
               (let [request-headers (merge service-description {:x-waiter-debug "true", "host" token})
                     path "/foo"
                     {:keys [headers request-headers] :as response} (make-request waiter-url path :headers request-headers)
                     service-id (retrieve-service-id waiter-url request-headers)]
-                (assert-response-status response 200)
+                (assert-response-status response http-200-ok)
                 (with-service-cleanup
                   service-id
                   (is (= token-prefix (name-from-service-description waiter-url service-id)))
@@ -592,7 +593,7 @@
                                      :run-as-user (retrieve-username)
                                      :token token}
                   response (post-token waiter-url token-description)]
-              (assert-response-status response 200))
+              (assert-response-status response http-200-ok))
 
             (testing "if-match-required during update"
               (let [token-description {:health-check-url "/probe-1"
@@ -603,7 +604,7 @@
                     {:keys [body] :as response} (post-token waiter-url token-description
                                                             :headers {}
                                                             :query-params {"update-mode" "admin"})]
-                (assert-response-status response 400)
+                (assert-response-status response http-400-bad-request)
                 (is (str/includes? body "Must specify if-match header for admin mode token updates"))))
 
             (try
@@ -621,7 +622,7 @@
                       response (post-token waiter-url token-description
                                            :headers {"if-match" (get headers "etag")}
                                            :query-params {"update-mode" "admin"})]
-                  (assert-response-status response 200)
+                  (assert-response-status response http-200-ok)
                   (log/info "created configuration using token" token))
 
                 (let [token-response (get-token waiter-url token)
@@ -656,7 +657,7 @@
                                                                 :headers {"host" token}
                                                                 :method :delete
                                                                 :query-params {"hard-delete" true})]
-                  (assert-response-status response 400)
+                  (assert-response-status response http-400-bad-request)
                   (is (str/includes? (str body) "Must specify if-match header for token hard deletes"))))
 
               (testing "hard-delete with invalid etag"
@@ -681,7 +682,7 @@
                                        :owner (retrieve-username)
                                        :token token}
                     response (post-token waiter-url token-description :headers {"host" token})]
-                (assert-response-status response 200))
+                (assert-response-status response http-200-ok))
 
               (let [{:keys [body headers]} (get-token waiter-url token)
                     token-description (-> body
@@ -695,10 +696,10 @@
                     response (post-token waiter-url token-description
                                          :headers {"if-match" (get headers "etag")}
                                          :query-params {"update-mode" "admin"})]
-                (assert-response-status response 200))
+                (assert-response-status response http-200-ok))
               (log/info "created configuration using token" token)
               (let [{:keys [body] :as response} (get-token waiter-url token)]
-                (assert-response-status response 404)
+                (assert-response-status response http-404-not-found)
                 (is (str/includes? (str body) "Couldn't find token") (str body)))
               (let [token-response (get-token waiter-url token :query-params {"include" ["deleted" "metadata"]})
                     response-body (json/read-str (:body token-response))]
@@ -728,7 +729,7 @@
                                  :name service-id-prefix
                                  :token token)
               {:keys [body status]} (post-token waiter-url token-definition)]
-          (when (not= 200 status)
+          (when (not= http-200-ok status)
             (log/info "error:" body)
             (is (not body))))
         (log/info "created configuration using token" token)
@@ -737,7 +738,7 @@
               response-body (str (:body token-response))]
           (when (not (str/includes? response-body service-id-prefix))
             (log/info response-body))
-          (assert-response-status token-response 200)
+          (assert-response-status token-response http-200-ok)
           (is (str/includes? response-body service-id-prefix)))
         (log/info "asserted retrieval of configuration for token" token)
 
@@ -746,7 +747,7 @@
               path "/foo"
               response (make-request waiter-url path :headers request-headers)
               service-id (retrieve-service-id waiter-url (:request-headers response))]
-          (assert-response-status response 200)
+          (assert-response-status response http-200-ok)
           (is (= (name-from-service-description waiter-url service-id) service-id-prefix))
           (is (= #{(make-source-tokens-entries waiter-url token)}
                  (service-id->source-tokens-entries waiter-url service-id))))
@@ -756,7 +757,7 @@
               path "/foo"
               {:keys [headers request-headers] :as response} (make-request waiter-url path :headers request-headers)
               service-id (retrieve-service-id waiter-url request-headers)]
-          (assert-response-status response 200)
+          (assert-response-status response http-200-ok)
           (with-service-cleanup
             service-id
             (is (= (name-from-service-description waiter-url service-id) service-id-prefix))
@@ -780,7 +781,7 @@
                                  :run-as-user "*"
                                  :token token)
               {:keys [body status]} (post-token waiter-url token-definition)]
-          (when (not= 200 status)
+          (when (not= http-200-ok status)
             (log/info "error:" body)
             (is (not body))))
         (log/info "created configuration using token" token)
@@ -789,7 +790,7 @@
               response-body (str (:body token-response))]
           (when (not (str/includes? response-body service-id-prefix))
             (log/info response-body))
-          (assert-response-status token-response 200)
+          (assert-response-status token-response http-200-ok)
           (is (str/includes? response-body service-id-prefix)))
         (log/info "asserted retrieval of configuration for token" token)
 
@@ -797,7 +798,7 @@
               token-description (try (json/read-str (str body))
                                      (catch Exception _
                                        (is false (str "Failed to parse token" body))))]
-          (assert-response-status token-response 200)
+          (assert-response-status token-response http-200-ok)
           (is (= "/status" (token-description "health-check-url")))
           (is (= service-id-prefix (token-description "name")))
           (is (= "*" (token-description "run-as-user")))
@@ -808,7 +809,7 @@
               path "/foo"
               response (make-request waiter-url path :headers request-headers)
               service-id (retrieve-service-id waiter-url (:request-headers response))]
-          (assert-response-status response 200)
+          (assert-response-status response http-200-ok)
           (is (= (name-from-service-description waiter-url service-id) service-id-prefix))
           (is (= #{(make-source-tokens-entries waiter-url token)}
                  (service-id->source-tokens-entries waiter-url service-id)))
@@ -819,7 +820,7 @@
               path "/foo"
               {:keys [headers request-headers] :as response} (make-request waiter-url path :headers request-headers)
               service-id (retrieve-service-id waiter-url request-headers)]
-          (assert-response-status response 200)
+          (assert-response-status response http-200-ok)
           (with-service-cleanup
             service-id
             (is (= (name-from-service-description waiter-url service-id) service-id-prefix))
@@ -849,7 +850,7 @@
         (let [token (str "^SERVICE-ID#" service-id-1)
               response (make-request-with-debug-info {:x-waiter-token token} #(make-request waiter-url "" :headers %))
               service-id-2 (:service-id response)]
-          (assert-response-status response 200)
+          (assert-response-status response http-200-ok)
           (with-service-cleanup
             service-id-2
             (is (= service-id-1 service-id-2) "The on-the-fly and token-based service ids do not match")
@@ -878,7 +879,7 @@
                                    :run-as-user token-user
                                    :token token)
                 {:keys [body status]} (post-token waiter-url token-definition)]
-            (when (not= 200 status)
+            (when (not= http-200-ok status)
               (log/info "error:" body)
               (is (not body))))
           (log/info "created configuration using token" token)
@@ -887,7 +888,7 @@
                 response-body (str (:body token-response))]
             (when (not (str/includes? response-body service-id-prefix))
               (log/info response-body))
-            (assert-response-status token-response 200)
+            (assert-response-status token-response http-200-ok)
             (is (str/includes? response-body service-id-prefix))
             (let [{:strs [namespace run-as-user]} (try-parse-json response-body)]
               (is (= target-user run-as-user))
@@ -910,7 +911,7 @@
                           :health-check-url "/not-used"}
             response (post-token waiter-url service-desc)]
         (is (str/includes? (:body response) "Service namespace must either be omitted or match the run-as-user"))
-        (assert-response-status response 400)))))
+        (assert-response-status response http-400-bad-request)))))
 
 
 (deftest ^:parallel ^:integration-fast test-bad-token
@@ -921,52 +922,52 @@
       (testing "ignore missing token when have service description"
         (let [response (make-request waiter-url "/pathabc" :headers (assoc common-headers "host" "missing_token"))]
           (is (str/includes? (:body response) "Service description using waiter headers/token improperly configured"))
-          (assert-response-status response 400)))
+          (assert-response-status response http-400-bad-request)))
 
       (testing "ignore invalid token when have service description"
         (let [response (make-request waiter-url "/pathabc" :headers (assoc common-headers "host" "bad/token"))]
           (is (str/includes? (:body response) "Service description using waiter headers/token improperly configured"))
-          (assert-response-status response 400)))
+          (assert-response-status response http-400-bad-request)))
 
       (testing "ignore invalid token when have invalid service description"
         (let [response (make-request waiter-url "/pathabc" :headers (assoc common-headers "host" "bad/token"))]
           (is (str/includes? (:body response) "Service description using waiter headers/token improperly configured"))
-          (assert-response-status response 400))))
+          (assert-response-status response http-400-bad-request))))
 
     (testing "can't use missing token server"
       (let [response (make-request waiter-url "/pathabc" :headers {"host" "missing_token"})]
         (is (str/includes? (:body response) "Unable to identify service using waiter headers/token"))
-        (assert-response-status response 400)))
+        (assert-response-status response http-400-bad-request)))
 
     (testing "can't use invalid token server"
       (let [response (make-request waiter-url "/pathabc" :headers {"host" "bad/token"})]
         (is (str/includes? (:body response) "Unable to identify service using waiter headers/token"))
-        (assert-response-status response 400)))
+        (assert-response-status response http-400-bad-request)))
 
     (testing "can't use invalid token that's valid for zookeeper"
       (let [response (make-request waiter-url "/pathabc" :headers {"x-waiter-token" "bad#token"})]
         (is (str/includes? (:body response) "Token not found: bad#token"))
-        (assert-response-status response 400)))
+        (assert-response-status response http-400-bad-request)))
 
     (testing "can't use invalid token"
       (let [response (make-request waiter-url "/pathabc" :headers {"x-waiter-token" "bad/token"})]
         (is (str/includes? (:body response) "Token not found: bad/token"))
-        (assert-response-status response 400)))
+        (assert-response-status response http-400-bad-request)))
 
     (testing "can't use invalid token with host set"
       (let [response (make-request waiter-url "/pathabc" :headers {"host" "missing_token" "x-waiter-token" "bad/token"})]
         (is (str/includes? (:body response) "Token not found: bad/token"))
-        (assert-response-status response 400)))
+        (assert-response-status response http-400-bad-request)))
 
     (testing "can't use missing token with host set"
       (let [response (make-request waiter-url "/pathabc" :headers {"host" "missing_token" "x-waiter-token" "missing_token"})]
         (is (str/includes? (:body response) "Token not found: missing_token"))
-        (assert-response-status response 400)))
+        (assert-response-status response http-400-bad-request)))
 
     (testing "can't use missing token"
       (let [response (make-request waiter-url "/pathabc" :headers {"x-waiter-token" "missing_token"})]
         (is (str/includes? (:body response) "Token not found: missing_token"))
-        (assert-response-status response 400)))
+        (assert-response-status response http-400-bad-request)))
 
 
     (testing "can't create bad token"
@@ -982,7 +983,7 @@
                           :health-check-url "/not-used"}
             response (post-token waiter-url service-desc)]
         (is (str/includes? (:body response) "Token must match pattern"))
-        (assert-response-status response 400)))))
+        (assert-response-status response http-400-bad-request)))))
 
 (deftest ^:parallel ^:integration-fast test-token-metadata
   (testing-using-waiter-url
@@ -999,7 +1000,7 @@
                         :metadata {"a" "b", "c" "d"}}
           register-response (post-token waiter-url service-desc)
           {:keys [body]} (get-token waiter-url token)]
-      (assert-response-status register-response 200)
+      (assert-response-status register-response http-200-ok)
       (is (= (:metadata service-desc) (get (json/read-str body) "metadata")))
       (delete-token-and-assert waiter-url token))))
 
@@ -1016,7 +1017,7 @@
                         "health-check-url" "/not-used"
                         "metadata" {"a" "b", "c" {"d" "e"}}}
           register-response (post-token waiter-url service-desc)]
-      (assert-response-status register-response 400))))
+      (assert-response-status register-response http-400-bad-request))))
 
 (deftest ^:parallel ^:integration-fast test-token-bad-payload
   (testing-using-waiter-url
@@ -1024,7 +1025,7 @@
                                  :body "i'm bad at json"
                                  :headers {"host" "test-token"}
                                  :method :post)]
-      (assert-response-status response 400))))
+      (assert-response-status response http-400-bad-request))))
 
 (deftest ^:parallel ^:integration-fast test-token-environment-variables
   (testing-using-waiter-url
@@ -1038,8 +1039,8 @@
                                                  :token token})
           {:keys [service-id] :as response} (make-request-with-debug-info {:x-waiter-token token}
                                                                           #(make-light-request waiter-url %))]
-      (assert-response-status token-response 200)
-      (assert-response-status response 200)
+      (assert-response-status token-response http-200-ok)
+      (assert-response-status response http-200-ok)
       (with-service-cleanup
         service-id
         (let [{:keys [env] :as service-description} (response->service-description waiter-url response)]
@@ -1055,7 +1056,7 @@
                                                  :name token
                                                  :version "does-not-matter"
                                                  :token token})]
-      (assert-response-status token-response 200)
+      (assert-response-status token-response http-200-ok)
 
       (testing "https redirects"
         (let [request-headers {:x-waiter-token token}
@@ -1065,14 +1066,14 @@
           (testing "get request"
             (let [{:keys [headers] :as response}
                   (make-kitchen-request waiter-url request-headers :method :get :path endpoint)]
-              (assert-response-status response 301)
+              (assert-response-status response http-301-moved-permanently)
               (is (= (str "https://" (.getHost url) endpoint) (get headers "location")))
               (is (str/starts-with? (str (get headers "server")) "waiter") (str "headers:" headers))))
 
           (testing "post request"
             (let [{:keys [headers] :as response}
                   (make-kitchen-request waiter-url request-headers :method :post :path endpoint)]
-              (assert-response-status response 307)
+              (assert-response-status response http-307-temporary-redirect)
               (is (= (str "https://" (.getHost url) endpoint) (get headers "location")))
               (is (str/starts-with? (str (get headers "server")) "waiter") (str "headers:" headers))))))
 
@@ -1083,7 +1084,7 @@
   `(let [response# (make-request-with-debug-info ~request-headers ~request-fn)
          service-description# (response->service-description ~waiter-url response#)
          service-id# (:service-id response#)]
-     (assert-response-status response# 200)
+     (assert-response-status response# http-200-ok)
      (is (= ~expected-env (:env service-description#)) (str service-description#))
      (delete-service ~waiter-url service-id#)
      service-id#))
@@ -1104,25 +1105,25 @@
       (try
         (let [token-description (assoc service-description :token token)
               token-response (post-token waiter-url token-description :query-params {"update-mode" "admin"})]
-          (assert-response-status token-response 200)
+          (assert-response-status token-response http-200-ok)
           (let [request-headers {:x-waiter-param-my_variable "value-1"
                                  :x-waiter-token token}
                 {:keys [body] :as response} (make-request-with-debug-info request-headers kitchen-request)]
-            (assert-response-status response 400)
+            (assert-response-status response http-400-bad-request)
             (is (str/includes? body "Some params cannot be configured")))
           (let [request-headers {:x-waiter-allowed-params ""
                                  :x-waiter-param-my_variable "value-1"
                                  :x-waiter-token token}
                 {:keys [body] :as response} (make-request-with-debug-info request-headers kitchen-request)]
-            (assert-response-status response 400)
+            (assert-response-status response http-400-bad-request)
             (is (str/includes? body "Some params cannot be configured"))))
         (let [token-description (-> service-description (dissoc :allowed-params) (assoc :token (str token ".1")))
               token-response (post-token waiter-url token-description :query-params {"update-mode" "admin"})]
-          (assert-response-status token-response 200)
+          (assert-response-status token-response http-200-ok)
           (let [request-headers {:x-waiter-param-my_variable "value-1"
                                  :x-waiter-token token}
                 {:keys [body] :as response} (make-request-with-debug-info request-headers kitchen-request)]
-            (assert-response-status response 400)
+            (assert-response-status response http-400-bad-request)
             (is (str/includes? body "Some params cannot be configured"))))
         (let [service-ids (set [(run-token-param-support
                                   waiter-url kitchen-request
@@ -1152,7 +1153,7 @@
 (deftest ^:parallel ^:integration-fast test-token-invalid-environment-variables
   (testing-using-waiter-url
     (let [{:keys [body] :as response} (post-token waiter-url {:env {"HOME" "/my/home"} :token (rand-name)})]
-      (assert-response-status response 400)
+      (assert-response-status response http-400-bad-request)
       (is (not (str/includes? body "clojure")) body)
       (is (str/includes? body "The following environment variable keys are reserved: HOME.") body))))
 
@@ -1167,7 +1168,7 @@
                             (apply str parameter " " (repeat max-constraint "x"))
                             (inc max-constraint))
               {:keys [body] :as response} (post-token waiter-url {parameter param-value :token (rand-name)})]
-          (assert-response-status response 400)
+          (assert-response-status response http-400-bad-request)
           (is (not (str/includes? body "clojure")) body)
           (is (every? #(str/includes? body %)
                       ["The following fields exceed their allowed limits"
@@ -1193,7 +1194,7 @@
         (testing "token creation"
           (let [token-description (assoc service-description :token token)
                 response (post-token waiter-url token-description)]
-            (assert-response-status response 200)))
+            (assert-response-status response http-200-ok)))
 
         (testing "token retrieval"
           (let [token-response (get-token waiter-url token)
@@ -1212,7 +1213,7 @@
           (let [{:keys [headers] :as response} (make-request waiter-url "/hello-world" :headers {"host" host-header})]
             (is (= (str "/waiter-consent/hello-world")
                    (get headers "location")))
-            (assert-response-status response 303)))
+            (assert-response-status response http-303-see-other)))
 
         (testing "waiter-consent"
           (let [consent-path (str "/waiter-consent/hello-world")
@@ -1222,7 +1223,7 @@
                                (when-let [end-index (str/index-of body "\"" (+ value-index 7))]
                                  (subs body (+ value-index 7) end-index))))]
             (is service-id)
-            (assert-response-status response 200)
+            (assert-response-status response http-200-ok)
 
             (let [cookies-atom (atom nil)]
               (testing "approval of specific service"
@@ -1239,7 +1240,7 @@
                   (is (= "Added cookie x-waiter-consent" body))
                   ; x-waiter-consent should be emitted Waiter
                   (is (has-x-waiter-consent? cookies))
-                  (assert-response-status response 200)))
+                  (assert-response-status response http-200-ok)))
 
               (testing "auto run-as-user population on expected service-id"
                 (let [service-id-atom (atom nil)]
@@ -1258,7 +1259,7 @@
                       (is (= expected-service-id service-id))
                       (is (not (str/blank? permitted-user)))
                       (is (= run-as-user permitted-user))
-                      (assert-response-status response 200))
+                      (assert-response-status response http-200-ok))
                     (finally
                       (when @service-id-atom
                         (delete-service waiter-url @service-id-atom))))))
@@ -1267,14 +1268,14 @@
                 (let [updated-service-name (rand-name)
                       token-description (assoc service-description :name updated-service-name :token token)
                       response (post-token waiter-url token-description)]
-                  (assert-response-status response 200)))
+                  (assert-response-status response http-200-ok)))
 
               (testing "expecting redirect after token update"
                 (let [{:keys [headers] :as response}
                       (make-request waiter-url "/hello-world" :cookies @cookies-atom :headers {"host" host-header})]
                   (is (= (str "/waiter-consent/hello-world")
                          (get headers "location")))
-                  (assert-response-status response 303)))
+                  (assert-response-status response http-303-see-other)))
 
               (testing "approval of token"
                 (let [{:keys [body cookies] :as response}
@@ -1290,7 +1291,7 @@
                   (is (= "Added cookie x-waiter-consent" body))
                   ; x-waiter-consent should be emitted Waiter
                   (is (has-x-waiter-consent? cookies))
-                  (assert-response-status response 200)))
+                  (assert-response-status response http-200-ok)))
 
               (testing "auto run-as-user population on approved token"
                 (let [service-id-atom (atom nil)]
@@ -1305,7 +1306,7 @@
                       ; x-waiter-consent should not be re-emitted Waiter
                       (is (not (has-x-waiter-consent? cookies)))
                       (is (not= previous-service-id service-id))
-                      (assert-response-status response 200))
+                      (assert-response-status response http-200-ok))
                     (finally
                       (when @service-id-atom
                         (delete-service waiter-url @service-id-atom)))))))))
@@ -1330,7 +1331,7 @@
         (testing "token creation"
           (let [token-description (assoc service-description :token token)
                 response (post-token waiter-url token-description)]
-            (assert-response-status response 200)))
+            (assert-response-status response http-200-ok)))
 
         (testing "token retrieval"
           (let [token-response (get-token waiter-url token)
@@ -1348,7 +1349,7 @@
         (testing "successful request"
           (let [{:keys [body] :as response}
                 (make-request waiter-url "/hello-world" :headers request-headers :disable-auth true)]
-            (assert-response-status response 200)
+            (assert-response-status response http-200-ok)
             (is (= "Hello World" body))))
 
         (testing "backend request headers"
@@ -1356,7 +1357,7 @@
                 (make-request waiter-url "/request-info" :headers request-headers :disable-auth true)
                 {:strs [headers]} (json/read-str (str body))
                 service-id (retrieve-service-id waiter-url (:request-headers response))]
-            (assert-response-status response 200)
+            (assert-response-status response http-200-ok)
             (is (not (contains? headers "x-waiter-auth-principal")))
             (is (not (contains? headers "x-waiter-authenticated-principal")))
             (is (contains? headers "x-cid"))
@@ -1374,7 +1375,7 @@
       (try
         (testing "creating initial token"
           (let [response (post-token waiter-url (assoc service-description :token token))]
-            (assert-response-status response 200)))
+            (assert-response-status response http-200-ok)))
 
         (let [initial-service-id (retrieve-service-id waiter-url {:x-waiter-token token})]
           (testing "current service reports as current for token"
@@ -1384,7 +1385,7 @@
           (testing "updating token"
             (let [new-service-description (assoc service-description :metadata {"foo" "bar"})
                   response (post-token waiter-url (assoc new-service-description :token token))]
-              (assert-response-status response 200)))
+              (assert-response-status response http-200-ok)))
 
           (testing "old service is no longer current for token"
             (let [initial-service-details' (service-settings waiter-url initial-service-id)
@@ -1407,7 +1408,7 @@
   [waiter-url token-name service-description]
   (let [response (post-token waiter-url (assoc service-description :token token-name))
         etag (response->etag response)]
-    (assert-response-status response 200)
+    (assert-response-status response http-200-ok)
     (is (not (str/blank? etag)))
     etag))
 
@@ -1529,12 +1530,12 @@
       (try
         (let [token-description-1 (assoc service-description-1 :token token)
               post-response (post-token waiter-url token-description-1)
-              _ (assert-response-status post-response 200)
+              _ (assert-response-status post-response http-200-ok)
               service-id-1 (retrieve-service-id waiter-url service-id-headers)]
 
           (testing "token response contains fallback and owner"
             (let [{:keys [body] :as response} (get-token waiter-url token :query-params {})]
-              (assert-response-status response 200)
+              (assert-response-status response http-200-ok)
               (is (= (assoc service-description-1 :owner (retrieve-username))
                      (-> body json/read-str walk/keywordize-keys)))))
 
@@ -1548,7 +1549,7 @@
             (let [service-description-2 (assoc service-description-1 :name (str service-name "-v2") :version "version-2")
                   token-description-2 (assoc service-description-2 :token token)
                   post-response (post-token waiter-url token-description-2)
-                  _ (assert-response-status post-response 200)
+                  _ (assert-response-status post-response http-200-ok)
                   service-id-2 (retrieve-service-id waiter-url service-id-headers)]
               (with-service-cleanup
                 service-id-2
@@ -1569,7 +1570,7 @@
                                                 (update "cmd" (fn [c] (str "sleep " sleep-duration " && " c))))
                       token-description-3 (assoc service-description-3 :token token)
                       post-response (post-token waiter-url token-description-3)
-                      _ (assert-response-status post-response 200)
+                      _ (assert-response-status post-response http-200-ok)
                       service-id-3 (retrieve-service-id waiter-url service-id-headers)]
                   (with-service-cleanup
                     service-id-3
@@ -1616,12 +1617,12 @@
                                          :name (str service-name "-v3")
                                          :version "version-3"))]
       (try
-        (assert-response-status (post-token waiter-url token-description-1) 200)
+        (assert-response-status (post-token waiter-url token-description-1) http-200-ok)
         (let [service-id-1 (retrieve-service-id waiter-url request-headers)]
           (with-service-cleanup
             service-id-1
             (let [response-1 (make-request-with-debug-info request-headers #(make-request waiter-url "/hello" :headers %))]
-              (assert-response-status response-1 200)
+              (assert-response-status response-1 http-200-ok)
               (is (= service-id-1 (:service-id response-1))))
             ;; allow every router to learn about the new instance
             (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")]
@@ -1632,15 +1633,15 @@
                                                  (get-in [:instances :active-instances]))]
                           (and (seq active-instances)
                                (some :healthy? active-instances))))))))
-            (assert-response-status (post-token waiter-url token-description-2) 200)
-            (assert-response-status (make-request waiter-url "/hello" :headers request-headers) 400)
-            (assert-response-status (post-token waiter-url token-description-3) 200)
+            (assert-response-status (post-token waiter-url token-description-2) http-200-ok)
+            (assert-response-status (make-request waiter-url "/hello" :headers request-headers) http-400-bad-request)
+            (assert-response-status (post-token waiter-url token-description-3) http-200-ok)
             (let [service-id-2 (retrieve-service-id waiter-url (assoc request-headers :x-waiter-fallback-period-secs 0))]
               (is (not= service-id-1 service-id-2))
               (with-service-cleanup
                 service-id-2
                 (let [response-2 (make-request-with-debug-info request-headers #(make-request waiter-url "/hello" :headers %))]
-                  (assert-response-status response-2 200)
+                  (assert-response-status response-2 http-200-ok)
                   (is (= service-id-1 (:service-id response-2))))))))
         (finally
           (delete-token-and-assert waiter-url token))))))
@@ -1664,7 +1665,7 @@
                                   (assoc :profile (name profile) :token token))
               register-response (post-token waiter-url token-description)]
           (try
-            (assert-response-status register-response 200)
+            (assert-response-status register-response http-200-ok)
             (let [{:keys [body]} (get-token waiter-url token)]
               (is (= (:profile token-description) (-> body str json/read-str (get "profile"))))
               (let [service-id (retrieve-service-id waiter-url {"x-waiter-token" token})

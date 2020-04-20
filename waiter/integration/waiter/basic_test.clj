@@ -26,6 +26,7 @@
             [waiter.interstitial :as interstitial]
             [waiter.service-description :as sd]
             [waiter.schema :as schema]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
@@ -138,7 +139,7 @@
         (log/info "Basic test for empty body in request")
         (let [request-headers (assoc request-headers :accept "text/plain")
               {:keys [body headers] :as response} (make-kitchen-request waiter-url request-headers :path "/request-info")
-              _ (assert-response-status response 200)
+              _ (assert-response-status response http-200-ok)
               body-json (try-parse-json (str body))]
           (is (= (some-> http1-client .getUserAgentField .getValue) (get-in body-json ["headers" "user-agent"])) (str body))
           (is (= "application/json" (get headers "content-type")) (str headers))
@@ -186,7 +187,7 @@
                                             (assoc request-headers :accept "application/json")
                                             :path "/request-info"
                                             :query-params bad-query-string)]
-          (assert-response-status response 200)
+          (assert-response-status response http-200-ok)
           (is (= bad-query-string (get (try-parse-json body) "query-string"))))
 
         (log/info "Basic test for query-string with encoded characters")
@@ -196,14 +197,14 @@
                                             (assoc request-headers :accept "application/json")
                                             :path "/request-info"
                                             :query-params bad-query-string)]
-          (assert-response-status response 200)
+          (assert-response-status response http-200-ok)
           (is (= bad-query-string (get (try-parse-json body) "query-string")))))
 
       (testing "http methods"
         (log/info "Basic test for empty body in request")
         (testing "http method: HEAD"
           (let [response (make-kitchen-request waiter-url request-headers :method :head :path "/request-info")]
-            (assert-response-status response 200)
+            (assert-response-status response http-200-ok)
             (is (str/blank? (:body response)))))
         (doseq [request-method [:delete :copy :get :move :options :patch :post :put
                                 ;; additional webdav verbs
@@ -212,7 +213,7 @@
             (let [{:keys [body headers] :as response}
                   (make-kitchen-request waiter-url request-headers :method request-method :path "/request-info")
                   body-json (try-parse-json (str body))]
-              (assert-response-status response 200)
+              (assert-response-status response http-200-ok)
               (is (= (name request-method) (get body-json "request-method")))
               (is (str/includes? (str (get headers "server")) "Python"))))))
 
@@ -252,17 +253,17 @@
                                                    (assoc request-headers :x-kitchen-long-string
                                                                           (random-string header-size))))]
           (let [response (make-request 2000)]
-            (assert-response-status response 200))
+            (assert-response-status response http-200-ok))
           (let [response (make-request 4000)]
-            (assert-response-status response 200))
+            (assert-response-status response http-200-ok))
           (let [response (make-request 8000)]
-            (assert-response-status response 200))
+            (assert-response-status response http-200-ok))
           (let [response (make-request 16000)]
-            (assert-response-status response 200))
+            (assert-response-status response http-200-ok))
           (let [response (make-request 20000)]
-            (assert-response-status response 200))
+            (assert-response-status response http-200-ok))
           (let [response (make-request 24000)]
-            (assert-response-status response 200))))
+            (assert-response-status response http-200-ok))))
 
       (testing "https-redirect header is a no-op"
         (let [request-headers (-> request-headers
@@ -273,13 +274,13 @@
           (testing "get request"
             (let [{:keys [headers] :as response}
                   (make-kitchen-request waiter-url request-headers :method :get :path endpoint)]
-              (assert-response-status response 200)
+              (assert-response-status response http-200-ok)
               (is (not (str/starts-with? (str (get headers "server")) "waiter")) (str "headers:" headers))))
 
           (testing "post request"
             (let [{:keys [headers] :as response}
                   (make-kitchen-request waiter-url request-headers :method :post :path endpoint)]
-              (assert-response-status response 200)
+              (assert-response-status response http-200-ok)
               (is (not (str/starts-with? (str (get headers "server")) "waiter")) (str "headers:" headers))))))
 
       (testing "metric group should be waiter_test"
@@ -294,7 +295,7 @@
                                                           :query-params {"include" "request-info"}
                                                           :trailers-fn (constantly test-trailers))
                 body-json (try-parse-json (str body))]
-            (assert-response-status response 200)
+            (assert-response-status response http-200-ok)
             (is (= "chunked" (get-in body-json ["request-info" "headers" "transfer-encoding"])))
             (is (= test-trailers (get-in body-json ["request-info" "trailers"]))))))
 
@@ -342,7 +343,7 @@
                                 (let [request-to-ip? (some? (re-find #"^https?://\d+\.\d+\.\d+\.\d+:" url))]
                                   (make-request url "" :disable-auth request-to-ip? :verbose true)))
               {:keys [body] :as logs-response} (make-request-fn log-url)
-              _ (assert-response-status logs-response 200)
+              _ (assert-response-status logs-response http-200-ok)
               _ (log/debug "Response body:" body)
               log-files-list (walk/keywordize-keys (try-parse-json body))
               stdout-file-link (:url (first (filter #(= (:name %) "stdout") log-files-list)))
@@ -355,7 +356,7 @@
                      ": got response: " logs-response)))
           (doseq [file-link [stderr-file-link stdout-file-link]]
             (if (str/starts-with? (str file-link) "http")
-              (assert-response-status (make-request-fn file-link) 200)
+              (assert-response-status (make-request-fn file-link) http-200-ok)
               (log/warn "test-basic-logs did not verify file link:" stdout-file-link))))))))
 
 (deftest ^:parallel ^:integration-fast test-basic-backoff-config
@@ -367,7 +368,7 @@
               {:x-waiter-name (rand-name)
                :x-waiter-restart-backoff-factor 2.5}
               #(make-kitchen-request waiter-url % :path path))]
-        (assert-response-status response 200)
+        (assert-response-status response http-200-ok)
         (with-service-cleanup
           service-id
           (let [service-settings (service-settings waiter-url service-id)]
@@ -378,7 +379,7 @@
     (let [headers {:x-waiter-name (rand-name)
                    :x-waiter-cmd (kitchen-cmd "-p $PORT0")}
           {:keys [cookies service-id] :as response} (make-request-with-debug-info headers #(make-shell-request waiter-url %))]
-      (assert-response-status response 200)
+      (assert-response-status response http-200-ok)
       (with-service-cleanup
         service-id
         (assert-service-on-all-routers waiter-url service-id cookies)
@@ -412,7 +413,7 @@
           {:keys [service-id] :as response} (make-request-with-debug-info headers #(make-shell-request waiter-url %))]
       (with-service-cleanup
         service-id
-        (assert-response-status response 502)
+        (assert-response-status response http-502-bad-gateway)
         (is (str/includes? (-> response :body str) "Request to service backend failed"))
         (is (str/includes? (-> response :headers (get "server")) "waiter/"))
         (let [{:keys [service-description]} (service-settings waiter-url service-id)
@@ -428,7 +429,7 @@
                    :x-waiter-cmd "false"
                    :x-waiter-cmd-type "fakecommand"}
           {:keys [body] :as response} (make-light-request waiter-url headers)]
-      (assert-response-status response 400)
+      (assert-response-status response http-400-bad-request)
       (is (str/includes? body "Command type fakecommand is not supported")))))
 
 (deftest ^:parallel ^:integration-fast test-basic-parameters-violates-max-constraint
@@ -443,7 +444,7 @@
                        :x-waiter-version "1"
                        (keyword (str "x-waiter-" (name parameter))) (inc max-constraint)}
               {:keys [body] :as response} (make-light-request waiter-url headers)]
-          (assert-response-status response 400)
+          (assert-response-status response http-400-bad-request)
           (is (not (str/includes? body "clojure")) body)
           (is (every? #(str/includes? body %)
                       ["The following fields exceed their allowed limits"
@@ -459,7 +460,7 @@
                    :x-waiter-metadata-endDate "null"
                    :x-waiter-metadata-timestamp "20160713201333949"}
           {:keys [service-id] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
-      (assert-response-status response 200)
+      (assert-response-status response http-200-ok)
       (with-service-cleanup
         service-id
         (let [value (:metadata (response->service-description waiter-url response))]
@@ -475,7 +476,7 @@
                      :x-waiter-env-time2 "201607132013"}
             {:keys [body service-id] :as response}
             (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :path "/environment"))]
-        (assert-response-status response 200)
+        (assert-response-status response http-200-ok)
         (with-service-cleanup
           service-id
           (let [body-json (try-parse-json (str body))]
@@ -503,7 +504,7 @@
                      :x-waiter-env-fee_fie "fum"}
             {:keys [body] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
             env-error-message (get-in (try-parse-json body) ["waiter-error" "message"])]
-        (assert-response-status response 400)
+        (assert-response-status response http-400-bad-request)
         (is (every? #(str/includes? env-error-message %)
                     ["The following environment variable keys are invalid:" "1_INVALID" "123456" "BEGIN-DATE" "END-DATE"]))
         (is (not-any? #(str/includes? (str/lower-case env-error-message) %) ["foo" "fee_fie"]))))))
@@ -518,7 +519,7 @@
                    :x-waiter-cmd (kitchen-cmd "-p $PORT0")}
           {:keys [headers request-headers service-id] :as first-response}
           (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :method :get))
-          _ (assert-response-status first-response 200)
+          _ (assert-response-status first-response http-200-ok)
           canary-request-time-from-header (-> (get headers "x-waiter-request-date")
                                               (du/str-to-date du/formatter-rfc822))]
       (with-service-cleanup
@@ -632,14 +633,14 @@
 
         (testing "delete service successfully"
           (let [response (make-request waiter-url (str "/apps/" service-id) :method :delete)]
-            (assert-response-status response 200)))
+            (assert-response-status response http-200-ok)))
 
         (testing "deleted service is removed from all routers"
           (assert-service-not-on-any-routers waiter-url service-id cookies))
 
         (testing "delete service again (should get 404)"
           (let [response (make-request waiter-url (str "/apps/" service-id) :method :delete)]
-            (assert-response-status response 404)))
+            (assert-response-status response http-404-not-found)))
 
         (testing "service-deleted-from-all-routers"
           (let [router-id->service-id-deleted
@@ -666,7 +667,7 @@
         service-id
         (let [results (parallelize-requests 10 2
                                             #(let [response (make-kitchen-request waiter-url waiter-headers)]
-                                               (= 200 (:status response)))
+                                               (= http-200-ok (:status response)))
                                             :verbose true)]
           (is (every? true? results)))
         (log/info "Suspending service " service-id)
@@ -681,7 +682,7 @@
         (let [results (parallelize-requests 10 2
                                             #(let [_ (log/info "making kitchen request")
                                                    response (make-kitchen-request waiter-url waiter-headers)]
-                                               (= 200 (:status response)))
+                                               (= http-200-ok (:status response)))
                                             :verbose true)]
           (is (every? true? results)))))))
 
@@ -696,10 +697,10 @@
       (with-service-cleanup
         service-id
         (-> (make-request waiter-url override-endpoint :body (utils/clj->json overrides) :method :post)
-            (assert-response-status 200))
+            (assert-response-status http-200-ok))
         (let [{:keys [body] :as response}
               (make-request waiter-url override-endpoint :body (utils/clj->json overrides) :method :get)]
-          (assert-response-status response 200)
+          (assert-response-status response http-200-ok)
           (let [response-data (-> body str try-parse-json walk/keywordize-keys)]
             (is (= (retrieve-username) (:last-updated-by response-data)))
             (is (= overrides (:overrides response-data)))
@@ -709,7 +710,7 @@
               service-description-overrides (-> service-settings :service-description-overrides :overrides)]
           (is (= overrides service-description-overrides)))
         (-> (make-request waiter-url override-endpoint :method :delete)
-            (assert-response-status 200))
+            (assert-response-status http-200-ok))
         (let [service-settings (service-settings waiter-url service-id)
               service-description-overrides (-> service-settings :service-description-overrides :overrides)]
           (is (not service-description-overrides)))))))
@@ -719,7 +720,7 @@
     (log/info "Basic waiter-auth test")
     (let [{:keys [body cookies headers] :as response} (make-request waiter-url "/waiter-auth")
           set-cookie (get headers "set-cookie")]
-      (assert-response-status response 200)
+      (assert-response-status response http-200-ok)
       (is (contains? headers "x-waiter-auth-method") (str headers))
       (is (not= "cookie" (get headers "x-waiter-auth-method")) (str headers))
       (is (contains? headers "x-waiter-auth-principal") (str headers))
@@ -732,7 +733,7 @@
 
       (let [{:keys [body headers] :as response} (make-request waiter-url "/waiter-auth" :cookies cookies)
             set-cookie (get headers "set-cookie")]
-        (assert-response-status response 200)
+        (assert-response-status response http-200-ok)
         (is (contains? headers "x-waiter-auth-method") (str headers))
         (is (= "cookie" (get headers "x-waiter-auth-method")) (str headers))
         (is (contains? headers "x-waiter-auth-principal") (str headers))
@@ -814,7 +815,7 @@
                           :x-waiter-ports num-ports}
           {:keys [body service-id] :as response}
           (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url % :path "/environment"))]
-      (assert-response-status response 200)
+      (assert-response-status response http-200-ok)
       (with-service-cleanup
         service-id
         (let [body-json (try-parse-json (str body))]
@@ -853,35 +854,35 @@
           ; There's nothing special about /state, any CORS validated endpoint will do.
           (let [{:keys [headers] :as response} (make-request waiter-url "/state"
                                                              :headers {"origin" "example.com"})]
-            (assert-response-status response 200)
+            (assert-response-status response http-200-ok)
             (when (seq exposed-headers)
               (is (= (str/join ", " exposed-headers) (get headers "access-control-expose-headers"))
                   (str response)))))
         (testing "cors not allowed"
           (let [response (make-request waiter-url "/state" :headers {"origin" "badorigin.com"} :method :get)]
-            (assert-response-status response 403))
+            (assert-response-status response http-403-forbidden))
           (let [response (make-request waiter-url "/state" :headers {"origin" "badorigin.com"} :method :post)]
-            (assert-response-status response 403))
+            (assert-response-status response http-403-forbidden))
           (let [response (make-request waiter-url "/state" :headers {"origin" "badorigin.com"} :method :options)]
-            (assert-response-status response 403)))))))
+            (assert-response-status response http-403-forbidden)))))))
 
 (deftest ^:parallel ^:integration-fast test-error-handling
   (testing-using-waiter-url
     (testing "text/plain default"
       (let [{:keys [body headers] :as response} (make-request waiter-url "/404")]
-        (assert-response-status response 404)
+        (assert-response-status response http-404-not-found)
         (is (= "text/plain" (get headers "content-type")))
         (is (str/includes? body "Waiter Error 404"))
         (is (str/includes? body "================"))))
     (testing "text/plain explicit"
       (let [{:keys [body headers] :as response} (make-request waiter-url "/404" :headers {"accept" "text/plain"})]
-        (assert-response-status response 404)
+        (assert-response-status response http-404-not-found)
         (is (= "text/plain" (get headers "content-type")))
         (is (str/includes? body "Waiter Error 404"))
         (is (str/includes? body "================"))))
     (testing "text/html"
       (let [{:keys [body headers] :as response} (make-request waiter-url "/404" :headers {"accept" "text/html"})]
-        (assert-response-status response 404)
+        (assert-response-status response http-404-not-found)
         (is (= "text/html" (get headers "content-type")))
         (is (str/includes? body "Waiter Error 404"))
         (is (str/includes? body "<html>"))))
@@ -890,21 +891,21 @@
             {:strs [waiter-error]} (try (try-parse-json body)
                                         (catch Throwable _
                                           (is false (str "Could not parse body that is supposed to be JSON:\n" body))))]
-        (assert-response-status response 404)
+        (assert-response-status response http-404-not-found)
         (is (= "application/json" (get headers "content-type")))
         (is waiter-error (str "Could not find waiter-error element in body " body))
         (let [{:strs [status]} waiter-error]
-          (is (= 404 status)))))
+          (is (= http-404-not-found status)))))
     (testing "application/json implied by content-type"
       (let [{:keys [body headers] :as response} (make-request waiter-url "/404" :headers {"content-type" "application/json"})
             {:strs [waiter-error]} (try (try-parse-json body)
                                         (catch Throwable _
                                           (is false (str "Could not parse body that is supposed to be JSON:\n" body))))]
-        (assert-response-status response 404)
+        (assert-response-status response http-404-not-found)
         (is (= "application/json" (get headers "content-type")))
         (is waiter-error (str "Could not find waiter-error element in body " body))
         (let [{:strs [status]} waiter-error]
-          (is (= 404 status)))))
+          (is (= http-404-not-found status)))))
     (testing "support information included"
       (let [{:keys [body headers] :as response} (make-request waiter-url "/404" :headers {"accept" "application/json"})
             {:keys [messages support-info]} (waiter-settings waiter-url)
@@ -912,12 +913,12 @@
                                         (catch Throwable _
                                           (is false (str "Could not parse body that is supposed to be JSON:\n" body))))]
 
-        (assert-response-status response 404)
+        (assert-response-status response http-404-not-found)
         (is (= "application/json" (get headers "content-type")))
         (is (= (:not-found messages) (get waiter-error "message")))
         (is waiter-error (str "Could not find waiter-error element in body " body))
         (let [{:strs [status]} waiter-error]
-          (is (= 404 status))
+          (is (= http-404-not-found status))
           (is (= support-info (-> (get waiter-error "support-info")
                                   (walk/keywordize-keys)))))))))
 
@@ -925,17 +926,17 @@
   (testing-using-waiter-url
     (testing "default text/plain"
       (let [{:keys [body headers] :as response} (make-request waiter-url "/")]
-        (assert-response-status response 200)
+        (assert-response-status response http-200-ok)
         (is (= "text/plain" (get headers "content-type")))
         (is (str/includes? body "Welcome to Waiter"))))
     (testing "accept text/plain"
       (let [{:keys [body headers] :as response} (make-request waiter-url "/" :headers {"accept" "text/plain"})]
-        (assert-response-status response 200)
+        (assert-response-status response http-200-ok)
         (is (= "text/plain" (get headers "content-type")))
         (is (str/includes? body "Welcome to Waiter"))))
     (testing "accept text/html"
       (let [{:keys [body headers] :as response} (make-request waiter-url "/" :headers {"accept" "text/html"})]
-        (assert-response-status response 200)
+        (assert-response-status response http-200-ok)
         (is (= "text/html" (get headers "content-type")))
         (is (str/includes? body "Welcome to Waiter"))))
     (testing "accept application/json"
@@ -943,12 +944,12 @@
             json-data (try (try-parse-json body)
                            (catch Exception _
                              (is false ("Not json:\n" body))))]
-        (assert-response-status response 200)
+        (assert-response-status response http-200-ok)
         (is (= "application/json" (get headers "content-type")))
         (is (= "Welcome to Waiter" (get json-data "message")))))
     (testing "only GET"
       (let [{:keys [body] :as response} (make-request waiter-url "/" :method :post)]
-        (assert-response-status response 405)
+        (assert-response-status response http-405-method-not-allowed)
         (is (str/includes? body "Only GET supported"))))))
 
 (deftest ^:parallel ^:integration-fast test-interstitial-page
@@ -982,7 +983,7 @@
                                         :cookies cookies
                                         :headers request-headers
                                         :query-params {"a" "b"})]
-                      (assert-response-status response 200)
+                      (assert-response-status response http-200-ok)
                       (is (str/includes? body (str "<title>Waiter - Interstitial</title>")))
                       (is (str/includes? body (str "/some-endpoint?a=b&x-waiter-bypass-interstitial=")))))
                   (async/thread ;; GET request inside the interstitial period, using DNS token
@@ -995,7 +996,7 @@
                                         :headers request-headers
                                         :method :get)
                           end-time (t/now)]
-                      (assert-response-status response 303)
+                      (assert-response-status response http-303-see-other)
                       (is (= (str "/waiter-interstitial" endpoint) (get headers "location")))
                       (is (= "true" (get headers "x-waiter-interstitial")))
                       (is (< (t/in-millis (t/interval start-time end-time))
@@ -1010,7 +1011,7 @@
                                         :headers request-headers
                                         :method :post)
                           end-time (t/now)]
-                      (assert-response-status response 303)
+                      (assert-response-status response http-303-see-other)
                       (is (= (str "/waiter-interstitial" endpoint) (get headers "location")))
                       (is (= "true" (get headers "x-waiter-interstitial")))
                       (is (< (t/in-millis (t/interval start-time end-time))
@@ -1022,7 +1023,7 @@
                           (make-request router-url endpoint
                                         :cookies cookies
                                         :headers request-headers)]
-                      (assert-response-status response 200)
+                      (assert-response-status response http-200-ok)
                       (is (str/includes? (str body) "Hello World"))
                       (is (not (contains? headers "x-waiter-interstitial")))))
                   (async/thread ;; request inside the interstitial period but with bypass query param
@@ -1034,7 +1035,7 @@
                                         :headers request-headers
                                         :query-params {"x-waiter-bypass-interstitial"
                                                        (interstitial/request-time->interstitial-param-value (t/now))})]
-                      (assert-response-status response 200)
+                      (assert-response-status response http-200-ok)
                       (is (str/includes? (str body) "Hello World"))
                       (is (not (contains? headers "x-waiter-interstitial")))))
                   (async/thread ;; request outside the interstitial period
@@ -1045,7 +1046,7 @@
                           (make-request router-url endpoint
                                         :cookies cookies
                                         :headers request-headers)]
-                      (assert-response-status response 200)
+                      (assert-response-status response http-200-ok)
                       (is (str/includes? (str body) "Hello World"))
                       (is (not (contains? headers "x-waiter-interstitial")))))]
                  (map async/<!!)
@@ -1073,7 +1074,7 @@
                                                           {:x-waiter-name (str (rand-name) "-" scheduler-name)
                                                            :x-waiter-scheduler scheduler-name}
                                                           #(make-kitchen-request waiter-url % :path "/hello"))
-                      _ (assert-response-status response 200)
+                      _ (assert-response-status response http-200-ok)
                       {:keys [name scheduler] :as service-description} (service-id->service-description waiter-url service-id)]
                   (is (= scheduler-name scheduler) (str service-description))
                   (is (str/ends-with? name scheduler-name) (str service-description))
@@ -1096,10 +1097,10 @@
       (cond (using-k8s? waiter-url)
             (let [kitchen-image (System/getenv "INTEGRATION_TEST_KITCHEN_IMAGE")
                   _ (is (not (str/blank? kitchen-image)) "You must provide a kitchen image in the INTEGRATION_TEST_KITCHEN_IMAGE environment variable")]
-              (make-kitchen-request-fn kitchen-image 200))
+              (make-kitchen-request-fn kitchen-image http-200-ok))
             (or (using-cook? waiter-url)
                 (using-shell? waiter-url))
-            (make-kitchen-request-fn "dummy/image" 500)))))
+            (make-kitchen-request-fn "dummy/image" http-500-internal-server-error)))))
 
 (deftest ^:parallel ^:integration-fast test-self-service-cors
   (testing-using-waiter-url
@@ -1113,14 +1114,14 @@
                                                   :name token
                                                   :token token))]
             (try
-              (assert-response-status response 200)
+              (assert-response-status response http-200-ok)
               (let [response (make-request-with-debug-info
                                {:host test-host
                                 :origin test-origin
                                 :method :get
                                 :x-waiter-token token}
                                #(make-kitchen-request waiter-url % :path "/request-info"))]
-                (assert-response-status response 403))
+                (assert-response-status response http-403-forbidden))
               (finally
                 (delete-token-and-assert waiter-url token)))))
         (testing "Invalid cors config - missing origin regex"
@@ -1129,7 +1130,7 @@
                                                   :name token
                                                   :token token
                                                   :cors-rules [{}]))]
-            (assert-response-status response 400)))
+            (assert-response-status response http-400-bad-request)))
         (testing "Invalid cors config - empty methods"
           (let [token (rand-name)
                 response (post-token waiter-url (assoc (kitchen-params)
@@ -1137,7 +1138,7 @@
                                                   :token token
                                                   :cors-rules [{:origin-regex "blah"
                                                                 :methods []}]))]
-            (assert-response-status response 400)))
+            (assert-response-status response http-400-bad-request)))
         (testing "Invalid cors config - not a list"
           (let [token (rand-name)
                 response (post-token waiter-url (assoc (kitchen-params)
@@ -1145,7 +1146,7 @@
                                                   :token token
                                                   :cors-rules {:origin-regex "blah"
                                                                :methods []}))]
-            (assert-response-status response 400)))
+            (assert-response-status response http-400-bad-request)))
         (testing "CORS allowed"
           (let [token (rand-name)
                 response (post-token waiter-url (assoc (kitchen-params)
@@ -1153,14 +1154,14 @@
                                                   :token token
                                                   :cors-rules [{:origin-regex origin-regex}]))]
             (try
-              (assert-response-status response 200)
+              (assert-response-status response http-200-ok)
               (let [response (make-request-with-debug-info
                                {:host test-host
                                 :origin test-origin
                                 :method :get
                                 :x-waiter-token token}
                                #(make-kitchen-request waiter-url % :path "/request-info"))]
-                (assert-response-status response 200))
+                (assert-response-status response http-200-ok))
               (finally
                 (delete-token-and-assert waiter-url token)))))
         (testing "CORS not allowed path"
@@ -1171,14 +1172,14 @@
                                                   :cors-rules [{:origin-regex origin-regex
                                                                 :target-path-regex "/some-path"}]))]
             (try
-              (assert-response-status response 200)
+              (assert-response-status response http-200-ok)
               (let [response (make-request-with-debug-info
                                {:host test-host
                                 :origin test-origin
                                 :method :get
                                 :x-waiter-token token}
                                #(make-kitchen-request waiter-url % :path "/request-info"))]
-                (assert-response-status response 403))
+                (assert-response-status response http-403-forbidden))
               (finally
                 (delete-token-and-assert waiter-url token)))))
         (testing "CORS allowed path"
@@ -1189,14 +1190,14 @@
                                                   :cors-rules [{:origin-regex origin-regex
                                                                 :target-path-regex "/request-info"}]))]
             (try
-              (assert-response-status response 200)
+              (assert-response-status response http-200-ok)
               (let [response (make-request-with-debug-info
                                {:host test-host
                                 :origin test-origin
                                 :method :get
                                 :x-waiter-token token}
                                #(make-kitchen-request waiter-url % :path "/request-info"))]
-                (assert-response-status response 200))
+                (assert-response-status response http-200-ok))
               (finally
                 (delete-token-and-assert waiter-url token)))))
         (testing "CORS preflight allowed no methods"
@@ -1206,7 +1207,7 @@
                                                   :token token
                                                   :cors-rules [{:origin-regex origin-regex}]))]
             (try
-              (assert-response-status response 200)
+              (assert-response-status response http-200-ok)
               (let [{:keys [headers] :as response} (make-request-with-debug-info
                                                      {:access-control-request-method "PUT"
                                                       :access-control-request-headers "origin"
@@ -1214,7 +1215,7 @@
                                                       :origin test-origin
                                                       :x-waiter-token token}
                                                      #(make-kitchen-request waiter-url % :method :options :path ""))]
-                (assert-response-status response 200)
+                (assert-response-status response http-200-ok)
                 (is (= (str/join ", " schema/http-methods) (get headers "access-control-allow-methods"))))
               (finally
                 (delete-token-and-assert waiter-url token)))))
@@ -1226,7 +1227,7 @@
                                                   :token token
                                                   :cors-rules [{:origin-regex origin-regex :methods methods}]))]
             (try
-              (assert-response-status response 200)
+              (assert-response-status response http-200-ok)
               (let [{:keys [headers] :as response} (make-request-with-debug-info
                                                      {:access-control-request-method "PUT"
                                                       :access-control-request-headers "origin"
@@ -1234,7 +1235,7 @@
                                                       :origin test-origin
                                                       :x-waiter-token token}
                                                      #(make-kitchen-request waiter-url % :method :options :path ""))]
-                (assert-response-status response 200)
+                (assert-response-status response http-200-ok)
                 (is (= (str/join ", " methods) (get headers "access-control-allow-methods"))))
               (finally
                 (delete-token-and-assert waiter-url token)))))
@@ -1246,7 +1247,7 @@
                                                   :token token
                                                   :cors-rules [{:origin-regex origin-regex :methods methods}]))]
             (try
-              (assert-response-status response 200)
+              (assert-response-status response http-200-ok)
               (let [response (make-request-with-debug-info
                                {:access-control-request-method "OPTIONS"
                                 :access-control-request-headers "origin"
@@ -1254,7 +1255,7 @@
                                 :origin test-origin
                                 :x-waiter-token token}
                                #(make-kitchen-request waiter-url % :method :options :path ""))]
-                (assert-response-status response 403))
+                (assert-response-status response http-403-forbidden))
               (finally
                 (delete-token-and-assert waiter-url token)))))))))
 
@@ -1267,7 +1268,7 @@
                                          ":"
                                          p)
                 response (make-request waiter-url-for-port "/")]
-            (assert-response-status response 200)))))))
+            (assert-response-status response http-200-ok)))))))
 
 (deftest ^:parallel ^:integration-slow test-grace-period-disabled
   (testing-using-waiter-url
@@ -1281,7 +1282,7 @@
             #(make-kitchen-request waiter-url % :method :get :path "/"))]
       (with-service-cleanup
         service-id
-        (assert-response-status response 200)
+        (assert-response-status response http-200-ok)
         (let [{:keys [grace-period-secs] :as service-description}
               (service-id->service-description waiter-url service-id)]
           (is (zero? grace-period-secs) (str {:service-description service-description
@@ -1289,11 +1290,11 @@
         (assert-service-on-all-routers waiter-url service-id cookies)
         (let [request-headers (assoc request-headers
                                 :x-kitchen-default-status-timeout 600000
-                                :x-kitchen-default-status-value 400)
+                                :x-kitchen-default-status-value http-400-bad-request)
               response (make-kitchen-request waiter-url request-headers :path "/hello")]
-          (assert-response-status response 400))
+          (assert-response-status response http-400-bad-request))
         (assert-service-unhealthy-on-all-routers waiter-url service-id cookies)
         (let [request-headers (assoc request-headers
                                 :x-waiter-queue-timeout 5000)
               response (make-kitchen-request waiter-url request-headers :path "/hello")]
-          (assert-response-status response 503))))))
+          (assert-response-status response http-503-service-unavailable))))))

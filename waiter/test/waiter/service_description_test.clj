@@ -23,6 +23,7 @@
             [waiter.authorization :as authz]
             [waiter.kv :as kv]
             [waiter.service-description :refer :all]
+            [waiter.status-codes :refer :all]
             [waiter.util.cache-utils :as cu])
   (:import (clojure.lang ExceptionInfo)
            (org.joda.time DateTime)))
@@ -2233,7 +2234,7 @@
           (catch ExceptionInfo ex
             (is (= {:friendly-error-message "cpus must be a positive number."
                     :issue {}
-                    :status 400
+                    :status http-400-bad-request
                     :type :service-description-error}
                    (select-keys (ex-data ex) [:friendly-error-message :issue :status :type])))))))
 
@@ -2245,7 +2246,7 @@
           (catch ExceptionInfo ex
             (is (= {:friendly-error-message (str "The following fields exceed their allowed limits: "
                                                  "cpus is 200 but the max allowed is 100")
-                    :status 400
+                    :status http-400-bad-request
                     :type :service-description-error}
                    (select-keys (ex-data ex) [:friendly-error-message :status :type])))))))
 
@@ -2258,7 +2259,7 @@
             (is (= {:friendly-error-message (str "The following fields exceed their allowed limits: "
                                                  "cpus is 200 but the max allowed is 100, "
                                                  "mem is 40960 but the max allowed is 32768")
-                    :status 400
+                    :status http-400-bad-request
                     :type :service-description-error}
                    (select-keys (ex-data ex) [:friendly-error-message :status :type])))))))
 

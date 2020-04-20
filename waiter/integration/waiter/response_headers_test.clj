@@ -16,6 +16,7 @@
 (ns waiter.response-headers-test
   (:require [clojure.string :as str]
             [clojure.test :refer :all]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]))
 
 (defn- make-debug-kitchen-request
@@ -31,13 +32,13 @@
         service-id
         (testing "Basic response headers test using endpoint"
           (let [{:keys [headers] :as response} (make-kitchen-request waiter-url extra-headers :debug false)]
-            (assert-response-status response 200)
+            (assert-response-status response http-200-ok)
             (is (every? #(not (str/blank? (get headers %))) required-response-headers) (str "Response headers: " headers))
             (is (every? #(str/blank? (get headers %)) (retrieve-debug-response-headers waiter-url)) (str headers))))
 
         (testing "Router-Id in response headers test using endpoint"
           (let [{:keys [headers] :as response} (make-kitchen-request waiter-url extra-headers :debug true)]
-            (assert-response-status response 200)
+            (assert-response-status response http-200-ok)
             (is (every? #(not (str/blank? (get headers %)))
                         (concat required-response-headers (retrieve-debug-response-headers waiter-url)))
                 (str headers))))
@@ -46,7 +47,7 @@
           (let [test-cid "1234567890"
                 extra-headers (assoc extra-headers :x-cid test-cid)
                 {:keys [headers] :as response} (make-kitchen-request waiter-url extra-headers :debug false)]
-            (assert-response-status response 200)
+            (assert-response-status response http-200-ok)
             (is (= test-cid (get headers "x-cid")) (str headers))
             (is (every? #(not (str/blank? (get headers %))) required-response-headers) (str headers))
             (is (every? #(str/blank? (get headers %)) (retrieve-debug-response-headers waiter-url)) (str headers))))))))

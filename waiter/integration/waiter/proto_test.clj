@@ -16,6 +16,7 @@
 (ns waiter.proto-test
   (:require [clojure.data.json :as json]
             [clojure.test :refer :all]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
             [waiter.util.http-utils :as hu]))
 
@@ -27,7 +28,7 @@
          http-version# (hu/backend-protocol->http-version protocol#)
          kitchen-response-size# ~kitchen-response-size
          response# ~response]
-     (assert-response-status response# 200)
+     (assert-response-status response# http-200-ok)
      (is (= {:client-protocol http-version#
              :internal-protocol http-version#
              :response-size kitchen-response-size#}
@@ -56,7 +57,7 @@
         (make-request-with-debug-info request-headers #(make-shell-request waiter-url % :path "/request-info"))]
     (with-service-cleanup
       service-id
-      (assert-response-status response 200)
+      (assert-response-status response http-200-ok)
       (let [{:strs [x-nginx-client-proto x-nginx-client-scheme x-waiter-backend-proto]} headers]
         (is (= backend-proto-version x-nginx-client-proto))
         (is (= backend-scheme x-nginx-client-scheme))
@@ -146,7 +147,7 @@
                                                         :client http1-client
                                                         :query-params {"include" "request-info"})
               body-json (some-> body str json/read-str)]
-          (assert-response-status response 200)
+          (assert-response-status response http-200-ok)
           (is (= "HTTP/1.1" (retrieve-client-protocol body-json)) (str body-json))
           (is (= "HTTP/1.1" (retrieve-internal-protocol body-json)) (str body-json))
           (is (= "http" (retrieve-scheme body-json)) (str body-json))))
@@ -157,7 +158,7 @@
                                                           :client http2-client
                                                           :query-params {"include" "request-info"})
                 body-json (some-> body str json/read-str)]
-            (assert-response-status response 200)
+            (assert-response-status response http-200-ok)
             (is (= "HTTP/2.0" (retrieve-client-protocol body-json)) (str body-json))
             (is (= "HTTP/2.0" (retrieve-internal-protocol body-json)) (str body-json))
             (is (= "http" (retrieve-scheme body-json)) (str body-json)))))
@@ -169,7 +170,7 @@
                                                           :query-params {"include" "request-info"}
                                                           :scheme "https")
                 body-json (some-> body str json/read-str)]
-            (assert-response-status response 200)
+            (assert-response-status response http-200-ok)
             (is (= "HTTP/1.1" (retrieve-client-protocol body-json)) (str body-json))
             (is (= "HTTP/1.1" (retrieve-internal-protocol body-json)) (str body-json))
             (is (= "https" (retrieve-scheme body-json)) (str body-json))))
@@ -181,7 +182,7 @@
                                                             :query-params {"include" "request-info"}
                                                             :scheme "https")
                   body-json (some-> body str json/read-str)]
-              (assert-response-status response 200)
+              (assert-response-status response http-200-ok)
               (is (= "HTTP/2.0" (retrieve-client-protocol body-json)) (str body-json))
               (is (= "HTTP/2.0" (retrieve-internal-protocol body-json)) (str body-json))
               (is (= "https" (retrieve-scheme body-json)) (str body-json)))))))))

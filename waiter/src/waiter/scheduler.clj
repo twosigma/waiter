@@ -31,6 +31,7 @@
             [waiter.metrics :as metrics]
             [waiter.request-log :as rlog]
             [waiter.statsd :as statsd]
+            [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
@@ -166,7 +167,10 @@
    a transient exception.
    Will NOT catch unknown exceptions."
   [msg & body]
-  `(retry-on-transient-server-exceptions-fn ~msg #{500 501 502 503 504} (fn [] ~@body)))
+  `(retry-on-transient-server-exceptions-fn
+     ~msg
+     #{http-500-internal-server-error http-501-not-implemented http-502-bad-gateway http-503-service-unavailable http-504-gateway-timeout}
+     (fn [] ~@body)))
 
 (defn suppress-transient-server-exceptions-fn
   "Helper function for `suppress-transient-server-exceptions`.
@@ -177,7 +181,9 @@
   [msg f]
   (ss/try+
     (f)
-    (catch #(contains? #{500 501 502 503 504} (:status %)) e
+    (catch #(contains?
+              #{http-500-internal-server-error http-501-not-implemented http-502-bad-gateway http-503-service-unavailable http-504-gateway-timeout}
+              (:status %)) e
       (log/warn (str "Scheduler unavailable (Error code: " (:status e) ").") msg)
       (log/debug (:throwable &throw-context) "Scheduler unavailable." msg))))
 
@@ -230,9 +236,9 @@
         TimeoutException (log/debug error "timeout while connecting to backend for health check" error-map)
         EOFException (log/info "Got an EOF when connecting to backend for health check" error-map)
         Throwable (log/error error "unexpected error while connecting to backend for health check" error-map)))
-    (when-not (or (<= 200 status 299)
-                  (= 404 status)
-                  (= 504 status))
+    (when-not (or (hu/status-2XX? status)
+                  (= http-404-not-found status)
+                  (= http-504-gateway-timeout status))
       (log/info "unexpected status from health check" {:status status
                                                        :instance service-instance
                                                        :service instance-health-check-url}))))
@@ -266,7 +272,7 @@
       (if (and port (pos? port) host (not= UNKNOWN-IP host))
         (let [protocol (service-description->health-check-protocol service-description)
               instance-health-check-url (build-health-check-url service-instance protocol health-check-port-index health-check-url)
-              request-timeout-ms (max (+ (.getConnectTimeout http-client) (.getIdleTimeout http-client)) 200)
+              request-timeout-ms (max (+ (.getConnectTimeout http-client) (.getIdleTimeout http-client)) http-200-ok )
               request-abort-chan (async/chan 1)
               request-time (t/now)
               request-time-ns (System/nanoTime)
@@ -332,7 +338,7 @@
                             :timeout request-timeout-ms})
                  {:error-flag :operation-timeout}))]
           (async/close! request-abort-chan)
-          {:healthy? (and (nil? error-flag) (<= 200 status 299))
+          {:healthy? (and (nil? error-flag) (hu/status-2XX? status))
            :status status
            :error error-flag})
         {:error :unknown-authority

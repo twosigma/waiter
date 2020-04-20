@@ -21,6 +21,7 @@
             [waiter.async-request :refer :all]
             [waiter.auth.authentication :as auth]
             [waiter.service :as service]
+            [waiter.status-codes :refer :all]
             [waiter.test-helpers :refer :all])
   (:import java.net.URLDecoder))
 
@@ -49,7 +50,7 @@
             make-request-counter (atom 0)
             make-http-request (fn []
                                 (swap! make-request-counter inc)
-                                (async/go {:body (async/chan 1), :status 200}))
+                                (async/go {:body (async/chan 1), :status http-200-ok}))
             request-still-active? (constantly true)
             exit-chan (async/chan 1)
             response-chan (monitor-async-request make-http-request complete-async-request request-still-active? status-endpoint
@@ -65,7 +66,7 @@
             make-request-counter (atom 0)
             make-http-request (fn []
                                 (swap! make-request-counter inc)
-                                (async/go {:body (async/chan 1), :status 200}))
+                                (async/go {:body (async/chan 1), :status http-200-ok}))
             request-still-active? (constantly true)
             exit-chan (async/chan 1)
             response-chan (monitor-async-request make-http-request complete-async-request request-still-active? status-endpoint
@@ -84,7 +85,7 @@
             make-request-counter (atom 0)
             make-http-request (fn []
                                 (swap! make-request-counter inc)
-                                (async/go {:body (async/chan 1), :status 200}))
+                                (async/go {:body (async/chan 1), :status http-200-ok}))
             calls-to-in-active 6
             request-still-active? (fn [] (< @make-request-counter calls-to-in-active))
             exit-chan (async/chan 1)
@@ -98,123 +99,123 @@
     (testing "status-check-eventually-201-created"
       (let [release-status-atom (atom [])
             complete-async-request (fn [status] (swap! release-status-atom conj status))
-            calls-to-non-200 6
+            calls-to-non-http-200-ok 6
             make-request-counter (atom 0)
             make-http-request (fn []
                                 (swap! make-request-counter inc)
                                 (async/go
-                                  (if (= calls-to-non-200 @make-request-counter)
-                                    {:body (async/chan 1), :status 201, :headers {"location" "/result"}}
-                                    {:body (async/chan 1), :status 200})))
+                                  (if (= calls-to-non-http-200-ok @make-request-counter)
+                                    {:body (async/chan 1), :status http-201-created, :headers {"location" "/result"}}
+                                    {:body (async/chan 1), :status http-200-ok})))
             request-still-active? (constantly true)
             exit-chan (async/chan 1)
             response-chan (monitor-async-request make-http-request complete-async-request request-still-active? status-endpoint
                                                  check-interval-ms request-timeout-ms correlation-id exit-chan)
             monitor-result (async/<!! response-chan)]
-        (is (= calls-to-non-200 @make-request-counter))
+        (is (= calls-to-non-http-200-ok @make-request-counter))
         (is (= [:success] @release-status-atom))
         (is (= :unknown-status-code monitor-result))))
 
     (testing "status-check-eventually-303-see-other-repeated"
       (let [release-status-atom (atom [])
             complete-async-request (fn [status] (swap! release-status-atom conj status))
-            calls-to-non-200 6
+            calls-to-non-http-200-ok 6
             make-request-counter (atom 0)
             make-http-request (fn []
                                 (swap! make-request-counter inc)
                                 (async/go
-                                  (if (> calls-to-non-200 @make-request-counter)
-                                    {:body (async/chan 1), :status 303, :headers {"location" "/result"}}
-                                    {:body (async/chan 1), :status 200})))
+                                  (if (> calls-to-non-http-200-ok @make-request-counter)
+                                    {:body (async/chan 1), :status http-303-see-other, :headers {"location" "/result"}}
+                                    {:body (async/chan 1), :status http-200-ok})))
             request-still-active? (constantly true)
             exit-chan (async/chan 1)
             response-chan (monitor-async-request make-http-request complete-async-request request-still-active? status-endpoint
                                                  check-interval-ms request-timeout-ms correlation-id exit-chan)
             monitor-result (async/<!! response-chan)]
-        (is (> @make-request-counter calls-to-non-200))
+        (is (> @make-request-counter calls-to-non-http-200-ok))
         (is (= [:success] @release-status-atom))
         (is (= :monitor-timed-out monitor-result))))
 
     (testing "status-check-eventually-303-relative-url-in-location"
       (let [release-status-atom (atom [])
             complete-async-request (fn [status] (swap! release-status-atom conj status))
-            calls-to-non-200 6
+            calls-to-non-http-200-ok 6
             make-request-counter (atom 0)
             make-http-request (fn []
                                 (swap! make-request-counter inc)
                                 (async/go
-                                  (if (= calls-to-non-200 @make-request-counter)
-                                    {:body (async/chan 1), :status 303, :headers {"location" "../result"}}
-                                    {:body (async/chan 1), :status 200})))
+                                  (if (= calls-to-non-http-200-ok @make-request-counter)
+                                    {:body (async/chan 1), :status http-303-see-other, :headers {"location" "../result"}}
+                                    {:body (async/chan 1), :status http-200-ok})))
             request-still-active? (constantly true)
             exit-chan (async/chan 1)
             response-chan (monitor-async-request make-http-request complete-async-request request-still-active? status-endpoint
                                                  check-interval-ms request-timeout-ms correlation-id exit-chan)
             monitor-result (async/<!! response-chan)]
-        (is (> @make-request-counter calls-to-non-200))
+        (is (> @make-request-counter calls-to-non-http-200-ok))
         (is (= [:success] @release-status-atom))
         (is (= :monitor-timed-out monitor-result))))
 
     (testing "status-check-eventually-303-absolute-url-in-location"
       (let [release-status-atom (atom [])
             complete-async-request (fn [status] (swap! release-status-atom conj status))
-            calls-to-non-200 6
+            calls-to-non-http-200-ok 6
             make-request-counter (atom 0)
             make-http-request (fn []
                                 (swap! make-request-counter inc)
                                 (async/go
-                                  (if (= calls-to-non-200 @make-request-counter)
-                                    {:body (async/chan 1), :status 303, :headers {"location" "http://www.example.com/result"}}
-                                    {:body (async/chan 1), :status 200})))
+                                  (if (= calls-to-non-http-200-ok @make-request-counter)
+                                    {:body (async/chan 1), :status http-303-see-other, :headers {"location" "http://www.example.com/result"}}
+                                    {:body (async/chan 1), :status http-200-ok})))
             request-still-active? (constantly true)
             exit-chan (async/chan 1)
             response-chan (monitor-async-request make-http-request complete-async-request request-still-active? status-endpoint
                                                  check-interval-ms request-timeout-ms correlation-id exit-chan)
             monitor-result (async/<!! response-chan)]
-        (is (= @make-request-counter calls-to-non-200))
+        (is (= @make-request-counter calls-to-non-http-200-ok))
         (is (= [:success] @release-status-atom))
         (is (= :status-see-other monitor-result))))
 
     (testing "status-check-eventually-303-see-other-evetually-410-gone"
       (let [release-status-atom (atom [])
             complete-async-request (fn [status] (swap! release-status-atom conj status))
-            calls-to-non-200 6
-            calls-to-non-200-and-non-303 10
+            calls-to-non-http-200-ok 6
+            calls-to-non-200-ok-and-non-303-see-other 10
             make-request-counter (atom 0)
             make-http-request (fn []
                                 (swap! make-request-counter inc)
                                 (async/go
-                                  (if (> calls-to-non-200 @make-request-counter)
-                                    {:body (async/chan 1), :status 200}
-                                    (if (> calls-to-non-200-and-non-303 @make-request-counter)
-                                      {:body (async/chan 1), :status 303, :headers {"location" "/result"}}
-                                      {:body (async/chan 1), :status 410}))))
+                                  (if (> calls-to-non-http-200-ok @make-request-counter)
+                                    {:body (async/chan 1), :status http-200-ok}
+                                    (if (> calls-to-non-200-ok-and-non-303-see-other @make-request-counter)
+                                      {:body (async/chan 1), :status http-303-see-other, :headers {"location" "/result"}}
+                                      {:body (async/chan 1), :status http-410-gone}))))
             request-still-active? (constantly true)
             exit-chan (async/chan 1)
             response-chan (monitor-async-request make-http-request complete-async-request request-still-active? status-endpoint
                                                  check-interval-ms request-timeout-ms correlation-id exit-chan)
             monitor-result (async/<!! response-chan)]
-        (is (= @make-request-counter calls-to-non-200-and-non-303))
+        (is (= @make-request-counter calls-to-non-200-ok-and-non-303-see-other))
         (is (= [:success] @release-status-atom))
         (is (= :status-gone monitor-result))))
 
     (testing "status-check-eventually-410-gone"
       (let [release-status-atom (atom [])
             complete-async-request (fn [status] (swap! release-status-atom conj status))
-            calls-to-non-200 6
+            calls-to-non-http-200-ok 6
             make-request-counter (atom 0)
             make-http-request (fn []
                                 (swap! make-request-counter inc)
                                 (async/go
-                                  (if (= calls-to-non-200 @make-request-counter)
-                                    {:body (async/chan 1), :status 410}
-                                    {:body (async/chan 1), :status 200})))
+                                  (if (= calls-to-non-http-200-ok @make-request-counter)
+                                    {:body (async/chan 1), :status http-410-gone}
+                                    {:body (async/chan 1), :status http-200-ok})))
             request-still-active? (constantly true)
             exit-chan (async/chan 1)
             response-chan (monitor-async-request make-http-request complete-async-request request-still-active? status-endpoint
                                                  check-interval-ms request-timeout-ms correlation-id exit-chan)
             monitor-result (async/<!! response-chan)]
-        (is (= calls-to-non-200 @make-request-counter))
+        (is (= calls-to-non-http-200-ok @make-request-counter))
         (is (= [:success] @release-status-atom))
         (is (= :status-gone monitor-result))))))
 
