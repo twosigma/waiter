@@ -592,8 +592,8 @@
             (is (= last-request-time (get body-json "last-request-time")))
             (is (= 2 (get body-json "num-active-instances")))
             (is (zero? (get body-json "num-routers")))
-            (is (= {"name" "test-service-1-name", "run-as-user" "waiter-user"} (get body-json "service-description")))
-            (is (= {"cpus" 2, "mem" 4096} (get body-json "usage")))))))
+            (is (= {"cpus" 2, "mem" 4096} (get body-json "resource-usage")))
+            (is (= {"name" "test-service-1-name", "run-as-user" "waiter-user"} (get body-json "service-description")))))))
 
     (testing "service-handler:valid-response-including-active-killed-and-failed"
       (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
@@ -621,8 +621,8 @@
             (is (= last-request-time (get body-json "last-request-time")))
             (is (= 1 (get body-json "num-active-instances")))
             (is (zero? (get body-json "num-routers")))
-            (is (= {"name" "test-service-1-name", "run-as-user" "waiter-user"} (get body-json "service-description")))
-            (is (= {"cpus" 1, "mem" 2048} (get body-json "usage")))))))
+            (is (= {"cpus" 1, "mem" 2048} (get body-json "resource-usage")))
+            (is (= {"name" "test-service-1-name", "run-as-user" "waiter-user"} (get body-json "service-description")))))))
 
     (.shutdown scheduler-interactions-thread-pool)))
 

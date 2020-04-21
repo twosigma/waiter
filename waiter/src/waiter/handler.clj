@@ -287,7 +287,7 @@
       (or (empty? param-predicates)
           (every? #(%1 service-description) param-predicates)))))
 
-(defn compute-service-usage
+(defn compute-resource-usage
   "Computes the resources used to a service."
   [{:strs [cpus mem]} instance-count]
   {:cpus (* instance-count cpus)
@@ -338,20 +338,20 @@
                             (let [scaling-state (retrieve-scaling-state query-autoscaler-state-fn service-id)
                                   core-service-description (service-id->service-description-fn service-id :effective? false)
                                   source-tokens-entries (service-id->source-tokens-entries-fn service-id)
-                                  instance-counts (retrieve-instance-counts service-id)
+                                  instance-counts-map (retrieve-instance-counts service-id)
+                                  instance-count (reduce + (vals instance-counts-map))
                                   effective-service-description (service-id->service-description-fn service-id :effective? true)
-                                  usage-map (compute-service-usage effective-service-description (reduce + (vals instance-counts)))]
+                                  resource-usage (compute-resource-usage effective-service-description instance-count)]
                               (cond->
-                                {:instance-counts instance-counts
+                                {:instance-counts instance-counts-map
                                  :last-request-time (get-in service-id->metrics [service-id "last-request-time"])
+                                 :resource-usage resource-usage
                                  :service-id service-id
                                  :service-description core-service-description
                                  :status (service/retrieve-service-status-label service-id global-state)
-                                 :url (prepend-waiter-url (str "/apps/" service-id))
-                                 :usage usage-map}
+                                 :url (prepend-waiter-url (str "/apps/" service-id))}
                                 include-effective-parameters?
-                                (assoc :effective-parameters
-                                       (service-id->service-description-fn service-id :effective? true))
+                                (assoc :effective-parameters effective-service-description)
                                 include-references?
                                 (assoc :references (seq (service-id->references-fn service-id)))
                                 scaling-state
@@ -486,11 +486,11 @@
         scaling-state (retrieve-scaling-state query-autoscaler-state-fn service-id)
         effective-service-description (service-id->service-description-fn service-id :effective? true)
         num-active-instances (count (:active-instances service-instance-maps))
-        usage-map (compute-service-usage effective-service-description num-active-instances)
+        resource-usage (compute-resource-usage effective-service-description num-active-instances)
         result-map (cond-> {:num-routers (count router->metrics)
+                            :resource-usage resource-usage
                             :router-id router-id
-                            :status (service/retrieve-service-status-label service-id global-state)
-                            :usage usage-map}
+                            :status (service/retrieve-service-status-label service-id global-state)}
                      (and (not-empty core-service-description) include-effective-parameters?)
                      (assoc :effective-parameters effective-service-description)
                      (not-empty service-instance-maps)
