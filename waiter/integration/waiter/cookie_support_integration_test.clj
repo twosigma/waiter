@@ -16,6 +16,7 @@
 (ns waiter.cookie-support-integration-test
   (:require [clojure.data.json :as json]
             [clojure.test :refer :all]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]))
 
 (deftest ^:parallel ^:integration-fast test-cookie-support
@@ -54,10 +55,10 @@
       (testing "no cookies sent to backend (x-waiter-auth removed)"
         (let [{:keys [cookies service-id] :as response}
               (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
-          (assert-response-status response 200)
+          (assert-response-status response http-200-ok)
           (with-service-cleanup
             service-id
             (let [{:keys [body] :as response} (make-kitchen-request waiter-url headers :cookies cookies :path "/request-info")
-                  _ (assert-response-status response 200)
+                  _ (assert-response-status response http-200-ok)
                   {:strs [headers]} (json/read-str (str body))]
               (is (empty? (get headers "cookie"))))))))))

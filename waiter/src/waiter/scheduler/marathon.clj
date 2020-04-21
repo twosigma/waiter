@@ -33,6 +33,7 @@
             [waiter.scheduler :as scheduler]
             [waiter.schema :as schema]
             [waiter.service-description :as sd]
+            [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
@@ -141,19 +142,19 @@
               kill-success? (and result (map? result) (contains? result :deploymentId))]
           (log/info "kill instance" instance-id "result" result)
           (let [message (if kill-success? "Successfully killed instance" "Unable to kill instance")
-                status (if kill-success? 200 500)]
+                status (if kill-success? http-200-ok http-500-internal-server-error)]
             (make-kill-response kill-success? message status)))
-        (catch [:status 409] e
+        (catch [:status http-409-conflict] e
           (log/info "kill instance" instance-id "failed as it is locked by one or more deployments"
                     {:deployment-info (extract-deployment-info marathon-api e)
                      :kill-params kill-params})
-          (make-kill-response false "Locked by one or more deployments" 409))
+          (make-kill-response false "Locked by one or more deployments" http-409-conflict))
         (catch map? {:keys [body status]}
           (log/info "kill instance" instance-id "returned" status body)
-          (make-kill-response false (str body) (or status 500)))
+          (make-kill-response false (str body) (or status http-500-internal-server-error)))
         (catch Throwable e
           (log/info e "exception thrown when calling kill-instance")
-          (make-kill-response false (str (.getMessage e)) (:status e 500)))))))
+          (make-kill-response false (str (.getMessage e)) (:status e http-500-internal-server-error)))))))
 
 (defn response-data->service-instances
   "Extracts the list of instances for a given app from the marathon response."
@@ -298,7 +299,7 @@
     (scheduler/retry-on-transient-server-exceptions
       (str "create-service-if-new[" service-id "]")
       (marathon/create-app marathon-api marathon-descriptor))
-    (catch [:status 409] e
+    (catch [:status http-409-conflict] e
       (conflict-handler {:deployment-info (extract-deployment-info marathon-api e)
                          :descriptor marathon-descriptor
                          :error e}))))
@@ -306,7 +307,7 @@
 (defn- exception->stop-application-deployment
   "Retrieves the first StopApplication deployment in the exception data."
   [error-data]
-  (when (= 409 (some-> error-data :error :status))
+  (when (= http-409-conflict (some-> error-data :error :status))
     (some->> error-data
       :deployment-info
       (some (fn [{:keys [currentActions] :as deployment}]
@@ -382,7 +383,7 @@
       (scheduler/suppress-transient-server-exceptions
         (str "service-exists?[" service-id "]")
         (marathon/get-app marathon-api service-id))
-      (catch [:status 404] _
+      (catch [:status http-404-not-found] _
         (log/warn "service-exists?: service" service-id "does not exist!"))))
 
   (create-service-if-new [this {:keys [service-id] :as descriptor}]
@@ -406,15 +407,15 @@
            :message (str "Marathon deleted with deploymentId " (:deploymentId delete-result))}
           {:result :error
            :message "Marathon did not provide deploymentId for delete request"}))
-      (catch [:status 404] {}
+      (catch [:status http-404-not-found] {}
         (log/warn "[delete-service] Service does not exist:" service-id)
         {:result :no-such-service-exists
          :message "Marathon reports service does not exist"})
-      (catch [:status 409] e
+      (catch [:status http-409-conflict] e
         (log/warn "Marathon deployment conflict while deleting"
                   {:deployment-info (extract-deployment-info marathon-api e)
                    :service-id service-id}))
-      (catch [:status 503] {}
+      (catch [:status http-503-service-unavailable] {}
         (log/warn "[delete-service] Marathon unavailable (Error 503).")
         (log/debug (:throwable &throw-context) "[delete-service] Marathon unavailable"))))
 
@@ -438,11 +439,11 @@
               new-descriptor (-> (select-keys old-descriptor [:cmd :cpus :id :mem])
                                  (assoc :instances scale-to-instances'))]
           (marathon/update-app marathon-api service-id new-descriptor)))
-      (catch [:status 409] e
+      (catch [:status http-409-conflict] e
         (log/warn "Marathon deployment conflict while scaling"
                   {:deployment-info (extract-deployment-info marathon-api e)
                    :service-id service-id}))
-      (catch [:status 503] {}
+      (catch [:status http-503-service-unavailable] {}
         (log/warn "[scale-service] Marathon unavailable (Error 503).")
         (log/debug (:throwable &throw-context) "[autoscaler] Marathon unavailable"))))
 

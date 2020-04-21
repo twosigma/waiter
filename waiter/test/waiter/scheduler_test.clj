@@ -30,6 +30,7 @@
             [waiter.headers :as headers]
             [waiter.metrics :as metrics]
             [waiter.scheduler :refer :all]
+            [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
             [waiter.util.client-tools :as ct]
             [waiter.util.date-utils :as du])
@@ -61,7 +62,7 @@
                         "service-id"
                         start-time
                         true
-                        200
+                        http-200-ok
                         #{}
                         nil
                         "www.scheduler-test.example.com"
@@ -74,7 +75,7 @@
       (is (= "service-id" (:service-id test-instance)))
       (is (= start-time (:started-at test-instance)))
       (is (true? (:healthy? test-instance)))
-      (is (= 200 (:health-check-status test-instance)))
+      (is (= http-200-ok (:health-check-status test-instance)))
       (is (= "www.scheduler-test.example.com" (:host test-instance)))
       (is (= 1234 (:port test-instance)))
       (is (= "log-dir" (:log-directory test-instance)))
@@ -287,9 +288,9 @@
                                       (= "https" (or health-check-proto backend-proto))
                                       (= 2 health-check-port-index)
                                       (= "/s1" health-check-url))
-                                 {:healthy? true, :status 200}
+                                 {:healthy? true, :status http-200-ok}
                                  :else
-                                 {:healthy? false, :status 400})))
+                                 {:healthy? false, :status http-400-bad-request})))
         start-time-ms (.getMillis (clock))
         failed-check-threshold 5
         scheduler-name "test-scheduler"
@@ -299,7 +300,7 @@
         instance3-unhealthy (assoc instance3
                               :flags #{:has-connected :has-responded}
                               :healthy? false
-                              :health-check-status 400)]
+                              :health-check-status http-400-bad-request)]
     (let [response-chan (async/promise-chan)]
       (async/>!! query-chan {:response-chan response-chan :service-id "s0"})
       (is (= {:last-update-time nil} (async/<!! response-chan)))
@@ -357,7 +358,7 @@
                      (async/go
                        (let [healthy? (= (:id instance) available-instance)]
                          {:healthy? healthy?
-                          :status (if healthy? 200 400)})))
+                          :status (if healthy? http-200-ok http-400-bad-request)})))
         scheduler-name "test-scheduler"
         service->service-description-fn (constantly {:health-check-url "/health"})]
     (testing "Does not call available? for healthy apps"
@@ -395,7 +396,7 @@
                      (async/go
                        (let [healthy? (= id available-instance)]
                          {:healthy? healthy?
-                          :status (if healthy? 200 400)})))
+                          :status (if healthy? http-200-ok http-400-bad-request)})))
         scheduler-name "test-scheduler"
         service->service-description-fn (constantly {:health-check-url "/healthy"})
         service->service-instances {service {:active-instances [{:id available-instance}
@@ -426,7 +427,7 @@
           function (fn []
                      (swap! call-counter inc)
                      (when (< @call-counter 3)
-                       (ss/throw+ {:status 501}))
+                       (ss/throw+ {:status http-501-not-implemented}))
                      call-result)]
       (is (= call-result (retry-on-transient-server-exceptions "test" (function))))
       (is (= 3 @call-counter))))
@@ -497,7 +498,7 @@
       (is (= 5 @call-counter))))
 
   (testing (str "failure-on-non-transient-exception-throw+")
-    (doseq [status [300 302 400 404]]
+    (doseq [status [http-300-multiple-choices http-302-moved-temporarily http-400-bad-request http-404-not-found]]
       (let [call-counter (atom 0)
             function (fn [] (swap! call-counter inc) (ss/throw+ {:status status}))]
         (is (thrown-with-msg?
@@ -509,7 +510,7 @@
         (is (= 1 @call-counter)))))
 
   (testing (str "failure-repeating-transient-exception")
-    (doseq [status [500 501 502 503 504]]
+    (doseq [status [http-500-internal-server-error http-501-not-implemented http-502-bad-gateway http-503-service-unavailable http-504-gateway-timeout]]
       (let [call-counter (atom 0)
             function (fn [] (swap! call-counter inc) (ss/throw+ {:status status}))]
         (is (thrown-with-msg?
@@ -578,10 +579,10 @@
                                    (assert-health-check-headers
                                      health-check-authentication http-client service-password waiter-principal headers)
                                    (let [response-chan (async/promise-chan)]
-                                     (async/>!! response-chan {:status 200})
+                                     (async/>!! response-chan {:status http-200-ok})
                                      response-chan))]
             (let [resp (async/<!! (available-fn? service-instance service-description))]
-              (is (= {:error nil, :healthy? true, :status 200} resp))))
+              (is (= {:error nil, :healthy? true, :status http-200-ok} resp))))
 
           (with-redefs [http/get (fn [in-http-client in-health-check-url {:keys [headers]}]
                                    (is (= http-client in-http-client))

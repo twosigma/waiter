@@ -24,6 +24,7 @@
             [waiter.mocks :refer :all]
             [waiter.scaling :refer :all]
             [waiter.scheduler :as scheduler]
+            [waiter.status-codes :refer :all]
             [waiter.test-helpers :refer :all])
   (:import (java.util.concurrent CountDownLatch Executors)))
 
@@ -131,7 +132,7 @@
                                  (is id)
                                  (is (= test-service-id service-id))
                                  {:instance-id id, :killed? success-flag, :message message, :service-id service-id,
-                                  :status (if success-flag 200 404)})))
+                                  :status (if success-flag http-200-ok http-404-not-found)})))
             peers-acknowledged-blacklist-requests-fn (fn [{:keys [service-id]} short-circuit? blacklist-period-ms reason]
                                                        (if (= (:blacklist-backoff-base-time-ms timeout-config) blacklist-period-ms)
                                                          (do
@@ -167,9 +168,9 @@
                         scheduler populate-maintainer-chan! timeout-config scheduler-interactions-thread-pool
                         {:basic-authentication {:src-router-id src-router-id} :route-params {:service-id test-service-id}}))
                     {:keys [body headers status]} (async/<!! response-chan)]
-                (is (= 200 status))
+                (is (= http-200-ok status))
                 (is (= (assoc expected-json-response-headers "x-cid" correlation-id) headers))
-                (is (= {:kill-response {:instance-id "instance-1", :killed? true, :message "Killed", :service-id test-service-id, :status 200},
+                (is (= {:kill-response {:instance-id "instance-1", :killed? true, :message "Killed", :service-id test-service-id, :status http-200-ok},
                         :service-id test-service-id, :source-router-id src-router-id, :success true}
                        (walk/keywordize-keys (json/read-str body))))
                 (is (= [[:kill-instance "instance-1" "test-service-id" true]] @scheduler-operation-tracker-atom))
@@ -196,9 +197,9 @@
                       scheduler populate-maintainer-chan! timeout-config scheduler-interactions-thread-pool
                       {:basic-authentication {:src-router-id src-router-id} :route-params {:service-id test-service-id}}))
                   {:keys [body headers status]} (async/<!! response-chan)]
-              (is (= 404 status))
+              (is (= http-404-not-found status))
               (is (= (assoc expected-json-response-headers "x-cid" correlation-id) headers))
-              (is (= {:kill-response {:message "no-instance-killed", :status 404}, :service-id test-service-id,
+              (is (= {:kill-response {:message "no-instance-killed", :status http-404-not-found}, :service-id test-service-id,
                       :source-router-id src-router-id, :success false}
                      (walk/keywordize-keys (json/read-str body))))
               (is (empty? @scheduler-operation-tracker-atom))
@@ -229,10 +230,10 @@
                       scheduler populate-maintainer-chan! timeout-config scheduler-interactions-thread-pool
                       {:basic-authentication {:src-router-id src-router-id} :route-params {:service-id test-service-id}}))
                   {:keys [body headers status]} (async/<!! response-chan)]
-              (is (= 404 status))
+              (is (= http-404-not-found status))
               (is (= (assoc expected-json-response-headers "x-cid" correlation-id) headers))
               (is (= {:kill-response {:instance-id "instance-1", :killed? false, :message "Failure message",
-                                      :service-id test-service-id, :status 404},
+                                      :service-id test-service-id, :status http-404-not-found},
                       :service-id test-service-id, :source-router-id src-router-id, :success false}
                      (walk/keywordize-keys (json/read-str body))))
               (is (= [[:kill-instance "instance-1" "test-service-id" false]] @scheduler-operation-tracker-atom))

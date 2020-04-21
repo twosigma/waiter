@@ -26,6 +26,7 @@
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.schema :as schema]
+            [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
             [waiter.util.cache-utils :as cu]
             [waiter.util.date-utils :as du]
@@ -396,7 +397,7 @@
         (str "service-exists?[" service-id "]")
         (some->> (service-id->service-description-fn service-id)
           (retrieve-jobs cook-api search-interval service-id)))
-      (catch [:status 404] _
+      (catch [:status http-404-not-found] _
         (log/warn "service-exists?: service" service-id "does not exist!"))))
 
   (create-service-if-new [this {:keys [service-id] :as descriptor}]

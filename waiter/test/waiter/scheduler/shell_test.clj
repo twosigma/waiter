@@ -25,6 +25,7 @@
             [waiter.config :as config]
             [waiter.scheduler :as scheduler]
             [waiter.scheduler.shell :refer :all]
+            [waiter.status-codes :refer :all]
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
   (:import clojure.lang.ExceptionInfo
@@ -361,7 +362,7 @@
       (with-redefs [http/get (fn [_ _]
                                (swap! health-check-count-atom inc)
                                (let [c (async/chan)]
-                                 (async/go (async/>! c {:status 200}))
+                                 (async/go (async/>! c {:status http-200-ok}))
                                  c))]
         (let [instance (-> (scheduler/service-id->state scheduler "foo") :id->instance vals first)]
           ;; We force a health check to occur

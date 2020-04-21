@@ -25,6 +25,7 @@
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.statsd :as statsd]
+            [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
             [waiter.util.cache-utils :as cu]
             [waiter.util.utils :as utils])
@@ -59,7 +60,7 @@
          (log/error "Unable to find blacklist chan for service" ~service-id)
          (throw (ex-info "Service not found" {:instance-id ~instance-id
                                               :service-id ~service-id
-                                              :status 400}))))))
+                                              :status http-400-bad-request}))))))
 
 (defn blacklist-instance-go
   "Sends a rpc to the router state to blacklist the lock on the given instance."
@@ -236,7 +237,7 @@
            (metrics/service-timer ~service-id "reserve-instance")
            (when-not (au/offer! service-chan# [~reason-map instance-resp-chan# ~exclude-ids-set ~timeout-in-millis])
              (throw (ex-info "Unable to request an instance."
-                             {:status 503
+                             {:status http-503-service-unavailable
                               :service-id ~service-id
                               :reason-map ~reason-map})))
            (async/<! instance-resp-chan#))))))
@@ -261,7 +262,7 @@
                 instance)
               (if (and instance (not= instance :no-matching-instance-found))
                 ; instance is a deployment error if it (1) does not have an :id tag, (2) is not nil, and (3) does not equal :no-matching-instance-found
-                (ex-info (str "Deployment error: " (utils/message instance)) {:service-id service-id :status 503})
+                (ex-info (str "Deployment error: " (utils/message instance)) {:service-id service-id :status http-503-service-unavailable})
                 (if-not (t/before? (t/now) expiry-time)
                   (do
                     ;; No instances were started in a reasonable amount of time
@@ -288,7 +289,7 @@
                                 :slots-in-use (counters/value (metrics/service-counter service-id "instance-counts" "slots-in-use"))
                                 :work-stealing-offers-received (counters/value (metrics/service-counter service-id "work-stealing" "received-from" "in-flight"))
                                 :work-stealing-offers-sent (counters/value (metrics/service-counter service-id "work-stealing" "sent-to" "in-flight"))
-                                :status 503})))
+                                :status http-503-service-unavailable})))
                   (do
                     (cid/with-correlation-id cid (service-not-found-fn))
                     (async/<! (async/timeout 1500))

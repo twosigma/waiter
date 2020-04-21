@@ -26,6 +26,7 @@
             [ring.util.codec :as codec]
             [ring.util.response :as response]
             [waiter.auth.authentication :as auth]
+            [waiter.status-codes :refer :all]
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils]
             [waiter.metrics :as metrics])
@@ -146,9 +147,9 @@
       (.validate saml-signature-validator signature)
       (catch ValidationException ex
         (throw (ex-info "Could not authenticate user. Invalid SAML assertion signature."
-                        {:status 400} ex))))
+                        {:status http-400-bad-request} ex))))
     (throw (ex-info "Could not authenticate user. SAML assertion is not signed."
-                    {:status 400}))))
+                    {:status http-400-bad-request}))))
 
 (let [authenticated-redirect-template-fn
       (template/fn
@@ -171,7 +172,7 @@
                                                  (throw (ex-info "Could not parse SAML RelayState"
                                                                  {:inner-exception e
                                                                   :saml-relay-state (get form-params "RelayState")
-                                                                  :status 400} e))))
+                                                                  :status http-400-bad-request} e))))
         saml-response (-> form-params
                         (get "SAMLResponse")
                         .getBytes
@@ -182,7 +183,7 @@
         _ (when-not (= 1 (count assertions))
             (throw (ex-info (str "Could not authenticate user. Invalid SAML response. "
                                  "Must have exactly one assertion but got " (count assertions))
-                            {:status 400})))
+                            {:status http-400-bad-request})))
         assertion (first assertions)
         _ (validate-saml-assertion-signature assertion saml-signature-validator)
         {:keys [attrs confirmation name-id-value min-session-not-on-or-after]} (parse-saml-assertion assertion)
@@ -192,12 +193,12 @@
             (throw (ex-info "Could not authenticate user. Expired SAML assertion."
                             {:current-time current-time
                              :expiry-time not-on-or-after
-                             :status 400})))
+                             :status http-400-bad-request})))
         _ (when (and min-session-not-on-or-after (not (t/before? current-time min-session-not-on-or-after)))
             (throw (ex-info "Could not authenticate user. Expired SAML session."
                             {:current-time current-time
                              :expiry-time min-session-not-on-or-after
-                             :status 400})))
+                             :status http-400-bad-request})))
         email (first (get attrs "email"))
         ; https://docs.microsoft.com/en-us/windows-server/identity/ad-fs/technical-reference/the-role-of-claims
         upn (first (get attrs "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"))
@@ -211,7 +212,7 @@
                          password)]
     {:body (render-authenticated-redirect-template {:auth-redirect-uri (str scheme "://" host auth-redirect-endpoint)
                                                     :saml-auth-data saml-auth-data})
-     :status 200}))
+     :status http-200-ok }))
 
 (defn saml-auth-redirect-handler
   "Endpoint for POST back to Waiter with SAML authentication data. If data is still valid,
@@ -225,17 +226,17 @@
             (catch Exception e
               (throw (ex-info "Could not parse saml-auth-data." {:inner-exception e
                                                                  :saml-auth-data saml-auth-data
-                                                                 :status 400} e))))
+                                                                 :status http-400-bad-request} e))))
           _ (when-not (and redirect-url saml-principal)
               (throw (ex-info "Could not authenticate user. Invalid SAML auth data."
                               {:saml-auth-data saml-auth-data
-                               :status 500})))
+                               :status http-500-internal-server-error})))
           current-time (t/now)
           _ (when (and min-session-not-on-or-after (not (t/before? current-time min-session-not-on-or-after)))
               (throw (ex-info "Could not authenticate user. Expired SAML session."
                               {:current-time current-time
                                :expiry-time min-session-not-on-or-after
-                               :status 400})))
+                               :status http-400-bad-request})))
           current-time-plus-1-day (t/plus current-time (t/days 1))
           auth-cookie-expiry-date (t/min-date (or min-session-not-on-or-after current-time-plus-1-day) current-time-plus-1-day)
           auth-cookie-age-in-seconds (-> current-time
@@ -245,10 +246,10 @@
           (auth/auth-params-map :saml saml-principal)]
       (auth/handle-request-auth (constantly {:body ""
                                              :headers {"location" redirect-url}
-                                             :status 303})
+                                             :status http-303-see-other})
                                 request principal auth-params-map password auth-cookie-age-in-seconds))
     (throw (ex-info "Missing saml-auth-data from SAML authenticated redirect message"
-                    {:status 400}))))
+                    {:status http-400-bad-request}))))
 
 (defn- escape-xml-string
   "Escape a string for use in an XML document."
@@ -294,7 +295,7 @@
                    relay-state (utils/map->base-64-string {:host host :request-url request-url :scheme scheme} password)]
                (get-idp-redirect idp-uri saml-request relay-state))
         (throw (ex-info "Invalid request method for use with SAML authentication. Only GET supported."
-                        {:log-level :info :request-method request-method :status 405})))))
+                        {:log-level :info :request-method request-method :status http-405-method-not-allowed})))))
 
   auth/CallbackAuthenticator
   (process-callback [this {{:keys [operation]} :route-params :as request}]
@@ -303,7 +304,7 @@
       "auth-redirect" (do (counters/inc! (metrics/waiter-counter "auth" "saml" "auth-redirect")) (saml-auth-redirect-handler this request))
       (throw (ex-info (str "Unknown SAML authenticator operation: " operation)
                       {:operation operation
-                       :status 400})))))
+                       :status http-400-bad-request})))))
 
 (defn saml-authenticator
   "Factory function for creating SAML authenticator middleware"

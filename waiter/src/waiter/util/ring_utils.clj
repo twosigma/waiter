@@ -18,6 +18,7 @@
             [clojure.data.json :as json]
             [ring.middleware.params :as ring-params]
             [ring.util.request :as ring-request]
+            [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]))
 
 (defn update-response
@@ -33,7 +34,7 @@
   (try
     (assoc request :body (-> body slurp json/read-str))
     (catch Exception e
-      (throw (ex-info "Invalid JSON payload" {:status 400} e)))))
+      (throw (ex-info "Invalid JSON payload" {:status http-400-bad-request} e)))))
 
 (defn query-params-request
   "Like Ring's params-request, but doesn't try to pull params from the body."
@@ -45,7 +46,7 @@
   "Determines if a response is an error"
   [{:keys [status]}]
   (and status
-       (>= status 400)
+       (>= status http-400-bad-request)
        (<= status 599)))
 
 (defn attach-header

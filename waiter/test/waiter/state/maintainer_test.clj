@@ -23,6 +23,7 @@
             [digest]
             [plumbing.core :as pc]
             [waiter.state.maintainer :refer :all]
+            [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]))
 
@@ -627,16 +628,16 @@
         test-cases (list {:name "no-instances", :healthy-instances [], :unhealthy-instances [], :failed-instances [], :expected nil}
                          {:name "no-deployment-errors", :healthy-instances [:instance-one], :unhealthy-instances [], :failed-instances [], :expected nil}
                          {:name "healthy-and-unhealthy-instances", :healthy-instances [:instance-one],
-                          :unhealthy-instances [{:health-check-status 400 :started-at alive-started-at}], :failed-instances [], :expected nil}
+                          :unhealthy-instances [{:health-check-status http-400-bad-request :started-at alive-started-at}], :failed-instances [], :expected nil}
                          {:name "healthy-and-failed-instances", :healthy-instances [:instance-one],
                           :unhealthy-instances [], :failed-instances [{:message "Command exited with status" :exit-code 1}], :expected nil}
                          {:name "single-unhealthy-instance", :healthy-instances [],
-                          :unhealthy-instances [{:health-check-status 400 :started-at alive-started-at}], :failed-instances [], :expected nil}
+                          :unhealthy-instances [{:health-check-status http-400-bad-request :started-at alive-started-at}], :failed-instances [], :expected nil}
                          {:name "single-failed-instance", :healthy-instances [], :unhealthy-instances [],
                           :failed-instances [{:message "Command exited with status" :exit-code 1}], :expected nil}
                          {:name "multiple-different-unhealthy-instances", :healthy-instances [],
-                          :unhealthy-instances [{:health-check-status 400 :started-at alive-started-at}
-                                                {:health-check-status 401 :started-at alive-started-at}],
+                          :unhealthy-instances [{:health-check-status http-400-bad-request :started-at alive-started-at}
+                                                {:health-check-status http-401-unauthorized :started-at alive-started-at}],
                           :failed-instances [], :expected nil}
                          {:name "multiple-different-failed-instances", :healthy-instances [], :unhealthy-instances [],
                           :failed-instances [{:message "Command exited with status" :exit-code 1}
@@ -663,10 +664,10 @@
                                              {:message "Command exited with status" :exit-code 1}],
                           :expected :bad-startup-command}
                          {:name "health-check-requires-authentication", :healthy-instances [],
-                          :unhealthy-instances [{:health-check-status 401}], :failed-instances [],
+                          :unhealthy-instances [{:health-check-status http-401-unauthorized}], :failed-instances [],
                           :expected :health-check-requires-authentication}
                          {:name "unhealthy-and-failed-instances", :healthy-instances [],
-                          :unhealthy-instances [{:health-check-status 401}],
+                          :unhealthy-instances [{:health-check-status http-401-unauthorized}],
                           :failed-instances [{:message "Command exited with status" :exit-code 1}
                                              {:message "Command exited with status" :exit-code 1}],
                           :expected :bad-startup-command})]
@@ -1030,7 +1031,7 @@
       (is (= routers (:routers (async/<!! router-state-push-chan))))
 
       (let [start-time (t/now)
-            unhealthy-health-check-statuses [400 401 402]
+            unhealthy-health-check-statuses [http-400-bad-request http-401-unauthorized http-402-payment-required]
             unhealthy-instances-fn (fn [service-id index]
                                      (vec (map (fn [x] {:id (str service-id "." x "1")
                                                         :health-check-status (get unhealthy-health-check-statuses (mod index (count unhealthy-health-check-statuses)))

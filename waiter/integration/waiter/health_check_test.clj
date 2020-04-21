@@ -15,15 +15,15 @@
 ;;
 (ns waiter.health-check-test
   (:require [clojure.data.json :as json]
-            [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.walk :as walk]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
             [waiter.util.http-utils :as hu]))
 
 (defn assert-ping-response
   [waiter-url health-check-protocol idle-timeout service-id response]
-  (assert-response-status response 200)
+  (assert-response-status response http-200-ok)
   (let [{:keys [ping-response service-description service-state]}
         (some-> response :body json/read-str walk/keywordize-keys)]
     (is (seq service-description) (str service-description))
@@ -139,14 +139,14 @@
                                        :token token
                                        :version "version-1"))]
       (try
-        (assert-response-status (post-token waiter-url token-description-1) 200)
+        (assert-response-status (post-token waiter-url token-description-1) http-200-ok)
         (let [ping-response-1 (make-request waiter-url "/waiter-ping" :headers request-headers)
               service-id-1 (get-in ping-response-1 [:headers "x-waiter-service-id"])]
           (with-service-cleanup
             service-id-1
             (assert-ping-response waiter-url backend-proto nil service-id-1 ping-response-1)
             (let [token-description-2 (assoc token-description-1 :name (str token "-v2") :version "version-2")
-                  _ (assert-response-status (post-token waiter-url token-description-2) 200)
+                  _ (assert-response-status (post-token waiter-url token-description-2) http-200-ok)
                   ping-response-2 (make-request waiter-url "/waiter-ping" :headers request-headers)
                   service-id-2 (get-in ping-response-2 [:headers "x-waiter-service-id"])]
               (is (not= service-id-1 service-id-2))
@@ -172,7 +172,7 @@
                                      :token token
                                      :version "version-foo"))]
       (try
-        (assert-response-status (post-token waiter-url token-description) 200)
+        (assert-response-status (post-token waiter-url token-description) http-200-ok)
         (let [ping-response (make-request waiter-url "/waiter-ping" :headers request-headers)
               service-id (get-in ping-response [:headers "x-waiter-service-id"])]
           (with-service-cleanup
@@ -202,7 +202,7 @@
                                                           (map :id))]
                                        (and (= 1 (count instance-ids))
                                             (= instance-id (first instance-ids)))))]
-      (assert-response-status canary-response 200)
+      (assert-response-status canary-response http-200-ok)
       (with-service-cleanup
         service-id
         (doseq [[_ router-url] (routers waiter-url)]
@@ -210,14 +210,14 @@
           (is (= 1 (count (active-instances router-url service-id :cookies cookies)))))
         (let [request-headers (assoc request-headers
                                 :x-kitchen-default-status-timeout 20000
-                                :x-kitchen-default-status-value 400)
+                                :x-kitchen-default-status-value http-400-bad-request)
               response (make-kitchen-request waiter-url request-headers :path "/hello")]
-          (assert-response-status response 400))
+          (assert-response-status response http-400-bad-request))
         (doseq [[_ router-url] (routers waiter-url)]
           (is (wait-for #(check-filtered-instances router-url remove)))
           (is (= 1 (count (active-instances router-url service-id :cookies cookies)))))
         (let [response (make-kitchen-request waiter-url request-headers :path "/hello")]
-          (assert-response-status response 200))
+          (assert-response-status response http-200-ok))
         (doseq [[_ router-url] (routers waiter-url)]
           (is (wait-for #(check-filtered-instances router-url filter)))
           (is (= 1 (count (active-instances router-url service-id :cookies cookies)))))))))
@@ -243,14 +243,14 @@
                                        :token token
                                        :version "version-foo"))]
         (try
-          (assert-response-status (post-token waiter-url token-description) 200)
+          (assert-response-status (post-token waiter-url token-description) http-200-ok)
           (let [ping-response (make-request waiter-url "/waiter-ping" :headers request-headers :method :get)
                 service-id (get-in ping-response [:headers "x-waiter-service-id"])]
             (is service-id (str ping-response))
             (with-service-cleanup
               service-id
               (let [backend-response (-> ping-response :body json/read-str walk/keywordize-keys :ping-response)]
-                (assert-response-status backend-response 200)
+                (assert-response-status backend-response http-200-ok)
                 (is (= (str "Hello " (retrieve-username)) (-> backend-response :body str))))))
           (finally
             (delete-token-and-assert waiter-url token)))))))

@@ -32,6 +32,7 @@
             [waiter.middleware :as middleware]
             [waiter.scheduler :as scheduler]
             [waiter.statsd :as statsd]
+            [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
             [waiter.util.http-utils :as hu]
             [waiter.util.ring-utils :as ru])
@@ -42,7 +43,7 @@
            (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse)))
 
 ;; https://tools.ietf.org/html/rfc6455#section-7.4
-(def ^:const server-termination-on-unexpected-condition StatusCode/SERVER_ERROR)
+(def ^:const server-termination-on-unexpected-condition websocket-1011-server-error)
 
 (defn request-authenticator
   "Authenticates the request using the x-waiter-auth cookie.
@@ -65,7 +66,7 @@
       auth-cookie-valid?)
     (catch Throwable e
       (log/error e "error while authenticating websocket request")
-      (.sendError response 500 (.getMessage e))
+      (.sendError response http-500-internal-server-error (.getMessage e))
       false)))
 
 (defn request-subprotocol-acceptor
@@ -85,11 +86,11 @@
             true)
         (do
           (log/info "rejecting websocket due to presence of multiple subprotocols" sec-websocket-protocols)
-          (.sendError response 500 (str "waiter does not yet support multiple subprotocols in websocket requests: " sec-websocket-protocols))
+          (.sendError response http-500-internal-server-error (str "waiter does not yet support multiple subprotocols in websocket requests: " sec-websocket-protocols))
           false)))
     (catch Throwable th
       (log/error th "error while selecting subprotocol for websocket request")
-      (.sendError response 500 (.getMessage th))
+      (.sendError response http-500-internal-server-error (.getMessage th))
       false)))
 
 (defn inter-router-request-middleware
@@ -304,13 +305,13 @@
                   (when (integer? return-code-or-exception)
                     ;; Close status codes https://tools.ietf.org/html/rfc6455#section-7.4
                     (case (int return-code-or-exception)
-                      StatusCode/NORMAL "closed normally"
-                      StatusCode/SHUTDOWN "shutdown"
-                      StatusCode/PROTOCOL "protocol error"
-                      StatusCode/BAD_DATA "unsupported input data"
-                      StatusCode/ABNORMAL "closed abnormally"
-                      StatusCode/BAD_PAYLOAD "unsupported payload"
-                      StatusCode/POLICY_VIOLATION "policy violation"
+                      websocket-1000-normal "closed normally"
+                      websocket-1001-shutdown "shutdown"
+                      websocket-1002-protocol "protocol error"
+                      websocket-1003-bad-data "unsupported input data"
+                      websocket-1006-abnormal "closed abnormally"
+                      websocket-1007-bad-payload "unsupported payload"
+                      websocket-1008-policy-violation "policy violation"
                       (str "status code " return-code-or-exception))))
         (if (integer? return-code-or-exception)
           (on-close-callback return-code-or-exception)
@@ -351,7 +352,7 @@
 (defn- successful?
   "Returns whether the status represents a successful status code."
   [status]
-  (= StatusCode/NORMAL status))
+  (= websocket-1000-normal status))
 
 (defn process-response!
   "Processes a response resulting from a websocket request.

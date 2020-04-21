@@ -5,6 +5,7 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [reaver :as reaver]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
             [waiter.util.utils :as utils])
   (:import (java.net URI URL URLEncoder)))
@@ -20,7 +21,7 @@
                                                       :token token)
                                                     :authentication))]
         (try
-          (assert-response-status response 200)
+          (assert-response-status response http-200-ok)
           (let [{:keys [service-id body]} (make-request-with-debug-info
                                             {:x-waiter-token token}
                                             #(make-kitchen-request waiter-url % :path "/request-info"))
@@ -49,7 +50,7 @@
                                                                    :permitted-user "*"
                                                                    :run-as-user (retrieve-username)
                                                                    :token token))]
-          (assert-response-status response 400)
+          (assert-response-status response http-400-bad-request)
           (is (str/includes? body error-message)))
         (let [token (rand-name)
               {:keys [body] :as response} (post-token waiter-url (assoc (kitchen-params)
@@ -58,7 +59,7 @@
                                                                    :permitted-user "*"
                                                                    :run-as-user (retrieve-username)
                                                                    :token token))]
-          (assert-response-status response 400)
+          (assert-response-status response http-400-bad-request)
           (is (str/includes? body error-message)))))))
 
 (defn- perform-saml-authentication
@@ -73,7 +74,7 @@
                             (.connect http-connection)
                             http-connection))
         conn (make-connection saml-redirect-location)]
-    (is (= 200 (.getResponseCode conn)))
+    (is (= http-200-ok (.getResponseCode conn)))
     (reaver/extract (reaver/parse (slurp (.getInputStream conn))) [:waiter-saml-acs-endpoint :saml-response :relay-state]
                     "form" (reaver/attr :action)
                     "form input[name=SAMLResponse]" (reaver/attr :value)
@@ -90,10 +91,10 @@
                                                 :permitted-user "*"
                                                 :run-as-user (retrieve-username)
                                                 :token token)))]
-        (assert-response-status response 200)
+        (assert-response-status response http-200-ok)
         (try
           (let [{:keys [headers] :as response} (make-request waiter-url "/request-info" :headers {:x-waiter-token token})
-                _ (assert-response-status response 302)
+                _ (assert-response-status response http-302-moved-temporarily)
                 saml-redirect-location (get headers "location")
                 {:keys [relay-state saml-response waiter-saml-acs-endpoint]} (perform-saml-authentication saml-redirect-location)
                 {:keys [body] :as response} (make-request waiter-saml-acs-endpoint ""
@@ -101,7 +102,7 @@
                                                                      "&RelayState=" (URLEncoder/encode relay-state))
                                                           :headers {"content-type" "application/x-www-form-urlencoded"}
                                                           :method :post)
-                _ (assert-response-status response 200)
+                _ (assert-response-status response http-200-ok)
                 {:keys [waiter-saml-auth-redirect-endpoint saml-auth-data]}
                 (reaver/extract (reaver/parse body) [:waiter-saml-auth-redirect-endpoint :saml-auth-data]
                                 "form" (reaver/attr :action)
@@ -111,7 +112,7 @@
                                                                      :body (str "saml-auth-data=" (URLEncoder/encode saml-auth-data))
                                                                      :headers {"content-type" "application/x-www-form-urlencoded"}
                                                                      :method :post)
-                _ (assert-response-status response 303)
+                _ (assert-response-status response http-303-see-other)
                 cookie-fn (fn [cookies name] (some #(when (= name (:name %)) %) cookies))
                 auth-cookie (cookie-fn cookies "x-waiter-auth")
                 _ (is (not (nil? auth-cookie)))
@@ -120,7 +121,7 @@
                 {:keys [body service-id] :as response} (make-request-with-debug-info
                                                          {:x-waiter-token token}
                                                          #(make-request waiter-url "/request-info" :headers % :cookies cookies))
-                _ (assert-response-status response 200)
+                _ (assert-response-status response http-200-ok)
                 body-json (json/read-str (str body))]
             (with-service-cleanup
               service-id
@@ -137,7 +138,7 @@
           authority (.getAuthority access-token-uri)
           path (str (.getPath access-token-uri) "?" (.getQuery access-token-uri))
           access-token-response (make-request authority path :headers {"x-iam" "waiter"} :protocol protocol)
-          _ (assert-response-status access-token-response 200)
+          _ (assert-response-status access-token-response http-200-ok)
           access-token-response-json (-> access-token-response :body str json/read-str)]
       (get access-token-response-json "access_token"))
     (throw (ex-info "WAITER_TEST_JWT_ACCESS_TOKEN_URL environment variable has not been provided" {}))))
@@ -169,7 +170,7 @@
             assertion-message (str {:headers headers
                                     :set-cookie set-cookie
                                     :target-url target-url})]
-        (assert-response-status response 200)
+        (assert-response-status response http-200-ok)
         (is (= (retrieve-username) (str body)))
         (is (= "jwt" (get headers "x-waiter-auth-method")) assertion-message)
         (is (= (retrieve-username) (get headers "x-waiter-auth-user")) assertion-message)
@@ -192,7 +193,7 @@
             set-cookie (str (get headers "set-cookie"))
             assertion-message (str {:headers headers
                                     :target-url target-url})]
-        (assert-response-status response 403)
+        (assert-response-status response http-403-forbidden)
         (is (str/includes? (str body) "Must use HTTPS connection") assertion-message)
         (is (str/blank? set-cookie) assertion-message))
       (log/info "JWT authentication is disabled"))))
@@ -213,7 +214,7 @@
             (make-request target-url "/waiter-auth" :disable-auth true :headers request-headers :method :get)
             set-cookie (str (get headers "set-cookie"))
             assertion-message (str (select-keys response [:body :error :headers :status]))]
-        (assert-response-status response 403)
+        (assert-response-status response http-403-forbidden)
         (is (str/blank? (get headers "www-authenticate")) assertion-message)
         (is (str/blank? set-cookie) assertion-message))
       (log/info "JWT authentication is disabled"))))
@@ -235,7 +236,7 @@
             (make-request target-url "/waiter-auth" :disable-auth true :headers request-headers :method :get)
             set-cookie (str (get headers "set-cookie"))
             assertion-message (str (select-keys response [:body :error :headers :status]))]
-        (assert-response-status response 401)
+        (assert-response-status response http-401-unauthorized)
         (is (str/blank? set-cookie) assertion-message)
         (if-let [challenge (get headers "www-authenticate")]
           (do
@@ -260,7 +261,7 @@
             assertion-message (str {:headers headers
                                     :set-cookie set-cookie
                                     :target-url target-url})]
-        (assert-response-status response 200)
+        (assert-response-status response http-200-ok)
         (is (= (retrieve-username) (str body)))
         (let [{:strs [x-waiter-auth-method]} headers]
           (is (not= "jwt" x-waiter-auth-method) assertion-message)
@@ -284,7 +285,7 @@
             token-response (post-token waiter-url (assoc service-parameters
                                                     :run-as-user (retrieve-username)
                                                     "token" host))
-            _ (assert-response-status token-response 200)
+            _ (assert-response-status token-response http-200-ok)
             access-token (retrieve-access-token host)
             request-headers {"authorization" (str "Bearer " access-token)
                              "host" host
@@ -303,7 +304,7 @@
         (try
           (with-service-cleanup
             service-id
-            (assert-response-status response 200)
+            (assert-response-status response http-200-ok)
             (is (= "jwt" (get headers "x-waiter-auth-method")) assertion-message)
             (is (= (retrieve-username) (get headers "x-waiter-auth-user")) assertion-message)
             (assert-auth-cookie set-cookie assertion-message))
@@ -322,7 +323,7 @@
             token-response (post-token waiter-url (assoc service-parameters
                                                     :run-as-user (retrieve-username)
                                                     "token" host))
-            _ (assert-response-status token-response 200)
+            _ (assert-response-status token-response http-200-ok)
             access-token (str (retrieve-access-token host) "invalid")
             request-headers {"authorization" (str "Bearer " access-token)
                              "host" host
@@ -341,7 +342,7 @@
         (try
           (with-service-cleanup
             service-id
-            (assert-response-status response 200)
+            (assert-response-status response http-200-ok)
             (let [{:strs [x-waiter-auth-method]} headers]
               (is (not= "jwt" x-waiter-auth-method) assertion-message)
               (is (not (str/blank? x-waiter-auth-method)) assertion-message))

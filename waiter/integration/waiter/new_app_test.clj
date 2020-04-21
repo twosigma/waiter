@@ -16,6 +16,7 @@
 (ns waiter.new-app-test
   (:require [clojure.test :refer :all]
             [clojure.tools.logging :as log]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
             [waiter.util.utils :as utils]))
 
@@ -28,7 +29,7 @@
           lorem-ipsum "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
           {:keys [body cookies router-id service-id] :as response}
           (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :body lorem-ipsum))]
-      (assert-response-status response 200)
+      (assert-response-status response http-200-ok)
       (is (= lorem-ipsum body))
       (with-service-cleanup
         service-id
@@ -68,7 +69,7 @@
                         (dissoc :x-waiter-grace-period-secs))
             {:keys [service-id] :as response}
             (make-request-with-debug-info headers #(make-request waiter-url "/endpoint" :headers %))]
-        (assert-response-status response 200)
+        (assert-response-status response http-200-ok)
         (with-service-cleanup
           service-id
           (let [settings-json (waiter-settings waiter-url)

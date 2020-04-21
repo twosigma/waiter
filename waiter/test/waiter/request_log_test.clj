@@ -16,7 +16,8 @@
 (ns waiter.request-log-test
   (:require [clj-time.core :as t]
             [clojure.test :refer :all]
-            [waiter.request-log :refer :all]))
+            [waiter.request-log :refer :all]
+            [waiter.status-codes :refer :all]))
 
 (deftest test-request->context
   (let [request {:client-protocol "HTTP/2.0"
@@ -81,13 +82,13 @@
                   :latest-service-id "latest-service-id"
                   :protocol "HTTP/2.0"
                   :request-type "test-request"
-                  :status 200
+                  :status http-200-ok
                   :waiter-api-call? false}]
     (is (= {:authentication-method "cookie"
             :backend-response-latency-ns 1000
             :backend-protocol "HTTP/2.0"
             :get-instance-latency-ns 500
-            :grpc-status "13"
+            :grpc-status (str grpc-13-internal)
             :handle-request-latency-ns 2000
             :instance-host "instance-host"
             :instance-id "instance-id"
@@ -107,7 +108,7 @@
             :service-id "service-id"
             :service-name "service-name"
             :service-version "service-version"
-            :status 200
+            :status http-200-ok
             :token "test-token1,test-token2"
             :waiter-api false
             :waiter-error-class "java.lang.Exception"}
@@ -146,7 +147,7 @@
                   :handle-request-latency-ns 2000
                   :headers {"content-length" "40"
                             "content-type" "application/xml"
-                            "grpc-status" "13"
+                            "grpc-status" (str grpc-13-internal)
                             "location" "/foo/bar"
                             "server" "foo-bar"}
                   :instance {:host "instance-host"
@@ -158,7 +159,7 @@
                   :latest-service-id "latest-service-id"
                   :protocol "HTTP/2.0"
                   :request-type "test-request"
-                  :status 200
+                  :status http-200-ok
                   :waiter-api-call? false}
         log-entries (atom [])]
     (with-redefs [log (fn [log-data]
@@ -184,7 +185,7 @@
                 :backend-response-latency-ns 1000
                 :backend-protocol "HTTP/2.0"
                 :get-instance-latency-ns 500
-                :grpc-status "13"
+                :grpc-status (str grpc-13-internal)
                 :handle-request-latency-ns 2000
                 :instance-host "instance-host"
                 :instance-id "instance-id"
@@ -203,7 +204,7 @@
                 :service-id "service-id"
                 :service-name "service-name"
                 :service-version "service-version"
-                :status 200
+                :status http-200-ok
                 :token "test-token1,test-token2"
                 :waiter-api false
                 :waiter-error-class "java.lang.Exception"}
@@ -213,7 +214,7 @@
   (let [log-entries (atom [])]
     (with-redefs [log (fn [log-data]
                         (swap! log-entries conj log-data))]
-      (let [handler (wrap-log (fn [_] {:status 200}))
+      (let [handler (wrap-log (fn [_] {:status http-200-ok}))
             request {:headers {"content-type" "text/plain"
                                "host" "host"
                                "x-cid" "123"}
@@ -232,5 +233,5 @@
                 :request-content-type "text/plain"
                 :request-id "abc"
                 :scheme "http"
-                :status 200}
+                :status http-200-ok}
                (dissoc log-entry :handle-request-latency-ns)))))))

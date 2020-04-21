@@ -20,6 +20,7 @@
             [waiter.auth.authentication :as auth]
             [waiter.cookie-support :as cs]
             [waiter.correlation-id :as cid]
+            [waiter.status-codes :refer :all]
             [waiter.test-helpers]
             [waiter.websocket :refer :all])
   (:import (java.net HttpCookie SocketTimeoutException URLDecoder)
@@ -56,7 +57,7 @@
         (reset! response-status-atom status)
         (reset! response-reason-atom reason))
       (sendForbidden [reason]
-        (reset! response-status-atom 403)
+        (reset! response-status-atom http-403-forbidden)
         (reset! response-reason-atom reason))
       (setAcceptedSubProtocol [subprotocol] (reset! response-subprotocol-atom subprotocol)))))
 
@@ -97,7 +98,7 @@
                                                 (is (= password in-password))
                                                 nil)]
           (is (not (request-authenticator password request response)))
-          (is (= 403 (.getStatusCode response)))
+          (is (= http-403-forbidden (.getStatusCode response)))
           (is (= "Unauthorized" (.getStatusReason response))))))
 
     (testing "unsuccessful-auth:auth-header-present"
@@ -109,7 +110,7 @@
                                                 (is (= password in-password))
                                                 nil)]
           (is (not (request-authenticator password request response)))
-          (is (= 403 (.getStatusCode response)))
+          (is (= http-403-forbidden (.getStatusCode response)))
           (is (= "Unauthorized" (.getStatusReason response))))))
 
     (testing "unsuccessful-auth:exception"
@@ -121,7 +122,7 @@
                                                 (is (= password in-password))
                                                 (throw (Exception. "Test-Exception")))]
           (is (not (request-authenticator password request response)))
-          (is (= 500 (.getStatusCode response)))
+          (is (= http-500-internal-server-error (.getStatusCode response)))
           (is (= "Test-Exception" (.getStatusReason response))))))))
 
 (deftest test-request-subprotocol-acceptor
@@ -142,7 +143,7 @@
       (let [request (reified-upgrade-request {:headers {"sec-websocket-protocol" ["foo" "bar"]}})
             response (reified-upgrade-response)]
         (is (not (request-subprotocol-acceptor request response)))
-        (is (= 500 (.getStatusCode response)))
+        (is (= http-500-internal-server-error (.getStatusCode response)))
         (is (= "waiter does not yet support multiple subprotocols in websocket requests: [\"foo\" \"bar\"]"
                (.getStatusReason response)))))
 
@@ -150,7 +151,7 @@
       (let [request (reified-upgrade-request {:headers {"sec-websocket-protocol" (Object.)}})
             response (reified-upgrade-response)]
         (is (not (request-subprotocol-acceptor request response)))
-        (is (= 500 (.getStatusCode response)))
+        (is (= http-500-internal-server-error (.getStatusCode response)))
         (is (= "Don't know how to create ISeq from: java.lang.Object"
                (.getStatusReason response)))))))
 
@@ -350,11 +351,11 @@
             status-callback-atom (atom nil)
             on-close-callback #(reset! status-callback-atom %1)]
         (watch-ctrl-chan request-name ctrl-mult reservation-status-promise request-close-promise-chan on-close-callback)
-        (async/>!! ctrl-chan [:qbits.jet.websocket/close 1000])
+        (async/>!! ctrl-chan [:qbits.jet.websocket/close websocket-1000-normal])
         (ensure-test-timeout-fn request-close-promise-chan)
-        (is (= [:test :success 1000 nil] (async/<!! request-close-promise-chan)))
+        (is (= [:test :success websocket-1000-normal nil] (async/<!! request-close-promise-chan)))
         (is (not (realized? reservation-status-promise)))
-        (is (= 1000 @status-callback-atom))))
+        (is (= websocket-1000-normal @status-callback-atom))))
 
     (testing "unknown-error"
       (let [request-name :test
@@ -423,10 +424,10 @@
   (testing "error case"
     (let [out (async/chan 1)
           request {:out out}
-          handler (wrap-ws-close-on-error (fn [_] {:status 500}))
+          handler (wrap-ws-close-on-error (fn [_] {:status http-500-internal-server-error}))
           {:keys [status]} (handler request)]
       ;; response should indicate an error
-      (is (= 500 status))
+      (is (= http-500-internal-server-error status))
       ;; channels should be closed
       (is (not (async/>!! out :out-data)))))
   (testing "non-error case"
@@ -435,10 +436,10 @@
           handler (-> (fn [{:keys [out]}]
                         (async/go
                           (async/>! out :data)
-                          {:status 200}))
+                          {:status http-200-ok}))
                       wrap-ws-close-on-error)
           {:keys [status]} (async/<!! (handler request))]
       ;; response should indicate an internal server error
-      (is (= 200 status))
+      (is (= http-200-ok status))
       ;; channels should contain data and not be closed
       (is (= :data (async/<!! out))))))

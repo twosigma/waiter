@@ -17,6 +17,7 @@
   (:require [clojure.core.async :as async]
             [clojure.test :refer :all]
             [waiter.auth.spnego :refer :all]
+            [waiter.status-codes :refer :all]
             [waiter.util.utils :as utils]))
 
 (deftest test-decode-input-token
@@ -29,7 +30,7 @@
            (String. (decode-input-token {:headers {"authorization" encoded-token}}))))))
 
 (deftest test-require-gss
-  (let [ideal-response {:body "OK" :status 200}
+  (let [ideal-response {:body "OK" :status http-200-ok}
         request-handler (constantly ideal-response)
         thread-pool (Object.)
         max-queue-length 10
@@ -39,7 +40,7 @@
         standard-401-response {:body "Unauthorized"
                                :headers {"content-type" "text/plain"
                                          "www-authenticate" "Negotiate"}
-                               :status 401
+                               :status http-401-unauthorized
                                :waiter/response-source :waiter}]
 
     (with-redefs [utils/error-context->text-body #(-> % :message str)]
@@ -49,7 +50,7 @@
           (let [handler (require-gss request-handler thread-pool max-queue-length password)]
             (is (= {:body "Too many Kerberos authentication requests"
                     :headers {"content-type" "text/plain"}
-                    :status 503
+                    :status http-503-service-unavailable
                     :waiter/response-source :waiter}
                    (handler standard-request))))))
 

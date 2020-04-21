@@ -18,6 +18,7 @@
             [clojure.tools.logging :as log]
             [schema.core :as s]
             [waiter.schema :as schema]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]))
 
 (def quantile-metric-schema
@@ -217,7 +218,7 @@
       (with-service-cleanup
         service-id
         ; ensure the first request succeded before continuing with testing
-        (assert-response-status first-response 200)
+        (assert-response-status first-response http-200-ok)
         ; on each router, check that the launch-metrics are present and have sane values
         (doseq [[_ router-url] router->endpoint]
           (is (wait-for #(n-healthy-instances-observed? router-url cookies service-id instance-count)

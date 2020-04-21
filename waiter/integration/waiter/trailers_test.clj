@@ -17,6 +17,7 @@
   (:require [clojure.data.json :as json]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
             [waiter.util.http-utils :as hu]))
 
@@ -33,7 +34,7 @@
                            :x-waiter-name (rand-name)}
           {:keys [service-id] :as canary-response}
           (make-request-with-debug-info request-headers #(make-shell-request waiter-url % :path "/status"))]
-      (assert-response-status canary-response 200)
+      (assert-response-status canary-response http-200-ok)
       (with-service-cleanup
         service-id
         (testing "jet returns some trailers"
@@ -52,7 +53,7 @@
                               (log/error ex "unable to parse response as json")
                               (is false (str "unable to parse response as json" (:body response)))))
                 http-version (hu/backend-protocol->http-version backend-proto)]
-            (assert-response-status response 200)
+            (assert-response-status response http-200-ok)
             (is (= http-version (get body-json "protocol")) (str body-json))
             (when (= "http" backend-proto)
               (is (= "chunked" (get-in body-json ["headers" "Transfer-Encoding"]))
@@ -66,7 +67,7 @@
 
         (let [request-trailer-delay-ms 100
               response-trailer-delay-ms 100]
-          (doseq [response-status [200 400 500]]
+          (doseq [response-status [http-200-ok http-400-bad-request http-500-internal-server-error]]
             (testing (str {:backend-proto backend-proto
                            :request-trailer-delay-ms request-trailer-delay-ms
                            :response-status response-status
@@ -133,7 +134,7 @@
                            :x-waiter-name (rand-name)}
           {:keys [service-id] :as canary-response}
           (make-request-with-debug-info request-headers #(make-kitchen-request waiter-url % :path "/status"))]
-      (assert-response-status canary-response 200)
+      (assert-response-status canary-response http-200-ok)
       (with-service-cleanup
         service-id
         (doseq [response-trailer-delay-ms [0 1000]]
@@ -154,7 +155,7 @@
                              :path "/chunked"
                              :protocol backend-proto)]
               (log/info "response headers:" (:headers response))
-              (assert-response-status response 200)
+              (assert-response-status response http-200-ok)
               (when (= "http" backend-proto)
                 (is (= "chunked" (get-in response [:headers "transfer-encoding"]))
                     (-> response :headers str)))

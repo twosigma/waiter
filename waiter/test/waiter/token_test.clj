@@ -24,6 +24,7 @@
             [waiter.authorization :as authz]
             [waiter.kv :as kv]
             [waiter.service-description :as sd]
+            [waiter.status-codes :refer :all]
             [waiter.test-helpers :refer :all]
             [waiter.token :refer :all]
             [waiter.util.date-utils :as du]
@@ -112,7 +113,7 @@
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
                 {:headers {}
                  :request-method :put})]
-          (is (= 405 status))
+          (is (= http-405-method-not-allowed status))
           (is (str/includes? body "Invalid request method"))))
 
       (testing "delete:no-token-in-request"
@@ -121,7 +122,7 @@
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
                 {:headers {}
                  :request-method :delete})]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (str/includes? body "Couldn't find token in request"))))
 
       (testing "delete:token-does-not-exist"
@@ -130,7 +131,7 @@
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
                 {:headers {"x-waiter-token" (str "invalid-" token)}
                  :request-method :delete})]
-          (is (= 404 status))
+          (is (= http-404-not-found status))
           (is (str/includes? body (str "Token invalid-" token " does not exist")))))
 
       (testing "delete:token-does-exist-unauthorized"
@@ -146,7 +147,7 @@
                    :request-method :delete})
                 {{message "message"
                   {:strs [owner user]} "details"} "waiter-error"} (json/read-str body)]
-            (is (= 403 status))
+            (is (= http-403-forbidden status))
             (is (= "User not allowed to delete token" message))
             (is (= "tu2" owner) body)
             (is (= "tu1" user))
@@ -169,7 +170,7 @@
                     {:authorization/user auth-user
                      :headers {"x-waiter-token" token}
                      :request-method :delete})]
-              (is (= 404 status))
+              (is (= http-404-not-found status))
               (is (str/includes? body (str "Token " token " does not exist")))
               (is (= token-description (kv/fetch kv-store token)) "Entry deleted from kv-store!"))
             (finally
@@ -185,7 +186,7 @@
                   {:authorization/user auth-user
                    :headers {"x-waiter-token" token}
                    :request-method :delete})]
-            (is (= 200 status))
+            (is (= http-200-ok status))
             (is (every? #(str/includes? body (str %)) [(str "\"delete\":\"" token "\""), "\"success\":true"]))
             (is (= (assoc service-description-1
                      "deleted" true
@@ -209,7 +210,7 @@
                    :headers {"x-waiter-token" token}
                    :query-params {"hard-delete" "false"}
                    :request-method :delete})]
-            (is (= 200 status))
+            (is (= http-200-ok status))
             (is (every? #(str/includes? body (str %)) [(str "\"delete\":\"" token "\""), "\"success\":true"]))
             (is (= (assoc service-description-1
                      "deleted" true
@@ -234,7 +235,7 @@
                    :headers {"x-waiter-token" token}
                    :query-params {"hard-delete" "true"}
                    :request-method :delete})]
-            (is (= 400 status))
+            (is (= http-400-bad-request status))
             (is (str/includes? body "Must specify if-match header for token hard deletes"))
             (is (kv/fetch kv-store token)))
           (finally
@@ -272,7 +273,7 @@
                                "x-waiter-token" token}
                      :query-params {"hard-delete" "true"}
                      :request-method :delete})]
-              (is (= 200 status))
+              (is (= http-200-ok status))
               (is (str/includes? body (str "\"delete\":\"" token "\"")))
               (is (str/includes? body "\"hard-delete\":true"))
               (is (str/includes? body "\"success\":true"))
@@ -301,7 +302,7 @@
                    :request-method :delete})
                 {{message "message"
                   {{:strs [owner]} "metadata"} "details"} "waiter-error"} (json/read-str body)]
-            (is (= 403 status))
+            (is (= http-403-forbidden status))
             (is (= "Cannot hard-delete token" message))
             (is (= "tu2" owner) body)
             (is (not-empty (kv/fetch kv-store token)) "Entry deleted from kv-store!"))
@@ -314,7 +315,7 @@
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
                 {:headers {"x-waiter-token" token}
                  :request-method :get})]
-          (is (= 404 status))))
+          (is (= http-404-not-found status))))
 
       (testing "get:token-with-only-metadata"
         (try
@@ -328,7 +329,7 @@
                   kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
                   {:headers {"x-waiter-token" token}
                    :request-method :get})]
-            (is (= 200 status))
+            (is (= http-200-ok status))
             (is (= (get headers "etag") (sd/token-data->token-hash (kv/fetch kv-store token))))
             (is (= {"fallback-period-secs" 100
                     "https-redirect" true
@@ -346,7 +347,7 @@
                  :body (StringBufferInputStream. (utils/clj->json service-description-1))
                  :headers {}
                  :request-method :post})]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (= (get headers "etag") (sd/token-data->token-hash (kv/fetch kv-store token))))
           (is (str/includes? body (str "Successfully created " token)))
           (is (= (select-keys service-description-1 sd/token-data-keys)
@@ -371,7 +372,7 @@
                  :query-string "include=metadata"
                  :request-method :get})
               {:strs [last-update-time] :as token-data} (kv/fetch kv-store token)]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (= [{"deleted" false
                    "etag" (sd/token-data->token-hash token-data)
                    "last-update-time" (-> last-update-time tc/from-long du/date-to-str)
@@ -388,7 +389,7 @@
                  :body (-> service-description-1 (assoc "owner" "tu2" "token" token) utils/clj->json StringBufferInputStream.)
                  :headers {}
                  :request-method :post})]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (str/includes? body (str "Successfully created " token)))
           (is (= (select-keys service-description-1 sd/token-data-keys)
                  (sd/token->service-parameter-template kv-store token)))
@@ -410,7 +411,7 @@
                 {:headers {"x-waiter-token" token}
                  :request-method :get})
               json-keys ["metadata" "env"]]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (= "application/json" (get headers "content-type")))
           (is (not (str/includes? body "last-update-time")))
           (doseq [key (keys (apply dissoc (select-keys service-description-1 sd/service-parameter-keys) json-keys))]
@@ -426,7 +427,7 @@
                  :query-params {"token" token}
                  :request-method :get})
               json-keys ["metadata" "env"]]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (= "application/json" (get headers "content-type")))
           (is (not (str/includes? body "last-update-time")))
           (doseq [key (keys (apply dissoc (select-keys service-description-1 sd/service-parameter-keys) json-keys))]
@@ -443,7 +444,7 @@
                  :body (StringBufferInputStream. (utils/clj->json service-description-2))
                  :headers {}
                  :request-method :post})]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (str/includes? body (str "Successfully updated " token)))
           (is (= (select-keys service-description-2 sd/token-data-keys)
                  (sd/token->service-parameter-template kv-store token)))
@@ -471,7 +472,7 @@
                  :body (StringBufferInputStream. (utils/clj->json (assoc existing-service-parameter-template "token" token)))
                  :headers {}
                  :request-method :post})]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (str/includes? body (str "No changes detected for " token)))
           (is (= (-> existing-service-parameter-template
                      (dissoc "owner")
@@ -497,7 +498,7 @@
                  :body (StringBufferInputStream. (utils/clj->json (assoc existing-service-parameter-template "owner" auth-user "token" token)))
                  :headers {}
                  :request-method :post})]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (str/includes? body (str "Successfully updated " token)))
           (is (= (-> (dissoc existing-service-parameter-template "owner")
                      (select-keys sd/token-data-keys))
@@ -523,7 +524,7 @@
                  :body (StringBufferInputStream. (utils/clj->json (assoc service-description-2 "owner" "tu2")))
                  :headers {}
                  :request-method :post})]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (str/includes? body (str "Successfully updated " token)))
           (is (= (select-keys service-description-2 sd/token-data-keys)
                  (sd/token->service-parameter-template kv-store token)))
@@ -548,7 +549,7 @@
                  :body (StringBufferInputStream. (utils/clj->json service-description-2))
                  :headers {}
                  :request-method :post})]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (= "application/json" (get headers "content-type")))
           (is (str/includes? body (str "No changes detected for " token)))
           (is (= (select-keys service-description-2 sd/token-data-keys)
@@ -566,7 +567,7 @@
                 {:headers {"x-waiter-token" token}
                  :query-params {"include" "metadata"}
                  :request-method :get})]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (= "application/json" (get headers "content-type")))
           (is (-> body json/read-str (get "last-update-time") du/str-to-date))
           (let [body-map (-> body str json/read-str)]
@@ -585,7 +586,7 @@
                 {:headers {"x-waiter-token" token}
                  :query-params {"include" "foo"}
                  :request-method :get})]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (= "application/json" (get headers "content-type")))
           (is (not (str/includes? body "last-update-time")))
           (let [body-map (-> body str json/read-str)]
@@ -601,7 +602,7 @@
                 {:headers {"x-waiter-token" token}
                  :query-params {"include" ["foo" "metadata"]}
                  :request-method :get})]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (= "application/json" (get headers "content-type")))
           (is (-> body json/read-str (get "last-update-time") du/str-to-date))
           (let [body-map (-> body str json/read-str)]
@@ -619,7 +620,7 @@
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
                 {:headers {"x-waiter-token" token}
                  :request-method :get})]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (= "application/json" (get headers "content-type")))
           (is (not (str/includes? body "last-update-time")))
           (let [body-map (-> body str json/read-str)]
@@ -634,7 +635,7 @@
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
                 {:headers {"x-waiter-token" "###"}
                  :request-method :get})]
-          (is (= 404 status))
+          (is (= http-404-not-found status))
           (is (str/includes? body "Couldn't find token ###"))))
 
       (testing "post:new-service-description:missing-permitted-user"
@@ -649,7 +650,7 @@
                  :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {}
                  :request-method :post})]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (str/includes? body (str "Successfully created " token)))
           (is (= (-> service-description
                      (dissoc "token")
@@ -672,7 +673,7 @@
                  :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {}
                  :request-method :post})]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (str/includes? body (str "Successfully created " token)))
           (is (= (-> service-description
                      (dissoc "token")
@@ -696,7 +697,7 @@
                  :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {}
                  :request-method :post})]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (str/includes? body (str "Successfully created " token)))
           (is (= (-> service-description (dissoc "token") sd/transform-allowed-params-token-entry)
                  (-> body json/read-str (get "service-description") sd/transform-allowed-params-token-entry)))
@@ -724,7 +725,7 @@
                    :body (StringBufferInputStream. (utils/clj->json service-description))
                    :headers {}
                    :request-method :post})]
-            (is (= 200 status))
+            (is (= http-200-ok status))
             (is (str/includes? body (str "Successfully created " token)))
             (is (= (-> service-description (select-keys sd/service-parameter-keys) sd/transform-allowed-params-token-entry)
                    (-> body json/read-str (get "service-description") sd/transform-allowed-params-token-entry)))
@@ -746,7 +747,7 @@
                   {:headers {"x-waiter-token" token}
                    :query-params {"include" "foo"}
                    :request-method :get})]
-            (is (= 200 status))
+            (is (= http-200-ok status))
             (is (= "application/json" (get headers "content-type")))
             (is (not (str/includes? body "last-update-time")))
             (let [body-map (-> body str json/read-str)]
@@ -776,7 +777,7 @@
                  :body (StringBufferInputStream. (utils/clj->json service-description-2))
                  :headers {}
                  :request-method :post})]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (str/includes? body (str "Successfully updated " token)))
           (is (= (-> service-description-2 (select-keys sd/service-parameter-keys) sd/transform-allowed-params-token-entry)
                  (-> body json/read-str (get "service-description") sd/transform-allowed-params-token-entry)))
@@ -808,7 +809,7 @@
                  :body (StringBufferInputStream. (utils/clj->json service-description-2))
                  :headers {}
                  :request-method :post})]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (str/includes? body (str "No changes detected for " token)))
           (is (= (-> service-description-2 (select-keys sd/service-parameter-keys) sd/transform-allowed-params-token-entry)
                  (-> body json/read-str (get "service-description") sd/transform-allowed-params-token-entry)))
@@ -828,7 +829,7 @@
                  :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (str/includes? body "Successfully updated test-token"))
           (is (= (-> service-description
                      (dissoc "token")
@@ -854,7 +855,7 @@
                  :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (str/includes? body "Successfully updated test-token"))
           (is (= (-> service-description
                      (dissoc "token")
@@ -884,7 +885,7 @@
                  :headers {"x-waiter-token" token}
                  :query-params {"update-mode" "admin"}
                  :request-method :post})]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (str/includes? body "Successfully created test-token"))
           (is (= (-> service-description
                      (dissoc "token")
@@ -913,7 +914,7 @@
                  :headers {"x-waiter-token" token}
                  :query-params {"update-mode" "admin"}
                  :request-method :post})]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (str/includes? body "Successfully created test-token"))
           (is (= (-> service-description
                      (dissoc "token")
@@ -942,7 +943,7 @@
                      :body (StringBufferInputStream. (utils/clj->json new-service-description))
                      :headers {"x-waiter-token" token}
                      :request-method :post})]
-              (is (= 200 status))
+              (is (= http-200-ok status))
               (is (str/includes? body "Successfully updated test-token"))
               (is (= (-> service-description
                          (dissoc "token")
@@ -980,7 +981,7 @@
                  :headers {"x-waiter-token" token}
                  :query-params {"update-mode" "admin"}
                  :request-method :post})]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (str/includes? body "Successfully created test-token"))
           (is (= (-> service-description
                      (dissoc "token")
@@ -1001,7 +1002,7 @@
                  :headers {}
                  :query-params {"token" test-token}
                  :request-method :post})]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (= (get headers "etag") (sd/token-data->token-hash (kv/fetch kv-store test-token))))
           (is (str/includes? body (str "Successfully created " test-token)))
           (is (= (select-keys service-description-1 sd/token-data-keys)
@@ -1028,7 +1029,7 @@
                  :body (-> service-description-1 (assoc "cors-rules" cors-rules "token" token) utils/clj->json StringBufferInputStream.)
                  :headers {}
                  :request-method :post})]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (str/includes? body (str "Successfully created " token)))
           (is (= (select-keys service-description-1 sd/token-data-keys)
                  (sd/token->service-parameter-template kv-store token)))
@@ -1069,7 +1070,7 @@
                  :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {}
                  :request-method :post})]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (str/includes? body "Must provide the token"))))
 
       (testing "post:new-service-description:reserved-token"
@@ -1084,7 +1085,7 @@
                  :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {}
                  :request-method :post})]
-          (is (= 403 status))
+          (is (= http-403-forbidden status))
           (is (str/includes? body "Token name is reserved"))))
 
       (testing "post:new-service-description:no-parameters"
@@ -1096,7 +1097,7 @@
                 {:authorization/user auth-user
                  :body (StringBufferInputStream. (utils/clj->json service-description))
                  :request-method :post})]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (str/includes? body (str "No parameters provided for abcdefgh")))))
 
       (testing "post:new-service-description:schema-fail"
@@ -1111,7 +1112,7 @@
                  :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (str/includes? body "issue"))))
 
       (testing "post:new-service-description:edit-unauthorized-run-as-user"
@@ -1127,7 +1128,7 @@
                  :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
-          (is (= 403 status))
+          (is (= http-403-forbidden status))
           (is (str/includes? body "Cannot run as user"))))
 
       (testing "post:new-service-description:edit-unauthorized-owner"
@@ -1143,7 +1144,7 @@
                  :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
-          (is (= 403 status))
+          (is (= http-403-forbidden status))
           (is (str/includes? body "Cannot change owner of token"))))
 
       (testing "post:new-service-description:create-unauthorized-owner"
@@ -1158,7 +1159,7 @@
                  :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
-          (is (= 403 status))
+          (is (= http-403-forbidden status))
           (is (str/includes? body "Cannot create token as user"))))
 
       (testing "post:new-service-description:token-sync:invalid-admin-mode"
@@ -1177,7 +1178,7 @@
                 {:request-method :post :authorization/user test-user :headers {"x-waiter-token" token}
                  :body (StringBufferInputStream. (utils/clj->json service-description))
                  :query-params {"update-mode" "foobar"}})]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (str/includes? body "Invalid update-mode"))
           (is (nil? (kv/fetch kv-store token)))))
 
@@ -1201,7 +1202,7 @@
                  :headers {"x-waiter-token" token}
                  :query-params {"update-mode" "admin"}
                  :request-method :post})]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (str/includes? body "Must specify if-match header for admin mode token updates"))
           (is (= service-description (kv/fetch kv-store token)))))
 
@@ -1224,7 +1225,7 @@
                            "x-waiter-token" token}
                  :query-params {"update-mode" "admin"}
                  :request-method :post})]
-          (is (= 403 status))
+          (is (= http-403-forbidden status))
           (is (str/includes? body "Cannot administer token"))
           (is (nil? (kv/fetch kv-store token)))))
 
@@ -1246,7 +1247,7 @@
                            "x-waiter-token" token}
                  :query-params {"update-mode" "admin"}
                  :request-method :post})]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (str/includes? body "Token previous must be a map"))
           (is (nil? (kv/fetch kv-store token)))))
 
@@ -1263,7 +1264,7 @@
                  :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (str/includes? body "min-instances (2) must be less than or equal to max-instances (1)"))))
 
       (testing "post:new-service-description:invalid-token"
@@ -1278,7 +1279,7 @@
                 {:authorization/user auth-user
                  :body (StringBufferInputStream. (utils/clj->json service-description))
                  :request-method :post})]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (str/includes? body "Token must match pattern"))))
 
       (testing "post:new-service-description:invalid-token"
@@ -1293,7 +1294,7 @@
                 {:authorization/user auth-user
                  :body (StringBufferInputStream. (utils/clj->json service-description))
                  :request-method :post})]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (str/includes? body "Unsupported key(s) in token"))))
 
       (testing "post:new-service-description:cannot-modify-last-update-time"
@@ -1308,7 +1309,7 @@
                 {:authorization/user auth-user
                  :body (StringBufferInputStream. (utils/clj->json service-description))
                  :request-method :post})]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (str/includes? body "Cannot modify last-update-time token metadata"))))
 
       (testing "post:new-service-description:cannot-modify-root"
@@ -1323,7 +1324,7 @@
                 {:authorization/user auth-user
                  :body (StringBufferInputStream. (utils/clj->json service-description))
                  :request-method :post})]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (str/includes? body "Cannot modify root token metadata"))))
 
       (testing "post:new-service-description:cannot-modify-previous"
@@ -1338,7 +1339,7 @@
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
                 {:request-method :post :authorization/user "tu1"
                  :body (StringBufferInputStream. (utils/clj->json service-description))})]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (str/includes? body "Cannot modify previous token metadata"))))
 
       (testing "post:new-service-description:bad-token-command"
@@ -1354,7 +1355,7 @@
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [message]} "waiter-error"} (json/read-str body)]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (not (str/includes? body "clojure")))
           (is (str/includes? message "cmd must be a non-empty string") body)))
 
@@ -1371,7 +1372,7 @@
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [message]} "waiter-error"} (json/read-str body)]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (not (str/includes? body "clojure")))
           (is (str/includes? message "did not have string values: a") body)
           (is (str/includes? message "Metadata values must be strings"))))
@@ -1389,7 +1390,7 @@
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [message]} "waiter-error"} (json/read-str body)]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (not (str/includes? body "clojure")))
           (is (str/includes? message "environment variable keys are reserved: HOME") body)))
 
@@ -1406,7 +1407,7 @@
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [message]} "waiter-error"} (json/read-str body)]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (str/includes? message "authentication must be 'disabled', 'standard', or the specific authentication scheme if supported by the configured authenticator") body)))
 
       (testing "post:new-service-description:valid-authentication"
@@ -1421,7 +1422,7 @@
                  :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"accept" "application/json"}
                  :request-method :post})]
-          (is (= 200 status))))
+          (is (= http-200-ok status))))
 
       (testing "post:new-service-description:valid-authentication-2"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -1435,7 +1436,7 @@
                  :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"accept" "application/json"}
                  :request-method :post})]
-          (is (= 200 status))))
+          (is (= http-200-ok status))))
 
       (testing "post:new-service-description:missing-permitted-user-with-authentication-disabled"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -1450,7 +1451,7 @@
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [message]} "waiter-error"} (json/read-str body)]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (str/includes? message "Tokens with authentication disabled must specify permitted-user as *, instead provided") body)))
 
       (testing "post:new-service-description:non-star-permitted-user-with-authentication-disabled"
@@ -1466,7 +1467,7 @@
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [message]} "waiter-error"} (json/read-str body)]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (str/includes? message "Tokens with authentication disabled must specify permitted-user as *, instead provided") body)))
 
       (testing "post:new-service-description:partial-description-with-authentication-disabled"
@@ -1482,7 +1483,7 @@
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [message]} "waiter-error"} (json/read-str body)]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (str/includes? message "Tokens with authentication disabled must specify all required parameters") body)))
 
       (testing "post:new-service-description:partial-description-with-interstitial"
@@ -1498,7 +1499,7 @@
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [message]} "waiter-error"} (json/read-str body)]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (str/includes? message "Tokens with missing required parameters cannot use interstitial support") body)))
 
       (let [run-allowed-params-check
@@ -1515,7 +1516,7 @@
                        :headers {"accept" "application/json"}
                        :request-method :post})
                     {{:strs [message]} "waiter-error"} (json/read-str body)]
-                (is (= 400 status))
+                (is (= http-400-bad-request status))
                 (doseq [error-message error-messages]
                   (is (str/includes? (str message) error-message) body))))]
 
@@ -1596,7 +1597,7 @@
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [details message]} "waiter-error"} (json/read-str body)]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (not (str/includes? body "clojure")))
           (is (str/includes? (str details) "fallback-period-secs") body)
           (is (str/includes? message "Validation failed for user metadata on token") body)))
@@ -1614,7 +1615,7 @@
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [details message]} "waiter-error"} (json/read-str body)]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (not (str/includes? body "clojure")))
           (is (str/includes? (str details) "fallback-period-secs") body)
           (is (str/includes? message "Validation failed for user metadata on token") body)))
@@ -1634,7 +1635,7 @@
                 {:authorization/user test-user
                  :body (StringBufferInputStream. (utils/clj->json service-description-2))
                  :request-method :post})]
-          (is (= 403 status))
+          (is (= http-403-forbidden status))
           (is (str/includes? body "You have reached the limit of number of tokens allowed"))
           (is (nil? (kv/fetch kv-store token)))))
 
@@ -1650,7 +1651,7 @@
                  :query-params {"token" "abcdefgh"}
                  :request-method :post})
               {{:strs [details message]} "waiter-error"} (json/read-str body)]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (not (str/includes? body "clojure")))
           (is (str/includes? (str details) "json-payload") body)
           (is (str/includes? (str details) "query-parameter") body)
@@ -1668,7 +1669,7 @@
                  :query-params {"token" "stuvwxyz"}
                  :request-method :post})
               {{:strs [details message]} "waiter-error"} (json/read-str body)]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (not (str/includes? body "clojure")))
           (is (str/includes? (str details) "json-payload") body)
           (is (str/includes? (str details) "query-parameter") body)
@@ -1690,7 +1691,7 @@
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [details message]} "waiter-error"} (json/read-str body)]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (not (str/includes? body "clojure")))
           (is (str/includes? (str details) "cors-rules") body)
           (is (str/includes? (str details) "origin-regex\\\" (throws? (is-a-valid-regular-expression?") body)
@@ -1714,7 +1715,7 @@
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [details message]} "waiter-error"} (json/read-str body)]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (not (str/includes? body "clojure")))
           (is (str/includes? (str details) "cors-rules") body)
           (is (str/includes? (str details) "origin-regex\\\" (throws? (is-a-valid-regular-expression?") body)
@@ -1737,7 +1738,7 @@
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [details message]} "waiter-error"} (json/read-str body)]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (str/includes? (str details) "cors-rules\\\" (not (sequential?") body)
           (is (str/includes? message "Validation failed for user metadata on token") body))))))
 
@@ -2074,7 +2075,7 @@
                                   synchronize-fn inter-router-request-fn kv-store list-tokens-fn
                                   {:request-method :post})
           json-response (json/read-str body)]
-      (is (= 200 status))
+      (is (= http-200-ok status))
       (is (= {:message "Successfully re-indexed" :tokens 3} (walk/keywordize-keys json-response)))
       (is @inter-router-request-fn-called))
 
@@ -2084,7 +2085,7 @@
                                   synchronize-fn inter-router-request-fn kv-store list-tokens-fn
                                   {:headers {"accept" "application/json"} :request-method :get})
           json-response (json/read-str body)]
-      (is (= 405 status))
+      (is (= http-405-method-not-allowed status))
       (is json-response)
       (is (not @inter-router-request-fn-called)))))
 
@@ -2113,7 +2114,7 @@
       {"cpus" 4} {"deleted" true "last-update-time" (- last-update-time-seed 3000) "owner" "owner2"})
     (let [request {:query-string "include=metadata" :request-method :get}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
-      (is (= 200 status))
+      (is (= http-200-ok status))
       (is (= #{{"deleted" false
                 "etag" (token->token-hash "token1")
                 "last-update-time" (-> (- last-update-time-seed 1000) tc/from-long du/date-to-str)
@@ -2132,7 +2133,7 @@
              (set (json/read-str body)))))
     (let [request {:query-string "include=metadata&include=deleted" :request-method :get}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
-      (is (= 200 status))
+      (is (= http-200-ok status))
       (is (= #{{"deleted" false
                 "etag" (token->token-hash "token1")
                 "last-update-time" (-> (- last-update-time-seed 1000) tc/from-long du/date-to-str)
@@ -2156,7 +2157,7 @@
              (set (json/read-str body)))))
     (let [request {:request-method :get}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
-      (is (= 200 status))
+      (is (= http-200-ok status))
       (is (= #{{"owner" "owner1" "token" "token1"}
                {"owner" "owner1" "token" "token2"}
                {"owner" "owner2" "token" "token3"}}
@@ -2167,35 +2168,35 @@
                                   (str/starts-with? (:user resource) subject)))]
       (let [request {:query-string "can-manage-as-user=owner" :request-method :get}
             {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
-        (is (= 200 status))
+        (is (= http-200-ok status))
         (is (= #{{"owner" "owner1" "token" "token1"}
                  {"owner" "owner1" "token" "token2"}
                  {"owner" "owner2" "token" "token3"}}
                (set (json/read-str body)))))
       (let [request {:query-string "can-manage-as-user=owner1" :request-method :get}
             {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
-        (is (= 200 status))
+        (is (= http-200-ok status))
         (is (= #{{"owner" "owner1" "token" "token1"}
                  {"owner" "owner1" "token" "token2"}}
                (set (json/read-str body)))))
       (let [request {:query-string "can-manage-as-user=owner2" :request-method :get}
             {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
-        (is (= 200 status))
+        (is (= http-200-ok status))
         (is (= #{{"owner" "owner2" "token" "token3"}}
                (set (json/read-str body)))))
       (let [request {:query-string "can-manage-as-user=test" :request-method :get}
             {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
-        (is (= 200 status))
+        (is (= http-200-ok status))
         (is (= #{} (set (json/read-str body))))))
     (let [request {:query-string "owner=owner1" :request-method :get}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
-      (is (= 200 status))
+      (is (= http-200-ok status))
       (is (= #{{"owner" "owner1" "token" "token1"}
                {"owner" "owner1" "token" "token2"}}
              (set (json/read-str body)))))
     (let [request {:query-string "owner=owner1&include=metadata" :request-method :get}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
-      (is (= 200 status))
+      (is (= http-200-ok status))
       (is (= #{{"deleted" false
                 "etag" (token->token-hash "token1")
                 "last-update-time" (-> (- last-update-time-seed 1000) tc/from-long du/date-to-str)
@@ -2209,7 +2210,7 @@
              (set (json/read-str body)))))
     (let [request {:query-string "owner=does-not-exist" :request-method :get}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
-      (is (= 200 status))
+      (is (= http-200-ok status))
       (is (= [] (json/read-str body))))
     (let [request {:headers {"accept" "application/json"}
                    :request-method :post}
@@ -2217,11 +2218,11 @@
           json-response (try (json/read-str body)
                              (catch Exception _
                                (is (str "Failed to parse body as JSON:\n" body))))]
-      (is (= 405 status))
+      (is (= http-405-method-not-allowed status))
       (is json-response))
     (let [request {:request-method :get :query-string "owner=owner2&include=metadata"}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
-      (is (= 200 status))
+      (is (= http-200-ok status))
       (is (= #{{"deleted" false
                 "etag" (token->token-hash "token3")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
@@ -2230,7 +2231,7 @@
              (set (json/read-str body)))))
     (let [request {:request-method :get :query-string "owner=owner2&include=metadata&include=deleted"}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
-      (is (= 200 status))
+      (is (= http-200-ok status))
       (is (= #{{"deleted" false
                 "etag" (token->token-hash "token3")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)

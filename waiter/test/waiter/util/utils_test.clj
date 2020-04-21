@@ -24,6 +24,7 @@
             [clojure.walk :as walk]
             [full.async :refer (<?? <? go-try)]
             [waiter.password-store]
+            [waiter.status-codes :refer :all]
             [waiter.test-helpers :refer :all]
             [waiter.util.cache-utils :refer :all]
             [waiter.util.date-utils :refer :all]
@@ -116,7 +117,7 @@
 
     (testing "should convert empty map"
       (let [{:keys [body headers status]} (clj->json-response {})]
-        (is (= 200 status))
+        (is (= http-200-ok status))
         (is (= expected-json-response-headers headers))
         (is (not (nil? body)))))
 
@@ -130,12 +131,12 @@
 (deftest test-clj->streaming-json-response
   (testing "convert empty map"
     (let [{:keys [body headers status]} (clj->streaming-json-response {})]
-      (is (= 200 status))
+      (is (= http-200-ok status))
       (is (= expected-json-response-headers headers))
       (is (= {} (json/read-str (json-response->str body))))))
   (testing "consumes status argument"
-    (let [{:keys [status]} (clj->streaming-json-response {} :status 404)]
-      (is (= status 404))))
+    (let [{:keys [status]} (clj->streaming-json-response {} :status http-404-not-found)]
+      (is (= status http-404-not-found))))
   (testing "converts regex patters to strings"
     (is (= {"foo" ["bar"]}
            (-> {:foo [#"bar"]}
@@ -160,34 +161,34 @@
     (testing "html response"
       (let [{:keys [body headers status]}
             (exception->response
-              (ex-info "TestCase Exception" (map->TestResponse {:status 400}))
+              (ex-info "TestCase Exception" (map->TestResponse {:status http-400-bad-request}))
               (assoc-in request [:headers "accept"] "text/html"))]
-        (is (= 400 status))
+        (is (= http-400-bad-request status))
         (is (= expected-html-response-headers headers))
         (is (str/includes? body "TestCase Exception"))))
     (testing "html response with links"
       (let [{:keys [body headers status]}
             (exception->response
-              (ex-info "TestCase Exception" (map->TestResponse {:status 400
+              (ex-info "TestCase Exception" (map->TestResponse {:status http-400-bad-request
                                                                 :friendly-error-message "See http://localhost/path"}))
               (assoc-in request [:headers "accept"] "text/html"))]
-        (is (= 400 status))
+        (is (= http-400-bad-request status))
         (is (= expected-html-response-headers headers))
         (is (str/includes? body "See <a href=\"http://localhost/path\">http://localhost/path</a>"))))
     (testing "plaintext response"
       (let [{:keys [body headers status]}
             (exception->response
-              (ex-info "TestCase Exception" (map->TestResponse {:status 400}))
+              (ex-info "TestCase Exception" (map->TestResponse {:status http-400-bad-request}))
               (assoc-in request [:headers "accept"] "text/plain"))]
-        (is (= 400 status))
+        (is (= http-400-bad-request status))
         (is (= expected-text-response-headers headers))
         (is (str/includes? body "TestCase Exception"))))
     (testing "json response"
       (let [{:keys [body headers status]}
             (exception->response
-              (ex-info "TestCase Exception" (map->TestResponse {:status 500}))
+              (ex-info "TestCase Exception" (map->TestResponse {:status http-500-internal-server-error}))
               (assoc-in request [:headers "accept"] "application/json"))]
-        (is (= 500 status))
+        (is (= http-500-internal-server-error status))
         (is (= expected-json-response-headers headers))
         (is (str/includes? body "TestCase Exception"))))))
 
@@ -629,37 +630,37 @@
                                (update :trailers assoc
                                        "grpc-message" grpc-message
                                        "grpc-status" (str grpc-status))))]
-    (let [response (make-response 200)]
+    (let [response (make-response http-200-ok)]
       (is (= response (-> response (add-grpc-headers-and-trailers {}) load-trailers))))
-    (let [response (make-response 301)]
+    (let [response (make-response http-301-moved-permanently)]
       (is (= response (-> response (add-grpc-headers-and-trailers {}) load-trailers))))
-    (let [response (make-response 400)]
-      (is (= (attach-grpc-errors response 3 "Bad Request")
+    (let [response (make-response http-400-bad-request)]
+      (is (= (attach-grpc-errors response grpc-3-invalid-argument "Bad Request")
              (-> response (add-grpc-headers-and-trailers {}) load-trailers))))
-    (let [response (make-response 401)]
-      (is (= (attach-grpc-errors response 16 "Unauthorized")
+    (let [response (make-response http-401-unauthorized)]
+      (is (= (attach-grpc-errors response grpc-16-unauthenticated "Unauthorized")
              (-> response (add-grpc-headers-and-trailers {}) load-trailers))))
-    (let [response (make-response 403)]
-      (is (= (attach-grpc-errors response 7 "Permission Denied")
+    (let [response (make-response http-403-forbidden)]
+      (is (= (attach-grpc-errors response grpc-7-permission-denied "Permission Denied")
              (-> response (add-grpc-headers-and-trailers {}) load-trailers))))
-    (let [response (make-response 429)]
-      (is (= (attach-grpc-errors response 14 "Too Many Requests")
+    (let [response (make-response http-429-too-many-requests)]
+      (is (= (attach-grpc-errors response grpc-14-unavailable "Too Many Requests")
              (-> response (add-grpc-headers-and-trailers {}) load-trailers))))
-    (let [response (make-response 500)]
-      (is (= (attach-grpc-errors response 13 "Internal Server Error")
+    (let [response (make-response http-500-internal-server-error)]
+      (is (= (attach-grpc-errors response grpc-13-internal "Internal Server Error")
              (-> response (add-grpc-headers-and-trailers {}) load-trailers))))
-    (let [response (make-response 502)]
-      (is (= (attach-grpc-errors response 14 "Bad Gateway")
+    (let [response (make-response http-502-bad-gateway)]
+      (is (= (attach-grpc-errors response grpc-14-unavailable "Bad Gateway")
              (-> response (add-grpc-headers-and-trailers {}) load-trailers))))
-    (let [response (make-response 503)]
-      (is (= (attach-grpc-errors response 14 "Service Unavailable")
+    (let [response (make-response http-503-service-unavailable)]
+      (is (= (attach-grpc-errors response grpc-14-unavailable "Service Unavailable")
              (-> response (add-grpc-headers-and-trailers {}) load-trailers))))
-    (let [response (make-response 504)]
-      (is (= (attach-grpc-errors response 4 "Gateway Timeout")
+    (let [response (make-response http-504-gateway-timeout)]
+      (is (= (attach-grpc-errors response grpc-4-deadline-exceeded "Gateway Timeout")
              (-> response (add-grpc-headers-and-trailers {}) load-trailers))))))
 
 (deftest test-attach-grpc-status
-  (let [standard-response {:body "hello" :status 200}]
+  (let [standard-response {:body "hello" :status http-200-ok}]
     (with-redefs [add-grpc-headers-and-trailers (fn [response _]
                                                   (assoc response :add-grpc-headers-and-trailers true))]
       (testing "non-grpc request"

@@ -61,6 +61,7 @@
             [waiter.state.responder :as responder]
             [waiter.state.router :as router]
             [waiter.statsd :as statsd]
+            [waiter.status-codes :refer :all]
             [waiter.token :as token]
             [waiter.util.async-utils :as au]
             [waiter.util.cache-utils :as cu]
@@ -354,7 +355,7 @@
            blacklist-successful? true]
       (log/info {:dest-id dest-router-id, :blacklist-successful? blacklist-successful?}, :reason reason)
       (let [response (make-blacklist-request-fn dest-router-id endpoint instance reason)
-            response-successful? (= 200 (:status response))
+            response-successful? (= http-200-ok (:status response))
             blacklist-successful? (and blacklist-successful? response-successful?)]
         (when (and short-circuit? (not response-successful?))
           (log/info "peer communication" dest-router-id "veto-ed killing of" id {:http-status (:status response)}))
@@ -387,7 +388,7 @@
     (loop [[dest-router-id & remaining-router-ids] (seq router-ids)]
       (let [dest-endpoint (str "waiter-kill-instance/" service-id)
             {:keys [body status]} (make-kill-instance-request-fn dest-router-id dest-endpoint)
-            kill-successful? (= 200 status)]
+            kill-successful? (= http-200-ok status)]
         (when kill-successful?
           (log/info "peer communication" dest-router-id "killed instance of" service-id body))
         (if (and remaining-router-ids (not kill-successful?))
@@ -607,14 +608,14 @@
       (do
         (log/info "x-waiter-authentication is not supported as an on-the-fly header"
                   {:service-description service-description, :token token})
-        (on-error 400 "An authentication parameter is not supported for on-the-fly headers"))
+        (on-error http-400-bad-request "An authentication parameter is not supported for on-the-fly headers"))
 
       ;; ensure service description formed comes entirely from the token by ensuring absence of on-the-fly headers
       (and authentication-disabled? (some sd/service-parameter-keys (-> waiter-headers headers/drop-waiter-header-prefix keys)))
       (do
         (log/info "request cannot proceed as it is mixing an authentication disabled token with on-the-fly headers"
                   {:service-description service-description, :token token})
-        (on-error 400 "An authentication disabled token may not be combined with on-the-fly headers"))
+        (on-error http-400-bad-request "An authentication disabled token may not be combined with on-the-fly headers"))
 
       authentication-disabled?
       (do
@@ -1114,7 +1115,7 @@
                                             (when-not (contains? authentication-providers authentication)
                                               (throw (ex-info (str "authentication must be one of: '"
                                                                    (str/join "', '" (sort authentication-providers)) "'")
-                                                              {:authentication authentication :status 400}))))
+                                                              {:authentication authentication :status http-400-bad-request}))))
                                           (sd/validate service-description-builder service-description {}))))
    :waiter-request?-fn (pc/fnk [[:state waiter-hostnames]]
                          (let [local-router (InetAddress/getLocalHost)
@@ -1774,7 +1775,7 @@
                                     :headers {"x-waiter-auth-method" (some-> method name)
                                               "x-waiter-auth-principal" (str principal)
                                               "x-waiter-auth-user" (str user)}
-                                    :status 200}))))
+                                    :status http-200-ok }))))
    :waiter-request-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template]
                                                [:settings consent-expiry-days]
                                                wrap-secure-request-fn]

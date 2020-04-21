@@ -26,6 +26,7 @@
             [waiter.auth.authentication :as auth]
             [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics]
+            [waiter.status-codes :refer :all]
             [waiter.util.utils :as utils])
   (:import (java.util.concurrent ThreadPoolExecutor)
            (org.ietf.jgss GSSManager GSSCredential GSSContext GSSException)))
@@ -54,7 +55,7 @@
     (when-let [ntok (.acceptSecContext gss-context intok 0 (alength intok))]
       (encode-output-token ntok))))
 
-(defn response-401-negotiate
+(defn response-http-401-unauthorized-negotiate
   "Tell the client you'd like them to use kerberos"
   [request]
   (log/info "triggering 401 negotiate for spnego authentication")
@@ -62,18 +63,18 @@
   (meters/mark! (metrics/waiter-meter "core" "response-status-rate" "401"))
   (-> {:headers {"www-authenticate" (str/trim negotiate-prefix)}
        :message "Unauthorized"
-       :status 401}
+       :status http-401-unauthorized}
     (utils/data->error-response request)
     (cookies/cookies-response)))
 
-(defn response-503-temporarily-unavailable
+(defn response-http-503-service-unavailable-temporarily-unavailable
   "Tell the client you're overloaded and would like them to try later"
   [request]
   (log/info "triggering 401 negotiate for spnego authentication")
   (counters/inc! (metrics/waiter-counter "core" "response-status" "503"))
   (meters/mark! (metrics/waiter-meter "core" "response-status-rate" "503"))
   (-> {:message "Too many Kerberos authentication requests"
-       :status 503}
+       :status http-503-service-unavailable}
     (utils/data->error-response request)
     (cookies/cookies-response)))
 
@@ -122,7 +123,7 @@
               (async/>!! response-chan
                          {:error (ex-info "Error during Kerberos authentication"
                                           {:details (.getMessage ex)
-                                           :status 403}
+                                           :status http-403-forbidden}
                                           ex)}))
             (catch Throwable th
               (log/error th "error while performing kerberos auth")
@@ -141,7 +142,7 @@
     (cond
       ;; Ensure we are not already queued with lots of Kerberos auth requests
       (too-many-pending-auth-requests? thread-pool-executor max-queue-length)
-      (response-503-temporarily-unavailable request)
+      (response-http-503-service-unavailable-temporarily-unavailable request)
       ;; Try and authenticate using kerberos and add cookie in response when valid
       (auth/select-auth-header request negotiate-token?)
       (let [current-correlation-id (cid/get-correlation-id)
@@ -163,11 +164,11 @@
                           (let [actual-response (async/<! response)]
                             (rr/header actual-response "www-authenticate" token)))
                         response))
-                    (response-401-negotiate request))
+                    (response-http-401-unauthorized-negotiate request))
                   (catch Throwable th
                     (log/error th "error while processing response")
                     th))
                 error)))))
       ;; Default to unauthorized
       :else
-      (response-401-negotiate request))))
+      (response-http-401-unauthorized-negotiate request))))

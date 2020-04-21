@@ -19,6 +19,7 @@
             [clojure.string :as str]
             [clojure.test :refer :all]
             [waiter.auth.kerberos :refer :all]
+            [waiter.status-codes :refer :all]
             [waiter.util.utils :as utils])
   (:import (clojure.lang ExceptionInfo)
            (waiter.auth.kerberos KerberosAuthenticator)))
@@ -90,7 +91,7 @@
           (is false "Expected exception to be thrown")
           (catch ExceptionInfo e
             (let [{:keys [status message]} (ex-data e)]
-              (is (= 403 status))
+              (is (= http-403-forbidden status))
               (is (str/includes? message "Prestashed tickets")))))))
 
     (testing "queries on cache miss"

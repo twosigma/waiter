@@ -22,13 +22,14 @@
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
             [qbits.jet.client.websocket :as ws-client]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils]
             [waiter.websocket :as websocket])
   (:import (java.net HttpCookie)
            (java.nio ByteBuffer)
-           (org.eclipse.jetty.websocket.api StatusCode UpgradeException UpgradeRequest)
+           (org.eclipse.jetty.websocket.api UpgradeException UpgradeRequest)
            (org.eclipse.jetty.websocket.client WebSocketClient)
            (qbits.jet.client.websocket Connection)
            (qbits.jet.websocket WebSocket)))
@@ -97,7 +98,7 @@
                                           (add-auth-cookie request auth-cookie-value))})
               [close-code error] (connection->ctrl-data connection)]
           (is (= :qbits.jet.websocket/close close-code))
-          (is (= StatusCode/NORMAL error))
+          (is (= websocket-1000-normal error))
           (is (= :done (deref response-promise default-timeout-period :timed-out))))
         (log/info "websocket responses:" @ws-response-atom)
         (is (= "Connected to kitchen" (first @ws-response-atom)) (str @ws-response-atom))
@@ -123,7 +124,7 @@
           waiter-headers {"x-waiter-token" token}]
       (try
         (let [token-response (post-token waiter-url token-description)]
-          (assert-response-status token-response 200)
+          (assert-response-status token-response http-200-ok)
           (try
             (let [response-promise (promise)
                   connection (ws-client/connect!
@@ -140,7 +141,7 @@
                                               (websocket/add-headers-to-upgrade-request! request waiter-headers))})
                   [close-code error] (connection->ctrl-data connection)]
               (is (= :qbits.jet.websocket/close close-code))
-              (is (= StatusCode/NORMAL error))
+              (is (= websocket-1000-normal error))
               (is (= :done (deref response-promise default-timeout-period :timed-out))))
             (log/info "websocket responses:" @ws-response-atom)
             (is (= "Connected to kitchen" (first @ws-response-atom)) (str @ws-response-atom))
@@ -166,7 +167,7 @@
                               :token token)]
       (try
         (let [token-response (post-token waiter-url token-description)]
-          (assert-response-status token-response 200)
+          (assert-response-status token-response http-200-ok)
 
           (let [connect-success-promise (promise)
                 waiter-headers {"x-waiter-concurrency-level" 300
@@ -232,7 +233,7 @@
                             :subprotocols ["Chat-1.0"]})
               [close-code error] (connection->ctrl-data connection)]
           (is (= :qbits.jet.websocket/close close-code))
-          (is (= StatusCode/NORMAL error))
+          (is (= websocket-1000-normal error))
           (is (= :done (deref response-promise default-timeout-period :timed-out))))
         (log/info "websocket responses:" @ws-response-atom)
         (is (= "Connected to kitchen" (first @ws-response-atom)) (str @ws-response-atom))
@@ -288,7 +289,7 @@
           _ (make-kitchen-request waiter-url waiter-headers :method :get)
           {:keys [headers service-id] :as canary-response}
           (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url % :method :get))
-          _ (assert-response-status canary-response 200)
+          _ (assert-response-status canary-response http-200-ok)
           first-request-time-header (-> (get headers "x-waiter-request-date")
                                         (du/str-to-date du/formatter-rfc822))
           num-iterations 5]
@@ -320,7 +321,7 @@
                                           (add-auth-cookie request auth-cookie-value))})
               [close-code error] (connection->ctrl-data connection)]
           (is (= :qbits.jet.websocket/close close-code))
-          (is (= StatusCode/NORMAL error))
+          (is (= websocket-1000-normal error))
           (is (= :done (deref response-promise (* 2 num-iterations inter-request-interval-ms) :timed-out)))
           (Thread/sleep (* 3 metrics-sync-interval-ms))
           (let [connection-duration-ms (- @connect-end-time-ms-atom connect-start-time-ms)
@@ -363,7 +364,7 @@
                                           (add-auth-cookie request auth-cookie-value))})
               [close-code error] (connection->ctrl-data connection)]
           (is (= :qbits.jet.websocket/close close-code))
-          (is (= StatusCode/SERVER_ERROR error))
+          (is (= websocket-1011-server-error error))
           (is (= :done (deref response-promise default-timeout-period :timed-out))))
         (is (not @send-success-after-timeout-atom))
         (finally
@@ -416,7 +417,7 @@
                                            "x-waiter-timeout" "20000")]
                              (websocket/add-headers-to-upgrade-request! request headers))
                            (add-auth-cookie request auth-cookie-value))})
-          (is (= [:qbits.jet.websocket/close StatusCode/ABNORMAL "Disconnected"]
+          (is (= [:qbits.jet.websocket/close websocket-1006-abnormal "Disconnected"]
                  (deref ctrl-promise default-timeout-period :timed-out)))
           (is (= :done (deref response-promise default-timeout-period :timed-out))))
         (is (not @send-success-after-timeout-atom))
@@ -473,7 +474,7 @@
             (is (nil? (deref backend-data-promise 100 :timed-out)))
             (let [[message-key close-code close-message] (deref ctrl-data-promise 100 [:timed-out])]
               (is (= :qbits.jet.websocket/close message-key))
-              (is (= StatusCode/SERVER_ERROR close-code))
+              (is (= websocket-1011-server-error close-code))
               (is (str/includes? (str close-message) "exceeds maximum size")))))
 
         (finally

@@ -16,19 +16,20 @@
 (ns waiter.middleware-test
   (:require [clojure.core.async :as async]
             [clojure.test :refer :all]
-            [waiter.middleware :refer :all]))
+            [waiter.middleware :refer :all]
+            [waiter.status-codes :refer :all]))
 
 (deftest test-wrap-update
   (testing "sync"
     (let [handler (-> (fn [request]
                         (is (= :value (:key request)))
-                        {:status 200})
+                        {:status http-200-ok})
                       (wrap-assoc :key :value))]
       (is (= :value (-> {} handler :key)))))
   (testing "async"
     (let [handler (-> (fn [request]
                         (is (= :value (:key request)))
-                        (async/go {:status 200}))
+                        (async/go {:status http-200-ok}))
                       (wrap-assoc :key :value))]
       (is (= :value (-> {} handler async/<!! :key)))))
   (testing "sync w/ exception"

@@ -26,6 +26,7 @@
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.service :as service]
+            [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
             [waiter.util.utils :as utils])
   (:import (org.joda.time DateTime)))
@@ -182,7 +183,7 @@
                                  scheduler populate-maintainer-chan! timeout-config service-id correlation-id 1
                                  scale-service-thread-pool response-chan))
             {:keys [instance-id status] :as kill-response} (or (async/poll! response-chan)
-                                                               {:message :no-instance-killed, :status 404})]
+                                                               {:message :no-instance-killed, :status http-404-not-found})]
         (if instance-killed?
           (cid/cinfo correlation-id "killed instance" instance-id)
           (cid/cinfo correlation-id "unable to kill instance" kill-response))
@@ -190,7 +191,7 @@
                                        :service-id service-id
                                        :source-router-id src-router-id
                                        :success instance-killed?}
-                                      :status (or status 500))
+                                      :status (or status http-500-internal-server-error))
             (update :headers assoc "x-cid" correlation-id))))))
 
 (defn compute-scale-amount-restricted-by-quanta

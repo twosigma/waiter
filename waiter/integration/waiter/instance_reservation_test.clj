@@ -20,6 +20,7 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [waiter.state.responder :as responder]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
             [waiter.util.date-utils :as du])
   (:import (java.util.concurrent CountDownLatch)))
@@ -117,7 +118,7 @@
                          #(make-kitchen-request waiter-url % :cookies cookies)))
           _ (log/info (str "Making canary request..."))
           {:keys [cookies instance-id service-id] :as canary-response} (request-fn 100)]
-      (assert-response-status canary-response 200)
+      (assert-response-status canary-response http-200-ok)
       (with-service-cleanup
         service-id
         (log/info "Sending additional requests.")
@@ -155,7 +156,7 @@
                        #(make-kitchen-request router-url % :cookies cookies)))
         _ (log/info "making canary request...")
         {:keys [cookies service-id] :as canary-response} (request-fn waiter-url 2)]
-    (assert-response-status canary-response 200)
+    (assert-response-status canary-response http-200-ok)
     (with-service-cleanup
       service-id
       (let [[_ router-url] (first (routers waiter-url))]
@@ -173,7 +174,7 @@
                                     (swap! response-atom conj response)
                                     (swap! instance-id->request-count-atom update instance-id (fnil inc 0)))))
           (doseq [response @response-atom]
-            (assert-response-status response 200))
+            (assert-response-status response http-200-ok))
           (let [sorted-instance-ids (->> (active-instances router-url service-id :cookies cookies)
                                       (map (fn [instance] (update instance :started-at du/str-to-date)))
                                       (responder/sort-instances-for-processing #{})

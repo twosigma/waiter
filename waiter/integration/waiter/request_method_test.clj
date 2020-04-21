@@ -15,6 +15,7 @@
 ;;
 (ns waiter.request-method-test
   (:require [clojure.test :refer :all]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]))
 
 (deftest ^:parallel ^:integration-fast test-request-method
@@ -23,7 +24,7 @@
           service-name (rand-name)
           headers {:x-waiter-name service-name, :x-kitchen-echo "true"}
           {:keys [service-id] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
-      (assert-response-status response 200)
+      (assert-response-status response http-200-ok)
       (with-service-cleanup
         service-id
         (is (= lorem-ipsum (:body (make-kitchen-request waiter-url headers :body lorem-ipsum :method :get))))

@@ -32,6 +32,7 @@
             [waiter.scheduler :as scheduler]
             [waiter.service-description :as sd]
             [waiter.statsd :as statsd]
+            [waiter.status-codes :refer :all]
             [waiter.test-helpers :refer :all]
             [waiter.util.utils :as utils])
   (:import (clojure.core.async.impl.channels ManyToManyChannel)
@@ -49,7 +50,7 @@
                    :uri (str "/waiter-async/complete//" service-id)}
           async-request-terminate-fn (fn [_] (throw (Exception. "unexpected call!")))
           {:keys [body headers status]} (complete-async-handler async-request-terminate-fn request)]
-      (is (= 400 status))
+      (is (= http-400-bad-request status))
       (is (= expected-json-response-headers headers))
       (is (str/includes? body "No request-id specified"))))
 
@@ -62,7 +63,7 @@
                    :uri (str "/waiter-async/complete/" request-id "/")}
           async-request-terminate-fn (fn [_] (throw (Exception. "unexpected call!")))
           {:keys [body headers status]} (complete-async-handler async-request-terminate-fn request)]
-      (is (= 400 status))
+      (is (= http-400-bad-request status))
       (is (= expected-json-response-headers headers))
       (is (str/includes? body "No service-id specified"))))
 
@@ -75,7 +76,7 @@
                    :uri (str "/waiter-async/complete/" request-id "/" service-id)}
           async-request-terminate-fn (fn [in-request-id] (= request-id in-request-id))
           {:keys [body headers status]} (complete-async-handler async-request-terminate-fn request)]
-      (is (= 200 status))
+      (is (= http-200-ok status))
       (is (= expected-json-response-headers headers))
       (is (= {:request-id request-id, :success true} (pc/keywordize-map (json/read-str body))))))
 
@@ -88,7 +89,7 @@
                    :uri (str "/waiter-async/complete/" request-id "/" service-id)}
           async-request-terminate-fn (fn [_] false)
           {:keys [body headers status]} (complete-async-handler async-request-terminate-fn request)]
-      (is (= 200 status))
+      (is (= http-200-ok status))
       (is (= expected-json-response-headers headers))
       (is (= {:request-id request-id, :success false} (pc/keywordize-map (json/read-str body)))))))
 
@@ -112,7 +113,7 @@
             {:keys [body headers status]}
             (async/<!!
               (async-result-handler nil nil service-id->service-description-fn request))]
-        (is (= 400 status))
+        (is (= http-400-bad-request status))
         (is (= expected-json-response-headers headers))
         (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri"))))
 
@@ -122,7 +123,7 @@
             {:keys [body headers status]}
             (async/<!!
               (async-result-handler nil nil service-id->service-description-fn request))]
-        (is (= 400 status))
+        (is (= http-400-bad-request status))
         (is (= expected-json-response-headers headers))
         (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri"))))
 
@@ -132,7 +133,7 @@
             {:keys [body headers status]}
             (async/<!!
               (async-result-handler nil nil service-id->service-description-fn request))]
-        (is (= 400 status))
+        (is (= http-400-bad-request status))
         (is (= expected-json-response-headers headers))
         (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri"))))
 
@@ -149,7 +150,7 @@
                                    (is (= (-> request :route-params :location) end-route))
                                    (is (= "test-metric-group" metric-group))
                                    (is (= "http" backend-proto))
-                                   (async/go {:error (ex-info "backend-status-error" {:status 502})}))
+                                   (async/go {:error (ex-info "backend-status-error" {:status http-502-bad-gateway})}))
             async-trigger-terminate-fn (fn [in-router-id in-service-id in-request-id]
                                          (is (= my-router-id in-router-id))
                                          (is (= service-id in-service-id))
@@ -157,7 +158,7 @@
             {:keys [body headers status]}
             (async/<!!
               (async-result-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))]
-        (is (= 502 status))
+        (is (= http-502-bad-gateway status))
         (is (= expected-json-response-headers headers))
         (is (every? #(str/includes? body %) ["backend-status-error"]))))))
 
@@ -202,48 +203,48 @@
                     (async/<!!
                       (async-result-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))]
                 {:terminated @terminate-call-atom, :return-status status, :return-headers headers}))]
-      (is (= {:terminated true, :return-status 200, :return-headers {}}
-             (execute-async-result-check {:request-method :get, :return-status 200, :router-type "local"})))
-      (is (= {:terminated true, :return-status 303, :return-headers {}}
-             (execute-async-result-check {:request-method :get, :return-status 303, :router-type "local"})))
-      (is (= {:terminated true, :return-status 410, :return-headers {}}
-             (execute-async-result-check {:request-method :get, :return-status 410, :router-type "local"})))
-      (is (= {:terminated true, :return-status 200, :return-headers {}}
-             (execute-async-result-check {:request-method :get, :return-status 200, :router-type "remote"})))
-      (is (= {:terminated true, :return-status 303, :return-headers {}}
-             (execute-async-result-check {:request-method :get, :return-status 303, :router-type "remote"})))
-      (is (= {:terminated true, :return-status 410, :return-headers {}}
-             (execute-async-result-check {:request-method :get, :return-status 410, :router-type "remote"})))
-      (is (= {:terminated true, :return-status 200, :return-headers {}}
-             (execute-async-result-check {:request-method :delete, :return-status 200, :router-type "local"})))
-      (is (= {:terminated true, :return-status 200, :return-headers {}}
-             (execute-async-result-check {:request-method :post, :return-status 200, :router-type "local"})))
-      (is (= {:terminated true, :return-status 303, :return-headers {}}
-             (execute-async-result-check {:request-method :post, :return-status 303, :router-type "local"})))
-      (is (= {:terminated true, :return-status 410, :return-headers {}}
-             (execute-async-result-check {:request-method :post, :return-status 410, :router-type "local"})))
-      (is (= {:terminated true, :return-status 200, :return-headers {}}
-             (execute-async-result-check {:request-method :post, :return-status 200, :router-type "remote"})))
-      (is (= {:terminated true, :return-status 303, :return-headers {}}
-             (execute-async-result-check {:request-method :post, :return-status 303, :router-type "remote"})))
-      (is (= {:terminated true, :return-status 410, :return-headers {}}
-             (execute-async-result-check {:request-method :post, :return-status 410, :router-type "remote"})))
-      (is (= {:terminated true, :return-status 200, :return-headers {}}
-             (execute-async-result-check {:request-method :delete, :return-status 200, :router-type "local"})))
-      (is (= {:terminated true, :return-status 204, :return-headers {}}
-             (execute-async-result-check {:request-method :delete, :return-status 204, :router-type "local"})))
-      (is (= {:terminated true, :return-status 404, :return-headers {}}
-             (execute-async-result-check {:request-method :delete, :return-status 404, :router-type "local"})))
-      (is (= {:terminated true, :return-status 405, :return-headers {}}
-             (execute-async-result-check {:request-method :delete, :return-status 405, :router-type "local"})))
-      (is (= {:terminated true, :return-status 200, :return-headers {}}
-             (execute-async-result-check {:request-method :delete, :return-status 200, :router-type "remote"})))
-      (is (= {:terminated true, :return-status 204, :return-headers {}}
-             (execute-async-result-check {:request-method :delete, :return-status 204, :router-type "remote"})))
-      (is (= {:terminated true, :return-status 404, :return-headers {}}
-             (execute-async-result-check {:request-method :delete, :return-status 404, :router-type "remote"})))
-      (is (= {:terminated true, :return-status 405, :return-headers {}}
-             (execute-async-result-check {:request-method :delete, :return-status 405, :router-type "remote"}))))))
+      (is (= {:terminated true, :return-status http-200-ok, :return-headers {}}
+             (execute-async-result-check {:request-method :get, :return-status http-200-ok, :router-type "local"})))
+      (is (= {:terminated true, :return-status http-303-see-other, :return-headers {}}
+             (execute-async-result-check {:request-method :get, :return-status http-303-see-other, :router-type "local"})))
+      (is (= {:terminated true, :return-status http-410-gone, :return-headers {}}
+             (execute-async-result-check {:request-method :get, :return-status http-410-gone, :router-type "local"})))
+      (is (= {:terminated true, :return-status http-200-ok, :return-headers {}}
+             (execute-async-result-check {:request-method :get, :return-status http-200-ok, :router-type "remote"})))
+      (is (= {:terminated true, :return-status http-303-see-other, :return-headers {}}
+             (execute-async-result-check {:request-method :get, :return-status http-303-see-other, :router-type "remote"})))
+      (is (= {:terminated true, :return-status http-410-gone, :return-headers {}}
+             (execute-async-result-check {:request-method :get, :return-status http-410-gone, :router-type "remote"})))
+      (is (= {:terminated true, :return-status http-200-ok, :return-headers {}}
+             (execute-async-result-check {:request-method :delete, :return-status http-200-ok, :router-type "local"})))
+      (is (= {:terminated true, :return-status http-200-ok, :return-headers {}}
+             (execute-async-result-check {:request-method :post, :return-status http-200-ok, :router-type "local"})))
+      (is (= {:terminated true, :return-status http-303-see-other, :return-headers {}}
+             (execute-async-result-check {:request-method :post, :return-status http-303-see-other, :router-type "local"})))
+      (is (= {:terminated true, :return-status http-410-gone, :return-headers {}}
+             (execute-async-result-check {:request-method :post, :return-status http-410-gone, :router-type "local"})))
+      (is (= {:terminated true, :return-status http-200-ok, :return-headers {}}
+             (execute-async-result-check {:request-method :post, :return-status http-200-ok, :router-type "remote"})))
+      (is (= {:terminated true, :return-status http-303-see-other, :return-headers {}}
+             (execute-async-result-check {:request-method :post, :return-status http-303-see-other, :router-type "remote"})))
+      (is (= {:terminated true, :return-status http-410-gone, :return-headers {}}
+             (execute-async-result-check {:request-method :post, :return-status http-410-gone, :router-type "remote"})))
+      (is (= {:terminated true, :return-status http-200-ok, :return-headers {}}
+             (execute-async-result-check {:request-method :delete, :return-status http-200-ok, :router-type "local"})))
+      (is (= {:terminated true, :return-status http-204-no-content, :return-headers {}}
+             (execute-async-result-check {:request-method :delete, :return-status http-204-no-content, :router-type "local"})))
+      (is (= {:terminated true, :return-status http-404-not-found, :return-headers {}}
+             (execute-async-result-check {:request-method :delete, :return-status http-404-not-found, :router-type "local"})))
+      (is (= {:terminated true, :return-status http-405-method-not-allowed, :return-headers {}}
+             (execute-async-result-check {:request-method :delete, :return-status http-405-method-not-allowed, :router-type "local"})))
+      (is (= {:terminated true, :return-status http-200-ok, :return-headers {}}
+             (execute-async-result-check {:request-method :delete, :return-status http-200-ok, :router-type "remote"})))
+      (is (= {:terminated true, :return-status http-204-no-content, :return-headers {}}
+             (execute-async-result-check {:request-method :delete, :return-status http-204-no-content, :router-type "remote"})))
+      (is (= {:terminated true, :return-status http-404-not-found, :return-headers {}}
+             (execute-async-result-check {:request-method :delete, :return-status http-404-not-found, :router-type "remote"})))
+      (is (= {:terminated true, :return-status http-405-method-not-allowed, :return-headers {}}
+             (execute-async-result-check {:request-method :delete, :return-status http-405-method-not-allowed, :router-type "remote"}))))))
 
 (deftest test-async-status-handler-errors
   (let [my-router-id "my-router-id"
@@ -263,7 +264,7 @@
       (let [request {:headers {"accept" "application/json"}
                      :query-string ""}
             {:keys [body headers status]} (async/<!! (async-status-handler nil nil service-id->service-description-fn request))]
-        (is (= 400 status))
+        (is (= http-400-bad-request status))
         (is (= expected-json-response-headers headers))
         (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri"))))
 
@@ -271,7 +272,7 @@
       (let [request {:headers {"accept" "application/json"}
                      :route-params (make-route-params "missing-location")}
             {:keys [body headers status]} (async/<!! (async-status-handler nil nil service-id->service-description-fn request))]
-        (is (= 400 status))
+        (is (= http-400-bad-request status))
         (is (= expected-json-response-headers headers))
         (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri"))))
 
@@ -279,7 +280,7 @@
       (let [request {:headers {"accept" "application/json"}
                      :route-params (make-route-params "missing-request-id")}
             {:keys [body headers status]} (async/<!! (async-status-handler nil nil service-id->service-description-fn request))]
-        (is (= 400 status))
+        (is (= http-400-bad-request status))
         (is (= expected-json-response-headers headers))
         (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri"))))
 
@@ -287,7 +288,7 @@
       (let [request {:headers {"accept" "application/json"}
                      :route-params (make-route-params "missing-router-id")}
             {:keys [body headers status]} (async/<!! (async-status-handler nil nil service-id->service-description-fn request))]
-        (is (= 400 status))
+        (is (= http-400-bad-request status))
         (is (= expected-json-response-headers headers))
         (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri"))))
 
@@ -304,10 +305,10 @@
                                    (is (= (-> request :route-params :location) end-route))
                                    (is (= "test-metric-group" metric-group))
                                    (is (= "http" backend-proto))
-                                   (async/go {:error (ex-info "backend-status-error" {:status 400})}))
+                                   (async/go {:error (ex-info "backend-status-error" {:status http-400-bad-request})}))
             async-trigger-terminate-fn nil
             {:keys [body headers status]} (async/<!! (async-status-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))]
-        (is (= 400 status))
+        (is (= http-400-bad-request status))
         (is (= expected-json-response-headers headers))
         (is (every? #(str/includes? body %) ["backend-status-error"]))))))
 
@@ -357,63 +358,63 @@
                                            (is (= "test-metric-group" metric-group))
                                            (is (= "http" backend-proto))
                                            (async/go {:body "status-check-response"
-                                                      :headers (if (= return-status 303) {"location" (or result-location (result-location-fn router-type))} {})
+                                                      :headers (if (= return-status http-303-see-other) {"location" (or result-location (result-location-fn router-type))} {})
                                                       :status return-status}))
                     {:keys [status headers]}
                     (async/<!!
                       (async-status-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))]
                 {:terminated @terminate-call-atom, :return-status status, :return-headers headers}))]
-      (is (= {:terminated false, :return-status 200, :return-headers {}}
-             (execute-async-status-check {:request-method :get, :return-status 200, :router-type "local"})))
+      (is (= {:terminated false, :return-status http-200-ok, :return-headers {}}
+             (execute-async-status-check {:request-method :get, :return-status http-200-ok, :router-type "local"})))
       (let [result-location (async-result-location "local" :include-host-port false)]
-        (is (= {:terminated false, :return-status 303, :return-headers {"location" result-location}}
-               (execute-async-status-check {:request-method :get, :return-status 303, :router-type "local"}))))
+        (is (= {:terminated false, :return-status http-303-see-other, :return-headers {"location" result-location}}
+               (execute-async-status-check {:request-method :get, :return-status http-303-see-other, :router-type "local"}))))
       (let [result-location (async-result-location "local" :include-host-port false :location "/query/location/another/path/to/result")]
-        (is (= {:terminated false, :return-status 303, :return-headers {"location" result-location}}
-               (execute-async-status-check {:request-method :get, :result-location "another/path/to/result", :return-status 303, :router-type "local"}))))
+        (is (= {:terminated false, :return-status http-303-see-other, :return-headers {"location" result-location}}
+               (execute-async-status-check {:request-method :get, :result-location "another/path/to/result", :return-status http-303-see-other, :router-type "local"}))))
       (let [result-location (async-result-location "local" :include-host-port false :location "/query/location/another/path/to/result")]
-        (is (= {:terminated false, :return-status 303, :return-headers {"location" result-location}}
-               (execute-async-status-check {:request-method :get, :result-location "./another/path/to/result", :return-status 303, :router-type "local"}))))
+        (is (= {:terminated false, :return-status http-303-see-other, :return-headers {"location" result-location}}
+               (execute-async-status-check {:request-method :get, :result-location "./another/path/to/result", :return-status http-303-see-other, :router-type "local"}))))
       (let [result-location (async-result-location "local" :include-host-port false :location "/query/another/path/to/result")]
-        (is (= {:terminated false, :return-status 303, :return-headers {"location" result-location}}
-               (execute-async-status-check {:request-method :get, :result-location "../another/path/to/result", :return-status 303, :router-type "local"}))))
+        (is (= {:terminated false, :return-status http-303-see-other, :return-headers {"location" result-location}}
+               (execute-async-status-check {:request-method :get, :result-location "../another/path/to/result", :return-status http-303-see-other, :router-type "local"}))))
       (let [result-location (async-result-location "local" :include-host-port false :location "/another/path/to/result")]
-        (is (= {:terminated false, :return-status 303, :return-headers {"location" result-location}}
-               (execute-async-status-check {:request-method :get, :result-location "../../another/path/to/result", :return-status 303, :router-type "local"}))))
+        (is (= {:terminated false, :return-status http-303-see-other, :return-headers {"location" result-location}}
+               (execute-async-status-check {:request-method :get, :result-location "../../another/path/to/result", :return-status http-303-see-other, :router-type "local"}))))
       (let [result-location (str "http://www.example.com:1234" (async-result-location "local" :include-host-port true))]
-        (is (= {:terminated true, :return-status 303, :return-headers {"location" result-location}}
-               (execute-async-status-check {:request-method :get, :result-location result-location, :return-status 303, :router-type "local"}))))
-      (is (= {:terminated true, :return-status 410, :return-headers {}}
-             (execute-async-status-check {:request-method :get, :return-status 410, :router-type "local"})))
+        (is (= {:terminated true, :return-status http-303-see-other, :return-headers {"location" result-location}}
+               (execute-async-status-check {:request-method :get, :result-location result-location, :return-status http-303-see-other, :router-type "local"}))))
+      (is (= {:terminated true, :return-status http-410-gone, :return-headers {}}
+             (execute-async-status-check {:request-method :get, :return-status http-410-gone, :router-type "local"})))
 
-      (is (= {:terminated false, :return-status 200, :return-headers {}}
-             (execute-async-status-check {:request-method :get, :return-status 200, :router-type "remote"})))
+      (is (= {:terminated false, :return-status http-200-ok, :return-headers {}}
+             (execute-async-status-check {:request-method :get, :return-status http-200-ok, :router-type "remote"})))
       (let [result-location (async-result-location "remote" :include-host-port false)]
-        (is (= {:terminated false, :return-status 303, :return-headers {"location" result-location}}
-               (execute-async-status-check {:request-method :get, :return-status 303, :router-type "remote"}))))
+        (is (= {:terminated false, :return-status http-303-see-other, :return-headers {"location" result-location}}
+               (execute-async-status-check {:request-method :get, :return-status http-303-see-other, :router-type "remote"}))))
       (let [result-location (str "http://www.example.com:1234" (async-result-location "remote" :include-host-port true))]
-        (is (= {:terminated true, :return-status 303, :return-headers {"location" result-location}}
-               (execute-async-status-check {:request-method :get, :result-location result-location, :return-status 303, :router-type "remote"}))))
-      (is (= {:terminated true, :return-status 410, :return-headers {}}
-             (execute-async-status-check {:request-method :get, :return-status 410, :router-type "remote"})))
+        (is (= {:terminated true, :return-status http-303-see-other, :return-headers {"location" result-location}}
+               (execute-async-status-check {:request-method :get, :result-location result-location, :return-status http-303-see-other, :router-type "remote"}))))
+      (is (= {:terminated true, :return-status http-410-gone, :return-headers {}}
+             (execute-async-status-check {:request-method :get, :return-status http-410-gone, :router-type "remote"})))
 
-      (is (= {:terminated true, :return-status 200, :return-headers {}}
-             (execute-async-status-check {:request-method :delete, :return-status 200, :router-type "local"})))
-      (is (= {:terminated true, :return-status 204, :return-headers {}}
-             (execute-async-status-check {:request-method :delete, :return-status 204, :router-type "local"})))
-      (is (= {:terminated false, :return-status 404, :return-headers {}}
-             (execute-async-status-check {:request-method :delete, :return-status 404, :router-type "local"})))
-      (is (= {:terminated false, :return-status 405, :return-headers {}}
-             (execute-async-status-check {:request-method :delete, :return-status 405, :router-type "local"})))
+      (is (= {:terminated true, :return-status http-200-ok, :return-headers {}}
+             (execute-async-status-check {:request-method :delete, :return-status http-200-ok, :router-type "local"})))
+      (is (= {:terminated true, :return-status http-204-no-content, :return-headers {}}
+             (execute-async-status-check {:request-method :delete, :return-status http-204-no-content, :router-type "local"})))
+      (is (= {:terminated false, :return-status http-404-not-found, :return-headers {}}
+             (execute-async-status-check {:request-method :delete, :return-status http-404-not-found, :router-type "local"})))
+      (is (= {:terminated false, :return-status http-405-method-not-allowed, :return-headers {}}
+             (execute-async-status-check {:request-method :delete, :return-status http-405-method-not-allowed, :router-type "local"})))
 
-      (is (= {:terminated true, :return-status 200, :return-headers {}}
-             (execute-async-status-check {:request-method :delete, :return-status 200, :router-type "remote"})))
-      (is (= {:terminated true, :return-status 204, :return-headers {}}
-             (execute-async-status-check {:request-method :delete, :return-status 204, :router-type "remote"})))
-      (is (= {:terminated false, :return-status 404, :return-headers {}}
-             (execute-async-status-check {:request-method :delete, :return-status 404, :router-type "remote"})))
-      (is (= {:terminated false, :return-status 405, :return-headers {}}
-             (execute-async-status-check {:request-method :delete, :return-status 405, :router-type "remote"}))))))
+      (is (= {:terminated true, :return-status http-200-ok, :return-headers {}}
+             (execute-async-status-check {:request-method :delete, :return-status http-200-ok, :router-type "remote"})))
+      (is (= {:terminated true, :return-status http-204-no-content, :return-headers {}}
+             (execute-async-status-check {:request-method :delete, :return-status http-204-no-content, :router-type "remote"})))
+      (is (= {:terminated false, :return-status http-404-not-found, :return-headers {}}
+             (execute-async-status-check {:request-method :delete, :return-status http-404-not-found, :router-type "remote"})))
+      (is (= {:terminated false, :return-status http-405-method-not-allowed, :return-headers {}}
+             (execute-async-status-check {:request-method :delete, :return-status http-405-method-not-allowed, :router-type "remote"}))))))
 
 (deftest test-list-services-handler
   (let [test-user "test-user"
@@ -463,7 +464,7 @@
                                      (some #(= % service-id) test-user-services))))
         list-services-handler (wrap-handler-json-response list-services-handler)
         assert-successful-json-response (fn [{:keys [body headers status]}]
-                                          (is (= 200 status))
+                                          (is (= http-200-ok status))
                                           (is (= "application/json" (get headers "content-type")))
                                           (is (instance-counts-present body)))]
     (letfn [(service-id->metrics-fn []
@@ -612,13 +613,13 @@
                                           :service-id->healthy-instances {"service1" []}})
               request {:authorization/user test-user}
               exception-message "Custom message from test case"
-              prepend-waiter-url (fn [_] (throw (ex-info exception-message {:status 400})))
+              prepend-waiter-url (fn [_] (throw (ex-info exception-message {:status http-400-bad-request})))
               list-services-handler (core/wrap-error-handling
                                       #(list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
                                                               service-id->service-description-fn service-id->metrics-fn
                                                               service-id->references-fn service-id->source-tokens-entries-fn %))
               {:keys [body headers status]} (list-services-handler request)]
-          (is (= 400 status))
+          (is (= http-400-bad-request status))
           (is (= "text/plain" (get headers "content-type")))
           (is (str/includes? (str body) exception-message))))
 
@@ -720,7 +721,7 @@
               (async/<!!
                 (delete-service-handler test-service-id core-service-description scheduler allowed-to-manage-service?-fn
                                         scheduler-interactions-thread-pool request))]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (= "application/json" (get headers "content-type")))
           (is (every? #(str/includes? (str body) (str %)) ["Worked!"]))))
 
@@ -761,7 +762,7 @@
                                     :router-id test-router-id
                                     :service-id test-service-id}
                      :response-status :promptly-rejected
-                     :expected-status 200
+                     :expected-status http-200-ok
                      :expected-body-fragments ["cid" "request-id" "response-status" "promptly-rejected"
                                                test-service-id test-router-id]}
                     {:name "valid-parameters-success-response"
@@ -771,7 +772,7 @@
                                     :router-id test-router-id
                                     :service-id test-service-id}
                      :response-status :success
-                     :expected-status 200
+                     :expected-status http-200-ok
                      :expected-body-fragments ["cid" "request-id" "response-status" "success"
                                                test-service-id test-router-id]}
                     {:name "missing-cid"
@@ -780,7 +781,7 @@
                                     :router-id test-router-id
                                     :service-id test-service-id}
                      :response-status :success
-                     :expected-status 400
+                     :expected-status http-400-bad-request
                      :expected-body-fragments ["Missing one of"]}
                     {:name "missing-instance"
                      :request-body {:cid "cid-1"
@@ -788,7 +789,7 @@
                                     :router-id test-router-id
                                     :service-id test-service-id}
                      :response-status :success
-                     :expected-status 400
+                     :expected-status http-400-bad-request
                      :expected-body-fragments ["Missing one of"]}
                     {:name "missing-request-id"
                      :request-body {:cid "cid-1"
@@ -796,7 +797,7 @@
                                     :router-id test-router-id
                                     :service-id test-service-id}
                      :response-status :success
-                     :expected-status 400
+                     :expected-status http-400-bad-request
                      :expected-body-fragments ["Missing one of"]}
                     {:name "missing-router-id"
                      :request-body {:cid "cid-1"
@@ -804,7 +805,7 @@
                                     :request-id "request-1"
                                     :service-id test-service-id}
                      :response-status :success
-                     :expected-status 400
+                     :expected-status http-400-bad-request
                      :expected-body-fragments ["Missing one of"]}
                     {:name "missing-service-id"
                      :request-body {:cid "cid-1"
@@ -812,7 +813,7 @@
                                     :request-id "request-1"
                                     :router-id test-router-id}
                      :response-status :success
-                     :expected-status 400
+                     :expected-status http-400-bad-request
                      :expected-body-fragments ["Missing one of"]}]]
     (doseq [{:keys [name request-body response-status expected-status expected-body-fragments]} test-cases]
       (testing name
@@ -845,7 +846,7 @@
         (is (instance? ManyToManyChannel response-chan))
         (async/close! response-chan)))
     (let [{:keys [status]} (async/<!! response-chan)]
-      (is (= 404 status)))))
+      (is (= http-404-not-found status)))))
 
 (deftest test-work-stealing-handler-channel-put-failed
   (let [instance-rpc-chan (async/chan)
@@ -870,7 +871,7 @@
         (async/put! response-chan work-stealing-chan)
         (async/close! response-chan)))
     (let [{:keys [status]} (async/<!! response-chan)]
-      (is (= 500 status)))))
+      (is (= http-500-internal-server-error status)))))
 
 (deftest test-get-router-state
   (let [state-atom (atom nil)
@@ -887,7 +888,7 @@
         (let [bad-request {:scheme 1} ;; integer scheme will throw error
               {:keys [status body]} (test-fn router-id query-state-fn bad-request)]
           (is (str/includes? (str body) "Internal error"))
-          (is (= 500 status))))
+          (is (= http-500-internal-server-error status))))
 
       (testing "display router state"
         (let [{:keys [status body]} (test-fn router-id query-state-fn {})]
@@ -896,7 +897,7 @@
                        "codahale-reporters" "fallback" "interstitial" "kv-store" "leader" "local-usage"
                        "maintainer" "router-metrics" "scheduler" "statsd"])
               (str "Body did not include necessary JSON keys:\n" body))
-          (is (= 200 status)))))))
+          (is (= http-200-ok status)))))))
 
 (deftest test-get-query-fn-state
   (let [router-id "test-router-id"
@@ -905,13 +906,13 @@
       (let [state {"autoscaler" "state"}
             query-state-fn (constantly state)
             {:keys [body status]} (test-fn router-id query-state-fn {})]
-        (is (= 200 status))
+        (is (= http-200-ok status))
         (is (= (json/read-str body) {"router-id" router-id, "state" state}))))
 
     (testing "exception response"
       (let [query-state-fn (fn [] (throw (Exception. "from test")))
             {:keys [body status]} (test-fn router-id query-state-fn {})]
-        (is (= 500 status))
+        (is (= http-500-internal-server-error status))
         (is (str/includes? body "Waiter Error 500"))))))
 
 (deftest test-get-kv-store-state
@@ -921,13 +922,13 @@
       (let [kv-store (kv/new-local-kv-store {})
             state (walk/stringify-keys (kv/state kv-store))
             {:keys [body status]} (test-fn router-id kv-store {})]
-        (is (= 200 status))
+        (is (= http-200-ok status))
         (is (= (json/read-str body) {"router-id" router-id, "state" state}))))
 
     (testing "exception response"
       (let [kv-store (Object.)
             {:keys [body status]} (test-fn router-id kv-store {})]
-        (is (= 500 status))
+        (is (= http-500-internal-server-error status))
         (is (str/includes? body "Waiter Error 500"))))))
 
 (deftest test-get-local-usage-state
@@ -937,13 +938,13 @@
       (let [last-request-time-state {"foo" 1234, "bar" 7890}
             last-request-time-agent (agent last-request-time-state)
             {:keys [body status]} (test-fn router-id last-request-time-agent {})]
-        (is (= 200 status))
+        (is (= http-200-ok status))
         (is (= (json/read-str body) {"router-id" router-id, "state" last-request-time-state}))))
 
     (testing "exception response"
       (let [handler (core/wrap-error-handling #(test-fn router-id nil %))
             {:keys [body status]} (handler {})]
-        (is (= 500 status))
+        (is (= http-500-internal-server-error status))
         (is (str/includes? body "Waiter Error 500"))))))
 
 (deftest test-get-leader-state
@@ -954,13 +955,13 @@
       (let [leader?-fn (constantly true)
             state {"leader?" (leader?-fn), "leader-id" (leader-id-fn)}
             {:keys [body status]} (test-fn router-id leader?-fn leader-id-fn {})]
-        (is (= 200 status))
+        (is (= http-200-ok status))
         (is (= (json/read-str body) {"router-id" router-id, "state" state}))))
 
     (testing "exception response"
       (let [leader?-fn (fn [] (throw (Exception. "Test Exception")))
             {:keys [body status]} (test-fn router-id leader?-fn leader-id-fn {})]
-        (is (= 500 status))
+        (is (= http-500-internal-server-error status))
         (is (str/includes? body "Waiter Error 500"))))))
 
 (deftest test-get-chan-latest-state-handler
@@ -972,7 +973,7 @@
             state {"foo" "bar"}
             _ (reset! state-atom state)
             {:keys [body status]} (test-fn router-id query-state-fn {})]
-        (is (= 200 status))
+        (is (= http-200-ok status))
         (is (= (json/read-str body) {"router-id" router-id, "state" state}))))))
 
 (deftest test-get-router-metrics-state
@@ -982,14 +983,14 @@
       (let [state {"router-metrics" "foo"}
             router-metrics-state-fn (constantly state)
             {:keys [body status]} (test-fn router-id router-metrics-state-fn {})]
-        (is (= 200 status))
+        (is (= http-200-ok status))
         (is (= {"router-id" router-id "state" state}
                (json/read-str body)))))
 
     (testing "exception response"
       (let [router-metrics-state-fn (fn [] (throw (Exception. "Test Exception")))
             {:keys [body status]} (test-fn router-id router-metrics-state-fn {})]
-        (is (= 500 status))
+        (is (= http-500-internal-server-error status))
         (is (str/includes? body "Waiter Error 500"))))))
 
 (deftest test-get-query-chan-state-handler
@@ -1002,7 +1003,7 @@
                 (let [{:keys [response-chan]} (async/<! scheduler-chan)]
                   (async/>! response-chan state)))
             {:keys [body status]} (async/<!! (test-fn router-id scheduler-chan {}))]
-        (is (= 200 status))
+        (is (= http-200-ok status))
         (is (= (json/read-str body) {"router-id" router-id, "state" state}))))))
 
 (deftest test-get-scheduler-state
@@ -1014,7 +1015,7 @@
     (testing "successful response"
       (let [state (walk/stringify-keys (scheduler/state scheduler #{}))
             {:keys [body status]} (test-fn router-id scheduler {})]
-        (is (= 200 status))
+        (is (= http-200-ok status))
         (is (= (json/read-str body) {"router-id" router-id, "state" state}))))))
 
 (deftest test-get-statsd-state
@@ -1023,7 +1024,7 @@
     (testing "successful response"
       (let [state (walk/stringify-keys (statsd/state))
             {:keys [body status]} (test-fn router-id {})]
-        (is (= 200 status))
+        (is (= http-200-ok status))
         (is (= (json/read-str body) {"router-id" router-id, "state" state}))))))
 
 (deftest test-get-service-state
@@ -1031,7 +1032,7 @@
         service-id "service-1"
         local-usage-agent (agent {service-id {"last-request-time" "foo"}})]
     (testing "returns 400 for missing service id"
-      (is (= 400 (:status (async/<!! (get-service-state router-id nil local-usage-agent "" {} {}))))))
+      (is (= http-400-bad-request (:status (async/<!! (get-service-state router-id nil local-usage-agent "" {} {}))))))
     (let [instance-rpc-chan (async/chan 1)
           populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
           query-state-chan (async/chan 1)
@@ -1115,7 +1116,7 @@
     (testing "unsupported request method"
       (let [request {:request-method :get}
             {:keys [body headers status]} (acknowledge-consent-handler-fn request)]
-        (is (= 405 status))
+        (is (= http-405-method-not-allowed status))
         (is (= expected-text-response-headers headers))
         (is (str/includes? body "Only POST supported"))))
 
@@ -1123,7 +1124,7 @@
       (let [request {:headers {"host" "www.example2.com"
                                "origin" (str "http://" test-token)}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
-        (is (= 400 status))
+        (is (= http-400-bad-request status))
         (is (= expected-text-response-headers headers))
         (is (nil? cookie))
         (is (str/includes? body "Origin is not the same as the host"))))
@@ -1133,7 +1134,7 @@
                                "origin" (str "http://" test-token)
                                "referer" "http://www.example2.com/consent"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
-        (is (= 400 status))
+        (is (= http-400-bad-request status))
         (is (= expected-text-response-headers headers))
         (is (nil? cookie))
         (is (str/includes? body "Referer does not start with origin"))))
@@ -1144,7 +1145,7 @@
                                "referer" (str "http://" test-token "/consent")
                                "x-requested-with" "AJAX"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
-        (is (= 400 status))
+        (is (= http-400-bad-request status))
         (is (= expected-text-response-headers headers))
         (is (nil? cookie))
         (is (str/includes? body "Header x-requested-with does not match expected value"))))
@@ -1156,7 +1157,7 @@
                                "x-requested-with" "XMLHttpRequest"}
                      :params {"service-id" "service-id-1"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
-        (is (= 400 status))
+        (is (= http-400-bad-request status))
         (is (= expected-text-response-headers headers))
         (is (nil? cookie))
         (is (str/includes? body "Missing or invalid mode"))))
@@ -1169,7 +1170,7 @@
                                "x-requested-with" "XMLHttpRequest"}
                      :params {"mode" "unsupported", "service-id" "service-id-1"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
-        (is (= 400 status))
+        (is (= http-400-bad-request status))
         (is (= expected-text-response-headers headers))
         (is (nil? cookie))
         (is (str/includes? body "Missing or invalid mode"))))
@@ -1182,7 +1183,7 @@
                                "x-requested-with" "XMLHttpRequest"}
                      :params {"mode" "service"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
-        (is (= 400 status))
+        (is (= http-400-bad-request status))
         (is (= expected-text-response-headers headers))
         (is (nil? cookie))
         (is (str/includes? body "Missing service-id"))))
@@ -1196,7 +1197,7 @@
                                "x-requested-with" "XMLHttpRequest"}
                      :params {"mode" "service", "service-id" "service-id-1"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
-        (is (= 400 status))
+        (is (= http-400-bad-request status))
         (is (= expected-text-response-headers headers))
         (is (nil? cookie))
         (is (str/includes? body "Unable to load description for token"))))
@@ -1209,7 +1210,7 @@
                                "x-requested-with" "XMLHttpRequest"}
                      :params {"mode" "service", "service-id" "service-id-1"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
-        (is (= 400 status))
+        (is (= http-400-bad-request status))
         (is (= expected-text-response-headers headers))
         (is (nil? cookie))
         (is (str/includes? body "Invalid service-id for specified token"))))
@@ -1222,7 +1223,7 @@
                                "x-requested-with" "XMLHttpRequest"}
                      :params {"mode" "service", "service-id" test-service-id}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
-        (is (= 200 status))
+        (is (= http-200-ok status))
         (is (= {"x-waiter-consent" {:value ["service" current-time-ms test-service-id], :age consent-expiry-days}} cookie))
         (is (= {} headers))
         (is (str/includes? body "Added cookie x-waiter-consent"))))
@@ -1234,7 +1235,7 @@
                                "x-requested-with" "XMLHttpRequest"}
                      :params {"mode" "service", "service-id" test-service-id}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
-        (is (= 200 status))
+        (is (= http-200-ok status))
         (is (= {"x-waiter-consent" {:value ["service" current-time-ms test-service-id], :age consent-expiry-days}} cookie))
         (is (= {} headers))
         (is (str/includes? body "Added cookie x-waiter-consent"))))
@@ -1247,7 +1248,7 @@
                                "x-requested-with" "XMLHttpRequest"}
                      :params {"mode" "token"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
-        (is (= 200 status))
+        (is (= http-200-ok status))
         (is (= {"x-waiter-consent" {:value ["token" current-time-ms test-token "user"], :age consent-expiry-days}} cookie))
         (is (= {} headers))
         (is (str/includes? body "Added cookie x-waiter-consent"))))
@@ -1259,7 +1260,7 @@
                                "x-requested-with" "XMLHttpRequest"}
                      :params {"mode" "token"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
-        (is (= 200 status))
+        (is (= http-200-ok status))
         (is (= {"x-waiter-consent" {:value ["token" current-time-ms test-token "user"], :age consent-expiry-days}} cookie))
         (is (= {} headers))
         (is (str/includes? body "Added cookie x-waiter-consent"))))))
@@ -1328,7 +1329,7 @@
                      :request-time request-time
                      :scheme :http}
             {:keys [body headers status]} (request-consent-handler-fn request)]
-        (is (= 405 status))
+        (is (= http-405-method-not-allowed status))
         (is (= expected-text-response-headers headers))
         (is (str/includes? body "Only GET supported"))))
 
@@ -1340,7 +1341,7 @@
                      :route-params {:path "some-path"}
                      :scheme :http}
             {:keys [body headers status]} (request-consent-handler-fn request)]
-        (is (= 404 status))
+        (is (= http-404-not-found status))
         (is (= expected-text-response-headers headers))
         (is (str/includes? body "Unable to load description for token"))))
 
@@ -1353,7 +1354,7 @@
                        :route-params {:path "some-path"}
                        :scheme :http}
               {:keys [body headers status]} (request-consent-handler-fn request)]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (= {"content-type" "text/html"} headers))
           (is (= body "template:some-content")))))
 
@@ -1366,7 +1367,7 @@
                        :route-params {:path "some-path"}
                        :scheme :https}
               {:keys [body headers status]} (request-consent-handler-fn request)]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (= {"content-type" "text/html"} headers))
           (is (= body "template:some-content")))))
 
@@ -1379,7 +1380,7 @@
                        :route-params {:path "some-path"}
                        :scheme :http}
               {:keys [body headers status]} (request-consent-handler-fn request)]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (= {"content-type" "text/html"} headers))
           (is (= body "template:some-content")))))
 
@@ -1392,7 +1393,7 @@
                        :route-params {:path "some-path"}
                        :scheme :http}
               {:keys [body headers status]} (request-consent-handler-fn request)]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (= {"content-type" "text/html"} headers))
           (is (= body "template:some-content")))))
 
@@ -1405,7 +1406,7 @@
                        :route-params {:path "some-path"}
                        :scheme :http}
               {:keys [body headers status]} (request-consent-handler-fn request)]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (= {"content-type" "text/html"} headers))
           (is (= body "template:some-content")))))
 
@@ -1418,7 +1419,7 @@
                        :route-params {:path "some-path"}
                        :scheme :http}
               {:keys [body headers status]} (request-consent-handler-fn request)]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (= {"content-type" "text/html"} headers))
           (is (= body "template:some-content")))))))
 
@@ -1441,7 +1442,7 @@
         (is (instance? ManyToManyChannel response-chan))
         (async/close! response-chan)))
     (let [{:keys [status]} (async/<!! response-chan)]
-      (is (= 400 status)))))
+      (is (= http-400-bad-request status)))))
 
 (deftest test-blacklist-killed-instance
   (let [notify-instance-chan (async/promise-chan)
@@ -1473,7 +1474,7 @@
             (is (= (:id instance) instance-id))
             (async/>!! repsonse-chan :blacklisted)))
         (let [{:keys [status]} (async/<!! response-chan)]
-          (is (= 200 status))
+          (is (= http-200-ok status))
           (is (= instance (async/<!! notify-instance-chan))))))))
 
 (deftest test-get-blacklisted-instances-cannot-find-channel
@@ -1489,4 +1490,4 @@
         (is (instance? ManyToManyChannel response-chan))
         (async/close! response-chan)))
     (let [{:keys [status]} (async/<!! response-chan)]
-      (is (= 500 status)))))
+      (is (= http-500-internal-server-error status)))))

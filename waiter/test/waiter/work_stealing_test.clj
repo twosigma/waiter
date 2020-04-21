@@ -18,6 +18,7 @@
             [clojure.data.json :as json]
             [clojure.test :refer :all]
             [clojure.walk :as walk]
+            [waiter.status-codes :refer :all]
             [waiter.test-helpers]
             [waiter.util.semaphore :as semaphore]
             [waiter.test-helpers :refer :all]
@@ -579,7 +580,7 @@
 
       (testing "2XX response - missing status"
         (let [offers-allowed-semaphore (semaphore/create-semaphore 10)
-              make-inter-router-requests-fn (make-inter-router-requests-fn-factory 200 {})]
+              make-inter-router-requests-fn (make-inter-router-requests-fn-factory http-200-ok {})]
           (start-work-stealing-balancer populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
                                         service-id->router-id->metrics make-inter-router-requests-fn router-id service-id)
           (is @offer-help-fn-atom)
@@ -591,7 +592,7 @@
 
       (testing "2XX response - success"
         (let [offers-allowed-semaphore (semaphore/create-semaphore 10)
-              make-inter-router-requests-fn (make-inter-router-requests-fn-factory 200 {:response-status "successful"})]
+              make-inter-router-requests-fn (make-inter-router-requests-fn-factory http-200-ok {:response-status "successful"})]
           (start-work-stealing-balancer populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
                                         service-id->router-id->metrics make-inter-router-requests-fn router-id service-id)
           (is @offer-help-fn-atom)
@@ -603,7 +604,7 @@
 
       (testing "2XX response - failure"
         (let [offers-allowed-semaphore (semaphore/create-semaphore 10)
-              make-inter-router-requests-fn (make-inter-router-requests-fn-factory 200 {:response-status "failure"})]
+              make-inter-router-requests-fn (make-inter-router-requests-fn-factory http-200-ok {:response-status "failure"})]
           (start-work-stealing-balancer populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
                                         service-id->router-id->metrics make-inter-router-requests-fn router-id service-id)
           (is @offer-help-fn-atom)
@@ -615,7 +616,7 @@
 
       (testing "4XX response - failure"
         (let [offers-allowed-semaphore (semaphore/create-semaphore 10)
-              make-inter-router-requests-fn (make-inter-router-requests-fn-factory 400 {:response-status "failure"})]
+              make-inter-router-requests-fn (make-inter-router-requests-fn-factory http-400-bad-request {:response-status "failure"})]
           (start-work-stealing-balancer populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
                                         service-id->router-id->metrics make-inter-router-requests-fn router-id service-id)
           (is @offer-help-fn-atom)
@@ -627,7 +628,7 @@
 
       (testing "5XX response - failure"
         (let [offers-allowed-semaphore (semaphore/create-semaphore 10)
-              make-inter-router-requests-fn (make-inter-router-requests-fn-factory 500 {:response-status "failure"})]
+              make-inter-router-requests-fn (make-inter-router-requests-fn-factory http-500-internal-server-error {:response-status "failure"})]
           (start-work-stealing-balancer populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
                                         service-id->router-id->metrics make-inter-router-requests-fn router-id service-id)
           (is @offer-help-fn-atom)

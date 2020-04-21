@@ -26,6 +26,7 @@
             [waiter.scheduler :as scheduler]
             [waiter.service :as service]
             [waiter.statsd :as statsd]
+            [waiter.status-codes :refer :all]
             [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
   (:import (java.net ConnectException SocketTimeoutException URI URLEncoder)
@@ -98,12 +99,12 @@
                       (log/info (.getMessage error) "releasing allocated instance")
                       (complete-async-request :instance-error)
                       :make-request-error)
-                    (case (int status)
-                      200
+                    (condp = (int status)
+                      http-200-ok
                       (do
                         (log/debug "async request has not yet completed")
                         (recur (max 0 (- ttl check-interval-ms))))
-                      303
+                      http-303-see-other
                       (do
                         (log/info "async request has completed, result headers" headers)
                         (let [location-header (get headers "location")
@@ -116,11 +117,12 @@
                               (log/info "completing async request as result location is not a relative path:" location)
                               (complete-async-request :success)
                               :status-see-other))))
-                      410
+                      http-410-gone
                       (do
                         (log/info "async request has completed, result is no longer available!")
                         (complete-async-request :success)
                         :status-gone)
+                      ;; else
                       (do
                         (log/warn "status check returned unsupported status" status ", releasing reserved instance")
                         (complete-async-request :success)

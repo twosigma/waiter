@@ -17,6 +17,7 @@
   (:require [clj-time.core :as t]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
             [waiter.util.utils :as utils]))
 
@@ -157,7 +158,7 @@
           {:keys [cookies instance-id service-id] :as response}
           (make-request-with-debug-info extra-headers #(make-kitchen-request waiter-url %))
           extra-headers (assoc extra-headers :x-kitchen-delay-ms (-> 10 t/seconds t/in-millis))]
-      (assert-response-status response 200)
+      (assert-response-status response http-200-ok)
       (log/info "service-id:" service-id)
       (with-service-cleanup
         service-id
@@ -179,7 +180,7 @@
                           :service-id service-id
                           :verbose true)]
           (log/info "made" (count responses) "requests")
-          (is (every? #(= 200 (:status %)) responses))
+          (is (every? #(= http-200-ok (:status %)) responses))
           (is (contains? @response-instance-ids-atom instance-id)
               (str {:all-instances @response-instance-ids-atom :instance-id instance-id}))
           (is (> (count @response-instance-ids-atom) 1)

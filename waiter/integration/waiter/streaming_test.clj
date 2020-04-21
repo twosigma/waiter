@@ -16,6 +16,7 @@
 (ns waiter.streaming-test
   (:require [clojure.test :refer :all]
             [clojure.tools.logging :as log]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all])
   (:import (java.net HttpURLConnection URL)))
 
@@ -33,7 +34,7 @@
           service-id (retrieve-service-id waiter-url request-headers)
           epsilon 0.01
           num-streaming-requests 50]
-      (assert-response-status canary-response 200)
+      (assert-response-status canary-response http-200-ok)
       (with-service-cleanup
         service-id
         (dotimes [n num-streaming-requests]
@@ -43,7 +44,7 @@
                           :content-type "application/octet-stream"
                           :x-cid request-cid)
                 {:keys [body] :as response} (make-kitchen-request waiter-url headers :body post-body :path "/streaming")]
-            (assert-response-status response 200)
+            (assert-response-status response http-200-ok)
             (is (.equals post-body body) (str response)))) ;; avoids printing the post-body when assertion fails
         ; wait to allow metrics to be aggregated
         (let [sleep-period (max (* 20 metrics-sync-interval-ms) 10000)]
@@ -80,7 +81,7 @@
           headers {:x-waiter-name (rand-name), :x-kitchen-echo true}
           {:keys [body service-id] :as response}
           (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :body request-body))]
-      (assert-response-status response 200)
+      (assert-response-status response http-200-ok)
       (is (= (count request-body) (count body)))
       (delete-service waiter-url service-id))))
 

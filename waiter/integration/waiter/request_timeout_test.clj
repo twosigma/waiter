@@ -19,6 +19,7 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all])
   (:import java.util.concurrent.CountDownLatch))
 
@@ -51,7 +52,7 @@
 (defn- make-request-and-assert-timeout
   [waiter-url request-headers start-time-ms timeout-period-sec & {:keys [cookies] :or {cookies {}}}]
   (let [{:keys [body service-name] :as response} (make-request-verbose waiter-url request-headers cookies)]
-    (assert-response-status response 503)
+    (assert-response-status response http-503-service-unavailable)
     (assert-failed-request service-name body start-time-ms timeout-period-sec true)))
 
 (defn- make-successful-request
@@ -72,7 +73,7 @@
           headers {:x-waiter-name service-name}
           {:keys [service-id] :as first-response}
           (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :method :get))]
-      (assert-response-status first-response 200)
+      (assert-response-status first-response http-200-ok)
       (with-service-cleanup
         service-id
         (testing "backend request timeout"
@@ -84,7 +85,7 @@
                 {:keys [headers] :as response} (make-kitchen-request waiter-url extra-headers)
                 response-body (:body response)
                 error-message (-> (waiter-settings waiter-url) :messages :backend-request-timed-out)]
-            (assert-response-status response 504)
+            (assert-response-status response http-504-gateway-timeout)
             (is error-message)
             (is (str/includes? response-body error-message))
             (is (not (str/blank? (get headers "server"))))
@@ -101,7 +102,7 @@
                 {:keys [headers] :as response} (make-kitchen-request waiter-url extra-headers :path "/die")
                 response-body (:body response)
                 error-message (-> (waiter-settings waiter-url) :messages :backend-request-failed)]
-            (assert-response-status response 502)
+            (assert-response-status response http-502-bad-gateway)
             (is error-message)
             (is (str/includes? response-body error-message))
             (is (not (str/blank? (get headers "server"))))
@@ -165,7 +166,7 @@
                          :x-waiter-min-instances 1
                          :x-waiter-name (rand-name)}
           {:keys [cookies instance-id service-id] :as response} (make-request-fn waiter-url extra-headers nil)]
-      (assert-response-status response 200)
+      (assert-response-status response http-200-ok)
       (log/info "canary instance-id:" instance-id)
       (with-service-cleanup
         service-id
@@ -174,7 +175,7 @@
             (.countDown long-request-started-latch)
             (let [extra-headers (assoc extra-headers :x-kitchen-delay-ms long-request-period-ms)
                   response (make-request-fn router-url extra-headers cookies)]
-              (assert-response-status response 200)
+              (assert-response-status response http-200-ok)
               (log/info "long request instance-id:" (:instance-id response))
               (is (= instance-id (:instance-id response))))
             (.countDown long-request-ended-latch)))
@@ -184,7 +185,7 @@
               extra-headers (assoc extra-headers :x-waiter-queue-timeout timeout-period-ms)
               _ (Thread/sleep timeout-period-ms)
               {:keys [body] :as response} (make-request-fn waiter-url extra-headers cookies)]
-          (assert-response-status response 503)
+          (assert-response-status response http-503-service-unavailable)
           (is (str/includes?
                 (str body)
                 (str "After " timeout-period-secs " seconds, no instance available to handle request.")))
@@ -211,15 +212,15 @@
                                       :name (str "test" token)
                                       :grace-period-secs (t/in-seconds grace-period)
                                       :cmd-type "shell"})]
-          (assert-response-status response 200))
+          (assert-response-status response http-200-ok))
         (log/info "Making request for" token)
         (let [{:keys [status service-id] :as response} (make-request-with-debug-info
                                                          {:x-waiter-token token}
                                                          #(make-request waiter-url "/req" :headers %))]
-          (assert-response-status response 200)
+          (assert-response-status response http-200-ok)
           (with-service-cleanup
             service-id
-            (when (= 200 status)
+            (when (= http-200-ok status)
               (log/info "Verifying app grace period for" token)
               (let [instance-acquired-delay-ms (-> response
                                                  :headers

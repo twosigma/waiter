@@ -22,6 +22,7 @@
             [clojure.walk :as walk]
             [plumbing.core :as pc]
             [waiter.correlation-id :as cid]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all])
   (:import (com.twosigma.waiter.courier
              CourierReply CourierSummary GrpcClient
@@ -92,7 +93,7 @@
          request-headers (assoc request-headers
                            "cookie" cookie-header
                            "x-waiter-timeout" "60000")]
-     (assert-response-status response 200)
+     (assert-response-status response http-200-ok)
      (log/info "ping cid:" (get headers "x-cid"))
      (log/info "service-id:" service-id)
      (is service-id)
@@ -103,7 +104,7 @@
        (is (= "received-response" (:result ping-response)) (str ping-response))
        (is (= "OK" (some-> ping-response :body)) (str ping-response))
        (is (str/starts-with? (str (some-> ping-response :headers :server)) "courier-health-check") (str ping-response))
-       (assert-response-status ping-response 200)
+       (assert-response-status ping-response http-200-ok)
        (is (true? (:exists? service-state)) (str service-state))
        (is (= service-id (:service-id service-state)) (str service-state))
        (is (contains? #{"Running" "Starting"} (:status service-state)) (str service-state)))
@@ -587,7 +588,7 @@
                                    "token" token)
                 _ (log/info "creating token:" token)
                 post-response (post-token waiter-url (walk/keywordize-keys token-parameters))
-                _ (assert-response-status post-response 200)
+                _ (assert-response-status post-response http-200-ok)
                 request-headers {"host" token
                                  "x-waiter-debug" true}
                 {:keys [h2c-port host service-id]} (start-courier-instance waiter-url request-headers)]

@@ -17,6 +17,7 @@
   (:require [clojure.string :as str]
             [plumbing.core :as pc]
             [waiter.auth.authentication :as auth]
+            [waiter.status-codes :refer :all]
             [waiter.util.utils :as utils]))
 
 (defrecord CompositeAuthenticator [default-authentication provider-name->authenticator]
@@ -31,7 +32,7 @@
             (throw (ex-info (str "No authenticator found for " authentication " authentication.")
                             {:available-authenticators (keys provider-name->handler)
                              :request-authentication authentication
-                             :status 400})))))))
+                             :status http-400-bad-request})))))))
 
   auth/CompositeAuthenticator
   (get-authentication-providers [_]
@@ -44,7 +45,7 @@
       (throw (ex-info (str "Unknown authentication provider " authentication-provider)
                       {:available-authenticators (keys provider-name->authenticator)
                        :authentication-provider authentication-provider
-                       :status 400})))))
+                       :status http-400-bad-request})))))
 
 (defn- make-authenticator
   "Create an authenticator from an authentication-provider"

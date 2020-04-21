@@ -20,6 +20,7 @@
             [waiter.metrics :as metrics]
             [waiter.service-description :as sd]
             [waiter.schema :as schema]
+            [waiter.status-codes :refer :all]
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils])
   (:import java.util.regex.Pattern))
@@ -64,7 +65,7 @@
         (let [{:keys [headers request-method]} request
               {:strs [origin]} headers]
           (when-not origin
-            (throw (ex-info "No origin provided" {:status 403})))
+            (throw (ex-info "No origin provided" {:status http-403-forbidden})))
           (let [{:keys [allowed? summary allowed-methods]}
                 (preflight-check cors-validator (assoc request :waiter-discovery discovered-parameters))]
             (when-not allowed?
@@ -72,11 +73,11 @@
               (throw (ex-info "Cross-origin request not allowed" {:cors-checks summary
                                                                   :origin origin
                                                                   :request-method request-method
-                                                                  :status 403
+                                                                  :status http-403-forbidden
                                                                   :log-level :warn})))
             (log/info "cors preflight request allowed" summary)
             (let [{:strs [access-control-request-headers]} headers]
-              {:status 200
+              {:status http-200-ok
                :headers {"access-control-allow-origin" origin
                          "access-control-allow-headers" access-control-request-headers
                          "access-control-allow-methods" (str/join ", " (or allowed-methods schema/http-methods))
@@ -114,7 +115,7 @@
                               {:cors-checks summary
                                :origin origin
                                :request-method request-method
-                               :status 403
+                               :status http-403-forbidden
                                :log-level :warn})))
             (log/info "cors request allowed" summary)
             (-> (handler request)
