@@ -226,11 +226,17 @@
 
 (defn make-http-clients
   "Instantiates and returns http1 and http2 clients without a cookie store"
-  []
-  (hu/prepare-http-clients {:client-name (str "waiter-test-" (retrieve-git-branch))
-                            :clear-content-decoders false
-                            :conn-timeout 10000
-                            :user-agent (str "waiter-test/" (retrieve-git-branch))}))
+  ([]
+   (make-http-clients {}))
+  ([client-config]
+   (let [git-branch (retrieve-git-branch)
+         user-agent (if (contains? client-config :user-agent)
+                      (:user-agent client-config)
+                      (str "waiter-test/" git-branch))]
+     (hu/prepare-http-clients {:clear-content-decoders false
+                               :client-name (str "waiter-test-" git-branch)
+                               :conn-timeout 10000
+                               :user-agent user-agent}))))
 
 (defn current-test-name
   "Get the name of the currently-running test."
@@ -238,6 +244,20 @@
   (str (-> *testing-vars* first meta :ns str)
        "/"
        (-> *testing-vars* first meta :name)))
+
+(defmacro with-http-clients
+  [config & body]
+  `(let [config# ~config
+         local-http-clients# (make-http-clients config#)
+         local-http1-client# (:http1-client local-http-clients#)
+         local-http2-client# (:http2-client local-http-clients#)]
+     (binding [http1-client local-http1-client#
+               http2-client local-http2-client#]
+       (try
+         ~@body
+         (finally
+           (http/stop-client! http1-client)
+           (http/stop-client! http2-client))))))
 
 (defmacro testing-using-waiter-url
   [& body]
@@ -247,16 +267,10 @@
          name#
          (timing-using-waiter-url
            name#
-           (let [local-http-clients# (make-http-clients)
-                 local-http1-client# (:http1-client local-http-clients#)
-                 local-http2-client# (:http2-client local-http-clients#)]
-             (binding [http1-client local-http1-client#
-                       http2-client local-http2-client#]
-               (try
-                 ~@body
-                 (finally
-                   (http/stop-client! http1-client)
-                   (http/stop-client! http2-client))))))))))
+           (let [config# nil]
+             (with-http-clients
+               config#
+               ~@body)))))))
 
 (defn instance-id->service-id [^String instance-id]
   (when (str/index-of instance-id ".") (subs instance-id 0 (str/index-of instance-id "."))))

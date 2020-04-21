@@ -102,9 +102,9 @@
       (.clear (.getContentDecoderFactories client)))
     (.setCookieStore client (HttpCookieStore$Empty.))
     (.setDefaultRequestContentType client nil)
-    (when user-agent
-      (let [new-user-agent-field (HttpField. HttpHeader/USER_AGENT (str user-agent))]
-        (.setUserAgentField client new-user-agent-field)))
+    (.setUserAgentField client
+                        (when-not (str/blank? user-agent)
+                          (HttpField. HttpHeader/USER_AGENT (str user-agent))))
     client))
 
 (defn- prepare-http2-transport
@@ -125,11 +125,11 @@
   (let [http2-transport (prepare-http2-transport conn-timeout socket-timeout)]
     {:http1-client (http-client-factory (cond-> config
                                           client-name (update :client-name str "-http1")
-                                          user-agent (update :user-agent str ".http1")))
+                                          (not (str/blank? user-agent)) (update :user-agent str ".http1")))
      ;; prepare-http2-transport already handles the connect and socket timeouts
      :http2-client (-> (cond-> (dissoc config :conn-timeout :socket-timeout)
                          client-name (update :client-name str "-http2")
-                         user-agent (update :user-agent str ".http2"))
+                         (not (str/blank? user-agent)) (update :user-agent str ".http2"))
                        (assoc :transport http2-transport)
                        http-client-factory)}))
 
