@@ -923,6 +923,10 @@
                                  (fn async-trigger-terminate-fn [target-router-id service-id request-id]
                                    (async-req/async-trigger-terminate
                                      async-request-terminate-fn make-inter-router-requests-sync-fn router-id target-router-id service-id request-id)))
+   :attach-service-defaults-fn (pc/fnk [[:settings metric-group-mappings service-description-defaults]
+                                      [:state profile->defaults]]
+                               (fn attach-service-defaults-fn [service-description]
+                                 (sd/merge-defaults service-description service-description-defaults profile->defaults metric-group-mappings)))
    :attach-token-defaults-fn (pc/fnk [[:settings [:token-config token-defaults]]
                                       [:state profile->defaults]]
                                (fn attach-token-defaults-fn [token-parameters]
@@ -1016,12 +1020,13 @@
    :request->descriptor-fn (pc/fnk [[:settings [:token-config history-length]]
                                     [:state fallback-state-atom kv-store service-description-builder
                                      service-id-prefix waiter-hostnames]
-                                    assoc-run-as-user-approved? attach-token-defaults-fn can-run-as?-fn
-                                    store-reference-fn store-source-tokens-fn]
+                                    assoc-run-as-user-approved? attach-service-defaults-fn attach-token-defaults-fn
+                                    can-run-as?-fn store-reference-fn store-source-tokens-fn]
                              (fn request->descriptor-fn [request]
                                (let [{:keys [latest-descriptor] :as result}
                                      (descriptor/request->descriptor
-                                       assoc-run-as-user-approved? can-run-as?-fn attach-token-defaults-fn
+                                       assoc-run-as-user-approved? can-run-as?-fn
+                                       attach-service-defaults-fn attach-token-defaults-fn
                                        fallback-state-atom kv-store history-length service-description-builder
                                        service-id-prefix waiter-hostnames request)
                                      {:keys [reference-type->entry service-id source-tokens]} latest-descriptor]

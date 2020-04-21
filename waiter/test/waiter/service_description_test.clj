@@ -238,6 +238,8 @@
                                 (str/includes? token "fall") (assoc "fallback-period-secs" 600)
                                 (str/includes? token "mem") (assoc "mem" "2")
                                 (str/includes? token "per") (assoc "permitted-user" "puser")
+                                (str/includes? token "proser") (assoc "profile" "service")
+                                (str/includes? token "proweb") (assoc "profile" "webapp")
                                 (str/includes? token "run") (assoc "run-as-user" "ruser"))
                               {}))
         build-source-tokens (fn [& tokens]
@@ -246,8 +248,14 @@
                              (is (= kv-store in-kv-store))
                              (create-token-data token))]
       (let [profile->defaults {"webapp" {"concurrency-level" 120
-                                         "fallback-period-secs" 100}}
+                                         "fallback-period-secs" 100}
+                               "service" {"concurrency-level" 30
+                                          "fallback-period-secs" 90
+                                          "permitted-user" "*"}}
+            service-description-defaults {}
             token-defaults {"fallback-period-secs" 300}
+            metric-group-mappings []
+            attach-service-defaults-fn #(merge-defaults % service-description-defaults profile->defaults metric-group-mappings)
             attach-token-defaults-fn #(attach-token-defaults % token-defaults profile->defaults)
             test-cases (list
                          {:name "prepare-service-description-sources:WITH Service Desc specific Waiter Headers except run-as-user"
@@ -660,13 +668,57 @@
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
                                      :token-sequence []}}
+                         {:name "prepare-service-description-sources:profile:not-preauthorized-missing-permitted-user"
+                          :waiter-headers {"x-waiter-token" "test-token-run-proweb"}
+                          :passthrough-headers {}
+                          :expected {:fallback-period-secs 100
+                                     :headers {}
+                                     :service-description-template {"cmd" "token-user"
+                                                                    "name" "test-token-run-proweb"
+                                                                    "profile" "webapp"
+                                                                    "run-as-user" "ruser"
+                                                                    "version" "token"},
+                                     :source-tokens (build-source-tokens "test-token-run-proweb")
+                                     :token->token-data {"test-token-run-proweb" (create-token-data "test-token-run-proweb")}
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :token-sequence ["test-token-run-proweb"]}}
+                         {:name "prepare-service-description-sources:profile:not-preauthorized-missing-run-as-user"
+                          :waiter-headers {"x-waiter-token" "test-token-proser"}
+                          :passthrough-headers {}
+                          :expected {:fallback-period-secs 90
+                                     :headers {}
+                                     :service-description-template {"cmd" "token-user"
+                                                                    "name" "test-token-proser"
+                                                                    "profile" "service"
+                                                                    "version" "token"},
+                                     :source-tokens (build-source-tokens "test-token-proser")
+                                     :token->token-data {"test-token-proser" (create-token-data "test-token-proser")}
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :token-sequence ["test-token-proser"]}}
+                         {:name "prepare-service-description-sources:profile:preauthorized-missing-run-as-user"
+                          :waiter-headers {"x-waiter-token" "test-token-run-proser"}
+                          :passthrough-headers {}
+                          :expected {:fallback-period-secs 90
+                                     :headers {}
+                                     :service-description-template {"cmd" "token-user"
+                                                                    "name" "test-token-run-proser"
+                                                                    "profile" "service"
+                                                                    "run-as-user" "ruser"
+                                                                    "version" "token"},
+                                     :source-tokens (build-source-tokens "test-token-run-proser")
+                                     :token->token-data {"test-token-run-proser" (create-token-data "test-token-run-proser")}
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized true,
+                                     :token-sequence ["test-token-run-proser"]}}
                          )]
         (doseq [{:keys [expected name passthrough-headers waiter-headers]} test-cases]
           (testing (str "Test " name)
             (let [actual (prepare-service-description-sources
                            {:passthrough-headers passthrough-headers
                             :waiter-headers waiter-headers}
-                           kv-store waiter-hostnames attach-token-defaults-fn)]
+                           kv-store waiter-hostnames attach-service-defaults-fn attach-token-defaults-fn)]
               (when (not= expected actual)
                 (println name)
                 (println "Expected: " (into (sorted-map) expected))
@@ -677,7 +729,12 @@
   (let [kv-store (Object.)
         waiter-hostnames ["waiter-hostname.app.example.com"]
         test-token "test-token-name"
-        token-defaults {"fallback-period-secs" 300}]
+        service-description-defaults {}
+        profile->defaults {}
+        metric-group-mappings []
+        attach-service-defaults-fn #(merge-defaults % service-description-defaults profile->defaults metric-group-mappings)
+        token-defaults {"fallback-period-secs" 300}
+        attach-token-defaults-fn #(merge token-defaults %)]
     (testing "authentication-disabled token"
       (let [token-data {"authentication" "disabled"
                         "cmd" "a-command"
@@ -688,8 +745,7 @@
                         "permitted-user" "*"
                         "previous" {}
                         "run-as-user" "ruser"
-                        "version" "token"}
-            attach-token-defaults-fn #(merge token-defaults %)]
+                        "version" "token"}]
         (with-redefs [kv/fetch (fn [in-kv-store token]
                                  (is (= kv-store in-kv-store))
                                  (is (= test-token token))
@@ -699,7 +755,7 @@
                 actual (prepare-service-description-sources
                          {:waiter-headers waiter-headers
                           :passthrough-headers passthrough-headers}
-                         kv-store waiter-hostnames attach-token-defaults-fn)
+                         kv-store waiter-hostnames attach-service-defaults-fn attach-token-defaults-fn)
                 expected {:fallback-period-secs 300
                           :headers {}
                           :service-description-template (select-keys token-data service-parameter-keys)
@@ -720,8 +776,7 @@
                         "permitted-user" "*"
                         "previous" {}
                         "run-as-user" "ruser"
-                        "version" "token"}
-            attach-token-defaults-fn #(merge token-defaults %)]
+                        "version" "token"}]
         (with-redefs [kv/fetch (fn [in-kv-store token]
                                  (is (= kv-store in-kv-store))
                                  (is (= test-token token))
@@ -731,7 +786,7 @@
                 actual (prepare-service-description-sources
                          {:waiter-headers waiter-headers
                           :passthrough-headers passthrough-headers}
-                         kv-store waiter-hostnames attach-token-defaults-fn)
+                         kv-store waiter-hostnames attach-service-defaults-fn attach-token-defaults-fn)
                 expected {:fallback-period-secs 300
                           :headers {}
                           :service-description-template (select-keys token-data service-parameter-keys)
