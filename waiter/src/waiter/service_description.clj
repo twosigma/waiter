@@ -292,59 +292,6 @@
     (assoc "metric-group" (or (name->metric-group mappings name)
                               "other"))))
 
-(defn merge-defaults
-  "Merges the defaults into the existing service description."
-  [service-description-without-defaults service-description-defaults metric-group-mappings]
-  (->
-    (let [provided-max-instances (get service-description-without-defaults "max-instances")
-          provided-min-instances (get service-description-without-defaults "min-instances")
-          default-min-instances (get service-description-defaults "min-instances")]
-      (cond-> service-description-defaults
-        ;; adjust the min-instances if the max-instances is provided without min-instances and
-        ;; the max-instances is smaller than the default min-instances
-        (and (integer? provided-max-instances)
-             (nil? provided-min-instances)
-             (integer? default-min-instances)
-             (> default-min-instances provided-max-instances))
-        (assoc "min-instances" (max provided-max-instances minimum-min-instances))))
-    (merge service-description-without-defaults)
-    (metric-group-filter metric-group-mappings)))
-
-(defn- merge-overrides
-  "Merges the overrides into the service description."
-  [service-description-without-overrides service-description-overrides]
-  (cond-> service-description-without-overrides
-    service-description-overrides (merge service-description-overrides)))
-
-(defn sanitize-service-description
-  "Sanitizes the service description by removing unsupported keys."
-  ([service-description] (sanitize-service-description service-description service-description-keys))
-  ([service-description allowed-fields] (select-keys service-description allowed-fields)))
-
-(let [service-id->key #(str "^OVERRIDE#" %)]
-  (defn store-service-description-overrides
-    "Stores an entry in the key-value store marking the service has overrides."
-    [kv-store service-id username service-description-template]
-    (let [service-description-to-store (sanitize-service-description service-description-template service-override-keys)]
-      (kv/store kv-store (service-id->key service-id) {:overrides service-description-to-store, :last-updated-by username, :time (t/now)})))
-
-  (defn clear-service-description-overrides
-    "Stores a blank entry in the key-value store marking the service has no overrides."
-    [kv-store service-id username]
-    (kv/store kv-store (service-id->key service-id) {:overrides {}, :last-updated-by username, :time (t/now)}))
-
-  (defn service-id->overrides
-    "Retrieves the overridden service description for a service from the key-value store."
-    [kv-store service-id & {:keys [refresh] :or {refresh false}}]
-    (kv/fetch kv-store (service-id->key service-id) :refresh refresh)))
-
-(defn default-and-override
-  "Adds defaults and overrides to the provided service-description"
-  [service-description metric-group-mappings kv-store defaults service-id]
-  (-> service-description
-      (merge-defaults defaults metric-group-mappings)
-      (merge-overrides (:overrides (service-id->overrides kv-store service-id)))))
-
 (defn- compute-valid-profiles-str
   "Computes the string representation of supported profiles"
   [profile->defaults]
@@ -391,6 +338,59 @@
   [token-defaults profile->defaults profile]
   (compute-profile-defaults
     user-metadata-keys token-defaults profile->defaults profile))
+
+(defn merge-defaults
+  "Merges the defaults into the existing service description."
+  [{:strs [profile max-instances min-instances] :as service-description-without-defaults}
+   service-description-defaults profile->defaults metric-group-mappings]
+  (->
+    (let [service-defaults (compute-service-defaults service-description-defaults profile->defaults profile)
+          default-min-instances (get service-defaults "min-instances")]
+      (cond-> service-defaults
+        ;; adjust the min-instances if the max-instances is provided without min-instances and
+        ;; the max-instances is smaller than the default min-instances
+        (and (integer? max-instances)
+             (nil? min-instances)
+             (integer? default-min-instances)
+             (> default-min-instances max-instances))
+        (assoc "min-instances" (max max-instances minimum-min-instances))))
+    (merge service-description-without-defaults)
+    (metric-group-filter metric-group-mappings)))
+
+(defn- merge-overrides
+  "Merges the overrides into the service description."
+  [service-description-without-overrides service-description-overrides]
+  (cond-> service-description-without-overrides
+    service-description-overrides (merge service-description-overrides)))
+
+(defn sanitize-service-description
+  "Sanitizes the service description by removing unsupported keys."
+  ([service-description] (sanitize-service-description service-description service-description-keys))
+  ([service-description allowed-fields] (select-keys service-description allowed-fields)))
+
+(let [service-id->key #(str "^OVERRIDE#" %)]
+  (defn store-service-description-overrides
+    "Stores an entry in the key-value store marking the service has overrides."
+    [kv-store service-id username service-description-template]
+    (let [service-description-to-store (sanitize-service-description service-description-template service-override-keys)]
+      (kv/store kv-store (service-id->key service-id) {:overrides service-description-to-store, :last-updated-by username, :time (t/now)})))
+
+  (defn clear-service-description-overrides
+    "Stores a blank entry in the key-value store marking the service has no overrides."
+    [kv-store service-id username]
+    (kv/store kv-store (service-id->key service-id) {:overrides {}, :last-updated-by username, :time (t/now)}))
+
+  (defn service-id->overrides
+    "Retrieves the overridden service description for a service from the key-value store."
+    [kv-store service-id & {:keys [refresh] :or {refresh false}}]
+    (kv/fetch kv-store (service-id->key service-id) :refresh refresh)))
+
+(defn default-and-override
+  "Adds defaults and overrides to the provided service-description"
+  [service-description service-description-defaults profile->defaults metric-group-mappings kv-store service-id]
+  (-> service-description
+      (merge-defaults service-description-defaults profile->defaults metric-group-mappings)
+      (merge-overrides (:overrides (service-id->overrides kv-store service-id)))))
 
 (defn parameters->id
   "Generates a deterministic ID from the input parameter map."
@@ -661,9 +661,9 @@
                   candidate-service-description)
                 user-service-description)))
           service-id (service-description->service-id service-id-prefix core-service-description)
-          defaults (compute-service-defaults service-description-defaults profile->defaults profile)
-          service-description (default-and-override core-service-description metric-group-mappings
-                                                    kv-store defaults service-id)
+          service-description (default-and-override
+                                core-service-description service-description-defaults profile->defaults
+                                metric-group-mappings kv-store service-id)
           reference-type->entry (cond-> (or reference-type->entry {})
                                   (seq source-tokens)
                                   (assoc :token {:sources (map walk/keywordize-keys source-tokens)}))]
@@ -1168,10 +1168,10 @@
   "Loads the service description for the specified service-id including any overrides."
   [kv-store service-id service-description-defaults profile->defaults metric-group-mappings
    & {:keys [effective?] :or {effective? true}}]
-  (let [{:strs [profile] :as core-service-description} (fetch-core kv-store service-id :refresh false)
-        service-description-defaults (compute-service-defaults service-description-defaults profile->defaults profile)]
+  (let [core-service-description (fetch-core kv-store service-id :refresh false)]
     (cond-> core-service-description
-      effective? (default-and-override metric-group-mappings kv-store service-description-defaults service-id))))
+      effective? (default-and-override
+                   service-description-defaults profile->defaults metric-group-mappings kv-store service-id))))
 
 (defn can-manage-service?
   "Returns whether the `username` is allowed to modify the specified service description."

@@ -2105,28 +2105,51 @@
 
 (deftest test-merge-defaults-into-service-description
   (testing "Merging defaults into service description"
-    (testing "should incorporate metric group mappings"
-      (is (= {"metric-group" "bar"
-              "name" "foo"}
-             (merge-defaults {"name" "foo"} {} [[#"f.." "bar"]]))))
-    (testing "min-instances default missing but only max-instances provided"
-      (is (= {"max-instances" 2
-              "metric-group" "other"}
-             (merge-defaults {"max-instances" 2} {} [[#"f.." "bar"]]))))
-    (testing "min-instances should be updated when not provided"
-      (is (= {"max-instances" 2
-              "metric-group" "other"
-              "min-instances" 2}
-             (merge-defaults {"max-instances" 2} {"min-instances" 3} [[#"f.." "bar"]]))))
-    (testing "min-instances should not be updated when provided without max-instances"
-      (is (= {"metric-group" "other"
-              "min-instances" 4}
-             (merge-defaults {"min-instances" 4} {"min-instances" 3} [[#"f.." "bar"]]))))
-    (testing "min-instances should not be updated when provided with max-instances"
-      (is (= {"max-instances" 2
-              "metric-group" "other"
-              "min-instances" 4}
-             (merge-defaults {"max-instances" 2 "min-instances" 4} {"min-instances" 3} [[#"f.." "bar"]]))))))
+    (let [profile->defaults {"webapp" {"concurrency-level" 120
+                                       "fallback-period-secs" 100}}
+          metric-group-mappings [[#"f.." "bar"]]]
+      (testing "should incorporate profile"
+        (is (= {"concurrency-level" 120
+                "metric-group" "other"
+                "name" "lorem"
+                "profile" "webapp"}
+               (merge-defaults {"name" "lorem", "profile" "webapp"} {}
+                               profile->defaults metric-group-mappings))))
+      (testing "should incorporate metric group mappings"
+        (is (= {"metric-group" "bar"
+                "name" "foo"}
+               (merge-defaults {"name" "foo"} {}
+                               profile->defaults metric-group-mappings))))
+      (testing "should incorporate defaults, profile, and metric-group"
+        (is (= {"concurrency-level" 120
+                "metric-group" "bar"
+                "name" "foo"
+                "ports" 2
+                "profile" "webapp"}
+               (merge-defaults {"name" "foo", "profile" "webapp"} {"concurrency-level" 30, "ports" 2}
+                               profile->defaults metric-group-mappings))))
+      (testing "min-instances default missing but only max-instances provided"
+        (is (= {"max-instances" 2
+                "metric-group" "other"}
+               (merge-defaults {"max-instances" 2} {}
+                               profile->defaults metric-group-mappings))))
+      (testing "min-instances should be updated when not provided"
+        (is (= {"max-instances" 2
+                "metric-group" "other"
+                "min-instances" 2}
+               (merge-defaults {"max-instances" 2} {"min-instances" 3}
+                               profile->defaults metric-group-mappings))))
+      (testing "min-instances should not be updated when provided without max-instances"
+        (is (= {"metric-group" "other"
+                "min-instances" 4}
+               (merge-defaults {"min-instances" 4} {"min-instances" 3}
+                               profile->defaults metric-group-mappings))))
+      (testing "min-instances should not be updated when provided with max-instances"
+        (is (= {"max-instances" 2
+                "metric-group" "other"
+                "min-instances" 4}
+               (merge-defaults {"max-instances" 2 "min-instances" 4} {"min-instances" 3}
+                               profile->defaults metric-group-mappings)))))))
 
 (deftest test-validate-cmd-type
   (testing "DefaultServiceDescriptionBuilder validation"
