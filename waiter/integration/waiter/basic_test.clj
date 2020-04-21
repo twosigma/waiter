@@ -43,7 +43,13 @@
         (testing "instances are non-null"
           (is (get-in service-settings [:instances :active-instances]))
           (is (get-in service-settings [:instances :failed-instances]))
-          (is (get-in service-settings [:instances :killed-instances]))))
+          (is (get-in service-settings [:instances :killed-instances]))
+          (let [active-instance-count (count (get-in service-settings [:instances :active-instances]))
+                {:keys [cpus mem]} (get service-settings :service-description)]
+            (is (= {:cpus (* active-instance-count cpus)
+                    :mem (* active-instance-count mem)}
+                   (get service-settings :usage))
+                (str service-settings)))))
 
       (testing "status is reported"
         (is (wait-for #(= "Running" (get (service-settings waiter-url service-id) :status)) :interval 2 :timeout 30)
@@ -557,7 +563,8 @@
               (is (contains? #{"Running" "Starting"} (get service "status")))
               (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
               (is (get service "scaling-state") (str service))
-              (is (pos? (get-in service ["service-description" "cpus"])) service)))
+              (is (pos? (get-in service ["service-description" "cpus"])) service)
+              (is (get service "usage") (str service))))
 
           (testing "with star run-as-user parameter"
             (let [run-as-user-param (->> current-user reverse (drop 2) (cons "*") reverse (str/join ""))
@@ -566,7 +573,8 @@
               (is (contains? #{"Running" "Starting"} (get service "status")))
               (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
               (is (get service "scaling-state") (str service))
-              (is (pos? (get-in service ["service-description" "cpus"])) service)))
+              (is (pos? (get-in service ["service-description" "cpus"])) service)
+              (is (get service "usage") (str service))))
 
           (testing "waiter user disabled" ;; see my app as myself
             (let [service (service waiter-url service-id {"force" "false"})]
@@ -574,7 +582,8 @@
               (is (contains? #{"Running" "Starting"} (get service "status")))
               (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
               (is (get service "scaling-state") (str service))
-              (is (pos? (get-in service ["service-description" "cpus"])) service)))
+              (is (pos? (get-in service ["service-description" "cpus"])) service)
+              (is (get service "usage") (str service))))
 
           (testing "waiter user disabled and same user" ;; see my app as myself
             (let [service (service waiter-url service-id {"force" "false", "run-as-user" current-user})]
@@ -582,7 +591,8 @@
               (is (contains? #{"Running" "Starting"} (get service "status")))
               (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
               (is (get service "scaling-state") (str service))
-              (is (pos? (get-in service ["service-description" "cpus"])) service)))
+              (is (pos? (get-in service ["service-description" "cpus"])) service)
+              (is (get service "usage") (str service))))
 
           (testing "different run-as-user" ;; no such app
             (let [service (service waiter-url service-id {"run-as-user" "test-user"}
@@ -618,7 +628,8 @@
               (is (contains? #{"Running" "Starting"} (get service "status")))
               (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
               (is (get service "scaling-state") (str service))
-              (is (pos? (get-in service ["service-description" "cpus"])) service))))))))
+              (is (pos? (get-in service ["service-description" "cpus"])) service)
+              (is (get service "usage") (str service)))))))))
 
 (deftest ^:parallel ^:integration-fast test-delete-service
   (testing-using-waiter-url

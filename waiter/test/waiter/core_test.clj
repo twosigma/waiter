@@ -516,7 +516,12 @@
                                   :make-inter-router-requests-sync-fn nil
                                   :router-metrics-helpers {:service-id->metrics-fn (constantly service-id->metrics)}
                                   :service-id->references-fn (constantly [])
-                                  :service-id->service-description-fn (constantly {})
+                                  :service-id->service-description-fn (fn [service-id _ effective?]
+                                                                        (cond-> {"name" (str service-id "-name")
+                                                                                 "run-as-user" user}
+                                                                          effective?
+                                                                          (assoc "cpus" 1
+                                                                                 "mem" 2048)))
                                   :service-id->source-tokens-entries-fn (constantly #{})
                                   :token->token-hash identity}
                        :scheduler {:scheduler (Object.)}
@@ -542,13 +547,21 @@
             (is (= "test-service-1" service-id))))))
 
     (testing "service-handler:valid-response-missing-killed-and-failed"
-      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
+      (with-redefs [sd/fetch-core (fn [_ service-id & _]
+                                    {"name" (str service-id "-name")
+                                     "run-as-user" user})]
         (reset! router-state-atom {:service-id->healthy-instances
                                    {service-id [{:id (str service-id ".A")
                                                  :service-id service-id
                                                  :healthy? true,
                                                  :host "10.141.141.11"
                                                  :port 31045,
+                                                 :started-at started-time}
+                                                {:id (str service-id ".B")
+                                                 :service-id service-id
+                                                 :healthy? true,
+                                                 :host "10.141.141.12"
+                                                 :port 32045,
                                                  :started-at started-time}]}})
         (let [request {:headers {"accept" "application/json"}
                        :query-string "include=metrics"
@@ -564,15 +577,23 @@
                                          "host" "10.141.141.11"
                                          "log-url" "http://www.example.com/apps/test-service-1/logs?instance-id=test-service-1.A&host=10.141.141.11"
                                          "port" 31045,
+                                         "started-at" (du/date-to-str started-time du/formatter-iso8601)}
+                                        {"id" (str service-id ".B")
+                                         "service-id" service-id
+                                         "healthy?" true,
+                                         "host" "10.141.141.12"
+                                         "log-url" "http://www.example.com/apps/test-service-1/logs?instance-id=test-service-1.B&host=10.141.141.12"
+                                         "port" 32045,
                                          "started-at" (du/date-to-str started-time du/formatter-iso8601)}]
                     "failed-instances" []
                     "killed-instances" []}
                    (get body-json "instances")))
             (is (= {"aggregate" {"routers-sent-requests-to" 0}} (get body-json "metrics")))
             (is (= last-request-time (get body-json "last-request-time")))
-            (is (= 1 (get body-json "num-active-instances")))
+            (is (= 2 (get body-json "num-active-instances")))
             (is (zero? (get body-json "num-routers")))
-            (is (= {"name" "test-service-1-name", "run-as-user" "waiter-user"} (get body-json "service-description")))))))
+            (is (= {"name" "test-service-1-name", "run-as-user" "waiter-user"} (get body-json "service-description")))
+            (is (= {"cpus" 2, "mem" 4096} (get body-json "usage")))))))
 
     (testing "service-handler:valid-response-including-active-killed-and-failed"
       (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
@@ -600,7 +621,8 @@
             (is (= last-request-time (get body-json "last-request-time")))
             (is (= 1 (get body-json "num-active-instances")))
             (is (zero? (get body-json "num-routers")))
-            (is (= {"name" "test-service-1-name", "run-as-user" "waiter-user"} (get body-json "service-description")))))))
+            (is (= {"name" "test-service-1-name", "run-as-user" "waiter-user"} (get body-json "service-description")))
+            (is (= {"cpus" 1, "mem" 2048} (get body-json "usage")))))))
 
     (.shutdown scheduler-interactions-thread-pool)))
 
