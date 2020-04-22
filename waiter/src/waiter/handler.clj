@@ -287,6 +287,12 @@
       (or (empty? param-predicates)
           (every? #(%1 service-description) param-predicates)))))
 
+(defn compute-resource-usage
+  "Computes the resources used to a service."
+  [{:strs [cpus mem]} instance-count]
+  {:cpus (* instance-count cpus)
+   :mem (* instance-count mem)})
+
 (defn list-services-handler
   "Retrieves the list of services viewable by the currently logged in user.
    A service is viewable by the run-as-user or a waiter super-user."
@@ -330,18 +336,22 @@
           response-data (map
                           (fn service-id->service-info [service-id]
                             (let [scaling-state (retrieve-scaling-state query-autoscaler-state-fn service-id)
-                                  service-description (service-id->service-description-fn service-id :effective? false)
-                                  source-tokens-entries (service-id->source-tokens-entries-fn service-id)]
+                                  core-service-description (service-id->service-description-fn service-id :effective? false)
+                                  source-tokens-entries (service-id->source-tokens-entries-fn service-id)
+                                  instance-counts-map (retrieve-instance-counts service-id)
+                                  instance-count (reduce + (vals instance-counts-map))
+                                  effective-service-description (service-id->service-description-fn service-id :effective? true)
+                                  resource-usage (compute-resource-usage effective-service-description instance-count)]
                               (cond->
-                                {:instance-counts (retrieve-instance-counts service-id)
+                                {:instance-counts instance-counts-map
                                  :last-request-time (get-in service-id->metrics [service-id "last-request-time"])
+                                 :resource-usage resource-usage
                                  :service-id service-id
-                                 :service-description service-description
+                                 :service-description core-service-description
                                  :status (service/retrieve-service-status-label service-id global-state)
                                  :url (prepend-waiter-url (str "/apps/" service-id))}
                                 include-effective-parameters?
-                                (assoc :effective-parameters
-                                       (service-id->service-description-fn service-id :effective? true))
+                                (assoc :effective-parameters effective-service-description)
                                 include-references?
                                 (assoc :references (seq (service-id->references-fn service-id)))
                                 scaling-state
@@ -432,9 +442,9 @@
                                       (fn assoc-log-url-to-instances [instances]
                                         (map #(assoc-log-url generate-log-url-fn %) instances))]
                                   (-> (get-service-instances global-state service-id)
-                                      (update :active-instances assoc-log-url-to-instances)
-                                      (update :failed-instances assoc-log-url-to-instances)
-                                      (update :killed-instances assoc-log-url-to-instances)))
+                                    (update :active-instances assoc-log-url-to-instances)
+                                    (update :failed-instances assoc-log-url-to-instances)
+                                    (update :killed-instances assoc-log-url-to-instances)))
                                 (catch Exception e
                                   (log/error e "Error in retrieving instances for" service-id)))
         request-params (-> request ru/query-params-request :query-params)
@@ -474,14 +484,18 @@
         include-references? (utils/param-contains? request-params "include" "references")
         last-request-time (get-in (service-id->metrics-fn) [service-id "last-request-time"])
         scaling-state (retrieve-scaling-state query-autoscaler-state-fn service-id)
+        effective-service-description (service-id->service-description-fn service-id :effective? true)
+        num-active-instances (count (:active-instances service-instance-maps))
+        resource-usage (compute-resource-usage effective-service-description num-active-instances)
         result-map (cond-> {:num-routers (count router->metrics)
+                            :resource-usage resource-usage
                             :router-id router-id
                             :status (service/retrieve-service-status-label service-id global-state)}
                      (and (not-empty core-service-description) include-effective-parameters?)
-                     (assoc :effective-parameters (service-id->service-description-fn service-id :effective? true))
+                     (assoc :effective-parameters effective-service-description)
                      (not-empty service-instance-maps)
                      (assoc :instances service-instance-maps
-                            :num-active-instances (count (:active-instances service-instance-maps)))
+                            :num-active-instances num-active-instances)
                      last-request-time
                      (assoc :last-request-time last-request-time)
                      (not-empty aggregate-metrics-map)

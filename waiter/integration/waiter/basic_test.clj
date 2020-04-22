@@ -43,7 +43,13 @@
         (testing "instances are non-null"
           (is (get-in service-settings [:instances :active-instances]))
           (is (get-in service-settings [:instances :failed-instances]))
-          (is (get-in service-settings [:instances :killed-instances]))))
+          (is (get-in service-settings [:instances :killed-instances]))
+          (let [active-instance-count (count (get-in service-settings [:instances :active-instances]))
+                {:keys [cpus mem]} (get service-settings :service-description)]
+            (is (= {:cpus (* active-instance-count cpus)
+                    :mem (* active-instance-count mem)}
+                   (get service-settings :resource-usage))
+                (str service-settings)))))
 
       (testing "status is reported"
         (is (wait-for #(= "Running" (get (service-settings waiter-url service-id) :status)) :interval 2 :timeout 30)
@@ -556,6 +562,7 @@
               (is service)
               (is (contains? #{"Running" "Starting"} (get service "status")))
               (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
+              (is (get service "resource-usage") (str service))
               (is (get service "scaling-state") (str service))
               (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
@@ -565,6 +572,7 @@
               (is service)
               (is (contains? #{"Running" "Starting"} (get service "status")))
               (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
+              (is (get service "resource-usage") (str service))
               (is (get service "scaling-state") (str service))
               (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
@@ -573,6 +581,7 @@
               (is service)
               (is (contains? #{"Running" "Starting"} (get service "status")))
               (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
+              (is (get service "resource-usage") (str service))
               (is (get service "scaling-state") (str service))
               (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
@@ -581,6 +590,7 @@
               (is service)
               (is (contains? #{"Running" "Starting"} (get service "status")))
               (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
+              (is (get service "resource-usage") (str service))
               (is (get service "scaling-state") (str service))
               (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
@@ -617,6 +627,7 @@
               (is service)
               (is (contains? #{"Running" "Starting"} (get service "status")))
               (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
+              (is (get service "resource-usage") (str service))
               (is (get service "scaling-state") (str service))
               (is (pos? (get-in service ["service-description" "cpus"])) service))))))))
 

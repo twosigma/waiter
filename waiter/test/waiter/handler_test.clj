@@ -474,6 +474,7 @@
             (service-id->service-description-fn [service-id & _]
               (let [id (subs service-id (count "service"))]
                 {"cpus" (Integer/parseInt id)
+                 "mem" (* 10 (Integer/parseInt id))
                  "metric-group" (str "mg" id)
                  "run-as-user" (if (contains? test-user-services service-id) test-user "another-user")}))
             (service-id->source-tokens-entries-fn [service-id]
