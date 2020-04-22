@@ -924,9 +924,9 @@
                                    (async-req/async-trigger-terminate
                                      async-request-terminate-fn make-inter-router-requests-sync-fn router-id target-router-id service-id request-id)))
    :attach-service-defaults-fn (pc/fnk [[:settings metric-group-mappings service-description-defaults]
-                                      [:state profile->defaults]]
-                               (fn attach-service-defaults-fn [service-description]
-                                 (sd/merge-defaults service-description service-description-defaults profile->defaults metric-group-mappings)))
+                                        [:state profile->defaults]]
+                                 (fn attach-service-defaults-fn [service-description]
+                                   (sd/merge-defaults service-description service-description-defaults profile->defaults metric-group-mappings)))
    :attach-token-defaults-fn (pc/fnk [[:settings [:token-config token-defaults]]
                                       [:state profile->defaults]]
                                (fn attach-token-defaults-fn [token-parameters]
@@ -965,6 +965,11 @@
                             (let [position-generator-atom (atom 0)]
                               (fn determine-priority-fn [waiter-headers]
                                 (pr/determine-priority position-generator-atom waiter-headers))))
+   :discover-service-parameters-fn (pc/fnk [[:state kv-store waiter-hostnames]
+                                            attach-token-defaults-fn]
+                                     (fn discover-service-parameters-fn [headers]
+                                       (sd/discover-service-parameters
+                                         kv-store attach-token-defaults-fn waiter-hostnames headers)))
    :generate-log-url-fn (pc/fnk [prepend-waiter-url]
                           (partial handler/generate-log-url prepend-waiter-url))
    :list-tokens-fn (pc/fnk [[:curator curator]
@@ -1131,8 +1136,8 @@
    :websocket-request-auth-cookie-attacher (pc/fnk [[:state passwords router-id]]
                                              (fn websocket-request-auth-cookie-attacher [request]
                                                (ws/inter-router-request-middleware router-id (first passwords) request)))
-   :websocket-request-acceptor (pc/fnk [[:state kv-store passwords server-name waiter-hostnames]
-                                        attach-token-defaults-fn]
+   :websocket-request-acceptor (pc/fnk [[:state passwords server-name]
+                                        discover-service-parameters-fn]
                                  (fn websocket-request-acceptor [^ServletUpgradeRequest request ^ServletUpgradeResponse response]
                                    (let [request-headers (->> (.getHeaders request)
                                                            (pc/map-vals #(str/join "," %))
@@ -1151,8 +1156,7 @@
                                                   :uri (some-> request .getRequestURI .getPath)})
                                        (.setHeader response "server" server-name)
                                        (.setHeader response "x-cid" correlation-id)
-                                       (let [waiter-discovery (sd/discover-service-parameters
-                                                                kv-store attach-token-defaults-fn waiter-hostnames request-headers)]
+                                       (let [waiter-discovery (discover-service-parameters-fn request-headers)]
                                          (process-authentication-parameter
                                            waiter-discovery
                                            (fn [status message]
@@ -1858,12 +1862,10 @@
                                    (fn inner-wrap-secure-request-fn [{:keys [uri] :as request}]
                                      (log/debug "secure request received at" uri)
                                      (handler request))))))
-   :wrap-service-discovery-fn (pc/fnk [[:routines attach-token-defaults-fn]
-                                       [:state kv-store waiter-hostnames]]
+   :wrap-service-discovery-fn (pc/fnk [[:routines discover-service-parameters-fn]]
                                 (fn wrap-service-discovery-fn
                                   [handler]
                                   (fn [{:keys [headers] :as request}]
                                     ;; TODO optimization opportunity to avoid this re-computation later in the chain
-                                    (let [discovered-parameters (sd/discover-service-parameters
-                                                                  kv-store attach-token-defaults-fn waiter-hostnames headers)]
+                                    (let [discovered-parameters (discover-service-parameters-fn headers)]
                                       (handler (assoc request :waiter-discovery discovered-parameters))))))})
