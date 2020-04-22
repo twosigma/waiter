@@ -1233,6 +1233,35 @@
                                                                                sd/user-metadata-keys))
                                                       :waiter-headers {}})
                handled-request))
+        (is (= handler-response response)))
+
+      (let [test-request {:headers {"host" "www.token-1.com"
+                                    "x-waiter-profile" "service"}}
+            {:keys [handled-request response]} (execute-request test-request)]
+        (is (nil? handled-request))
+        (is (= (utils/clj->json-response {:error "An authentication disabled token may not be combined with on-the-fly headers"}
+                                         :status http-400-bad-request)
+               response)))
+
+      (let [test-request {:headers {"host" "www.token-2s.com"
+                                    "x-waiter-profile" "service"}}
+            {:keys [handled-request response]} (execute-request test-request)]
+        (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.token-2s.com"}
+                                                      :service-description-template {"authentication" "standard"
+                                                                                     "concurrency-level" 30
+                                                                                     "health-check-url" "/status"
+                                                                                     "mem" 2048
+                                                                                     "metric-group" "other"
+                                                                                     "permitted-user" "*"
+                                                                                     "profile" "service"}
+                                                      :token "www.token-2s.com"
+                                                      :token-metadata (merge {"owner" nil "previous" {}}
+                                                                             token-defaults
+                                                                             (select-keys
+                                                                               (get profile->defaults "service")
+                                                                               sd/user-metadata-keys))
+                                                      :waiter-headers {"x-waiter-profile" "service"}})
+               handled-request))
         (is (= handler-response response))))
 
     (testing "request-without-existing-auth-disabled-hostname-token"

@@ -978,19 +978,24 @@
             sanitized-service-description (apply dissoc service-description metadata-keys)]
         (assoc sanitized-service-description "metadata" renamed-metadata-map)))))
 
+(defn- waiter-headers->service-parameters
+  "Converts the x-waiter headers to service parameters."
+  [waiter-headers]
+  (-> waiter-headers
+    headers/drop-waiter-header-prefix
+    (parse-env-map-headers "env")
+    (parse-env-map-headers "param")
+    parse-metadata-headers
+    transform-allowed-params-header
+    (sanitize-service-description service-description-from-header-keys)))
+
 (defn prepare-service-description-sources
   [{:keys [waiter-headers passthrough-headers]} kv-store waiter-hostnames attach-service-defaults-fn attach-token-defaults-fn]
   "Prepare the service description sources from the current request.
    Populates the service description for on-the-fly waiter-specific headers.
    Also populates for the service description for a token (first looked in headers and then using the host name).
    Finally, it also includes the service configuration defaults."
-  (let [service-description-template-from-headers (-> waiter-headers
-                                                      headers/drop-waiter-header-prefix
-                                                      (parse-env-map-headers "env")
-                                                      (parse-env-map-headers "param")
-                                                      parse-metadata-headers
-                                                      transform-allowed-params-header
-                                                      (sanitize-service-description service-description-from-header-keys))]
+  (let [service-description-template-from-headers (waiter-headers->service-parameters waiter-headers)]
     (-> (prepare-service-description-template-from-tokens
           waiter-headers passthrough-headers kv-store waiter-hostnames attach-service-defaults-fn attach-token-defaults-fn)
         (assoc :headers service-description-template-from-headers))))
@@ -1340,10 +1345,19 @@
   (let [{:keys [passthrough-headers waiter-headers]} (headers/split-headers headers)
         {:keys [token]} (retrieve-token-from-service-description-or-hostname
                           waiter-headers passthrough-headers waiter-hostnames)
-        service-parameter-template (when token
-                                       (token->service-parameter-template kv-store token :error-on-missing false))
-        service-description-template (cond-> service-parameter-template
-                                       (seq service-parameter-template) (attach-service-defaults-fn))
+        service-parameter-template-from-token (when token
+                                                (token->service-parameter-template kv-store token :error-on-missing false))
+        contains-service-parameter-header? (headers/contains-waiter-header waiter-headers service-parameter-keys)
+        service-parameter-template-from-headers (when contains-service-parameter-header?
+                                                  (waiter-headers->service-parameters waiter-headers))
+        service-description-template (cond-> service-parameter-template-from-token
+                                       contains-service-parameter-header?
+                                       (->
+                                         (merge service-parameter-template-from-headers)
+                                         ;; remove user fields from service description
+                                         (dissoc "permitted-user" "run-as-user"))
+                                       (seq service-parameter-template-from-token)
+                                       (attach-service-defaults-fn))
         token-metadata (when token
                          (-> (token->token-parameters kv-store token :error-on-missing false)
                            (attach-token-defaults-fn)
