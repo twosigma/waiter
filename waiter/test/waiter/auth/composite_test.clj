@@ -48,10 +48,8 @@
    :default-authentication-provider "one-user"})
 
 (defn dummy-composite-authenticator
-  ([config]
-   (composite-authenticator (assoc config :default-authentication "standard")))
-  ([]
-   (dummy-composite-authenticator valid-config)))
+  ([] (dummy-composite-authenticator valid-config))
+  ([config] (composite-authenticator config)))
 
 
 (def time-now
@@ -78,7 +76,7 @@
 
 (defn- make-request
   [auth-type]
-  {:waiter-discovery {:service-parameter-template {"authentication" auth-type}}})
+  {:waiter-discovery {:service-description-template {"authentication" auth-type}}})
 
 (deftest auth-standard-auth-type
   (let [composite-authenticator (dummy-composite-authenticator)

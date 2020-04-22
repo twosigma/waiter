@@ -1105,10 +1105,18 @@
 
 (deftest test-wrap-auth-bypass
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+        service-description-defaults {"concurrency-level" 100
+                                      "health-check-url" "/status"}
+        metric-group-mappings []
         profile->defaults {"webapp" {"concurrency-level" 120
-                                     "fallback-period-secs" 100}}
+                                     "fallback-period-secs" 100}
+                           "service" {"authentication" "disabled"
+                                      "concurrency-level" 30
+                                      "fallback-period-secs" 90
+                                      "permitted-user" "*"}}
         token-defaults {"fallback-period-secs" 300
                         "https-redirect" false}
+        attach-service-defaults-fn #(sd/merge-defaults % service-description-defaults profile->defaults metric-group-mappings)
         attach-token-defaults-fn #(sd/attach-token-defaults % token-defaults profile->defaults)
         waiter-hostnames #{"www.waiter-router.com"}
         configuration {}
@@ -1116,7 +1124,7 @@
         handler-response (Object.)
         execute-request (fn execute-request-fn [{:keys [headers] :as in-request}]
                           (let [test-request (->> (sd/discover-service-parameters
-                                                    kv-store attach-token-defaults-fn waiter-hostnames headers)
+                                                    kv-store attach-service-defaults-fn attach-token-defaults-fn waiter-hostnames headers)
                                                (assoc in-request :waiter-discovery))
                                 request-handler-argument-atom (atom nil)
                                 test-request-handler (fn request-handler-fn [request]
@@ -1131,9 +1139,16 @@
     (kv/store kv-store "www.token-1p.com" {"cpu" 1
                                            "mem" 2048
                                            "profile" "webapp"})
+    (kv/store kv-store "www.token-1s.com" {"cpu" 1
+                                           "mem" 2048
+                                           "profile" "service"})
     (kv/store kv-store "www.token-2.com" {"authentication" "standard"
                                           "cpu" 1
                                           "mem" 2048})
+    (kv/store kv-store "www.token-2s.com" {"authentication" "standard"
+                                          "cpu" 1
+                                          "mem" 2048
+                                           "profile" "service"})
     (kv/store kv-store "www.token-3.com" {"authentication" "disabled"
                                           "cpu" 1
                                           "mem" 2048})
@@ -1150,7 +1165,7 @@
       (let [test-request {:headers {"host" "www.host.com"}}
             {:keys [handled-request response]} (execute-request test-request)]
         (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.host.com"}
-                                                      :service-parameter-template {}
+                                                      :service-description-template {}
                                                       :token "www.host.com"
                                                       :token-metadata token-defaults
                                                       :waiter-headers {}})
@@ -1161,7 +1176,7 @@
       (let [test-request {:headers {"host" "www.host.com" "x-waiter-run-as-user" "test-user"}}
             {:keys [handled-request response]} (execute-request test-request)]
         (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.host.com"}
-                                                      :service-parameter-template {}
+                                                      :service-description-template {}
                                                       :token "www.host.com"
                                                       :token-metadata token-defaults
                                                       :waiter-headers {"x-waiter-run-as-user" "test-user"}})
@@ -1172,7 +1187,10 @@
       (let [test-request {:headers {"host" "www.token-1.com"}}
             {:keys [handled-request response]} (execute-request test-request)]
         (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.token-1.com"}
-                                                      :service-parameter-template {"mem" 2048}
+                                                      :service-description-template {"concurrency-level" 100
+                                                                                     "health-check-url" "/status"
+                                                                                     "mem" 2048
+                                                                                     "metric-group" "other"}
                                                       :token "www.token-1.com"
                                                       :token-metadata (assoc token-defaults "owner" nil "previous" {})
                                                       :waiter-headers {}})
@@ -1182,12 +1200,36 @@
       (let [test-request {:headers {"host" "www.token-1p.com"}}
             {:keys [handled-request response]} (execute-request test-request)]
         (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.token-1p.com"}
-                                                      :service-parameter-template {"mem" 2048 "profile" "webapp"}
+                                                      :service-description-template {"concurrency-level" 120
+                                                                                     "health-check-url" "/status"
+                                                                                     "mem" 2048
+                                                                                     "metric-group" "other"
+                                                                                     "profile" "webapp"}
                                                       :token "www.token-1p.com"
                                                       :token-metadata (merge {"owner" nil "previous" {}}
                                                                              token-defaults
                                                                              (select-keys
                                                                                (get profile->defaults "webapp")
+                                                                               sd/user-metadata-keys))
+                                                      :waiter-headers {}})
+               handled-request))
+        (is (= handler-response response)))
+
+      (let [test-request {:headers {"host" "www.token-2s.com"}}
+            {:keys [handled-request response]} (execute-request test-request)]
+        (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.token-2s.com"}
+                                                      :service-description-template {"authentication" "standard"
+                                                                                     "concurrency-level" 30
+                                                                                     "health-check-url" "/status"
+                                                                                     "mem" 2048
+                                                                                     "metric-group" "other"
+                                                                                     "permitted-user" "*"
+                                                                                     "profile" "service"}
+                                                      :token "www.token-2s.com"
+                                                      :token-metadata (merge {"owner" nil "previous" {}}
+                                                                             token-defaults
+                                                                             (select-keys
+                                                                               (get profile->defaults "service")
                                                                                sd/user-metadata-keys))
                                                       :waiter-headers {}})
                handled-request))
@@ -1198,10 +1240,34 @@
             {:keys [handled-request response]} (execute-request test-request)]
         (is (= (assoc test-request :skip-authentication true
                                    :waiter-discovery {:passthrough-headers {"host" "www.token-3.com"}
-                                                      :service-parameter-template {"authentication" "disabled"
-                                                                                   "mem" 2048}
+                                                      :service-description-template {"authentication" "disabled"
+                                                                                     "concurrency-level" 100
+                                                                                     "health-check-url" "/status"
+                                                                                     "mem" 2048
+                                                                                     "metric-group" "other"}
                                                       :token "www.token-3.com"
                                                       :token-metadata (assoc token-defaults "owner" nil "previous" {})
+                                                      :waiter-headers {}})
+               handled-request))
+        (is (= handler-response response)))
+
+      (let [test-request {:headers {"host" "www.token-1s.com"}}
+            {:keys [handled-request response]} (execute-request test-request)]
+        (is (= (assoc test-request :skip-authentication true
+                                   :waiter-discovery {:passthrough-headers {"host" "www.token-1s.com"}
+                                                      :service-description-template {"authentication" "disabled"
+                                                                                     "concurrency-level" 30
+                                                                                     "health-check-url" "/status"
+                                                                                     "mem" 2048
+                                                                                     "metric-group" "other"
+                                                                                     "permitted-user" "*"
+                                                                                     "profile" "service"}
+                                                      :token "www.token-1s.com"
+                                                      :token-metadata (merge {"owner" nil "previous" {}}
+                                                                             token-defaults
+                                                                             (select-keys
+                                                                               (get profile->defaults "service")
+                                                                               sd/user-metadata-keys))
                                                       :waiter-headers {}})
                handled-request))
         (is (= handler-response response))))
@@ -1220,7 +1286,10 @@
                                     "x-waiter-token" "a-named-token-A"}}
             {:keys [handled-request response]} (execute-request test-request)]
         (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.service.com"}
-                                                      :service-parameter-template {"mem" 2048}
+                                                      :service-description-template {"concurrency-level" 100
+                                                                                     "health-check-url" "/status"
+                                                                                     "mem" 2048
+                                                                                     "metric-group" "other"}
                                                       :token "a-named-token-A"
                                                       :token-metadata (assoc token-defaults "owner" nil "previous" {})
                                                       :waiter-headers {"x-waiter-token" "a-named-token-A"}})
@@ -1243,8 +1312,11 @@
             {:keys [handled-request response]} (execute-request test-request)]
         (is (= (assoc test-request :skip-authentication true
                                    :waiter-discovery {:passthrough-headers {"host" "www.service.com"}
-                                                      :service-parameter-template {"authentication" "disabled"
-                                                                                   "mem" 2048}
+                                                      :service-description-template {"authentication" "disabled"
+                                                                                     "concurrency-level" 100
+                                                                                     "health-check-url" "/status"
+                                                                                     "mem" 2048
+                                                                                     "metric-group" "other"}
                                                       :token "a-named-token-B"
                                                       :token-metadata (assoc token-defaults "owner" nil "previous" {})
                                                       :waiter-headers {"x-waiter-token" "a-named-token-B"}})
@@ -1276,8 +1348,11 @@
                                     "x-waiter-token" "a-named-token-C"}}
             {:keys [handled-request response]} (execute-request test-request)]
         (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.service.com"}
-                                                      :service-parameter-template {"authentication" "standard"
-                                                                                   "mem" 2048}
+                                                      :service-description-template {"authentication" "standard"
+                                                                                     "concurrency-level" 100
+                                                                                     "health-check-url" "/status"
+                                                                                     "mem" 2048
+                                                                                     "metric-group" "other"}
                                                       :token "a-named-token-C"
                                                       :token-metadata (assoc token-defaults "owner" nil "previous" {})
                                                       :waiter-headers {"x-waiter-token" "a-named-token-C"}})
@@ -1308,8 +1383,11 @@
                                     "x-waiter-token" "a-named-token-C"}}
             {:keys [handled-request response]} (execute-request test-request)]
         (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.service.com"}
-                                                      :service-parameter-template {"authentication" "standard"
-                                                                                   "mem" 2048}
+                                                      :service-description-template {"authentication" "standard"
+                                                                                     "concurrency-level" 100
+                                                                                     "health-check-url" "/status"
+                                                                                     "mem" 2048
+                                                                                     "metric-group" "other"}
                                                       :token "a-named-token-C"
                                                       :token-metadata (assoc token-defaults "owner" nil "previous" {})
                                                       :waiter-headers {"x-waiter-run-as-user" "test-user"
@@ -1421,7 +1499,7 @@
         (let [test-request {:headers {"host" "token.localtest.me"}
                             :scheme :ws
                             :waiter-discovery {:passthrough-headers {}
-                                               :service-parameter-template {}
+                                               :service-description-template {}
                                                :token "token.localtest.me"
                                                :token-metadata {"https-redirect" true}
                                                :waiter-headers {}}}
@@ -1433,7 +1511,7 @@
         (let [test-request {:headers {"host" "token.localtest.me"}
                             :scheme :http
                             :waiter-discovery {:passthrough-headers {}
-                                               :service-parameter-template {}
+                                               :service-description-template {}
                                                :token "token.localtest.me"
                                                :token-metadata {"https-redirect" false}
                                                :waiter-headers {}}}
@@ -1447,7 +1525,7 @@
                             :request-method :get
                             :scheme :http
                             :waiter-discovery {:passthrough-headers {}
-                                               :service-parameter-template {}
+                                               :service-description-template {}
                                                :token "token.localtest.me"
                                                :token-metadata {"https-redirect" false}
                                                :waiter-headers {"x-waiter-https-redirect" true}}}
@@ -1459,7 +1537,7 @@
         (let [test-request {:headers {"host" "token.localtest.me"}
                             :scheme :https
                             :waiter-discovery {:passthrough-headers {}
-                                               :service-parameter-template {}
+                                               :service-description-template {}
                                                :token "token.localtest.me"
                                                :token-metadata {"https-redirect" false}
                                                :waiter-headers {}}}
@@ -1471,7 +1549,7 @@
         (let [test-request {:headers {"host" "token.localtest.me"}
                             :scheme :https
                             :waiter-discovery {:passthrough-headers {}
-                                               :service-parameter-template {}
+                                               :service-description-template {}
                                                :token "token.localtest.me"
                                                :token-metadata {"https-redirect" true}
                                                :waiter-headers {}}}
@@ -1484,7 +1562,7 @@
                                       "x-waiter-https-redirect" "false"}
                             :scheme :https
                             :waiter-discovery {:passthrough-headers {}
-                                               :service-parameter-template {"cpus" 1}
+                                               :service-description-template {"cpus" 1}
                                                :token "token.localtest.me"
                                                :token-metadata {"https-redirect" false}
                                                :waiter-headers {"x-waiter-https-redirect" false}}}
@@ -1497,7 +1575,7 @@
                                       "x-waiter-https-redirect" "true"}
                             :scheme :https
                             :waiter-discovery {:passthrough-headers {}
-                                               :service-parameter-template {"cpus" 1}
+                                               :service-description-template {"cpus" 1}
                                                :token "token.localtest.me"
                                                :token-metadata {"https-redirect" false}
                                                :waiter-headers {"x-waiter-https-redirect" true}}}
@@ -1510,7 +1588,7 @@
         (let [test-request {:headers {"host" "token.localtest.me:1234"}
                             :scheme :http
                             :waiter-discovery {:passthrough-headers {}
-                                               :service-parameter-template {}
+                                               :service-description-template {}
                                                :token "token.localtest.me"
                                                :token-metadata {"https-redirect" true}
                                                :waiter-headers {}}}
@@ -1528,7 +1606,7 @@
                             :request-method :get
                             :scheme :http
                             :waiter-discovery {:passthrough-headers {}
-                                               :service-parameter-template {}
+                                               :service-description-template {}
                                                :token "token.localtest.me"
                                                :token-metadata {"https-redirect" true}
                                                :waiter-headers {"x-waiter-https-redirect" false}}}

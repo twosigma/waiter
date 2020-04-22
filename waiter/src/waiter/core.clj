@@ -600,21 +600,21 @@
    - (on-disabled) when the authentication is disabled
    - (on-auth-required) when authentication is enabled."
   [waiter-discovery on-error on-disabled on-auth-required]
-  (let [{:keys [service-parameter-template token waiter-headers]} waiter-discovery
-        {:strs [authentication] :as service-description} service-parameter-template
+  (let [{:keys [service-description-template token waiter-headers]} waiter-discovery
+        {:strs [authentication]} service-description-template
         authentication-disabled? (= authentication "disabled")]
     (cond
       (contains? waiter-headers "x-waiter-authentication")
       (do
         (log/info "x-waiter-authentication is not supported as an on-the-fly header"
-                  {:service-description service-description, :token token})
+                  {:service-description service-description-template, :token token})
         (on-error http-400-bad-request "An authentication parameter is not supported for on-the-fly headers"))
 
       ;; ensure service description formed comes entirely from the token by ensuring absence of on-the-fly headers
       (and authentication-disabled? (some sd/service-parameter-keys (-> waiter-headers headers/drop-waiter-header-prefix keys)))
       (do
         (log/info "request cannot proceed as it is mixing an authentication disabled token with on-the-fly headers"
-                  {:service-description service-description, :token token})
+                  {:service-description service-description-template, :token token})
         (on-error http-400-bad-request "An authentication disabled token may not be combined with on-the-fly headers"))
 
       authentication-disabled?
@@ -632,8 +632,7 @@
                            passwords]
                     (let [hostname (if (sequential? hostname) (first hostname) hostname)]
                       (utils/create-component authenticator-config
-                                              :context {:default-authentication (get service-description-defaults "authentication")
-                                                        :hostname hostname
+                                              :context {:hostname hostname
                                                         :password (first passwords)})))
    :clock (pc/fnk [] t/now)
    :cors-validator (pc/fnk [[:settings cors-config]]
@@ -966,10 +965,10 @@
                               (fn determine-priority-fn [waiter-headers]
                                 (pr/determine-priority position-generator-atom waiter-headers))))
    :discover-service-parameters-fn (pc/fnk [[:state kv-store waiter-hostnames]
-                                            attach-token-defaults-fn]
+                                            attach-service-defaults-fn attach-token-defaults-fn]
                                      (fn discover-service-parameters-fn [headers]
                                        (sd/discover-service-parameters
-                                         kv-store attach-token-defaults-fn waiter-hostnames headers)))
+                                         kv-store attach-service-defaults-fn attach-token-defaults-fn waiter-hostnames headers)))
    :generate-log-url-fn (pc/fnk [prepend-waiter-url]
                           (partial handler/generate-log-url prepend-waiter-url))
    :list-tokens-fn (pc/fnk [[:curator curator]

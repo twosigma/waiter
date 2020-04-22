@@ -1335,18 +1335,21 @@
 (defn discover-service-parameters
   "Processing the request headers to identify the Waiter service parameters.
    Returns a map of the waiter and passthrough headers, the identified token, and
-   the service parameter template from the token."
-  [kv-store attach-token-defaults-fn waiter-hostnames headers]
+   the service description template created from the token."
+  [kv-store attach-service-defaults-fn attach-token-defaults-fn waiter-hostnames headers]
   (let [{:keys [passthrough-headers waiter-headers]} (headers/split-headers headers)
-        {:keys [token]} (retrieve-token-from-service-description-or-hostname waiter-headers passthrough-headers waiter-hostnames)
+        {:keys [token]} (retrieve-token-from-service-description-or-hostname
+                          waiter-headers passthrough-headers waiter-hostnames)
         service-parameter-template (when token
-                                     (token->service-parameter-template kv-store token :error-on-missing false))
+                                       (token->service-parameter-template kv-store token :error-on-missing false))
+        service-description-template (cond-> service-parameter-template
+                                       (seq service-parameter-template) (attach-service-defaults-fn))
         token-metadata (when token
                          (-> (token->token-parameters kv-store token :error-on-missing false)
                            (attach-token-defaults-fn)
                            (select-keys token-metadata-keys)))]
     {:passthrough-headers passthrough-headers
-     :service-parameter-template service-parameter-template
+     :service-description-template service-description-template
      :token token
      :token-metadata token-metadata
      :waiter-headers waiter-headers}))

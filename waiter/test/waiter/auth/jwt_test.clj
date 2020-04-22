@@ -551,7 +551,7 @@
         issuer-constraints ["issuer"]
         attach-bearer-auth-env
         (fn attach-bearer-auth-env [request env-value]
-          (assoc-in request [:waiter-discovery :service-parameter-template "env" "USE_BEARER_AUTH"]
+          (assoc-in request [:waiter-discovery :service-description-template "env" "USE_BEARER_AUTH"]
                     (str env-value)))]
     (with-redefs [authenticate-request (fn [handler token-type in-issuer-constraints subject-key in-subject-regex in-algorithms
                                             keys password in-max-expiry-duration-ms request]
