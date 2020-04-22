@@ -49,7 +49,7 @@
 
 (defn dummy-composite-authenticator
   ([] (dummy-composite-authenticator valid-config))
-  ([config] (composite-authenticator config)))
+  ([config] (composite-authenticator (assoc config :default-authentication "standard"))))
 
 
 (def time-now

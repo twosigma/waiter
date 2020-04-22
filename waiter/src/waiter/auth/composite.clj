@@ -20,12 +20,14 @@
             [waiter.status-codes :refer :all]
             [waiter.util.utils :as utils]))
 
-(defrecord CompositeAuthenticator [provider-name->authenticator]
+(defrecord CompositeAuthenticator [default-authentication provider-name->authenticator]
   auth/Authenticator
   (wrap-auth-handler [_ request-handler]
     (let [provider-name->handler (pc/map-vals #(auth/wrap-auth-handler % request-handler) provider-name->authenticator)]
       (fn composite-authenticator-handler [request]
-        (let [authentication (get-in request [:waiter-discovery :service-description-template "authentication"])]
+        (let [authentication (or (get-in request [:waiter-discovery :service-description-template "authentication"])
+                                 ;; used by waiter api requests
+                                 default-authentication)]
           (if-let [handler (get provider-name->handler authentication)]
             (handler request)
             (throw (ex-info (str "No authenticator found for " authentication " authentication.")
@@ -61,12 +63,13 @@
 
 (defn composite-authenticator
   "Factory function for creating composite authenticator middleware"
-  [{:keys [authentication-providers default-authentication-provider] :as context}]
+  [{:keys [authentication-providers default-authentication default-authentication-provider] :as context}]
   {:pre [(not-empty authentication-providers)
+         (not (str/blank? default-authentication))
          (not (str/blank? default-authentication-provider))
          (contains? authentication-providers default-authentication-provider)]}
   (let [provider-name->authenticator (as-> (pc/map-vals
                                              #(make-authenticator % context)
                                              authentication-providers) map
                                        (merge {"standard" (get map default-authentication-provider)} map))]
-    (->CompositeAuthenticator provider-name->authenticator)))
+    (->CompositeAuthenticator default-authentication provider-name->authenticator)))

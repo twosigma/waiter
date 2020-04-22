@@ -632,7 +632,8 @@
                            passwords]
                     (let [hostname (if (sequential? hostname) (first hostname) hostname)]
                       (utils/create-component authenticator-config
-                                              :context {:hostname hostname
+                                              :context {:default-authentication (get service-description-defaults "authentication")
+                                                        :hostname hostname
                                                         :password (first passwords)})))
    :clock (pc/fnk [] t/now)
    :cors-validator (pc/fnk [[:settings cors-config]]
