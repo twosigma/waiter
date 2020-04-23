@@ -87,6 +87,7 @@
     (is (= {:authentication-method "cookie"
             :backend-response-latency-ns 1000
             :backend-protocol "HTTP/2.0"
+            :fallback-triggered true
             :get-instance-latency-ns 500
             :grpc-status (str grpc-13-internal)
             :handle-request-latency-ns 2000
@@ -184,6 +185,7 @@
                 :authentication-method "cookie"
                 :backend-response-latency-ns 1000
                 :backend-protocol "HTTP/2.0"
+                :fallback-triggered true
                 :get-instance-latency-ns 500
                 :grpc-status (str grpc-13-internal)
                 :handle-request-latency-ns 2000
