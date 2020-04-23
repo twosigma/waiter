@@ -160,22 +160,31 @@
   (or (get-in descriptor [:waiter-headers "x-waiter-fallback-period-secs"])
       (get-in descriptor [:sources :fallback-period-secs] 0)))
 
+(defn retrieve-most-recently-updated-component-entry
+  "Retrieves the most recently updated component entry from the descriptor."
+  [{:keys [component->previous-descriptor-fns] :as descriptor}]
+  (apply
+    max-key
+    (fn [[_ {:keys [retrieve-last-update-time]}]]
+      (retrieve-last-update-time descriptor))
+    (seq component->previous-descriptor-fns)))
+
 (defn retrieve-fallback-descriptor
   "Computes the fallback descriptor with a healthy instance based on the provided descriptor.
    Fallback descriptors can only be computed for token-based descriptors.
    The amount of history lookup for fallback descriptor candidates is limited by search-history-length.
    Also, the fallback descriptor needs to be inside the fallback period to be returned."
-  [descriptor->previous-descriptor search-history-length fallback-state request-time descriptor]
-  (when (-> descriptor :sources :token-sequence seq)
-    (let [{{:keys [token->token-data]} :sources} descriptor
-          current-service-id (:service-id descriptor)
+  [descriptor->previous-descriptor search-history-length fallback-state request-time
+   {:keys [component->previous-descriptor-fns] :as descriptor}]
+  (when (seq component->previous-descriptor-fns)
+    (let [current-service-id (:service-id descriptor)
           fallback-period-secs (descriptor->fallback-period-secs descriptor)]
       (when (pos? fallback-period-secs)
-        (let [most-recently-modified-token (sd/retrieve-most-recently-modified-token token->token-data)
-              token-last-update-time (get-in token->token-data [most-recently-modified-token "last-update-time"] 0)]
+        (let [[component {:keys [retrieve-last-update-time]}] (retrieve-most-recently-updated-component-entry descriptor)
+              component-last-update-time (retrieve-last-update-time descriptor)]
           (if (->> (t/seconds fallback-period-secs)
-                   (t/plus (tc/from-long token-last-update-time))
-                   (t/before? request-time))
+                (t/plus (tc/from-long component-last-update-time))
+                (t/before? request-time))
             (loop [iteration 1
                    loop-descriptor descriptor
                    attempted-service-ids #{}]
@@ -196,8 +205,8 @@
                           {:attempted-service-ids attempted-service-ids
                            :fallback-state (retrieve-fallback-state-for fallback-state attempted-service-ids)})))
             (log/info "fallback period expired for" current-service-id
-                      {:most-recently-modified-token most-recently-modified-token
-                       :token-last-update-time token-last-update-time})))))))
+                      {:component component
+                       :last-update-time component-last-update-time})))))))
 
 (defn resolve-descriptor
   "Resolves the descriptor that should be used based on available healthy services.
@@ -283,11 +292,7 @@
   [kv-store service-description-builder descriptor]
   (loop [{:keys [component->previous-descriptor-fns] :as descriptor} descriptor]
     (when-let [component-entry (and (seq component->previous-descriptor-fns)
-                                    (apply
-                                      max-key
-                                      (fn [[_ {:keys [retrieve-last-update-time]}]]
-                                        (retrieve-last-update-time descriptor))
-                                      (seq component->previous-descriptor-fns)))]
+                                    (retrieve-most-recently-updated-component-entry descriptor))]
       (let [component (key component-entry)
             {:keys [retrieve-previous-descriptor]} (val component-entry)]
         (if-let [previous-descriptor (retrieve-previous-descriptor descriptor)]
