@@ -888,9 +888,8 @@
           (if loop-token
             (let [token-data (token->token-data kv-store loop-token token-data-keys true false)]
               (recur (assoc loop-token->token-data loop-token token-data) remaining-tokens))
-            (let []
-              (compute-service-description-template-from-tokens
-                attach-service-defaults-fn attach-token-defaults-fn token-sequence loop-token->token-data)))))
+            (compute-service-description-template-from-tokens
+              attach-service-defaults-fn attach-token-defaults-fn token-sequence loop-token->token-data))))
 
       :else
       (compute-service-description-template-from-tokens attach-service-defaults-fn attach-token-defaults-fn [] {}))))
