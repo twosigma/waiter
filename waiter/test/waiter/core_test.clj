@@ -1134,31 +1134,31 @@
                             {:handled-request @request-handler-argument-atom
                              :response test-response}))]
 
-    (kv/store kv-store "www.token-1.com" {"cpu" 1
+    (kv/store kv-store "www.token-1.com" {"cpus" 1
                                           "mem" 2048})
-    (kv/store kv-store "www.token-1p.com" {"cpu" 1
+    (kv/store kv-store "www.token-1p.com" {"cpus" 1
                                            "mem" 2048
                                            "profile" "webapp"})
-    (kv/store kv-store "www.token-1s.com" {"cpu" 1
+    (kv/store kv-store "www.token-1s.com" {"cpus" 1
                                            "mem" 2048
                                            "profile" "service"})
     (kv/store kv-store "www.token-2.com" {"authentication" "standard"
-                                          "cpu" 1
+                                          "cpus" 1
                                           "mem" 2048})
     (kv/store kv-store "www.token-2s.com" {"authentication" "standard"
-                                          "cpu" 1
-                                          "mem" 2048
+                                           "cpus" 1
+                                           "mem" 2048
                                            "profile" "service"})
     (kv/store kv-store "www.token-3.com" {"authentication" "disabled"
-                                          "cpu" 1
+                                          "cpus" 1
                                           "mem" 2048})
-    (kv/store kv-store "a-named-token-A" {"cpu" 1
+    (kv/store kv-store "a-named-token-A" {"cpus" 1
                                           "mem" 2048})
     (kv/store kv-store "a-named-token-B" {"authentication" "disabled"
-                                          "cpu" 1
+                                          "cpus" 1
                                           "mem" 2048})
     (kv/store kv-store "a-named-token-C" {"authentication" "standard"
-                                          "cpu" 1
+                                          "cpus" 1
                                           "mem" 2048})
 
     (testing "request-without-non-existing-hostname-token"
@@ -1188,6 +1188,7 @@
             {:keys [handled-request response]} (execute-request test-request)]
         (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.token-1.com"}
                                                       :service-description-template {"concurrency-level" 100
+                                                                                     "cpus" 1
                                                                                      "health-check-url" "/status"
                                                                                      "mem" 2048
                                                                                      "metric-group" "other"}
@@ -1201,6 +1202,7 @@
             {:keys [handled-request response]} (execute-request test-request)]
         (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.token-1p.com"}
                                                       :service-description-template {"concurrency-level" 120
+                                                                                     "cpus" 1
                                                                                      "health-check-url" "/status"
                                                                                      "mem" 2048
                                                                                      "metric-group" "other"
@@ -1220,6 +1222,7 @@
         (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.token-2s.com"}
                                                       :service-description-template {"authentication" "standard"
                                                                                      "concurrency-level" 30
+                                                                                     "cpus" 1
                                                                                      "health-check-url" "/status"
                                                                                      "mem" 2048
                                                                                      "metric-group" "other"
@@ -1249,6 +1252,7 @@
         (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.token-2s.com"}
                                                       :service-description-template {"authentication" "standard"
                                                                                      "concurrency-level" 30
+                                                                                     "cpus" 1
                                                                                      "health-check-url" "/status"
                                                                                      "mem" 2048
                                                                                      "metric-group" "other"
@@ -1271,6 +1275,7 @@
                                    :waiter-discovery {:passthrough-headers {"host" "www.token-3.com"}
                                                       :service-description-template {"authentication" "disabled"
                                                                                      "concurrency-level" 100
+                                                                                     "cpus" 1
                                                                                      "health-check-url" "/status"
                                                                                      "mem" 2048
                                                                                      "metric-group" "other"}
@@ -1286,6 +1291,7 @@
                                    :waiter-discovery {:passthrough-headers {"host" "www.token-1s.com"}
                                                       :service-description-template {"authentication" "disabled"
                                                                                      "concurrency-level" 30
+                                                                                     "cpus" 1
                                                                                      "health-check-url" "/status"
                                                                                      "mem" 2048
                                                                                      "metric-group" "other"
@@ -1316,6 +1322,7 @@
             {:keys [handled-request response]} (execute-request test-request)]
         (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.service.com"}
                                                       :service-description-template {"concurrency-level" 100
+                                                                                     "cpus" 1
                                                                                      "health-check-url" "/status"
                                                                                      "mem" 2048
                                                                                      "metric-group" "other"}
@@ -1343,6 +1350,7 @@
                                    :waiter-discovery {:passthrough-headers {"host" "www.service.com"}
                                                       :service-description-template {"authentication" "disabled"
                                                                                      "concurrency-level" 100
+                                                                                     "cpus" 1
                                                                                      "health-check-url" "/status"
                                                                                      "mem" 2048
                                                                                      "metric-group" "other"}
@@ -1379,6 +1387,7 @@
         (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.service.com"}
                                                       :service-description-template {"authentication" "standard"
                                                                                      "concurrency-level" 100
+                                                                                     "cpus" 1
                                                                                      "health-check-url" "/status"
                                                                                      "mem" 2048
                                                                                      "metric-group" "other"}
@@ -1414,6 +1423,7 @@
         (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.service.com"}
                                                       :service-description-template {"authentication" "standard"
                                                                                      "concurrency-level" 100
+                                                                                     "cpus" 1
                                                                                      "health-check-url" "/status"
                                                                                      "mem" 2048
                                                                                      "metric-group" "other"}
