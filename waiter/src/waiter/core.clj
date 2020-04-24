@@ -600,21 +600,21 @@
    - (on-disabled) when the authentication is disabled
    - (on-auth-required) when authentication is enabled."
   [waiter-discovery on-error on-disabled on-auth-required]
-  (let [{:keys [service-parameter-template token waiter-headers]} waiter-discovery
-        {:strs [authentication] :as service-description} service-parameter-template
+  (let [{:keys [service-description-template token waiter-headers]} waiter-discovery
+        {:strs [authentication]} service-description-template
         authentication-disabled? (= authentication "disabled")]
     (cond
       (contains? waiter-headers "x-waiter-authentication")
       (do
         (log/info "x-waiter-authentication is not supported as an on-the-fly header"
-                  {:service-description service-description, :token token})
+                  {:service-description service-description-template, :token token})
         (on-error http-400-bad-request "An authentication parameter is not supported for on-the-fly headers"))
 
       ;; ensure service description formed comes entirely from the token by ensuring absence of on-the-fly headers
       (and authentication-disabled? (some sd/service-parameter-keys (-> waiter-headers headers/drop-waiter-header-prefix keys)))
       (do
         (log/info "request cannot proceed as it is mixing an authentication disabled token with on-the-fly headers"
-                  {:service-description service-description, :token token})
+                  {:service-description service-description-template, :token token})
         (on-error http-400-bad-request "An authentication disabled token may not be combined with on-the-fly headers"))
 
       authentication-disabled?
@@ -923,6 +923,10 @@
                                  (fn async-trigger-terminate-fn [target-router-id service-id request-id]
                                    (async-req/async-trigger-terminate
                                      async-request-terminate-fn make-inter-router-requests-sync-fn router-id target-router-id service-id request-id)))
+   :attach-service-defaults-fn (pc/fnk [[:settings metric-group-mappings service-description-defaults]
+                                        [:state profile->defaults]]
+                                 (fn attach-service-defaults-fn [service-description]
+                                   (sd/merge-defaults service-description service-description-defaults profile->defaults metric-group-mappings)))
    :attach-token-defaults-fn (pc/fnk [[:settings [:token-config token-defaults]]
                                       [:state profile->defaults]]
                                (fn attach-token-defaults-fn [token-parameters]
@@ -961,6 +965,11 @@
                             (let [position-generator-atom (atom 0)]
                               (fn determine-priority-fn [waiter-headers]
                                 (pr/determine-priority position-generator-atom waiter-headers))))
+   :discover-service-parameters-fn (pc/fnk [[:state kv-store waiter-hostnames]
+                                            attach-service-defaults-fn attach-token-defaults-fn]
+                                     (fn discover-service-parameters-fn [headers]
+                                       (sd/discover-service-parameters
+                                         kv-store attach-service-defaults-fn attach-token-defaults-fn waiter-hostnames headers)))
    :generate-log-url-fn (pc/fnk [prepend-waiter-url]
                           (partial handler/generate-log-url prepend-waiter-url))
    :list-tokens-fn (pc/fnk [[:curator curator]
@@ -1016,12 +1025,13 @@
    :request->descriptor-fn (pc/fnk [[:settings [:token-config history-length]]
                                     [:state fallback-state-atom kv-store service-description-builder
                                      service-id-prefix waiter-hostnames]
-                                    assoc-run-as-user-approved? attach-token-defaults-fn can-run-as?-fn
-                                    store-reference-fn store-source-tokens-fn]
+                                    assoc-run-as-user-approved? attach-service-defaults-fn attach-token-defaults-fn
+                                    can-run-as?-fn store-reference-fn store-source-tokens-fn]
                              (fn request->descriptor-fn [request]
                                (let [{:keys [latest-descriptor] :as result}
                                      (descriptor/request->descriptor
-                                       assoc-run-as-user-approved? can-run-as?-fn attach-token-defaults-fn
+                                       assoc-run-as-user-approved? can-run-as?-fn
+                                       attach-service-defaults-fn attach-token-defaults-fn
                                        fallback-state-atom kv-store history-length service-description-builder
                                        service-id-prefix waiter-hostnames request)
                                      {:keys [reference-type->entry service-id source-tokens]} latest-descriptor]
@@ -1126,8 +1136,8 @@
    :websocket-request-auth-cookie-attacher (pc/fnk [[:state passwords router-id]]
                                              (fn websocket-request-auth-cookie-attacher [request]
                                                (ws/inter-router-request-middleware router-id (first passwords) request)))
-   :websocket-request-acceptor (pc/fnk [[:state kv-store passwords server-name waiter-hostnames]
-                                        attach-token-defaults-fn]
+   :websocket-request-acceptor (pc/fnk [[:state passwords server-name]
+                                        discover-service-parameters-fn]
                                  (fn websocket-request-acceptor [^ServletUpgradeRequest request ^ServletUpgradeResponse response]
                                    (let [request-headers (->> (.getHeaders request)
                                                            (pc/map-vals #(str/join "," %))
@@ -1146,8 +1156,7 @@
                                                   :uri (some-> request .getRequestURI .getPath)})
                                        (.setHeader response "server" server-name)
                                        (.setHeader response "x-cid" correlation-id)
-                                       (let [waiter-discovery (sd/discover-service-parameters
-                                                                kv-store attach-token-defaults-fn waiter-hostnames request-headers)]
+                                       (let [waiter-discovery (discover-service-parameters-fn request-headers)]
                                          (process-authentication-parameter
                                            waiter-discovery
                                            (fn [status message]
@@ -1853,12 +1862,10 @@
                                    (fn inner-wrap-secure-request-fn [{:keys [uri] :as request}]
                                      (log/debug "secure request received at" uri)
                                      (handler request))))))
-   :wrap-service-discovery-fn (pc/fnk [[:routines attach-token-defaults-fn]
-                                       [:state kv-store waiter-hostnames]]
+   :wrap-service-discovery-fn (pc/fnk [[:routines discover-service-parameters-fn]]
                                 (fn wrap-service-discovery-fn
                                   [handler]
                                   (fn [{:keys [headers] :as request}]
                                     ;; TODO optimization opportunity to avoid this re-computation later in the chain
-                                    (let [discovered-parameters (sd/discover-service-parameters
-                                                                  kv-store attach-token-defaults-fn waiter-hostnames headers)]
+                                    (let [discovered-parameters (discover-service-parameters-fn headers)]
                                       (handler (assoc request :waiter-discovery discovered-parameters))))))})
