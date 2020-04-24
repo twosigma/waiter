@@ -226,7 +226,7 @@
 
 (defn log-health-check-issues
   "Logs messages based on the type of error (if any) encountered by a health check"
-  [service-instance instance-health-check-url status error]
+  [service-instance instance-health-check-url {:keys [error headers status]}]
   (if error
     (let [error-map {:instance service-instance
                      :service instance-health-check-url}]
@@ -239,9 +239,10 @@
     (when-not (or (hu/status-2XX? status)
                   (= http-404-not-found status)
                   (= http-504-gateway-timeout status))
-      (log/info "unexpected status from health check" {:status status
+      (log/info "unexpected status from health check" {:headers headers
                                                        :instance service-instance
-                                                       :service instance-health-check-url}))))
+                                                       :service instance-health-check-url
+                                                       :status status}))))
 
 (defn service-description->health-check-protocol
   "Determines the protocol to use for health checks."
@@ -297,7 +298,7 @@
                                     (instance? EOFException error) :hangup-exception
                                     (instance? SocketTimeoutException error) :timeout-exception
                                     (instance? TimeoutException error) :timeout-exception)]
-                   (log-health-check-issues service-instance instance-health-check-url status error)
+                   (log-health-check-issues service-instance instance-health-check-url response)
                    (let [backend-protocol (hu/backend-protocol->http-version protocol)
                          backend-scheme (hu/backend-proto->scheme protocol)
                          request {:client-protocol backend-protocol
