@@ -61,6 +61,7 @@
                   :descriptor {:service-id "service-id"
                                :service-description {"metric-group" "service-metric-group"
                                                      "name" "service-name"
+                                                     "profile" "test-profile"
                                                      "run-as-user" "john.doe"
                                                      "version" "service-version"}
                                :source-tokens [{"token" "test-token1" "version" "E-1234"}
@@ -108,6 +109,7 @@
             :server "foo-bar"
             :service-id "service-id"
             :service-name "service-name"
+            :service-profile "test-profile"
             :service-version "service-version"
             :status http-200-ok
             :token "test-token1,test-token2"

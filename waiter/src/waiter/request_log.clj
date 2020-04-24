@@ -57,7 +57,7 @@
            protocol request-type status waiter-api-call?] :as response}]
   (let [{:keys [service-id service-description source-tokens]} descriptor
         token (some->> source-tokens (map #(get % "token")) seq (str/join ","))
-        {:strs [metric-group run-as-user version]} service-description
+        {:strs [metric-group profile run-as-user version]} service-description
         {:strs [content-length content-type grpc-status location server]} headers
         {:keys [k8s/node-name k8s/pod-name]} instance]
     (cond-> {}
@@ -82,6 +82,7 @@
       node-name (assoc :k8s-node-name node-name)
       pod-name (assoc :k8s-pod-name pod-name)
       principal (assoc :principal principal)
+      profile (assoc :service-profile profile)
       protocol (assoc :backend-protocol protocol)
       request-type (assoc :request-type request-type)
       server (assoc :server server)
