@@ -132,75 +132,81 @@
 (deftest test-retrieve-fallback-descriptor
   (let [current-time (t/now)
         current-time-millis (.getMillis ^DateTime current-time)
-        descriptor->previous-descriptor (fn [descriptor] (:previous descriptor))
+        descriptor->previous-descriptor-fn (fn [descriptor] (descriptor->previous-descriptor nil nil descriptor))
         fallback-period-secs 120
         search-history-length 5
         time-1 (- current-time-millis (t/in-millis (t/seconds 30)))
-        descriptor-1 {:service-id "service-1"
-                      :sources {:fallback-period-secs fallback-period-secs
-                                :token->token-data {"test-token" {"last-update-time" time-1}}
-                                :token-sequence ["test-token"]}}
+        descriptor-1 {:component->previous-descriptor-fns {:token {:retrieve-last-update-time (constantly time-1)
+                                                                   :retrieve-previous-descriptor (constantly nil)}}
+                      :service-id "service-1"
+                      :sources {:fallback-period-secs fallback-period-secs}}
         time-2 (- current-time-millis (t/in-millis (t/seconds 20)))
-        descriptor-2 {:previous descriptor-1
+        descriptor-2 {:component->previous-descriptor-fns {:token {:retrieve-last-update-time (constantly time-2)
+                                                                   :retrieve-previous-descriptor (constantly descriptor-1)}}
+                      :previous descriptor-1
                       :service-id "service-2"
-                      :sources {:fallback-period-secs fallback-period-secs
-                                :token->token-data {"test-token" {"last-update-time" time-2}}
-                                :token-sequence ["test-token"]}}
+                      :sources {:fallback-period-secs fallback-period-secs}}
         request-time current-time]
 
-    (testing "no fallback service for on-the-fly"
-      (let [descriptor-4 {:previous descriptor-2
-                          :service-id "service-4"
-                          :sources {:token->token-data {} :token-sequence []}}
-            fallback-state {:available-service-ids #{"service-1" "service-2"}
-                            :healthy-service-ids #{"service-1" "service-2"}}
-            result-descriptor (retrieve-fallback-descriptor
-                                descriptor->previous-descriptor search-history-length fallback-state request-time descriptor-4)]
-        (is (nil? result-descriptor))))
+    (with-redefs [sd/validate-service-description (constantly nil)
+                  t/now (constantly current-time)]
 
-    (let [time-3 (- current-time-millis (t/in-millis (t/seconds 10)))
-          descriptor-3 {:previous descriptor-2
-                        :service-id "service-3"
-                        :sources {:fallback-period-secs fallback-period-secs
-                                  :token->token-data {"test-token" {"last-update-time" time-3}}
-                                  :token-sequence ["test-token"]}}]
-
-      (testing "fallback to previous healthy instance inside fallback period"
-        (let [fallback-state {:available-service-ids #{"service-1" "service-2"}
+      (testing "no fallback service for on-the-fly"
+        (let [descriptor-4 {:component->previous-descriptor-fns {}
+                            :previous descriptor-2
+                            :service-id "service-4"
+                            :sources {:token->token-data {} :token-sequence []}}
+              fallback-state {:available-service-ids #{"service-1" "service-2"}
                               :healthy-service-ids #{"service-1" "service-2"}}
               result-descriptor (retrieve-fallback-descriptor
-                                  descriptor->previous-descriptor search-history-length fallback-state request-time descriptor-3)]
-          (is (= descriptor-2 result-descriptor))))
-
-      (testing "no healthy fallback service"
-        (let [fallback-state {:available-service-ids #{"service-1" "service-2"}
-                              :healthy-service-ids #{}}
-              result-descriptor (retrieve-fallback-descriptor
-                                  descriptor->previous-descriptor search-history-length fallback-state request-time descriptor-3)]
+                                  descriptor->previous-descriptor-fn search-history-length fallback-state request-time descriptor-4)]
           (is (nil? result-descriptor))))
 
-      (testing "no fallback service outside period"
-        (let [fallback-state {:available-service-ids #{"service-1" "service-2"}
-                              :healthy-service-ids #{"service-1" "service-2"}}
-              request-time (t/plus current-time (t/seconds (* 2 fallback-period-secs)))
-              result-descriptor (retrieve-fallback-descriptor
-                                  descriptor->previous-descriptor search-history-length fallback-state request-time descriptor-3)]
-          (is (nil? result-descriptor))))
+      (let [time-3 (- current-time-millis (t/in-millis (t/seconds 10)))
+            descriptor-3 {:component->previous-descriptor-fns {:token {:retrieve-last-update-time (constantly time-3)
+                                                                       :retrieve-previous-descriptor (constantly descriptor-2)}}
+                          :previous descriptor-2
+                          :service-id "service-3"
+                          :sources {:fallback-period-secs fallback-period-secs
+                                    :token->token-data {"test-token" {"last-update-time" time-3}}
+                                    :token-sequence ["test-token"]}}]
 
-      (testing "fallback to 2-level previous healthy instance inside fallback period"
-        (let [fallback-state {:available-service-ids #{"service-1" "service-2"}
-                              :healthy-service-ids #{"service-1"}}
-              result-descriptor (retrieve-fallback-descriptor
-                                  descriptor->previous-descriptor search-history-length fallback-state request-time descriptor-3)]
-          (is (= descriptor-1 result-descriptor))))
+        (testing "fallback to previous healthy instance inside fallback period"
+          (let [fallback-state {:available-service-ids #{"service-1" "service-2"}
+                                :healthy-service-ids #{"service-1" "service-2"}}
+                result-descriptor (retrieve-fallback-descriptor
+                                    descriptor->previous-descriptor-fn search-history-length fallback-state request-time descriptor-3)]
+            (is (= descriptor-2 result-descriptor))))
 
-      (testing "no fallback for limited history"
-        (let [fallback-state {:available-service-ids #{"service-1" "service-2"}
-                              :healthy-service-ids #{"service-1"}}
-              search-history-length 1
-              result-descriptor (retrieve-fallback-descriptor
-                                  descriptor->previous-descriptor search-history-length fallback-state request-time descriptor-3)]
-          (is (nil? result-descriptor)))))))
+        (testing "no healthy fallback service"
+          (let [fallback-state {:available-service-ids #{"service-1" "service-2"}
+                                :healthy-service-ids #{}}
+                result-descriptor (retrieve-fallback-descriptor
+                                    descriptor->previous-descriptor-fn search-history-length fallback-state request-time descriptor-3)]
+            (is (nil? result-descriptor))))
+
+        (testing "no fallback service outside period"
+          (let [fallback-state {:available-service-ids #{"service-1" "service-2"}
+                                :healthy-service-ids #{"service-1" "service-2"}}
+                request-time (t/plus current-time (t/seconds (* 2 fallback-period-secs)))
+                result-descriptor (retrieve-fallback-descriptor
+                                    descriptor->previous-descriptor-fn search-history-length fallback-state request-time descriptor-3)]
+            (is (nil? result-descriptor))))
+
+        (testing "fallback to 2-level previous healthy instance inside fallback period"
+          (let [fallback-state {:available-service-ids #{"service-1" "service-2"}
+                                :healthy-service-ids #{"service-1"}}
+                result-descriptor (retrieve-fallback-descriptor
+                                    descriptor->previous-descriptor-fn search-history-length fallback-state request-time descriptor-3)]
+            (is (= descriptor-1 result-descriptor))))
+
+        (testing "no fallback for limited history"
+          (let [fallback-state {:available-service-ids #{"service-1" "service-2"}
+                                :healthy-service-ids #{"service-1"}}
+                search-history-length 1
+                result-descriptor (retrieve-fallback-descriptor
+                                    descriptor->previous-descriptor-fn search-history-length fallback-state request-time descriptor-3)]
+            (is (nil? result-descriptor))))))))
 
 (deftest test-request-authorized?
   (let [test-cases
@@ -558,10 +564,17 @@
                            :reference-type->entry {:cmd-source {:version "v8"} :cpu-source {:version "v10"}}
                            :service-description service-description-1
                            :sources sources
-                           :waiter-headers waiter-headers}]
+                           :waiter-headers waiter-headers}
+          compute-most-recently-updated-component-fn
+          (fn compute-most-recently-updated-component-fn [descriptor]
+            (let [[component {:keys [retrieve-last-update-time]}] (retrieve-most-recently-updated-component-entry descriptor)]
+              {:component component
+               :last-update-time (retrieve-last-update-time descriptor)}))]
       (let [prev-descriptor-1 (descriptor->previous-descriptor kv-store builder curr-descriptor)
             template-1 (get-in curr-descriptor [:sources :cpu-source])
             template-basic-1 (dissoc template-1 "last-update-time" "previous")]
+        (is (= {:component :cpu-source, :last-update-time 10}
+               (compute-most-recently-updated-component-fn curr-descriptor)))
         (is (= (-> curr-descriptor
                  (update :core-service-description merge template-basic-1)
                  (assoc :reference-type->entry {:cmd-source {:version "v8"} :cpu-source {:version "v4"}})
@@ -572,6 +585,8 @@
         (let [prev-descriptor-2 (descriptor->previous-descriptor kv-store builder prev-descriptor-1)
               template-2 (get-in curr-descriptor [:sources :cmd-source])
               template-basic-2 (dissoc template-2 "last-update-time" "previous")]
+          (is (= {:component :cmd-source, :last-update-time 8}
+                 (compute-most-recently-updated-component-fn prev-descriptor-1)))
           (is (= (-> prev-descriptor-1
                    (update :core-service-description merge template-basic-2)
                    (assoc :reference-type->entry {:cmd-source {:version "v6"} :cpu-source {:version "v4"}})
@@ -582,6 +597,8 @@
           (let [prev-descriptor-3 (descriptor->previous-descriptor kv-store builder prev-descriptor-2)
                 template-3 (get-in curr-descriptor [:sources :cmd-source "previous"])
                 template-basic-3 (dissoc template-3 "last-update-time" "previous")]
+            (is (= {:component :cmd-source, :last-update-time 6}
+                   (compute-most-recently-updated-component-fn prev-descriptor-2)))
             (is (= (-> prev-descriptor-3
                      (update :core-service-description merge template-basic-3)
                      (assoc-in [:reference-type->entry :cpu-source :version] "v4")
@@ -592,6 +609,8 @@
             (let [prev-descriptor-4 (descriptor->previous-descriptor kv-store builder prev-descriptor-3)
                   template-4 (get-in curr-descriptor [:sources :cpu-source "previous"])
                   template-basic-4 (dissoc template-4 "last-update-time" "previous")]
+              (is (= {:component :cpu-source, :last-update-time 4}
+                     (compute-most-recently-updated-component-fn prev-descriptor-3)))
               (is (= (-> prev-descriptor-3
                        (update :core-service-description merge template-basic-4)
                        (assoc :reference-type->entry {})
