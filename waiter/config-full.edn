@@ -232,6 +232,10 @@
                               ;; The value of USE_BEARER_AUTH environment variable of the service overrides this value.
                               ;; When not configured, the value is assumed to be false.
                               :allow-bearer-auth-services? false
+                              ;; Whether or not to include the www-authenticate header on 401 responses
+                              ;; even if a Bearer token is not provided in the request authenticate header.
+                              ;; When not configured, the value is assumed to be true.
+                              :attach-www-authenticate-on-missing-bearer-token? true
                               ;; JWT relies on periodically refreshing the list of available keys from a JWKS
                               :http-options {;; The HTTP options that will be used when accessing the authorization server:
                                              :conn-timeout 10000

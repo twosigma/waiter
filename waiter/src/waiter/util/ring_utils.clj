@@ -57,6 +57,6 @@
     [:headers header-name]
     (fn update-header-value [current-value]
       (cond
-        (string? current-value) (str current-value "," header-value)
+        (string? current-value) [current-value header-value]
         (seq? current-value) (conj current-value header-value)
         :else header-value))))

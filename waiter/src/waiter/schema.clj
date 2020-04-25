@@ -123,6 +123,7 @@
   (s/either
     {(s/optional-key :allow-bearer-auth-api?) s/Bool
      (s/optional-key :allow-bearer-auth-services?) s/Bool
+     (s/optional-key :attach-www-authenticate-on-missing-bearer-token?) s/Bool
      (s/required-key :http-options) {s/Keyword s/Any}
      (s/required-key :issuer) valid-jwt-issuer-config
      (s/required-key :jwks-url) s/Str
