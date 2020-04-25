@@ -1169,7 +1169,7 @@
       :token->token-data
       (pc/map-vals (fn [{:strs [last-update-time]}] (or last-update-time 0)))
       vals
-      (apply max))
+      (reduce max))
     0))
 
 (defn service-id->service-description
