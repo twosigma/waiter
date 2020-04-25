@@ -98,7 +98,9 @@
   (let [redacted-request-fields-string (get-in response [:descriptor :service-description "env" "WAITER_CONFIG_REDACTED_REQUEST_FIELDS"])
         redacted-request-fields (when-not (str/blank? redacted-request-fields-string)
                                   (map keyword (str/split redacted-request-fields-string #",")))]
-    (log (apply dissoc (merge (request->context request) (response->context response)) redacted-request-fields))))
+    (-> (merge (request->context request) (response->context response))
+      (utils/remove-keys redacted-request-fields)
+      (log))))
 
 (defn wrap-log
   "Wraps a handler logging data from requests and responses."

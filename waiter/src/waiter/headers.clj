@@ -107,8 +107,8 @@
         connection-headers (map str/trim (str/split (str connection) #","))]
     (cond-> (dissoc headers "connection" "keep-alive" "proxy-authenticate" "proxy-authorization"
                     "trailers" "transfer-encoding" "upgrade")
-      (seq force-remove-headers) (as-> $ (apply dissoc $ force-remove-headers))
-      (seq connection-headers) (as-> $ (apply dissoc $ connection-headers)))))
+      (seq force-remove-headers) (utils/remove-keys force-remove-headers)
+      (seq connection-headers) (utils/remove-keys connection-headers))))
 
 (defn assoc-auth-headers
   "`assoc`s the x-waiter-auth-principal and x-waiter-authenticated-principal headers if the

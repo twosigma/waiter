@@ -27,7 +27,8 @@
             [plumbing.core :as pc]
             [waiter.metrics :as metrics]
             [waiter.status-codes :refer :all]
-            [waiter.util.async-utils :as au]))
+            [waiter.util.async-utils :as au]
+            [waiter.util.utils :as utils]))
 
 (defn- service-id->interstitial-promise
   "Returns the promise mapped against a service-id.
@@ -86,7 +87,7 @@
          (fn [{:keys [service-id->interstitial-promise] :as interstitial-state}]
            (->> service-ids
                 (filter #(some-> % service-id->interstitial-promise realized?))
-                (apply dissoc service-id->interstitial-promise)
+                (utils/remove-keys service-id->interstitial-promise)
                 (assoc interstitial-state :service-id->interstitial-promise))))
   (->> @interstitial-state-atom
        :service-id->interstitial-promise
