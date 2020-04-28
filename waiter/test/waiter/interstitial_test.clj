@@ -302,7 +302,8 @@
             response ((wrap-interstitial handler interstitial-state-atom) request)]
         (is (= {:headers {"location" (str "/waiter-interstitial/test")
                           "x-waiter-interstitial" "true"}
-                :status http-303-see-other}
+                :status http-303-see-other
+                :waiter/response-source :waiter}
                response))
         (is (some-> @interstitial-state-atom
                     :service-id->interstitial-promise
@@ -348,7 +349,8 @@
                 response ((wrap-interstitial handler interstitial-state-atom) request)]
             (is (= {:headers {"location" (str "/waiter-interstitial?a=b")
                               "x-waiter-interstitial" "true"}
-                    :status http-303-see-other}
+                    :status http-303-see-other
+                    :waiter/response-source :waiter}
                    response)))
 
           (let [request {:descriptor {:service-description {"interstitial-secs" 10}
@@ -361,7 +363,8 @@
                 response ((wrap-interstitial handler interstitial-state-atom) request)]
             (is (= {:headers {"location" (str "/waiter-interstitial?c=d&x-waiter-bypass-interstitial=1&a=b")
                               "x-waiter-interstitial" "true"}
-                    :status http-303-see-other}
+                    :status http-303-see-other
+                    :waiter/response-source :waiter}
                    response)))
 
           (let [request {:descriptor {:service-description {"interstitial-secs" 10}
@@ -374,7 +377,8 @@
                 response ((wrap-interstitial handler interstitial-state-atom) request)]
             (is (= {:headers {"location" (str "/waiter-interstitial/test")
                               "x-waiter-interstitial" "true"}
-                    :status http-303-see-other}
+                    :status http-303-see-other
+                    :waiter/response-source :waiter}
                    response))))))))
 
 (deftest test-display-interstitial-handler
@@ -385,12 +389,14 @@
                      :route-params {:path "test"}}
             response (display-interstitial-handler request)]
         (is (= {:body {:target-url (str "/test?" (request-time->interstitial-param-string request-time))}
-                :status http-200-ok}
+                :status http-200-ok
+                :waiter/response-source :waiter}
                response)))
       (let [request {:query-string "a=b&c=d"
                      :request-time request-time
                      :route-params {:path "test"}}
             response (display-interstitial-handler request)]
         (is (= {:body {:target-url (str "/test?a=b&c=d&" (request-time->interstitial-param-string request-time))}
-                :status http-200-ok}
+                :status http-200-ok
+                :waiter/response-source :waiter}
                response))))))

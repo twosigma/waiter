@@ -27,7 +27,8 @@
             [plumbing.core :as pc]
             [waiter.metrics :as metrics]
             [waiter.status-codes :refer :all]
-            [waiter.util.async-utils :as au]))
+            [waiter.util.async-utils :as au]
+            [waiter.util.utils :as utils]))
 
 (defn- service-id->interstitial-promise
   "Returns the promise mapped against a service-id.
@@ -239,9 +240,10 @@
         (let [location (str "/waiter-interstitial" uri (when-not (str/blank? query-string) (str "?" query-string)))]
           (counters/inc! (metrics/service-counter service-id "request-counts" "interstitial"))
           (meters/mark! (metrics/waiter-meter "interstitial" "redirect"))
-          {:headers {"location" location
-                     "x-waiter-interstitial" "true"}
-           :status http-303-see-other})))))
+          (utils/attach-waiter-source
+            {:headers {"location" location
+                       "x-waiter-interstitial" "true"}
+             :status http-303-see-other}))))))
 
 (let [interstitial-template-fn (template/fn [{:keys [target-url]}] (slurp (io/resource "web/interstitial.html")))]
   (defn render-interstitial-template
@@ -257,5 +259,6 @@
                           (str query-string "&"))
                         ;; the bypass interstitial should be the last query parameter
                         (request-time->interstitial-param-string request-time))]
-    {:body (render-interstitial-template {:target-url target-url})
-     :status http-200-ok }))
+    (utils/attach-waiter-source
+      {:body (render-interstitial-template {:target-url target-url})
+       :status http-200-ok})))
