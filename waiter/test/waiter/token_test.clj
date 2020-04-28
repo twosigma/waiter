@@ -414,7 +414,7 @@
           (is (= http-200-ok status))
           (is (= "application/json" (get headers "content-type")))
           (is (not (str/includes? body "last-update-time")))
-          (doseq [key (keys (apply dissoc (select-keys service-description-1 sd/service-parameter-keys) json-keys))]
+          (doseq [key (keys (utils/remove-keys (select-keys service-description-1 sd/service-parameter-keys) json-keys))]
             (is (str/includes? body (str (get service-description-1 key)))))
           (doseq [key json-keys]
             (is (str/includes? body (utils/clj->json (get service-description-1 key)))))))
@@ -430,7 +430,7 @@
           (is (= http-200-ok status))
           (is (= "application/json" (get headers "content-type")))
           (is (not (str/includes? body "last-update-time")))
-          (doseq [key (keys (apply dissoc (select-keys service-description-1 sd/service-parameter-keys) json-keys))]
+          (doseq [key (keys (utils/remove-keys (select-keys service-description-1 sd/service-parameter-keys) json-keys))]
             (is (str/includes? body (str (get service-description-1 key)))))
           (doseq [key json-keys]
             (is (str/includes? body (utils/clj->json (get service-description-1 key)))))))

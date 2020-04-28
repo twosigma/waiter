@@ -962,7 +962,7 @@
       service-description
       (let [key-regex (re-pattern (str "^" key-name "-"))
             renamed-env-map (pc/map-keys #(str/upper-case (str/replace % key-regex "")) env-map)
-            sanitized-service-description (apply dissoc service-description env-keys)]
+            sanitized-service-description (utils/remove-keys service-description env-keys)]
         (assoc sanitized-service-description key-name renamed-env-map)))))
 
 (defn- parse-metadata-headers
@@ -974,7 +974,7 @@
     (if (empty? metadata-map)
       service-description
       (let [renamed-metadata-map (pc/map-keys #(str/replace % #"^metadata-" "") metadata-map)
-            sanitized-service-description (apply dissoc service-description metadata-keys)]
+            sanitized-service-description (utils/remove-keys service-description metadata-keys)]
         (assoc sanitized-service-description "metadata" renamed-metadata-map)))))
 
 (defn- waiter-headers->service-parameters

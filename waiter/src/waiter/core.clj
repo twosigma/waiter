@@ -484,7 +484,7 @@
                                                                  (log/error e "error in deleting:" service))))
                                                            apps-to-gc)
                             apps-failed-to-delete (apply disj (set apps-to-gc) apps-successfully-gced)
-                            service->state'' (apply dissoc service->state' apps-successfully-gced)]
+                            service->state'' (utils/remove-keys service->state' apps-successfully-gced)]
                         (when (or (not= (set (keys service->state'')) (set (keys service->raw-data)))
                                   (not= (set (keys service->state'')) (set (keys service->state))))
                           (log/info "state has" (count service->state'') "active services, received"

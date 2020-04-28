@@ -391,6 +391,12 @@
       m)
     (dissoc m k)))
 
+(defn remove-keys
+  "Returns a map with any key in ks dissoc-ed from m.
+   Provides an alternate to (apply dissoc m ks)."
+  [m ks]
+  (reduce dissoc m ks))
+
 (defn sleep
   "Helper function that wraps sleep call to java.lang.Thread"
   [time]

@@ -673,3 +673,32 @@
         (is (= (assoc standard-response :add-grpc-headers-and-trailers true)
                (attach-grpc-status standard-response {} {:client-protocol "HTTP/2.0"
                                                          :headers {"content-type" "application/grpc"}})))))))
+
+(deftest test-remove-keys
+  (is (nil? (remove-keys nil nil)))
+  (is (nil? (remove-keys nil [])))
+  (is (nil? (remove-keys nil [:a])))
+  (is (nil? (remove-keys nil [:a :b])))
+
+  (is (= {} (remove-keys {} nil)))
+  (is (= {} (remove-keys {} [])))
+  (is (= {} (remove-keys {} [:a])))
+  (is (= {} (remove-keys {} [:a :b])))
+
+  (is (= {:a 1} (remove-keys {:a 1} nil)))
+  (is (= {:a 1} (remove-keys {:a 1} [])))
+  (is (= {} (remove-keys {:a 1} [:a])))
+  (is (= {} (remove-keys {:a 1} [:a :b])))
+
+  (is (= {:a 1 :b 2} (remove-keys {:a 1 :b 2} nil)))
+  (is (= {:a 1 :b 2} (remove-keys {:a 1 :b 2} [])))
+  (is (= {:b 2} (remove-keys {:a 1 :b 2} [:a])))
+  (is (= {} (remove-keys {:a 1 :b 2} [:a :b])))
+  (is (= {} (remove-keys {:a 1 :b 2} [:a :b :c])))
+  (is (= {} (remove-keys {:a 1 :b 2} [:a :b :c :d])))
+
+  (is (= {:b 2 :c 3} (remove-keys {:b 2 :c 3} nil)))
+  (is (= {:b 2 :c 3} (remove-keys {:b 2 :c 3} [])))
+  (is (= {:b 2 :c 3} (remove-keys {:b 2 :c 3} [:a])))
+  (is (= {:b 2 :c 3} (remove-keys {:b 2 :c 3} [:a :d :e :f :g])))
+  (is (= {:c 3} (remove-keys {:b 2 :c 3} [:a :b]))))
