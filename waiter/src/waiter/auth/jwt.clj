@@ -326,6 +326,21 @@
         (log/info throwable "error in access token validation")
         throwable))))
 
+(defn make-401-response-updater
+  "Returns a function that attaches the www-authenticate header to the response if it has status 401."
+  [request]
+  (fn update-401-response [{:keys [status] :as response}]
+    (if (and (= status http-401-unauthorized) (utils/waiter-generated-response? response))
+      ;; add to challenge initiated by Waiter
+      (let [realm (request->realm request)
+            www-auth-header (if (str/blank? realm)
+                              (str/trim bearer-prefix)
+                              (str bearer-prefix "realm=\"" realm "\""))]
+        (log/debug "attaching www-authenticate header to response")
+        (ru/attach-header response "www-authenticate" www-auth-header))
+      ;; non-401 response, avoid authentication challenge
+      response)))
+
 (defn authenticate-request
   "Performs authentication and then
    - responds with an error response when authentication fails, or
@@ -339,17 +354,7 @@
         ;; allow downstream processing before deciding on authentication challenge in response
         (ru/update-response
           (request-handler request)
-          (fn [{:keys [status] :as response}]
-            (if (and (= status http-401-unauthorized) (utils/waiter-generated-response? response))
-              ;; add to challenge initiated by Waiter
-              (let [realm (request->realm request)
-                    www-auth-header (if (str/blank? realm)
-                                      (str/trim bearer-prefix)
-                                      (str bearer-prefix "realm=\"" realm "\""))]
-                (log/debug "attaching www-authenticate header to response")
-                (ru/attach-header response "www-authenticate" www-auth-header))
-              ;; non-401 response, avoid authentication challenge
-              response)))
+          (make-401-response-updater request))
         ;; non-401 response avoids further downstream handler processing
         (utils/exception->response claims-or-throwable request))
       (let [{:keys [exp] :as claims} claims-or-throwable
@@ -361,22 +366,31 @@
 
 (defn wrap-auth-handler
   "Wraps the request handler with a handler to trigger JWT access token authentication."
-  [{:keys [allow-bearer-auth-api? allow-bearer-auth-services? issuer-constraints keys-cache max-expiry-duration-ms
-           password subject-key subject-regex supported-algorithms token-type]}
+  [{:keys [allow-bearer-auth-api? allow-bearer-auth-services? attach-www-authenticate-on-missing-bearer-token?
+           issuer-constraints keys-cache max-expiry-duration-ms password subject-key subject-regex
+           supported-algorithms token-type]}
    request-handler]
   (fn jwt-auth-handler [{:keys [waiter-api-call?] :as request}]
-    (if (and (not (auth/request-authenticated? request))
-             (auth/select-auth-header request access-token?)
-             (or
-               ;; service requests will enable JWT auth based on env variable or when absent, the allow-bearer-auth-services?
-               (and (not waiter-api-call?)
-                    (= "true" (get-in request [:waiter-discovery :service-description-template "env" "USE_BEARER_AUTH"]
-                                      (str allow-bearer-auth-services?))))
-               ;; waiter api requests will enable JWT auth based on allow-bearer-auth-api?
-               (and waiter-api-call? allow-bearer-auth-api?)))
-      (authenticate-request request-handler token-type issuer-constraints subject-key subject-regex supported-algorithms
-                            (:key-id->jwk @keys-cache) password max-expiry-duration-ms request)
-      (request-handler request))))
+    (let [use-jwt-auth? (or
+                          ;; service requests will enable JWT auth based on env variable or when absent, the allow-bearer-auth-services?
+                          (and (not waiter-api-call?)
+                               (= "true" (get-in request [:waiter-discovery :service-description-template "env" "USE_BEARER_AUTH"]
+                                                 (str allow-bearer-auth-services?))))
+                          ;; waiter api requests will enable JWT auth based on allow-bearer-auth-api?
+                          (and waiter-api-call? allow-bearer-auth-api?))]
+      (cond
+        (or (not use-jwt-auth?)
+            (auth/request-authenticated? request))
+        (request-handler request)
+
+        (auth/select-auth-header request access-token?)
+        (authenticate-request request-handler token-type issuer-constraints subject-key subject-regex supported-algorithms
+                              (:key-id->jwk @keys-cache) password max-expiry-duration-ms request)
+
+        :else
+        (cond-> (request-handler request)
+          attach-www-authenticate-on-missing-bearer-token?
+          (ru/update-response (make-401-response-updater request)))))))
 
 (defn retrieve-state
   "Returns the state of the JWT authenticator."
@@ -387,6 +401,7 @@
     {:cache-data cache-data}))
 
 (defrecord JwtAuthenticator [allow-bearer-auth-api? allow-bearer-auth-services?
+                             attach-www-authenticate-on-missing-bearer-token?
                              issuer-constraints keys-cache max-expiry-duration-ms password
                              subject-key subject-regex supported-algorithms token-type])
 
@@ -400,14 +415,18 @@
 
 (defn jwt-authenticator
   "Factory function for creating jwt authenticator middleware"
-  [{:keys [http-options issuer jwks-url max-expiry-duration-ms password subject-key subject-regex
-           supported-algorithms token-type update-interval-ms allow-bearer-auth-api?
-           allow-bearer-auth-services?]
-    :or {max-expiry-duration-ms (-> 24 t/hours t/in-millis)
-         subject-regex default-subject-regex
-         allow-bearer-auth-api? true
-         allow-bearer-auth-services? false}}]
-  {:pre [(map? http-options)
+  [{:keys [allow-bearer-auth-api? allow-bearer-auth-services? attach-www-authenticate-on-missing-bearer-token?
+           http-options issuer jwks-url max-expiry-duration-ms password subject-key subject-regex
+           supported-algorithms token-type update-interval-ms]
+    :or {allow-bearer-auth-api? true
+         allow-bearer-auth-services? false
+         attach-www-authenticate-on-missing-bearer-token? true
+         max-expiry-duration-ms (-> 24 t/hours t/in-millis)
+         subject-regex default-subject-regex}}]
+  {:pre [(boolean? allow-bearer-auth-api?)
+         (boolean? allow-bearer-auth-services?)
+         (boolean? attach-www-authenticate-on-missing-bearer-token?)
+         (map? http-options)
          (vector? (issuer->issuer-constraints issuer))
          (seq (issuer->issuer-constraints issuer))
          (every? #(or (and (string? %)
@@ -425,9 +444,7 @@
          (empty? (set/difference supported-algorithms #{:eddsa :rs256}))
          (not (str/blank? token-type))
          (and (integer? update-interval-ms)
-              (not (neg? update-interval-ms)))
-         (boolean? allow-bearer-auth-api?)
-         (boolean? allow-bearer-auth-services?)]}
+              (not (neg? update-interval-ms)))]}
   (let [keys-cache (atom {})
         http-client (-> http-options
                       (utils/assoc-if-absent :client-name "waiter-jwt")
@@ -436,5 +453,6 @@
         issuer-constraints (issuer->issuer-constraints issuer)]
     (start-jwt-cache-maintainer http-client http-options jwks-url update-interval-ms supported-algorithms keys-cache)
     (->JwtAuthenticator allow-bearer-auth-api? allow-bearer-auth-services?
+                        attach-www-authenticate-on-missing-bearer-token?
                         issuer-constraints keys-cache max-expiry-duration-ms password
                         subject-key subject-regex supported-algorithms token-type)))

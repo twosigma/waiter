@@ -499,6 +499,84 @@
                  (authenticate-request request-handler token-type issuer-constraints subject-key subject-regex supported-algorithms
                                        keys password max-expiry-duration-ms request))))))))
 
+(deftest test-wrap-auth-handler
+  (with-redefs [authenticate-request (fn [_ _ _ _ _ _ _ _ _ request] (assoc request :processed-by :authenticate-request))]
+    (let [request-handler (fn [request] (assoc request :processed-by :request-handler))
+          jwt-authenticator {:allow-bearer-auth-api? false
+                             :allow-bearer-auth-services? false
+                             :attach-www-authenticate-on-missing-bearer-token? false
+                             :keys-cache (atom nil)}]
+      (testing "jwt-disabled"
+        (let [jwt-auth-handler (wrap-auth-handler jwt-authenticator request-handler)]
+          (doseq [status [200 301 400 401 403]]
+            (doseq [waiter-api-call? [true false]]
+              (is (= {:headers {"www-authenticate" "StandardAuth"}
+                      :processed-by :request-handler
+                      :status status
+                      :waiter-api-call? waiter-api-call?}
+                     (jwt-auth-handler {:headers {"www-authenticate" "StandardAuth"}
+                                        :status status
+                                        :waiter-api-call? waiter-api-call?})))))))
+
+      (testing "already authenticated"
+        (let [jwt-auth-handler (wrap-auth-handler jwt-authenticator request-handler)]
+          (doseq [status [200 301 400 401 403]]
+            (doseq [waiter-api-call? [true false]]
+              (is (= {:authorization/principal "auth-principal"
+                      :authorization/user "auth-user"
+                      :headers {"www-authenticate" "StandardAuth"}
+                      :processed-by :request-handler
+                      :status status
+                      :waiter-api-call? waiter-api-call?}
+                     (jwt-auth-handler {:authorization/principal "auth-principal"
+                                        :authorization/user "auth-user"
+                                        :headers {"www-authenticate" "StandardAuth"}
+                                        :status status
+                                        :waiter-api-call? waiter-api-call?})))))))
+
+      (testing "jwt-enabled and bearer token provided"
+        (let [jwt-authenticator {:allow-bearer-auth-api? true :allow-bearer-auth-services? true :keys-cache (atom nil)}
+              jwt-auth-handler (wrap-auth-handler jwt-authenticator request-handler)]
+          (doseq [status [200 301 400 401 403]]
+            (doseq [waiter-api-call? [true false]]
+              (is (= {:headers {"authorization" "Bearer 12.34.56"
+                                "www-authenticate" "StandardAuth"}
+                      :processed-by :authenticate-request
+                      :status status
+                      :waiter-api-call? waiter-api-call?}
+                     (jwt-auth-handler {:headers {"authorization" "Bearer 12.34.56"
+                                                  "www-authenticate" "StandardAuth"}
+                                        :status status
+                                        :waiter-api-call? waiter-api-call?})))))))
+
+      (testing "jwt-enabled and bearer token NOT provided"
+        (doseq [attach-www-authenticate-on-missing-bearer-token? [true false]]
+          (let [jwt-authenticator {:allow-bearer-auth-api? true
+                                   :allow-bearer-auth-services? true
+                                   :attach-www-authenticate-on-missing-bearer-token? attach-www-authenticate-on-missing-bearer-token?
+                                   :keys-cache (atom nil)}
+                jwt-auth-handler (wrap-auth-handler jwt-authenticator request-handler)]
+            (doseq [status [200 301 400 401 403]]
+              (doseq [waiter-api-call? [true false]]
+                (doseq [response-source [:backend :waiter]]
+                  (is (= {:headers {"authorization" "Basic 123456"
+                                    "host" "www.test.com:1234"
+                                    "www-authenticate" (if (and attach-www-authenticate-on-missing-bearer-token?
+                                                                (= response-source :waiter)
+                                                                (= status 401))
+                                                         ["StandardAuth" "Bearer realm=\"www.test.com\""]
+                                                         "StandardAuth")}
+                          :processed-by :request-handler
+                          :status status
+                          :waiter-api-call? waiter-api-call?
+                          :waiter/response-source response-source}
+                         (jwt-auth-handler {:headers {"authorization" "Basic 123456"
+                                                      "host" "www.test.com:1234"
+                                                      "www-authenticate" "StandardAuth"}
+                                            :status status
+                                            :waiter-api-call? waiter-api-call?
+                                            :waiter/response-source response-source}))))))))))))
+
 (deftest test-jwt-authenticator
   (with-redefs [start-jwt-cache-maintainer (constantly nil)]
     (let [config {:http-options {:conn-timeout 10000
@@ -516,6 +594,8 @@
         (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :allow-bearer-auth-api? false))))
         (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :allow-bearer-auth-services? true))))
         (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :allow-bearer-auth-services? false))))
+        (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :attach-www-authenticate-on-missing-bearer-token? true))))
+        (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :attach-www-authenticate-on-missing-bearer-token? false))))
         (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :issuer "w8r.*"))))
         (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :issuer #"w8r.*"))))
         (is (instance? JwtAuthenticator (jwt-authenticator (assoc config :issuer ["w8r" #"w8r.*"]))))
@@ -525,6 +605,7 @@
       (testing "invalid configuration"
         (is (thrown? Throwable (jwt-authenticator (assoc config :allow-bearer-auth-api? "true"))))
         (is (thrown? Throwable (jwt-authenticator (assoc config :allow-bearer-auth-services? "true"))))
+        (is (thrown? Throwable (jwt-authenticator (assoc config :attach-www-authenticate-on-missing-bearer-token? "true"))))
         (is (thrown? Throwable (jwt-authenticator (dissoc config :http-options))))
         (is (thrown? Throwable (jwt-authenticator (dissoc config :token-type))))
         (is (thrown? Throwable (jwt-authenticator (dissoc config :issuer))))
@@ -564,7 +645,7 @@
                                          (is (= "password" password))
                                          (is (= max-expiry-duration-ms in-max-expiry-duration-ms))
                                          (handler (assoc request :source ::jwt-auth)))]
-      (let [authenticator (->JwtAuthenticator false false issuer-constraints keys-cache max-expiry-duration-ms
+      (let [authenticator (->JwtAuthenticator false false false issuer-constraints keys-cache max-expiry-duration-ms
                                               "password" :sub subject-regex supported-algorithms "jwt+type")
             jwt-handler (wrap-auth-handler authenticator handler)]
         (is (= {:body ::standard-request}
@@ -691,7 +772,7 @@
 
       (doseq [allow-bearer-auth-api? [true false]]
         (let [authenticator (->JwtAuthenticator
-                              allow-bearer-auth-api? true issuer-constraints keys-cache max-expiry-duration-ms
+                              allow-bearer-auth-api? true false issuer-constraints keys-cache max-expiry-duration-ms
                               "password" :sub subject-regex supported-algorithms "jwt+type")
               jwt-handler (wrap-auth-handler authenticator handler)]
           (is (= {:body ::jwt-auth}
@@ -737,7 +818,7 @@
 
       (doseq [allow-bearer-auth-services? [true false]]
         (let [authenticator (->JwtAuthenticator
-                              true allow-bearer-auth-services? issuer-constraints keys-cache max-expiry-duration-ms
+                              true allow-bearer-auth-services? false issuer-constraints keys-cache max-expiry-duration-ms
                               "password" :sub subject-regex supported-algorithms "jwt+type")
               jwt-handler (wrap-auth-handler authenticator handler)]
           (is (= {:body ::jwt-auth}

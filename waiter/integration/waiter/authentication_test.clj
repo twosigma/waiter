@@ -202,21 +202,36 @@
   (testing-using-waiter-url
     (if (jwt-auth-enabled? waiter-url)
       (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)
-            access-token (str (retrieve-access-token waiter-host) "invalid")
-            request-headers {"authorization" [(str "Bearer " access-token)
-                                              (str "Negotiate bad-token")
-                                              (str "SingleUser forbidden")]
-                             "host" waiter-host
-                             "x-forwarded-proto" "https"}
             port (waiter-settings-port waiter-url)
-            target-url (str waiter-host ":" port)
-            {:keys [headers] :as response}
-            (make-request target-url "/waiter-auth" :disable-auth true :headers request-headers :method :get)
-            set-cookie (str (get headers "set-cookie"))
-            assertion-message (str (select-keys response [:body :error :headers :status]))]
-        (assert-response-status response http-403-forbidden)
-        (is (str/blank? (get headers "www-authenticate")) assertion-message)
-        (is (str/blank? set-cookie) assertion-message))
+            target-url (str waiter-host ":" port)]
+        (let [access-token (str (retrieve-access-token waiter-host) "invalid")
+              request-headers {"authorization" [(str "Bearer " access-token)
+                                                (str "Negotiate bad-token")
+                                                (str "SingleUser forbidden")]
+                               "host" waiter-host
+                               "x-forwarded-proto" "https"}
+              {:keys [headers] :as response}
+              (make-request target-url "/waiter-auth" :disable-auth true :headers request-headers :method :get)
+              set-cookie (str (get headers "set-cookie"))
+              assertion-message (str (select-keys response [:body :error :headers :status]))]
+          (assert-response-status response http-403-forbidden)
+          (is (str/blank? (get headers "www-authenticate")) assertion-message)
+          (is (str/blank? set-cookie) assertion-message))
+
+        (when use-spnego
+          (let [request-headers {"host" waiter-host
+                                 "x-forwarded-proto" "https"}
+                {:keys [headers] :as response}
+                (make-request target-url "/waiter-auth" :disable-auth true :headers request-headers :method :get)
+                set-cookie (str (get headers "set-cookie"))
+                assertion-message (str (select-keys response [:body :error :headers :status]))]
+            (assert-response-status response http-401-unauthorized)
+            (is (get headers "www-authenticate") assertion-message)
+            (when (or (setting waiter-url [:authenticator-config :jwt :attach-www-authenticate-on-missing-bearer-token?])
+                      ;; attach-www-authenticate-on-missing-bearer-token? defaults to true
+                      true)
+              (is (str/includes? (str (get headers "www-authenticate")) "Bearer") assertion-message))
+            (is (str/blank? set-cookie) assertion-message))))
       (log/info "JWT authentication is disabled"))))
 
 ;; Test disabled because JWT support is, currently, only for tokens
