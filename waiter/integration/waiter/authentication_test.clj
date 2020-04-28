@@ -219,7 +219,11 @@
           (is (str/blank? set-cookie) assertion-message))
 
         (when use-spnego
-          (let [request-headers {"host" waiter-host
+          (let [{:keys [allow-bearer-auth-api? attach-www-authenticate-on-missing-bearer-token?]
+                 :or {allow-bearer-auth-api? true
+                      attach-www-authenticate-on-missing-bearer-token? true}}
+                (setting waiter-url [:authenticator-config :jwt])
+                request-headers {"host" waiter-host
                                  "x-forwarded-proto" "https"}
                 {:keys [headers] :as response}
                 (make-request target-url "/waiter-auth" :disable-auth true :headers request-headers :method :get)
@@ -227,9 +231,7 @@
                 assertion-message (str (select-keys response [:body :error :headers :status]))]
             (assert-response-status response http-401-unauthorized)
             (is (get headers "www-authenticate") assertion-message)
-            (when (or (setting waiter-url [:authenticator-config :jwt :attach-www-authenticate-on-missing-bearer-token?])
-                      ;; attach-www-authenticate-on-missing-bearer-token? defaults to true
-                      true)
+            (when (and allow-bearer-auth-api? attach-www-authenticate-on-missing-bearer-token?)
               (is (str/includes? (str (get headers "www-authenticate")) "Bearer") assertion-message))
             (is (str/blank? set-cookie) assertion-message))))
       (log/info "JWT authentication is disabled"))))
