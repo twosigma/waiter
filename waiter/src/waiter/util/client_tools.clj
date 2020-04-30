@@ -725,7 +725,10 @@
          (testing current-testing-context#
            (cid/with-correlation-id
              (str current-testing-context#)
-             ~@body))))))
+             (try
+               ~@body
+               (catch Throwable throwable#
+                 (log/error throwable# "error executing task in" (str current-testing-context#))))))))))
 
 (defmacro launch-thread
   [& body]
@@ -739,39 +742,38 @@
                              verbose false
                              wait-for-tasks true}}]
   (let [pool (Executors/newFixedThreadPool nthreads)
-        start-counter (ref 0)
-        finish-counter (ref 0)
+        start-counter (atom 0)
+        finish-counter (atom 0)
         target-count (* nthreads niters)
+        test-name (current-test-name)
         print-state-fn #(when verbose
-                          (log/info (str (when service-id (str "requests to " service-id ":")))
+                          (log/info test-name
+                                    (str (when service-id (str "requests to " service-id ":")))
                                     "started:" @start-counter
                                     ", completed:" @finish-counter
-                                    ", target:" target-count))
-        num-groups (cond
-                     (> target-count 300) 6
-                     (> target-count 200 ) 5
-                     (> target-count 100) 4
-                     (> target-count 60) 3
-                     :else 2)
-        checkpoints (set (map #(quot (* % target-count) num-groups) (range 1 num-groups)))
+                                    ", target:" target-count
+                                    ", cancelled:" (canceled?)))
         http1-client-backup http1-client
         http2-client-backup http2-client
         tasks (map (fn [_]
                      (retrieve-task
                        (binding [http1-client http1-client-backup
                                  http2-client http2-client-backup]
-                         (loop [iter-id 1
+                         (loop [seq-num 1
                                 result []]
-                           (dosync (alter start-counter inc))
-                           (let [loop-result (f)
-                                 result' (conj result loop-result)]
-                             (dosync
-                               (alter finish-counter inc)
-                               (when (contains? checkpoints @finish-counter) (print-state-fn)))
-                             (Thread/sleep 100)
-                             (if (or (>= iter-id niters) (canceled?))
-                               result'
-                               (recur (inc iter-id) result')))))))
+                           (do
+                             (swap! start-counter inc)
+                             (print-state-fn)
+                             (let [loop-result (f)
+                                   result' (conj result loop-result)]
+                               (swap! finish-counter inc)
+                               (print-state-fn)
+                               (Thread/sleep 100)
+                               (if (or (>= seq-num niters) (canceled?))
+                                 (do
+                                   (print-state-fn)
+                                   result')
+                                 (recur (inc seq-num) result'))))))))
                    (range nthreads))
         futures (loop [futures []
                        [task & remaining-tasks] tasks]
