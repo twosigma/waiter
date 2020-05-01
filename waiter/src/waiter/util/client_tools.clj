@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.util.client-tools
-  (:require [clj-time.core :as t]
+  (:require [clj-http.client :as clj-http]
+            [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.java.shell :as shell]
@@ -1150,8 +1151,9 @@
 
 (defn num-instances
   "Returns the number of active instances for the given service-id"
-  [waiter-url service-id & {:keys [cookies] :or {cookies {}}}]
-  (let [instances (count (active-instances waiter-url service-id :cookies cookies))]
+  [waiter-url service-id]
+  (let [{:keys [body]} (clj-http/get (str "http://" waiter-url "/apps/" service-id) {:spnego-auth use-spnego})
+        instances (-> body str try-parse-json walk/keywordize-keys (get-in [:instances :active-instances]) count)]
     (log/debug service-id "has" instances "instances.")
     instances))
 
