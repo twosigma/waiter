@@ -27,7 +27,7 @@
     (let [cancellation-token-atom (atom false)
           {:keys [cookies] :as first-request} (request-fn {})
           service-id (retrieve-service-id waiter-url (:request-headers first-request))
-          count-instances (fn [] (num-instances waiter-url service-id :cookies cookies))]
+          count-instances (fn [] (num-instances waiter-url service-id))]
       (with-service-cleanup
         service-id
         (is (wait-for #(= 1 (count-instances))) "First instance never started")
