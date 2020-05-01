@@ -572,8 +572,11 @@
   "Fetches and returns the service data at the /apps/<service-id> endpoint."
   [waiter-url service-id & {:keys [cookies keywordize-keys query-params]
                             :or {cookies [] keywordize-keys true query-params {}}}]
-  (let [settings-path (str "/apps/" service-id)
-        settings-result (make-request waiter-url settings-path :cookies cookies :query-params query-params)]
+  (let [clj-http-cookies (map (fn [{:keys [name value]}] [name {:value value}]) cookies)
+        settings-result (clj-http/get (str "http://" waiter-url "/apps/" service-id)
+                                      {:cookies clj-http-cookies
+                                       :query-params query-params
+                                       :spnego-auth use-spnego})]
     (log/debug "service" service-id ":" settings-result)
     (cond-> (some-> settings-result :body try-parse-json)
       keywordize-keys walk/keywordize-keys)))
@@ -1151,9 +1154,8 @@
 
 (defn num-instances
   "Returns the number of active instances for the given service-id"
-  [waiter-url service-id]
-  (let [{:keys [body]} (clj-http/get (str "http://" waiter-url "/apps/" service-id) {:spnego-auth use-spnego})
-        instances (-> body str try-parse-json walk/keywordize-keys (get-in [:instances :active-instances]) count)]
+  [waiter-url service-id & {:keys [cookies] :or {cookies {}}}]
+  (let [instances (count (active-instances waiter-url service-id :cookies cookies))]
     (log/debug service-id "has" instances "instances.")
     instances))
 
