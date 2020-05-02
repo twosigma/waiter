@@ -27,11 +27,11 @@
     (let [cancellation-token-atom (atom false)
           {:keys [cookies] :as first-request} (request-fn {})
           service-id (retrieve-service-id waiter-url (:request-headers first-request))
-          count-instances (fn [] (num-instances waiter-url service-id))]
+          count-instances (fn [] (num-instances waiter-url service-id :cookies cookies))]
       (with-service-cleanup
         service-id
         (is (wait-for #(= 1 (count-instances))) "First instance never started")
-        (let [requests-per-thread 100
+        (let [requests-per-thread 1
               num-threads (* target-instances concurrency-level)
               futures (parallelize-requests
                         num-threads
