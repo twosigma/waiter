@@ -14,8 +14,7 @@
 ;; limitations under the License.
 ;;
 (ns waiter.util.client-tools
-  (:require [clj-http.client :as clj-http]
-            [clj-time.core :as t]
+  (:require [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.java.shell :as shell]
@@ -572,11 +571,8 @@
   "Fetches and returns the service data at the /apps/<service-id> endpoint."
   [waiter-url service-id & {:keys [cookies keywordize-keys query-params]
                             :or {cookies [] keywordize-keys true query-params {}}}]
-  (let [clj-http-cookies (map (fn [{:keys [name value]}] [name {:value value}]) cookies)
-        settings-result (clj-http/get (str "http://" waiter-url "/apps/" service-id)
-                                      {:cookies clj-http-cookies
-                                       :query-params query-params
-                                       :spnego-auth use-spnego})]
+  (let [settings-path (str "/apps/" service-id)
+        settings-result (make-request waiter-url settings-path :cookies cookies :query-params query-params)]
     (log/debug "service" service-id ":" settings-result)
     (cond-> (some-> settings-result :body try-parse-json)
       keywordize-keys walk/keywordize-keys)))
