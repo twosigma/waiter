@@ -1204,12 +1204,13 @@ class WaiterCliTest(util.WaiterTest):
     def test_show_service_current(self):
         token_name_1 = self.token_name()
         token_name_2 = self.token_name()
+        iso_8601_time = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat()
         custom_fields = {
             'owner': getpass.getuser(),
             'cluster': 'test_show_service_current',
             'root': 'test_show_service_current',
             'last-update-user': getpass.getuser(),
-            'last-update-time': datetime.datetime.utcnow().isoformat()
+            'last-update-time': iso_8601_time
         }
         token_definition = util.minimal_service_description(**custom_fields)
 

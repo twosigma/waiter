@@ -992,6 +992,99 @@
                             "root" "foo-bar"))
                  (kv/fetch kv-store token)))))
 
+      (testing "post:last-update-time"
+        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+              test-user (str "test-user-" (utils/unique-identifier))]
+          (testing "not-in-admin-mode"
+            (let [entitlement-manager (reify authz/EntitlementManager
+                                        (authorized? [_ subject _ {:keys [user]}]
+                                          (and (= subject test-user) (= test-user user))))
+                  test-token (str "token-" (utils/unique-identifier))
+                  service-description (walk/stringify-keys
+                                        {:cmd "tc1" :cpus 1 :mem 200 :permitted-user "*" :run-as-user test-user
+                                         :last-update-time 123456 :owner test-user :root "foo-bar" :token test-token})
+                  {:keys [body status]}
+                  (run-handle-token-request
+                    kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
+                    {:authorization/user test-user
+                     :body (StringBufferInputStream. (str (utils/clj->json service-description)))
+                     :headers {"x-waiter-token" token}
+                     :query-params {}
+                     :request-method :post})]
+              (is (= http-400-bad-request status))
+              (is (str/includes? body "Cannot modify last-update-time token metadata"))
+              (is (nil? (kv/fetch kv-store test-token)))))
+
+          (testing "admin-mode"
+            (let [entitlement-manager (reify authz/EntitlementManager
+                                        (authorized? [_ subject verb {:keys [user]}]
+                                          (and (= subject test-user) (= :admin verb) (= test-user user))))
+                  base-service-description (walk/stringify-keys
+                                             {:cmd "tc1" :cpus 1 :mem 200 :permitted-user "*" :run-as-user test-user
+                                              :owner test-user :root "foo-bar"})]
+              (testing "long-value"
+                (let [test-token (str "token-" (utils/unique-identifier))
+                      service-description (assoc base-service-description
+                                            "last-update-time" 123456 "token" test-token)
+                      {:keys [body status]}
+                      (run-handle-token-request
+                        kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
+                        {:authorization/user test-user
+                         :body (StringBufferInputStream. (str (utils/clj->json service-description)))
+                         :headers {"x-waiter-token" token}
+                         :query-params {"update-mode" "admin"}
+                         :request-method :post})]
+                  (is (= http-200-ok status))
+                  (is (str/includes? body "Successfully created token"))
+                  (is (= (-> service-description
+                           (dissoc "token")
+                           (assoc "cluster" (str token-root "-cluster")
+                                  "last-update-time" 123456
+                                  "last-update-user" test-user
+                                  "owner" test-user
+                                  "root" "foo-bar"))
+                         (kv/fetch kv-store test-token)))))
+
+              (testing "valid-string-value"
+                (let [test-token (str "token-" (utils/unique-identifier))
+                      current-time (t/now)
+                      service-description (assoc base-service-description
+                                            "last-update-time" (du/date-to-str current-time) "token" test-token)
+                      {:keys [body status]}
+                      (run-handle-token-request
+                        kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
+                        {:authorization/user test-user
+                         :body (StringBufferInputStream. (str (utils/clj->json service-description)))
+                         :headers {"x-waiter-token" token}
+                         :query-params {"update-mode" "admin"}
+                         :request-method :post})]
+                  (is (= http-200-ok status))
+                  (is (str/includes? body "Successfully created token"))
+                  (is (= (-> service-description
+                           (dissoc "token")
+                           (assoc "cluster" (str token-root "-cluster")
+                                  "last-update-time" (tc/to-long current-time)
+                                  "last-update-user" test-user
+                                  "owner" test-user
+                                  "root" "foo-bar"))
+                         (kv/fetch kv-store test-token)))))
+
+              (testing "invalid-string-value"
+                (let [test-token (str "token-" (utils/unique-identifier))
+                      service-description (assoc base-service-description
+                                            "last-update-time" "foo-bar" "token" test-token)
+                      {:keys [body status]}
+                      (run-handle-token-request
+                        kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
+                        {:authorization/user test-user
+                         :body (StringBufferInputStream. (str (utils/clj->json service-description)))
+                         :headers {"x-waiter-token" token}
+                         :query-params {"update-mode" "admin"}
+                         :request-method :post})]
+                  (is (= http-400-bad-request status))
+                  (is (str/includes? body "Invalid date format for last-update-time string"))
+                  (is (nil? (kv/fetch kv-store test-token)))))))))
+
       (testing "post:new-service-description:token-query-param"
         (let [test-token (str "token-" (rand-int 10000))
               {:keys [body headers status]}
@@ -1021,7 +1114,7 @@
       (testing "post:new-service-description-cors-rules"
         (let [token (str token "-cors-rules")
               cors-rules [{"origin-regex" "test\\.com"
-                             "methods" ["GET" "POST"]}]
+                           "methods" ["GET" "POST"]}]
               {:keys [body status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames (public-entitlement-manager) make-peer-requests-fn (constantly true)
@@ -1678,8 +1771,8 @@
       (testing "post:new-service-description-cors-rules"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               cors-rules [{"origin-regex" "test\\.co(m"
-                             "methods" ["a"]
-                             "target-schemes" ["https"]}]
+                           "methods" ["a"]
+                           "target-schemes" ["https"]}]
               service-description (walk/stringify-keys
                                     {:cors-rules cors-rules
                                      :token "abcdefgh"})
@@ -1702,8 +1795,8 @@
       (testing "post:new-service-description-cors-rules-2"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               cors-rules [{"origin-regex" "test\\.co(m"
-                             "methods" []
-                             "target-schemes" []}]
+                           "methods" []
+                           "target-schemes" []}]
               service-description (walk/stringify-keys
                                     {:cors-rules cors-rules
                                      :token "abcdefgh"})
@@ -1726,7 +1819,7 @@
       (testing "post:new-service-description-cors-rules-2"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               cors-rules {"origin-regex" "test\\.com"
-                            "methods" ["GET" "POST"]}
+                          "methods" ["GET" "POST"]}
               service-description (walk/stringify-keys
                                     {:cors-rules cors-rules
                                      :token "abcdefgh"})

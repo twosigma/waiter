@@ -24,6 +24,7 @@
             [waiter.kv :as kv]
             [waiter.service-description :as sd]
             [waiter.status-codes :refer :all]
+            [waiter.util.date-utils :as du]
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils])
   (:import (org.joda.time DateTime)))
@@ -281,6 +282,18 @@
           host->cluster
           (or default-cluster)))))
 
+(defn- parse-last-update-time
+  "Parses input string as a ISO 8601 format date string."
+  [last-update-time-str]
+  (try
+    (-> last-update-time-str du/str-to-date tc/to-long)
+    (catch Throwable throwable
+      (throw (ex-info "Invalid date format for last-update-time string"
+                      {:last-update-time last-update-time-str
+                       :log-level :warn
+                       :status http-400-bad-request}
+                      throwable)))))
+
 (defn- handle-delete-token-request
   "Deletes the token configuration if found."
   [clock synchronize-fn kv-store history-length waiter-hostnames entitlement-manager make-peer-requests-fn
@@ -495,12 +508,16 @@
                         {:previous previous :status http-400-bad-request :token token :log-level :warn}))))
 
     ; Store the token
-    (let [new-token-metadata (merge {"cluster" (calculate-cluster cluster-calculator request)
+    (let [{:strs [last-update-time] :as new-token-metadata}
+          (merge {"cluster" (calculate-cluster cluster-calculator request)
                                      "last-update-time" (.getMillis ^DateTime (clock))
                                      "last-update-user" authenticated-user
                                      "owner" owner
                                      "root" (or (get existing-token-metadata "root") token-root)}
                                     new-token-metadata)
+          new-token-metadata (cond-> new-token-metadata
+                               (string? last-update-time)
+                               (assoc "last-update-time" (parse-last-update-time last-update-time)))
           new-user-editable-token-data (-> (merge new-service-parameter-template new-token-metadata)
                                            (select-keys sd/token-user-editable-keys))
           existing-token-description (sd/token->token-description kv-store token :include-deleted false)
