@@ -1,4 +1,5 @@
 import collections
+from functools import reduce
 
 from tabulate import tabulate
 
@@ -20,25 +21,34 @@ def format_using_current_token(service, token_etag, token_name):
         return 'Not Current'
 
 
+def retrieve_num_instances(service):
+    """Returns the total number of instances."""
+    instance_counts = service["instance-counts"]
+    return instance_counts["healthy-instances"] + instance_counts["unhealthy-instances"]
+
+
 def tabulate_token_services(services, token_etag, token_name):
     """Returns a table displaying the service info"""
     num_services = len(services)
     if num_services > 0:
         num_failing_services = len([s for s in services if s['status'] == 'Failing'])
-        total_mem_usage = format_memory_amount(sum(s['service-description']['mem'] for s in services))
-        total_cpu_usage = round(sum(s['service-description']['cpus'] for s in services), 2)
+        num_instances = reduce(lambda acc, s: acc + retrieve_num_instances(s), services, 0)
+        total_mem_usage = format_memory_amount(sum(s['resource-usage']['mem'] for s in services))
+        total_cpu_usage = round(sum(s['resource-usage']['cpus'] for s in services), 2)
         table = [['# Services', num_services],
                  ['# Failing', num_failing_services],
+                 ['# Instances', num_instances],
                  ['Total Memory', total_mem_usage],
                  ['Total CPUs', total_cpu_usage]]
         summary_table = tabulate(table, tablefmt='plain')
 
         services = sorted(services, key=lambda s: s.get('last-request-time', None) or '', reverse=True)
         rows = [collections.OrderedDict([('Service Id', s['service-id']),
-                                         ('Run as user', s['service-description']['run-as-user']),
-                                         ('CPUs', s['service-description']['cpus']),
-                                         ('Memory', format_mem_field(s['service-description'])),
-                                         ('Version', s['service-description']['version']),
+                                         ('Run as user', s['effective-parameters']['run-as-user']),
+                                         ('Instances', retrieve_num_instances(s)),
+                                         ('CPUs', s['effective-parameters']['cpus']),
+                                         ('Memory', format_mem_field(s['effective-parameters'])),
+                                         ('Version', s['effective-parameters']['version']),
                                          ('Status', format_status(s['status'])),
                                          ('Last request', format_last_request_time(s)),
                                          ('Current?', format_using_current_token(s, token_etag, token_name))])
