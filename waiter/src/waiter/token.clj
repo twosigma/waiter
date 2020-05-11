@@ -510,14 +510,14 @@
     ; Store the token
     (let [{:strs [last-update-time] :as new-token-metadata}
           (merge {"cluster" (calculate-cluster cluster-calculator request)
-                                     "last-update-time" (.getMillis ^DateTime (clock))
-                                     "last-update-user" authenticated-user
-                                     "owner" owner
-                                     "root" (or (get existing-token-metadata "root") token-root)}
-                                    new-token-metadata)
+                  "last-update-time" (.getMillis ^DateTime (clock))
+                  "last-update-user" authenticated-user
+                  "owner" owner
+                  "root" (or (get existing-token-metadata "root") token-root)}
+                 new-token-metadata)
           new-token-metadata (cond-> new-token-metadata
                                (string? last-update-time)
-                               (assoc "last-update-time" (parse-last-update-time last-update-time)))
+                               (update "last-update-time" parse-last-update-time))
           new-user-editable-token-data (-> (merge new-service-parameter-template new-token-metadata)
                                            (select-keys sd/token-user-editable-keys))
           existing-token-description (sd/token->token-description kv-store token :include-deleted false)
