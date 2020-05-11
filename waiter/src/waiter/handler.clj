@@ -331,7 +331,7 @@
                                       :unhealthy-instances (-> service-id->unhealthy-instances (get service-id) count)})
           service-id->metrics (service-id->metrics-fn)
           include-effective-parameters? (or (utils/request-flag request-params "effective-parameters")
-                                            (utils/param-contains? request-params "include" "request-info"))
+                                            (utils/param-contains? request-params "include" "effective-parameters"))
           include-references? (utils/param-contains? request-params "include" "references")
           response-data (map
                           (fn service-id->service-info [service-id]

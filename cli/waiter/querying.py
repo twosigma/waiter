@@ -91,7 +91,8 @@ def get_service_on_cluster(cluster, service_id):
                      
 def get_services_using_token(cluster, token_name):
     """Retrieves all services that are using the token"""
-    params = {'token': token_name}
+    params = {'effective-parameters': 'true',
+              'token': token_name}
     services, _ = http_util.make_data_request(cluster, lambda: http_util.get(cluster, 'apps', params=params))
     return services
 
