@@ -1,5 +1,4 @@
 import collections
-from functools import reduce
 
 from tabulate import tabulate
 
@@ -32,7 +31,7 @@ def tabulate_token_services(services, token_etag, token_name):
     num_services = len(services)
     if num_services > 0:
         num_failing_services = len([s for s in services if s['status'] == 'Failing'])
-        num_instances = reduce(lambda acc, s: acc + retrieve_num_instances(s), services, 0)
+        num_instances = sum(retrieve_num_instances(s) for s in services)
         total_mem_usage = format_memory_amount(sum(s['resource-usage']['mem'] for s in services))
         total_cpu_usage = round(sum(s['resource-usage']['cpus'] for s in services), 2)
         table = [['# Services', num_services],
