@@ -17,9 +17,7 @@ ADDITIONAL_CONFIG_PATHS = ['.waiter.json',
 
 DEFAULT_CONFIG = {'http': {'retries': 2,
                            'connect-timeout': 3.05,
-                           'read-timeout': 20,
-                           'modules': {'session-module': 'requests',
-                                       'adapters-module': 'requests.adapters'}},
+                           'read-timeout': 20},
                   'metrics': {'disabled': True,
                               'max-retries': 2,
                               'timeout': 0.15}}

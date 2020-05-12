@@ -71,7 +71,7 @@ def load_target_clusters(config_map, url=None, cluster=None):
     return clusters
 
 
-def run(args):
+def run(args, plugins):
     """
     Main entrypoint to the Waiter CLI. Loads configuration files,
     processes global command line arguments, and calls other command line 
@@ -93,13 +93,15 @@ def run(args):
 
     args = parser.parse_args()
     args = vars(args)
-    logging.debug('args: %s' % args)
+    logging.debug('args: %s', args)
     args.pop('verbose')
 
     action = args.pop('action')
     config_path = args.pop('config')
     cluster = args.pop('cluster')
     url = args.pop('url')
+
+    logging.debug('plugins: %s', plugins)
 
     if action is None:
         parser.print_help()
@@ -109,7 +111,7 @@ def run(args):
             metrics.initialize(config_map)
             metrics.inc(f'command.{action}.runs')
             clusters = load_target_clusters(config_map, url, cluster)
-            http_util.configure(config_map)
+            http_util.configure(config_map, plugins)
             args = {k: v for k, v in args.items() if v is not None}
             result = actions[action]['run-function'](clusters, args, config_path)
             logging.debug(f'result: {result}')

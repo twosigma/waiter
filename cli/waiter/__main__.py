@@ -9,12 +9,12 @@ from waiter.cli import run
 from waiter.util import print_error
 
 
-def main(args=None):
+def main(args=None, plugins={}):
     if args is None:
         args = sys.argv[1:]
 
     try:
-        result = run(args)
+        result = run(args, plugins)
         sys.exit(result)
     except Exception as e:
         logging.exception('exception when running with %s' % args)
