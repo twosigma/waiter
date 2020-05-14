@@ -2045,6 +2045,18 @@
         (assoc valid-description "cmd" (str/join "" (repeat 150 "c")))
         constraints-schema profile->defaults config "cmd must be at most 100 characters"))
 
+    (testing (str "idle-timeout-mins")
+      (is (nil? (validate-schema (assoc valid-description "idle-timeout-mins" 0)
+                                 constraints-schema profile->defaults config)))
+      (is (nil? (validate-schema (assoc valid-description "idle-timeout-mins" 100)
+                                 constraints-schema profile->defaults config)))
+      (run-validate-schema-test
+        (assoc valid-description "idle-timeout-mins" 50000)
+        constraints-schema profile->defaults config "idle-timeout-mins must be an integer in the range [0, 43200].")
+      (run-validate-schema-test
+        (assoc valid-description "idle-timeout-mins" -1)
+        constraints-schema profile->defaults config "idle-timeout-mins must be an integer in the range [0, 43200]."))
+
     (testing (str "testing instance counts")
       (run-validate-schema-test
         (assoc valid-description "max-instances" 0)

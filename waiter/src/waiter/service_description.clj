@@ -88,7 +88,7 @@
    (s/optional-key "health-check-port-index") schema/valid-health-check-port-index
    (s/optional-key "health-check-proto") schema/valid-health-check-proto
    (s/optional-key "health-check-url") schema/non-empty-string
-   (s/optional-key "idle-timeout-mins") (s/both s/Int (s/pred #(<= 1 % (t/in-minutes (t/days 30))) 'between-1-minute-and-30-days))
+   (s/optional-key "idle-timeout-mins") (s/both s/Int (s/pred #(<= 0 % (t/in-minutes (t/days 30))) 'between-0-minute-and-30-days))
    (s/optional-key "interstitial-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/minutes 60))) 'at-most-60-minutes))
    (s/optional-key "restart-backoff-factor") schema/positive-number-greater-than-or-equal-to-1
    (s/optional-key "scheduler") schema/non-empty-string
@@ -511,7 +511,7 @@
                                              parameter->issues :health-check-url "health-check-url must be a non-empty string.")
                                            (attach-error-message-for-parameter
                                              parameter->issues :idle-timeout-mins
-                                             "idle-timeout-mins must be an integer in the range [1, 43200].")
+                                             "idle-timeout-mins must be an integer in the range [0, 43200].")
                                            (attach-error-message-for-parameter
                                              parameter->issues :load-balancing
                                              (str "load-balancing must be one of 'oldest', 'youngest' or 'random'."))
