@@ -115,7 +115,7 @@
                               ["/gc-services" :state-gc-for-services]
                               ["/gc-transient-metrics" :state-gc-for-transient-metrics]
                               ["/interstitial" :state-interstitial-handler-fn]
-                              ["/jwt-authenticator" :state-jwt-authenticator-handler-fn]
+                              ["/jwt-auth-server" :state-jwt-auth-server-handler-fn]
                               ["/kv-store" :state-kv-store-handler-fn]
                               ["/launch-metrics" :state-launch-metrics-handler-fn]
                               ["/leader" :state-leader-handler-fn]
@@ -667,12 +667,16 @@
                    (hu/prepare-http-clients http-client-properties))
    :interstitial-state-atom (pc/fnk [] (atom {:initialized? false
                                               :service-id->interstitial-promise {}}))
+   :jwt-auth-server (pc/fnk [[:settings authenticator-config]]
+                      (let [jwt-config (:jwt authenticator-config)]
+                        (when (not= :disabled jwt-config)
+                          (jwt/create-auth-server jwt-config))))
    :jwt-authenticator (pc/fnk [[:settings authenticator-config]
-                               passwords]
+                               jwt-auth-server passwords]
                         (let [jwt-config (:jwt authenticator-config)]
                           (when (not= :disabled jwt-config)
                             (let [jwt-config (assoc jwt-config :password (first passwords))]
-                              (jwt/jwt-authenticator jwt-config)))))
+                              (jwt/jwt-authenticator jwt-auth-server jwt-config)))))
    :kv-store (pc/fnk [[:settings kv-config]
                       kv-store-factory]
                (kv-store-factory kv-config))
@@ -1641,14 +1645,11 @@
                                       (wrap-secure-request-fn
                                         (fn state-interstitial-handler-fn [request]
                                           (handler/get-query-chan-state-handler router-id interstitial-query-chan request)))))
-   :state-jwt-authenticator-handler-fn (pc/fnk [[:state jwt-authenticator router-id]
-                                                wrap-secure-request-fn]
-                                         (let [query-state-fn (if (nil? jwt-authenticator)
-                                                                (constantly :disabled)
-                                                                #(jwt/retrieve-state jwt-authenticator))]
-                                           (wrap-secure-request-fn
-                                             (fn state-jwt-authenticator-handler-fn [request]
-                                               (handler/get-query-fn-state router-id query-state-fn request)))))
+   :state-jwt-auth-server-handler-fn (pc/fnk [[:state jwt-auth-server router-id]
+                                              wrap-secure-request-fn]
+                                       (wrap-secure-request-fn
+                                         (fn state-jwt-auth-server-handler-fn [request]
+                                           (handler/get-jwt-auth-server-state router-id jwt-auth-server request))))
    :state-kv-store-handler-fn (pc/fnk [[:state kv-store router-id]
                                        wrap-secure-request-fn]
                                 (wrap-secure-request-fn
@@ -1784,7 +1785,7 @@
                                     :headers {"x-waiter-auth-method" (some-> method name)
                                               "x-waiter-auth-principal" (str principal)
                                               "x-waiter-auth-user" (str user)}
-                                    :status http-200-ok }))))
+                                    :status http-200-ok}))))
    :waiter-request-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template]
                                                [:settings consent-expiry-days]
                                                wrap-secure-request-fn]

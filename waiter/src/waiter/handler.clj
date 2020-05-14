@@ -27,6 +27,7 @@
             [plumbing.core :as pc]
             [ring.middleware.multipart-params :as multipart-params]
             [waiter.async-request :as async-req]
+            [waiter.auth.jwt :as jwt]
             [waiter.authorization :as authz]
             [waiter.correlation-id :as cid]
             [waiter.headers :as headers]
@@ -702,7 +703,7 @@
                      (str (when scheme (str scheme "://")) host "/state/" path))]
       (utils/clj->streaming-json-response {:details (->> ["autoscaler" "autoscaling-multiplexer" "codahale-reporters" "fallback"
                                                           "gc-broken-services" "gc-services" "gc-transient-metrics" "interstitial"
-                                                          "jwt-authenticator" "kv-store" "launch-metrics" "leader" "local-usage"
+                                                          "jwt-auth-server" "kv-store" "launch-metrics" "leader" "local-usage"
                                                           "maintainer" "router-metrics" "scheduler" "service-description-builder"
                                                           "service-maintainer" "statsd" "work-stealing"]
                                                          (pc/map-from-keys make-url))
@@ -749,6 +750,16 @@
   "Outputs the state retrieved by invoking the query-state-fn."
   [router-id query-state-fn request]
   (get-function-state query-state-fn router-id request))
+
+(defn get-jwt-auth-server-state
+  "Outputs the JWT auth server state."
+  [router-id auth-server request]
+  (let [{:strs [include]} (-> request ru/query-params-request :query-params)
+        include-flags (if (string? include) #{include} (set include))
+        query-state-fn (if (nil? auth-server)
+                         (constantly :disabled)
+                         #(jwt/retrieve-server-state auth-server include-flags))]
+    (get-function-state query-state-fn router-id request)))
 
 (defn get-kv-store-state
   "Outputs the kv-store state."
