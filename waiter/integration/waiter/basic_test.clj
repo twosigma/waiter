@@ -515,6 +515,18 @@
                     ["The following environment variable keys are invalid:" "1_INVALID" "123456" "BEGIN-DATE" "END-DATE"]))
         (is (not-any? #(str/includes? (str/lower-case env-error-message) %) ["foo" "fee_fie"]))))))
 
+(deftest ^:parallel ^:integration-fast test-idle-timeout-mins-zero
+  (testing-using-waiter-url
+    (let [headers {:x-waiter-idle-timeout-mins 0
+                   :x-waiter-name (rand-name)}
+          {:keys [service-id] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
+      (with-service-cleanup
+        service-id
+        (assert-response-status response http-200-ok)
+        (let [service-settings (service-settings waiter-url service-id)
+              {:keys [idle-timeout-mins] :as service-description} (get service-settings :service-description)]
+          (is (zero? idle-timeout-mins) (str service-description)))))))
+
 (deftest ^:parallel ^:integration-fast test-last-request-time
   (testing-using-waiter-url
     (let [waiter-settings (waiter-settings waiter-url)

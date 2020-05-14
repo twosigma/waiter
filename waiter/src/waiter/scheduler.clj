@@ -372,7 +372,7 @@
     (utils/filterm (fn [[service _]] (contains? cur-services-set service)) prev-service->state)))
 
 (defn scheduler-services-gc
-  "Performs scheduler GC by tracking which services are idle (i.e. have no outstanding requests).
+  "Performs scheduler GC by tracking which services are idle (i.e. have no outstanding requests and positive idle-timeout-mins).
    The function launches a go-block that tracks the metrics state of all services currently being managed by the scheduler.
    Idle services are detected based on no changes to the metrics state past the `idle-timeout-mins` period.
    They are then deleted by the leader using the `delete-service` function.
@@ -401,10 +401,11 @@
                          (let [outstanding (get state "outstanding")]
                            (and (number? outstanding)
                                 (zero? outstanding)
-                                (let [idle-timeout-mins (service-id->idle-timeout service-id)
-                                      timeout-time (t/plus last-modified-time (t/minutes idle-timeout-mins))]
-                                  (log/debug service-id "timeout:" (du/date-to-str timeout-time) "current:" (du/date-to-str current-time))
-                                  (t/after? current-time timeout-time)))))
+                                (let [idle-timeout-mins (service-id->idle-timeout service-id)]
+                                  (and (pos? idle-timeout-mins)
+                                       (let [timeout-time (t/plus last-modified-time (t/minutes idle-timeout-mins))]
+                                         (log/debug service-id "timeout:" (du/date-to-str timeout-time) "current:" (du/date-to-str current-time))
+                                         (t/after? current-time timeout-time)))))))
         perform-gc-fn (fn [service-id]
                         (log/info "deleting idle service" service-id)
                         (try

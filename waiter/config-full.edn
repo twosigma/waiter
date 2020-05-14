@@ -646,7 +646,8 @@
  ;; 1. Services that are "broken" (i.e. have no healthy instance, but at
  ;;    least one failed instance, possibly due to a broken command).
  ;;
- ;; 2. Services that are "idle" (i.e. have no outstanding requests).
+ ;; 2. Services that are "idle" (i.e. have no outstanding requests and have
+ ;;    a positive value for idle-timeout-mins parameter value).
  ;;    Idle services are detected based on no changes to the metrics state
  ;;    past the idle-timeout-mins period set on the service description.
  ;;

@@ -115,13 +115,14 @@
         leader? (constantly true)
         state-store (atom {})
         read-state-fn (fn [name] (:data (curator/read-path curator (str gc-base-path "/" name) :nil-on-missing? true :serializer :nippy)))
-        write-state-fn (fn [name state] (curator/write-path curator (str gc-base-path "/" name) state :serializer :nippy :create-parent-zknodes? true))]
+        write-state-fn (fn [name state] (curator/write-path curator (str gc-base-path "/" name) state :serializer :nippy :create-parent-zknodes? true))
+        get-service-state-fn (fn [service-id] (-> (read-state-fn "scheduler-services-gc") (get service-id) (dissoc :last-modified-time)))]
     (with-redefs [curator/read-path (fn [_ path & _] {:data (get @state-store path)})
                   curator/write-path (fn [_ path data & _] (swap! state-store (fn [v] (assoc v path data))))]
       (let [available-services-atom (atom #{"service01" "service02" "service03" "service04stayalive" "service05"
                                             "service06faulty" "service07" "service08stayalive" "service09stayalive"
                                             "service10broken" "service11broken" "service12missingmetrics"
-                                            "service13zerooutmetrics"})
+                                            "service13zerooutmetrics" "service14eternal" "service15eternal"})
             initial-global-state {"service01" {"last-request-time" (tc/from-long 10)
                                                "outstanding" 0}
                                   "service02" {"last-request-time" (tc/from-long 20)
@@ -145,7 +146,11 @@
                                   "service12missingmetrics" {"last-request-time" (tc/from-long 30)
                                                              "outstanding" 24}
                                   "service13zerooutmetrics" {"last-request-time" (tc/from-long 40)
-                                                             "outstanding" 5000}}
+                                                             "outstanding" 5000}
+                                  "service14eternal" {"last-request-time" (tc/from-long 30)
+                                                      "outstanding" 20}
+                                  "service15eternal" {"last-request-time" (tc/from-long 20)
+                                                      "outstanding" 0}}
             deleted-services-atom (atom #{})
             scheduler (reify ServiceScheduler
                         (delete-service [_ service-id]
@@ -164,7 +169,7 @@
           (let [timeout-interval-ms 1
                 broken-service-timeout-mins 5
                 broken-service-min-hosts 2
-                service-id->idle-timeout (constantly 50)
+                service-id->idle-timeout (fn [service-id] (if (str/includes? service-id "eternal") 0 50))
                 query-state-fn (fn [] (async/<!! scheduler-state-chan))
                 channel-map (scheduler-services-gc
                               scheduler query-state-fn service-id->metrics-fn
@@ -195,13 +200,17 @@
             (is (= #{"service01" "service02" "service03" "service05" "service07" "service13zerooutmetrics"}
                    @deleted-services-atom))
             (is (= #{"service04stayalive" "service06faulty" "service08stayalive" "service09stayalive"
-                     "service10broken" "service11broken" "service12missingmetrics"}
+                     "service10broken" "service11broken" "service12missingmetrics" "service14eternal" "service15eternal"}
                    @available-services-atom))
             (is (= {:state {"last-request-time" (tc/from-long 30)
                             "outstanding" 15}}
-                   (get (->> (read-state-fn "scheduler-services-gc")
-                             (pc/map-vals #(dissoc % :last-modified-time)))
-                        "service12missingmetrics")))
+                   (get-service-state-fn "service12missingmetrics")))
+            (is (= {:state {"last-request-time" (tc/from-long 30)
+                            "outstanding" 0}}
+                   (get-service-state-fn "service14eternal")))
+            (is (= {:state {"last-request-time" (tc/from-long 20)
+                            "outstanding" 0}}
+                   (get-service-state-fn "service15eternal")))
             ;; ensures last-request-time was not last when it was absent
             (is (= (pc/map-vals #(get % "last-request-time" (tc/from-long 1))
                                 (select-keys initial-global-state @available-services-atom))
