@@ -300,8 +300,7 @@
    service-id->metrics-fn service-id->references-fn service-id->source-tokens-entries-fn request]
   (let [{:keys [all-available-service-ids service-id->healthy-instances service-id->unhealthy-instances] :as global-state} (query-state-fn)]
     (let [{:strs [run-as-user token token-version] :as request-params} (-> request ru/query-params-request :query-params)
-          service-description-filter-predicate (query-params->service-description-filter-predicate
-                                                 (dissoc request-params "run-as-users"))
+          service-description-filter-predicate (query-params->service-description-filter-predicate request-params)
           auth-user (get request :authorization/user)
           viewable-service-ids (filter
                                  (fn [service-id]
@@ -309,12 +308,11 @@
                                          source-tokens (-> (service-id->source-tokens-entries-fn service-id) vec flatten)]
                                      (and (service-description-filter-predicate service-description)
                                           ;; legacy behavior:
-                                          ;; when run-as-user param is missing list only services managed by current user
-                                          ;; else list services filtered by the provided run-as-user query parameters.
-                                          (if (or (nil? run-as-user)
-                                                  (and (string? run-as-user) (str/blank? run-as-user)))
-                                            (authz/manage-service? entitlement-manager auth-user service-id service-description)
-                                            ((param-value->filter-fn run-as-user) (get service-description "run-as-user")))
+                                          ;; when run-as-user param is provided filtered by the run-as-user using
+                                          ;; the service-description-filter-predicate predicate above,
+                                          ;; else list only services managed by current user.
+                                          (or (seq run-as-user)
+                                              (authz/manage-service? entitlement-manager auth-user service-id service-description))
                                           (or (str/blank? token)
                                               (let [filter-fn (str->filter-fn token)]
                                                 (->> source-tokens

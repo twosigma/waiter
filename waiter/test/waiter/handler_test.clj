@@ -418,9 +418,9 @@
 
 (deftest test-list-services-handler
   (let [test-user "test-user"
-        test-user-services #{"service1" "service2" "service3" "service7" "service8" "service9"}
-        other-user-services #{"service4" "service5" "service6"}
-        healthy-services #{"service1" "service2" "service4" "service6" "service7" "service8" "service9"}
+        test-user-services #{"service1" "service2" "service3" "service7" "service8" "service9" "service10"}
+        other-user-services #{"service4" "service5" "service6" "service11"}
+        healthy-services #{"service1" "service2" "service4" "service6" "service7" "service8" "service9" "service10" "service11"}
         unhealthy-services #{"service2" "service3" "service5"}
         service-id->references {"service1" {:sources [{:token "t1.org" :version "v1"} {:token "t2.com" :version "v2"}]
                                             :type :token }
@@ -459,9 +459,10 @@
         prepend-waiter-url identity
         entitlement-manager (reify authz/EntitlementManager
                               (authorized? [_ user action {:keys [service-id]}]
-                                (and (= user test-user)
-                                     (= action :manage)
-                                     (some #(= % service-id) test-user-services))))
+                                (let [id (subs service-id (count "service"))]
+                                  (and (str/includes? (str test-user id) user)
+                                       (= action :manage)
+                                       (some #(= % service-id) test-user-services)))))
         list-services-handler (wrap-handler-json-response list-services-handler)
         assert-successful-json-response (fn [{:keys [body headers status]}]
                                           (is (= http-200-ok status))
@@ -476,7 +477,7 @@
                 {"cpus" (Integer/parseInt id)
                  "mem" (* 10 (Integer/parseInt id))
                  "metric-group" (str "mg" id)
-                 "run-as-user" (if (contains? test-user-services service-id) test-user "another-user")}))
+                 "run-as-user" (if (contains? test-user-services service-id) (str test-user id) "another-user")}))
             (service-id->source-tokens-entries-fn [service-id]
               (when (contains? service-id->source-tokens service-id)
                 (let [source-tokens (-> service-id service-id->source-tokens walk/stringify-keys)]
@@ -488,7 +489,14 @@
                                      service-id->service-description-fn service-id->metrics-fn
                                      service-id->references-fn service-id->source-tokens-entries-fn request)]
           (assert-successful-json-response response)
-          (is (= test-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set)))))
+          (is (= test-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))
+        (let [request (assoc request :authorization/user "test-user1")]
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
+            (assert-successful-json-response response)
+            (is (= #{"service1" "service10"} (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
 
       (testing "list-services-handler:success-regular-user-with-filter-for-another-user"
         (let [request (assoc request :query-string "run-as-user=another-user")]
@@ -497,7 +505,14 @@
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->references-fn service-id->source-tokens-entries-fn request)]
             (assert-successful-json-response response)
-            (is (= other-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
+            (is (= other-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set)))))
+        (let [request (assoc request :authorization/user "test-user1" :query-string "run-as-user=test-user1*")]
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
+            (assert-successful-json-response response)
+            (is (= #{"service1" "service10"} (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
 
       (testing "list-services-handler:success-regular-user-with-filter-for-another-user"
         (let [request (assoc request :query-string "run-as-user=another-user&run-as-user=another-user")]
@@ -515,7 +530,30 @@
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->references-fn service-id->source-tokens-entries-fn request)]
             (assert-successful-json-response response)
-            (is (= all-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
+            (is (= other-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set)))))
+        (let [request (assoc request :query-string "run-as-user=another-user&run-as-user=test-user*")]
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
+            (assert-successful-json-response response)
+            (is (= all-services (->> body json/read-str walk/keywordize-keys (map :service-id) set)))))
+        (let [request (assoc request :query-string "run-as-user=another-user&run-as-user=test-user1")]
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
+            (assert-successful-json-response response)
+            (is (= (conj other-user-services "service1")
+                   (->> body json/read-str walk/keywordize-keys (map :service-id) set)))))
+        (let [request (assoc request :query-string "run-as-user=another-user&run-as-user=test-user1*")]
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn request)]
+            (assert-successful-json-response response)
+            (is (= (conj other-user-services "service1" "service10")
+                   (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
 
       (testing "list-services-handler:success-with-filter-for-cpus"
         (let [request (assoc request :query-string "cpus=1")]
@@ -575,7 +613,7 @@
                                     (authorized? [_ _ _ _]
                                       ; use (constantly true) for authorized? to verify that filter still applies
                                       true))
-              request (assoc request :authorization/user "another-user" :query-string "run-as-user=*user")]
+              request (assoc request :authorization/user "another-user" :query-string "run-as-user=*user*")]
           (let [{:keys [body] :as response}
                 (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
                                        service-id->service-description-fn service-id->metrics-fn
