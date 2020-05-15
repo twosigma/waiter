@@ -339,7 +339,7 @@
          (= 3 (count (str/split authorization #"\."))))))
 
 (defn extract-claims
-  "Returns either claims in the access token provided in the request, or
+  "Returns either the access token provided in the request and claims from the extracted access token, or
    an exception that occurred while attempting to extract the claims."
   [token-type issuer-constraints subject-key subject-regex supported-algorithms key-id->jwk max-expiry-duration-ms
    request]
@@ -354,7 +354,8 @@
                                           key-id->jwk max-expiry-duration-ms realm request-scheme access-token)]
         (timers/stop timer-context)
         (counters/inc! (metrics/waiter-counter "core" "jwt" "validation" "success"))
-        claims)
+        {:access-token access-token
+         :claims claims})
       (catch Throwable throwable
         (timers/stop timer-context)
         (counters/inc! (metrics/waiter-counter "core" "jwt" "validation" "failed"))
@@ -382,22 +383,24 @@
    - invokes the downstream request handler using the authenticated credentials in the request."
   [request-handler token-type issuer-constraints subject-key subject-regex supported-algorithms key-id->jwk
    password max-expiry-duration-ms request]
-  (let [claims-or-throwable (extract-claims token-type issuer-constraints subject-key subject-regex supported-algorithms
-                                            key-id->jwk max-expiry-duration-ms request)]
-    (if (instance? Throwable claims-or-throwable)
-      (if (-> claims-or-throwable ex-data :status (= http-401-unauthorized))
+  (let [result-map-or-throwable
+        (extract-claims token-type issuer-constraints subject-key subject-regex supported-algorithms
+                        key-id->jwk max-expiry-duration-ms request)]
+    (if (instance? Throwable result-map-or-throwable)
+      (if (-> result-map-or-throwable ex-data :status (= http-401-unauthorized))
         ;; allow downstream processing before deciding on authentication challenge in response
         (ru/update-response
           (request-handler request)
           (make-401-response-updater request))
         ;; non-401 response avoids further downstream handler processing
-        (utils/exception->response claims-or-throwable request))
-      (let [{:keys [exp] :as claims} claims-or-throwable
+        (utils/exception->response result-map-or-throwable request))
+      (let [{:keys [access-token claims]} result-map-or-throwable
+            {:keys [exp]} claims
             subject (subject-key claims)
-            auth-params-map (auth/auth-params-map :jwt subject)
+            auth-params-map (auth/build-auth-params-map :jwt subject {:access-token access-token})
             auth-cookie-age-in-seconds (- exp (current-time-secs))]
         (auth/handle-request-auth
-          request-handler request subject auth-params-map password auth-cookie-age-in-seconds)))))
+          request-handler request auth-params-map password auth-cookie-age-in-seconds)))))
 
 (defn wrap-auth-handler
   "Wraps the request handler with a handler to trigger JWT access token authentication."

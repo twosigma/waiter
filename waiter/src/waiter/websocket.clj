@@ -110,8 +110,8 @@
   [password process-request-fn {:keys [headers] :as request}]
   ;; auth-cookie is assumed to be valid when it is present
   (if-let [auth-cookie (-> headers (get "cookie") str auth/get-auth-cookie-value)]
-    (let [[auth-principal auth-time] (auth/decode-auth-cookie auth-cookie password)
-          auth-params-map (auth/auth-params-map :cookie auth-principal)
+    (let [[auth-principal auth-time auth-metadata] (auth/decode-auth-cookie auth-cookie password)
+          auth-params-map (auth/build-auth-params-map :cookie auth-principal auth-metadata)
           handler (middleware/wrap-merge process-request-fn auth-params-map)
           request' (assoc request :waiter/auth-expiry-time auth-time)]
       (log/info "processing websocket request" {:user auth-principal})
@@ -150,15 +150,17 @@
 
 (defn make-request
   "Makes an asynchronous websocket request to the instance endpoint and returns a channel."
-  [websocket-client service-id->password-fn {:keys [host port] :as instance} ws-request request-properties passthrough-headers end-route _ backend-proto proto-version]
+  [websocket-client service-id->password-fn {:keys [host port] :as instance} ws-request
+   request-properties passthrough-headers end-route _ backend-proto proto-version]
   (let [ws-middleware (fn ws-middleware [_ ^UpgradeRequest request]
                         (let [service-password (-> instance scheduler/instance->service-id service-id->password-fn)
+                              {:keys [authorization/metadata authorization/principal]} ws-request
                               headers
                               (-> (dissoc passthrough-headers "content-length" "expect" "authorization")
                                   (headers/dissoc-hop-by-hop-headers proto-version)
                                   (dissoc-forbidden-headers)
                                   (assoc "Authorization" (str "Basic " (String. ^bytes (b64/encode (.getBytes (str "waiter:" service-password) "utf-8")) "utf-8")))
-                                  (headers/assoc-auth-headers (:authorization/user ws-request) (:authorization/principal ws-request))
+                                  (headers/assoc-auth-headers principal metadata)
                                   (assoc "x-cid" (cid/get-correlation-id)))]
                           (add-headers-to-upgrade-request! request headers)))
         response (async/promise-chan)

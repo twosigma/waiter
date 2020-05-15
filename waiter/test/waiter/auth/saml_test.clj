@@ -119,7 +119,7 @@
                   :authorization/user "my-user"
                   :body ""
                   :headers {"location" "redirect-url"
-                            "set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000%5D;Max-Age=86400;Path=/;HttpOnly=true"}
+                            "set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000+nil%5D;Max-Age=86400;Path=/;HttpOnly=true"}
                   :status http-303-see-other}
                  (saml-auth-redirect-handler saml-authenticator dummy-request'))))))
     (testing "has saml-auth-data no expiry"
@@ -139,7 +139,7 @@
                   :authorization/user "my-user"
                   :body ""
                   :headers {"location" "redirect-url"
-                            "set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000%5D;Max-Age=86400;Path=/;HttpOnly=true"}
+                            "set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000+nil%5D;Max-Age=86400;Path=/;HttpOnly=true"}
                   :status http-303-see-other}
                  (saml-auth-redirect-handler saml-authenticator dummy-request'))))))
     (testing "has saml-auth-data short expiry"
@@ -159,7 +159,7 @@
                   :authorization/user "my-user"
                   :body ""
                   :headers {"location" "redirect-url"
-                            "set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000%5D;Max-Age=3600;Path=/;HttpOnly=true"}
+                            "set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000+nil%5D;Max-Age=3600;Path=/;HttpOnly=true"}
                   :status http-303-see-other}
                  (saml-auth-redirect-handler saml-authenticator dummy-request'))))))))
 

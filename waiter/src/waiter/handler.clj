@@ -47,12 +47,6 @@
             [waiter.util.utils :as utils])
   (:import (java.io InputStream)))
 
-(defn make-auth-user-map
-  "Creates a map containing the username and principal from a request"
-  [request]
-  {:principal (:authorization/principal request)
-   :username (:authorization/user request)})
-
 (defn async-make-request-helper
   "Helper function that returns a function that can invoke make-request-fn."
   [http-clients instance-request-properties make-basic-auth-fn service-id->password-fn prepare-request-properties-fn make-request-fn]

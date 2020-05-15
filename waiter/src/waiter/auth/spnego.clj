@@ -156,7 +156,8 @@
               (if-not error
                 (try
                   (if principal
-                    (let [response (auth/handle-request-auth request-handler request :spnego principal password)]
+                    (let [auth-params-map (auth/build-auth-params-map :spnego principal)
+                          response (auth/handle-request-auth request-handler request auth-params-map password)]
                       (log/debug "added cookies to response")
                       (if token
                         (if (map? response)

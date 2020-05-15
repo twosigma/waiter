@@ -52,6 +52,13 @@
            (org.eclipse.jetty.io EofException)
            (org.eclipse.jetty.server HttpChannel HttpOutput Response)))
 
+(defn make-auth-user-map
+  "Creates a map containing the username and principal from a request"
+  [{:keys [authorization/metadata authorization/principal]}]
+  ;; TODO creating this map is unnecessary, we can destructure from the request directly
+  {:metadata metadata
+   :principal principal})
+
 (defn check-control
   [control-chan correlation-id]
   (let [state (au/poll! control-chan :still-running)]
@@ -382,10 +389,10 @@
   "Makes an asynchronous request to the endpoint using Basic authentication."
   [^HttpClient http-client make-basic-auth-fn
    request-method endpoint query-string headers body trailers-fn
-   service-id service-password metric-group {:keys [username principal]}
+   service-id service-password metric-group {:keys [metadata principal]}
    idle-timeout streaming-timeout-ms output-buffer-size proto-version ctrl-ch]
   (let [auth (make-basic-auth-fn endpoint "waiter" service-password)
-        headers (headers/assoc-auth-headers headers username principal)
+        headers (headers/assoc-auth-headers headers principal metadata)
         abort-ch (async/chan 10)
         body' (cond->> body
                 (instance? ServletInputStream body)
@@ -438,7 +445,7 @@
         (log/error e "unable to track content-length on request")))
     (when waiter-debug-enabled?
       (log/info "connecting to" instance-endpoint "using" proto-version))
-    (let [auth-user-map (handler/make-auth-user-map request)
+    (let [auth-user-map (make-auth-user-map request)
           http-client (hu/select-http-client backend-proto http-clients)]
       (make-http-request
         http-client make-basic-auth-fn request-method instance-endpoint query-string headers body trailers-fn
@@ -695,7 +702,7 @@
                             (metrics/stream-metric-map service-id))
       (-> (cond-> response
             location (post-process-async-request-response-fn
-                       descriptor instance (handler/make-auth-user-map request)
+                       descriptor instance (make-auth-user-map request)
                        reason-map instance-request-properties location query-string))
         (utils/attach-waiter-source :backend)
         (introspect-trailers)

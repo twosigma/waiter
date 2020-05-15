@@ -291,6 +291,22 @@
   [waiter-url service-id-prefix]
   (str service-id-prefix "." (subs waiter-url 0 (str/index-of waiter-url ":"))))
 
+(defn- validate-response
+  [service-id access-token auth-method {:keys [body headers] :as response}]
+  (let [assertion-message (str {:access-token access-token
+                                :auth-method auth-method
+                                :body body
+                                :headers headers
+                                :service-id service-id})
+        set-cookie (str (get headers "set-cookie"))]
+    (assert-response-status response http-200-ok)
+    (is (= auth-method (get headers "x-waiter-auth-method")) assertion-message)
+    (is (= (retrieve-username) (get headers "x-waiter-auth-user")) assertion-message)
+    (when-not (= auth-method "cookie")
+      (assert-auth-cookie set-cookie assertion-message))
+    (let [body-json (try-parse-json body)]
+      (is (= access-token (get-in body-json ["headers" "x-waiter-jwt"])) assertion-message))))
+
 (deftest ^:parallel ^:integration-fast test-jwt-authentication-token-realm
   (testing-using-waiter-url
     (if (jwt-auth-enabled? waiter-url)
@@ -309,22 +325,20 @@
                              "x-forwarded-proto" "https"}
             port (waiter-settings-port waiter-url)
             target-url (str waiter-host ":" port)
-            {:keys [headers service-id] :as response}
+            {:keys [cookies request-headers service-id] :as response}
             (make-request-with-debug-info
               request-headers
-              #(make-request target-url "/status" :disable-auth true :headers % :method :get))
-            set-cookie (str (get headers "set-cookie"))
-            assertion-message (str {:headers headers
-                                    :service-id service-id
-                                    :set-cookie set-cookie
-                                    :target-url target-url})]
+              #(make-request target-url "/request-info" :disable-auth true :headers % :method :get))]
         (try
           (with-service-cleanup
             service-id
-            (assert-response-status response http-200-ok)
-            (is (= "jwt" (get headers "x-waiter-auth-method")) assertion-message)
-            (is (= (retrieve-username) (get headers "x-waiter-auth-user")) assertion-message)
-            (assert-auth-cookie set-cookie assertion-message))
+            (validate-response service-id access-token "jwt" response)
+            (->> (make-request target-url "/request-info"
+                               :cookies cookies
+                               :disable-auth true
+                               :headers (dissoc request-headers "authorization" "x-cid")
+                               :method :get)
+              (validate-response service-id access-token "cookie")))
           (finally
             (delete-token-and-assert waiter-url host))))
       (log/info "JWT authentication is disabled"))))

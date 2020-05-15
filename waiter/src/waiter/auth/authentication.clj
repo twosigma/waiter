@@ -52,23 +52,27 @@
                     {:status http-400-bad-request}))))
 
 (defn- add-cached-auth
-  [response password principal age-in-seconds]
-  (cookie-support/add-encoded-cookie response password AUTH-COOKIE-NAME [principal (tc/to-long (t/now))]
-                                     (or age-in-seconds (-> 1 t/days t/in-seconds))))
+  [response password principal age-in-seconds auth-metadata]
+  (let [cookie-value [principal (tc/to-long (t/now)) auth-metadata]
+        cookie-expiry (or age-in-seconds (-> 1 t/days t/in-seconds))]
+    (cookie-support/add-encoded-cookie
+      response password AUTH-COOKIE-NAME cookie-value cookie-expiry)))
 
 (defn select-auth-params
   "Returns a map that contains only the auth params from the input map"
   [m]
   (select-keys m [:authorization/method :authorization/principal :authorization/user]))
 
-(defn auth-params-map
+(defn build-auth-params-map
   "Creates a map intended to be merged into requests/responses."
   ([method principal]
-   (auth-params-map method principal (first (str/split principal #"@" 2))))
-  ([method principal user]
-   {:authorization/method method
-    :authorization/principal principal
-    :authorization/user user}))
+   (build-auth-params-map method principal nil))
+  ([method principal metadata]
+   (let [user (utils/principal->username principal)]
+     (cond-> {:authorization/method method
+              :authorization/principal principal
+              :authorization/user user}
+       metadata (assoc :authorization/metadata metadata)))))
 
 (defn request-authenticated?
   "Returns true if the authorization info is already available in the input map."
@@ -78,13 +82,14 @@
 (defn handle-request-auth
   "Invokes the given request-handler on the given request, adding the necessary
   auth headers on the way in, and the x-waiter-auth cookie on the way out."
-  ([handler request method principal password]
-   (handle-request-auth handler request principal (auth-params-map method principal) password nil))
-  ([handler request principal auth-params-map password age-in-seconds]
-   (let [handler' (middleware/wrap-merge handler auth-params-map)]
+  ([handler request auth-params-map password]
+   (handle-request-auth handler request auth-params-map password nil))
+  ([handler request auth-params-map password age-in-seconds]
+   (let [{:keys [authorization/metadata authorization/principal]} auth-params-map
+         handler' (middleware/wrap-merge handler auth-params-map)]
      (-> request
        handler'
-       (add-cached-auth password principal age-in-seconds)))))
+       (add-cached-auth password principal age-in-seconds metadata)))))
 
 (defn decode-auth-cookie
   "Decodes the provided cookie using the provided password.
@@ -104,12 +109,17 @@
   "Verifies whether the decoded authenticated cookie is valid as per the following rules:
    The decoded value must be a sequence in the format: [auth-principal auth-time].
    In addition, the auth-principal must be a string and the auth-time must be less than a day old."
-  [[auth-principal auth-time :as decoded-auth-cookie]]
-  (log/debug "well-formed?" decoded-auth-cookie (integer? auth-time) (string? auth-principal) (= 2 (count decoded-auth-cookie)))
+  [[auth-principal auth-time auth-metadata :as decoded-auth-cookie]]
+  (log/debug "well-formed?" decoded-auth-cookie
+             (<= 2 (count decoded-auth-cookie) 3)
+             (integer? auth-time)
+             (string? auth-principal)
+             (or (nil? auth-metadata) (map? auth-metadata)))
   (let [well-formed? (and decoded-auth-cookie
+                          (<= 2 (count decoded-auth-cookie) 3)
                           (integer? auth-time)
                           (string? auth-principal)
-                          (= 2 (count decoded-auth-cookie)))
+                          (or (nil? auth-metadata) (map? auth-metadata)))
         one-day-in-millis (-> 1 t/days t/in-millis)]
     (and well-formed? (> (+ auth-time one-day-in-millis) (System/currentTimeMillis)))))
 
@@ -157,7 +167,8 @@
                           (str/trim (subs auth-header (count single-user-prefix))))]
           (cond
             (str/blank? auth-path)
-            (handle-request-auth request-handler request :single-user run-as-user password)
+            (let [auth-params-map (build-auth-params-map :single-user run-as-user)]
+              (handle-request-auth request-handler request auth-params-map password))
             (= "unauthorized" auth-path)
             (utils/attach-waiter-source
               {:headers {"www-authenticate" "SingleUser"} :status http-401-unauthorized})
@@ -182,9 +193,10 @@
   [password handler]
   (fn auth-cookie-handler
     [{:keys [headers] :as request}]
-    (let [[auth-principal _ :as decoded-auth-cookie] (get-and-decode-auth-cookie-value headers password)]
+    (let [decoded-auth-cookie (get-and-decode-auth-cookie-value headers password)
+          [auth-principal _ auth-metadata] decoded-auth-cookie]
       (if (decoded-auth-valid? decoded-auth-cookie)
-        (let [auth-params-map (auth-params-map :cookie auth-principal)
+        (let [auth-params-map (build-auth-params-map :cookie auth-principal auth-metadata)
               handler' (middleware/wrap-merge handler auth-params-map)]
           (handler' request))
         (handler request)))))
