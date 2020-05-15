@@ -129,6 +129,41 @@
    :query-state-fn (fn query-jwt-cache-state []
                      @keys-cache)})
 
+(defprotocol AuthServer
+  (get-key-id->jwk [this]
+    "Returns a map for public key id to the JSON Web Key which contains the public key used to
+     verify any JSON Web Token (JWT) issued by the authorization server.")
+  (retrieve-server-state [this include-flags]
+    "Returns the current state of the auth server."))
+
+(defrecord JwtAuthServer [jwks-url keys-cache]
+  AuthServer
+  (get-key-id->jwk [_]
+    (get @keys-cache :key-id->jwk))
+  (retrieve-server-state [_ include-flags]
+    (cond-> {:endpoints {:jwks jwks-url}}
+      (contains? include-flags "jwks")
+      (assoc :jwks {:cache-data (update @keys-cache :key-id->jwk
+                                        (fn stringify-public-keys [key-id->jwk]
+                                          (pc/map-vals #(update % ::public-key str) key-id->jwk)))}))))
+
+(defn create-auth-server
+  [{:keys [http-options jwks-url supported-algorithms update-interval-ms]}]
+  {:pre [(map? http-options)
+         (not (str/blank? jwks-url))
+         supported-algorithms
+         (set? supported-algorithms)
+         (empty? (set/difference supported-algorithms #{:eddsa :rs256}))
+         (and (integer? update-interval-ms)
+              (not (neg? update-interval-ms)))]}
+  (let [keys-cache (atom {})
+        http-client (-> http-options
+                      (utils/assoc-if-absent :client-name "waiter-jwt")
+                      (utils/assoc-if-absent :user-agent "waiter-jwt")
+                      hu/http-client-factory)]
+    (start-jwt-cache-maintainer http-client http-options jwks-url update-interval-ms supported-algorithms keys-cache)
+    (->JwtAuthServer jwks-url keys-cache)))
+
 (def ^:const bearer-prefix "Bearer ")
 
 (defn- regex-pattern?
@@ -367,7 +402,7 @@
 (defn wrap-auth-handler
   "Wraps the request handler with a handler to trigger JWT access token authentication."
   [{:keys [allow-bearer-auth-api? allow-bearer-auth-services? attach-www-authenticate-on-missing-bearer-token?
-           issuer-constraints keys-cache max-expiry-duration-ms password subject-key subject-regex
+           auth-server issuer-constraints max-expiry-duration-ms password subject-key subject-regex
            supported-algorithms token-type]}
    request-handler]
   (fn jwt-auth-handler [{:keys [waiter-api-call?] :as request}]
@@ -385,24 +420,16 @@
 
         (auth/select-auth-header request access-token?)
         (authenticate-request request-handler token-type issuer-constraints subject-key subject-regex supported-algorithms
-                              (:key-id->jwk @keys-cache) password max-expiry-duration-ms request)
+                              (get-key-id->jwk auth-server) password max-expiry-duration-ms request)
 
         :else
         (cond-> (request-handler request)
           attach-www-authenticate-on-missing-bearer-token?
           (ru/update-response (make-401-response-updater request)))))))
 
-(defn retrieve-state
-  "Returns the state of the JWT authenticator."
-  [{:keys [keys-cache]}]
-  (let [cache-data (update @keys-cache :key-id->jwk
-                           (fn stringify-public-keys [key-id->jwk]
-                             (pc/map-vals #(update % ::public-key str) key-id->jwk)))]
-    {:cache-data cache-data}))
-
 (defrecord JwtAuthenticator [allow-bearer-auth-api? allow-bearer-auth-services?
                              attach-www-authenticate-on-missing-bearer-token?
-                             issuer-constraints keys-cache max-expiry-duration-ms password
+                             auth-server issuer-constraints max-expiry-duration-ms password
                              subject-key subject-regex supported-algorithms token-type])
 
 (def ^:const default-subject-regex #"([a-zA-Z0-9]+)@([a-zA-Z0-9]+(-[a-zA-Z0-9]+)*\.)+([a-zA-Z]{2,})$")
@@ -415,18 +442,19 @@
 
 (defn jwt-authenticator
   "Factory function for creating jwt authenticator middleware"
-  [{:keys [allow-bearer-auth-api? allow-bearer-auth-services? attach-www-authenticate-on-missing-bearer-token?
-           http-options issuer jwks-url max-expiry-duration-ms password subject-key subject-regex
-           supported-algorithms token-type update-interval-ms]
+  [auth-server
+   {:keys [allow-bearer-auth-api? allow-bearer-auth-services? attach-www-authenticate-on-missing-bearer-token?
+           issuer max-expiry-duration-ms password subject-key subject-regex
+           supported-algorithms token-type]
     :or {allow-bearer-auth-api? true
          allow-bearer-auth-services? false
          attach-www-authenticate-on-missing-bearer-token? true
          max-expiry-duration-ms (-> 24 t/hours t/in-millis)
          subject-regex default-subject-regex}}]
-  {:pre [(boolean? allow-bearer-auth-api?)
+  {:pre [(satisfies? AuthServer auth-server)
+         (boolean? allow-bearer-auth-api?)
          (boolean? allow-bearer-auth-services?)
          (boolean? attach-www-authenticate-on-missing-bearer-token?)
-         (map? http-options)
          (vector? (issuer->issuer-constraints issuer))
          (seq (issuer->issuer-constraints issuer))
          (every? #(or (and (string? %)
@@ -437,22 +465,13 @@
                  (issuer->issuer-constraints issuer))
          (pos? max-expiry-duration-ms)
          (some? password)
-         (not (str/blank? jwks-url))
          (keyword? subject-key)
          supported-algorithms
          (set? supported-algorithms)
          (empty? (set/difference supported-algorithms #{:eddsa :rs256}))
-         (not (str/blank? token-type))
-         (and (integer? update-interval-ms)
-              (not (neg? update-interval-ms)))]}
-  (let [keys-cache (atom {})
-        http-client (-> http-options
-                      (utils/assoc-if-absent :client-name "waiter-jwt")
-                      (utils/assoc-if-absent :user-agent "waiter-jwt")
-                      hu/http-client-factory)
-        issuer-constraints (issuer->issuer-constraints issuer)]
-    (start-jwt-cache-maintainer http-client http-options jwks-url update-interval-ms supported-algorithms keys-cache)
+         (not (str/blank? token-type))]}
+  (let [issuer-constraints (issuer->issuer-constraints issuer)]
     (->JwtAuthenticator allow-bearer-auth-api? allow-bearer-auth-services?
                         attach-www-authenticate-on-missing-bearer-token?
-                        issuer-constraints keys-cache max-expiry-duration-ms password
+                        auth-server issuer-constraints max-expiry-duration-ms password
                         subject-key subject-regex supported-algorithms token-type)))
