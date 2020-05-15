@@ -1079,6 +1079,10 @@
       (when (and (= "*" raw-run-as-user) raw-namespace (not= "*" raw-namespace))
         (throw (ex-info "Cannot use run-as-requester with a specific namespace"
                         {:namespace raw-namespace :run-as-user raw-run-as-user :status http-400-bad-request :log-level :warn})))
+      (when-let [idle-timeout-mins-header (get waiter-headers (str headers/waiter-header-prefix "idle-timeout-mins"))]
+        (when (zero? idle-timeout-mins-header)
+          (throw (ex-info "idle-timeout-mins on-the-fly header configured to a value of zero is not supported"
+                          {:log-level :info :status http-400-bad-request :waiter-headers waiter-headers}))))
       (sling/try+
         (let [build-map (build service-description-builder user-service-description
                                {:assoc-run-as-user-approved? assoc-run-as-user-approved?

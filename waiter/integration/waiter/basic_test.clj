@@ -517,15 +517,35 @@
 
 (deftest ^:parallel ^:integration-fast test-idle-timeout-mins-zero
   (testing-using-waiter-url
-    (let [headers {:x-waiter-idle-timeout-mins 0
-                   :x-waiter-name (rand-name)}
-          {:keys [service-id] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
-      (with-service-cleanup
-        service-id
-        (assert-response-status response http-200-ok)
-        (let [service-settings (service-settings waiter-url service-id)
-              {:keys [idle-timeout-mins] :as service-description} (get service-settings :service-description)]
-          (is (zero? idle-timeout-mins) (str service-description)))))))
+    (testing "on-the-fly"
+      (let [headers {:x-waiter-idle-timeout-mins 0
+                     :x-waiter-name (rand-name)}
+            {:keys [body] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
+        (assert-response-status response http-400-bad-request)
+        (is (str/includes? body "idle-timeout-mins on-the-fly header configured to a value of zero is not supported")
+            (str response))))
+
+    (testing "token"
+      (let [token (str "token-" (rand-name))
+            token-parameters (assoc (kitchen-params)
+                               :idle-timeout-mins 0
+                               :name (rand-name)
+                               :permitted-user (retrieve-username)
+                               :run-as-user (retrieve-username)
+                               :token token)]
+        (assert-response-status (post-token waiter-url token-parameters) http-200-ok)
+        (try
+          (let [headers {:x-waiter-token token}
+                {:keys [service-id] :as response}
+                (make-request-with-debug-info headers #(make-request waiter-url "/status" :headers %))]
+            (with-service-cleanup
+              service-id
+              (assert-response-status response http-200-ok)
+              (let [service-settings (service-settings waiter-url service-id)
+                    {:keys [idle-timeout-mins] :as service-description} (get service-settings :service-description)]
+                (is (zero? idle-timeout-mins) (str service-description)))))
+          (finally
+            (delete-token-and-assert waiter-url token)))))))
 
 (deftest ^:parallel ^:integration-fast test-last-request-time
   (testing-using-waiter-url
