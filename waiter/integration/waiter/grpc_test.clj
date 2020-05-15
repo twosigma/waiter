@@ -67,6 +67,7 @@
        "max-instances" 1
        "min-instances" 1
        "mem" 512
+       "metric-group" "waiter_test"
        "name" (rand-name)
        "ports" 2
        "version" "version-does-not-matter"})))
