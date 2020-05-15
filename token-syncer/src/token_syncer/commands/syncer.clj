@@ -115,7 +115,10 @@
                        (not (get description "deleted"))
                        (= (apply dissoc latest-token-description system-metadata-keys)
                           (apply dissoc description system-metadata-keys)))
-                  {:code :skip/token-sync}
+                  (if (= latest-update-user cluster-update-user)
+                    {:code :success/skip-token-sync}
+                    {:code :error/token-sync
+                     :details {:message "token contents match, but were edited by different users"}})
 
                   ;; token user-specified content, last update user, and root different
                   (and (seq description)
