@@ -2358,22 +2358,24 @@
       (is (nil? (validate builder
                           (assoc basic-service-description "namespace" "*")
                           validation-settings)))
-      (is (thrown? Exception #"Cannot use run-as-requester with a specific namespace"
-                   (validate builder
-                             (assoc basic-service-description
-                               "namespace" "some-user")
-                             validation-settings))))
+      (is (thrown-with-msg?
+            Exception #"Service namespace must either be omitted or match the run-as-user"
+            (validate builder
+                      (assoc basic-service-description
+                        "namespace" "some-user")
+                      validation-settings))))
 
     (testing "validate-service-description-namespace-some-user"
       (is (nil? (validate builder some-user-service-description validation-settings)))
       (is (nil? (validate builder
                           (assoc some-user-service-description "namespace" "some-user")
                           validation-settings)))
-      (is (thrown? Exception #"Service namespace must either be omitted or match the run-as-user"
-                   (validate builder
-                             (assoc basic-service-description
-                               "namespace" "some-other-user")
-                             validation-settings))))))
+      (is (thrown-with-msg?
+            Exception #"Service namespace must either be omitted or match the run-as-user"
+            (validate builder
+                      (assoc basic-service-description
+                        "namespace" "some-other-user")
+                      validation-settings))))))
 
 (deftest test-retrieve-most-recently-modified-token
   (testing "all tokens have last-update-time"
