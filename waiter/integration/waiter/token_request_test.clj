@@ -104,7 +104,7 @@
 
 (defn- create-token-name
   [waiter-url service-id-prefix]
-  (str service-id-prefix "." (subs waiter-url 0 (str/index-of waiter-url ":"))))
+  (str service-id-prefix "." (subs waiter-url 0 (str/index-of waiter-url "."))))
 
 (defn- list-tokens
   [waiter-url owner cookies query-params]
@@ -340,8 +340,8 @@
 (deftest ^:parallel ^:integration-fast ^:resource-heavy test-service-list-filtering
   (testing-using-waiter-url
     (let [service-name (rand-name)
-          token-1 (create-token-name waiter-url (str "www." service-name ".t1"))
-          token-2 (create-token-name waiter-url (str "www." service-name ".t2"))
+          token-1 (create-token-name waiter-url (str service-name ".t1"))
+          token-2 (create-token-name waiter-url (str service-name ".t2"))
           service-ids-atom (atom #{})
           token->version->etag-atom (atom {})
           all-tokens [token-1 token-2]
@@ -385,7 +385,7 @@
 
         (testing "star in token filter"
           (doseq [[_ router-url] (routers waiter-url)]
-            (let [query-params {"token" (str "www." service-name ".t*")}
+            (let [query-params {"token" (str service-name ".t*")}
                   _ (log/info query-params)
                   {:keys [body] :as response} (make-request router-url "/apps" :cookies cookies :query-params query-params)
                   services (json/read-str body)
