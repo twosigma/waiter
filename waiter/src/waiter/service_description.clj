@@ -782,8 +782,10 @@
 
 (defn token->token-parameters
   "Retrieves the template for the given token containing only the token data parameters."
-  [kv-store ^String token & {:keys [error-on-missing] :or {error-on-missing true}}]
-  (token->token-data kv-store token token-data-keys error-on-missing false))
+  [kv-store ^String token & {:keys [error-on-missing include-deleted]
+                             :or {error-on-missing true
+                                  include-deleted false}}]
+  (token->token-data kv-store token token-data-keys error-on-missing include-deleted))
 
 (defn token->service-description-template
   "Retrieves the service description template for the given token including the service metadata values."
