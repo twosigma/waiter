@@ -378,6 +378,13 @@
                        :token token
                        :log-level :warn})))))
 
+(defn- token-description->editable-token-parameters
+  "Retrieves the user editable token parameters from the token description."
+  [token-description]
+  (-> (merge (:service-parameter-template token-description)
+             (:token-metadata token-description))
+    (select-keys sd/token-user-editable-keys)))
+
 (defn- handle-post-token-request
   "Validates that the user is the creator of the token if it already exists.
    Then, updates the configuration for the token in the database using the newest password."
@@ -521,9 +528,7 @@
           new-user-editable-token-data (-> (merge new-service-parameter-template new-token-metadata)
                                            (select-keys sd/token-user-editable-keys))
           existing-token-description (sd/token->token-description kv-store token :include-deleted false)
-          existing-editable-token-data (-> (merge (:service-parameter-template existing-token-description)
-                                                  (:token-metadata existing-token-description))
-                                           (select-keys sd/token-user-editable-keys))]
+          existing-editable-token-data (token-description->editable-token-parameters existing-token-description)]
       (if (and (not admin-mode?)
                (= existing-editable-token-data new-user-editable-token-data))
         (utils/clj->json-response
@@ -584,25 +589,49 @@
       :get (let [{:strs [can-manage-as-user] :as request-params} (-> req ru/query-params-request :query-params)
                  include-deleted (utils/param-contains? request-params "include" "deleted")
                  show-metadata (utils/param-contains? request-params "include" "metadata")
-                 owner (get request-params "owner")
-                 owners (if owner #{owner} (list-token-owners kv-store))]
+                 owner-param (get request-params "owner")
+                 owners (cond
+                          (string? owner-param) #{owner-param}
+                          (coll? owner-param) (set owner-param)
+                          :else (list-token-owners kv-store))
+                 parameter-filter-predicates (map
+                                               (fn [[parameter-name allowed-parameter-values]]
+                                                 (fn [token-parameters]
+                                                   (and (contains? token-parameters parameter-name)
+                                                        (contains? allowed-parameter-values
+                                                                   (str (get token-parameters parameter-name))))))
+                                               (pc/map-vals
+                                                 (fn [params]
+                                                   (cond
+                                                     (string? params) #{params}
+                                                     :else (set params)))
+                                                 (-> request-params
+                                                   (select-keys sd/token-user-editable-keys)
+                                                   (dissoc "owner"))))
+                 token->token-parameters (fn [token]
+                                           (-> (sd/token->token-description kv-store token :include-deleted include-deleted)
+                                             (token-description->editable-token-parameters)))]
              (->> owners
                   (map
                     (fn [owner]
                       (->> (list-index-entries-for-owner kv-store owner)
                            (filter
-                             (fn [[_ entry]]
+                             (fn list-tokens-delete-predicate [[_ entry]]
                                (or include-deleted (not (:deleted entry)))))
                            (filter
-                             (fn [[token _]]
+                             (fn list-tokens-auth-predicate [[token _]]
                                (or (nil? can-manage-as-user)
                                    (authz/manage-token? entitlement-manager can-manage-as-user token {"owner" owner}))))
+                           (filter
+                             (fn list-tokens-parameters-predicate [[token _]]
+                               (let [token-parameters (token->token-parameters token)]
+                                 (every? #(% token-parameters) parameter-filter-predicates))))
                            (map
                              (fn [[token entry]]
                                (-> (if show-metadata
                                      (update entry :last-update-time tc/from-long)
                                      (dissoc entry :deleted :etag :last-update-time))
-                                   (assoc :owner owner :token token)))))))
+                                 (assoc :owner owner :token token)))))))
                   flatten
                   utils/clj->streaming-json-response))
       (throw (ex-info "Only GET supported" {:log-level :info
