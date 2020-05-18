@@ -299,7 +299,7 @@
         request-properties {:async-check-interval-ms 100 :async-request-max-status-checks 50 :async-request-timeout-ms 200}
         location (str "/location/" request-id)
         query-string "a=b&c=d|e"
-        auth-params-map (auth/auth-params-map :internal "waiter@example.com")
+        auth-params-map (auth/build-auth-params-map :internal "waiter@example.com")
         make-http-request-fn (fn [in-instance in-request end-route metric-group backend-proto]
                                (is (= instance in-instance))
                                (is (contains? in-request :request-id))
@@ -368,7 +368,7 @@
         sanitized-check-interval-ms (sanitize-check-interval async-request-timeout-ms async-check-interval-ms async-request-max-status-checks)
         location (str "/location/" request-id)
         query-string "a=b&c=d|e"
-        auth-params-map (auth/auth-params-map :internal "waiter@example.com")
+        auth-params-map (auth/build-auth-params-map :internal "waiter@example.com")
         make-http-request-fn (fn [in-instance in-request end-route metric-group backend-proto]
                                (is (= instance in-instance))
                                (is (contains? in-request :request-id))

@@ -1265,7 +1265,7 @@
                                                     [:settings waiter-principal]
                                                     [:state async-request-store-atom router-id user-agent-version]
                                                     populate-maintainer-chan!]
-                                             (let [auth-params-map (auth/auth-params-map :internal waiter-principal)
+                                             (let [auth-params-map (auth/build-auth-params-map :internal waiter-principal)
                                                    user-agent (str "waiter-async-status-check/" user-agent-version)]
                                                (fn post-process-async-request-response-wrapper
                                                  [response descriptor instance _

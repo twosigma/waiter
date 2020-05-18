@@ -459,7 +459,8 @@
     (testing "success scenario - non 401"
       (let [request-handler (fn [request] (assoc request :source ::request-handler))
             realm "www.test-realm.com"
-            request {:headers {"authorization" "Bearer foo.bar.baz"
+            access-token "foo.bar.baz"
+            request {:headers {"authorization" (str "Bearer " access-token)
                                "host" realm}
                      :request-id (rand-int 10000)
                      :scheme :test-scheme}
@@ -482,17 +483,17 @@
                                               (is (= "foo.bar.baz" in-access-token))
                                               (is (= keys in-keys))
                                               payload)
-                      auth/handle-request-auth (fn [request-handler request principal auth-params-map password auth-cookie-age-in-seconds]
+                      auth/handle-request-auth (fn [request-handler request auth-params-map password auth-cookie-age-in-seconds]
                                                  (-> request
                                                    (assoc :auth-cookie-age-in-seconds auth-cookie-age-in-seconds
                                                           :auth-params-map auth-params-map
                                                           :password password
-                                                          :principal principal)
+                                                          :principal (:authorization/principal auth-params-map))
                                                    request-handler))
                       t/now (constantly (tc/from-long (* current-time 1000)))]
           (is (= (assoc request
                    :auth-cookie-age-in-seconds expiry-interval-secs
-                   :auth-params-map (auth/auth-params-map :jwt principal)
+                   :auth-params-map (auth/build-auth-params-map :jwt principal {:jwt-access-token access-token})
                    :password password
                    :principal principal
                    :source ::request-handler)

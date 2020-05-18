@@ -33,7 +33,7 @@
   (try
     (let [{:keys [exit out err]} (shell/sh "krb5_prestash" "query" "host" host)]
       (if (zero? exit)
-        (set (map #(first (str/split % #"@" 2)) (str/split-lines out)))
+        (set (map #(utils/principal->username %) (str/split-lines out)))
         (do
           (log/error "Failed to reload prestash cache: " err)
           nil)))

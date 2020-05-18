@@ -55,11 +55,14 @@
         one-day-in-millis (-> 1 t/days t/in-millis)]
     (is (true? (decoded-auth-valid? ["test-principal" now-ms])))
     (is (true? (decoded-auth-valid? ["test-principal" (-> now-ms (- one-day-in-millis) (+ 1000))])))
+    (is (true? (decoded-auth-valid? ["test-principal" now-ms {:jwt-access-token "a.b.c"}])))
     (is (false? (decoded-auth-valid? ["test-principal" (- now-ms one-day-in-millis 1000)])))
     (is (false? (decoded-auth-valid? ["test-principal" "invalid-string-time"])))
     (is (false? (decoded-auth-valid? [(rand-int 10000) "invalid-string-time"])))
+    (is (false? (decoded-auth-valid? [])))
     (is (false? (decoded-auth-valid? ["test-principal"])))
-    (is (false? (decoded-auth-valid? [])))))
+    (is (false? (decoded-auth-valid? ["test-principal" now-ms now-ms])))
+    (is (false? (decoded-auth-valid? ["test-principal" now-ms {:jwt-access-token "a.b.c"} now-ms])))))
 
 (deftest test-auth-cookie-handler
   (let [request-handler (fn [{:keys [authorization/principal authorization/user]}]
@@ -73,6 +76,16 @@
       (with-redefs [decode-auth-cookie (constantly [auth-principal (+ (System/currentTimeMillis) 60000)])]
         (let [auth-cookie-handler (wrap-auth-cookie-handler password request-handler)]
           (is (= {:authorization/method :cookie
+                  :authorization/principal auth-principal
+                  :authorization/user auth-user
+                  :body {:principal auth-principal :user auth-user}}
+                 (auth-cookie-handler {:headers {"cookie" "x-waiter-auth=test-auth-cookie"}})))))
+
+      (with-redefs [decode-auth-cookie (constantly [auth-principal (+ (System/currentTimeMillis) 60000)
+                                                    {:jwt-access-token "test.access.token"}])]
+        (let [auth-cookie-handler (wrap-auth-cookie-handler password request-handler)]
+          (is (= {:authorization/metadata {:jwt-access-token "test.access.token"}
+                  :authorization/method :cookie
                   :authorization/principal auth-principal
                   :authorization/user auth-user
                   :body {:principal auth-principal :user auth-user}}

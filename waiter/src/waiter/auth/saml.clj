@@ -203,8 +203,8 @@
         ; https://docs.microsoft.com/en-us/windows-server/identity/ad-fs/technical-reference/the-role-of-claims
         upn (first (get attrs "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"))
         saml-principal (or upn name-id-value)
-        {:keys [authorization/principal authorization/user]} (auth/auth-params-map :saml saml-principal)
-        saml-principal' (if (and email (= principal user)) email saml-principal)
+        saml-user (utils/principal->username saml-principal)
+        saml-principal' (if (and email (= saml-principal saml-user)) email saml-principal)
         saml-auth-data (utils/map->base-64-string
                          {:min-session-not-on-or-after min-session-not-on-or-after
                           :redirect-url request-url
@@ -242,12 +242,11 @@
           auth-cookie-age-in-seconds (-> current-time
                                        (t/interval auth-cookie-expiry-date)
                                        t/in-seconds)
-          {:keys [authorization/principal authorization/user] :as auth-params-map}
-          (auth/auth-params-map :saml saml-principal)]
+          auth-params-map (auth/build-auth-params-map :saml saml-principal)]
       (auth/handle-request-auth (constantly {:body ""
                                              :headers {"location" redirect-url}
                                              :status http-303-see-other})
-                                request principal auth-params-map password auth-cookie-age-in-seconds))
+                                request auth-params-map password auth-cookie-age-in-seconds))
     (throw (ex-info "Missing saml-auth-data from SAML authenticated redirect message"
                     {:status http-400-bad-request}))))
 

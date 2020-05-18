@@ -637,3 +637,8 @@
   [data history-length history-key]
   (dissoc-in data (repeat history-length history-key)))
 
+(defn principal->username
+  "Extracts the user name from the provided principal by dropping the domain part."
+  [principal]
+  (when principal
+    (first (str/split principal #"@" 2))))
