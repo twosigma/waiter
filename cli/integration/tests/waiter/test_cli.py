@@ -1042,6 +1042,7 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertIn('Writing token JSON', cli.stdout(cp))
 
+    @pytest.mark.xfail
     def test_show_services_using_token(self):
         token_name = self.token_name()
         custom_fields = {
