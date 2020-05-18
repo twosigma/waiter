@@ -246,8 +246,8 @@
                                                :latest token-description}}}
                (sync-token-on-clusters waiter-api cluster-urls test-token token-description cluster-url->token-data)))))
 
-    (testing "sync cluster same parameters and owner but different root"
-      (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
+    (testing "sync cluster similar parameters and owner but different root"
+      (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com" "www.cluster-3.com"]
             test-token "test-token-1"
             token-description {"cpus" 1
                                "last-update-user" "john.doe"
@@ -256,14 +256,20 @@
                                "owner" "test-user-1"}
             token-description-1 (assoc token-description "root" "cluster-1")
             token-description-2 (assoc token-description "root" "cluster-2")
+            token-description-3 (assoc token-description "last-update-user" "jane.doe" "root" "cluster-3")
             cluster-url->token-data {"www.cluster-1.com" {:description token-description-1
                                                           :token-etag (str test-token-etag ".1")
                                                           :status 200}
                                      "www.cluster-2.com" {:description token-description-2
                                                           :token-etag (str test-token-etag ".2")
+                                                          :status 200}
+                                     "www.cluster-3.com" {:description token-description-3
+                                                          :token-etag (str test-token-etag ".3")
                                                           :status 200}}]
         (is (= {"www.cluster-1.com" {:code :success/token-match}
-                "www.cluster-2.com" {:code :skip/token-sync}}
+                "www.cluster-2.com" {:code :success/skip-token-sync}
+                "www.cluster-3.com" {:code :error/token-sync
+                                     :details {:message "token contents match, but were edited by different users"}}}
                (sync-token-on-clusters waiter-api cluster-urls test-token token-description-1 cluster-url->token-data)))))
 
     (testing "sync cluster same owner; soft-deleted on one; and different last-update-user and root"
