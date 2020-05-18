@@ -293,10 +293,10 @@
 
 (defn- validate-response
   [service-id access-token auth-method {:keys [body headers] :as response}]
-  (let [assertion-message (str {:access-token access-token
-                                :auth-method auth-method
+  (let [assertion-message (str {:auth-method auth-method
                                 :body body
                                 :headers headers
+                                :jwt-access-token access-token
                                 :service-id service-id})
         set-cookie (str (get headers "set-cookie"))]
     (assert-response-status response http-200-ok)

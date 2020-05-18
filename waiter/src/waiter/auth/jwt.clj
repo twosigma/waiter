@@ -354,8 +354,8 @@
                                           key-id->jwk max-expiry-duration-ms realm request-scheme access-token)]
         (timers/stop timer-context)
         (counters/inc! (metrics/waiter-counter "core" "jwt" "validation" "success"))
-        {:access-token access-token
-         :claims claims})
+        {:claims claims
+         :jwt-access-token access-token})
       (catch Throwable throwable
         (timers/stop timer-context)
         (counters/inc! (metrics/waiter-counter "core" "jwt" "validation" "failed"))
@@ -394,10 +394,10 @@
           (make-401-response-updater request))
         ;; non-401 response avoids further downstream handler processing
         (utils/exception->response result-map-or-throwable request))
-      (let [{:keys [access-token claims]} result-map-or-throwable
+      (let [{:keys [claims jwt-access-token]} result-map-or-throwable
             {:keys [exp]} claims
             subject (subject-key claims)
-            auth-params-map (auth/build-auth-params-map :jwt subject {:access-token access-token})
+            auth-params-map (auth/build-auth-params-map :jwt subject {:jwt-access-token jwt-access-token})
             auth-cookie-age-in-seconds (- exp (current-time-secs))]
         (auth/handle-request-auth
           request-handler request auth-params-map password auth-cookie-age-in-seconds)))))

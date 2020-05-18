@@ -53,7 +53,8 @@
 
 (defn- add-cached-auth
   [response password principal age-in-seconds auth-metadata]
-  (let [cookie-value [principal (tc/to-long (t/now)) auth-metadata]
+  (let [cookie-value (cond-> [principal (tc/to-long (t/now))]
+                       auth-metadata (conj auth-metadata))
         cookie-expiry (or age-in-seconds (-> 1 t/days t/in-seconds))]
     (cookie-support/add-encoded-cookie
       response password AUTH-COOKIE-NAME cookie-value cookie-expiry)))

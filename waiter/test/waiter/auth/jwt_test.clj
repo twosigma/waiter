@@ -493,7 +493,7 @@
                       t/now (constantly (tc/from-long (* current-time 1000)))]
           (is (= (assoc request
                    :auth-cookie-age-in-seconds expiry-interval-secs
-                   :auth-params-map (auth/build-auth-params-map :jwt principal {:access-token access-token})
+                   :auth-params-map (auth/build-auth-params-map :jwt principal {:jwt-access-token access-token})
                    :password password
                    :principal principal
                    :source ::request-handler)

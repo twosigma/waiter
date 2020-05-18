@@ -55,7 +55,6 @@
 (defn make-auth-user-map
   "Creates a map containing the username and principal from a request"
   [{:keys [authorization/metadata authorization/principal]}]
-  ;; TODO creating this map is unnecessary, we can destructure from the request directly
   {:metadata metadata
    :principal principal})
 

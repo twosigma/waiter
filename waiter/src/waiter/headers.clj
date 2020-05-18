@@ -113,12 +113,12 @@
 (defn assoc-auth-headers
   "`assoc`s the x-waiter-auth-principal and x-waiter-authenticated-principal headers if the
    username and principal are non-nil, respectively."
-  ([headers principal {:keys [access-token]}]
+  ([headers principal {:keys [jwt-access-token]}]
    (let [username (utils/principal->username principal)]
      (cond-> headers
        username (assoc "x-waiter-auth-principal" username)
        principal (assoc "x-waiter-authenticated-principal" principal)
-       access-token (assoc "x-waiter-jwt" access-token)))))
+       jwt-access-token (assoc "x-waiter-jwt" jwt-access-token)))))
 
 (defn basic-auth-header
   "Constructs the basic auth header for the provided username and password."
