@@ -594,20 +594,16 @@
                           (string? owner-param) #{owner-param}
                           (coll? owner-param) (set owner-param)
                           :else (list-token-owners kv-store))
-                 parameter-filter-predicates (map
-                                               (fn [[parameter-name allowed-parameter-values]]
+                 filterable-parameter? (disj sd/token-user-editable-keys "owner")
+                 parameter-filter-predicates (for [[parameter-name raw-param] request-params
+                                                   :when (filterable-parameter? parameter-name)]
+                                               (let [search-parameter-values (cond
+                                                                               (string? raw-param) #{raw-param}
+                                                                               :else (set raw-param))]
                                                  (fn [token-parameters]
                                                    (and (contains? token-parameters parameter-name)
-                                                        (contains? allowed-parameter-values
-                                                                   (str (get token-parameters parameter-name))))))
-                                               (pc/map-vals
-                                                 (fn [params]
-                                                   (cond
-                                                     (string? params) #{params}
-                                                     :else (set params)))
-                                                 (-> request-params
-                                                   (select-keys sd/token-user-editable-keys)
-                                                   (dissoc "owner"))))
+                                                        (contains? search-parameter-values
+                                                                   (str (get token-parameters parameter-name)))))))
                  token->token-parameters (fn [token]
                                            (-> (sd/token->token-description kv-store token :include-deleted include-deleted)
                                              (token-description->editable-token-parameters)))]
