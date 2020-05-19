@@ -594,7 +594,7 @@
                           (string? owner-param) #{owner-param}
                           (coll? owner-param) (set owner-param)
                           :else (list-token-owners kv-store))
-                 filterable-parameter? (disj sd/token-user-editable-keys "owner")
+                 filterable-parameter? (disj sd/token-data-keys "owner")
                  parameter-filter-predicates (for [[parameter-name raw-param] request-params
                                                    :when (filterable-parameter? parameter-name)]
                                                (let [search-parameter-values (cond
@@ -603,10 +603,7 @@
                                                  (fn [token-parameters]
                                                    (and (contains? token-parameters parameter-name)
                                                         (contains? search-parameter-values
-                                                                   (str (get token-parameters parameter-name)))))))
-                 token->token-parameters (fn [token]
-                                           (-> (sd/token->token-description kv-store token :include-deleted include-deleted)
-                                             (token-description->editable-token-parameters)))]
+                                                                   (str (get token-parameters parameter-name)))))))]
              (->> owners
                   (map
                     (fn [owner]
@@ -620,7 +617,10 @@
                                    (authz/manage-token? entitlement-manager can-manage-as-user token {"owner" owner}))))
                            (filter
                              (fn list-tokens-parameters-predicate [[token _]]
-                               (let [token-parameters (token->token-parameters token)]
+                               (let [token-parameters (sd/token->token-parameters
+                                                        kv-store token
+                                                        :error-on-missing false
+                                                        :include-deleted include-deleted)]
                                  (every? #(% token-parameters) parameter-filter-predicates))))
                            (map
                              (fn [[token entry]]

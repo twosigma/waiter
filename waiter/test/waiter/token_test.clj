@@ -2196,19 +2196,19 @@
     (store-service-description-for-token
       synchronize-fn kv-store history-length limit-per-owner "token1"
       {"cpus" 1 "idle-timeout-mins" 0 "mem" 1024}
-      {"last-update-time" (- last-update-time-seed 1000) "owner" "owner1"})
+      {"cluster" "c1" "last-update-time" (- last-update-time-seed 1000) "owner" "owner1"})
     (store-service-description-for-token
       synchronize-fn kv-store history-length limit-per-owner "token2"
       {"cpus" 2 "idle-timeout-mins" 9 "image" "test-image" "mem" 2048}
-      {"last-update-time" (- last-update-time-seed 2000) "owner" "owner1"})
+      {"cluster" "c1" "last-update-time" (- last-update-time-seed 2000) "owner" "owner1"})
     (store-service-description-for-token
       synchronize-fn kv-store history-length limit-per-owner "token3"
       {"cpus" 3 "idle-timeout-mins" 5 "mem" 2048}
-      {"last-update-time" (- last-update-time-seed 3000) "owner" "owner2"})
+      {"cluster" "c2" "last-update-time" (- last-update-time-seed 3000) "owner" "owner2"})
     (store-service-description-for-token
       synchronize-fn kv-store history-length limit-per-owner "token4"
       {"cpus" 4 "idle-timeout-mins" 0 "mem" 2048}
-      {"deleted" true "last-update-time" (- last-update-time-seed 3000) "owner" "owner2"})
+      {"cluster" "c2" "deleted" true "last-update-time" (- last-update-time-seed 3000) "owner" "owner2"})
     (let [request {:query-string "include=metadata" :request-method :get}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= http-200-ok status))
@@ -2351,6 +2351,16 @@
       (is (= #{{"owner" "owner1", "token" "token2"}
                {"owner" "owner2", "token" "token3"}}
              (set (json/read-str body)))))
+    (let [request {:request-method :get :query-string "cluster=c1&mem=2048"}
+          {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
+      (is (= http-200-ok status))
+      (is (= #{{"owner" "owner1", "token" "token2"}}
+             (set (json/read-str body)))))
+    (let [request {:request-method :get :query-string "cluster=c2&mem=2048"}
+          {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
+      (is (= http-200-ok status))
+      (is (= #{{"owner" "owner2", "token" "token3"}}
+             (set (json/read-str body)))))
     (let [request {:request-method :get :query-string "include=deleted&mem=2048"}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= http-200-ok status))
@@ -2363,6 +2373,15 @@
       (is (= http-200-ok status))
       (is (= #{{"owner" "owner1", "token" "token1"}}
              (set (json/read-str body)))))
+    (let [request {:request-method :get :query-string "cluster=c1&idle-timeout-mins=0"}
+          {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
+      (is (= http-200-ok status))
+      (is (= #{{"owner" "owner1", "token" "token1"}}
+             (set (json/read-str body)))))
+    (let [request {:request-method :get :query-string "cluster=c2&idle-timeout-mins=0"}
+          {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
+      (is (= http-200-ok status))
+      (is (empty? (set (json/read-str body)))))
     (let [request {:request-method :get :query-string "idle-timeout-mins=5"}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= http-200-ok status))
