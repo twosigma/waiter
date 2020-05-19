@@ -1,5 +1,5 @@
 pip==9.0.1; python_version >= '3.6'
-pytest>=4.3.0
+pytest>=4.3.0,<=5.3.5
 pytest-xdist>=1.20.1
 pyyaml>=3.13
 requests>=2.20.0
