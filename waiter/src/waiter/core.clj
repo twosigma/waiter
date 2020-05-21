@@ -669,14 +669,18 @@
                                               :service-id->interstitial-promise {}}))
    :jwt-auth-server (pc/fnk [[:settings authenticator-config]]
                       (let [jwt-config (:jwt authenticator-config)]
-                        (when (not= :disabled jwt-config)
+                        (when-not (= :disabled jwt-config)
                           (jwt/create-auth-server jwt-config))))
    :jwt-authenticator (pc/fnk [[:settings authenticator-config]
-                               jwt-auth-server passwords]
+                               jwt-auth-server jwt-validator passwords]
                         (let [jwt-config (:jwt authenticator-config)]
-                          (when (not= :disabled jwt-config)
+                          (when-not (= :disabled jwt-config)
                             (let [jwt-config (assoc jwt-config :password (first passwords))]
-                              (jwt/jwt-authenticator jwt-auth-server jwt-config)))))
+                              (jwt/jwt-authenticator jwt-auth-server jwt-validator jwt-config)))))
+   :jwt-validator (pc/fnk [[:settings authenticator-config]]
+                    (let [jwt-config (:jwt authenticator-config)]
+                      (when-not (= :disabled jwt-config)
+                        (jwt/create-jwt-validator jwt-config))))
    :kv-store (pc/fnk [[:settings kv-config]
                       kv-store-factory]
                (kv-store-factory kv-config))
