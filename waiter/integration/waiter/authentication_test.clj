@@ -139,8 +139,10 @@
           path (str (.getPath access-token-uri) "?" (.getQuery access-token-uri))
           access-token-response (make-request authority path :headers {"x-iam" "waiter"} :protocol protocol)
           _ (assert-response-status access-token-response http-200-ok)
-          access-token-response-json (-> access-token-response :body str json/read-str)]
-      (get access-token-response-json "access_token"))
+          access-token-response-json (-> access-token-response :body str json/read-str)
+          access-token (get access-token-response-json "access_token")]
+      (log/info "retrieved access token" {:access-token access-token :realm realm})
+      access-token)
     (throw (ex-info "WAITER_TEST_JWT_ACCESS_TOKEN_URL environment variable has not been provided" {}))))
 
 (defmacro assert-auth-cookie
@@ -382,3 +384,105 @@
           (finally
             (delete-token-and-assert waiter-url host))))
       (log/info "JWT authentication is disabled"))))
+
+(defmacro assert-oidc-challenge-cookie
+  "Helper macro to assert the value of x-waiter-oidc-challenge in the set-cookie header."
+  [set-cookie assertion-message]
+  `(let [set-cookie# ~set-cookie
+         assertion-message# ~assertion-message]
+     (is (str/includes? set-cookie# "x-waiter-oidc-challenge=") assertion-message#)
+     (is (str/includes? set-cookie# "Max-Age=") assertion-message#)
+     (is (str/includes? set-cookie# "Path=/") assertion-message#)
+     (is (str/includes? set-cookie# "HttpOnly=true") assertion-message#)))
+
+(defn- follow-authorize-redirects
+  "Asserts for query parameters on the redirect url.
+   Then makes requests and follows redirects until the oidc callback url is returned as a redirect."
+  [authorize-redirect-location]
+
+  (is (str/includes? authorize-redirect-location "client_id="))
+  (is (str/includes? authorize-redirect-location "code_challenge="))
+  (is (str/includes? authorize-redirect-location "code_challenge_method="))
+  (is (str/includes? authorize-redirect-location "redirect_uri="))
+  (is (str/includes? authorize-redirect-location "response_type="))
+  (is (str/includes? authorize-redirect-location "scope="))
+  (is (str/includes? authorize-redirect-location "state="))
+
+  (loop [iteration 1
+         authorize-location authorize-redirect-location]
+    (log/info "redirecting to" authorize-location)
+    (let [authorize-uri (URI. authorize-location)
+          authorize-protocol (.getScheme authorize-uri)
+          authorize-authority (.getAuthority authorize-uri)
+          authorize-path (str (.getPath authorize-uri) "?" (.getQuery authorize-uri))
+          authorize-response (make-request authorize-authority authorize-path :protocol authorize-protocol)
+          _ (assert-response-status authorize-response #{http-301-moved-permanently
+                                                         http-302-moved-temporarily
+                                                         http-307-temporary-redirect
+                                                         http-308-permanent-redirect})
+          assertion-message (str {:headers (:headers authorize-response)
+                                  :status (:status authorize-response)
+                                  :uri authorize-location})
+          {:strs [location]} (:headers authorize-response)]
+      (is (not (str/blank? location)) assertion-message)
+      (if (or (>= iteration 10)
+              (and (str/includes? location "/oidc/v1/callback?")
+                   (str/includes? location "code=")
+                   (str/includes? location "state=")))
+        location
+        (recur (inc iteration) location)))))
+
+(deftest ^:parallel ^:integration-fast test-oidc-authentication-redirect
+  (testing-using-waiter-url
+    (if (oidc-auth-enabled? waiter-url)
+      (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)
+            waiter-token (or (System/getenv "WAITER_TEST_TOKEN_OIDC")
+                             (create-token-name waiter-url (rand-name)))
+            service-parameters (assoc (kitchen-params)
+                                 :env {"USE_OIDC_AUTH" "true"}
+                                 :name (rand-name)
+                                 :run-as-user (retrieve-username))
+            token-response (post-token waiter-url (assoc service-parameters :token waiter-token))
+            _ (assert-response-status token-response http-200-ok)
+            ;; absence of Negotiate header also triggers an unauthorized response
+            request-headers {"authorization" "SingleUser unauthorized"
+                             "accept-redirect" "yes"
+                             "host" waiter-token
+                             "x-forwarded-proto" "https"}
+            port (waiter-settings-port waiter-url)
+            target-url (str waiter-host ":" port)
+            {:keys [cookies] :as initial-response}
+            (make-request-with-debug-info
+              request-headers
+              #(make-request target-url "/request-info" :disable-auth true :headers % :method :get))]
+        (try
+          (assert-response-status initial-response http-302-moved-temporarily)
+          (let [{:strs [location set-cookie]} (:headers initial-response)
+                assertion-message (str {:headers (:headers initial-response)
+                                        :set-cookie set-cookie
+                                        :status (:status initial-response)})]
+            (is (not (str/blank? location)) assertion-message)
+            (assert-oidc-challenge-cookie set-cookie assertion-message)
+
+            (let [callback-location (follow-authorize-redirects location)]
+              (is (not (str/blank? callback-location)) assertion-message)
+              (is (str/includes? callback-location "/oidc/v1/callback?") assertion-message)
+              (let [callback-uri (URI. callback-location)
+                    callback-path (str (.getPath callback-uri) "?" (.getRawQuery callback-uri))
+                    callback-request-headers {"host" waiter-token
+                                              "x-forwarded-proto" "https"}
+                    {:keys [cookies] :as callback-response}
+                    (make-request target-url callback-path
+                                  :cookies cookies
+                                  :headers callback-request-headers)]
+                (assert-response-status callback-response http-302-moved-temporarily)
+                (is (= 2 (count cookies)))
+                (is (zero? (:max-age (first (filter #(= (:name %) "x-waiter-oidc-challenge") cookies)))))
+                (is (pos? (:max-age (first (filter #(= (:name %) "x-waiter-auth") cookies)))))
+                (let [{:strs [location]} (:headers callback-response)
+                      assertion-message (str {:headers (:headers callback-response)
+                                              :status (:status callback-response)})]
+                  (is (= (str "https://" waiter-token "/request-info") location) assertion-message)))))
+          (finally
+            (delete-token-and-assert waiter-url waiter-token))))
+      (log/info "OIDC+PKCE authentication is disabled"))))

@@ -232,6 +232,13 @@
                               ;; The value of USE_BEARER_AUTH environment variable of the service overrides this value.
                               ;; When not configured, the value is assumed to be false.
                               :allow-bearer-auth-services? false
+                              ;; Whether OIDC+PKCE authentication is allowed for Waiter API requests.
+                              ;; When not configured, the value is assumed to be false.
+                              :allow-oidc-auth-api? false
+                              ;; Whether OIDC+PKCE authentication is the allowed for service (proxy) requests.
+                              ;; The value of USE_OIDC_AUTH environment variable of the service overrides this value.
+                              ;; When not configured, the value is assumed to be false.
+                              :allow-oidc-auth-services? false
                               ;; Whether or not to include the www-authenticate header on 401 responses
                               ;; even if a Bearer token is not provided in the request authenticate header.
                               ;; When not configured, the value is assumed to be true.
@@ -250,6 +257,10 @@
                               ;; The maximum duration from current time allowed for expiry time on the JWT claim.
                               ;; The value defaults to 24 hours, i.e. 3600000
                               :max-expiry-duration-ms 86400000
+                              ;; (optional) url of the authorization server authorize endpoint:
+                              :oidc-authorize-uri "http://127.0.0.1:8040/authorize"
+                              ;; (optional) url of the authorization server get token endpoint:
+                              :oidc-token-uri "http://127.0.0.1:8040/id-token"
                               ;; The keyword used to retrieve the subject from the access token claims
                               :subject-key :sub
                               ;; The regex used to validate the subject from the claims

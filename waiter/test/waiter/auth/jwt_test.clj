@@ -18,6 +18,7 @@
             [buddy.sign.jwt :as jwt]
             [clj-time.coerce :as tc]
             [clj-time.core :as t]
+            [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.test :refer :all]
             [clojure.walk :as walk]
@@ -32,6 +33,15 @@
            (java.security.interfaces RSAPublicKey)
            (net.i2p.crypto.eddsa EdDSAPublicKey)
            (waiter.auth.jwt JwtAuthServer JwtAuthenticator JwtValidator)))
+
+(defn make-jwt-auth-server
+  [& {:keys [http-client jwks-url keys-cache oidc-authorize-uri oidc-token-uri]
+      :or {http-client (Object.)
+           jwks-url nil
+           keys-cache (atom {})
+           oidc-authorize-uri nil
+           oidc-token-uri nil}}]
+  (->JwtAuthServer http-client jwks-url keys-cache oidc-authorize-uri oidc-token-uri))
 
 (deftest test-retrieve-public-key
   (let [eddsa-entry (pc/keywordize-map
@@ -495,7 +505,7 @@
           jwt-authenticator {:allow-bearer-auth-api? false
                              :allow-bearer-auth-services? false
                              :attach-www-authenticate-on-missing-bearer-token? false
-                             :auth-server (->JwtAuthServer "jwks-url" (atom nil))}]
+                             :auth-server (make-jwt-auth-server :jwks-url "jwks-url")}]
       (testing "jwt-disabled"
         (let [jwt-auth-handler (wrap-auth-handler jwt-authenticator request-handler)]
           (doseq [status [http-200-ok
@@ -535,7 +545,7 @@
       (testing "jwt-enabled and bearer token provided"
         (let [jwt-authenticator {:allow-bearer-auth-api? true
                                  :allow-bearer-auth-services? true
-                                 :auth-server (->JwtAuthServer "jwks-url" (atom nil))}
+                                 :auth-server (make-jwt-auth-server :jwks-url "jwks-url")}
               jwt-auth-handler (wrap-auth-handler jwt-authenticator request-handler)]
           (doseq [status [http-200-ok
                           http-301-moved-permanently
@@ -558,7 +568,7 @@
           (let [jwt-authenticator {:allow-bearer-auth-api? true
                                    :allow-bearer-auth-services? true
                                    :attach-www-authenticate-on-missing-bearer-token? attach-www-authenticate-on-missing-bearer-token?
-                                   :auth-server (->JwtAuthServer "jwks-url" (atom nil))}
+                                   :auth-server (make-jwt-auth-server :jwks-url "jwks-url")}
                 jwt-auth-handler (wrap-auth-handler jwt-authenticator request-handler)]
             (doseq [status [http-200-ok
                             http-301-moved-permanently
@@ -643,7 +653,7 @@
 
 (deftest test-jwt-authenticator
   (with-redefs [start-jwt-cache-maintainer (constantly nil)]
-    (let [auth-server (map->JwtAuthServer {})
+    (let [auth-server (make-jwt-auth-server :jwks-url "jwks-url")
           jwt-validator (map->JwtValidator {})
           create-jwt-authenticator (fn [config]
                                      (jwt-authenticator auth-server jwt-validator config))
@@ -684,7 +694,7 @@
                                          (is (= "password" password))
                                          (is (= max-expiry-duration-ms (:max-expiry-duration-ms jwt-validator)))
                                          (handler (assoc request :source ::jwt-auth)))]
-      (let [auth-server (->JwtAuthServer "jwks-url" keys-cache)
+      (let [auth-server (make-jwt-auth-server :jwks-url "jwks-url" :keys-cache keys-cache)
             jwt-validator (->JwtValidator
                             issuer-constraints max-expiry-duration-ms :sub subject-regex supported-algorithms "jwt+type")
             authenticator (->JwtAuthenticator false false false auth-server jwt-validator "password")
@@ -812,7 +822,7 @@
                    true)))))
 
       (doseq [allow-bearer-auth-api? [true false]]
-        (let [auth-server (->JwtAuthServer "jwks-url" keys-cache)
+        (let [auth-server (make-jwt-auth-server :jwks-url "jwks-url" :keys-cache keys-cache)
               jwt-validator (->JwtValidator
                               issuer-constraints max-expiry-duration-ms :sub subject-regex supported-algorithms "jwt+type")
               authenticator (->JwtAuthenticator
@@ -860,7 +870,7 @@
                      false))))))
 
       (doseq [allow-bearer-auth-services? [true false]]
-        (let [auth-server (->JwtAuthServer "jwks-url" keys-cache)
+        (let [auth-server (make-jwt-auth-server :jwks-url "jwks-url" :keys-cache keys-cache)
               jwt-validator (->JwtValidator
                               issuer-constraints max-expiry-duration-ms :sub subject-regex supported-algorithms "jwt+type")
               authenticator (->JwtAuthenticator
@@ -894,3 +904,62 @@
                       :source ::standard-request
                       :waiter-api-call? true}
                      false)))))))))
+
+(deftest test-request-access-token
+  (let [access-code "access-code"
+        challenge-cookie "challenge-cookie"
+        oidc-callback "/oidc/callback"
+        host-header "www.test.com:8080"
+        request {:headers {"host" host-header}
+                 :scheme "https"}]
+    (is (thrown-with-msg?
+          ExceptionInfo #"OIDC token endpoint not configured"
+          (request-access-token (make-jwt-auth-server) request oidc-callback access-code challenge-cookie)))
+
+    (let [{:keys [http-client oidc-token-uri] :as auth-server} (make-jwt-auth-server :oidc-token-uri "/oidc/token")
+          access-token (str "access-token:" (rand-int 10000))
+          make-http-request-async (fn [result]
+                                    (fn [in-http-client in-oidc-token-uri & {:keys [form-params request-method]}]
+                                      (is (= http-client in-http-client))
+                                      (is (= oidc-token-uri in-oidc-token-uri))
+                                      (is (= {"client_id" "www.test.com"
+                                              "code" access-code
+                                              "code_verifier" challenge-cookie
+                                              "grant_type" "authorization_code"
+                                              "redirect_uri" (str "https://" host-header oidc-callback)}
+                                             form-params))
+                                      (is (= :post request-method))
+                                      (let [result-chan (async/promise-chan)]
+                                        (async/>!! result-chan result)
+                                        result-chan)))]
+
+      (with-redefs [hu/http-request-async (make-http-request-async {:id_token access-token})]
+        (let [result-chan (request-access-token auth-server request oidc-callback access-code challenge-cookie)
+              result (async/<!! result-chan)]
+          (is (= access-token result))))
+
+      (with-redefs [hu/http-request-async (make-http-request-async {:access_token access-token})]
+        (let [result-chan (request-access-token auth-server request oidc-callback access-code challenge-cookie)
+              result (async/<!! result-chan)]
+          (is (instance? ExceptionInfo result))
+          (is (= "ID token missing in auth server response" (ex-message result)))))
+
+      (with-redefs [hu/http-request-async (make-http-request-async (Exception. "Created from test"))]
+        (let [result-chan (request-access-token auth-server request oidc-callback access-code challenge-cookie)
+              result (async/<!! result-chan)]
+          (is (instance? Exception result))
+          (is (= "Created from test" (ex-message result)))))
+
+      (with-redefs [hu/http-request-async (make-http-request-async (ex-info "Created from test"
+                                                                            {:http-utils/response {:body {"error" "Bad request"}
+                                                                                                   :headers {"content-type" "application/json"}
+                                                                                                   :status 400}}))]
+        (let [result-chan (request-access-token auth-server request oidc-callback access-code challenge-cookie)
+              result (async/<!! result-chan)]
+          (is (instance? Exception result))
+          (is (= "Non-2XX response from auth server" (ex-message result)))
+          (is (= {:body {"error" "Bad request"}
+                  :headers {"content-type" "application/json"}
+                  :source :auth-server
+                  :status 400}
+                 (ex-data result))))))))

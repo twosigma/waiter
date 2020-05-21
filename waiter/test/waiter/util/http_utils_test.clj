@@ -137,3 +137,10 @@
   (is (not (service-unavailable?
              {:client-protocol "HTTP/2.0" :headers {"content-type" "application/grpc"}}
              {:headers {"grpc-status" 14} :status http-200-ok}))))
+
+(deftest test-browser-request?
+  (is (not (browser-request? {:headers {"user-agent" "curl"}})))
+  (is (not (browser-request? {:headers {"user-agent" "jetty"}})))
+  (is (not (browser-request? {:headers {"user-agent" "python-requests"}})))
+  (is (browser-request? {:headers {"user-agent" "chrome"}}))
+  (is (browser-request? {:headers {"user-agent" "mozilla"}})))

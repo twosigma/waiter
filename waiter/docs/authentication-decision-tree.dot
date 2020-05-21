@@ -1,0 +1,75 @@
+digraph WaiterAuthenticationFlowchart {
+
+  node [fontname = "Handlee"];
+  edge [fontname = "Handlee"];
+
+  start [
+    label = "Start";
+    shape = rect;
+    style = "rounded";
+  ];
+
+  auth_success [
+    label = "Process request and \n send to backend \n (write auth cookie(s) in response)";
+    shape = rect;
+    style = "rounded";
+  ];
+  respond_302 [
+    label = "Issue 302 redirect \n response for OIDC \n with www-negotiate headers";
+    shape = rect;
+    style = "rounded";
+  ];
+  respond_401 [
+    label = "Issue 401 response \n with appropriate headers";
+    shape = rect;
+    style = "rounded";
+  ];
+  {
+    rank=same;
+    auth_success; respond_302; respond_401;
+  }
+
+  waiter_auth_cookie [
+    label = "x-waiter-auth \n cookie \n authentication \n successful?";
+    shape = diamond;
+  ];
+
+  oidc_auth [
+    label = "OIDC token \n authentication \n (on the callback path) \n successful?";
+    shape = diamond;
+  ];
+
+  jwt_auth [
+    label = "JWT \n Bearer token \n authentication \n successful?";
+    shape = diamond;
+  ];
+
+  skip_auth [
+    label = "Token \n configured \n to skip \n authentication?";
+    shape = diamond;
+  ];
+
+  configured_auth [
+    label = "Configured \n authentication \n (e.g. kerberos, saml) \n successful?";
+    shape = diamond;
+  ];
+
+  browser [
+    label = "OIDC \n auth enabled \n AND \n user-agent suggests \n browser?";
+    shape = diamond;
+  ];
+
+  start -> waiter_auth_cookie;
+  waiter_auth_cookie -> oidc_auth [ label = "No" ];
+  waiter_auth_cookie -> auth_success [ label = "Yes" ];
+  oidc_auth -> jwt_auth [ label = "No" ];
+  oidc_auth -> auth_success [ label = "Yes" ];
+  jwt_auth -> skip_auth [ label = "No" ];
+  jwt_auth -> auth_success [ label = "Yes" ];
+  skip_auth -> configured_auth [ label = "No" ];
+  skip_auth -> auth_success [ label = "Yes" ];
+  configured_auth -> browser [ label = "No" ];
+  configured_auth -> auth_success [ label = "Yes" ];
+  browser -> respond_401 [ label = "No" ];
+  browser -> respond_302 [ label = "Yes" ];
+}

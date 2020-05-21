@@ -209,3 +209,10 @@
   (or (= http-503-service-unavailable (:status response))
       (and (grpc? (:headers request) (:client-protocol request))
            (= "14" (get-in response [:headers "grpc-status"])))))
+
+(defn browser-request?
+  "Looks at the user-agent header to determine if the request came from a browser."
+  [request]
+  (when-let [user-agent (some-> request (get-in [:headers "user-agent"]) str/lower-case)]
+    (or (str/includes? user-agent "chrome")
+        (str/includes? user-agent "mozilla"))))

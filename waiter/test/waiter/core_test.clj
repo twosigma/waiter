@@ -24,6 +24,7 @@
             [qbits.jet.client.http :as http]
             [waiter.auth.authentication :as auth]
             [waiter.auth.jwt :as jwt]
+            [waiter.auth.oidc :as oidc]
             [waiter.authorization :as authz]
             [waiter.core :refer :all]
             [waiter.curator :as curator]
@@ -748,6 +749,7 @@
       (is (waiter-request? {:headers {"host" "127.0.0.1:80"}}))
       (is (waiter-request? {}))
       (is (waiter-request? {:uri "/app-name"}))
+      (is (waiter-request? {:uri "/oidc/v1/callback"}))
       (is (waiter-request? {:uri "/service-id"}))
       (is (waiter-request? {:uri "/token"}))
       (is (waiter-request? {:uri "/waiter-async/complete/remaining-parts"}))
@@ -1436,64 +1438,80 @@
 
 (deftest test-authentication-method-wrapper-fn
   (let [standard-handler (fn [request] (assoc request ::standard-handler true))
-        jwt-authenticator (Object.)]
+        jwt-authenticator-obj (Object.)
+        oidc-authenticator-obj (Object.)]
     (with-redefs [jwt/wrap-auth-handler (fn [in-authenticator request-handler]
-                                          (is (= jwt-authenticator in-authenticator))
+                                          (is (= jwt-authenticator-obj in-authenticator))
                                           (is (some? request-handler))
                                           (fn [request]
                                             (-> request
                                               (assoc ::jwt-authenticator
                                                      (-> request :headers (get "authorization") str (str/starts-with? "Bearer ")))
-                                              request-handler)))]
-      (let [authenticator (reify auth/Authenticator
-                            (wrap-auth-handler [_ request-handler]
-                              (is (= standard-handler request-handler))
-                              (fn [request]
-                                (-> request
-                                  (assoc ::authenticator true)
-                                  request-handler))))
-            {:keys [authentication-method-wrapper-fn]} routines
-            authenticate-request-handler (authentication-method-wrapper-fn {:state {:authenticator authenticator
-                                                                                    :jwt-authenticator jwt-authenticator
-                                                                                    :passwords ["a" "b" "c"]}})
-            request-handler (authenticate-request-handler standard-handler)]
+                                              request-handler)))
+                  oidc/wrap-auth-handler (fn [in-authenticator request-handler]
+                                           (is (= oidc-authenticator-obj in-authenticator))
+                                           (is (some? request-handler))
+                                           (fn [request]
+                                             (-> request
+                                               (assoc ::oidc-authenticator :oidc-authenticator)
+                                               request-handler)))]
+      (doseq [jwt-authenticator [nil jwt-authenticator-obj]]
+        (doseq [oidc-authenticator [nil oidc-authenticator-obj]]
+          (let [authenticator (reify auth/Authenticator
+                                (wrap-auth-handler [_ request-handler]
+                                  (is (= standard-handler request-handler))
+                                  (fn [request]
+                                    (-> request
+                                      (assoc ::authenticator true)
+                                      request-handler))))
+                {:keys [authentication-method-wrapper-fn]} routines
+                authenticate-request-handler (authentication-method-wrapper-fn {:state {:authenticator authenticator
+                                                                                        :jwt-authenticator jwt-authenticator
+                                                                                        :oidc-authenticator oidc-authenticator
+                                                                                        :passwords ["a" "b" "c"]}})
+                request-handler (authenticate-request-handler standard-handler)]
 
-        (testing "skip-authentication"
-          (is (= {:headers {}
-                  :skip-authentication true
-                  ::jwt-authenticator false
-                  ::standard-handler true}
-                 (request-handler {:headers {}
-                                   :skip-authentication true}))))
+            (testing "skip-authentication"
+              (is (= (cond-> {:headers {}
+                              :skip-authentication true
+                              ::standard-handler true}
+                       jwt-authenticator (assoc ::jwt-authenticator false)
+                       oidc-authenticator (assoc ::oidc-authenticator :oidc-authenticator))
+                     (request-handler {:headers {}
+                                       :skip-authentication true}))))
 
-        (testing "JWT authentication"
-          (is (= {:headers {"authorization" "Bearer abcd.efgh.ijkl"}
-                  ::authenticator true
-                  ::jwt-authenticator true
-                  ::standard-handler true}
-                 (request-handler {:headers {"authorization" "Bearer abcd.efgh.ijkl"}}))))
+            (testing "JWT authentication"
+              (is (= (cond-> {:headers {"authorization" "Bearer abcd.efgh.ijkl"}
+                              ::authenticator true
+                              ::standard-handler true}
+                       jwt-authenticator (assoc ::jwt-authenticator true)
+                       oidc-authenticator (assoc ::oidc-authenticator :oidc-authenticator))
+                     (request-handler {:headers {"authorization" "Bearer abcd.efgh.ijkl"}}))))
 
-        (testing "cookie-authentication"
-          (with-redefs [auth/get-and-decode-auth-cookie-value (constantly ["user@test.com" (System/currentTimeMillis)])
-                        auth/decoded-auth-valid? (fn [[principal _]] (some? principal))]
-            (is (= {:headers {"cookie" "test-cookie"}
-                    :authorization/method :cookie
-                    :authorization/principal "user@test.com"
-                    :authorization/user "user"
-                    ::jwt-authenticator false
-                    ::standard-handler true}
-                   (request-handler {:headers {"cookie" "test-cookie"}})))))
+            (testing "cookie-authentication"
+              (with-redefs [auth/get-and-decode-auth-cookie-value (constantly ["user@test.com" (System/currentTimeMillis)])
+                            auth/decoded-auth-valid? (fn [[principal _]] (some? principal))]
+                (is (= (cond-> {:headers {"cookie" "test-cookie"}
+                                :authorization/method :cookie
+                                :authorization/principal "user@test.com"
+                                :authorization/user "user"
+                                ::standard-handler true}
+                         jwt-authenticator (assoc ::jwt-authenticator false)
+                         oidc-authenticator (assoc ::oidc-authenticator :oidc-authenticator))
+                       (request-handler {:headers {"cookie" "test-cookie"}})))))
 
-        (testing "require-authentication"
-          (is (= {::authenticator true
-                  ::jwt-authenticator false
-                  ::standard-handler true}
-                 (request-handler {})))
-          (is (= {:headers {"cookie" "test-cookie"}
-                  ::authenticator true
-                  ::jwt-authenticator false
-                  ::standard-handler true}
-                 (request-handler {:headers {"cookie" "test-cookie"}}))))))))
+            (testing "require-authentication"
+              (is (= (cond-> {::authenticator true
+                              ::standard-handler true}
+                       jwt-authenticator (assoc ::jwt-authenticator false)
+                       oidc-authenticator (assoc ::oidc-authenticator :oidc-authenticator))
+                     (request-handler {})))
+              (is (= (cond-> {:headers {"cookie" "test-cookie"}
+                              ::authenticator true
+                              ::standard-handler true}
+                       jwt-authenticator (assoc ::jwt-authenticator false)
+                       oidc-authenticator (assoc ::oidc-authenticator :oidc-authenticator))
+                     (request-handler {:headers {"cookie" "test-cookie"}}))))))))))
 
 (deftest test-waiter-request?-fn
   (testing "string hostname config"

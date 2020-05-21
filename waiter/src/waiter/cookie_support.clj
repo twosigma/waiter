@@ -30,6 +30,12 @@
   (when string
     (UrlEncoded/decodeString string)))
 
+(defn url-encode
+  "URL-encode the input string."
+  [^String string]
+  (when string
+    (UrlEncoded/encodeString string)))
+
 (defn- strip-double-quotes
   [value]
   (let [value-length (count value)]
