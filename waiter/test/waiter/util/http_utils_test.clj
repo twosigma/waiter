@@ -71,7 +71,9 @@
           (http-request http-client "some-url")
           (is false "exception not thrown")
           (catch ExceptionInfo ex
-            (is (= {:body "{\"error\":\"response\"}" :status http-400-bad-request} (ex-data ex)))))))))
+            (is (= {:body {:error "response"}
+                    :status http-400-bad-request}
+                   (ex-data ex)))))))))
 
 (deftest test-backend-protocol->http-version
   (is (= "HTTP/2.0" (backend-protocol->http-version "h2")))

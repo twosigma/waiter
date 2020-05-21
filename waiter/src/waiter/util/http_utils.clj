@@ -19,6 +19,7 @@
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
+            [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [slingshot.slingshot :as ss]
             [waiter.status-codes :refer :all])
@@ -64,37 +65,60 @@
   (and (integer? status)
        (<= http-200-ok status 299)))
 
+(defn http-request-async
+  "Returns a go-block that contains either the body of the response or an exception.
+   Wrapper over the qbits.jet.client.http/request function.
+   It performs a non-blocking read on the response and the response body.
+   The body is assumed to be json and is parsed into a clojure data structure and returned on the channel.
+   If the status of the response in not 2XX and throw-exceptions is true (default), the response is returned inside an exception.
+   Any exception encountered during the processing is returned on the channel."
+  [http-client request-url & {:keys [accept body content-type form-params headers query-string request-method
+                                     spnego-auth throw-exceptions]
+                              :or {spnego-auth false throw-exceptions true}}]
+  (async/go
+    (try
+      (let [request-map (cond-> {:as :string
+                                 :method (or request-method :get)
+                                 :url request-url}
+                          spnego-auth (assoc :auth (spnego-authentication (URI. request-url)))
+                          accept (assoc :accept accept)
+                          form-params (assoc :form-params form-params)
+                          body (assoc :body body)
+                          (not (str/blank? content-type)) (assoc :content-type content-type)
+                          (seq headers) (assoc :headers headers)
+                          query-string (assoc :query-string query-string))
+            raw-response (http/request http-client request-map)
+            {:keys [body error status] :as response} (async/<! raw-response)]
+        (when error
+          (throw error))
+        (let [response-body (async/<! body)
+              parsed-body (try
+                            (cond-> response-body
+                              (not-empty response-body)
+                              (-> json/read-str walk/keywordize-keys))
+                            (catch Exception _
+                              response-body))
+              response (assoc response :body parsed-body)]
+          (when (and throw-exceptions (not (status-2XX? status)))
+            (throw (ex-info "Bad response" {:http-utils/response response})))
+          parsed-body))
+      (catch Throwable throwable
+        throwable))))
+
 (defn http-request
   "Wrapper over the qbits.jet.client.http/request function.
    It performs a blocking read on the response and the response body.
    The body is assumed to be json and is parsed into a clojure data structure.
    If the status of the response in not 2XX, the response is thrown as an exception."
-  [http-client request-url & {:keys [accept body content-type headers query-string request-method
-                                     spnego-auth throw-exceptions]
-                              :or {spnego-auth false throw-exceptions true}}]
-  (let [request-map (cond-> {:as :string
-                             :method (or request-method :get)
-                             :url request-url}
-                      spnego-auth (assoc :auth (spnego-authentication (URI. request-url)))
-                      accept (assoc :accept accept)
-                      body (assoc :body body)
-                      (not (str/blank? content-type)) (assoc :content-type content-type)
-                      (seq headers) (assoc :headers headers)
-                      query-string (assoc :query-string query-string))
-        raw-response (http/request http-client request-map)
-        {:keys [error status] :as response} (async/<!! raw-response)]
-    (when error
-      (throw error))
-    (let [response (update response :body async/<!!)]
-      (when (and throw-exceptions (not (status-2XX? status)))
-        (ss/throw+ response))
-      (let [{:keys [body]} response]
-        (try
-          (cond-> body
-            (not-empty body)
-            (-> json/read-str walk/keywordize-keys))
-          (catch Exception _
-            body))))))
+  [http-client request-url & {:as options-map}]
+  (let [result-chan (pc/mapply http-request-async http-client request-url options-map)
+        body-or-throwable (async/<!! result-chan)]
+    (if (instance? Throwable body-or-throwable)
+      (let [{:keys [http-utils/response]} (ex-data body-or-throwable)]
+        (if (some? response)
+          (ss/throw+ response)
+          (throw body-or-throwable)))
+      body-or-throwable)))
 
 (defn ^HttpClient http-client-factory
   "Creates a HttpClient."
