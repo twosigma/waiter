@@ -247,10 +247,44 @@
                        :subject-regex subject-regex}))))
   claims)
 
+(defrecord JwtValidator [issuer-constraints max-expiry-duration-ms subject-key subject-regex
+                         supported-algorithms token-type])
+
+(defn- issuer->issuer-constraints
+  "Converts the input issuer config to issuer-constraints vector."
+  [issuer]
+  (cond-> issuer
+    (or (string? issuer) (regex-pattern? issuer)) vector))
+
+(def ^:const default-subject-regex #"([a-zA-Z0-9]+)@([a-zA-Z0-9]+(-[a-zA-Z0-9]+)*\.)+([a-zA-Z]{2,})$")
+
+(defn create-jwt-validator
+  "Factory function for creating jwt validator."
+  [{:keys [issuer max-expiry-duration-ms subject-key subject-regex supported-algorithms token-type]
+    :or {max-expiry-duration-ms (-> 24 t/hours t/in-millis)
+         subject-regex default-subject-regex}}]
+  {:pre [(vector? (issuer->issuer-constraints issuer))
+         (seq (issuer->issuer-constraints issuer))
+         (every? #(or (and (string? %)
+                           (not (str/blank? %)))
+                      (and (regex-pattern? %)
+                           (nil? (re-find % ""))
+                           (nil? (re-find % " "))))
+                 (issuer->issuer-constraints issuer))
+         (pos? max-expiry-duration-ms)
+         (keyword? subject-key)
+         supported-algorithms
+         (set? supported-algorithms)
+         (empty? (set/difference supported-algorithms #{:eddsa :rs256}))
+         (not (str/blank? token-type))]}
+  (let [issuer-constraints (issuer->issuer-constraints issuer)]
+    (->JwtValidator issuer-constraints max-expiry-duration-ms subject-key subject-regex
+                    supported-algorithms token-type)))
+
 (defn validate-access-token
   "Validates the JWT access token using the provided keys, realm and issuer."
-  [token-type issuer-constraints subject-key subject-regex supported-algorithms key-id->jwk
-   max-expiry-duration-ms realm request-scheme access-token]
+  [{:keys [issuer-constraints max-expiry-duration-ms subject-key subject-regex supported-algorithms token-type]}
+   key-id->jwk realm request-scheme access-token]
   (when (str/blank? realm)
     (throw (ex-info "JWT authentication can only be used with host header"
                     {:log-level :info
@@ -341,21 +375,20 @@
 (defn extract-claims
   "Returns either the access token provided in the request and claims from the extracted access token, or
    an exception that occurred while attempting to extract the claims."
-  [token-type issuer-constraints subject-key subject-regex supported-algorithms key-id->jwk max-expiry-duration-ms
-   request]
+  [{:keys [subject-key] :as jwt-validator} key-id->jwk request access-token]
   (let [validation-timer (metrics/waiter-timer "core" "jwt" "validation")
         timer-context (timers/start validation-timer)]
     (try
       (let [realm (request->realm request)
             request-scheme (utils/request->scheme request)
-            bearer-entry (auth/select-auth-header request access-token?)
-            access-token (str/trim (subs bearer-entry (count bearer-prefix)))
-            claims (validate-access-token token-type issuer-constraints subject-key subject-regex supported-algorithms
-                                          key-id->jwk max-expiry-duration-ms realm request-scheme access-token)]
+            claims (validate-access-token jwt-validator key-id->jwk realm request-scheme access-token)
+            {:keys [exp]} claims
+            subject (subject-key claims)]
         (timers/stop timer-context)
         (counters/inc! (metrics/waiter-counter "core" "jwt" "validation" "success"))
         {:claims claims
-         :jwt-access-token access-token})
+         :expiry-time exp
+         :subject subject})
       (catch Throwable throwable
         (timers/stop timer-context)
         (counters/inc! (metrics/waiter-counter "core" "jwt" "validation" "failed"))
@@ -381,11 +414,10 @@
   "Performs authentication and then
    - responds with an error response when authentication fails, or
    - invokes the downstream request handler using the authenticated credentials in the request."
-  [request-handler token-type issuer-constraints subject-key subject-regex supported-algorithms key-id->jwk
-   password max-expiry-duration-ms request]
-  (let [result-map-or-throwable
-        (extract-claims token-type issuer-constraints subject-key subject-regex supported-algorithms
-                        key-id->jwk max-expiry-duration-ms request)]
+  [request-handler jwt-validator key-id->jwk password request]
+  (let [bearer-entry (auth/select-auth-header request access-token?)
+        access-token (str/trim (subs bearer-entry (count bearer-prefix)))
+        result-map-or-throwable (extract-claims jwt-validator key-id->jwk request access-token)]
     (if (instance? Throwable result-map-or-throwable)
       (if (-> result-map-or-throwable ex-data :status (= http-401-unauthorized))
         ;; allow downstream processing before deciding on authentication challenge in response
@@ -394,19 +426,16 @@
           (make-401-response-updater request))
         ;; non-401 response avoids further downstream handler processing
         (utils/exception->response result-map-or-throwable request))
-      (let [{:keys [claims jwt-access-token]} result-map-or-throwable
-            {:keys [exp]} claims
-            subject (subject-key claims)
-            auth-params-map (auth/build-auth-params-map :jwt subject {:jwt-access-token jwt-access-token})
-            auth-cookie-age-in-seconds (- exp (current-time-secs))]
+      (let [{:keys [expiry-time subject]} result-map-or-throwable
+            auth-params-map (auth/build-auth-params-map :jwt subject {:jwt-access-token access-token})
+            auth-cookie-age-in-seconds (- expiry-time (current-time-secs))]
         (auth/handle-request-auth
           request-handler request auth-params-map password auth-cookie-age-in-seconds)))))
 
 (defn wrap-auth-handler
   "Wraps the request handler with a handler to trigger JWT access token authentication."
   [{:keys [allow-bearer-auth-api? allow-bearer-auth-services? attach-www-authenticate-on-missing-bearer-token?
-           auth-server issuer-constraints max-expiry-duration-ms password subject-key subject-regex
-           supported-algorithms token-type]}
+           auth-server jwt-validator password]}
    request-handler]
   (fn jwt-auth-handler [{:keys [waiter-api-call?] :as request}]
     (let [use-jwt-auth? (or
@@ -422,8 +451,7 @@
         (request-handler request)
 
         (auth/select-auth-header request access-token?)
-        (authenticate-request request-handler token-type issuer-constraints subject-key subject-regex supported-algorithms
-                              (get-key-id->jwk auth-server) password max-expiry-duration-ms request)
+        (authenticate-request request-handler jwt-validator (get-key-id->jwk auth-server) password request)
 
         :else
         (cond-> (request-handler request)
@@ -432,49 +460,24 @@
 
 (defrecord JwtAuthenticator [allow-bearer-auth-api? allow-bearer-auth-services?
                              attach-www-authenticate-on-missing-bearer-token?
-                             auth-server issuer-constraints max-expiry-duration-ms password
-                             subject-key subject-regex supported-algorithms token-type])
-
-(def ^:const default-subject-regex #"([a-zA-Z0-9]+)@([a-zA-Z0-9]+(-[a-zA-Z0-9]+)*\.)+([a-zA-Z]{2,})$")
-
-(defn- issuer->issuer-constraints
-  "Converts the input issuer config to issuer-constraints vector."
-  [issuer]
-  (cond-> issuer
-    (or (string? issuer) (regex-pattern? issuer)) vector))
+                             auth-server jwt-validator password])
 
 (defn jwt-authenticator
   "Factory function for creating jwt authenticator middleware"
-  [auth-server
-   {:keys [allow-bearer-auth-api? allow-bearer-auth-services? attach-www-authenticate-on-missing-bearer-token?
-           issuer max-expiry-duration-ms password subject-key subject-regex
-           supported-algorithms token-type]
+  [auth-server jwt-validator
+   {:keys [allow-bearer-auth-api?
+           allow-bearer-auth-services?
+           attach-www-authenticate-on-missing-bearer-token?
+           password]
     :or {allow-bearer-auth-api? true
          allow-bearer-auth-services? false
-         attach-www-authenticate-on-missing-bearer-token? true
-         max-expiry-duration-ms (-> 24 t/hours t/in-millis)
-         subject-regex default-subject-regex}}]
+         attach-www-authenticate-on-missing-bearer-token? true}}]
   {:pre [(satisfies? AuthServer auth-server)
+         (instance? JwtValidator jwt-validator)
          (boolean? allow-bearer-auth-api?)
          (boolean? allow-bearer-auth-services?)
          (boolean? attach-www-authenticate-on-missing-bearer-token?)
-         (vector? (issuer->issuer-constraints issuer))
-         (seq (issuer->issuer-constraints issuer))
-         (every? #(or (and (string? %)
-                           (not (str/blank? %)))
-                      (and (regex-pattern? %)
-                           (nil? (re-find % ""))
-                           (nil? (re-find % " "))))
-                 (issuer->issuer-constraints issuer))
-         (pos? max-expiry-duration-ms)
-         (some? password)
-         (keyword? subject-key)
-         supported-algorithms
-         (set? supported-algorithms)
-         (empty? (set/difference supported-algorithms #{:eddsa :rs256}))
-         (not (str/blank? token-type))]}
-  (let [issuer-constraints (issuer->issuer-constraints issuer)]
-    (->JwtAuthenticator allow-bearer-auth-api? allow-bearer-auth-services?
-                        attach-www-authenticate-on-missing-bearer-token?
-                        auth-server issuer-constraints max-expiry-duration-ms password
-                        subject-key subject-regex supported-algorithms token-type)))
+         (some? password)]}
+  (->JwtAuthenticator allow-bearer-auth-api? allow-bearer-auth-services?
+                      attach-www-authenticate-on-missing-bearer-token?
+                      auth-server jwt-validator password))
