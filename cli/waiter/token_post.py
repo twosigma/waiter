@@ -136,6 +136,7 @@ def add_arguments(parser):
 def add_token_flags(parser):
     """Adds the "core" token-field flags to the given parser"""
     parser.add_argument('--name', '-n', help='name of service')
+    parser.add_argument('--owner', '-o', help='owner of service')
     parser.add_argument('--version', '-v', help='version of service')
     parser.add_argument('--cmd', '-C', help='command to start service')
     parser.add_argument('--cmd-type', '-t', help='command type of service (e.g. "shell")', dest='cmd-type')
