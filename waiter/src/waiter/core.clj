@@ -103,7 +103,7 @@
                                   ["/" :service-id] :blacklisted-instances-list-handler-fn}
                      "favicon.ico" :favicon-handler-fn
                      "metrics" :metrics-request-handler-fn
-                     "oidc/v1/callback" :oidc-callback-handler-fn
+                     (subs oidc/oidc-callback-uri 1) :oidc-callback-handler-fn
                      "service-id" :service-id-handler-fn
                      "profiles" :profile-list-handler-fn
                      "settings" :display-settings-handler-fn

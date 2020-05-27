@@ -33,17 +33,76 @@
         state-map {:redirect-uri "https://www.test.com/redirect-uri"}
         state-code (create-state-code password state-map)
         access-code (str "access-code-" (rand-int 1000))
-        challenge-cookie (str "challenge-cookie-" (rand-int 1000))]
+        challenge-cookie (str "challenge-cookie-" (rand-int 1000))
+        current-time-ms (System/currentTimeMillis)
+        expired-time-ms (- current-time-ms 10000)
+        not-expired-time-ms (+ current-time-ms 10000)]
 
     (with-redefs [cookie-support/decode-cookie (fn [cookie-value in-password]
                                                  (is (= password in-password))
-                                                 (str "decoded:" cookie-value))]
+                                                 {:code-verifier (str "decoded:" cookie-value)
+                                                  :expiry-time not-expired-time-ms})
+                  t/now (constantly (tc/from-long current-time-ms))]
       (let [request {:headers {"cookie" (str oidc-challenge-cookie "=" challenge-cookie)}
                      :query-string (str "code=" access-code "&state=" state-code)}]
         (is (= {:code access-code
                 :code-verifier (str "decoded:" challenge-cookie)
                 :state-map state-map}
                (validate-oidc-callback-request password request)))))
+
+    (with-redefs [cookie-support/decode-cookie (fn [cookie-value in-password]
+                                                 (is (= password in-password))
+                                                 (str "decoded:" cookie-value))
+                  t/now (constantly (tc/from-long current-time-ms))]
+      (let [request {:headers {"cookie" (str oidc-challenge-cookie "=" challenge-cookie)}
+                     :query-string (str "code=" access-code "&state=" state-code)}]
+        (is (thrown-with-msg?
+              ExceptionInfo #"Decoded challenge cookie is invalid"
+              (validate-oidc-callback-request password request)))))
+
+    (with-redefs [cookie-support/decode-cookie (fn [cookie-value in-password]
+                                                 (is (= password in-password))
+                                                 {:code-verifier (str "decoded:" cookie-value)
+                                                  :expiry-time (str not-expired-time-ms)})
+                  t/now (constantly (tc/from-long current-time-ms))]
+      (let [request {:headers {"cookie" (str oidc-challenge-cookie "=" challenge-cookie)}
+                     :query-string (str "code=" access-code "&state=" state-code)}]
+        (is (thrown-with-msg?
+              ExceptionInfo #"The challenge cookie has invalid format"
+              (validate-oidc-callback-request password request)))))
+
+    (with-redefs [cookie-support/decode-cookie (fn [cookie-value in-password]
+                                                 (is (= password in-password))
+                                                 {:code-verifier (str "decoded:" cookie-value)
+                                                  :expiry-time expired-time-ms})
+                  t/now (constantly (tc/from-long current-time-ms))]
+      (let [request {:headers {"cookie" (str oidc-challenge-cookie "=" challenge-cookie)}
+                     :query-string (str "code=" access-code "&state=" state-code)}]
+        (is (thrown-with-msg?
+              ExceptionInfo #"The challenge cookie has expired"
+              (validate-oidc-callback-request password request)))))
+
+    (with-redefs [cookie-support/decode-cookie (fn [cookie-value in-password]
+                                                 (is (= password in-password))
+                                                 {:code-verifier nil
+                                                  :expiry-time not-expired-time-ms})
+                  t/now (constantly (tc/from-long current-time-ms))]
+      (let [request {:headers {"cookie" (str oidc-challenge-cookie "=" challenge-cookie)}
+                     :query-string (str "code=" access-code "&state=" state-code)}]
+        (is (thrown-with-msg?
+              ExceptionInfo #"No challenge code available from cookie"
+              (validate-oidc-callback-request password request)))))
+
+    (with-redefs [cookie-support/decode-cookie (fn [cookie-value in-password]
+                                                 (is (= password in-password))
+                                                 {:code-verifier " "
+                                                  :expiry-time not-expired-time-ms})
+                  t/now (constantly (tc/from-long current-time-ms))]
+      (let [request {:headers {"cookie" (str oidc-challenge-cookie "=" challenge-cookie)}
+                     :query-string (str "code=" access-code "&state=" state-code)}]
+        (is (thrown-with-msg?
+              ExceptionInfo #"No challenge code available from cookie"
+              (validate-oidc-callback-request password request)))))
 
     (let [request {:headers {"cookie" (str oidc-challenge-cookie "=" challenge-cookie)}
                    :query-string (str "state=" state-code)}]
@@ -96,7 +155,8 @@
                                                                  :value value}))
                   cookie-support/decode-cookie (fn [cookie-value in-password]
                                                  (is (= password in-password))
-                                                 (str "decoded:" cookie-value))
+                                                 {:code-verifier (str "decoded:" cookie-value)
+                                                  :expiry-time (+ current-time-ms 10000)})
                   jwt/current-time-secs (constantly current-time-secs)
                   jwt/get-key-id->jwk (constantly {})
                   jwt/request-access-token (fn [& _]
@@ -130,7 +190,8 @@
 
     (with-redefs [cookie-support/decode-cookie (fn [cookie-value in-password]
                                                  (is (= password in-password))
-                                                 (str "decoded:" cookie-value))
+                                                 {:code-verifier (str "decoded:" cookie-value)
+                                                  :expiry-time (+ current-time-ms 10000)})
                   jwt/get-key-id->jwk (constantly {})
                   jwt/request-access-token (fn [& _]
                                              (let [result-chan (async/promise-chan)]
@@ -150,11 +211,12 @@
                 :status http-401-unauthorized
                 :waiter/response-source :waiter}
                (dissoc response :body)))
-        (is (str/includes? (-> response :body str) "Created from validate-access-token"))))
+        (is (str/includes? (-> response :body str) "Error in retrieving access token"))))
 
     (with-redefs [cookie-support/decode-cookie (fn [cookie-value in-password]
                                                  (is (= password in-password))
-                                                 (str "decoded:" cookie-value))
+                                                 {:code-verifier (str "decoded:" cookie-value)
+                                                  :expiry-time (+ current-time-ms 10000)})
                   jwt/get-key-id->jwk (constantly {})
                   jwt/request-access-token (fn [& _]
                                              (let [result-chan (async/promise-chan)]
@@ -172,7 +234,7 @@
                 :status http-401-unauthorized
                 :waiter/response-source :waiter}
                (dissoc response :body)))
-        (is (str/includes? (-> response :body str) "Created from request-access-token"))))))
+        (is (str/includes? (-> response :body str) "Error in retrieving access token"))))))
 
 (deftest test-update-oidc-auth-response
   (let [request-host "www.host.com:8080"
@@ -184,12 +246,14 @@
         code-verifier "code-verifier-1234"
         state-code "status-4567"
         oidc-authorize-uri "https://www.test.com:9090/authorize"
-        oidc-auth-server (jwt/->JwtAuthServer nil "jwks-url" (atom nil) oidc-authorize-uri nil)]
+        oidc-auth-server (jwt/->JwtAuthServer nil "jwks-url" (atom nil) oidc-authorize-uri nil)
+        current-time-ms (System/currentTimeMillis)]
     (with-redefs [cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds]
                                                       (is (= password in-password))
                                                       (is (= challenge-cookie-duration-secs age-in-seconds))
                                                       (assoc response :cookie {name value}))
                   utils/unique-identifier (constantly "123456")
+                  t/now (constantly (tc/from-long current-time-ms))
                   create-code-verifier (constantly code-verifier)
                   create-state-code (fn [in-password state-data]
                                       (is (= password in-password))
@@ -222,7 +286,10 @@
                                  "scope=openid&"
                                  "state=" state-code)]
           (is (= (-> response
-                   (assoc :cookie {oidc-challenge-cookie code-verifier}
+                   (assoc :cookie {oidc-challenge-cookie {:code-verifier code-verifier
+                                                          :expiry-time (-> (t/now)
+                                                                         (t/plus (t/seconds challenge-cookie-duration-secs))
+                                                                         (tc/to-long))}}
                           :status http-302-moved-temporarily)
                    (update :headers assoc
                            "cache-control" "no-store"

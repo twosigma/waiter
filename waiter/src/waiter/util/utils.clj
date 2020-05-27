@@ -499,7 +499,7 @@
 (defn map->base-36-string
   "Serializes data to a base 36 string along with encryption."
   [data-map encryption-key]
-  (bytes->base-36-string (b64/encode (nippy/freeze data-map {:compressor nil :password encryption-key}))))
+  (bytes->base-36-string (nippy/freeze data-map {:compressor nil :password encryption-key})))
 
 (defn base-36-string->bytes
   "Returns a base 36 encoded byte array."
@@ -509,7 +509,7 @@
 (defn base-36-string->map
   "Deserializes and decrypts a base 36 string."
   [b36-string decryption-key]
-  (nippy/thaw (b64/decode (base-36-string->bytes b36-string)) {:compressor nil :password decryption-key :v1-compatibility? false}))
+  (nippy/thaw (base-36-string->bytes b36-string) {:compressor nil :password decryption-key :v1-compatibility? false}))
 
 (defn b64-encode-sha256
   "Returns the url encoding of the input string using SHA256."

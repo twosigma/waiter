@@ -211,7 +211,9 @@
            (= "14" (get-in response [:headers "grpc-status"])))))
 
 (defn browser-request?
-  "Looks at the user-agent header to determine if the request came from a browser."
+  "Looks at the user-agent header to determine if the request came from a browser.
+   This is useful, e.g., determining whether the client should be asked to handle redirects.
+   Current implementation checks for the presence of chrome or mozilla."
   [request]
   (when-let [user-agent (some-> request (get-in [:headers "user-agent"]) str/lower-case)]
     (or (str/includes? user-agent "chrome")

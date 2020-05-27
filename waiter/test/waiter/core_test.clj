@@ -946,6 +946,8 @@
            (exec-routes-mapper "/metrics")))
     (is (= {:handler :not-found-handler-fn}
            (exec-routes-mapper "/not-found"))) ; any path that isn't mapped
+    (is (= {:handler :oidc-callback-handler-fn}
+           (exec-routes-mapper "/oidc/v1/callback")))
     (is (= {:handler :not-found-handler-fn}
            (exec-routes-mapper "/secrun")))
     (is (= {:handler :service-id-handler-fn}
