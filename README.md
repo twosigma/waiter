@@ -50,4 +50,4 @@ In order to accept your code contributions, please fill out the appropriate Cont
 
 Apache Mesos is a trademark of The Apache Software Foundation. The Apache Software Foundation is not affiliated, endorsed, connected, sponsored or otherwise associated in any way to Two Sigma, Waiter, or this website in any manner.
 
-© 2017-2019 Two Sigma Open Source, LLC
+© 2017-2020 Two Sigma Open Source, LLC
