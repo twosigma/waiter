@@ -1047,7 +1047,7 @@
       {:query-fn global-pods-state-query
        :resource-key :service-id->pod-id->pod
        :resource-name "Pods"
-       :resource-url (str api-server-url "/api/v1/pods?labelSelector=waiter-cluster=" cluster-name)
+       :resource-url (str api-server-url "/api/v1/pods?labelSelector=waiter%2Fcluster=" cluster-name)
        :metadata-key :pods-metadata
        :update-fn (fn pods-watch-update [{pod :object update-type :type}]
                     (let [now (t/now)
@@ -1091,7 +1091,7 @@
        :resource-key :service-id->service
        :resource-name "ReplicaSets"
        :resource-url (str api-server-url "/apis/" replicaset-api-version
-                          "/replicasets?labelSelector=waiter-cluster="
+                          "/replicasets?labelSelector=waiter%2Fcluster="
                           cluster-name)
        :metadata-key :rs-metadata
        :update-fn (fn rs-watch-update [{rs :object update-type :type}]
