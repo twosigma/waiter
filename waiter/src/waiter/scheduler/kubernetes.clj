@@ -837,10 +837,6 @@
                   ;; https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/#syntax-and-character-set
                   :annotations {:waiter/service-id service-id}
                   :labels {:app k8s-name
-                           ;; TODO - remove waiter-cluster
-                           ;; after waiter/cluster is exclusively in use
-                           ;; (see GitHub issue #721)
-                           :waiter-cluster cluster-name
                            :waiter/cluster cluster-name
                            :waiter/service-hash service-hash
                            :waiter/user run-as-user}
@@ -848,12 +844,10 @@
                   :namespace (or namespace default-namespace)}
        :spec {:replicas min-instances
               :selector {:matchLabels {:app k8s-name
-                                       :waiter-cluster cluster-name
                                        :waiter/user run-as-user}}
               :template {:metadata {:annotations {:waiter/port-count (str ports)
                                                   :waiter/service-id service-id}
                                     :labels {:app k8s-name
-                                             :waiter-cluster cluster-name
                                              :waiter/cluster cluster-name
                                              :waiter/service-hash service-hash
                                              :waiter/user run-as-user}}
