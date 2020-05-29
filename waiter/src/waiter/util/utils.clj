@@ -491,26 +491,6 @@
   [b64-string decryption-key]
   (nippy/thaw (b64/decode (.getBytes b64-string)) {:compressor nil :password decryption-key :v1-compatibility? false}))
 
-(defn bytes->base-36-string
-  "Returns a base 36 encoded string representation of the byte array."
-  [^bytes data-bytes]
-  (.toString (BigInteger. 1 data-bytes) 36))
-
-(defn map->base-36-string
-  "Serializes data to a base 36 string along with encryption."
-  [data-map encryption-key]
-  (bytes->base-36-string (nippy/freeze data-map {:compressor nil :password encryption-key})))
-
-(defn base-36-string->bytes
-  "Returns a base 36 encoded byte array."
-  [^String b36-string]
-  (.toByteArray (BigInteger. b36-string 36)))
-
-(defn base-36-string->map
-  "Deserializes and decrypts a base 36 string."
-  [b36-string decryption-key]
-  (nippy/thaw (base-36-string->bytes b36-string) {:compressor nil :password decryption-key :v1-compatibility? false}))
-
 (defn b64-encode-sha256
   "Returns the url encoding of the input string using SHA256."
   [clear-text]

@@ -49,13 +49,13 @@
 
 (defn create-state-code
   "Creates an encoded string of the input state map."
-  [password state-map]
-  (utils/map->base-36-string state-map password))
+  [state-map password]
+  (utils/map->base-64-string state-map password))
 
 (defn parse-state-code
   "Parses the encoded string into the state map."
-  [password state-str]
-  (utils/base-36-string->map state-str password))
+  [state-str password]
+  (utils/base-64-string->map state-str password))
 
 (defn validate-oidc-callback-request
   [password {:keys [headers] :as request}]
@@ -73,7 +73,10 @@
     (when (str/blank? challenge-cookie)
       (throw (ex-info "No challenge cookie set" bad-request-map)))
     (let [state-map (try
-                      (parse-state-code password state)
+                      (-> state
+                        ;; handle url decoding of + to whitespace
+                        (str/replace #" " "+")
+                        (parse-state-code password))
                       (catch Throwable throwable
                         (throw (ex-info "Unable to parse state"
                                         bad-request-map throwable))))]
@@ -157,7 +160,7 @@
         code-verifier (create-code-verifier)
         state-data {:redirect-uri (str (name request-scheme) "://" request-host uri
                                        (when query-string (str "?" query-string)))}
-        state-code (create-state-code password state-data)
+        state-code (create-state-code state-data password)
         authorize-uri (jwt/retrieve-authorize-url
                         jwt-auth-server request oidc-callback-uri code-verifier state-code)
         expiry-time (-> (t/now)

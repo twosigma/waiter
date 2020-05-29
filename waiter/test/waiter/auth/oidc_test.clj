@@ -31,7 +31,7 @@
 (deftest test-validate-oidc-callback-request
   (let [password [:cached "password"]
         state-map {:redirect-uri "https://www.test.com/redirect-uri"}
-        state-code (create-state-code password state-map)
+        state-code (create-state-code state-map password)
         access-code (str "access-code-" (rand-int 1000))
         challenge-cookie (str "challenge-cookie-" (rand-int 1000))
         current-time-ms (System/currentTimeMillis)
@@ -129,7 +129,7 @@
             (validate-oidc-callback-request password request))))
 
     (let [state-map {:callback-uri "https://www.test.com/redirect-uri"}
-          state-code (create-state-code password state-map)
+          state-code (create-state-code state-map password)
           request {:headers {"cookie" (str oidc-challenge-cookie "=" challenge-cookie)}
                    :query-string (str "code=" access-code "&state=" state-code)}]
       (is (thrown-with-msg?
@@ -139,7 +139,7 @@
 (deftest test-oidc-callback-request-handler
   (let [password [:cached "password"]
         state-map {:redirect-uri "https://www.test.com/redirect-uri"}
-        state-code (create-state-code password state-map)
+        state-code (create-state-code state-map password)
         access-code (str "access-code-" (rand-int 1000))
         challenge-cookie (str "challenge-cookie-" (rand-int 1000))
         access-token (str "access-token-" (rand-int 1000))
@@ -255,7 +255,7 @@
                   utils/unique-identifier (constantly "123456")
                   t/now (constantly (tc/from-long current-time-ms))
                   create-code-verifier (constantly code-verifier)
-                  create-state-code (fn [in-password state-data]
+                  create-state-code (fn [state-data in-password]
                                       (is (= password in-password))
                                       (is (= {:redirect-uri (str "https://" request-host "/test?some-query-string")}
                                              state-data))
