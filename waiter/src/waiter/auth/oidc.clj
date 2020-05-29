@@ -183,6 +183,17 @@
       ;; non-401 response, avoid authentication challenge
       response)))
 
+(defn oidc-enabled-on-service?
+  "Returns true if OIDC auth is enabled for the service."
+  [allow-oidc-auth-api? allow-oidc-auth-services? {:keys [waiter-api-call?] :as request}]
+  (let [use-oidc-auth-env (get-in request [:waiter-discovery :service-description-template "env" "USE_OIDC_AUTH"])]
+    (or
+      ;; service requests will enable OIDC auth based on env variable or when absent, allow-oidc-auth-services?
+      (and (not waiter-api-call?)
+           (if (some? use-oidc-auth-env) (= "true" use-oidc-auth-env) allow-oidc-auth-services?))
+      ;; waiter api requests will enable OIDC auth based on allow-oidc-auth-api?
+      (and waiter-api-call? allow-oidc-auth-api?))))
+
 (defn supports-redirect?
   "Returns true when:
    - either the request is deemed to have come from a browser
@@ -202,25 +213,18 @@
   "Wraps the request handler with a handler to trigger OIDC+PKCE authentication."
   [{:keys [allow-oidc-auth-api? allow-oidc-auth-services? jwt-auth-server oidc-authorize-uri password]} request-handler]
   (let [oidc-authority (-> oidc-authorize-uri (URI.) (.getAuthority))]
-    (fn oidc-auth-handler [{:keys [waiter-api-call?] :as request}]
-      (let [use-oidc-auth-env (get-in request [:waiter-discovery :service-description-template "env" "USE_OIDC_AUTH"])
-            use-oidc-auth? (or
-                             ;; service requests will enable OIDC auth based on env variable or when absent, allow-oidc-auth-services?
-                             (and (not waiter-api-call?)
-                                  (if (some? use-oidc-auth-env) (= "true" use-oidc-auth-env) allow-oidc-auth-services?))
-                             ;; waiter api requests will enable OIDC auth based on allow-oidc-auth-api?
-                             (and waiter-api-call? allow-oidc-auth-api?))
-            use-redirect? (supports-redirect? oidc-authority request)]
-        (cond
-          (or (not use-oidc-auth?)
-              (not use-redirect?) ;; OIDC auth is no-op when request cannot be redirected
-              (auth/request-authenticated? request))
-          (request-handler request)
+    (fn oidc-auth-handler [request]
+      (cond
+        (or (auth/request-authenticated? request)
+            (not (oidc-enabled-on-service? allow-oidc-auth-api? allow-oidc-auth-services? request))
+            ;; OIDC auth is no-op when request cannot be redirected
+            (not (supports-redirect? oidc-authority request)))
+        (request-handler request)
 
-          :else
-          (ru/update-response
-            (request-handler request)
-            (make-oidc-auth-response-updater jwt-auth-server password request)))))))
+        :else
+        (ru/update-response
+          (request-handler request)
+          (make-oidc-auth-response-updater jwt-auth-server password request))))))
 
 (defrecord OidcAuthenticator [allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri
                               jwt-auth-server jwt-validator password])
