@@ -642,6 +642,22 @@
                                                        (if (seq new-instance-ids) (str "New healthy instances: " new-instance-ids ".") "")
                                                        (if (seq rem-instance-ids) (str "Removed healthy instances: " rem-instance-ids ".") "")
                                                        (if (seq unhealthy-instance-ids) (str "Unhealthy instances: " unhealthy-instance-ids ".") ""))))
+                                         (when (or (not= (get service-id->expired-instances service-id) expired-instances))
+                                           (let [cur-exp-instance-ids (set (map :id expired-instances))
+                                                 old-exp-instance-ids (set (map :id (get service-id->expired-instances service-id)))
+                                                 new-exp-instance-ids (filterv (complement old-exp-instance-ids) cur-exp-instance-ids)
+
+                                                 cur-healthy-exp-instance-ids (set (map :id expired-healthy-instances))
+                                                 old-healthy-exp-instance-ids (set (map :id (get service-id->expired-healthy-instances service-id)))
+                                                 new-healthy-exp-instance-ids (filterv (complement old-healthy-exp-instance-ids) cur-healthy-exp-instance-ids)
+
+                                                 cur-unhealthy-exp-instance-ids (set (map :id expired-unhealthy-instances))
+                                                 old-unhealthy-exp-instance-ids (set (map :id (get service-id->expired-unhealthy-instances service-id)))
+                                                 new-unhealthy-exp-instance-ids (filterv (complement old-unhealthy-exp-instance-ids) cur-unhealthy-exp-instance-ids)]
+                                             (log/log "InstanceTracker" :debug nil
+                                                      (str "Following instances are now expired " {:ids new-exp-instance-ids :instances expired-instances}  "\n"
+                                                           "Following healthy instances are now expired " {:ids new-healthy-exp-instance-ids :instances expired-healthy-instances}  "\n"
+                                                           "Following unhealthy instances are now expired " {:ids new-unhealthy-exp-instance-ids :instances expired-unhealthy-instances}))))
                                          (assoc loop-state
                                            :service-id->deployment-error service-id->deployment-error'
                                            :service-id->expired-instances service-id->expired-instances'
@@ -711,7 +727,9 @@
       {:go-chan go-chan
        :notify-instance-killed-fn (fn notify-router-state-maintainer-of-instance-killed [instance]
                                     (log/info "received notification of killed instance" (:id instance))
-                                    (async/go (async/>! kill-notification-chan {:instance instance})))
+                                    (log/log "InstanceTracker" :debug nil (str "Instance was killed " {:id instance :instance instance}))
+                                    (async/go
+                                      (async/>! kill-notification-chan {:instance instance})))
        :query-chan query-chan
        :query-state-fn (fn router-state-maintainer-query-state-fn []
                          (assoc @state-atom :router-id router-id))

@@ -40,10 +40,8 @@
 
 (defn expired?
   "Predicate on instances containing the :expired status tag."
-  [{:keys [status-tags] :as status-map}]
-  (when-let [expired (contains? status-tags :expired)]
-    (log/log "InstanceTracker" :debug nil (str "Expired instance found at " (:instance-id status-map)))
-    expired))
+  [{:keys [status-tags]}]
+  (contains? status-tags :expired))
 
 (defn- slots-available?
   "Predicate on healthy instances with available slots greater than used slots."
@@ -390,7 +388,6 @@
                                          lingering-request-threshold-ms)]
     (if instance
       (let [instance-id (:id instance)]
-        (log/log "InstanceTracker" :debug nil (str "Instance id " instance-id " was killed"))
         {:current-state' (-> current-state
                            (assoc-in [:instance-id->request-id->use-reason-map instance-id request-id] reason-map)
                            ; mark instance as locked if it is going to be killed.
