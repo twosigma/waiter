@@ -35,6 +35,7 @@
            java.lang.Process
            java.net.ServerSocket
            java.nio.ByteBuffer
+           (java.nio.charset StandardCharsets)
            java.util.concurrent.ThreadLocalRandom
            java.util.regex.Pattern
            javax.servlet.ServletResponse
@@ -494,7 +495,7 @@
 (defn b64-encode-sha256
   "Returns the url encoding of the input string using SHA256."
   [clear-text]
-  (let [clear-text-bytes (.getBytes clear-text "US-ASCII")
+  (let [clear-text-bytes (.getBytes clear-text StandardCharsets/UTF_8)
         message-digest (MessageDigest/getInstance "SHA-256")
         sha256-bytes (.digest message-digest clear-text-bytes)
         b64-encoder (.withoutPadding (Base64/getUrlEncoder))
