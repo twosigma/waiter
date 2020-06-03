@@ -26,7 +26,8 @@
             [waiter.util.http-utils :as hu]
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils])
-  (:import (java.net URI)))
+  (:import (java.net URI)
+           (java.security SecureRandom)))
 
 (def ^:const accept-redirect-header-name "accept-redirect")
 
@@ -42,10 +43,13 @@
 
 (def ^:const oidc-callback-uri "/oidc/v1/callback")
 
-(defn create-code-verifier
-  "Creates a randomly generated string containing characters from A-Z of length code-verifier-length."
-  []
-  (apply str (take code-verifier-length (repeatedly #(char (+ (rand 26) 65))))))
+(let [allowed-chars "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+      allowed-chars-count (count allowed-chars)
+      secure-rng (SecureRandom.)]
+  (defn create-code-verifier
+    "Creates a randomly generated string of length code-verifier-length from the list of allowed characters."
+    []
+    (apply str (repeatedly code-verifier-length #(nth allowed-chars (.nextInt secure-rng allowed-chars-count))))))
 
 (defn create-state-code
   "Creates an encoded string of the input state map."
