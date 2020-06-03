@@ -18,6 +18,7 @@
             [clojure.core.async :as async]
             [clojure.set :as set]
             [clojure.tools.logging :as log]
+            [clojure.pprint :as pp]
             [metrics.core]
             [metrics.counters :as counters]
             [metrics.timers :as timers]
@@ -185,7 +186,9 @@
             {:keys [instance-id status] :as kill-response} (or (async/poll! response-chan)
                                                                {:message :no-instance-killed, :status http-404-not-found})]
         (if instance-killed?
-          (cid/cinfo correlation-id "killed instance" instance-id)
+          (do
+            (log/log "InstanceTracker" :debug nil (str "Killed instance " (with-out-str (pp/pprint route-params))))
+            (cid/cinfo correlation-id "killed instance" instance-id))
           (cid/cinfo correlation-id "unable to kill instance" kill-response))
         (-> (utils/clj->json-response {:kill-response kill-response
                                        :service-id service-id

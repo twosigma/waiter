@@ -19,6 +19,7 @@
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
+            [clojure.pprint :as pp]
             [digest]
             [metrics.counters :as counters]
             [metrics.timers :as timers]
@@ -643,21 +644,11 @@
                                                        (if (seq rem-instance-ids) (str "Removed healthy instances: " rem-instance-ids ".") "")
                                                        (if (seq unhealthy-instance-ids) (str "Unhealthy instances: " unhealthy-instance-ids ".") ""))))
                                          (when (or (not= (get service-id->expired-instances service-id) expired-instances))
-                                           (let [cur-exp-instance-ids (set (map :id expired-instances))
-                                                 old-exp-instance-ids (set (map :id (get service-id->expired-instances service-id)))
-                                                 new-exp-instance-ids (filterv (complement old-exp-instance-ids) cur-exp-instance-ids)
-
-                                                 cur-healthy-exp-instance-ids (set (map :id expired-healthy-instances))
-                                                 old-healthy-exp-instance-ids (set (map :id (get service-id->expired-healthy-instances service-id)))
-                                                 new-healthy-exp-instance-ids (filterv (complement old-healthy-exp-instance-ids) cur-healthy-exp-instance-ids)
-
-                                                 cur-unhealthy-exp-instance-ids (set (map :id expired-unhealthy-instances))
-                                                 old-unhealthy-exp-instance-ids (set (map :id (get service-id->expired-unhealthy-instances service-id)))
-                                                 new-unhealthy-exp-instance-ids (filterv (complement old-unhealthy-exp-instance-ids) cur-unhealthy-exp-instance-ids)]
-                                             (log/log "InstanceTracker" :debug nil
-                                                      (str "Following instances are now expired " {:ids new-exp-instance-ids :instances expired-instances}  "\n"
-                                                           "Following healthy instances are now expired " {:ids new-healthy-exp-instance-ids :instances expired-healthy-instances}  "\n"
-                                                           "Following unhealthy instances are now expired " {:ids new-unhealthy-exp-instance-ids :instances expired-unhealthy-instances}))))
+                                           (let [cur-exp-instances (set expired-instances)
+                                                 old-exp-instances (set (get service-id->expired-instances service-id))
+                                                 delta-exp-instances (filterv (complement old-exp-instances) cur-exp-instances)]
+                                             (doseq [expired-instance delta-exp-instances]
+                                               (log/log "InstanceTracker" :debug nil (str "Instance expired " expired-instance)))))
                                          (assoc loop-state
                                            :service-id->deployment-error service-id->deployment-error'
                                            :service-id->expired-instances service-id->expired-instances'

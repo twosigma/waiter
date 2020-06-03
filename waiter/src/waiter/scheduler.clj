@@ -77,7 +77,6 @@
    ^String message])
 
 (defn make-ServiceInstance [{id :id started-at :started-at :as value-map}]
-  (log/log "InstanceTracker" :debug nil (str "Created an instance with id: " id " that started at " started-at))
   (map->ServiceInstance (merge {:extra-ports [] :flags #{}} value-map)))
 
 (defprotocol ServiceScheduler
