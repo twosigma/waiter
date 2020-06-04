@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.service-description
-  (:require [clj-time.core :as t]
+  (:require [clj-time.coerce :as tc]
+            [clj-time.core :as t]
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
@@ -1222,21 +1223,21 @@
       (> (+ auth-timestamp (-> consent-expiry-days t/days t/in-millis))
          (.getMillis ^DateTime (clock))))))
 
-(defn source-tokens->idle-timeout
-  "Computes the idle timeout of the service using token parameters and defaults."
+(defn- source-tokens->gc-time
+  "Computes the time when a service created using provided source tokens should be GC-ed.
+   It ignores whether GC has been disabled by configuring idle-timeout-mins=0."
   [token->token-parameters attach-token-defaults-fn source-tokens-seq]
   (->> source-tokens-seq
-    (map (fn source-tokens->idle-timeout [source-tokens]
-           (let [{:strs [fallback-period-secs stale-timeout-mins]}
+    (map (fn source-tokens->gc-time-helper [source-tokens]
+           (let [{:strs [fallback-period-secs last-update-time stale-timeout-mins]}
                  (->> source-tokens
                    (map #(some-> % :token token->token-parameters))
                    (reduce merge {})
                    (attach-token-defaults-fn))]
-             (+ (-> (+ fallback-period-secs (dec (-> 1 t/minutes t/in-seconds))) ;; ceiling
-                  t/seconds
-                  t/in-minutes)
-                stale-timeout-mins))))
-    (reduce max)))
+             (-> (tc/from-long last-update-time)
+               (t/plus (t/seconds fallback-period-secs))
+               (t/plus (t/minutes stale-timeout-mins))))))
+    (reduce t/max-date)))
 
 (defn stale-reference?
   "Returns true if the any entry in the reference has gone stale.
@@ -1252,22 +1253,24 @@
   [reference-type->stale-fn references]
   (every? (fn [reference] (stale-reference? reference-type->stale-fn reference)) references))
 
-(defn service-id->idle-timeout
-  "Computes the idle timeout, in minutes, for a given service.
-   If the service is active or was created by on-the-fly, the idle timeout is retrieved from the service description.
-   Else, the idle timeout is the sum of the fallback period seconds and the stale service timeout."
+(defn service->gc-time
+  "Computes the time when a given service should be GC-ed.
+   If the service has GC disabled (by configuring idle-timeout-mins=0), nil is returned.
+   If the service is active or was created by on-the-fly, the GC time is retrieved from the service description.
+   Else, the GC time is the sum of the fallback period seconds and the stale service timeout."
   [service-id->service-description-fn service-id->references-fn token->token-parameters reference-type->stale-fn
-   attach-token-defaults-fn service-id]
+   attach-token-defaults-fn service-id last-modified-time]
   (let [{:strs [idle-timeout-mins]} (service-id->service-description-fn service-id)
         references (service-id->references-fn service-id)]
     (if (service-references-stale? reference-type->stale-fn references)
       (let [{:strs [stale-timeout-mins]} (attach-token-defaults-fn {})]
-        (log/info service-id "that uses tokens is stale")
+        (log/info service-id "that uses references is stale")
         (if-let [source-tokens (->> references (map :token) (remove nil?) (map :sources) seq)]
-          (source-tokens->idle-timeout token->token-parameters attach-token-defaults-fn source-tokens)
+          (source-tokens->gc-time token->token-parameters attach-token-defaults-fn source-tokens)
           ;; use the default token stale timeout for a stale service built without tokens
-          stale-timeout-mins))
-      idle-timeout-mins)))
+          (t/plus last-modified-time (t/minutes stale-timeout-mins))))
+      (when (pos? idle-timeout-mins)
+        (t/plus last-modified-time (t/minutes idle-timeout-mins))))))
 
 (let [service-id->key #(str "^REFERENCES#" %)]
 

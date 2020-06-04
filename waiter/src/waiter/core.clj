@@ -1058,15 +1058,15 @@
    :service-description->service-id (pc/fnk [[:state service-id-prefix]]
                                       (fn service-description->service-id [service-description]
                                         (sd/service-description->service-id service-id-prefix service-description)))
-   :service-id->idle-timeout (pc/fnk [[:state service-description-builder]
-                                      attach-token-defaults-fn service-id->service-description-fn service-id->references-fn
-                                      token->token-hash token->token-parameters]
-                               (let [context {:token->token-hash token->token-hash}
-                                     reference-type->stale-fn (sd/retrieve-reference-type->stale-fn service-description-builder context)]
-                                 (fn service-id->idle-timeout [service-id]
-                                   (sd/service-id->idle-timeout
-                                     service-id->service-description-fn service-id->references-fn token->token-parameters
-                                     reference-type->stale-fn attach-token-defaults-fn service-id))))
+   :service->gc-time-fn (pc/fnk [[:state service-description-builder]
+                                 attach-token-defaults-fn service-id->service-description-fn service-id->references-fn
+                                 token->token-hash token->token-parameters]
+                          (let [context {:token->token-hash token->token-hash}
+                                reference-type->stale-fn (sd/retrieve-reference-type->stale-fn service-description-builder context)]
+                            (fn service->gc-time-fn [service-id last-modified-time]
+                              (sd/service->gc-time
+                                service-id->service-description-fn service-id->references-fn token->token-parameters
+                                reference-type->stale-fn attach-token-defaults-fn service-id last-modified-time))))
    :service-id->password-fn (pc/fnk [[:scheduler service-id->password-fn*]]
                               service-id->password-fn*)
    :service-id->references-fn (pc/fnk [[:state kv-store]]
@@ -1319,7 +1319,7 @@
                                          service-gc-go-routine (partial service-gc-go-routine gc-state-reader-fn gc-state-writer-fn leader?-fn clock)]
                                      (scheduler/scheduler-broken-services-gc service-gc-go-routine query-state-fn scheduler scheduler-gc-config)))
    :scheduler-services-gc (pc/fnk [[:curator gc-state-reader-fn gc-state-writer-fn]
-                                   [:routines router-metrics-helpers service-id->idle-timeout]
+                                   [:routines router-metrics-helpers service->gc-time-fn]
                                    [:scheduler scheduler]
                                    [:settings scheduler-gc-config]
                                    [:state clock leader?-fn]
@@ -1329,7 +1329,7 @@
                                   service-gc-go-routine (partial service-gc-go-routine gc-state-reader-fn gc-state-writer-fn leader?-fn clock)]
                               (scheduler/scheduler-services-gc
                                 scheduler query-state-fn service-id->metrics-fn scheduler-gc-config service-gc-go-routine
-                                service-id->idle-timeout)))
+                                service->gc-time-fn)))
    :service-chan-maintainer (pc/fnk [[:routines service-id->service-description-fn
                                       start-work-stealing-balancer-fn stop-work-stealing-balancer-fn]
                                      [:settings blacklist-config instance-request-properties]

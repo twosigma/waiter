@@ -169,14 +169,16 @@
           (let [timeout-interval-ms 1
                 broken-service-timeout-mins 5
                 broken-service-min-hosts 2
-                service-id->idle-timeout (fn [service-id] (if (str/includes? service-id "eternal") 0 50))
+                service->gc-time-fn (fn [service-id last-modified-time]
+                                      (when-not (str/includes? service-id "eternal")
+                                        (t/plus last-modified-time (t/minutes 50))))
                 query-state-fn (fn [] (async/<!! scheduler-state-chan))
                 channel-map (scheduler-services-gc
                               scheduler query-state-fn service-id->metrics-fn
                               {:broken-service-min-hosts broken-service-min-hosts
                                :broken-service-timeout-mins broken-service-timeout-mins
                                :scheduler-gc-interval-ms timeout-interval-ms}
-                              service-gc-go-routine service-id->idle-timeout)
+                              service-gc-go-routine service->gc-time-fn)
                 service-gc-exit-chan (:exit channel-map)]
             (dotimes [n 100]
               (let [global-state (->> (map (fn [[service-id state]]

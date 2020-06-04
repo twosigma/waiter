@@ -378,7 +378,7 @@
    They are then deleted by the leader using the `delete-service` function.
    If an error occurs while deleting a service, there will be repeated attempts to delete it later."
   [scheduler query-state-fn service-id->metrics-fn {:keys [scheduler-gc-interval-ms]} service-gc-go-routine
-   service-id->idle-timeout]
+   service->gc-time-fn]
   (let [service->raw-data-fn (fn scheduler-services-gc-service->raw-data-fn []
                                (let [{:keys [all-available-service-ids]} (query-state-fn)
                                      global-state (service-id->metrics-fn)]
@@ -401,11 +401,10 @@
                          (let [outstanding (get state "outstanding")]
                            (and (number? outstanding)
                                 (zero? outstanding)
-                                (let [idle-timeout-mins (service-id->idle-timeout service-id)]
-                                  (and (pos? idle-timeout-mins)
-                                       (let [timeout-time (t/plus last-modified-time (t/minutes idle-timeout-mins))]
-                                         (log/debug service-id "timeout:" (du/date-to-str timeout-time) "current:" (du/date-to-str current-time))
-                                         (t/after? current-time timeout-time)))))))
+                                (let [gc-time (service->gc-time-fn service-id last-modified-time)]
+                                  (log/debug service-id "gc time:" (du/date-to-str gc-time) "current:" (du/date-to-str current-time))
+                                  (when gc-time
+                                    (t/after? current-time gc-time))))))
         perform-gc-fn (fn [service-id]
                         (log/info "deleting idle service" service-id)
                         (try

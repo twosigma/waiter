@@ -57,9 +57,11 @@
       (with-service-cleanup
         service-id
         (log/debug "Waiting for" service-id "to show up...")
-        (is (wait-for #(= 1 (num-instances waiter-url service-id)) :interval 1))
+        (is (wait-for #(= 1 (num-instances waiter-url service-id)) :interval 1)
+            (str service-id " instance wasn't created"))
         (log/debug "Waiting for" service-id "to go away...")
-        (is (wait-for #(= 0 (num-instances waiter-url service-id)) :interval 10))))))
+        (is (wait-for #(= 0 (num-instances waiter-url service-id)) :interval 10)
+            (str service-id " instance wasn't removed"))))))
 
 (deftest ^:parallel ^:integration-fast test-default-grace-period
   (testing-using-waiter-url
