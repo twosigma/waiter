@@ -187,7 +187,6 @@
                                                                {:message :no-instance-killed, :status http-404-not-found})]
         (if instance-killed?
           (do
-            (log/log "InstanceTracker" :debug nil (str "Killed instance " (with-out-str (pp/pprint route-params))))
             (cid/cinfo correlation-id "killed instance" instance-id))
           (cid/cinfo correlation-id "unable to kill instance" kill-response))
         (-> (utils/clj->json-response {:kill-response kill-response

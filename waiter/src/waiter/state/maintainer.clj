@@ -648,7 +648,7 @@
                                                  old-exp-instances (set (get service-id->expired-instances service-id))
                                                  delta-exp-instances (filterv (complement old-exp-instances) cur-exp-instances)]
                                              (doseq [expired-instance delta-exp-instances]
-                                               (log/log "InstanceTracker" :debug nil (str "Instance expired " expired-instance)))))
+                                               (log/log "InstanceTracker" :debug nil (str "Instance " instance-id " EXPIRE " expired-instance)))))
                                          (assoc loop-state
                                            :service-id->deployment-error service-id->deployment-error'
                                            :service-id->expired-instances service-id->expired-instances'
@@ -718,7 +718,7 @@
       {:go-chan go-chan
        :notify-instance-killed-fn (fn notify-router-state-maintainer-of-instance-killed [instance]
                                     (log/info "received notification of killed instance" (:id instance))
-                                    (log/log "InstanceTracker" :debug nil (str "Instance was killed " {:id instance :instance instance}))
+                                    (log/log "InstanceTracker" :debug nil (str "Instance " (:id instance) " KILL " (utils/clj->json instance)))
                                     (async/go
                                       (async/>! kill-notification-chan {:instance instance})))
        :query-chan query-chan
