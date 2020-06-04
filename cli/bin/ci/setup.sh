@@ -20,8 +20,3 @@ fi
 
 pip install -e .
 pip install -r integration/requirements.txt
-
-# Make sure that pyinstaller can successfully build the cli
-pip install pyinstaller
-pyinstaller --clean --onefile --name waiter waiter/__main__.py
-./dist/waiter
