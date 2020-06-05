@@ -2439,7 +2439,7 @@
         service-id->service-description-fn (fn [in-service-id]
                                              (is (str/starts-with? in-service-id service-id))
                                              {"idle-timeout-mins" idle-timeout-mins})
-        token->token-hash (fn [in-token] (str in-token ".hash1"))
+        token->token-hash (fn [in-token] (str in-token ".latest"))
         reference-type->stale-fn {:token #(service-token-references-stale? token->token-hash (:sources %))}
         token->token-data-factory (fn [token->token-data]
                                     (fn [in-token]
@@ -2465,7 +2465,7 @@
       (let [token->token-data {"t1" {"cpus" 1 "last-update-time" (tc/to-long t1000)}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s1")))
-                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.latest"}]}}})
             token->token-data (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                (service->gc-time
@@ -2492,7 +2492,7 @@
                                "t2" {"mem" 2048 "last-update-time" (tc/to-long t2000)}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s3")))
-                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"} {:token "t2" :version "t2.hash1"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.latest"} {:token "t2" :version "t2.latest"}]}}})
             token->token-data (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                (service->gc-time
@@ -2519,7 +2519,7 @@
                                     "t2" {"mem" 2048 "last-update-time" (tc/to-long t2000)}}}]]
         (let [service-id->references-fn (fn [in-service-id]
                                           (is (= in-service-id (str service-id "s4")))
-                                          #{{:token {:sources [{:token "t1" :version "t1.hash0"}]}}})
+                                          #{{:token {:sources [{:token "t1" :version "t1.old"}]}}})
               token->token-data (token->token-data-factory token->token-data)]
           (is (= (-> t1000
                    (t/plus (t/seconds expected-fallback-period-secs))
@@ -2529,7 +2529,7 @@
                    attach-token-defaults-fn (str service-id "s4") last-modified-time))))
         (let [service-id->references-fn (fn [in-service-id]
                                           (is (= in-service-id (str service-id "s5")))
-                                          #{{:token {:sources [{:token "t2" :version "t2.hash0"}]}}})
+                                          #{{:token {:sources [{:token "t2" :version "t2.old"}]}}})
               token->token-data (token->token-data-factory token->token-data)]
           (is (= (-> t2000
                    (t/plus (t/seconds fallback-period-secs))
@@ -2543,7 +2543,7 @@
                                "t2" {"mem" 2048 "last-update-time" (tc/to-long t2000)}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s5")))
-                                        #{{:token {:sources [{:token "t1" :version "t1.hash0"}]}}
+                                        #{{:token {:sources [{:token "t1" :version "t1.old"}]}}
                                           {}})
             token->token-data (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
@@ -2556,7 +2556,7 @@
                                "t2" {"mem" 2048 "last-update-time" (tc/to-long t2000)}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s6")))
-                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"} {:token "t2" :version "t2.hash0"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.latest"} {:token "t2" :version "t2.old"}]}}})
             token->token-data (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                (service->gc-time
@@ -2570,9 +2570,9 @@
                                "t3" {"cmd" "tc" "fallback-period-secs" 900 "last-update-time" (tc/to-long t3000)}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s7")))
-                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"}
-                                                             {:token "t2" :version "t2.hash0"}
-                                                             {:token "t3" :version "t3.hash0"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.latest"}
+                                                             {:token "t2" :version "t2.old"}
+                                                             {:token "t3" :version "t3.old"}]}}})
             token->token-data (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                (service->gc-time
@@ -2584,9 +2584,9 @@
                                "t3" {"cmd" "tc" "fallback-period-secs" 900 "last-update-time" (tc/to-long t3000)}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s7")))
-                                        #{{:token {:sources [{:token "t1" :version "t1.hash0"}
-                                                             {:token "t2" :version "t2.hash0"}
-                                                             {:token "t3" :version "t3.hash1"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.old"}
+                                                             {:token "t2" :version "t2.old"}
+                                                             {:token "t3" :version "t3.latest"}]}}})
             token->token-data (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                (service->gc-time
@@ -2600,9 +2600,9 @@
                                "t3" {"cmd" "tc" "fallback-period-secs" 900 "last-update-time" (tc/to-long t3000)}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s8")))
-                                        #{{:token {:sources [{:token "t1" :version "t1.hash0"}
-                                                             {:token "t2" :version "t2.hash0"}
-                                                             {:token "t3" :version "t3.hash0"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.old"}
+                                                             {:token "t2" :version "t2.old"}
+                                                             {:token "t3" :version "t3.old"}]}}})
             token->token-data (token->token-data-factory token->token-data)]
         (is (= (t/plus t4000 (t/minutes (-> 900 t/seconds t/in-minutes (+ stale-timeout-mins))))
                (service->gc-time
@@ -2617,8 +2617,8 @@
                                "t4" {"fallback-period-secs" 1200 "stale-timeout-mins" (+ stale-timeout-mins 15)}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s9")))
-                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"} {:token "t2" :version "t2.hash0"}]}}
-                                          {:token {:sources [{:token "t3" :version "t3.hash0"} {:token "t4" :version "t4.hash0"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.latest"} {:token "t2" :version "t2.old"}]}}
+                                          {:token {:sources [{:token "t3" :version "t3.old"} {:token "t4" :version "t4.old"}]}}})
             token->token-data (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                (service->gc-time
@@ -2633,8 +2633,8 @@
                                "t4" {"fallback-period-secs" 1200 "stale-timeout-mins" (+ stale-timeout-mins 15)}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s10")))
-                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"} {:token "t2" :version "t2.hash1"}]}}
-                                          {:token {:sources [{:token "t3" :version "t3.hash1"} {:token "t4" :version "t4.hash1"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.latest"} {:token "t2" :version "t2.latest"}]}}
+                                          {:token {:sources [{:token "t3" :version "t3.latest"} {:token "t4" :version "t4.latest"}]}}})
             token->token-data (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                (service->gc-time
@@ -2649,8 +2649,8 @@
                                "t4" {"fallback-period-secs" 1200 "stale-timeout-mins" (+ stale-timeout-mins 15)}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s11")))
-                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"} {:token "t2" :version "t2.hash1"}]}}
-                                          {:token {:sources [{:token "t3" :version "t3.hash0"} {:token "t4" :version "t4.hash0"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.latest"} {:token "t2" :version "t2.latest"}]}}
+                                          {:token {:sources [{:token "t3" :version "t3.old"} {:token "t4" :version "t4.old"}]}}})
             token->token-data (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                (service->gc-time
@@ -2665,8 +2665,8 @@
                                "t4" {"fallback-period-secs" 1200 "last-update-time" (tc/to-long t4000) "stale-timeout-mins" (+ stale-timeout-mins 15)}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s12")))
-                                        #{{:token {:sources [{:token "t1" :version "t1.hash0"} {:token "t2" :version "t2.hash0"}]}}
-                                          {:token {:sources [{:token "t3" :version "t3.hash0"} {:token "t4" :version "t4.hash0"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.old"} {:token "t2" :version "t2.old"}]}}
+                                          {:token {:sources [{:token "t3" :version "t3.old"} {:token "t4" :version "t4.old"}]}}})
             token->token-data (token->token-data-factory token->token-data)]
         (is (= (t/plus
                  t4000
@@ -2685,7 +2685,7 @@
                                                  {"idle-timeout-mins" idle-timeout-mins})
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s1")))
-                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.latest"}]}}})
             token->token-data (token->token-data-factory token->token-data)]
         (is (nil?
               (service->gc-time
