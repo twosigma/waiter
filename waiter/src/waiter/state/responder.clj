@@ -416,6 +416,9 @@
                 ; instance received from work-stealing, do not change slot state
                 (nil? work-stealing-data) (update-slot-state-fn instance-id #(cond-> %2 (not= :kill-instance reason) (-> (dec) (max 0))))
                 ; mark instance as no longer locked.
+                (do
+                  (log/log "InstanceTracker" :debug nil (str "RELEASE " instance-to-release))
+                  false) #(%)
                 (nil? work-stealing-data) (update-in [:instance-id->state instance-id] update-status-tag-fn #(disj % :locked))
                 ; clear work-stealing entry
                 work-stealing-data (update-in [:request-id->work-stealer] dissoc request-id))
@@ -481,10 +484,12 @@
 (defn- unblacklist-instance
   [{:keys [instance-id->state] :as current-state} update-instance-id->blacklist-expiry-time-fn update-status-tag-fn
    instance-id expiry-time]
-  (log/info "unblacklisting instance" instance-id "as blacklist expired at" expiry-time)
-  (cond-> (update-instance-id->blacklist-expiry-time-fn current-state #(dissoc % instance-id))
-    (contains? instance-id->state instance-id)
-    (update-in [:instance-id->state instance-id] update-status-tag-fn #(disj % :blacklisted))))
+  (log/info "unblacklisting instance" instance-id "as blackli
+  st expired at" expiry-time)
+  (when (contains? instance-id->state instance-id)
+    (log/log "InstanceTracker" :debug nil (str "UNBLACKLIST " (utils/clj->json (get instance-id->state instance-id)) ))
+    (update-in (update-instance-id->blacklist-expiry-time-fn current-state #(dissoc % instance-id))
+               [:instance-id->state instance-id] update-status-tag-fn #(disj % :blacklisted) )))
 
 (defn- expiry-time-reached?
   "Returns true if current-time is greater than or equal to expiry-time."

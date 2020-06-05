@@ -308,6 +308,8 @@
                             allowed-users)
         failed-instances (map job->service-instance failed-jobs)]
     (when (seq failed-instances)
+      (doseq [failed-instance failed-instances]
+        (log/log "InstanceTracker" :debug nil (str "FAIL " (utils/clj->json failed-instance))))
       (log/info "found" (count failed-instances) "failed instances" {:end-time end-time :start-time start-time}))
     (doseq [{:keys [service-id] :as failed-instance} failed-instances]
       (scheduler/add-instance-to-buffered-collection!
