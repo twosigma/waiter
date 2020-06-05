@@ -2596,7 +2596,7 @@
     (testing "service outdated on every token and fallback and timeout configured on all tokens"
       (let [stale-timeout-mins 45
             token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300 "last-update-time" (tc/to-long t1000)}
-                               "t2" {"cmd" "tc" "fallback-period-secs" 600 "last-update-time" (tc/to-long t2000) "stale-timeout-mins" stale-timeout-mins}
+                               "t2" {"cmd" "tc" "fallback-period-secs" 600 "last-update-time" (tc/to-long t4000) "stale-timeout-mins" stale-timeout-mins}
                                "t3" {"cmd" "tc" "fallback-period-secs" 900 "last-update-time" (tc/to-long t3000)}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s8")))
@@ -2604,7 +2604,7 @@
                                                              {:token "t2" :version "t2.hash0"}
                                                              {:token "t3" :version "t3.hash0"}]}}})
             token->token-data (token->token-data-factory token->token-data)]
-        (is (= (t/plus t3000 (t/minutes (-> 900 t/seconds t/in-minutes (+ stale-timeout-mins))))
+        (is (= (t/plus t4000 (t/minutes (-> 900 t/seconds t/in-minutes (+ stale-timeout-mins))))
                (service->gc-time
                  service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
                  attach-token-defaults-fn (str service-id "s8") last-modified-time)))))

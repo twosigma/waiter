@@ -1229,12 +1229,16 @@
   [token->token-parameters attach-token-defaults-fn source-tokens-seq]
   (->> source-tokens-seq
     (map (fn source-tokens->gc-time-helper [source-tokens]
-           (let [{:strs [fallback-period-secs last-update-time stale-timeout-mins]}
+           (let [{:strs [fallback-period-secs stale-timeout-mins]}
                  (->> source-tokens
                    (map #(some-> % :token token->token-parameters))
                    (reduce merge {})
-                   (attach-token-defaults-fn))]
-             (-> (tc/from-long last-update-time)
+                   (attach-token-defaults-fn))
+                 most-recent-token-update-time
+                 (->> source-tokens
+                   (map #(some-> % :token token->token-parameters (get "last-update-time")))
+                   (reduce max))]
+             (-> (tc/from-long most-recent-token-update-time)
                (t/plus (t/seconds fallback-period-secs))
                (t/plus (t/minutes stale-timeout-mins))))))
     (reduce t/max-date)))
