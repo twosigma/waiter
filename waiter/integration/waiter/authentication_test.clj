@@ -467,7 +467,7 @@
             (let [callback-location (follow-authorize-redirects location)]
               (is (not (str/blank? callback-location)) assertion-message)
               (is (str/includes? callback-location "/oidc/v1/callback?") assertion-message)
-              (let [callback-uri (URI. (str/replace callback-location #" " "+"))
+              (let [callback-uri (URI. callback-location)
                     callback-path (str (.getPath callback-uri) "?" (.getRawQuery callback-uri))
                     callback-request-headers {"host" waiter-token
                                               "x-forwarded-proto" "https"}
