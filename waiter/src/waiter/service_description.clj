@@ -1261,7 +1261,7 @@
   "Computes the time when a given service should be GC-ed.
    If the service has GC disabled (by configuring idle-timeout-mins=0), nil is returned.
    If the service is active or was created by on-the-fly, the GC time is calculated using
-   the service's idle-timeout-mins and the time of the service's most recent request.
+   the service's idle-timeout-mins and the most recent completion time of the service's requests.
    Else, the GC time is the sum of the fallback period seconds and the stale service timeout."
   [service-id->service-description-fn service-id->references-fn token->token-parameters reference-type->stale-fn
    attach-token-defaults-fn service-id last-modified-time]
