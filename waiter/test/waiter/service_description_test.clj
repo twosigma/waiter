@@ -2609,6 +2609,22 @@
                  service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
                  attach-token-defaults-fn (str service-id "s8") last-modified-time)))))
 
+    (testing "service outdated on every token and fallback disabled"
+      (let [stale-timeout-mins 45
+            token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 0 "last-update-time" (tc/to-long t1000)}
+                               "t2" {"cmd" "tc" "last-update-time" (tc/to-long t2000) "stale-timeout-mins" stale-timeout-mins}
+                               "t3" {"cmd" "tc" "last-update-time" (tc/to-long t3000)}}
+            service-id->references-fn (fn [in-service-id]
+                                        (is (= in-service-id (str service-id "s8")))
+                                        #{{:token {:sources [{:token "t1" :version "t1.old"}
+                                                             {:token "t3" :version "t3.old"}
+                                                             {:token "t2" :version "t2.old"}]}}})
+            token->token-data (token->token-data-factory token->token-data)]
+        (is (= (t/plus t3000 (t/minutes stale-timeout-mins))
+               (service->gc-time
+                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
+                 attach-token-defaults-fn (str service-id "s8") last-modified-time)))))
+
     (testing "service using latest of one partial token among many"
       (let [stale-timeout-mins 45
             token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300 "last-update-time" (tc/to-long t1000)}
