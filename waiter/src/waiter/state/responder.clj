@@ -58,14 +58,15 @@
 
 (defn- killable?
   "Only the following instances can be killed:
-   - without slots used and not killed|locked, or
+   - without slots used (regular or work-stealing) and not killed|locked, or
    - expired and idle or processing lingering requests.
    If there are expired instances, only choose healthy instances that are blacklisted or expired.
    If there are expired and starting instances, only kill unhealthy instances that are not starting."
   [request-id->use-reason-map earliest-request-threshold-time expired-instances? starting-instances?
-   {:keys [slots-used status-tags] :as state}]
+   {:keys [slots-used slots-used-from-work-steal status-tags] :as state}]
   (and (not-any? #(contains? status-tags %) [:killed :locked])
-       (or (zero? slots-used)
+       (or (and (zero? slots-used)
+                (zero? slots-used-from-work-steal))
            (and (expired? state)
                 (only-lingering-requests? request-id->use-reason-map earliest-request-threshold-time)))
        (or (not (and expired-instances? (contains? status-tags :healthy)))
@@ -101,10 +102,11 @@
   [id->instance instance-id->state acceptable-instance-id? instance-id->request-id->use-reason-map
    load-balancing lingering-request-threshold-ms]
   (let [earliest-request-threshold-time (t/minus (t/now) (t/millis lingering-request-threshold-ms))
-        instance-id-state-pair->categorizer-vec (fn [[instance-id {:keys [slots-used status-tags] :as state}]]
+        instance-id-state-pair->categorizer-vec (fn [[instance-id {:keys [slots-used slots-used-from-work-steal status-tags] :as state}]]
                                                   ; most important goes first
                                                   (vector
-                                                    (zero? slots-used)
+                                                    (and (zero? slots-used)
+                                                         (zero? slots-used-from-work-steal))
                                                     (contains? status-tags :expired)
                                                     (contains? status-tags :unhealthy)
                                                     (contains? status-tags :blacklisted)
@@ -175,20 +177,25 @@
 
 (defn compute-slots-values
   "Computes the aggregate values for slots assigned, available and in-use using data available in `instance-id->state`.
-   Returns the aggregated vector [slots-assigned slots-used slots-available]."
+   Returns the aggregated vector [slots-assigned slots-used slots-available slots-used-from-work-steal]."
   [instance-id->state]
-  (reduce (fn [[slots-assigned-accum slots-used-accum slots-available-accum]
-               {:keys [slots-assigned slots-used] :as instance-state}]
+  (reduce (fn [[slots-assigned-accum slots-used-accum slots-used-from-work-steal-accum slots-available-accum]
+               {:keys [slots-assigned slots-used slots-used-from-work-steal] :as instance-state}]
             [(+ slots-assigned-accum slots-assigned)
              (+ slots-used-accum slots-used)
+             (+ slots-used-from-work-steal-accum slots-used-from-work-steal)
              (+ slots-available-accum (state->slots-available instance-state))])
-          [0 0 0]
+          [0 0 0 0]
           (vals instance-id->state)))
 
 (defn- sanitize-instance-state
   "Ensures non-nil value for instance-state."
   [instance-state]
-  (or instance-state {:slots-assigned 0, :slots-used 0, :status-tags #{}}))
+  (or instance-state
+      {:slots-assigned 0
+       :slots-used 0
+       :slots-used-from-work-steal 0
+       :status-tags #{}}))
 
 (defn- update-slot-state
   "Updates the `slots-used` field in `instance-id->state` using the `slots-used-fn` function."
@@ -200,6 +207,16 @@
                                (counters/inc! slots-in-use-counter (- new-slots-used slots-used))
                                (counters/inc! slots-available-counter (- (state->slots-available new-state) (state->slots-available old-state)))
                                new-state))))
+
+(defn- update-work-stealing-count
+  "Updates the slots-used-from-work-steal count in the instance state."
+  [instance-state update-count-fn slots-from-work-steal-use-counter]
+  (let [{:keys [slots-assigned slots-used slots-used-from-work-steal] :as old-state} (sanitize-instance-state instance-state)
+        slots-used-from-work-steal' (update-count-fn slots-used-from-work-steal)]
+    (counters/inc! slots-from-work-steal-use-counter (- slots-used-from-work-steal' slots-used-from-work-steal))
+    (cond-> (assoc old-state :slots-used-from-work-steal slots-used-from-work-steal')
+      (and (zero? slots-assigned) (zero? slots-used) (zero? slots-used-from-work-steal'))
+      (update :status-tags disj :healthy))))
 
 (defn- update-status-tag
   "Updates the status tags in the instance state and the slots-available-counter."
@@ -231,15 +248,16 @@
 
 (defn update-slots-metrics
   "Resets the counters for the slots assigned, available and in-use using data available in `instance-id->state`."
-  [instance-id->state slots-assigned-counter slots-available-counter slots-in-use-counter]
-  (let [[slots-assigned slots-used slots-available] (compute-slots-values instance-id->state)]
+  [instance-id->state slots-assigned-counter slots-available-counter slots-in-use-counter slots-from-work-steal-use-counter]
+  (let [[slots-assigned slots-used slots-used-from-work-steal slots-available] (compute-slots-values instance-id->state)]
     (metrics/reset-counter slots-assigned-counter slots-assigned)
     (metrics/reset-counter slots-available-counter slots-available)
-    (metrics/reset-counter slots-in-use-counter slots-used)))
+    (metrics/reset-counter slots-in-use-counter slots-used)
+    (metrics/reset-counter slots-from-work-steal-use-counter slots-used-from-work-steal)))
 
 (defn- handle-update-state-request
   [{:keys [instance-id->state instance-id->consecutive-failures] :as current-state} data update-responder-state-timer
-   update-responder-state-meter slots-assigned-counter slots-available-counter slots-in-use-counter]
+   update-responder-state-meter slots-assigned-counter slots-available-counter slots-in-use-counter slots-from-work-steal-use-counter]
   (timers/start-stop-time!
     update-responder-state-timer
     (when-let [[{:keys [healthy-instances unhealthy-instances my-instance->slots expired-instances starting-instances deployment-error instability-issue]} _] data]
@@ -267,6 +285,7 @@
                                     (fn [acc instance-id]
                                       (let [slots-assigned (get my-instance-id->slots instance-id 0)
                                             slots-used (get-in instance-id->state [instance-id :slots-used] 0)
+                                            slots-used-from-work-steal (get-in instance-id->state [instance-id :slots-used-from-work-steal] 0)
                                             ; do not change blacklisted/locked state
                                             status-tags (let [existing-status-tags (get-in instance-id->state [instance-id :status-tags])
                                                               was-locked? (:locked existing-status-tags)
@@ -287,10 +306,12 @@
                                         ; cleanup instances who have no useful state
                                         (if (and (zero? slots-assigned)
                                                  (zero? slots-used)
+                                                 (zero? slots-used-from-work-steal)
                                                  (not-any? #(contains? #{:blacklisted, :expired, :healthy, :locked, :unhealthy} %) status-tags))
                                           acc
                                           (assoc! acc instance-id {:slots-assigned slots-assigned
                                                                    :slots-used slots-used
+                                                                   :slots-used-from-work-steal slots-used-from-work-steal
                                                                    :status-tags status-tags}))))
                                     (transient {})
                                     all-instance-ids))
@@ -303,7 +324,8 @@
             instance-id->consecutive-failures' (into {} (filter (fn [[instance-id _]]
                                                                   (contains? all-instance-ids instance-id))
                                                                 instance-id->consecutive-failures))]
-        (update-slots-metrics instance-id->state' slots-assigned-counter slots-available-counter slots-in-use-counter)
+        (update-slots-metrics instance-id->state' slots-assigned-counter slots-available-counter
+                              slots-in-use-counter slots-from-work-steal-use-counter)
         (meters/mark! update-responder-state-meter)
         (assoc current-state
           :deployment-error deployment-error
@@ -344,7 +366,8 @@
    this is expected to be the common case."
   [{:keys [deployment-error id->instance instance-id->state load-balancing request-id->work-stealer
            sorted-instance-ids work-stealing-queue] :as current-state}
-   service-id update-slot-state-fn [{:keys [cid request-id] :as reason-map} resp-chan exclude-ids-set _]]
+   service-id update-slot-state-fn update-work-stealing-count-fn
+   [{:keys [cid request-id] :as reason-map} resp-chan exclude-ids-set _]]
   (if deployment-error ; if a deployment error is associated with the state, return the error immediately instead of an instance
     {:current-state' current-state
      :response-chan resp-chan
@@ -357,7 +380,8 @@
         {:current-state' (-> current-state
                            (assoc-in [:instance-id->request-id->use-reason-map instance-id request-id] reason-map)
                            (assoc :request-id->work-stealer (assoc request-id->work-stealer request-id work-stealer-data)
-                                  :work-stealing-queue (pop work-stealing-queue)))
+                                  :work-stealing-queue (pop work-stealing-queue))
+                           (update-in [:instance-id->state instance-id] update-work-stealing-count-fn inc))
          :response-chan resp-chan
          :response instance})
       ; lookup available slots from router's pre-allocated instances
@@ -400,9 +424,10 @@
 
 (defn handle-release-instance-request
   "Handles a release instance request."
-  [{:keys [instance-id->consecutive-failures instance-id->request-id->use-reason-map request-id->work-stealer] :as current-state} service-id
-   update-slot-state-fn update-status-tag-fn update-state-by-blacklisting-instance-fn update-instance-id->blacklist-expiry-time-fn
-   work-stealing-received-in-flight-counter max-blacklist-time-ms blacklist-backoff-base-time-ms max-backoff-exponent
+  [{:keys [instance-id->consecutive-failures instance-id->request-id->use-reason-map request-id->work-stealer] :as current-state}
+   service-id update-slot-state-fn update-work-stealing-count-fn update-status-tag-fn update-state-by-blacklisting-instance-fn
+   update-instance-id->blacklist-expiry-time-fn work-stealing-received-in-flight-counter
+   max-blacklist-time-ms blacklist-backoff-base-time-ms max-backoff-exponent
    [{instance-id :id :as instance-to-release} {:keys [cid request-id status] :as reservation-result}]]
   (let [{:keys [reason] :as reason-map} (get-in instance-id->request-id->use-reason-map [instance-id request-id])
         work-stealing-data (get request-id->work-stealer request-id)]
@@ -418,7 +443,9 @@
                 ; mark instance as no longer locked.
                 (nil? work-stealing-data) (update-in [:instance-id->state instance-id] update-status-tag-fn #(disj % :locked))
                 ; clear work-stealing entry
-                work-stealing-data (update-in [:request-id->work-stealer] dissoc request-id))
+                work-stealing-data (update-in [:request-id->work-stealer] dissoc request-id)
+                ; decrease work-stealing slot count
+                work-stealing-data (update-in [:instance-id->state instance-id] update-work-stealing-count-fn dec))
               (-> current-state
                 (assoc-in [:instance-id->request-id->use-reason-map instance-id request-id :variant] :async-request)
                 (update-in [:instance-id->state instance-id] sanitize-instance-state)))]
@@ -576,6 +603,7 @@
         slots-available-counter (metrics/service-counter service-id "instance-counts" "slots-available")
         slots-assigned-counter (metrics/service-counter service-id "instance-counts" "slots-assigned")
         slots-in-use-counter (metrics/service-counter service-id "instance-counts" "slots-in-use")
+        slots-from-work-steal-use-counter (metrics/service-counter service-id "instance-counts" "slots-from-work-steal-in-use")
         update-responder-state-timer (metrics/service-timer service-id "update-responder-state")
         update-responder-state-meter (metrics/service-meter service-id "update-responder-state")
         blacklisted-instance-counter (metrics/service-counter service-id "instance-counts" "blacklisted")
@@ -583,6 +611,7 @@
         requests-outstanding-counter (metrics/service-counter service-id "request-counts" "outstanding")
         work-stealing-received-in-flight-counter (metrics/service-counter service-id "work-stealing" "received-from" "in-flight")
         update-slot-state-fn #(update-slot-state %1 %2 %3 slots-in-use-counter slots-available-counter)
+        update-work-stealing-count-fn #(update-work-stealing-count %1 %2 slots-from-work-steal-use-counter)
         update-status-tag-fn #(update-status-tag %1 %2 slots-available-counter)
         update-instance-id->blacklist-expiry-time-fn
         (fn update-instance-id->blacklist-expiry-time-fn [current-state transform-fn]
@@ -661,7 +690,8 @@
                          (let [{:keys [current-state' response-chan response]}
                                (timers/start-stop-time!
                                  responder-reserve-timer
-                                 (handle-reserve-instance-request current-state service-id update-slot-state-fn data))]
+                                 (handle-reserve-instance-request current-state service-id update-slot-state-fn
+                                                                  update-work-stealing-count-fn data))]
                            (async/>! response-chan response)
                            current-state')
 
@@ -677,10 +707,9 @@
                          (timers/start-stop-time!
                            responder-release-timer
                            (handle-release-instance-request
-                             current-state service-id update-slot-state-fn update-status-tag-fn
+                             current-state service-id update-slot-state-fn update-work-stealing-count-fn update-status-tag-fn
                              update-state-by-blacklisting-instance-fn update-instance-id->blacklist-expiry-time-fn
-                             work-stealing-received-in-flight-counter max-blacklist-time-ms
-                             blacklist-backoff-base-time-ms max-backoff-exponent data))
+                             work-stealing-received-in-flight-counter max-blacklist-time-ms blacklist-backoff-base-time-ms max-backoff-exponent data))
 
                          scaling-state-chan
                          (let [{:keys [scaling-state]} data]
@@ -699,7 +728,7 @@
                              (-> current-state
                                (handle-update-state-request
                                  data update-responder-state-timer update-responder-state-meter slots-assigned-counter
-                                 slots-available-counter slots-in-use-counter)
+                                 slots-available-counter slots-in-use-counter slots-from-work-steal-use-counter)
                                ;; cleanup items from blacklist map in-case they have not been cleaned
                                (handle-unblacklist-cleanup-request
                                  data-time update-status-tag-fn update-instance-id->blacklist-expiry-time-fn))))
