@@ -29,10 +29,6 @@
   (:import (java.net URI)
            (java.security SecureRandom)))
 
-(def ^:const accept-redirect-header-name "accept-redirect")
-
-(def ^:const accept-redirect-auth-header-name "accept-redirect-auth")
-
 (def ^:const challenge-cookie-duration-secs 60)
 
 (def ^:const code-verifier-length 128)
@@ -199,15 +195,18 @@
       ;; waiter api requests will enable OIDC auth based on allow-oidc-auth-api?
       (and waiter-api-call? allow-oidc-auth-api?))))
 
+;; Accept-Redirect request header "yes" means the user-agent will follow redirects.
+;; Accept-Redirect-Auth request header indicates which authorities the user-agent is willing to redirect to and authenticate at.
+;; https://tools.ietf.org/id/draft-williams-http-accept-auth-and-redirect-02.html#rfc.section.2
+(def ^:const accept-redirect-header-name "accept-redirect")
+(def ^:const accept-redirect-auth-header-name "accept-redirect-auth")
+
 (defn supports-redirect?
   "Returns true when:
    - either the request is deemed to have come from a browser
    - or the accept-redirect=yes request header is present in the request."
   [oidc-authority request]
   (or (hu/browser-request? request)
-      ;; Accept-Redirect request header "yes" means the user-agent will follow redirects.
-      ;; Accept-Redirect-Auth request header indicates which authorities the user-agent is willing to redirect to and authenticate at.
-      ;; https://tools.ietf.org/id/draft-williams-http-accept-auth-and-redirect-02.html#rfc.section.2
       (and (= "yes" (get-in request [:headers accept-redirect-header-name]))
            (let [accept-redirect-auth (get-in request [:headers accept-redirect-auth-header-name])]
              (or (str/blank? accept-redirect-auth)
