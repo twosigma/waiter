@@ -2461,6 +2461,19 @@
                  service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
                  attach-token-defaults-fn (str service-id "s0") last-modified-time)))))
 
+    (testing "service created with missing token parameters"
+      (let [token->token-data {"t1" {"cpus" 1 "last-update-time" (tc/to-long t1000)}}
+            service-id->references-fn (fn [in-service-id]
+                                        (is (= in-service-id (str service-id "s1")))
+                                        #{{:token {:sources [{:token "t-miss" :version "t-miss.old"}]}}})
+            token->token-data (token->token-data-factory token->token-data)]
+        (is (= (-> (tc/from-long 0)
+                 (t/plus (t/seconds fallback-period-secs))
+                 (t/plus (t/minutes stale-timeout-mins)))
+               (service->gc-time
+                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
+                 attach-token-defaults-fn (str service-id "s1") last-modified-time)))))
+
     (testing "service with single token is active"
       (let [token->token-data {"t1" {"cpus" 1 "last-update-time" (tc/to-long t1000)}}
             service-id->references-fn (fn [in-service-id]

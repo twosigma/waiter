@@ -1224,8 +1224,11 @@
          (.getMillis ^DateTime (clock))))))
 
 (defn- source-tokens->gc-time
-  "Computes the time when a service created using provided source tokens should be GC-ed.
-   It ignores whether GC has been disabled by configuring idle-timeout-mins=0."
+  "Computes the time when a service created using provided source tokens should be GC-ed
+   using token last-update-time, fallback-period-secs and stale-timeout-mins.
+   The function also assumes that source-tokens-seq is non-empty.
+   It ignores whether GC has been disabled by configuring idle-timeout-mins=0.
+   The caller must take care to handle the scenario where GC has been disabled."
   [token->token-parameters attach-token-defaults-fn source-tokens-seq]
   (->> source-tokens-seq
     (map (fn source-tokens->gc-time-helper [source-tokens]
@@ -1233,12 +1236,17 @@
                  (->> source-tokens
                    (map #(some-> % :token token->token-parameters))
                    (reduce merge {})
-                   (attach-token-defaults-fn))
-                 most-recent-token-update-time
-                 (->> source-tokens
-                   (map #(some-> % :token token->token-parameters (get "last-update-time")))
-                   (reduce max))]
-             (-> (tc/from-long most-recent-token-update-time)
+                   (attach-token-defaults-fn))]
+             (-> (if-let [most-recent-token-update-time
+                          (some->> source-tokens
+                            (keep #(some-> % :token token->token-parameters (get "last-update-time")))
+                            (seq)
+                            (reduce max))]
+                   (tc/from-long most-recent-token-update-time)
+                   (do
+                     ;; make service available for GC since missing token data means the token has been deleted
+                     (log/warn "unable to retrieve last update time from" source-tokens-seq)
+                     (tc/from-long 0)))
                (t/plus (t/seconds fallback-period-secs))
                (t/plus (t/minutes stale-timeout-mins))))))
     (reduce t/max-date)))
