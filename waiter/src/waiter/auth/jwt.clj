@@ -151,37 +151,49 @@
     (when (str/blank? oidc-token-uri)
       (throw (ex-info "OIDC token endpoint not configured!" {})))
     (async/go
-      (let [request-host (utils/request->host request)
-            request-scheme (utils/request->scheme request)
-            callback-uri (str (name request-scheme) "://" request-host oidc-callback-uri)
-            client-id (utils/authority->host request-host)
-            result-chan (hu/http-request-async http-client oidc-token-uri
-                                               :form-params {"client_id" client-id
-                                                             "code" access-code
-                                                             "code_verifier" code-verifier
-                                                             "grant_type" "authorization_code"
-                                                             "redirect_uri" callback-uri}
-                                               :request-method :post)
-            body-or-throwable (async/<! result-chan)]
-        (if (instance? Throwable body-or-throwable)
-          (let [{:keys [http-utils/response]} (ex-data body-or-throwable)]
-            (if (some? response)
-              (let [{:keys [body headers status]} response]
-                (ex-info "Non-2XX response from auth server"
-                         {:body body
-                          :headers headers
-                          :source :auth-server
-                          :status status}
-                         body-or-throwable))
-              body-or-throwable))
-          (let [access-token (str (get body-or-throwable :id_token))]
-            (if (str/blank? access-token)
-              (ex-info "ID token missing in auth server response" {:body body-or-throwable})
-              access-token))))))
+      (counters/inc! (metrics/waiter-counter "core" "jwt" "access-token" "total"))
+      (counters/inc! (metrics/waiter-counter "core" "jwt" "access-token" "in-flight"))
+      (let [retrieve-timer (metrics/waiter-timer "core" "jwt" "access-token" "retrieve")
+            timer-context (timers/start retrieve-timer)
+            access-token-or-throwable
+            (let [request-host (utils/request->host request)
+                  request-scheme (utils/request->scheme request)
+                  callback-uri (str (name request-scheme) "://" request-host oidc-callback-uri)
+                  client-id (utils/authority->host request-host)
+                  result-chan (hu/http-request-async http-client oidc-token-uri
+                                                     :form-params {"client_id" client-id
+                                                                   "code" access-code
+                                                                   "code_verifier" code-verifier
+                                                                   "grant_type" "authorization_code"
+                                                                   "redirect_uri" callback-uri}
+                                                     :request-method :post)
+                  body-or-throwable (async/<! result-chan)]
+              (if (instance? Throwable body-or-throwable)
+                (let [{:keys [http-utils/response]} (ex-data body-or-throwable)]
+                  (if (some? response)
+                    (let [{:keys [body headers status]} response]
+                      (ex-info "Non-2XX response from auth server"
+                               {:body body
+                                :headers headers
+                                :source :auth-server
+                                :status status}
+                               body-or-throwable))
+                    body-or-throwable))
+                (let [access-token (str (get body-or-throwable :id_token))]
+                  (if (str/blank? access-token)
+                    (ex-info "ID token missing in auth server response" {:body body-or-throwable})
+                    access-token))))]
+        (timers/stop timer-context)
+        (counters/dec! (metrics/waiter-counter "core" "jwt" "access-token" "in-flight"))
+        (if (instance? Throwable access-token-or-throwable)
+          (counters/inc! (metrics/waiter-counter "core" "jwt" "access-token" "failure"))
+          (counters/inc! (metrics/waiter-counter "core" "jwt" "access-token" "success")))
+        access-token-or-throwable)))
 
   (retrieve-authorize-url [_ request oidc-callback-uri code-verifier state-code]
     (when (str/blank? oidc-authorize-uri)
       (throw (ex-info "OIDC authorize endpoint not configured!" {})))
+    (counters/inc! (metrics/waiter-counter "core" "jwt" "authorize-url"))
     (let [request-host (utils/request->host request)
           request-scheme (utils/request->scheme request)
           code-challenge (utils/b64-encode-sha256 code-verifier)
