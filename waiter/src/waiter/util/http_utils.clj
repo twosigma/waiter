@@ -213,7 +213,8 @@
 (defn browser-request?
   "Looks at the user-agent header to determine if the request came from a browser.
    This is useful, e.g., determining whether the client should be asked to handle redirects.
-   Current implementation checks for the presence of chrome or mozilla based on common user-agents:
+   Current implementation checks for the presence of chrome or mozilla is based on our heuristic
+   of inspecting common user-agents to determine if it is a browser:
    https://www.networkinghowtos.com/howto/common-user-agent-list/"
   [request]
   (when-let [user-agent (some-> request (get-in [:headers "user-agent"]) str/lower-case)]
