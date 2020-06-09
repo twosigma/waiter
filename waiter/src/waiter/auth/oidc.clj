@@ -39,6 +39,10 @@
 
 (def ^:const oidc-callback-uri "/oidc/v1/callback")
 
+;; code_verifier = high-entropy cryptographic random STRING using the unreserved characters
+;;   [A-Z] / [a-z] / [0-9] / "-" / "." / "_" / "~"
+;; from Section 2.3 of [RFC3986], with a minimum length of 43 characters and a maximum length of 128 characters.
+;; https://tools.ietf.org/html/rfc7636#section-4.1
 (let [allowed-chars "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
       allowed-chars-count (count allowed-chars)
       secure-rng (SecureRandom.)]
