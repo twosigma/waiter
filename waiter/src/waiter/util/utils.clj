@@ -502,6 +502,16 @@
         result-bytes (.encode b64-encoder sha256-bytes)]
     (String. result-bytes)))
 
+(defn encode-url-safe-b64
+  "Performs url safe base 64 encoding of input string."
+  [^String data-string]
+  (.encodeToString (Base64/getUrlEncoder) (.getBytes data-string)))
+
+(defn decode-url-safe-b64
+  "Performs url safe base 64 decoding of input string."
+  [^String data-string]
+  (String. ^bytes (.decode (Base64/getUrlDecoder) data-string)))
+
 (let [messages (atom {})]
   (defn message
     "Returns the message corresponding to the provided key"

@@ -127,16 +127,15 @@
         (not= "openid" scope)
         (prepare-response request (str "Invalid scope: " scope) 400)
         :else
-        (let [access-code (str (UUID/randomUUID))
-              state-param (str/replace (str state) #" " "+")]
+        (let [access-code (str (UUID/randomUUID))]
           (swap! oidc-token-state
                  assoc access-code {:client-id client_id
                                     :code-challenge code_challenge
                                     :nonce nonce
                                     :redirect-uri redirect_uri
-                                    :state state-param})
+                                    :state state})
           (log/info "inserted access code entry for" access-code)
-          {:headers {"location" (str redirect_uri "?code=" access-code "&state=" state-param)
+          {:headers {"location" (str redirect_uri "?code=" access-code "&state=" state)
                      "server" "jwks-server"}
            :status 301}))))
 

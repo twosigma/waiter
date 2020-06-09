@@ -54,12 +54,13 @@
 (defn create-state-code
   "Creates an encoded string of the input state map."
   [state-map password]
-  (utils/map->base-64-string state-map password))
+  (utils/encode-url-safe-b64
+    (utils/map->base-64-string state-map password)))
 
 (defn parse-state-code
   "Parses the encoded string into the state map."
   [state-str password]
-  (utils/base-64-string->map state-str password))
+  (utils/base-64-string->map (utils/decode-url-safe-b64 state-str) password))
 
 (defn validate-oidc-callback-request
   [password {:keys [headers] :as request}]
@@ -77,10 +78,7 @@
     (when (str/blank? challenge-cookie)
       (throw (ex-info "No challenge cookie set" bad-request-map)))
     (let [state-map (try
-                      (-> state
-                        ;; handle url decoding of + to whitespace
-                        (str/replace #" " "+")
-                        (parse-state-code password))
+                      (parse-state-code state password)
                       (catch Throwable throwable
                         (throw (ex-info "Unable to parse state"
                                         bad-request-map throwable))))]
