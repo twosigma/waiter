@@ -176,10 +176,9 @@
                                                            (when started-at
                                                              (du/str-to-date started-at)))))]
                     (notify-instance-killed-fn instance)))
-                (scheduler/logI {:instance instance
-                                 :blacklist-period period-in-ms
-                                 :reason reason
-                                 :event-type "BLACKLIST"})
+                (scheduler/log-service-instance {:instance instance
+                                                 :blacklist-period period-in-ms
+                                                 :reason reason} "BLACKLIST")
                 (utils/clj->json-response {:instance-id instance-id
                                            :blacklist-period period-in-ms}))
               (let [response-status (if (= :in-use response-code) http-423-locked http-503-service-unavailable)]

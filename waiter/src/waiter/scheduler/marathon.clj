@@ -82,7 +82,7 @@
             (scheduler/add-instance-to-buffered-collection!
               service-id->failed-instances-transient-store max-instances-to-keep service-id failed-instance
               (fn [] #{}) (fn [instances] (-> (scheduler/sort-instances instances) (rest) (set))))
-            (scheduler/logI (assoc failed-instance :event-type "FAIL"))))))
+            (scheduler/log-service-instance failed-instance "FAIL")))))
     (when (some failed-instance-ids (map :id active-instances))
       ;; remove erroneous entries that are now healthy despite Marathon previously claiming them to be failed
       (swap! service-id->failed-instances-transient-store

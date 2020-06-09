@@ -189,7 +189,7 @@
                     :shell-scheduler/process process
                     :shell-scheduler/working-directory working-directory
                     :shell-scheduler/pid (pid process)})]
-    (scheduler/logI (assoc instance :event-type "LAUNCH"))
+    (scheduler/log-service-instance instance "LAUNCH")
     instance))
 
 (defn active?

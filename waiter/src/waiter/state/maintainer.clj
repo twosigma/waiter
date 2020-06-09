@@ -19,7 +19,6 @@
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
-            [clojure.pprint :as pp]
             [digest]
             [metrics.counters :as counters]
             [metrics.timers :as timers]
@@ -649,7 +648,7 @@
                                                  old-exp-instances (set (get service-id->expired-instances service-id))
                                                  delta-exp-instances (filterv (complement old-exp-instances) cur-exp-instances)]
                                              (doseq [expired-instance delta-exp-instances]
-                                               (scheduler/logI (assoc expired-instance :event-type "EXPIRE")))))
+                                               (scheduler/log-service-instance expired-instance "EXPIRE"))))
                                          (assoc loop-state
                                            :service-id->deployment-error service-id->deployment-error'
                                            :service-id->expired-instances service-id->expired-instances'
@@ -719,7 +718,7 @@
       {:go-chan go-chan
        :notify-instance-killed-fn (fn notify-router-state-maintainer-of-instance-killed [instance]
                                     (log/info "received notification of killed instance" (:id instance))
-                                    (scheduler/logI (assoc instance :event-type "KILL"))
+                                    (scheduler/log-service-instance instance "KILL")
                                     (async/go
                                       (async/>! kill-notification-chan {:instance instance})))
        :query-chan query-chan

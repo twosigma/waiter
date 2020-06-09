@@ -47,10 +47,10 @@
   [& args]
   `(log/log "Scheduler" :debug nil (print-str ~@args)))
 
-(defmacro logI
+(defmacro log-service-instance
   "Log InstanceTracker-specific messages."
-  [instance]
-  `(log/log "InstanceTracker" :debug nil (utils/clj->json instance)))
+  [instance event-type]
+  `(log/log "InstanceTracker" :debug nil (utils/clj->json (assoc ~instance :event-type ~event-type))))
 
 (defrecord Service
   [^String id
