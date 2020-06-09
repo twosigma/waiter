@@ -30,7 +30,8 @@
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils]
             [waiter.work-stealing :as work-stealing])
-  (:import clojure.lang.PersistentQueue))
+  (:import clojure.lang.PersistentQueue
+           (org.joda.time DateTime)))
 
 (defn- healthy?
   "Predicate on instances containing the :healthy status tag and optionally the :expired status tag."
@@ -417,7 +418,7 @@
                 (nil? work-stealing-data) (update-slot-state-fn instance-id #(cond-> %2 (not= :kill-instance reason) (-> (dec) (max 0))))
                 ; mark instance as no longer locked.
                 (do
-                  (log/log "InstanceTracker" :debug nil (str "RELEASE " instance-to-release))
+                  (scheduler/logI (assoc instance-to-release :event-type "RELEASE"))
                   false) #(%)
                 (nil? work-stealing-data) (update-in [:instance-id->state instance-id] update-status-tag-fn #(disj % :locked))
                 ; clear work-stealing entry
@@ -487,7 +488,7 @@
   (log/info "unblacklisting instance" instance-id "as blackli
   st expired at" expiry-time)
   (when (contains? instance-id->state instance-id)
-    (log/log "InstanceTracker" :debug nil (str "UNBLACKLIST " (utils/clj->json (get instance-id->state instance-id)) ))
+    (scheduler/logI (assoc (get instance-id->state instance-id) :event-type "UNBLACKLIST"))
     (update-in (update-instance-id->blacklist-expiry-time-fn current-state #(dissoc % instance-id))
                [:instance-id->state instance-id] update-status-tag-fn #(disj % :blacklisted) )))
 

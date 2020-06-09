@@ -176,19 +176,21 @@
                                        (range 0 (-> reserved-ports count inc))
                                        reserved-ports))
         {:keys [instance-id process started-at working-directory]}
-        (launch-process service-id working-dir-base-path cmd process-environment)]
-    (scheduler/make-ServiceInstance
-      {:id instance-id
-       :service-id service-id
-       :started-at started-at
-       :healthy? nil
-       :host (str "127.0.0." (inc (rand-int 10)))
-       :port (first reserved-ports)
-       :extra-ports (-> reserved-ports rest vec)
-       :log-directory working-directory
-       :shell-scheduler/process process
-       :shell-scheduler/working-directory working-directory
-       :shell-scheduler/pid (pid process)})))
+        (launch-process service-id working-dir-base-path cmd process-environment)
+        instance (scheduler/make-ServiceInstance
+                   {:id instance-id
+                    :service-id service-id
+                    :started-at started-at
+                    :healthy? nil
+                    :host (str "127.0.0." (inc (rand-int 10)))
+                    :port (first reserved-ports)
+                    :extra-ports (-> reserved-ports rest vec)
+                    :log-directory working-directory
+                    :shell-scheduler/process process
+                    :shell-scheduler/working-directory working-directory
+                    :shell-scheduler/pid (pid process)})]
+    (scheduler/logI (assoc instance :event-type "LAUNCH"))
+    instance))
 
 (defn active?
   "Returns true if the given instance is considered active"

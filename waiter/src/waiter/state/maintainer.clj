@@ -643,12 +643,13 @@
                                                        (if (seq new-instance-ids) (str "New healthy instances: " new-instance-ids ".") "")
                                                        (if (seq rem-instance-ids) (str "Removed healthy instances: " rem-instance-ids ".") "")
                                                        (if (seq unhealthy-instance-ids) (str "Unhealthy instances: " unhealthy-instance-ids ".") ""))))
+
                                          (when (not= (get service-id->expired-instances service-id) expired-instances)
                                            (let [cur-exp-instances (set expired-instances)
                                                  old-exp-instances (set (get service-id->expired-instances service-id))
                                                  delta-exp-instances (filterv (complement old-exp-instances) cur-exp-instances)]
                                              (doseq [expired-instance delta-exp-instances]
-                                               (log/log "InstanceTracker" :debug nil (str "EXPIRE " (utils->clj->json expired-instance))))))
+                                               (scheduler/logI (assoc expired-instance :event-type "EXPIRE")))))
                                          (assoc loop-state
                                            :service-id->deployment-error service-id->deployment-error'
                                            :service-id->expired-instances service-id->expired-instances'
@@ -718,7 +719,7 @@
       {:go-chan go-chan
        :notify-instance-killed-fn (fn notify-router-state-maintainer-of-instance-killed [instance]
                                     (log/info "received notification of killed instance" (:id instance))
-                                    (log/log "InstanceTracker" :debug nil (str "KILL " (utils/clj->json instance)))
+                                    (scheduler/logI (assoc instance :event-type "KILL"))
                                     (async/go
                                       (async/>! kill-notification-chan {:instance instance})))
        :query-chan query-chan

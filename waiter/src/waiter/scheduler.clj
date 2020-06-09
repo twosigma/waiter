@@ -47,6 +47,11 @@
   [& args]
   `(log/log "Scheduler" :debug nil (print-str ~@args)))
 
+(defmacro logI
+  "Log InstanceTracker-specific messages."
+  [instance]
+  `(log/log "InstanceTracker" :debug nil (utils/clj->json instance)))
+
 (defrecord Service
   [^String id
    instances
@@ -554,7 +559,7 @@
                         (assoc instances :active-instances active-instances))))))))
 
 (defn- update-scheduler-state
-  "Queries marathon, sends data on service and instance statuses to router state maintainer, and returns scheduler state"
+  "Queries given scheduler, sends data on service and instance statuses to router state maintainer, and returns scheduler state"
   [scheduler-name get-service->instances-fn service-id->service-description-fn available? failed-check-threshold service-id->health-check-context]
   (let [^DateTime request-services-time (t/now)
         timing-message-fn (fn [] (let [^DateTime now (t/now)]

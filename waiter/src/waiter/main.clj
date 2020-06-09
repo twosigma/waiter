@@ -180,7 +180,6 @@
       (uncaughtException [_ thread throwable]
         (log/error throwable (str (.getName thread) " threw exception: " (.getMessage throwable))))))
   (jvm-metrics/instrument-jvm)
-  (log/log "InstanceTracker" :debug nil "Starting waiter in InstanceTracker")
   (let [{:keys [validate-config]} (parse-options args)]
     (if validate-config
       (validate-config-schema config)

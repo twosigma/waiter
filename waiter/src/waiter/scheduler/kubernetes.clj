@@ -1069,6 +1069,7 @@
                             [pod-fields pod-fields'] (data/diff old-pod pod)
                             pod-ns (k8s-object->namespace pod)
                             pod-handle (str pod-ns "/" pod-id)]
+                        (scheduler/logI (assoc (pod->ServiceInstance scheduler pod) :event-type "UPDATE"))
                         (scheduler/log "pod state update:" update-type pod-handle version pod-fields "->" pod-fields'))))}
       (merge options))))
 
