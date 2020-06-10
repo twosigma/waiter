@@ -494,7 +494,7 @@
 (defn make-light-request
   [waiter-url custom-headers &
    {:keys [body cookies debug method path protocol query-params trailers-fn]
-    :or {body nil cookies {} debug true method :post path "/endpoint" query-params {}}}]
+    :or {body nil cookies [] debug true method :post path "/endpoint" query-params {}}}]
   (let [headers (cond->
                   (-> {:x-waiter-cpus 0.1
                        :x-waiter-mem 256
@@ -517,7 +517,7 @@
 (defn make-shell-request
   [waiter-url custom-headers &
    {:keys [body cookies debug method path protocol query-params trailers-fn]
-    :or {body nil cookies {} debug true method :post path "/endpoint" query-params {}}}]
+    :or {body nil cookies [] debug true method :post path "/endpoint" query-params {}}}]
   (make-light-request
     waiter-url
     (assoc
@@ -537,7 +537,7 @@
   "Makes an on-the-fly request to the Kitchen test service."
   [waiter-url custom-headers &
    {:keys [body cookies debug method protocol path query-params]
-    :or {body nil cookies {} debug true method :post path "/endpoint" query-params {}}}]
+    :or {body nil cookies [] debug true method :post path "/endpoint" query-params {}}}]
   {:pre [(not (str/blank? waiter-url))]}
   (make-shell-request
     waiter-url
@@ -596,7 +596,7 @@
     (cond-> (some-> settings-result :body try-parse-json)
       keywordize-keys walk/keywordize-keys)))
 
-(defn service-state [waiter-url service-id & {:keys [cookies] :or {cookies {}}}]
+(defn service-state [waiter-url service-id & {:keys [cookies] :or {cookies []}}]
   (let [state-result (make-request waiter-url (str "/state/" service-id)
                                    :cookies cookies :idle-timeout api-idle-timeout-ms)
         state-body (:body state-result)
@@ -606,7 +606,7 @@
 
 (defn- retrieve-state-helper
   "Fetches and returns the state at the specified endpoint."
-  [waiter-url endpoint & {:keys [cookies] :or {cookies {}}}]
+  [waiter-url endpoint & {:keys [cookies] :or {cookies []}}]
   (let [state-body (:body (make-request waiter-url endpoint
                                         :cookies cookies :idle-timeout api-idle-timeout-ms :verbose true))]
     (log/debug endpoint "body:" state-body)
@@ -614,27 +614,27 @@
 
 (defn fallback-state
   "Fetches and returns the fallback state."
-  [waiter-url & {:keys [cookies] :or {cookies {}}}]
+  [waiter-url & {:keys [cookies] :or {cookies []}}]
   (retrieve-state-helper waiter-url "/state/fallback" :cookies cookies))
 
 (defn interstitial-state
   "Fetches and returns the interstitial state."
-  [waiter-url & {:keys [cookies] :or {cookies {}}}]
+  [waiter-url & {:keys [cookies] :or {cookies []}}]
   (retrieve-state-helper waiter-url "/state/interstitial" :cookies cookies))
 
 (defn jwt-authenticator-state
   "Fetches and returns the interstitial state."
-  [waiter-url & {:keys [cookies] :or {cookies {}}}]
+  [waiter-url & {:keys [cookies] :or {cookies []}}]
   (retrieve-state-helper waiter-url "/state/jwt-authenticator" :cookies cookies))
 
 (defn kv-store-state
   "Fetches and returns the kv-store state."
-  [waiter-url & {:keys [cookies] :or {cookies {}}}]
+  [waiter-url & {:keys [cookies] :or {cookies []}}]
   (retrieve-state-helper waiter-url "/state/kv-store" :cookies cookies))
 
 (defn maintainer-state
   "Fetches and returns the maintainer state."
-  [waiter-url & {:keys [cookies] :or {cookies {}}}]
+  [waiter-url & {:keys [cookies] :or {cookies []}}]
   (retrieve-state-helper waiter-url "/state/maintainer" :cookies cookies))
 
 (defn routers
@@ -949,7 +949,7 @@
 
 (defn statsd-state
   "Fetches and returns the statsd state."
-  [waiter-url & {:keys [cookies] :or {cookies {}}}]
+  [waiter-url & {:keys [cookies] :or {cookies []}}]
   (retrieve-state-helper waiter-url "/state/statsd" :cookies cookies))
 
 (defn router-statsd-state
@@ -1116,7 +1116,7 @@
 (defn get-token
   "Gets the token with the given name"
   [waiter-url token & {:keys [cookies query-params request-headers] :or
-                       {cookies {}, query-params {"include" "metadata"}}}]
+                       {cookies [], query-params {"include" "metadata"}}}]
   (let [request-headers (or request-headers {"host" token})
         token-response (make-request waiter-url "/token"
                                      :cookies cookies
@@ -1149,7 +1149,7 @@
 
 (defn retrieve-services-on-router
   "Returns the service-ids of services known to be running at specified router."
-  [router-url & {:keys [cookies] :or {cookies {}}}]
+  [router-url & {:keys [cookies] :or {cookies []}}]
   (some->> (make-request router-url "/apps" :cookies cookies)
     :body
     json/read-str
@@ -1159,19 +1159,19 @@
 
 (defn active-instances
   "Returns the active instances for the given service-id"
-  [waiter-url service-id & {:keys [cookies] :or {cookies {}}}]
+  [waiter-url service-id & {:keys [cookies] :or {cookies []}}]
   (get-in (service-settings waiter-url service-id :cookies cookies)
           [:instances :active-instances]))
 
 (defn killed-instances
   "Returns the killed instances for the given service-id"
-  [waiter-url service-id & {:keys [cookies] :or {cookies {}}}]
+  [waiter-url service-id & {:keys [cookies] :or {cookies []}}]
   (get-in (service-settings waiter-url service-id :cookies cookies)
           [:instances :killed-instances]))
 
 (defn num-instances
   "Returns the number of active instances for the given service-id"
-  [waiter-url service-id & {:keys [cookies] :or {cookies {}}}]
+  [waiter-url service-id & {:keys [cookies] :or {cookies []}}]
   (let [instances (count (active-instances waiter-url service-id :cookies cookies))]
     (log/debug service-id "has" instances "instances.")
     instances))
@@ -1209,7 +1209,7 @@
 
 (defn token->etag
   "Retrieves the etag for a token"
-  [waiter-url token & {:keys [cookies] :or {cookies {}}}]
+  [waiter-url token & {:keys [cookies] :or {cookies []}}]
   (-> (get-token waiter-url token :cookies cookies :query-params {"token" token})
     :headers
     (get "etag")))
