@@ -484,13 +484,19 @@
 
 (defn map->base-64-string
   "Serializes data to a base 64 string along with encryption."
-  [data-map encryption-key]
-  (bytes->str (b64/encode (nippy/freeze data-map {:compressor nil :password encryption-key}))))
+  [data-map encryption-key & {:keys [url-safe] :or {url-safe false}}]
+  (let [encrypted-bytes (nippy/freeze data-map {:compressor nil :password encryption-key})]
+    (if url-safe
+      (.encodeToString (Base64/getUrlEncoder) encrypted-bytes)
+      (bytes->str (b64/encode encrypted-bytes)))))
 
 (defn base-64-string->map
   "Deserializes and decrypts a base 64 string."
-  [b64-string decryption-key]
-  (nippy/thaw (b64/decode (.getBytes b64-string)) {:compressor nil :password decryption-key :v1-compatibility? false}))
+  [^String b64-string decryption-key & {:keys [url-safe] :or {url-safe false}}]
+  (let [decoded-bytes (if url-safe
+                        (.decode (Base64/getUrlDecoder) b64-string)
+                        (b64/decode (.getBytes b64-string)))]
+    (nippy/thaw decoded-bytes {:compressor nil :password decryption-key :v1-compatibility? false})))
 
 (defn b64-encode-sha256
   "Returns the url encoding of the input string using SHA256."
