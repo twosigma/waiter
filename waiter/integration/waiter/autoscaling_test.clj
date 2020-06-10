@@ -21,23 +21,51 @@
             [waiter.util.client-tools :refer :all]
             [waiter.util.utils :as utils]))
 
-(defn- scaling-for-service-test [testing-str waiter-url target-instances concurrency-level request-fn]
+(defn- scaling-for-service-test
+  [testing-str waiter-url target-instances concurrency-level request-fn]
   (testing testing-str
-    (let [continue-running (atom true)
-          first-request (request-fn)
+    (let [cancellation-token-atom (atom false)
+          {:keys [cookies] :as first-request} (request-fn {})
           service-id (retrieve-service-id waiter-url (:request-headers first-request))
-          count-instances (fn [] (num-instances waiter-url service-id))]
+          count-instances (fn [] (num-instances waiter-url service-id :cookies cookies))]
       (with-service-cleanup
         service-id
         (is (wait-for #(= 1 (count-instances))) "First instance never started")
-        (future (dorun (pmap (fn [_] (while @continue-running (request-fn)))
-                             (range (* target-instances concurrency-level)))))
-        (is (wait-for #(= target-instances (count-instances))) (str "Never scaled up to " target-instances " instances"))
-        (reset! continue-running false)
+        (let [requests-per-thread 100
+              num-threads (* target-instances concurrency-level)
+              futures (parallelize-requests
+                        num-threads
+                        requests-per-thread
+                        #(request-fn cookies)
+                        :canceled? (fn [] @cancellation-token-atom)
+                        :service-id service-id
+                        :verbose true
+                        :wait-for-tasks false)]
+          (log/info "waiting for" service-id "to scale to" target-instances "instances")
+          (is (wait-for
+                (fn []
+                  (log/info "scale-up:" service-id "retrieving instance count")
+                  (let [current-instances (count-instances)]
+                    (log/info "scale-up:" service-id "currently has" current-instances "instance(s)")
+                    (= target-instances current-instances))))
+              (str "Never scaled up to " target-instances " instances"))
+          (log/info "cancelling parallel requests to" service-id)
+          (reset! cancellation-token-atom true)
+          (log/info "waiting for threads to complete making requests to" service-id)
+          (await-futures futures)
+          (log/info "completed making requests to" service-id))
         ; When scaling down in Marathon, we have to wait for forced kills,
         ; which by default occur after 60 seconds of failed kills.
         ; So give the scale down extra time
-        (is (wait-for #(= 1 (count-instances)) :timeout 300) "Never scaled back down to 1 instance")))))
+        (log/info "waiting for" service-id "to scale down to one instance")
+        (is (wait-for
+              (fn []
+                (log/info "scale-down:" service-id "retrieving instance count")
+                (let [current-instances (count-instances)]
+                  (log/info "scale-down:" service-id "currently has" current-instances "instance(s)")
+                  (= 1 current-instances)))
+              :timeout 300)
+            "Never scaled back down to 1 instance")))))
 
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-scaling-healthy-app
   (testing-using-waiter-url
@@ -49,7 +77,7 @@
                           :x-waiter-scale-down-factor 0.9
                           :x-waiter-name (rand-name)}]
       (scaling-for-service-test "Scaling healthy app" waiter-url 3 concurrency-level
-                                #(make-kitchen-request waiter-url custom-headers)))))
+                                #(make-kitchen-request waiter-url custom-headers :cookies %)))))
 
 (deftest ^:parallel ^:integration-fast ^:resource-heavy test-scaling-unhealthy-app
   (testing-using-waiter-url
@@ -63,7 +91,7 @@
                           :x-waiter-cmd "sleep 600"
                           :x-waiter-queue-timeout 5000}]
       (scaling-for-service-test "Scaling unhealthy app" waiter-url 3 concurrency-level
-                                #(make-shell-request waiter-url custom-headers)))))
+                                #(make-shell-request waiter-url custom-headers :cookies %)))))
 
 (defn- run-scale-service-requests
   [waiter-url cookies request-fn requests-per-thread delay-secs service-id
