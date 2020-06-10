@@ -20,20 +20,38 @@ export GRAPHITE_SERVER_PORT=5555
 nc -kl localhost $GRAPHITE_SERVER_PORT > /dev/null &
 ncat_pid=$!
 
-if [ "${TRAVIS}" == true ]; then
+function limit_tests_runtime() {
+    sleep 1500
+    echo "Running lein processes:"
+    ps aux | grep lein
+    echo "Running run-integration-tests-composite processes:"
+    ps aux | grep run-integration-tests-composite
+    echo "Killing run-integration-tests-composite processes:"
+    ps aux | grep run-integration-tests-composite | awk '{ print $2 }' | xargs kill -9
+    echo "Killed run-integration-tests-composite processes"
+}
+
+if [[ "${TRAVIS}" == true ]]; then
+
+    limit_tests_runtime &
     # Capture integration test command output into a log file
     mkdir -p ${WAITER_DIR}/log
     bash -x -c "${SUBCMD}" &> >(tee ${WAITER_DIR}/log/travis.log)
 
     # If there were failures, dump the logs
-    if [ $? -ne 0 ]; then
+    if [[ $? -ne 0 ]]; then
+        echo "run-integration-tests-composite command failed!"
         echo 'Uploading logs...'
         ${DIR}/upload-logs.sh
+        echo 'Uploaded logs.'
         exit 1
+    else
+        echo "run-integration-tests-composite command completed successfully"
     fi
 else
     eval ${SUBCMD}
 fi
 
 # Clean up ncat server
+echo "cleaning up ncat server"
 kill -9 $ncat_pid

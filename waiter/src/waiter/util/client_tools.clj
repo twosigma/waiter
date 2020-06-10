@@ -366,33 +366,40 @@
                          (str scheme "://"))
                        (strip-trailing-slash waiter-url)
                        path)
-         request-headers (walk/stringify-keys (ensure-cid-in-headers headers))]
+         {:strs [x-cid] :as request-headers} (walk/stringify-keys (ensure-cid-in-headers headers))]
      (try
-       (when verbose
-         (log/info "request url:" request-url)
-         (log/info "request headers:" (into (sorted-map) request-headers)))
+       (log/info x-cid "request url:" request-url)
+       (log/info x-cid "request headers:" (into (sorted-map) request-headers))
+       (log/info x-cid "request cookies:" cookies)
        (let [waiter-auth-cookie (some #(= authentication/AUTH-COOKIE-NAME (:name %)) cookies)
              add-spnego-auth (and (not disable-auth) use-spnego (not waiter-auth-cookie))
+             request-options (cond-> {:body body
+                                      :follow-redirects? false
+                                      :headers request-headers
+                                      :method method
+                                      :query-string query-params
+                                      :url request-url}
+                               multipart (assoc :multipart multipart)
+                               add-spnego-auth (assoc :auth (hu/spnego-authentication (URI. request-url)))
+                               form-params (assoc :form-params form-params)
+                               (not (str/blank? content-type)) (assoc :content-type content-type)
+                               (seq cookies) (assoc :cookies (map (fn [c] [(:name c) (:value c)]) cookies))
+                               trailers-fn (assoc :trailers-fn trailers-fn))
+             _ (log/info x-cid "request options:" (into (sorted-map) request-options))
              {:keys [body error error-chan headers status trailers]}
-             (async/<!! (http/request
-                          client
-                          (cond-> {:body body
-                                   :follow-redirects? false
-                                   :headers request-headers
-                                   :method method
-                                   :query-string query-params
-                                   :url request-url}
-                            multipart (assoc :multipart multipart)
-                            add-spnego-auth (assoc :auth (hu/spnego-authentication (URI. request-url)))
-                            form-params (assoc :form-params form-params)
-                            (not (str/blank? content-type)) (assoc :content-type content-type)
-                            cookies (assoc :cookies (map (fn [c] [(:name c) (:value c)]) cookies))
-                            trailers-fn (assoc :trailers-fn trailers-fn))))
+             (async/<!! (http/request client request-options))
              response-body (when body (async/<!! body))
              error (or error
                        (when error-chan (async/<!! error-chan)))]
          (when verbose
            (log/info (get request-headers "x-cid") "response size:" (count (str response-body))))
+         (log/info x-cid "response status:" status)
+         (log/info x-cid "response headers:" headers)
+         (when error
+           (log/error x-cid "request response error:" error)
+           (when-not (instance? Throwable error)
+             (println "error is not a throwable!" error)
+             (log/warn "error is not a throwable!" error)))
          {:body response-body
           :cookies (parse-cookies (get headers "set-cookie"))
           :error error
@@ -401,8 +408,7 @@
           :status status
           :trailers (when trailers (async/<!! trailers))})
        (catch Exception e
-         (when verbose
-           (log/info (get request-headers "x-cid") "error in obtaining response" (.getMessage e)))
+         (log/error x-cid "request thrown error" (.getMessage e))
          (throw e))))))
 
 (defmacro assert-response-status

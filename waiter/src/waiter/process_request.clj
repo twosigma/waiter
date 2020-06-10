@@ -251,6 +251,7 @@
         error-map (assoc metrics-map 
                     :error-class error-class
                     :status status)]
+    (log/debug "response error:" error-cause)
     (deliver reservation-status-promise error-cause)
     (utils/exception->response (ex-info message error-map error) request)))
 
@@ -394,7 +395,8 @@
         abort-ch (async/chan 10)
         body' (cond->> body
                 (instance? ServletInputStream body)
-                (servlet-input-stream->channel service-id metric-group streaming-timeout-ms abort-ch ctrl-ch))]
+                (servlet-input-stream->channel service-id metric-group streaming-timeout-ms abort-ch ctrl-ch))
+        correlation-id (cid/get-correlation-id)]
     (http/request
       http-client
       (cond-> {:abort-ch abort-ch
@@ -406,6 +408,7 @@
                :fold-chunked-response-buffer-size output-buffer-size
                :follow-redirects? false
                :idle-timeout idle-timeout
+               :log-fn (fn [& args] (log/info correlation-id (str/join " " args)))
                :method request-method
                :query-string query-string
                :url endpoint
@@ -496,6 +499,7 @@
                         (confirm-live-connection)
                         (let [buffer (timers/start-stop-time! stream-read-body (async/<! body))
                               bytes-read (if buffer (count buffer) -1)]
+                          (log/debug "read" bytes-read "response byte(s)")
                           (if-not (= -1 bytes-read)
                             (do
                               (meters/mark! throughput-meter bytes-read)
@@ -539,6 +543,7 @@
                         (catch Exception e
                           (histograms/update! (metrics/service-histogram service-id "response-size") bytes-streamed)
                           ; Handle lower down
+                          (log/debug "error occurred after streaming " bytes-streamed " bytes in response")
                           (throw (ex-info (str "error occurred after streaming " bytes-streamed " bytes in response") {} e))))]
                   (let [bytes-reported-to-statsd'
                         (let [unreported-bytes (- bytes-streamed' bytes-reported-to-statsd)]
@@ -564,6 +569,7 @@
                     (log/info "invoking poison pill directly on output stream")
                     (poison-pill-function output-stream)))))))
         (finally
+          (log/debug "closing response channels")
           (async/close! resp-chan)
           (async/close! body)
           (async/close! request-state-chan))))))
