@@ -56,6 +56,8 @@
 
 (def ^:const required-response-headers ["x-cid"])
 
+(def ^:const api-idle-timeout-ms 3000)
+
 (defn colored-time [time-string] (yellow time-string))
 
 (defn try-parse-json
@@ -344,7 +346,7 @@
 
 (defn make-request
   ([waiter-url path &
-    {:keys [body client cookies content-type disable-auth form-params headers
+    {:keys [body client cookies content-type disable-auth form-params headers idle-timeout
             method multipart protocol query-params scheme trailers-fn verbose]
      :or {body nil
           cookies []
@@ -385,6 +387,7 @@
                             multipart (assoc :multipart multipart)
                             add-spnego-auth (assoc :auth (hu/spnego-authentication (URI. request-url)))
                             form-params (assoc :form-params form-params)
+                            idle-timeout (assoc :idle-timeout idle-timeout)
                             (not (str/blank? content-type)) (assoc :content-type content-type)
                             cookies (assoc :cookies (map (fn [c] [(:name c) (:value c)]) cookies))
                             trailers-fn (assoc :trailers-fn trailers-fn))))
@@ -552,7 +555,8 @@
 
 (defn retrieve-service-id [waiter-url waiter-headers &
                            {:keys [cookies verbose] :or {cookies [] verbose false}}]
-  (let [service-id-result (make-request waiter-url "/service-id" :cookies cookies :headers waiter-headers)
+  (let [service-id-result (make-request waiter-url "/service-id"
+                                        :cookies cookies :headers waiter-headers :idle-timeout api-idle-timeout-ms)
         service-id (str (:body service-id-result))]
     (when verbose
       (log/info "service id: " service-id))
@@ -562,12 +566,14 @@
   (pc/mapply retrieve-service-id waiter-url (merge (kitchen-request-headers) waiter-headers) options))
 
 (defn waiter-profiles [waiter-url & {:keys [cookies] :or {cookies []}}]
-  (let [profiles-result (make-request waiter-url "/profiles" :verbose true :cookies cookies)
+  (let [profiles-result (make-request waiter-url "/profiles"
+                                      :cookies cookies :idle-timeout api-idle-timeout-ms :verbose true)
         profiles-json (try-parse-json (:body profiles-result))]
     (walk/keywordize-keys profiles-json)))
 
 (defn waiter-settings [waiter-url & {:keys [cookies] :or {cookies []}}]
-  (let [settings-result (make-request waiter-url "/settings" :verbose true :cookies cookies)
+  (let [settings-result (make-request waiter-url "/settings"
+                                      :cookies cookies :idle-timeout api-idle-timeout-ms :verbose true)
         settings-json (try-parse-json (:body settings-result))]
     (walk/keywordize-keys settings-json)))
 
@@ -584,13 +590,15 @@
   [waiter-url service-id & {:keys [cookies keywordize-keys query-params]
                             :or {cookies [] keywordize-keys true query-params {}}}]
   (let [settings-path (str "/apps/" service-id)
-        settings-result (make-request waiter-url settings-path :cookies cookies :query-params query-params)]
+        settings-result (make-request waiter-url settings-path
+                                      :cookies cookies :idle-timeout api-idle-timeout-ms :query-params query-params)]
     (log/debug "service" service-id ":" settings-result)
     (cond-> (some-> settings-result :body try-parse-json)
       keywordize-keys walk/keywordize-keys)))
 
 (defn service-state [waiter-url service-id & {:keys [cookies] :or {cookies {}}}]
-  (let [state-result (make-request waiter-url (str "/state/" service-id) :cookies cookies)
+  (let [state-result (make-request waiter-url (str "/state/" service-id)
+                                   :cookies cookies :idle-timeout api-idle-timeout-ms)
         state-body (:body state-result)
         _ (log/debug "service" service-id "state:" state-body)
         state-json (try-parse-json state-body)]
@@ -599,7 +607,8 @@
 (defn- retrieve-state-helper
   "Fetches and returns the state at the specified endpoint."
   [waiter-url endpoint & {:keys [cookies] :or {cookies {}}}]
-  (let [state-body (:body (make-request waiter-url endpoint :verbose true :cookies cookies))]
+  (let [state-body (:body (make-request waiter-url endpoint
+                                        :cookies cookies :idle-timeout api-idle-timeout-ms :verbose true))]
     (log/debug endpoint "body:" state-body)
     (try-parse-json state-body)))
 
@@ -704,16 +713,16 @@
    (when-not (str/blank? service-id)
      (try
        ((utils/retry-strategy {:delay-multiplier 1.2, :inital-delay-ms 250, :max-retries limit})
-         (fn []
-           (let [app-delete-path (str "/apps/" service-id "?force=true")
-                 delete-response (make-request waiter-url app-delete-path :method :delete)
-                 delete-json (try-parse-json (:body delete-response))
-                 delete-success (true? (get delete-json "success"))
-                 no-such-service (= "no-such-service-exists" (get delete-json "result"))]
-             (log/debug "Delete response for" service-id ":" delete-json)
-             (when (and (not delete-success) (not no-such-service))
-               (log/warn "Unable to delete" service-id)
-               (throw (Exception. (str "Unable to delete" service-id)))))))
+        (fn []
+          (let [app-delete-path (str "/apps/" service-id "?force=true")
+                delete-response (make-request waiter-url app-delete-path :idle-timeout api-idle-timeout-ms :method :delete)
+                delete-json (try-parse-json (:body delete-response))
+                delete-success (true? (get delete-json "success"))
+                no-such-service (= "no-such-service-exists" (get delete-json "result"))]
+            (log/debug "Delete response for" service-id ":" delete-json)
+            (when (and (not delete-success) (not no-such-service))
+              (log/warn "Unable to delete" service-id)
+              (throw (Exception. (str "Unable to delete" service-id)))))))
        (catch Exception e
          (log/error "Error in deleting service" service-id ":" (.getMessage e)))))))
 
@@ -737,7 +746,10 @@
          (testing current-testing-context#
            (cid/with-correlation-id
              (str current-testing-context#)
-             ~@body))))))
+             (try
+               ~@body
+               (catch Throwable throwable#
+                 (log/error throwable# "error executing task in" (str current-testing-context#))))))))))
 
 (defmacro launch-thread
   [& body]
@@ -829,6 +841,7 @@
                   (and hard-delete (nil? headers)) (attach-token-etag waiter-url token))
         response (make-request waiter-url "/token"
                                :headers (assoc headers "host" token)
+                               :idle-timeout api-idle-timeout-ms
                                :method :delete
                                :query-params (if hard-delete {"hard-delete" true} {}))]
     (assert-response-status response http-200-ok )))
@@ -1175,7 +1188,11 @@
   `(let [service-id# ~service-id
          cookies# ~cookies]
      (doseq [[_# router-url#] (routers ~waiter-url)]
-       (is (wait-for #(seq (active-instances router-url# service-id# :cookies cookies#)))))))
+       (is (wait-for #(seq (active-instances router-url# service-id# :cookies cookies#)))
+           (str "active instances not available for service"
+                {:cookies cookies#
+                 :router-url router-url#
+                 :service-id service-id#})))))
 
 (defmacro assert-service-unhealthy-on-all-routers
   [waiter-url service-id cookies]
@@ -1184,7 +1201,11 @@
      (doseq [[_# router-url#] (routers ~waiter-url)]
        (is (wait-for #(let [instances# (active-instances router-url# service-id# :cookies cookies#)]
                         (log/info "instances:" instances#)
-                        (and (seq instances#) (every? (comp not :healthy?) instances#))))))))
+                        (and (seq instances#) (every? (comp not :healthy?) instances#))))
+           (str "all active instances not unhealthy for service"
+                {:cookies cookies#
+                 :router-url router-url#
+                 :service-id service-id#})))))
 
 (defn token->etag
   "Retrieves the etag for a token"
