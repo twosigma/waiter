@@ -22,6 +22,8 @@ cache:
 before_install:
   - unset _JAVA_OPTIONS  # Avoid unwanted _JAVA_OPTIONS set by Travis CI
   - echo "Sudo-enabled build? ${TRAVIS_SUDO}"
+  - sudo apt-get -y install coreutils
+  - man timeout
 
 install:
   - ./waiter/bin/ci/install-lein
