@@ -1069,9 +1069,11 @@
 (deftest test-get-service-state
   (let [router-id "router-id"
         service-id "service-1"
-        local-usage-agent (agent {service-id {"last-request-time" "foo"}})]
+        local-usage-agent (agent {service-id {"last-request-time" "foo"}})
+        enable-work-stealing-support? (constantly true)]
     (testing "returns 400 for missing service id"
-      (is (= http-400-bad-request (:status (async/<!! (get-service-state router-id nil local-usage-agent "" {} {}))))))
+      (is (= http-400-bad-request
+             (:status (async/<!! (get-service-state router-id enable-work-stealing-support? nil local-usage-agent "" {} {}))))))
     (let [instance-rpc-chan (async/chan 1)
           populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
           query-state-chan (async/chan 1)
@@ -1104,7 +1106,8 @@
       (let [query-sources {:autoscaler-state (fn [{:keys [service-id]}]
                                                {:service-id service-id :source "autoscaler"})
                            :maintainer-state maintainer-state-chan}
-            response (async/<!! (get-service-state router-id populate-maintainer-chan! local-usage-agent service-id query-sources {}))
+            response (async/<!! (get-service-state router-id enable-work-stealing-support? populate-maintainer-chan!
+                                                   local-usage-agent service-id query-sources {}))
             service-state (json/read-str (:body response) :key-fn keyword)]
         (is (= router-id (get-in service-state [:router-id])))
         (is (= responder-state (get-in service-state [:state :responder-state])))

@@ -825,7 +825,10 @@
 
                  ;; The timeout (milliseconds) used internally by the
                  ;; Waiter router to reserve an instance for offering:
-                 :reserve-timeout-ms 1000}
+                 :reserve-timeout-ms 1000
+
+                 ;; The distribution schemes of services for which to enable work-stealing support:
+                 :supported-distribution-schemes #{"balanced" "simple"}}
 
  ; ---------- Metrics - StatsD ----------
 

@@ -187,7 +187,8 @@
                                        (s/required-key :ws-max-text-message-size) schema/positive-int}
    (s/required-key :work-stealing) {(s/required-key :max-in-flight-offers) schema/non-negative-int
                                     (s/required-key :offer-help-interval-ms) schema/positive-int
-                                    (s/required-key :reserve-timeout-ms) schema/positive-int}
+                                    (s/required-key :reserve-timeout-ms) schema/positive-int
+                                    (s/required-key :supported-distribution-schemes) #{(s/pred #(contains? #{"balanced" "simple"} %) 'invalid-distribution-scheme)}}
    (s/required-key :zookeeper) {(s/required-key :base-path) schema/non-empty-string
                                 (s/required-key :connect-string) schema/valid-zookeeper-connect-config
                                 (s/required-key :curator-retry-policy) {(s/required-key :base-sleep-time-ms) schema/positive-int
@@ -472,7 +473,8 @@
                       :ws-max-text-message-size (* 1024 1024 40)}
    :work-stealing {:max-in-flight-offers 4000
                    :offer-help-interval-ms 100
-                   :reserve-timeout-ms 1000}
+                   :reserve-timeout-ms 1000
+                   :supported-distribution-schemes #{"simple"}}
    :zookeeper {:base-path "/waiter"
                :curator-retry-policy {:base-sleep-time-ms 100
                                       :max-retries 10

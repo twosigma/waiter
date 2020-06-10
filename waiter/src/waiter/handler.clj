@@ -809,7 +809,7 @@
 
 (defn get-service-state
   "Retrieves the state for a particular service on the router."
-  [router-id populate-maintainer-chan! local-usage-agent service-id query-sources request]
+  [router-id enable-work-stealing-support? populate-maintainer-chan! local-usage-agent service-id query-sources request]
   (async/go
     (try
       (if (str/blank? service-id)
@@ -819,14 +819,17 @@
               responder-state-chan (service/query-maintainer-channel-map-with-timeout!
                                      populate-maintainer-chan! service-id timeout-ms :query-state)
               _ (log/info "waiting for response from query-work-stealing channel...")
-              work-stealing-state-chan (service/query-maintainer-channel-map-with-timeout!
-                                         populate-maintainer-chan! service-id timeout-ms :query-work-stealing)
+              work-stealing-state (if (enable-work-stealing-support? service-id)
+                                    (service/query-maintainer-channel-map-with-timeout!
+                                      populate-maintainer-chan! service-id timeout-ms :query-work-stealing)
+                                    {"state" "disabled"})
               local-usage-state (get @local-usage-agent service-id)
               query-params {:cid (cid/get-correlation-id) :service-id service-id}
               [query-chans initial-result]
               (loop [[[entry-key entry-value] & remaining]
                      (concat query-sources
-                             [[:responder-state responder-state-chan] [:work-stealing-state work-stealing-state-chan]])
+                             [[:responder-state responder-state-chan]
+                              [:work-stealing-state work-stealing-state]])
                      query-chans {}
                      initial-result {:local-usage local-usage-state}]
                 (if entry-key
