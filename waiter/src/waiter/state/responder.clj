@@ -417,9 +417,6 @@
                 ; instance received from work-stealing, do not change slot state
                 (nil? work-stealing-data) (update-slot-state-fn instance-id #(cond-> %2 (not= :kill-instance reason) (-> (dec) (max 0))))
                 ; mark instance as no longer locked.
-                (do
-                  (scheduler/log-service-instance instance-to-release "RELEASE")
-                  false) #(%)
                 (nil? work-stealing-data) (update-in [:instance-id->state instance-id] update-status-tag-fn #(disj % :locked))
                 ; clear work-stealing entry
                 work-stealing-data (update-in [:request-id->work-stealer] dissoc request-id))
