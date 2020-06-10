@@ -1090,7 +1090,8 @@
                              (scheduler/validate-service scheduler service-id)
                              (service/start-new-service
                                scheduler descriptor start-service-cache scheduler-interactions-thread-pool)))
-   :start-work-stealing-balancer-fn (pc/fnk [[:settings [:work-stealing offer-help-interval-ms reserve-timeout-ms]]
+   :start-work-stealing-balancer-fn (pc/fnk [[:settings [:work-stealing offer-help-interval-ms offer-idle-timeout-ms
+                                                         reserve-timeout-ms]]
                                              [:state offers-allowed-semaphore router-id]
                                              enable-work-stealing-support? make-inter-router-requests-async-fn router-metrics-helpers]
                                       (fn start-work-stealing-balancer [populate-maintainer-chan! service-id]
@@ -1100,7 +1101,7 @@
                                             (let [{:keys [service-id->router-id->metrics]} router-metrics-helpers]
                                               (work-stealing/start-work-stealing-balancer
                                                 populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms
-                                                offers-allowed-semaphore service-id->router-id->metrics
+                                                offer-idle-timeout-ms offers-allowed-semaphore service-id->router-id->metrics
                                                 make-inter-router-requests-async-fn router-id service-id))))))
    :stop-work-stealing-balancer-fn (pc/fnk []
                                      (fn stop-work-stealing-balancer [service-id {:keys [exit-chan]}]
