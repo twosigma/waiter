@@ -33,6 +33,8 @@
                                              :spnego-auth false}
                               :issuer "test.com"
                               :jwks-url #config/env "JWKS_SERVER_URL"
+                              :oidc-authorize-uri #config/env "OIDC_AUTHORIZE_URL"
+                              :oidc-token-uri #config/env "OIDC_TOKEN_URL"
                               :subject-key :sub
                               :supported-algorithms #{:eddsa :rs256}
                               :token-type "JWT"

@@ -19,6 +19,7 @@
             [buddy.sign.jwt :as jwt]
             [clj-time.coerce :as tc]
             [clj-time.core :as t]
+            [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.set :as set]
             [clojure.string :as str]
@@ -28,6 +29,7 @@
             [metrics.timers :as timers]
             [plumbing.core :as pc]
             [waiter.auth.authentication :as auth]
+            [waiter.cookie-support :as cookie-support]
             [waiter.metrics :as metrics]
             [waiter.status-codes :refer :all]
             [waiter.util.date-utils :as du]
@@ -133,24 +135,100 @@
   (get-key-id->jwk [this]
     "Returns a map for public key id to the JSON Web Key which contains the public key used to
      verify any JSON Web Token (JWT) issued by the authorization server.")
+  (request-access-token [this request oidc-callback-uri access-code code-verifier]
+    "Returns an async channel that will return the access token for the provided access code.")
+  (retrieve-authorize-url [this request oidc-callback-uri code-verifier state-code]
+    "Returns the OIDC authorize url to use for a given request.")
   (retrieve-server-state [this include-flags]
     "Returns the current state of the auth server."))
 
-(defrecord JwtAuthServer [jwks-url keys-cache]
+(defrecord JwtAuthServer [http-client jwks-url keys-cache oidc-authorize-uri oidc-token-uri]
   AuthServer
   (get-key-id->jwk [_]
     (get @keys-cache :key-id->jwk))
+
+  (request-access-token [_ request oidc-callback-uri access-code code-verifier]
+    (when (str/blank? oidc-token-uri)
+      (throw (ex-info "OIDC token endpoint not configured!" {})))
+    (async/go
+      (counters/inc! (metrics/waiter-counter "core" "jwt" "access-token" "total"))
+      (counters/inc! (metrics/waiter-counter "core" "jwt" "access-token" "in-flight"))
+      (let [retrieve-timer (metrics/waiter-timer "core" "jwt" "access-token" "retrieve")
+            timer-context (timers/start retrieve-timer)
+            access-token-or-throwable
+            (let [request-host (utils/request->host request)
+                  request-scheme (utils/request->scheme request)
+                  callback-uri (str (name request-scheme) "://" request-host oidc-callback-uri)
+                  client-id (utils/authority->host request-host)
+                  result-chan (hu/http-request-async http-client oidc-token-uri
+                                                     :form-params {"client_id" client-id
+                                                                   "code" access-code
+                                                                   "code_verifier" code-verifier
+                                                                   "grant_type" "authorization_code"
+                                                                   "redirect_uri" callback-uri}
+                                                     :request-method :post)
+                  body-or-throwable (async/<! result-chan)]
+              (if (instance? Throwable body-or-throwable)
+                (let [{:keys [http-utils/response]} (ex-data body-or-throwable)]
+                  (if (some? response)
+                    (let [{:keys [body headers status]} response]
+                      (ex-info "Non-2XX response from auth server"
+                               {:body body
+                                :headers headers
+                                :source :auth-server
+                                :status status}
+                               body-or-throwable))
+                    body-or-throwable))
+                (let [access-token (str (get body-or-throwable :id_token))]
+                  (if (str/blank? access-token)
+                    (ex-info "ID token missing in auth server response" {:body body-or-throwable})
+                    access-token))))]
+        (timers/stop timer-context)
+        (counters/dec! (metrics/waiter-counter "core" "jwt" "access-token" "in-flight"))
+        (if (instance? Throwable access-token-or-throwable)
+          (counters/inc! (metrics/waiter-counter "core" "jwt" "access-token" "failure"))
+          (counters/inc! (metrics/waiter-counter "core" "jwt" "access-token" "success")))
+        access-token-or-throwable)))
+
+  (retrieve-authorize-url [_ request oidc-callback-uri code-verifier state-code]
+    (when (str/blank? oidc-authorize-uri)
+      (throw (ex-info "OIDC authorize endpoint not configured!" {})))
+    (counters/inc! (metrics/waiter-counter "core" "jwt" "authorize-url"))
+    (let [request-host (utils/request->host request)
+          request-scheme (utils/request->scheme request)
+          code-challenge (utils/b64-encode-sha256 code-verifier)
+          callback-uri (str (name request-scheme) "://" request-host oidc-callback-uri)
+          callback-uri-encoded (cookie-support/url-encode callback-uri)
+          client-id (utils/authority->host request-host)]
+      (str oidc-authorize-uri "?"
+           "client_id=" client-id "&"
+           "code_challenge=" code-challenge "&"
+           "code_challenge_method=S256&"
+           "nonce=" (utils/unique-identifier) "&"
+           "redirect_uri=" callback-uri-encoded "&"
+           "response_type=code&"
+           "scope=openid&"
+           "state=" state-code)))
+
   (retrieve-server-state [_ include-flags]
-    (cond-> {:endpoints {:jwks jwks-url}}
+    (cond-> {:endpoints {:authorize oidc-authorize-uri
+                         :jwks jwks-url
+                         :token oidc-token-uri}}
       (contains? include-flags "jwks")
       (assoc :jwks {:cache-data (update @keys-cache :key-id->jwk
                                         (fn stringify-public-keys [key-id->jwk]
                                           (pc/map-vals #(update % ::public-key str) key-id->jwk)))}))))
 
 (defn create-auth-server
-  [{:keys [http-options jwks-url supported-algorithms update-interval-ms]}]
+  [{:keys [http-options jwks-url oidc-authorize-uri oidc-token-uri supported-algorithms update-interval-ms]}]
   {:pre [(map? http-options)
          (not (str/blank? jwks-url))
+         (or (nil? oidc-authorize-uri)
+             (and (string? oidc-authorize-uri)
+                  (not (str/blank? oidc-authorize-uri))))
+         (or (nil? oidc-token-uri)
+             (and (string? oidc-token-uri)
+                  (not (str/blank? oidc-token-uri))))
          supported-algorithms
          (set? supported-algorithms)
          (empty? (set/difference supported-algorithms #{:eddsa :rs256}))
@@ -162,7 +240,7 @@
                       (utils/assoc-if-absent :user-agent "waiter-jwt")
                       hu/http-client-factory)]
     (start-jwt-cache-maintainer http-client http-options jwks-url update-interval-ms supported-algorithms keys-cache)
-    (->JwtAuthServer jwks-url keys-cache)))
+    (->JwtAuthServer http-client jwks-url keys-cache oidc-authorize-uri oidc-token-uri)))
 
 (def ^:const bearer-prefix "Bearer ")
 

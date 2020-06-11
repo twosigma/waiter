@@ -14,16 +14,22 @@
 ;; limitations under the License.
 ;;
 (ns waiter.auth.saml-test
-  (:require [clj-time.core :as t]
+  (:require [clj-time.coerce :as tc]
+            [clj-time.core :as t]
             [clojure.data.codec.base64 :as b64]
             [clojure.string :as str]
             [clojure.test :refer :all]
             [taoensso.nippy :as nippy]
             [waiter.auth.authentication :as auth]
             [waiter.auth.saml :refer :all]
+            [waiter.cookie-support :as cookie-support]
             [waiter.status-codes :refer :all]
             [waiter.util.utils :as utils])
-  (:import (java.io StringBufferInputStream)))
+  (:import (java.io ByteArrayInputStream)))
+
+(defn string->stream
+  [data-string]
+  (ByteArrayInputStream. (.getBytes data-string)))
 
 (def valid-config
   {:auth-redirect-endpoint "auth-redirect-endpoint"
@@ -93,7 +99,8 @@
 
 (deftest test-auth-redirect-endpoint
   (let [saml-authenticator (dummy-saml-authenticator)
-        test-time (clj-time.format/parse "2019-05-14")]
+        test-time (clj-time.format/parse "2019-05-14")
+        {:keys [password]} valid-config]
     (testing "bad saml-auth-data"
       (with-redefs [t/now (fn [] time-now)
                     utils/unique-identifier (constantly "UUID")]
@@ -101,65 +108,73 @@
                               (saml-auth-redirect-handler saml-authenticator
                                                           (-> (merge-with merge dummy-request {:headers {"content-type" "application/x-www-form-urlencoded"}})
                                                             (merge {:request-method :post
-                                                                    :body (StringBufferInputStream. "saml-auth-data=my-saml-auth-data")})))))))
+                                                                    :body (string->stream "saml-auth-data=my-saml-auth-data")})))))))
     (testing "has saml-auth-data"
-      (with-redefs [b64/decode identity
-                    b64/encode identity
-                    nippy/freeze (fn [data _] (.getBytes (str data)))
-                    nippy/thaw (fn [data _]
-                                 (if (= "my-saml-auth-data" (String. data))
-                                   {:not-on-or-after (t/plus test-time (t/years 1)) :saml-principal "my-user@domain" :redirect-url "redirect-url"}
-                                   nil))
+      (with-redefs [cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds]
+                                                        (is (= password in-password))
+                                                        (is (= (-> 1 t/days t/in-seconds) age-in-seconds))
+                                                        (update response :headers
+                                                                assoc "set-cookie" (str name "=" value)))
+                    utils/base-64-string->map (fn [data in-password]
+                                                (is (= password in-password))
+                                                (when (= "my-saml-auth-data" data)
+                                                  {:not-on-or-after (t/plus test-time (t/years 1)) :saml-principal "my-user@domain" :redirect-url "redirect-url"}))
                     t/now (fn [] test-time)]
         (let [dummy-request' (-> (merge-with merge dummy-request {:headers {"content-type" "application/x-www-form-urlencoded"}})
                                (merge {:request-method :post
-                                       :body (StringBufferInputStream. "saml-auth-data=my-saml-auth-data")}))]
+                                       :body (string->stream "saml-auth-data=my-saml-auth-data")}))]
           (is (= {:authorization/method :saml
                   :authorization/principal "my-user@domain"
                   :authorization/user "my-user"
                   :body ""
                   :headers {"location" "redirect-url"
-                            "set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000%5D;Max-Age=86400;Path=/;HttpOnly=true"}
+                            "set-cookie" (str "x-waiter-auth=" ["my-user@domain" (tc/to-long test-time)])}
                   :status http-303-see-other}
                  (saml-auth-redirect-handler saml-authenticator dummy-request'))))))
+
     (testing "has saml-auth-data no expiry"
-      (with-redefs [b64/decode identity
-                    b64/encode identity
-                    nippy/freeze (fn [data _] (.getBytes (str data)))
-                    nippy/thaw (fn [data _]
-                                 (if (= "my-saml-auth-data" (String. data))
-                                   {:saml-principal "my-user@domain" :redirect-url "redirect-url"}
-                                   nil))
+      (with-redefs [cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds]
+                                                        (is (= password in-password))
+                                                        (is (= (-> 1 t/days t/in-seconds) age-in-seconds))
+                                                        (update response :headers
+                                                                assoc "set-cookie" (str name "=" value)))
+                    utils/base-64-string->map (fn [data in-password]
+                                                (is (= password in-password))
+                                                (when (= "my-saml-auth-data" data)
+                                                  {:saml-principal "my-user@domain" :redirect-url "redirect-url"}))
                     t/now (fn [] test-time)]
         (let [dummy-request' (-> (merge-with merge dummy-request {:headers {"content-type" "application/x-www-form-urlencoded"}})
                                (merge {:request-method :post
-                                       :body (StringBufferInputStream. "saml-auth-data=my-saml-auth-data")}))]
+                                       :body (string->stream "saml-auth-data=my-saml-auth-data")}))]
           (is (= {:authorization/method :saml
                   :authorization/principal "my-user@domain"
                   :authorization/user "my-user"
                   :body ""
                   :headers {"location" "redirect-url"
-                            "set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000%5D;Max-Age=86400;Path=/;HttpOnly=true"}
+                            "set-cookie" (str "x-waiter-auth=" ["my-user@domain" (tc/to-long test-time)])}
                   :status http-303-see-other}
                  (saml-auth-redirect-handler saml-authenticator dummy-request'))))))
+
     (testing "has saml-auth-data short expiry"
-      (with-redefs [b64/decode identity
-                    b64/encode identity
-                    nippy/freeze (fn [data _] (.getBytes (str data)))
-                    nippy/thaw (fn [data _]
-                                 (if (= "my-saml-auth-data" (String. data))
-                                   {:min-session-not-on-or-after (t/plus test-time (t/hours 1)) :saml-principal "my-user@domain" :redirect-url "redirect-url"}
-                                   nil))
+      (with-redefs [cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds]
+                                                        (is (= password in-password))
+                                                        (is (= (-> 1 t/hours t/in-seconds) age-in-seconds))
+                                                        (update response :headers
+                                                                assoc "set-cookie" (str name "=" value)))
+                    utils/base-64-string->map (fn [data in-password]
+                                                (is (= password in-password))
+                                                (when (= "my-saml-auth-data" data)
+                                                  {:min-session-not-on-or-after (t/plus test-time (t/hours 1)) :saml-principal "my-user@domain" :redirect-url "redirect-url"}))
                     t/now (fn [] test-time)]
         (let [dummy-request' (-> (merge-with merge dummy-request {:headers {"content-type" "application/x-www-form-urlencoded"}})
                                (merge {:request-method :post
-                                       :body (StringBufferInputStream. "saml-auth-data=my-saml-auth-data")}))]
+                                       :body (string->stream "saml-auth-data=my-saml-auth-data")}))]
           (is (= {:authorization/method :saml
                   :authorization/principal "my-user@domain"
                   :authorization/user "my-user"
                   :body ""
                   :headers {"location" "redirect-url"
-                            "set-cookie" "x-waiter-auth=%5B%22my%2Duser%40domain%22+1557792000000%5D;Max-Age=3600;Path=/;HttpOnly=true"}
+                            "set-cookie" (str "x-waiter-auth=" ["my-user@domain" (tc/to-long test-time)])}
                   :status http-303-see-other}
                  (saml-auth-redirect-handler saml-authenticator dummy-request'))))))))
 

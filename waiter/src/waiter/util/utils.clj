@@ -35,10 +35,12 @@
            java.lang.Process
            java.net.ServerSocket
            java.nio.ByteBuffer
-           java.util.UUID
+           (java.nio.charset StandardCharsets)
            java.util.concurrent.ThreadLocalRandom
            java.util.regex.Pattern
            javax.servlet.ServletResponse
+           (java.security MessageDigest)
+           (java.util Base64 UUID)
            (org.joda.time DateTime)
            (schema.utils ValidationError)))
 
@@ -483,12 +485,34 @@
 (defn map->base-64-string
   "Serializes data to a base 64 string along with encryption."
   [data-map encryption-key]
-  (bytes->str (b64/encode (nippy/freeze data-map {:compressor nil :password encryption-key}))))
+  (let [encrypted-bytes (nippy/freeze data-map {:compressor nil :password encryption-key})]
+    (.encodeToString (Base64/getUrlEncoder) encrypted-bytes)))
 
 (defn base-64-string->map
   "Deserializes and decrypts a base 64 string."
-  [b64-string decryption-key]
-  (nippy/thaw (b64/decode (.getBytes b64-string)) {:compressor nil :password decryption-key :v1-compatibility? false}))
+  [^String b64-string decryption-key]
+  (let [decoded-bytes (.decode (Base64/getUrlDecoder) b64-string)]
+    (nippy/thaw decoded-bytes {:compressor nil :password decryption-key :v1-compatibility? false})))
+
+(defn b64-encode-sha256
+  "Returns the url encoding of the input string using SHA256."
+  [clear-text]
+  (let [clear-text-bytes (.getBytes clear-text StandardCharsets/UTF_8)
+        message-digest (MessageDigest/getInstance "SHA-256")
+        sha256-bytes (.digest message-digest clear-text-bytes)
+        b64-encoder (.withoutPadding (Base64/getUrlEncoder))
+        result-bytes (.encode b64-encoder sha256-bytes)]
+    (String. result-bytes)))
+
+(defn encode-url-safe-b64
+  "Performs url safe base 64 encoding of input string."
+  [^String data-string]
+  (.encodeToString (Base64/getUrlEncoder) (.getBytes data-string)))
+
+(defn decode-url-safe-b64
+  "Performs url safe base 64 decoding of input string."
+  [^String data-string]
+  (String. ^bytes (.decode (Base64/getUrlDecoder) data-string)))
 
 (let [messages (atom {})]
   (defn message
@@ -539,6 +563,11 @@
   (let [{:strs [x-forwarded-proto]} headers]
     (or (some-> x-forwarded-proto str/lower-case keyword)
         scheme)))
+
+(defn request->host
+  "Extracts the host header from the request."
+  [request]
+  (get-in request [:headers "host"]))
 
 (defn same-origin
   "Returns true if the host and origin are non-nil and are equivalent."

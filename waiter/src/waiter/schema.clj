@@ -123,11 +123,15 @@
   (s/either
     {(s/optional-key :allow-bearer-auth-api?) s/Bool
      (s/optional-key :allow-bearer-auth-services?) s/Bool
+     (s/optional-key :allow-oidc-auth-api?) s/Bool
+     (s/optional-key :allow-oidc-auth-services?) s/Bool
      (s/optional-key :attach-www-authenticate-on-missing-bearer-token?) s/Bool
      (s/required-key :http-options) {s/Keyword s/Any}
      (s/required-key :issuer) valid-jwt-issuer-config
-     (s/required-key :jwks-url) s/Str
+     (s/required-key :jwks-url) non-empty-string
      (s/optional-key :max-expiry-duration-ms) positive-int
+     (s/optional-key :oidc-authorize-uri) non-empty-string
+     (s/optional-key :oidc-token-uri) non-empty-string
      (s/required-key :subject-key) s/Keyword
      (s/optional-key :subject-regex) s/Regex
      (s/required-key :supported-algorithms) #{s/Keyword}

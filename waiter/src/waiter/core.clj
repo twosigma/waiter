@@ -35,6 +35,7 @@
             [waiter.async-request :as async-req]
             [waiter.auth.authentication :as auth]
             [waiter.auth.jwt :as jwt]
+            [waiter.auth.oidc :as oidc]
             [waiter.authorization :as authz]
             [waiter.cookie-support :as cookie-support]
             [waiter.correlation-id :as cid]
@@ -102,6 +103,7 @@
                                   ["/" :service-id] :blacklisted-instances-list-handler-fn}
                      "favicon.ico" :favicon-handler-fn
                      "metrics" :metrics-request-handler-fn
+                     (subs oidc/oidc-callback-uri 1) :oidc-callback-handler-fn
                      "service-id" :service-id-handler-fn
                      "profiles" :profile-list-handler-fn
                      "settings" :display-settings-handler-fn
@@ -572,7 +574,7 @@
     (fn waiter-request? [{:keys [uri headers]}]
       (let [{:strs [host]} headers]
         ; special urls that are always for Waiter (FIXME)
-        (or (#{"/app-name" "/service-id" "/token" "/waiter-ping"} uri)
+        (or (#{"/app-name" oidc/oidc-callback-uri "/service-id" "/token" "/waiter-ping"} uri)
             (some #(str/starts-with? (str uri) %)
                   ["/waiter-async/complete/" "/waiter-async/result/" "/waiter-async/status/" "/waiter-auth/"
                    "/waiter-consent" "/waiter-interstitial"])
@@ -710,6 +712,15 @@
    :local-usage-agent (pc/fnk [] (agent {}))
    :offers-allowed-semaphore (pc/fnk [[:settings [:work-stealing max-in-flight-offers]]]
                                (semaphore/create-semaphore max-in-flight-offers))
+   :oidc-authenticator (pc/fnk [[:settings authenticator-config]
+                                jwt-auth-server jwt-validator passwords]
+                         (let [oidc-config (:jwt authenticator-config)]
+                           (when-not (or (= :disabled oidc-config)
+                                         (let [{:keys [oidc-authorize-uri oidc-token-uri]} oidc-config]
+                                           (or (str/blank? oidc-authorize-uri)
+                                               (str/blank? oidc-token-uri))))
+                             (let [oidc-config (assoc oidc-config :password (first passwords))]
+                               (oidc/create-oidc-authenticator jwt-auth-server jwt-validator oidc-config)))))
    :passwords (pc/fnk [[:settings password-store-config]]
                 (let [password-provider (utils/create-component password-store-config)
                       passwords (password-store/retrieve-passwords password-provider)
@@ -939,7 +950,7 @@
                                       [:state profile->defaults]]
                                (fn attach-token-defaults-fn [token-parameters]
                                  (sd/attach-token-defaults token-parameters token-defaults profile->defaults)))
-   :authentication-method-wrapper-fn (pc/fnk [[:state authenticator jwt-authenticator passwords]]
+   :authentication-method-wrapper-fn (pc/fnk [[:state authenticator jwt-authenticator oidc-authenticator passwords]]
                                        (fn authentication-method-wrapper [request-handler]
                                          (let [auth-handler (auth/wrap-auth-handler authenticator request-handler)
                                                password (first passwords)]
@@ -954,6 +965,7 @@
                                                         :else
                                                         (auth-handler request)))
                                              jwt-authenticator (jwt/wrap-auth-handler jwt-authenticator)
+                                             oidc-authenticator (oidc/wrap-auth-handler oidc-authenticator)
                                              true (auth/wrap-auth-cookie-handler password)))))
    :can-run-as?-fn (pc/fnk [[:state entitlement-manager]]
                      (fn can-run-as [auth-user run-as-user]
@@ -1455,6 +1467,9 @@
    :metrics-request-handler-fn (pc/fnk []
                                  (fn metrics-request-handler-fn [request]
                                    (handler/metrics-request-handler request)))
+   :oidc-callback-handler-fn (pc/fnk [[:state oidc-authenticator]]
+                               (fn oidc-callback-handler-fn [request]
+                                 (oidc/oidc-callback-request-handler oidc-authenticator request)))
    :not-found-handler-fn (pc/fnk [] handler/not-found-handler)
    :ping-service-handler (pc/fnk [[:daemons router-state-maintainer]
                                   [:state fallback-state-atom user-agent-version]

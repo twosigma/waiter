@@ -259,7 +259,9 @@
       (with-redefs [env (fn [name _]
                           (case name
                             "GRAPHITE_SERVER_PORT" (str graphite-server-port)
-                            "JWKS_SERVER_URL" "http://127.0.0.1:8040/jwks.json"
+                            "JWKS_SERVER_URL" "http://127.0.0.1:8040/keys"
+                            "OIDC_AUTHORIZE_URL" "http://127.0.0.1:8040/authorize"
+                            "OIDC_TOKEN_URL" "http://127.0.0.1:8040/id-token"
                             "WAITER_PORT" (str port)
                             "WAITER_AUTH_RUN_AS_USER" run-as-user
                             (throw (ex-info "Unexpected environment variable" {:name name}))))]
@@ -278,7 +280,9 @@
       (with-redefs [env (fn [name _]
                           (case name
                             "GRAPHITE_SERVER_PORT" (str graphite-server-port)
-                            "JWKS_SERVER_URL" "http://127.0.0.1:8040/jwks.json"
+                            "JWKS_SERVER_URL" "http://127.0.0.1:8040/keys"
+                            "OIDC_AUTHORIZE_URL" "http://127.0.0.1:8040/authorize"
+                            "OIDC_TOKEN_URL" "http://127.0.0.1:8040/id-token"
                             "WAITER_PORT" (str port)
                             "WAITER_AUTH_RUN_AS_USER" run-as-user
                             "WAITER_MARATHON" marathon
@@ -299,7 +303,9 @@
           cluster-name "bar"]
       (with-redefs [env (fn [name _]
                           (case name
-                            "JWKS_SERVER_URL" "http://127.0.0.1:8040/jwks.json"
+                            "JWKS_SERVER_URL" "http://127.0.0.1:8040/keys"
+                            "OIDC_AUTHORIZE_URL" "http://127.0.0.1:8040/authorize"
+                            "OIDC_TOKEN_URL" "http://127.0.0.1:8040/id-token"
                             "WAITER_PORT" (str port)
                             "WAITER_AUTH_RUN_AS_USER" run-as-user
                             "WAITER_CLUSTER_NAME" cluster-name
@@ -320,7 +326,9 @@
       (with-redefs [env (fn [name _]
                           (case name
                             "GRAPHITE_SERVER_PORT" (str graphite-server-port)
-                            "JWKS_SERVER_URL" "http://127.0.0.1:8040/jwks.json"
+                            "JWKS_SERVER_URL" "http://127.0.0.1:8040/keys"
+                            "OIDC_AUTHORIZE_URL" "http://127.0.0.1:8040/authorize"
+                            "OIDC_TOKEN_URL" "http://127.0.0.1:8040/id-token"
                             "SAML_IDP_CERT_URI" saml-idp-cert-uri
                             "SAML_IDP_URI" saml-idp-uri
                             "WAITER_AUTH_RUN_AS_USER" run-as-user

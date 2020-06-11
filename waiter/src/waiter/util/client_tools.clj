@@ -1213,3 +1213,12 @@
   "Returns true if JWT authentication is enabled."
   [waiter-url]
   (not= "disabled" (setting waiter-url [:authenticator-config :jwt])))
+
+(defn oidc-auth-enabled?
+  "Returns true if OIDC+PKCE authentication is enabled."
+  [waiter-url]
+  (let [jwt-config (setting waiter-url [:authenticator-config :jwt])]
+    (and (not= "disabled" jwt-config)
+         (map? jwt-config)
+         (-> jwt-config :oidc-authorize-uri str/blank? not)
+         (-> jwt-config :oidc-token-uri str/blank? not))))
