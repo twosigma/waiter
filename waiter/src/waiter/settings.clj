@@ -474,7 +474,7 @@
                       :ws-max-text-message-size (* 1024 1024 40)}
    :work-stealing {:max-in-flight-offers 4000
                    :offer-help-interval-ms 100
-                   :offer-idle-timeout-ms 1800000
+                   :offer-idle-timeout-ms 900000
                    :reserve-timeout-ms 1000
                    :supported-distribution-schemes #{"simple"}}
    :zookeeper {:base-path "/waiter"

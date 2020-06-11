@@ -824,7 +824,7 @@
                  :offer-help-interval-ms 100
 
                  ;; The duration (milliseconds) after which Waiter times out work-stealing offers:
-                 :offer-idle-timeout-ms 1800000
+                 :offer-idle-timeout-ms 900000
 
                  ;; The timeout (milliseconds) used internally by the
                  ;; Waiter router to reserve an instance for offering:
