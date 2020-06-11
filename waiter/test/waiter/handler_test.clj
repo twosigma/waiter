@@ -1105,17 +1105,20 @@
       (start-maintainer-fn)
       (let [query-sources {:autoscaler-state (fn [{:keys [service-id]}]
                                                {:service-id service-id :source "autoscaler"})
-                           :maintainer-state maintainer-state-chan}
+                           :keyword-state :disabled
+                           :maintainer-state maintainer-state-chan
+                           :map-state {:foo "bar"}}
             response (async/<!! (get-service-state router-id enable-work-stealing-support? populate-maintainer-chan!
                                                    local-usage-agent service-id query-sources {}))
             service-state (json/read-str (:body response) :key-fn keyword)]
         (is (= router-id (get-in service-state [:router-id])))
-        (is (= responder-state (get-in service-state [:state :responder-state])))
-        (is (= {:last-request-time "foo"}
-               (get-in service-state [:state :local-usage])))
-        (is (= work-stealing-state (get-in service-state [:state :work-stealing-state])))
+        (is (= {:service-id service-id :source "autoscaler"} (get-in service-state [:state :autoscaler-state])))
+        (is (= (name :disabled) (get-in service-state [:state :keyword-state])))
+        (is (= {:last-request-time "foo"} (get-in service-state [:state :local-usage])))
         (is (= (assoc maintainer-state :service-id service-id) (get-in service-state [:state :maintainer-state])))
-        (is (= {:service-id service-id :source "autoscaler"} (get-in service-state [:state :autoscaler-state])))))))
+        (is (= {:foo "bar"} (get-in service-state [:state :map-state])))
+        (is (= responder-state (get-in service-state [:state :responder-state])))
+        (is (= work-stealing-state (get-in service-state [:state :work-stealing-state])))))))
 
 (deftest test-acknowledge-consent-handler
   (let [current-time-ms (System/currentTimeMillis)

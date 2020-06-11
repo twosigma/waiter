@@ -822,7 +822,7 @@
               work-stealing-state (if (enable-work-stealing-support? service-id)
                                     (service/query-maintainer-channel-map-with-timeout!
                                       populate-maintainer-chan! service-id timeout-ms :query-work-stealing)
-                                    {"state" "disabled"})
+                                    :disabled)
               local-usage-state (get @local-usage-agent service-id)
               query-params {:cid (cid/get-correlation-id) :service-id service-id}
               [query-chans initial-result]
@@ -834,15 +834,18 @@
                      initial-result {:local-usage local-usage-state}]
                 (if entry-key
                   (cond
-                    (map? entry-value) (recur remaining
-                                              query-chans
-                                              (assoc initial-result entry-key entry-value))
-                    (fn? entry-value) (recur remaining
-                                             query-chans
-                                             (assoc initial-result entry-key (entry-value query-params)))
-                    :else (recur remaining
-                                 (assoc query-chans entry-key entry-value)
-                                 initial-result))
+                    (or (map? entry-value) (keyword? entry-value))
+                    (recur remaining
+                           query-chans
+                           (assoc initial-result entry-key entry-value))
+                    (fn? entry-value)
+                    (recur remaining
+                           query-chans
+                           (assoc initial-result entry-key (entry-value query-params)))
+                    :else
+                    (recur remaining
+                           (assoc query-chans entry-key entry-value)
+                           initial-result))
                   [query-chans initial-result]))
               query-chans-state (loop [[[key query-response-or-chan] & remaining] (seq query-chans)
                                        result initial-result]
