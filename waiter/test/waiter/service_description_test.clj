@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.service-description-test
-  (:require [clj-time.core :as t]
+  (:require [clj-time.coerce :as tc]
+            [clj-time.core :as t]
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.test :refer :all]
@@ -2413,7 +2414,7 @@
     (kv/store kv-store token token-data)
     (is (= (token-data->token-hash token-data) (token->token-hash kv-store token)))))
 
-(deftest test-service-id->idle-timeout
+(deftest test-service->gc-time
   (let [fallback-period-secs 150
         profile-fallback-period-secs 100
         idle-timeout-mins 25
@@ -2438,201 +2439,287 @@
         service-id->service-description-fn (fn [in-service-id]
                                              (is (str/starts-with? in-service-id service-id))
                                              {"idle-timeout-mins" idle-timeout-mins})
-        token->token-hash (fn [in-token] (str in-token ".hash1"))
+        token->token-hash (fn [in-token] (str in-token ".latest"))
         reference-type->stale-fn {:token #(service-token-references-stale? token->token-hash (:sources %))}
         token->token-data-factory (fn [token->token-data]
                                     (fn [in-token]
-                                      (get token->token-data in-token)))]
+                                      (get token->token-data in-token)))
+        t1000 (tc/from-long 1000)
+        t2000 (tc/from-long 2000)
+        t3000 (tc/from-long 3000)
+        t4000 (tc/from-long 4000)
+        last-modified-time (tc/from-long 5000)]
 
-    (testing "service with single token is active"
-      (let [token->token-data {"t1" {"cpus" 1}}
+    (testing "service created without token"
+      (let [token->token-data {"t1" {"cpus" 1 "last-update-time" (tc/to-long t1000)}}
+            service-id->references-fn (fn [in-service-id]
+                                        (is (= in-service-id (str service-id "s0")))
+                                        #{})
+            token->token-data (token->token-data-factory token->token-data)]
+        (is (= (t/plus last-modified-time (t/minutes stale-timeout-mins))
+               (service->gc-time
+                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
+                 attach-token-defaults-fn (str service-id "s0") last-modified-time)))))
+
+    (testing "service created with missing token parameters"
+      (let [token->token-data {"t1" {"cpus" 1 "last-update-time" (tc/to-long t1000)}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s1")))
-                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"}]}}})
+                                        #{{:token {:sources [{:token "t-miss" :version "t-miss.old"}]}}})
             token->token-data (token->token-data-factory token->token-data)]
-        (is (= idle-timeout-mins
-               (service-id->idle-timeout
+        (is (= (-> (tc/from-long 0)
+                 (t/plus (t/seconds fallback-period-secs))
+                 (t/plus (t/minutes stale-timeout-mins)))
+               (service->gc-time
                  service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
-                 attach-token-defaults-fn (str service-id "s1"))))))
+                 attach-token-defaults-fn (str service-id "s1") last-modified-time)))))
+
+    (testing "service with single token is active"
+      (let [token->token-data {"t1" {"cpus" 1 "last-update-time" (tc/to-long t1000)}}
+            service-id->references-fn (fn [in-service-id]
+                                        (is (= in-service-id (str service-id "s1")))
+                                        #{{:token {:sources [{:token "t1" :version "t1.latest"}]}}})
+            token->token-data (token->token-data-factory token->token-data)]
+        (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
+               (service->gc-time
+                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
+                 attach-token-defaults-fn (str service-id "s1") last-modified-time)))))
 
     (testing "direct access service is active"
       (doseq [token->token-data
-              [{"t1" {"cpus" 1}}
-               {"t1" {"cpus" 1 "profile" "webapp1"}}
-               {"t1" {"cpus" 1 "profile" "webapp2"}}
-               {"t1" {"cpus" 1 "profile" "webapp3"}}]]
+              [{"t1" {"cpus" 1 "last-update-time" (tc/to-long t1000)}}
+               {"t1" {"cpus" 1 "last-update-time" (tc/to-long t1000) "profile" "webapp1"}}
+               {"t1" {"cpus" 1 "last-update-time" (tc/to-long t1000) "profile" "webapp2"}}
+               {"t1" {"cpus" 1 "last-update-time" (tc/to-long t1000) "profile" "webapp3"}}]]
         (let [service-id->references-fn (fn [in-service-id]
                                           (is (= in-service-id (str service-id "s2")))
                                           #{{}})
               token->token-data (token->token-data-factory token->token-data)]
-          (is (= idle-timeout-mins
-                 (service-id->idle-timeout
+          (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
+                 (service->gc-time
                    service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
-                   attach-token-defaults-fn (str service-id "s2")))))))
+                   attach-token-defaults-fn (str service-id "s2") last-modified-time))))))
 
     (testing "service with multiple tokens is active"
-      (let [token->token-data {"t1" {"cpus" 1}
-                               "t2" {"mem" 2048}}
+      (let [token->token-data {"t1" {"cpus" 1 "last-update-time" (tc/to-long t1000)}
+                               "t2" {"mem" 2048 "last-update-time" (tc/to-long t2000)}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s3")))
-                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"} {:token "t2" :version "t2.hash1"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.latest"} {:token "t2" :version "t2.latest"}]}}})
             token->token-data (token->token-data-factory token->token-data)]
-        (is (= idle-timeout-mins
-               (service-id->idle-timeout
+        (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
+               (service->gc-time
                  service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
-                 attach-token-defaults-fn (str service-id "s3"))))))
+                 attach-token-defaults-fn (str service-id "s3") last-modified-time)))))
 
     (testing "service outdated but fallback not configured"
       (doseq [{:keys [expected-fallback-period-secs expected-stale-timeout-mins token->token-data]}
               [{:expected-fallback-period-secs fallback-period-secs
                 :expected-stale-timeout-mins stale-timeout-mins
-                :token->token-data {"t1" {"cpus" 1}
-                                    "t2" {"mem" 2048}}}
+                :token->token-data {"t1" {"cpus" 1 "last-update-time" (tc/to-long t1000)}
+                                    "t2" {"mem" 2048 "last-update-time" (tc/to-long t2000)}}}
                {:expected-fallback-period-secs profile-fallback-period-secs
                 :expected-stale-timeout-mins profile-stale-timeout-mins
-                :token->token-data {"t1" {"cpus" 1 "profile" "webapp1"}
-                                    "t2" {"mem" 2048}}}
+                :token->token-data {"t1" {"cpus" 1 "last-update-time" (tc/to-long t1000) "profile" "webapp1"}
+                                    "t2" {"mem" 2048 "last-update-time" (tc/to-long t2000)}}}
                {:expected-fallback-period-secs fallback-period-secs
                 :expected-stale-timeout-mins profile-stale-timeout-mins
-                :token->token-data {"t1" {"cpus" 1 "profile" "webapp2"}
-                                    "t2" {"mem" 2048}}}
+                :token->token-data {"t1" {"cpus" 1 "last-update-time" (tc/to-long t1000) "profile" "webapp2"}
+                                    "t2" {"mem" 2048 "last-update-time" (tc/to-long t2000)}}}
                {:expected-fallback-period-secs profile-fallback-period-secs
                 :expected-stale-timeout-mins stale-timeout-mins
-                :token->token-data {"t1" {"cpus" 1 "profile" "webapp3"}
-                                    "t2" {"mem" 2048}}}]]
+                :token->token-data {"t1" {"cpus" 1 "last-update-time" (tc/to-long t1000) "profile" "webapp3"}
+                                    "t2" {"mem" 2048 "last-update-time" (tc/to-long t2000)}}}]]
         (let [service-id->references-fn (fn [in-service-id]
                                           (is (= in-service-id (str service-id "s4")))
-                                          #{{:token {:sources [{:token "t1" :version "t1.hash0"}]}}})
+                                          #{{:token {:sources [{:token "t1" :version "t1.old"}]}}})
               token->token-data (token->token-data-factory token->token-data)]
-          (is (= (-> (+ expected-fallback-period-secs (dec (-> 1 t/minutes t/in-seconds)))
-                   t/seconds
-                   t/in-minutes
-                   (+ expected-stale-timeout-mins))
-                 (service-id->idle-timeout
+          (is (= (-> t1000
+                   (t/plus (t/seconds expected-fallback-period-secs))
+                   (t/plus (t/minutes expected-stale-timeout-mins)))
+                 (service->gc-time
                    service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
-                   attach-token-defaults-fn (str service-id "s4")))))))
+                   attach-token-defaults-fn (str service-id "s4") last-modified-time))))
+        (let [service-id->references-fn (fn [in-service-id]
+                                          (is (= in-service-id (str service-id "s5")))
+                                          #{{:token {:sources [{:token "t2" :version "t2.old"}]}}})
+              token->token-data (token->token-data-factory token->token-data)]
+          (is (= (-> t2000
+                   (t/plus (t/seconds fallback-period-secs))
+                   (t/plus (t/minutes stale-timeout-mins)))
+                 (service->gc-time
+                   service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
+                   attach-token-defaults-fn (str service-id "s5") last-modified-time))))))
 
     (testing "service outdated with tokens but direct access possible"
-      (let [token->token-data {"t1" {"cpus" 1}
-                               "t2" {"mem" 2048}}
+      (let [token->token-data {"t1" {"cpus" 1 "last-update-time" (tc/to-long t1000)}
+                               "t2" {"mem" 2048 "last-update-time" (tc/to-long t2000)}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s5")))
-                                        #{{:token {:sources [{:token "t1" :version "t1.hash0"}]}}
+                                        #{{:token {:sources [{:token "t1" :version "t1.old"}]}}
                                           {}})
             token->token-data (token->token-data-factory token->token-data)]
-        (is (= idle-timeout-mins
-               (service-id->idle-timeout
+        (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
+               (service->gc-time
                  service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
-                 attach-token-defaults-fn (str service-id "s5"))))))
+                 attach-token-defaults-fn (str service-id "s5") last-modified-time)))))
 
     (testing "service outdated and fallback configured on one token"
-      (let [token->token-data {"t1" {"cpus" 1 "fallback-period-secs" 300}
-                               "t2" {"mem" 2048}}
+      (let [token->token-data {"t1" {"cpus" 1 "last-update-time" (tc/to-long t1000) "fallback-period-secs" 300}
+                               "t2" {"mem" 2048 "last-update-time" (tc/to-long t2000)}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s6")))
-                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"} {:token "t2" :version "t2.hash0"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.latest"} {:token "t2" :version "t2.old"}]}}})
             token->token-data (token->token-data-factory token->token-data)]
-        (is (= idle-timeout-mins
-               (service-id->idle-timeout
+        (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
+               (service->gc-time
                  service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
-                 attach-token-defaults-fn (str service-id "s6"))))))
+                 attach-token-defaults-fn (str service-id "s6") last-modified-time)))))
 
     (testing "service outdated on some tokens and fallback and timeout configured on all tokens"
       (let [stale-timeout-mins 45
-            token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300}
-                               "t2" {"cmd" "tc" "fallback-period-secs" 600 "stale-timeout-mins" stale-timeout-mins}
-                               "t3" {"cmd" "tc" "fallback-period-secs" 900}}
+            token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300 "last-update-time" (tc/to-long t1000)}
+                               "t2" {"cmd" "tc" "fallback-period-secs" 600 "last-update-time" (tc/to-long t2000) "stale-timeout-mins" stale-timeout-mins}
+                               "t3" {"cmd" "tc" "fallback-period-secs" 900 "last-update-time" (tc/to-long t3000)}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s7")))
-                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"}
-                                                             {:token "t2" :version "t2.hash0"}
-                                                             {:token "t3" :version "t3.hash0"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.latest"}
+                                                             {:token "t2" :version "t2.old"}
+                                                             {:token "t3" :version "t3.old"}]}}})
             token->token-data (token->token-data-factory token->token-data)]
-        (is (= idle-timeout-mins
-               (service-id->idle-timeout
+        (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
+               (service->gc-time
                  service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
-                 attach-token-defaults-fn (str service-id "s7"))))))
+                 attach-token-defaults-fn (str service-id "s7") last-modified-time))))
+      (let [stale-timeout-mins 45
+            token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300 "last-update-time" (tc/to-long t1000)}
+                               "t2" {"cmd" "tc" "fallback-period-secs" 600 "last-update-time" (tc/to-long t2000) "stale-timeout-mins" stale-timeout-mins}
+                               "t3" {"cmd" "tc" "fallback-period-secs" 900 "last-update-time" (tc/to-long t3000)}}
+            service-id->references-fn (fn [in-service-id]
+                                        (is (= in-service-id (str service-id "s7")))
+                                        #{{:token {:sources [{:token "t1" :version "t1.old"}
+                                                             {:token "t2" :version "t2.old"}
+                                                             {:token "t3" :version "t3.latest"}]}}})
+            token->token-data (token->token-data-factory token->token-data)]
+        (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
+               (service->gc-time
+                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
+                 attach-token-defaults-fn (str service-id "s7") last-modified-time)))))
 
     (testing "service outdated on every token and fallback and timeout configured on all tokens"
       (let [stale-timeout-mins 45
-            token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300}
-                               "t2" {"cmd" "tc" "fallback-period-secs" 600 "stale-timeout-mins" stale-timeout-mins}
-                               "t3" {"cmd" "tc" "fallback-period-secs" 900}}
+            token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300 "last-update-time" (tc/to-long t1000)}
+                               "t2" {"cmd" "tc" "fallback-period-secs" 600 "last-update-time" (tc/to-long t4000) "stale-timeout-mins" stale-timeout-mins}
+                               "t3" {"cmd" "tc" "fallback-period-secs" 900 "last-update-time" (tc/to-long t3000)}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s8")))
-                                        #{{:token {:sources [{:token "t1" :version "t1.hash0"}
-                                                             {:token "t2" :version "t2.hash0"}
-                                                             {:token "t3" :version "t3.hash0"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.old"}
+                                                             {:token "t2" :version "t2.old"}
+                                                             {:token "t3" :version "t3.old"}]}}})
             token->token-data (token->token-data-factory token->token-data)]
-        (is (= (-> 900 t/seconds t/in-minutes (+ stale-timeout-mins))
-               (service-id->idle-timeout
+        (is (= (t/plus t4000 (t/minutes (-> 900 t/seconds t/in-minutes (+ stale-timeout-mins))))
+               (service->gc-time
                  service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
-                 attach-token-defaults-fn (str service-id "s8"))))))
+                 attach-token-defaults-fn (str service-id "s8") last-modified-time)))))
+
+    (testing "service outdated on every token and fallback disabled"
+      (let [stale-timeout-mins 45
+            token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 0 "last-update-time" (tc/to-long t1000)}
+                               "t2" {"cmd" "tc" "last-update-time" (tc/to-long t2000) "stale-timeout-mins" stale-timeout-mins}
+                               "t3" {"cmd" "tc" "last-update-time" (tc/to-long t3000)}}
+            service-id->references-fn (fn [in-service-id]
+                                        (is (= in-service-id (str service-id "s8")))
+                                        #{{:token {:sources [{:token "t1" :version "t1.old"}
+                                                             {:token "t3" :version "t3.old"}
+                                                             {:token "t2" :version "t2.old"}]}}})
+            token->token-data (token->token-data-factory token->token-data)]
+        (is (= (t/plus t3000 (t/minutes stale-timeout-mins))
+               (service->gc-time
+                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
+                 attach-token-defaults-fn (str service-id "s8") last-modified-time)))))
 
     (testing "service using latest of one partial token among many"
       (let [stale-timeout-mins 45
-            token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300}
-                               "t2" {"cmd" "tc" "fallback-period-secs" 600 "stale-timeout-mins" stale-timeout-mins}
-                               "t3" {"cmd" "tc" "fallback-period-secs" 900}
+            token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300 "last-update-time" (tc/to-long t1000)}
+                               "t2" {"cmd" "tc" "fallback-period-secs" 600 "last-update-time" (tc/to-long t2000) "stale-timeout-mins" stale-timeout-mins}
+                               "t3" {"cmd" "tc" "fallback-period-secs" 900 "last-update-time" (tc/to-long t3000)}
                                "t4" {"fallback-period-secs" 1200 "stale-timeout-mins" (+ stale-timeout-mins 15)}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s9")))
-                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"} {:token "t2" :version "t2.hash0"}]}}
-                                          {:token {:sources [{:token "t3" :version "t3.hash0"} {:token "t4" :version "t4.hash0"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.latest"} {:token "t2" :version "t2.old"}]}}
+                                          {:token {:sources [{:token "t3" :version "t3.old"} {:token "t4" :version "t4.old"}]}}})
             token->token-data (token->token-data-factory token->token-data)]
-        (is (= idle-timeout-mins
-               (service-id->idle-timeout
+        (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
+               (service->gc-time
                  service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
-                 attach-token-defaults-fn (str service-id "s9"))))))
+                 attach-token-defaults-fn (str service-id "s9") last-modified-time)))))
 
     (testing "service using latest versions of multiple tokens"
       (let [stale-timeout-mins 45
-            token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300}
-                               "t2" {"cmd" "tc" "fallback-period-secs" 600 "stale-timeout-mins" stale-timeout-mins}
-                               "t3" {"cmd" "tc" "fallback-period-secs" 900}
+            token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300 "last-update-time" (tc/to-long t1000)}
+                               "t2" {"cmd" "tc" "fallback-period-secs" 600 "last-update-time" (tc/to-long t2000) "stale-timeout-mins" stale-timeout-mins}
+                               "t3" {"cmd" "tc" "fallback-period-secs" 900 "last-update-time" (tc/to-long t3000)}
                                "t4" {"fallback-period-secs" 1200 "stale-timeout-mins" (+ stale-timeout-mins 15)}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s10")))
-                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"} {:token "t2" :version "t2.hash1"}]}}
-                                          {:token {:sources [{:token "t3" :version "t3.hash1"} {:token "t4" :version "t4.hash1"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.latest"} {:token "t2" :version "t2.latest"}]}}
+                                          {:token {:sources [{:token "t3" :version "t3.latest"} {:token "t4" :version "t4.latest"}]}}})
             token->token-data (token->token-data-factory token->token-data)]
-        (is (= idle-timeout-mins
-               (service-id->idle-timeout
+        (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
+               (service->gc-time
                  service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
-                 attach-token-defaults-fn (str service-id "s10"))))))
+                 attach-token-defaults-fn (str service-id "s10") last-modified-time)))))
 
     (testing "service using latest of one set of token entries"
       (let [stale-timeout-mins 45
-            token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300}
-                               "t2" {"cmd" "tc" "fallback-period-secs" 600 "stale-timeout-mins" stale-timeout-mins}
-                               "t3" {"cmd" "tc" "fallback-period-secs" 900}
+            token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300 "last-update-time" (tc/to-long t1000)}
+                               "t2" {"cmd" "tc" "fallback-period-secs" 600 "last-update-time" (tc/to-long t2000) "stale-timeout-mins" stale-timeout-mins}
+                               "t3" {"cmd" "tc" "fallback-period-secs" 900 "last-update-time" (tc/to-long t3000)}
                                "t4" {"fallback-period-secs" 1200 "stale-timeout-mins" (+ stale-timeout-mins 15)}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s11")))
-                                        #{{:token {:sources [{:token "t1" :version "t1.hash1"} {:token "t2" :version "t2.hash1"}]}}
-                                          {:token {:sources [{:token "t3" :version "t3.hash0"} {:token "t4" :version "t4.hash0"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.latest"} {:token "t2" :version "t2.latest"}]}}
+                                          {:token {:sources [{:token "t3" :version "t3.old"} {:token "t4" :version "t4.old"}]}}})
             token->token-data (token->token-data-factory token->token-data)]
-        (is (= idle-timeout-mins
-               (service-id->idle-timeout
+        (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
+               (service->gc-time
                  service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
-                 attach-token-defaults-fn (str service-id "s11"))))))
+                 attach-token-defaults-fn (str service-id "s11") last-modified-time)))))
 
     (testing "service outdated and fallback and timeout configured on multiple source tokens"
       (let [stale-timeout-mins 45
-            token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300}
-                               "t2" {"cmd" "tc" "fallback-period-secs" 600 "stale-timeout-mins" stale-timeout-mins}
-                               "t3" {"cmd" "tc" "fallback-period-secs" 900}
-                               "t4" {"fallback-period-secs" 1200 "stale-timeout-mins" (+ stale-timeout-mins 15)}}
+            token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300 "last-update-time" (tc/to-long t1000)}
+                               "t2" {"cmd" "tc" "fallback-period-secs" 600 "last-update-time" (tc/to-long t2000) "stale-timeout-mins" stale-timeout-mins}
+                               "t3" {"cmd" "tc" "fallback-period-secs" 900 "last-update-time" (tc/to-long t3000)}
+                               "t4" {"fallback-period-secs" 1200 "last-update-time" (tc/to-long t4000) "stale-timeout-mins" (+ stale-timeout-mins 15)}}
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s12")))
-                                        #{{:token {:sources [{:token "t1" :version "t1.hash0"} {:token "t2" :version "t2.hash0"}]}}
-                                          {:token {:sources [{:token "t3" :version "t3.hash0"} {:token "t4" :version "t4.hash0"}]}}})
+                                        #{{:token {:sources [{:token "t1" :version "t1.old"} {:token "t2" :version "t2.old"}]}}
+                                          {:token {:sources [{:token "t3" :version "t3.old"} {:token "t4" :version "t4.old"}]}}})
             token->token-data (token->token-data-factory token->token-data)]
-        (is (= (max (-> 900 t/seconds t/in-minutes (+ stale-timeout-mins))
-                    (-> 1200 t/seconds t/in-minutes (+ stale-timeout-mins 15)))
-               (service-id->idle-timeout
+        (is (= (t/plus
+                 t4000
+                 (t/minutes
+                   (max (-> 900 t/seconds t/in-minutes (+ stale-timeout-mins))
+                        (-> 1200 t/seconds t/in-minutes (+ stale-timeout-mins 15)))))
+               (service->gc-time
                  service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
-                 attach-token-defaults-fn (str service-id "s12"))))))))
+                 attach-token-defaults-fn (str service-id "s12") last-modified-time)))))
+
+    (testing "service with single token is stale but GC disabled"
+      (let [idle-timeout-mins 0
+            token->token-data {"t1" {"cpus" 1 "idle-timeout-mins" idle-timeout-mins "last-update-time" (tc/to-long t1000)}}
+            service-id->service-description-fn (fn [in-service-id]
+                                                 (is (str/starts-with? in-service-id service-id))
+                                                 {"idle-timeout-mins" idle-timeout-mins})
+            service-id->references-fn (fn [in-service-id]
+                                        (is (= in-service-id (str service-id "s1")))
+                                        #{{:token {:sources [{:token "t1" :version "t1.latest"}]}}})
+            token->token-data (token->token-data-factory token->token-data)]
+        (is (nil?
+              (service->gc-time
+                service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
+                attach-token-defaults-fn (str service-id "s1") last-modified-time)))))))
 
 (defn- synchronize-fn
   [lock f]
