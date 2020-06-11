@@ -224,7 +224,7 @@
 
 (defn start-work-stealing-balancer
   "Starts the work-stealing balancer for all services."
-  [populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
+  [populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms offer-idle-timeout-ms offers-allowed-semaphore
    service-id->router-id->metrics make-inter-router-requests-fn router-id service-id]
   (log/info "starting work-stealing balancer for" service-id)
   (letfn [(reserve-instance-fn
@@ -263,6 +263,7 @@
                   (let [{:keys [body error headers status] :as inter-router-response}
                         (some-> (make-inter-router-requests-fn "work-stealing"
                                                                :acceptable-router? #(= target-router-id %)
+                                                               :config {:idle-timeout offer-idle-timeout-ms}
                                                                :body (-> reservation-parameters
                                                                        (assoc :router-id router-id
                                                                               :service-id service-id)

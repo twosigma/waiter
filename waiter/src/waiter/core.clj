@@ -978,6 +978,11 @@
                                      (fn discover-service-parameters-fn [headers]
                                        (sd/discover-service-parameters
                                          kv-store attach-service-defaults-fn attach-token-defaults-fn waiter-hostnames headers)))
+   :enable-work-stealing-support? (pc/fnk [[:settings [:work-stealing supported-distribution-schemes]]
+                                           service-id->service-description-fn]
+                                    (fn enable-work-stealing-support? [service-id]
+                                      (let [{:strs [distribution-scheme]} (service-id->service-description-fn service-id)]
+                                        (contains? supported-distribution-schemes distribution-scheme))))
    :generate-log-url-fn (pc/fnk [prepend-waiter-url]
                           (partial handler/generate-log-url prepend-waiter-url))
    :list-tokens-fn (pc/fnk [[:curator curator]
@@ -1085,21 +1090,26 @@
                              (scheduler/validate-service scheduler service-id)
                              (service/start-new-service
                                scheduler descriptor start-service-cache scheduler-interactions-thread-pool)))
-   :start-work-stealing-balancer-fn (pc/fnk [[:settings [:work-stealing offer-help-interval-ms reserve-timeout-ms]]
+   :start-work-stealing-balancer-fn (pc/fnk [[:settings [:work-stealing offer-help-interval-ms offer-idle-timeout-ms
+                                                         reserve-timeout-ms]]
                                              [:state offers-allowed-semaphore router-id]
-                                             make-inter-router-requests-async-fn router-metrics-helpers]
+                                             enable-work-stealing-support? make-inter-router-requests-async-fn router-metrics-helpers]
                                       (fn start-work-stealing-balancer [populate-maintainer-chan! service-id]
-                                        (let [{:keys [service-id->router-id->metrics]} router-metrics-helpers]
-                                          (work-stealing/start-work-stealing-balancer
-                                            populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms
-                                            offers-allowed-semaphore service-id->router-id->metrics
-                                            make-inter-router-requests-async-fn router-id service-id))))
+                                        (let [support-work-stealing? (enable-work-stealing-support? service-id)]
+                                          (log/info service-id "has work-stealing support" (if support-work-stealing? "enabled" "disabled"))
+                                          (when support-work-stealing?
+                                            (let [{:keys [service-id->router-id->metrics]} router-metrics-helpers]
+                                              (work-stealing/start-work-stealing-balancer
+                                                populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms
+                                                offer-idle-timeout-ms offers-allowed-semaphore service-id->router-id->metrics
+                                                make-inter-router-requests-async-fn router-id service-id))))))
    :stop-work-stealing-balancer-fn (pc/fnk []
-                                     (fn stop-work-stealing-balancer [service-id work-stealing-chan-map]
-                                       (log/info "stopping work-stealing balancer for" service-id)
-                                       (async/go
-                                         (when-let [exit-chan (get work-stealing-chan-map [:exit-chan])]
-                                           (async/>! exit-chan :exit)))))
+                                     (fn stop-work-stealing-balancer [service-id {:keys [exit-chan]}]
+                                       (if exit-chan
+                                         (async/go
+                                           (log/info "stopping work-stealing balancer for" service-id)
+                                           (async/>! exit-chan :exit))
+                                         (log/info service-id "has no work-stealing cleanup required"))))
    :store-reference-fn (pc/fnk [[:curator synchronize-fn]
                                 [:state kv-store]]
                          (fn store-reference-fn [service-id reference]
@@ -1710,12 +1720,14 @@
                                               (fn state-service-maintainer-handler-fn [request]
                                                 (handler/get-query-fn-state router-id query-state-fn request)))))
    :state-service-handler-fn (pc/fnk [[:daemons populate-maintainer-chan! state-sources]
+                                      [:routines enable-work-stealing-support?]
                                       [:state local-usage-agent router-id]
                                       wrap-secure-request-fn]
                                (wrap-secure-request-fn
                                  (fn service-state-handler-fn [{{:keys [service-id]} :route-params :as request}]
-                                   (handler/get-service-state router-id populate-maintainer-chan! local-usage-agent
-                                                              service-id state-sources request))))
+                                   (handler/get-service-state
+                                     router-id enable-work-stealing-support? populate-maintainer-chan! local-usage-agent
+                                     service-id state-sources request))))
    :state-statsd-handler-fn (pc/fnk [[:state router-id]
                                      wrap-secure-request-fn]
                               (wrap-secure-request-fn

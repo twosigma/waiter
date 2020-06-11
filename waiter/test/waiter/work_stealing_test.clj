@@ -556,12 +556,14 @@
         populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
         reserve-timeout-ms 1000
         offer-help-interval-ms 1000
+        offer-idle-timeout-ms 1800000
         service-id->router-id->metrics {}
         make-inter-router-requests-fn-factory (fn [status response-map]
-                                                (fn [endpoint & {:keys [acceptable-router? body method]}]
+                                                (fn [endpoint & {:keys [acceptable-router? config body method]}]
                                                   (is (= "work-stealing" endpoint))
                                                   (is (acceptable-router? target-router-id))
                                                   (is (not (acceptable-router? router-id)))
+                                                  (is (= {:idle-timeout offer-idle-timeout-ms} config))
                                                   (is (= (walk/stringify-keys
                                                            {:request-id request-id
                                                             :router-id router-id
@@ -581,8 +583,9 @@
       (testing "2XX response - missing status"
         (let [offers-allowed-semaphore (semaphore/create-semaphore 10)
               make-inter-router-requests-fn (make-inter-router-requests-fn-factory http-200-ok {})]
-          (start-work-stealing-balancer populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
-                                        service-id->router-id->metrics make-inter-router-requests-fn router-id service-id)
+          (start-work-stealing-balancer
+            populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms offer-idle-timeout-ms
+            offers-allowed-semaphore service-id->router-id->metrics make-inter-router-requests-fn router-id service-id)
           (is @offer-help-fn-atom)
           (let [offer-help-fn @offer-help-fn-atom
                 reservation-parameters {:request-id request-id :target-router-id target-router-id}
@@ -593,8 +596,9 @@
       (testing "2XX response - success"
         (let [offers-allowed-semaphore (semaphore/create-semaphore 10)
               make-inter-router-requests-fn (make-inter-router-requests-fn-factory http-200-ok {:response-status "successful"})]
-          (start-work-stealing-balancer populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
-                                        service-id->router-id->metrics make-inter-router-requests-fn router-id service-id)
+          (start-work-stealing-balancer
+            populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms offer-idle-timeout-ms
+            offers-allowed-semaphore service-id->router-id->metrics make-inter-router-requests-fn router-id service-id)
           (is @offer-help-fn-atom)
           (let [offer-help-fn @offer-help-fn-atom
                 reservation-parameters {:request-id request-id :target-router-id target-router-id}
@@ -605,8 +609,9 @@
       (testing "2XX response - failure"
         (let [offers-allowed-semaphore (semaphore/create-semaphore 10)
               make-inter-router-requests-fn (make-inter-router-requests-fn-factory http-200-ok {:response-status "failure"})]
-          (start-work-stealing-balancer populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
-                                        service-id->router-id->metrics make-inter-router-requests-fn router-id service-id)
+          (start-work-stealing-balancer
+            populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms offer-idle-timeout-ms
+            offers-allowed-semaphore service-id->router-id->metrics make-inter-router-requests-fn router-id service-id)
           (is @offer-help-fn-atom)
           (let [offer-help-fn @offer-help-fn-atom
                 reservation-parameters {:request-id request-id :target-router-id target-router-id}
@@ -617,8 +622,9 @@
       (testing "4XX response - failure"
         (let [offers-allowed-semaphore (semaphore/create-semaphore 10)
               make-inter-router-requests-fn (make-inter-router-requests-fn-factory http-400-bad-request {:response-status "failure"})]
-          (start-work-stealing-balancer populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
-                                        service-id->router-id->metrics make-inter-router-requests-fn router-id service-id)
+          (start-work-stealing-balancer
+            populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms offer-idle-timeout-ms
+            offers-allowed-semaphore service-id->router-id->metrics make-inter-router-requests-fn router-id service-id)
           (is @offer-help-fn-atom)
           (let [offer-help-fn @offer-help-fn-atom
                 reservation-parameters {:request-id request-id :target-router-id target-router-id}
@@ -629,8 +635,9 @@
       (testing "5XX response - failure"
         (let [offers-allowed-semaphore (semaphore/create-semaphore 10)
               make-inter-router-requests-fn (make-inter-router-requests-fn-factory http-500-internal-server-error {:response-status "failure"})]
-          (start-work-stealing-balancer populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms offers-allowed-semaphore
-                                        service-id->router-id->metrics make-inter-router-requests-fn router-id service-id)
+          (start-work-stealing-balancer
+            populate-maintainer-chan! reserve-timeout-ms offer-help-interval-ms offer-idle-timeout-ms
+            offers-allowed-semaphore service-id->router-id->metrics make-inter-router-requests-fn router-id service-id)
           (is @offer-help-fn-atom)
           (let [offer-help-fn @offer-help-fn-atom
                 reservation-parameters {:request-id request-id :target-router-id target-router-id}
