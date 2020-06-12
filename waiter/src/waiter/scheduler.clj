@@ -893,10 +893,10 @@
                                   (concat healthy-instances))
             known-instance-ids' (->> known-instances' (map :id) set)
             previously-known-instance? (comp known-instance-ids :id)
-            new-instance-ids (->> known-instances'
-                                  (remove previously-known-instance?)
-                                  (sort instance-comparator)
-                                  (mapv :id))
+            new-instances (->> known-instances'
+                               (remove previously-known-instance?)
+                               (sort instance-comparator))
+            new-instance-ids (mapv :id new-instances)
             removed-instance-ids (set/difference known-instance-ids known-instance-ids')
             ;; Compute updated state for not-yet-scheduled instances of this service
             {:keys [new-instance-start-times outstanding-instance-start-times]}
@@ -923,6 +923,8 @@
             (when leader?
               (statsd/histo! metric-group "startup_time"
                              (du/interval->nanoseconds duration)))))
+        (doseq [new-instance new-instances]
+          (log-service-instance new-instance :launch))
         ;; tracker-state' for this service
         (assoc tracker-state
           :instance-counts instance-counts'

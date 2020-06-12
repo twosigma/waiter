@@ -264,7 +264,6 @@
           primary-container-status (first container-statuses)
           pod-annotations (get-in pod [:metadata :annotations])
           pod-started-at (-> pod (get-in [:status :startTime]) timestamp-str->datetime)]
-      (log/error "Successfully finishing let in pod->ServiceInstance")
       (scheduler/make-ServiceInstance
         (cond-> {:extra-ports (->> pod-annotations :waiter/port-count Integer/parseInt range next (mapv #(+ port0 %)))
                  :flags (cond-> #{}
@@ -284,9 +283,6 @@
                  :service-id (k8s-object->service-id pod)
                  :started-at pod-started-at}
           node-name (assoc :k8s/node-name node-name)
-          (do
-            (log/error "Error stage 2 pod->ServiceInstance creation")
-            false) #(%)
           phase (assoc :k8s/pod-phase phase)
           (seq container-statuses) (assoc :k8s/container-statuses
                                           (map (fn [{:keys [state] :as status}]
@@ -1073,9 +1069,6 @@
                             [pod-fields pod-fields'] (data/diff old-pod pod)
                             pod-ns (k8s-object->namespace pod)
                             pod-handle (str pod-ns "/" pod-id)]
-                        (if (= nil pod)
-                          (throw (ex-info "nil pod" pod)))
-                        (scheduler/log-service-instance (pod->ServiceInstance scheduler pod) "UPDATE")
                         (scheduler/log "pod state update:" update-type pod-handle version pod-fields "->" pod-fields'))))}
       (merge options))))
 

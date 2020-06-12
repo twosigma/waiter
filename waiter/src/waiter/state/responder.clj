@@ -485,7 +485,7 @@
   (log/info "unblacklisting instance" instance-id "as blackli
   st expired at" expiry-time)
   (when (contains? instance-id->state instance-id)
-    (scheduler/log-service-instance (get instance-id->state instance-id) "UNBLACKLIST")
+    (scheduler/log-service-instance (get instance-id->state instance-id) :welcome-back)
     (update-in (update-instance-id->blacklist-expiry-time-fn current-state #(dissoc % instance-id))
                [:instance-id->state instance-id] update-status-tag-fn #(disj % :blacklisted) )))
 

@@ -189,7 +189,6 @@
                     :shell-scheduler/process process
                     :shell-scheduler/working-directory working-directory
                     :shell-scheduler/pid (pid process)})]
-    (scheduler/log-service-instance instance "LAUNCH")
     instance))
 
 (defn active?
