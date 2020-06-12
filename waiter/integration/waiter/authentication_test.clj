@@ -436,14 +436,17 @@
   (testing-using-waiter-url
     (if (oidc-auth-enabled? waiter-url)
       (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)
-            waiter-token (or (System/getenv "WAITER_TEST_TOKEN_OIDC")
-                             (create-token-name waiter-url (rand-name)))
-            service-parameters (assoc (kitchen-params)
-                                 :env {"USE_OIDC_AUTH" "true"}
-                                 :name (rand-name)
-                                 :run-as-user (retrieve-username))
-            token-response (post-token waiter-url (assoc service-parameters :token waiter-token))
-            _ (assert-response-status token-response http-200-ok)
+            oidc-token-from-env (System/getenv "WAITER_TEST_TOKEN_OIDC")
+            edit-oidc-token-from-env? (Boolean/valueOf (System/getenv "WAITER_TEST_TOKEN_OIDC_EDIT"))
+            waiter-token (or oidc-token-from-env (create-token-name waiter-url (rand-name)))
+            edit-token? (or (str/blank? oidc-token-from-env) edit-oidc-token-from-env?)
+            _ (when edit-token?
+                (let [service-parameters (assoc (kitchen-params)
+                                           :env {"USE_OIDC_AUTH" "true"}
+                                           :name (rand-name)
+                                           :run-as-user (retrieve-username))
+                      token-response (post-token waiter-url (assoc service-parameters :token waiter-token))]
+                  (assert-response-status token-response http-200-ok)))
             ;; absence of Negotiate header also triggers an unauthorized response
             request-headers {"authorization" "SingleUser unauthorized"
                              "accept-redirect" "yes"
@@ -484,5 +487,6 @@
                                               :status (:status callback-response)})]
                   (is (= (str "https://" waiter-token "/request-info") location) assertion-message)))))
           (finally
-            (delete-token-and-assert waiter-url waiter-token))))
+            (when edit-token?
+              (delete-token-and-assert waiter-url waiter-token)))))
       (log/info "OIDC+PKCE authentication is disabled"))))
