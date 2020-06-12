@@ -70,7 +70,7 @@
           [close-code error] (connection->ctrl-data connection)]
       (is (= :qbits.jet.websocket/error close-code))
       (is (instance? UpgradeException error))
-      (is (str/includes? (.getMessage error) "403 Unauthorized"))
+      (is (str/includes? (.getMessage error) "Unexpected HTTP Response Status Code: 403 Forbidden"))
       (is (not (realized? connect-success-promise))))))
 
 (deftest ^:parallel ^:integration-fast test-request-auth-success
@@ -183,8 +183,7 @@
                 [close-code error] (connection->ctrl-data connection)]
             (is (= :qbits.jet.websocket/error close-code))
             (is (instance? UpgradeException error))
-            (is (str/includes? (.getMessage error)
-                               "400 An authentication disabled token may not be combined with on-the-fly headers"))
+            (is (str/includes? (.getMessage error) "Unexpected HTTP Response Status Code: 400 Bad Request"))
             (is (not (realized? connect-success-promise))))
 
           (let [connect-success-promise (promise)
@@ -201,8 +200,7 @@
                 [close-code error] (connection->ctrl-data connection)]
             (is (= :qbits.jet.websocket/error close-code))
             (is (instance? UpgradeException error))
-            (is (str/includes? (.getMessage error)
-                               "400 An authentication parameter is not supported for on-the-fly headers"))
+            (is (str/includes? (.getMessage error) "Unexpected HTTP Response Status Code: 400 Bad Request"))
             (is (not (realized? connect-success-promise)))))
         (finally
           (delete-token-and-assert waiter-url token))))))
