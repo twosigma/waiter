@@ -150,7 +150,7 @@
 
 (defn make-request
   "Makes an asynchronous websocket request to the instance endpoint and returns a channel."
-  [websocket-client service-id->password-fn {:keys [host port] :as instance} ws-request
+  [websocket-client service-id->password-fn {:keys [host port] :as instance} {:keys [query-string] :as ws-request}
    request-properties passthrough-headers end-route _ backend-proto proto-version]
   (let [ws-middleware (fn ws-middleware [_ ^UpgradeRequest request]
                         (let [service-password (-> instance scheduler/instance->service-id service-id->password-fn)
@@ -175,11 +175,13 @@
                                 (not (str/blank? sec-websocket-protocol))
                                 (assoc :subprotocols (str/split sec-websocket-protocol #",")))
         ws-protocol (if (= "https" (hu/backend-proto->scheme backend-proto)) "wss" "ws")
-        instance-endpoint (scheduler/end-point-url ws-protocol host port end-route)
+        instance-url (cond-> (scheduler/end-point-url ws-protocol host port end-route)
+                       (not (str/blank? query-string))
+                       (str "?" query-string))
         service-id (scheduler/instance->service-id instance)
         correlation-id (cid/get-correlation-id)]
     (try
-      (log/info "forwarding request for service" service-id "to" instance-endpoint)
+      (log/info "forwarding request for service" service-id "to" instance-url)
       (let [ctrl-copy-chan (async/tap control-mult (async/chan (async/dropping-buffer 1)))]
         (async/go
           (let [[close-code error] (async/<! ctrl-copy-chan)]
@@ -187,7 +189,7 @@
               ;; the put! is a no-op if the connection was successful
               (log/info "propagating error to response in case websocket connection failed")
               (async/put! response {:error error})))))
-      (ws-client/connect! websocket-client instance-endpoint
+      (ws-client/connect! websocket-client instance-url
                           (fn [request]
                             (cid/cinfo correlation-id "successfully connected with backend")
                             (async/put! response {:ctrl-mult control-mult, :request request}))

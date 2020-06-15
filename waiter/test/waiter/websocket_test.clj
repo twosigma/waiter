@@ -304,6 +304,26 @@
             (is (= #{:ctrl-mult :request} (-> response-map keys set)))
             (is (= connect-request (:request response-map)))))))
 
+    (testing "successful-connect-ws with query string"
+      (with-redefs [ws-client/connect! (fn [_ instance-endpoint request-callback {:keys [middleware] :as request-properties}]
+                                         (is (= (str "ws://www.host.com:1234" end-route "?a=b&c=d1&c=d2") instance-endpoint))
+                                         (is (= {:async-write-timeout 1, :connect-timeout 2, :max-idle-timeout 3}
+                                                (select-keys request-properties [:async-write-timeout :connect-timeout :max-idle-timeout])))
+                                         (is middleware)
+                                         (let [upgrade-request (ClientUpgradeRequest.)]
+                                           (middleware nil upgrade-request)
+                                           (assert-request-headers upgrade-request))
+                                         (request-callback connect-request))]
+        (cid/with-correlation-id
+          test-cid
+          (let [websocket-client nil
+                request (assoc request :query-string "a=b&c=d1&c=d2")
+                response (make-request websocket-client service-id->password-fn instance request request-properties
+                                       passthrough-headers end-route nil "http" proto-version)
+                response-map (async/<!! response)]
+            (is (= #{:ctrl-mult :request} (-> response-map keys set)))
+            (is (= connect-request (:request response-map)))))))
+
     (testing "successful-connect-wss"
       (with-redefs [ws-client/connect! (fn [_ instance-endpoint request-callback {:keys [middleware] :as request-properties}]
                                          (is (= (str "wss://www.host.com:1234" end-route) instance-endpoint))
