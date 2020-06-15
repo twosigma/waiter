@@ -176,20 +176,19 @@
                                        (range 0 (-> reserved-ports count inc))
                                        reserved-ports))
         {:keys [instance-id process started-at working-directory]}
-        (launch-process service-id working-dir-base-path cmd process-environment)
-        instance (scheduler/make-ServiceInstance
-                   {:id instance-id
-                    :service-id service-id
-                    :started-at started-at
-                    :healthy? nil
-                    :host (str "127.0.0." (inc (rand-int 10)))
-                    :port (first reserved-ports)
-                    :extra-ports (-> reserved-ports rest vec)
-                    :log-directory working-directory
-                    :shell-scheduler/process process
-                    :shell-scheduler/working-directory working-directory
-                    :shell-scheduler/pid (pid process)})]
-    instance))
+        (launch-process service-id working-dir-base-path cmd process-environment)]
+    (scheduler/make-ServiceInstance
+      {:id instance-id
+       :service-id service-id
+       :started-at started-at
+       :healthy? nil
+       :host (str "127.0.0." (inc (rand-int 10)))
+       :port (first reserved-ports)
+       :extra-ports (-> reserved-ports rest vec)
+       :log-directory working-directory
+       :shell-scheduler/process process
+       :shell-scheduler/working-directory working-directory
+       :shell-scheduler/pid (pid process)})))
 
 (defn active?
   "Returns true if the given instance is considered active"
@@ -369,7 +368,9 @@
         :failed? (if (zero? exit-value) false true)
         :healthy? false
         :killed? true ; does not actually mean killed -- using this to mark inactive
-        :message message))
+        :message message)
+      (if (= (get instance :failed?) true)
+        (scheduler/log-service-instance instance :fail)))
     instance))
 
 (defn- enforce-grace-period
