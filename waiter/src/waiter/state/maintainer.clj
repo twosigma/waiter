@@ -464,7 +464,7 @@
           _ (log/info "avoiding distribution computation of" (- (count service-id->healthy-instances') (count delta-service-id->healthy-instances))
                       "out of" (count service-id->healthy-instances') "services.")
           delta-service-id->my-instance->slots (compute-service-id->my-instance->slots
-                                                 router-id router-id->http-endpoint service-id->service-description-fn delta-service-id->healthy-instances)
+                                                 router-id router-id->http-endpoint' service-id->service-description-fn delta-service-id->healthy-instances)
           service-id->my-instance->slots' (into (select-keys service-id->my-instance->slots (keys service-id->healthy-instances'))
                                                 delta-service-id->my-instance->slots)]
       (-> candidate-new-state
