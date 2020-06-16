@@ -470,13 +470,11 @@
                                                     has-expired-instances has-starting-instances state))))
           response-code (if instance-not-allowed? :in-use :blacklisted)]
       {:current-state' (if (= :blacklisted response-code)
-                         (do
-                           (scheduler/log-service-instance {:id instance-id :blacklist-period-ms blacklist-period-ms} :eject)
-                           (-> current-state
+                         (-> current-state
                                ; mark instance as blacklisted and set the expiry time
                                (update-in [:instance-id->state instance-id] sanitize-instance-state)
                                (update-in [:instance-id->state instance-id] update-status-tag-fn #(conj % :blacklisted))
-                               (update-state-by-blacklisting-instance-fn cid instance-id blacklist-period-ms)))
+                               (update-state-by-blacklisting-instance-fn cid instance-id blacklist-period-ms))
                          current-state)
        :response-chan response-chan
        :response response-code})))
@@ -600,6 +598,7 @@
         (fn update-state-by-blacklisting-instance-fn [current-state correlation-id instance-id expiry-time-ms]
           (let [actual-expiry-time (t/plus (t/now) (t/millis expiry-time-ms))]
             (cid/cinfo correlation-id "blacklisting instance" instance-id "for" expiry-time-ms "ms.")
+            (scheduler/log-service-instance {:id instance-id :blacklist-period-ms expiry-time-ms} :eject)
             (trigger-unblacklist-process-fn correlation-id instance-id expiry-time-ms unblacklist-instance-chan)
             (update-instance-id->blacklist-expiry-time-fn current-state #(assoc % instance-id actual-expiry-time))))
         default-load-balancing (:load-balancing initial-state)]

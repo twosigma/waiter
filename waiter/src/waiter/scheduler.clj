@@ -50,7 +50,7 @@
 (defmacro log-service-instance
   "Log InstanceTracker-specific messages."
   [instance event-type]
-  `(log/log "InstanceTracker" :debug nil (utils/clj->json (assoc ~instance :event-type ~event-type))))
+  `(log/log "InstanceTracker" :debug nil (utils/clj->json (assoc ~instance :timestamp (t/now) :event-type ~event-type))))
 
 (defrecord Service
   [^String id
