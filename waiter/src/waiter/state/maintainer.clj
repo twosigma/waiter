@@ -29,7 +29,8 @@
             [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
-            [waiter.util.utils :as utils]))
+            [waiter.util.utils :as utils])
+  (:import (java.util.logging Level)))
 
 (defn retrieve-maintainer-channel
   "Retrieves the channel mapped to the provided method."
@@ -652,12 +653,13 @@
                                                        (if (seq new-instance-ids) (str "New healthy instances: " new-instance-ids ".") "")
                                                        (if (seq rem-instance-ids) (str "Removed healthy instances: " rem-instance-ids ".") "")
                                                        (if (seq unhealthy-instance-ids) (str "Unhealthy instances: " unhealthy-instance-ids ".") ""))))
-                                         (when (not= (get service-id->expired-instances service-id) expired-instances)
-                                           (let [cur-exp-instances (set expired-instances)
-                                                 old-exp-instances (set (get service-id->expired-instances service-id))
-                                                 delta-exp-instances (filterv (complement old-exp-instances) cur-exp-instances)]
-                                             (doseq [expired-instance delta-exp-instances]
-                                               (scheduler/log-service-instance expired-instance :expire))))
+                                         (log/enabled? (Level/FINER)
+                                                       (when (not= (get service-id->expired-instances service-id) expired-instances)
+                                                         (let [cur-exp-instances (set expired-instances)
+                                                               old-exp-instances (set (get service-id->expired-instances service-id))
+                                                               delta-exp-instances (filterv (complement old-exp-instances) cur-exp-instances)]
+                                                           (doseq [expired-instance delta-exp-instances]
+                                                             (scheduler/log-service-instance expired-instance :expire)))))
                                          (assoc loop-state
                                            :service-id->deployment-error service-id->deployment-error'
                                            :service-id->expired-instances service-id->expired-instances'
