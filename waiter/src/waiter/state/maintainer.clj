@@ -634,7 +634,6 @@
                                                  rem-instances (filterv (complement curr-instances) prev-instances)
                                                  new-instance-ids (mapv :id new-instances)
                                                  rem-instance-ids (mapv :id rem-instances)
-
                                                  prev-unhealthy-instances (set (get service-id->unhealthy-instances service-id))
                                                  new-unhealthy-instances (filterv (complement prev-unhealthy-instances) unhealthy-instances)
                                                  unhealthy-instance-ids (mapv :id (get service-id->unhealthy-instances' service-id))]
@@ -651,7 +650,6 @@
                                                        (if (seq new-instance-ids) (str "New healthy instances: " new-instance-ids ".") "")
                                                        (if (seq rem-instance-ids) (str "Removed healthy instances: " rem-instance-ids ".") "")
                                                        (if (seq unhealthy-instance-ids) (str "Unhealthy instances: " unhealthy-instance-ids ".") ""))))
-
                                          (when (not= (get service-id->expired-instances service-id) expired-instances)
                                            (let [cur-exp-instances (set expired-instances)
                                                  old-exp-instances (set (get service-id->expired-instances service-id))
