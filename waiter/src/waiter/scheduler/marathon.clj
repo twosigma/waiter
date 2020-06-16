@@ -256,16 +256,6 @@
                 health-check-interval-secs health-check-max-consecutive-failures health-check-port-index
                 health-check-proto instance-expiry-mins mem namespace ports restart-backoff-factor run-as-user]} service-description
         home-path (str home-path-prefix run-as-user)]
-    (when (= "docker" cmd-type)
-      (throw (ex-info "Unsupported command type on service"
-                      {:cmd-type cmd-type
-                       :service-description service-description
-                       :service-id service-id})))
-    (when (not= "disabled" health-check-authentication)
-      (throw (ex-info "Unsupported health check authentication on service"
-                      {:health-check-authentication health-check-authentication
-                       :service-description service-description
-                       :service-id service-id})))
     {:id service-id
      :env (scheduler/environment service-id service-description service-id->password-fn home-path)
      :user run-as-user
@@ -477,8 +467,19 @@
       (assoc :syncer (retrieve-syncer-state-fn))))
 
   (validate-service [_ service-id]
-    (let [{:strs [run-as-user]} (service-id->service-description-fn service-id)]
-      (authz/check-user authorizer run-as-user service-id))))
+    (let [{:strs [cmd-type health-check-authentication run-as-user] :as service-description}
+          (service-id->service-description-fn service-id)]
+      (authz/check-user authorizer run-as-user service-id)
+      (when (= "docker" cmd-type)
+        (throw (ex-info "Unsupported command type on service"
+                        {:cmd-type cmd-type
+                         :service-description service-description
+                         :service-id service-id})))
+      (when (not= "disabled" health-check-authentication)
+        (throw (ex-info "Unsupported health check authentication on service"
+                        {:health-check-authentication health-check-authentication
+                         :service-description service-description
+                         :service-id service-id}))))))
 
 (defn- get-apps-with-deployments
   "Retrieves the apps with the deployment info embedded."

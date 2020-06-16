@@ -29,7 +29,8 @@
             [waiter.status-codes :refer :all]
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
-  (:import waiter.scheduler.marathon.MarathonScheduler))
+  (:import (clojure.lang ExceptionInfo)
+           (waiter.scheduler.marathon MarathonScheduler)))
 
 (deftest test-response-data->service-instances
   (let [test-cases (list {
@@ -805,12 +806,30 @@
 
       (testing "validate service - normal"
         (scheduler/validate-service
-          (create-marathon-scheduler (assoc valid-config :service-id->service-description-fn (constantly {}))) nil))
+          (create-marathon-scheduler (assoc valid-config
+                                       :service-id->service-description-fn
+                                       (constantly {"health-check-authentication" "disabled"}))) nil))
+      (testing "validate service - docker command type"
+        (is (thrown-with-msg?
+              ExceptionInfo #"Unsupported command type on service"
+              (scheduler/validate-service
+                (create-marathon-scheduler (assoc valid-config
+                                             :service-id->service-description-fn
+                                             (constantly {"cmd-type" "docker"
+                                                          "health-check-authentication" "disabled"}))) nil))))
+      (testing "validate service - health check authentication enabled"
+        (is (thrown-with-msg?
+              ExceptionInfo #"Unsupported health check authentication on service"
+              (scheduler/validate-service
+                (create-marathon-scheduler (assoc valid-config
+                                             :service-id->service-description-fn
+                                             (constantly {"health-check-authentication" "standard"}))) nil))))
       (testing "validate service - test that image can be set"
         (scheduler/validate-service
           (create-marathon-scheduler (assoc valid-config
                                        :service-id->service-description-fn
-                                       (constantly {"image" "twosigma/waiter-test-apps"}))) nil)))))
+                                       (constantly {"health-check-authentication" "disabled"
+                                                    "image" "twosigma/waiter-test-apps"}))) nil)))))
 
 (deftest test-process-kill-instance-request
   (let [marathon-api (Object.)
