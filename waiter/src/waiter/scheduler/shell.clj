@@ -363,14 +363,15 @@
     (let [{:keys [exit-value message]} (instance->exit-details instance)]
       (log/info "instance exited with value" {:instance instance :exit-value exit-value :message message})
       (release-port! port->reservation-atom port port-grace-period-ms)
-      (assoc instance
-        :exit-code exit-value
-        :failed? (if (zero? exit-value) false true)
-        :healthy? false
-        :killed? true ; does not actually mean killed -- using this to mark inactive
-        :message message)
-      (if (= (get instance :failed?) true)
-        (scheduler/log-service-instance instance :fail)))
+      (let [newly-constructed-instance (assoc instance
+                                         :exit-code exit-value
+                                         :failed? (if (zero? exit-value) false true)
+                                         :healthy? false
+                                         :killed? true ; does not actually mean killed -- using this to mark inactive
+                                         :message message)]
+        (when (= (:failed? newly-constructed-instance) true)
+          (scheduler/log-service-instance newly-constructed-instance :fail))
+        newly-constructed-instance))
     instance))
 
 (defn- enforce-grace-period

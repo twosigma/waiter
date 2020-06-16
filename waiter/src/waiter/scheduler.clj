@@ -81,7 +81,7 @@
    ^String log-directory
    ^String message])
 
-(defn make-ServiceInstance [{id :id started-at :started-at :as value-map}]
+(defn make-ServiceInstance [value-map]
   (map->ServiceInstance (merge {:extra-ports [] :flags #{}} value-map)))
 
 (defprotocol ServiceScheduler
