@@ -52,6 +52,11 @@
   [instance event-type]
   `(log/log "InstanceTracker" :debug nil (utils/clj->json (assoc ~instance :timestamp (t/now) :event-type ~event-type))))
 
+(defn swap-atom-with-instance-logging
+  [atom instance event-type & args]
+  (log-service-instance instance event-type)
+  (swap! atom args))
+
 (defrecord Service
   [^String id
    instances

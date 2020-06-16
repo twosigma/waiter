@@ -78,11 +78,16 @@
                                     :healthy? false
                                     :port 0
                                     :started-at (some-> failed-marathon-task :timestamp (du/str-to-date formatter-marathon))))
-                max-instances-to-keep 10]
-            (scheduler/add-instance-to-buffered-collection!
-              service-id->failed-instances-transient-store max-instances-to-keep service-id failed-instance
-              (fn [] #{}) (fn [instances] (-> (scheduler/sort-instances instances) (rest) (set))))
-            (scheduler/log-service-instance failed-instance :fail)))))
+                max-instances-to-keep 10
+                initial-value-fn (fn [] #{})
+                remove-fn (fn [instances] (-> (scheduler/sort-instances instances) (rest) (set)))]
+            (scheduler/swap-atom-with-instance-logging service-id->failed-instances-transient-store
+                                                       failed-instance :fail
+                                                       (fn [service-id->failed-instances]
+                                                           (update-in service-id->failed-instances [service-id]
+                                                                      #(cond-> (or % (initial-value-fn))
+                                                                         (= max-instances-to-keep (count %)) (remove-fn)
+                                                                         true (conj failed-instance)))))))))
     (when (some failed-instance-ids (map :id active-instances))
       ;; remove erroneous entries that are now healthy despite Marathon previously claiming them to be failed
       (swap! service-id->failed-instances-transient-store
@@ -364,7 +369,9 @@
           params {:force use-force, :scale true}
           {:keys [killed?] :as kill-result} (process-kill-instance-request marathon-api service-id id params)]
       (if killed?
-        (swap! service-id->kill-info-store dissoc service-id)
+        (do
+          (scheduler/log-service-instance instance :kill)
+          (swap! service-id->kill-info-store dissoc service-id))
         (swap! service-id->kill-info-store update-in [service-id :kill-failing-since]
                (fn [existing-time] (or existing-time current-time))))
       kill-result))

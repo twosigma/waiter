@@ -630,13 +630,15 @@
                                                    (not= (get service-id->unhealthy-instances service-id) unhealthy-instances))
                                            (let [curr-instances (set healthy-instances)
                                                  prev-instances (set (get service-id->healthy-instances service-id))
-                                                 new-instances (filterv (complement prev-instances) curr-instances)
-                                                 rem-instances (filterv (complement curr-instances) prev-instances)
+                                                 new-instances (filter (complement prev-instances) curr-instances)
+                                                 rem-instances (filter (complement curr-instances) prev-instances)
                                                  new-instance-ids (mapv :id new-instances)
                                                  rem-instance-ids (mapv :id rem-instances)
                                                  prev-unhealthy-instances (set (get service-id->unhealthy-instances service-id))
-                                                 new-unhealthy-instances (filterv (complement prev-unhealthy-instances) unhealthy-instances)
+                                                 new-unhealthy-instances (filter (complement prev-unhealthy-instances) unhealthy-instances)
                                                  unhealthy-instance-ids (mapv :id (get service-id->unhealthy-instances' service-id))]
+                                             (doseq [rem-instance rem-instances]
+                                               (scheduler/log-service-instance rem-instance :remove))
                                              (doseq [new-healthy-instance new-instances]
                                                (scheduler/log-service-instance new-healthy-instance :healthy))
                                              (doseq [new-unhealthy-instance new-unhealthy-instances]
@@ -725,9 +727,8 @@
       {:go-chan go-chan
        :notify-instance-killed-fn (fn notify-router-state-maintainer-of-instance-killed [instance]
                                     (log/info "received notification of killed instance" (:id instance))
-                                    (scheduler/log-service-instance instance :kill)
-                                    (async/go
-                                      (async/>! kill-notification-chan {:instance instance})))
+                                    (scheduler/log-service-instance instance :kill-notification)
+                                    (async/go (async/>! kill-notification-chan {:instance instance})))
        :query-chan query-chan
        :query-state-fn (fn router-state-maintainer-query-state-fn []
                          (assoc @state-atom :router-id router-id))

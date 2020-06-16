@@ -596,6 +596,7 @@
     (ss/try+
       (let [service (service-id->service this service-id)]
         (kill-service-instance this instance service)
+        (scheduler/log-service-instance instance :kill)
         {:instance-id id
          :killed? true
          :message "Successfully killed instance"
