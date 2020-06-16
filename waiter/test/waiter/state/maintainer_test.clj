@@ -694,6 +694,187 @@
 
 (defn- dummy-deployment-error-config-fn [_] nil)
 
+(deftest test-router-state-maintainer-peer-router-updates
+  (with-redefs [build-instance-id->sorted-site-hash
+                (fn [router-ids instances _]
+                  (try
+                    (let [sorted-router-ids (sort router-ids)]
+                      (zipmap
+                        (map :id instances)
+                        (map (fn [instance]
+                               (let [instance-num (->> (:id instance) (take-last 1) (str/join) (Integer/parseInt))
+                                     start-offset (if (seq router-ids) (mod instance-num (count router-ids)) 0)]
+                                 (->> sorted-router-ids
+                                   (cycle)
+                                   (drop start-offset)
+                                   (take (count router-ids))
+                                   (map-indexed (fn [index id] [id index]))
+                                   (vec))))
+                             instances)))
+                    (catch Throwable th
+                      (.printStackTrace th))))]
+    (let [scheduler-state-chan (async/chan 1)
+          router-chan (async/chan 1)
+          router-id-0 "router.0"
+          router-id-1 "router.1"
+          router-id-2 "router.2"
+          router-id->router-url (fn [router-id] (str "http://www." router-id ".com"))
+          router-state-push-chan (async/chan 1)
+          exit-chan (async/chan 1)
+          service-id->service-description-fn (constantly {"concurrency-level" 1
+                                                          "distribution-scheme" "simple"
+                                                          "grace-period-secs" 30
+                                                          "instance-expiry-mins" 100})
+          refresh-service-descriptions-fn identity
+          create-instance (fn [service-id instance-num]
+                            {:id (str service-id "." instance-num)
+                             :started-at (t/minus (t/now) (t/minutes 2))})
+          deployment-error-config {:min-failed-instances 2
+                                   :min-hosts 2}
+          service-id-0 "service-0"
+          instance-0-1 (create-instance service-id-0 1)
+          instance-0-2 (create-instance service-id-0 2)
+          instance-0-3 (create-instance service-id-0 3)
+          instance-0-4 (create-instance service-id-0 4)
+          instance-0-5 (create-instance service-id-0 5)
+          instance-0-6 (create-instance service-id-0 6)
+          service-id-1 "service-1"
+          instance-1-1 (create-instance service-id-1 1)
+          service-id-2 "service-2"
+          instance-2-1 (create-instance service-id-2 1)
+          instance-2-2 (create-instance service-id-2 2)
+          service-id-3 "service-3"
+          instance-3-1 (create-instance service-id-3 1)
+          instance-3-2 (create-instance service-id-3 2)
+          instance-3-3 (create-instance service-id-3 3)
+          service-id-4 "service-4"
+          instance-4-1 (create-instance service-id-4 1)
+          instance-4-2 (create-instance service-id-4 2)
+          instance-4-3 (create-instance service-id-4 3)
+          instance-4-4 (create-instance service-id-4 4)
+          service-id-5 "service-5"
+          instance-5-1 (create-instance service-id-5 1)
+          instance-5-2 (create-instance service-id-5 2)
+          instance-5-3 (create-instance service-id-5 3)
+          instance-5-4 (create-instance service-id-5 4)
+          instance-5-5 (create-instance service-id-5 5)]
+
+      (let [{:keys [router-state-push-mult]}
+            (start-router-state-maintainer
+              scheduler-state-chan router-chan router-id-0 exit-chan service-id->service-description-fn
+              refresh-service-descriptions-fn dummy-deployment-error-config-fn deployment-error-config)]
+        (async/tap router-state-push-mult router-state-push-chan))
+
+      (async/>!! scheduler-state-chan
+                 [[:update-available-services {:available-service-ids #{service-id-0 service-id-1 service-id-2 service-id-3 service-id-4 service-id-5}
+                                               :scheduler-sync-time (t/now)}]
+                  [:update-service-instances {:healthy-instances [instance-0-1 instance-0-2 instance-0-3 instance-0-4 instance-0-5 instance-0-6]
+                                              :unhealthy-instances []
+                                              :sorted-instance-ids [(:id instance-0-1) (:id instance-0-2) (:id instance-0-3) (:id instance-0-4) (:id instance-0-5) (:id instance-0-6)]
+                                              :service-id service-id-0
+                                              :scheduler-sync-time (t/now)}]
+                  [:update-service-instances {:healthy-instances [instance-1-1]
+                                              :unhealthy-instances []
+                                              :sorted-instance-ids [(:id instance-1-1)]
+                                              :service-id service-id-1
+                                              :scheduler-sync-time (t/now)}]
+                  [:update-service-instances {:healthy-instances [instance-2-1 instance-2-2]
+                                              :unhealthy-instances []
+                                              :sorted-instance-ids [(:id instance-2-1) (:id instance-2-2)]
+                                              :service-id service-id-2
+                                              :scheduler-sync-time (t/now)}]
+                  [:update-service-instances {:healthy-instances [instance-3-1 instance-3-2 instance-3-3]
+                                              :unhealthy-instances []
+                                              :sorted-instance-ids [(:id instance-3-1) (:id instance-3-2) (:id instance-3-3)]
+                                              :service-id service-id-3
+                                              :scheduler-sync-time (t/now)}]
+                  [:update-service-instances {:healthy-instances [instance-4-1 instance-4-2 instance-4-3 instance-4-4]
+                                              :unhealthy-instances []
+                                              :sorted-instance-ids [(:id instance-4-1) (:id instance-4-2) (:id instance-4-3) (:id instance-4-4)]
+                                              :service-id service-id-4
+                                              :scheduler-sync-time (t/now)}]
+                  [:update-service-instances {:healthy-instances [instance-5-1 instance-5-2 instance-5-3 instance-5-4 instance-5-5]
+                                              :unhealthy-instances []
+                                              :sorted-instance-ids [(:id instance-5-1) (:id instance-5-2) (:id instance-5-3) (:id instance-5-4) (:id instance-5-5)]
+                                              :service-id service-id-5
+                                              :scheduler-sync-time (t/now)}]])
+      (async/<!! router-state-push-chan)
+
+      (async/>!! router-chan {router-id-0 (router-id->router-url router-id-0)})
+      (let [{:keys [service-id->my-instance->slots] :as router-state} (async/<!! router-state-push-chan)]
+        (is (= {service-id-0 {instance-0-1 1 instance-0-2 1 instance-0-3 1 instance-0-4 1 instance-0-5 1 instance-0-6 1}
+                service-id-1 {instance-1-1 1}
+                service-id-2 {instance-2-1 1 instance-2-2 1}
+                service-id-3 {instance-3-1 1 instance-3-2 1 instance-3-3 1}
+                service-id-4 {instance-4-1 1 instance-4-2 1 instance-4-3 1 instance-4-4 1}
+                service-id-5 {instance-5-1 1 instance-5-2 1 instance-5-3 1 instance-5-4 1 instance-5-5 1}}
+               service-id->my-instance->slots)
+            (str router-state)))
+
+      (async/>!! router-chan {router-id-0 (router-id->router-url router-id-0)
+                              router-id-1 (router-id->router-url router-id-1)})
+      (let [{:keys [service-id->my-instance->slots] :as router-state} (async/<!! router-state-push-chan)]
+        (is (= {service-id-0 {instance-0-2 1 instance-0-4 1 instance-0-6 1}
+                service-id-1 {}
+                service-id-2 {instance-2-2 1}
+                service-id-3 {instance-3-2 1}
+                service-id-4 {instance-4-2 1 instance-4-4 1}
+                service-id-5 {instance-5-2 1 instance-5-4 1}}
+               service-id->my-instance->slots)
+            (str router-state)))
+
+      (async/>!! router-chan {router-id-0 (router-id->router-url router-id-0)
+                              router-id-1 (router-id->router-url router-id-1)
+                              router-id-2 (router-id->router-url router-id-2)})
+      (let [{:keys [service-id->my-instance->slots] :as router-state} (async/<!! router-state-push-chan)]
+        (is (= {service-id-0 {instance-0-3 1 instance-0-6 1}
+                service-id-1 {}
+                service-id-2 {}
+                service-id-3 {instance-3-3 1}
+                service-id-4 {instance-4-3 1}
+                service-id-5 {instance-5-3 1}}
+               service-id->my-instance->slots)
+            (str router-state)))
+
+      (async/>!! router-chan {router-id-0 (router-id->router-url router-id-0)
+                              router-id-2 (router-id->router-url router-id-2)})
+      (let [{:keys [service-id->my-instance->slots] :as router-state} (async/<!! router-state-push-chan)]
+        (is (= {service-id-0 {instance-0-2 1 instance-0-4 1 instance-0-6 1}
+                service-id-1 {}
+                service-id-2 {instance-2-2 1}
+                service-id-3 {instance-3-2 1}
+                service-id-4 {instance-4-2 1 instance-4-4 1}
+                service-id-5 {instance-5-2 1 instance-5-4 1}}
+               service-id->my-instance->slots)
+            (str router-state)))
+
+      (async/>!! router-chan {router-id-1 (router-id->router-url router-id-1)
+                              router-id-2 (router-id->router-url router-id-2)})
+      (let [{:keys [service-id->my-instance->slots] :as router-state} (async/<!! router-state-push-chan)]
+        (is (= {service-id-0 nil
+                service-id-1 nil
+                service-id-2 nil
+                service-id-3 nil
+                service-id-4 nil
+                service-id-5 nil}
+               service-id->my-instance->slots)
+            (str router-state)))
+
+      (async/>!! router-chan {router-id-0 (router-id->router-url router-id-0)
+                              router-id-1 (router-id->router-url router-id-1)
+                              router-id-2 (router-id->router-url router-id-2)})
+      (let [{:keys [service-id->my-instance->slots] :as router-state} (async/<!! router-state-push-chan)]
+        (is (= {service-id-0 {instance-0-3 1 instance-0-6 1}
+                service-id-1 {}
+                service-id-2 {}
+                service-id-3 {instance-3-3 1}
+                service-id-4 {instance-4-3 1}
+                service-id-5 {instance-5-3 1}}
+               service-id->my-instance->slots)
+            (str router-state)))
+
+      (async/>!! exit-chan :exit))))
+
 (deftest test-router-state-maintainer-removes-expired-instances
   (let [scheduler-state-chan (async/chan 1)
         router-chan (async/chan 1)
