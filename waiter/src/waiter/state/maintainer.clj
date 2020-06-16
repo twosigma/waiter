@@ -727,7 +727,6 @@
       {:go-chan go-chan
        :notify-instance-killed-fn (fn notify-router-state-maintainer-of-instance-killed [instance]
                                     (log/info "received notification of killed instance" (:id instance))
-                                    (scheduler/log-service-instance instance :kill-notification)
                                     (async/go (async/>! kill-notification-chan {:instance instance})))
        :query-chan query-chan
        :query-state-fn (fn router-state-maintainer-query-state-fn []
