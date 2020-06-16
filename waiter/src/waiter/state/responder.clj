@@ -471,10 +471,10 @@
           response-code (if instance-not-allowed? :in-use :blacklisted)]
       {:current-state' (if (= :blacklisted response-code)
                          (-> current-state
-                             ; mark instance as blacklisted and set the expiry time
-                             (update-in [:instance-id->state instance-id] sanitize-instance-state)
-                             (update-in [:instance-id->state instance-id] update-status-tag-fn #(conj % :blacklisted))
-                             (update-state-by-blacklisting-instance-fn cid instance-id blacklist-period-ms))
+                               ; mark instance as blacklisted and set the expiry time
+                               (update-in [:instance-id->state instance-id] sanitize-instance-state)
+                               (update-in [:instance-id->state instance-id] update-status-tag-fn #(conj % :blacklisted))
+                               (update-state-by-blacklisting-instance-fn cid instance-id blacklist-period-ms))
                          current-state)
        :response-chan response-chan
        :response response-code})))
@@ -483,6 +483,7 @@
   [{:keys [instance-id->state] :as current-state} update-instance-id->blacklist-expiry-time-fn update-status-tag-fn
    instance-id expiry-time]
   (log/info "unblacklisting instance" instance-id "as blacklist expired at" expiry-time)
+  (let [update-instance-id->blacklist-expiry-time-fn-])
   (when (contains? instance-id->state instance-id)
     (scheduler/log-service-instance {:id instance-id} :readmit)
     (update-in (update-instance-id->blacklist-expiry-time-fn current-state #(dissoc % instance-id))
