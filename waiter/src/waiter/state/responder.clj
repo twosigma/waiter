@@ -483,11 +483,14 @@
   [{:keys [instance-id->state] :as current-state} update-instance-id->blacklist-expiry-time-fn update-status-tag-fn
    instance-id expiry-time]
   (log/info "unblacklisting instance" instance-id "as blacklist expired at" expiry-time)
-  (let [update-instance-id->blacklist-expiry-time-fn-])
-  (when (contains? instance-id->state instance-id)
-    (scheduler/log-service-instance {:id instance-id} :readmit)
-    (update-in (update-instance-id->blacklist-expiry-time-fn current-state #(dissoc % instance-id))
-               [:instance-id->state instance-id] update-status-tag-fn #(disj % :blacklisted) )))
+  (let [update-instance-id->blacklist-expiry-time-fn-ret
+        (update-instance-id->blacklist-expiry-time-fn current-state #(dissoc % instance-id))]
+    (if (contains? instance-id->state instance-id)
+      (do
+        (scheduler/log-service-instance {:id instance-id} :readmit)
+        (update-in update-instance-id->blacklist-expiry-time-fn-ret
+                   [:instance-id->state instance-id] update-status-tag-fn #(disj % :blacklisted)))
+      update-instance-id->blacklist-expiry-time-fn-ret)))
 
 (defn- expiry-time-reached?
   "Returns true if current-time is greater than or equal to expiry-time."
