@@ -482,10 +482,10 @@
 (defn- update-in-with-log-instance
   [mp log-body event-type key-sequence func & args]
   (if (string? log-body)
-    (update-in-with-log-instance mp {:id log-body} event-type key-sequence func args)
+    (apply update-in-with-log-instance mp {:id log-body} event-type key-sequence func args)
     (do
       (scheduler/log-service-instance log-body event-type)
-      (update-in mp key-sequence func args))))
+      (apply update-in mp key-sequence func args))))
 
 (defn- unblacklist-instance
   [{:keys [instance-id->state] :as current-state} update-instance-id->blacklist-expiry-time-fn update-status-tag-fn

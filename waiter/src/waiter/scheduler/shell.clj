@@ -370,7 +370,7 @@
                                          :healthy? false
                                          :killed? true ; does not actually mean killed -- using this to mark inactive
                                          :message message)]
-        (when (failed)
+        (when failed
           (scheduler/log-service-instance newly-constructed-instance :fail))
         newly-constructed-instance))
     instance))

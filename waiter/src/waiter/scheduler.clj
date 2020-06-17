@@ -52,7 +52,6 @@
   [instance event-type]
   `(log/log "InstanceTracker" :debug nil (utils/clj->json (assoc ~instance :timestamp (t/now) :event-type ~event-type))))
 
-
 (defrecord Service
   [^String id
    instances
