@@ -81,13 +81,9 @@
                 max-instances-to-keep 10
                 initial-value-fn (fn [] #{})
                 remove-fn (fn [instances] (-> (scheduler/sort-instances instances) (rest) (set)))]
-            (scheduler/swap-atom-with-instance-logging service-id->failed-instances-transient-store
-                                                       failed-instance :fail
-                                                       (fn [service-id->failed-instances]
-                                                           (update-in service-id->failed-instances [service-id]
-                                                                      #(cond-> (or % (initial-value-fn))
-                                                                         (= max-instances-to-keep (count %)) (remove-fn)
-                                                                         true (conj failed-instance)))))))))
+            (scheduler/add-instance-to-transient-store! service-id->failed-instances-transient-store
+                                                       service-id failed-instance :fail
+                                                       max-instances-to-keep initial-value-fn remove-fn)))))
     (when (some failed-instance-ids (map :id active-instances))
       ;; remove erroneous entries that are now healthy despite Marathon previously claiming them to be failed
       (swap! service-id->failed-instances-transient-store

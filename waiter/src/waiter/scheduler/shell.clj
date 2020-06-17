@@ -619,7 +619,7 @@
               completion-promise)
         (let [result (deref completion-promise)
               success (= result :deleted)]
-          (when (success)
+          (when success
             (scheduler/log-service-instance instance :kill))
           {:killed? true
            :success success
