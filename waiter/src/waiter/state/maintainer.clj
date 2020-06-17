@@ -29,8 +29,7 @@
             [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
-            [waiter.util.utils :as utils])
-  (:import (java.util.logging Level)))
+            [waiter.util.utils :as utils]))
 
 (defn retrieve-maintainer-channel
   "Retrieves the channel mapped to the provided method."
