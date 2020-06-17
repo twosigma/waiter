@@ -753,9 +753,7 @@
 (defn add-instance-to-transient-store!
   [transient-store service-id instance event-type & args]
   (log-service-instance instance event-type)
-  (if (= (count args) 3)
-    (add-instance-to-buffered-collection! transient-store service-id instance (nth args 0) (nth args 1) (nth args 2))
-    (add-instance-to-buffered-collection! transient-store service-id instance (nth args 0))))
+  (apply add-instance-to-buffered-collection! transient-store service-id instance args))
 
 (defn environment
   "Returns a new environment variable map with some basic variables added in"
