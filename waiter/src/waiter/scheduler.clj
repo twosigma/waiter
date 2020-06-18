@@ -734,12 +734,12 @@
 
 (defn add-instance-to-buffered-collection!
   "Helper function to add/remove entries into the transient store"
-  ([transient-store service-id instance-entry initial-value-fn remove-fn]
+  ([transient-store service-id instance-entry max-instances-to-keep initial-value-fn remove-fn]
    (swap! transient-store
           (fn [service-id->failed-instances]
             (update-in service-id->failed-instances [service-id]
                        #(cond-> (or % (initial-value-fn))
-                                (= 10 (count %)) (remove-fn)
+                                (= max-instances-to-keep (count %)) (remove-fn)
                                 true (conj instance-entry))))))
   ;; Since we have a map (failure-id to failure-instance) in k8s we just update
   ;; the map instead of adding element to a set like in marathon's case
