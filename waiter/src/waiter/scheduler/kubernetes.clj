@@ -193,7 +193,7 @@
                 newest-failure-start-time (-> newest-failure :startedAt timestamp-str->datetime)
                 newest-failure-id (pod->instance-id pod (dec restart-count))
                 failures (-> service-id->failed-instances-transient-store deref (get service-id))]
-            (when-not (contains? failures newest-failure-id)
+            (when-not (some #(= (:id %) newest-failure-id) failures)
               (let [newest-failure-instance (cond-> (assoc live-instance
                                                       :flags failure-flags
                                                       :healthy? false
@@ -204,9 +204,11 @@
                                               ;; To match the behavior of the marathon scheduler,
                                               ;; we don't include the exit code in failed instances that were killed by k8s.
                                               (not (killed-by-k8s? newest-failure))
-                                              (assoc :exit-code (:exitCode newest-failure)))]
-                (swap! service-id->failed-instances-transient-store
-                       update-in [service-id] assoc newest-failure-id newest-failure-instance)))))))
+                                              (assoc :exit-code (:exitCode newest-failure)))
+                    max-instances-to-keep 10]
+                (scheduler/add-instance-to-buffered-collection!
+                  service-id->failed-instances-transient-store max-instances-to-keep service-id newest-failure-instance
+                  (fn [] #{}) (fn [instances] (-> (scheduler/sort-instances instances) (rest) (set))))))))))
     (catch Throwable e
       (log/error e "error converting failed pod to waiter service instance" pod)
       (comment "Returning nil on failure."))))
@@ -388,7 +390,7 @@
    Grouped by liveness status, i.e.: {:active-instances [...] :failed-instances [...] :killed-instances [...]}"
   [{:keys [service-id->failed-instances-transient-store] :as scheduler} {service-id :id :as basic-service-info}]
   {:active-instances (get-service-instances! scheduler basic-service-info)
-   :failed-instances (-> @service-id->failed-instances-transient-store (get service-id) vals vec)})
+   :failed-instances (-> @service-id->failed-instances-transient-store (get service-id) vec)})
 
 (defn- patch-object-json
   "Make a JSON-patch request on a given Kubernetes object."
@@ -736,7 +738,7 @@
           (log/error ex "request to fileserver failed")))))
 
   (service-id->state [_ service-id]
-    {:failed-instances (vals (get @service-id->failed-instances-transient-store service-id))
+    {:failed-instances (get @service-id->failed-instances-transient-store service-id)
      :syncer (retrieve-syncer-state-fn service-id)})
 
   (state [_ include-flags]
