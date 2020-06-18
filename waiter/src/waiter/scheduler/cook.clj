@@ -311,7 +311,7 @@
       (log/info "found" (count failed-instances) "failed instances" {:end-time end-time :start-time start-time}))
     (doseq [{:keys [service-id] :as failed-instance} failed-instances]
       (scheduler/add-instance-to-buffered-collection!
-        service-id->failed-instances-transient-store service-id failed-instance max-instances-to-keep
+        service-id->failed-instances-transient-store service-id failed-instance
         (fn [] #{})
         (fn [instances] (-> (scheduler/sort-instances instances) (rest) (set)))))))
 
