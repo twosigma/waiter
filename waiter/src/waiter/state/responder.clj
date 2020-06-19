@@ -480,11 +480,11 @@
        :response response-code})))
 
 (defn- update-in-with-log-instance
-  [mp log-body event-type key-sequence func & args]
+  [mp log-body event-type log-level key-sequence func & args]
   (if (string? log-body)
-    (apply update-in-with-log-instance mp {:id log-body} event-type key-sequence func args)
+    (apply update-in-with-log-instance mp {:id log-body} event-type log-level key-sequence func args)
     (do
-      (scheduler/log-service-instance log-body event-type)
+      (scheduler/log-service-instance log-body event-type log-level)
       (apply update-in mp key-sequence func args))))
 
 (defn- unblacklist-instance
@@ -493,7 +493,7 @@
   (log/info "unblacklisting instance" instance-id "as blacklist expired at" expiry-time)
   (cond-> (update-instance-id->blacklist-expiry-time-fn current-state #(dissoc % instance-id))
     (contains? instance-id->state instance-id)
-    (update-in-with-log-instance instance-id :readmit [:instance-id->state instance-id] update-status-tag-fn #(disj % :blacklisted))))
+    (update-in-with-log-instance instance-id :readmit :info [:instance-id->state instance-id] update-status-tag-fn #(disj % :blacklisted))))
 
 (defn- expiry-time-reached?
   "Returns true if current-time is greater than or equal to expiry-time."
@@ -604,7 +604,7 @@
         (fn update-state-by-blacklisting-instance-fn [current-state correlation-id instance-id expiry-time-ms]
           (let [actual-expiry-time (t/plus (t/now) (t/millis expiry-time-ms))]
             (cid/cinfo correlation-id "blacklisting instance" instance-id "for" expiry-time-ms "ms.")
-            (scheduler/log-service-instance {:id instance-id :blacklist-period-ms expiry-time-ms} :eject)
+            (scheduler/log-service-instance {:id instance-id :blacklist-period-ms expiry-time-ms} :eject :info)
             (trigger-unblacklist-process-fn correlation-id instance-id expiry-time-ms unblacklist-instance-chan)
             (update-instance-id->blacklist-expiry-time-fn current-state #(assoc % instance-id actual-expiry-time))))
         default-load-balancing (:load-balancing initial-state)]

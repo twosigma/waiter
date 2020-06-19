@@ -80,8 +80,8 @@
                                     :started-at (some-> failed-marathon-task :timestamp (du/str-to-date formatter-marathon))))
                 max-instances-to-keep 10]
             (scheduler/add-to-store-and-track-instance!
-              service-id->failed-instances-transient-store max-instances-to-keep service-id failed-instance :fail
-              (fn [] #{}) (fn [instances] (-> (scheduler/sort-instances instances) (rest) (set))))))))
+              service-id->failed-instances-transient-store max-instances-to-keep service-id failed-instance
+              :fail :info (fn [] #{}) (fn [instances] (-> (scheduler/sort-instances instances) (rest) (set))))))))
     (when (some failed-instance-ids (map :id active-instances))
       ;; remove erroneous entries that are now healthy despite Marathon previously claiming them to be failed
       (swap! service-id->failed-instances-transient-store
@@ -364,7 +364,7 @@
           {:keys [killed?] :as kill-result} (process-kill-instance-request marathon-api service-id id params)]
       (if killed?
         (do
-          (scheduler/log-service-instance instance :kill)
+          (scheduler/log-service-instance instance :kill :info)
           (swap! service-id->kill-info-store dissoc service-id))
         (swap! service-id->kill-info-store update-in [service-id :kill-failing-since]
                (fn [existing-time] (or existing-time current-time))))

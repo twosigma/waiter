@@ -371,7 +371,7 @@
                                          :killed? true ; does not actually mean killed -- using this to mark inactive
                                          :message message)]
         (when failed
-          (scheduler/log-service-instance newly-constructed-instance :fail))
+          (scheduler/log-service-instance newly-constructed-instance :fail :info))
         newly-constructed-instance))
     instance))
 
@@ -620,7 +620,7 @@
         (let [result (deref completion-promise)
               success (= result :deleted)]
           (when success
-            (scheduler/log-service-instance instance :kill))
+            (scheduler/log-service-instance instance :kill :info))
           {:killed? true
            :success success
            :result result

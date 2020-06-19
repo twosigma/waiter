@@ -638,11 +638,11 @@
                                                  new-unhealthy-instances (filter (complement prev-unhealthy-instances) unhealthy-instances)
                                                  unhealthy-instance-ids (mapv :id (get service-id->unhealthy-instances' service-id))]
                                              (doseq [rem-instance rem-instances]
-                                               (scheduler/log-service-instance rem-instance :remove))
+                                               (scheduler/log-service-instance rem-instance :remove :info))
                                              (doseq [new-healthy-instance new-instances]
-                                               (scheduler/log-service-instance new-healthy-instance :healthy))
+                                               (scheduler/log-service-instance new-healthy-instance :healthy :info))
                                              (doseq [new-unhealthy-instance new-unhealthy-instances]
-                                               (scheduler/log-service-instance new-unhealthy-instance :unhealthy))
+                                               (scheduler/log-service-instance new-unhealthy-instance :unhealthy :info))
                                              (log/info "update-healthy-instances:" service-id "has"
                                                        {:num-expired-healthy-instances (count expired-healthy-instances)
                                                         :num-expired-unhealthy-instances (count expired-unhealthy-instances)
@@ -657,7 +657,7 @@
                                                   old-exp-instances (set (get service-id->expired-instances service-id))
                                                   delta-exp-instances (filter (complement old-exp-instances) cur-exp-instances)]
                                               (doseq [expired-instance delta-exp-instances]
-                                                (scheduler/log-service-instance expired-instance :expire))))
+                                                (scheduler/log-service-instance expired-instance :expire :info))))
                                          (assoc loop-state
                                            :service-id->deployment-error service-id->deployment-error'
                                            :service-id->expired-instances service-id->expired-instances'

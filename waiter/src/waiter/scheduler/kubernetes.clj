@@ -207,8 +207,8 @@
                                               (assoc :exit-code (:exitCode newest-failure)))
                     max-instances-to-keep 10]
                 (scheduler/add-to-store-and-track-instance!
-                  service-id->failed-instances-transient-store max-instances-to-keep service-id newest-failure-instance :fail
-                  (fn [] #{}) (fn [instances] (-> (scheduler/sort-instances instances) (rest) (set))))))))))
+                  service-id->failed-instances-transient-store max-instances-to-keep service-id newest-failure-instance
+                  :fail :info (fn [] #{}) (fn [instances] (-> (scheduler/sort-instances instances) (rest) (set))))))))))
     (catch Throwable e
       (log/error e "error converting failed pod to waiter service instance" pod)
       (comment "Returning nil on failure."))))
@@ -596,7 +596,7 @@
     (ss/try+
       (let [service (service-id->service this service-id)]
         (kill-service-instance this instance service)
-        (scheduler/log-service-instance instance :kill)
+        (scheduler/log-service-instance instance :kill :info)
         {:instance-id id
          :killed? true
          :message "Successfully killed instance"

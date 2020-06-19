@@ -49,8 +49,8 @@
 
 (defmacro log-service-instance
   "Log InstanceTracker-specific messages."
-  [instance event-type]
-  `(log/log "InstanceTracker" :debug nil (utils/clj->json (assoc ~instance :timestamp (t/now) :event-type ~event-type))))
+  [instance event-type log-level]
+  `(log/log "InstanceTracker" ~log-level nil (utils/clj->json (assoc ~instance :timestamp (t/now) :event-type ~event-type))))
 
 (defrecord Service
   [^String id
@@ -743,8 +743,8 @@
                                 true (conj instance-entry)))))))
 
 (defn add-to-store-and-track-instance!
-  [transient-store max-instances-to-keep service-id instance event-type initial-value-fn remove-fn]
-  (log-service-instance instance event-type)
+  [transient-store max-instances-to-keep service-id instance event-type log-level initial-value-fn remove-fn]
+  (log-service-instance instance event-type log-level)
   (add-instance-to-buffered-collection! transient-store max-instances-to-keep service-id instance initial-value-fn remove-fn))
 
 (defn environment
@@ -929,7 +929,7 @@
               (statsd/histo! metric-group "startup_time"
                              (du/interval->nanoseconds duration)))))
         (doseq [new-instance new-instances]
-          (log-service-instance new-instance :launch))
+          (log-service-instance new-instance :launch :info))
         ;; tracker-state' for this service
         (assoc tracker-state
           :instance-counts instance-counts'
