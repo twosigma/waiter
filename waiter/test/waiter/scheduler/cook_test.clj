@@ -476,9 +476,9 @@
     (let [max-instances-to-keep 10]
       (scheduler/add-instance-to-buffered-collection!
         service-id->failed-instances-transient-store
+        max-instances-to-keep
         service-id
         failed-instance
-        max-instances-to-keep
         (fn [] #{})
         (fn [instances] (-> (scheduler/sort-instances instances) (rest) (set)))))))
 
@@ -651,9 +651,8 @@
                   job->service-instance (fn [{:keys [name]}] {:id name})]
 
       (scheduler/add-instance-to-buffered-collection!
-        service-id->failed-instances-transient-store "S2"
+        service-id->failed-instances-transient-store 1 "S2"
         {:id (str "failed-S2.1." suffix) :service-id "S2"}
-        1
         (fn [] #{})
         (fn [instances] (-> (scheduler/sort-instances instances) (rest) (set))))
 

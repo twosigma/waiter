@@ -78,11 +78,10 @@
                                     :healthy? false
                                     :port 0
                                     :started-at (some-> failed-marathon-task :timestamp (du/str-to-date formatter-marathon))))
-                initial-value-fn (fn [] #{})
-                remove-fn (fn [instances] (-> (scheduler/sort-instances instances) (rest) (set)))]
-            (scheduler/add-instance-to-transient-store! service-id->failed-instances-transient-store
-                                                       service-id failed-instance :fail
-                                                       initial-value-fn remove-fn)))))
+                max-instances-to-keep 10]
+            (scheduler/add-to-store-and-track-instance!
+              service-id->failed-instances-transient-store max-instances-to-keep service-id failed-instance :fail
+              (fn [] #{}) (fn [instances] (-> (scheduler/sort-instances instances) (rest) (set))))))))
     (when (some failed-instance-ids (map :id active-instances))
       ;; remove erroneous entries that are now healthy despite Marathon previously claiming them to be failed
       (swap! service-id->failed-instances-transient-store
