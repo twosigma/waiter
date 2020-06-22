@@ -24,10 +24,10 @@
             [waiter.headers :as headers]
             [waiter.service-description :as sd]
             [waiter.status-codes :refer :all]
+            [waiter.token :as token]
             [waiter.util.client-tools :refer :all]
             [waiter.util.date-utils :as du]
-            [waiter.util.utils :as utils]
-            [waiter.token :as token])
+            [waiter.util.utils :as utils])
   (:import (java.net URL)
            (org.joda.time DateTime)))
 

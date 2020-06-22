@@ -19,7 +19,7 @@
             [clojure.data.json :as json]
             [clojure.test :refer :all]
             [clojure.walk :as walk]
-            [full.async :refer (<?? <? go-try)]
+            [full.async :refer [<? <?? go-try]]
             [waiter.correlation-id :as cid]
             [waiter.mocks :refer :all]
             [waiter.scaling :refer :all]

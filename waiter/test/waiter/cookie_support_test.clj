@@ -21,7 +21,7 @@
             [taoensso.nippy :as nippy]
             [waiter.cookie-support :refer :all])
   (:import (clojure.lang ExceptionInfo)
-           org.eclipse.jetty.util.UrlEncoded))
+           (org.eclipse.jetty.util UrlEncoded)))
 
 (deftest test-url-decode
   (is (= "testtest" (url-decode "testtest")))

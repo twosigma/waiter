@@ -22,7 +22,7 @@
             [waiter.service :refer :all]
             [waiter.test-helpers :refer :all]
             [waiter.util.cache-utils :as cu])
-  (:import (java.util.concurrent Future Executors)))
+  (:import (java.util.concurrent Executors Future)))
 
 (defn- mock-blacklisting-instance
   [instance-rpc-chan test-service-id callback-fn]

@@ -24,7 +24,6 @@
             [slingshot.slingshot :as ss]
             [waiter.status-codes :refer :all])
   (:import (java.net URI)
-           (java.net URI)
            (java.util ArrayList)
            (org.apache.commons.codec.binary Base64)
            (org.eclipse.jetty.client HttpClient)
@@ -33,8 +32,7 @@
            (org.eclipse.jetty.http2.client HTTP2Client)
            (org.eclipse.jetty.http2.client.http HttpClientTransportOverHTTP2)
            (org.eclipse.jetty.util HttpCookieStore$Empty)
-           (org.ietf.jgss GSSManager)
-           (org.ietf.jgss GSSManager GSSContext GSSName Oid)))
+           (org.ietf.jgss GSSContext GSSManager GSSName Oid)))
 
 (def ^Oid spnego-oid (Oid. "1.3.6.1.5.5.2"))
 

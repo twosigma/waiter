@@ -16,7 +16,7 @@
 (ns waiter.discovery-test
   (:require [clojure.test :refer :all]
             [waiter.discovery :refer :all])
-  (:import (org.apache.curator.x.discovery ServiceInstance ServiceCache)))
+  (:import (org.apache.curator.x.discovery ServiceCache ServiceInstance)))
 
 (defn- prepare-discovery
   [service-name instance-ids]

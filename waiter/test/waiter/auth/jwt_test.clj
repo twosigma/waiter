@@ -32,7 +32,7 @@
   (:import (clojure.lang ExceptionInfo)
            (java.security.interfaces RSAPublicKey)
            (net.i2p.crypto.eddsa EdDSAPublicKey)
-           (waiter.auth.jwt JwtAuthServer JwtAuthenticator JwtValidator)))
+           (waiter.auth.jwt JwtAuthenticator JwtAuthServer JwtValidator)))
 
 (defn make-jwt-auth-server
   [& {:keys [http-client jwks-url keys-cache oidc-authorize-uri oidc-token-uri]

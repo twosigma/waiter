@@ -20,7 +20,7 @@
             [waiter.curator :as curator]
             [waiter.kv :as kv])
   (:import (java.util Arrays)
-           (org.apache.curator.framework CuratorFrameworkFactory CuratorFramework)
+           (org.apache.curator.framework CuratorFramework CuratorFrameworkFactory)
            (org.apache.curator.retry RetryNTimes)))
 
 (deftest test-local-kv-store

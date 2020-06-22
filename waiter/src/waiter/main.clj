@@ -14,6 +14,7 @@
 ;; limitations under the License.
 ;;
 (ns waiter.main
+  (:gen-class)
   (:require [clj-time.core :as t]
             [clojure.java.io :as io]
             [clojure.java.shell :as sh]
@@ -26,20 +27,19 @@
             [qbits.jet.server :as server]
             [schema.core :as s]
             [waiter.config :as config]
-            [waiter.cors :as cors]
             [waiter.core :as core]
             [waiter.correlation-id :as cid]
+            [waiter.cors :as cors]
             [waiter.metrics :as metrics]
             [waiter.request-log :as rlog]
             [waiter.settings :as settings]
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
-  (:import clojure.core.async.impl.channels.ManyToManyChannel
-           java.io.IOException
-           javax.servlet.ServletInputStream
-           (org.eclipse.jetty.server AbstractConnector Server))
-  (:gen-class))
+  (:import (clojure.core.async.impl.channels ManyToManyChannel)
+           (java.io IOException)
+           (javax.servlet ServletInputStream)
+           (org.eclipse.jetty.server AbstractConnector Server)))
 
 (defn retrieve-git-version []
   (try

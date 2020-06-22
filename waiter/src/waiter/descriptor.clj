@@ -14,8 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.descriptor
-  (:require [clj-time.core :as t]
-            [clj-time.coerce :as tc]
+  (:require [clj-time.coerce :as tc]
+            [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.set :as set]
             [clojure.string :as str]

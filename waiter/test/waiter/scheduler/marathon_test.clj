@@ -22,10 +22,10 @@
             [clojure.walk :as walk]
             [slingshot.slingshot :as ss]
             [waiter.config :as config]
-            [waiter.scheduler.marathon :refer :all]
             [waiter.mesos.marathon :as marathon]
             [waiter.mesos.mesos :as mesos]
             [waiter.scheduler :as scheduler]
+            [waiter.scheduler.marathon :refer :all]
             [waiter.status-codes :refer :all]
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])

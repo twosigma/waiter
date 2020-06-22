@@ -15,7 +15,7 @@
 ;;
 (ns waiter.middleware
   (:require [clojure.core.async :as async]
-            [full.async :refer (<?? <? go-try)]
+            [full.async :refer [<? <?? go-try]]
             [waiter.util.async-utils :as au]
             [waiter.util.utils :as utils]))
 

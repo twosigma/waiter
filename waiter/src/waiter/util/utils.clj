@@ -29,18 +29,18 @@
             [waiter.status-codes :refer :all]
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu])
-  (:import clojure.core.async.impl.channels.ManyToManyChannel
-           clojure.lang.ExceptionInfo
-           java.io.OutputStreamWriter
-           java.lang.Process
-           java.net.ServerSocket
-           java.nio.ByteBuffer
+  (:import (clojure.core.async.impl.channels ManyToManyChannel)
+           (clojure.lang ExceptionInfo)
+           (java.io OutputStreamWriter)
+           (java.lang Process)
+           (java.net ServerSocket)
+           (java.nio ByteBuffer)
            (java.nio.charset StandardCharsets)
-           java.util.concurrent.ThreadLocalRandom
-           java.util.regex.Pattern
-           javax.servlet.ServletResponse
            (java.security MessageDigest)
            (java.util Base64 UUID)
+           (java.util.concurrent ThreadLocalRandom)
+           (java.util.regex Pattern)
+           (javax.servlet ServletResponse)
            (org.joda.time DateTime)
            (schema.utils ValidationError)))
 

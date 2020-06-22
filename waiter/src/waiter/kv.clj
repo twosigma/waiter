@@ -27,8 +27,8 @@
             [waiter.metrics :as metrics]
             [waiter.util.cache-utils :as cu]
             [waiter.util.utils :as utils])
-  (:import java.util.Arrays
-           org.apache.curator.framework.CuratorFramework))
+  (:import (java.util Arrays)
+           (org.apache.curator.framework CuratorFramework)))
 
 (defprotocol KeyValueStore
   "A protocol for a simple key value store."

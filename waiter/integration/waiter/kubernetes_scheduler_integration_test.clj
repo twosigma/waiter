@@ -1,9 +1,9 @@
 (ns waiter.kubernetes-scheduler-integration-test
   (:require [clojure.data.json :as json]
             [clojure.string :as str]
-            [clojure.walk :as walk]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
+            [clojure.walk :as walk]
             [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]))
 

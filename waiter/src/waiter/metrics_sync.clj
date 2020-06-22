@@ -19,7 +19,6 @@
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
-            [clojure.string :as str]
             [metrics.counters :as counters]
             [metrics.meters :as meters]
             [metrics.timers :as timers]

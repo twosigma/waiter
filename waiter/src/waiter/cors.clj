@@ -18,12 +18,11 @@
             [clojure.tools.logging :as log]
             [metrics.counters :as counters]
             [waiter.metrics :as metrics]
-            [waiter.service-description :as sd]
             [waiter.schema :as schema]
             [waiter.status-codes :refer :all]
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils])
-  (:import java.util.regex.Pattern))
+  (:import (java.util.regex Pattern)))
 
 (defprotocol CorsValidator
   "A simple protocol for validating CORS requests.

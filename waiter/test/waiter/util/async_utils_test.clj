@@ -17,7 +17,7 @@
   (:require [clojure.core.async :as async]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
-            [full.async :refer (<?? <? go-try)]
+            [full.async :refer [<? <?? go-try]]
             [metrics.histograms :as histograms]
             [waiter.util.async-utils :refer :all])
   (:import (java.util.concurrent Executors)))

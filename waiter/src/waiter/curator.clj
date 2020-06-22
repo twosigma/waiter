@@ -16,17 +16,15 @@
 (ns waiter.curator
   (:require [clojure.tools.logging :as log]
             [taoensso.nippy :as nippy])
-  (:import clojure.lang.ExceptionInfo
-           java.io.Closeable
-           java.net.ServerSocket
-           java.util.concurrent.TimeUnit
-           org.apache.curator.framework.CuratorFramework
-           org.apache.curator.framework.recipes.locks.InterProcessMutex
-           org.apache.curator.test.TestingServer
-           org.apache.zookeeper.KeeperException$NodeExistsException
-           org.apache.zookeeper.KeeperException$NoNodeException
-           org.apache.zookeeper.CreateMode
-           org.apache.zookeeper.data.Stat))
+  (:import (clojure.lang ExceptionInfo)
+           (java.io Closeable)
+           (java.net ServerSocket)
+           (java.util.concurrent TimeUnit)
+           (org.apache.curator.framework CuratorFramework)
+           (org.apache.curator.framework.recipes.locks InterProcessMutex)
+           (org.apache.curator.test TestingServer)
+           (org.apache.zookeeper CreateMode KeeperException$NodeExistsException KeeperException$NoNodeException)
+           (org.apache.zookeeper.data Stat)))
 
 (defn close
   [^Closeable c]

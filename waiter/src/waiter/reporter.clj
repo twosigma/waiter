@@ -22,12 +22,12 @@
             [waiter.metrics :as metrics]
             [waiter.schema :as schema]
             [waiter.util.date-utils :as du])
-  (:import (com.codahale.metrics ConsoleReporter MetricFilter MetricRegistry ScheduledReporter Clock)
+  (:import (com.codahale.metrics Clock ConsoleReporter MetricFilter MetricRegistry ScheduledReporter)
            (com.codahale.metrics.graphite Graphite GraphiteSender PickledGraphite)
            (java.io IOException PrintStream)
-           java.net.InetSocketAddress
+           (java.net InetSocketAddress)
            (java.text DecimalFormat)
-           java.util.concurrent.TimeUnit))
+           (java.util.concurrent TimeUnit)))
 
 (defprotocol CodahaleReporter
   "A reporter for codahale metrics"

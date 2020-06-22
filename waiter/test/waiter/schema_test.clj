@@ -14,8 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.schema-test
-  (:use [clojure.test])
   (:require [clojure.string :as str]
+            [clojure.test :refer :all]
             [schema.core :as s]
             [waiter.schema :refer :all]))
 

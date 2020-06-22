@@ -15,8 +15,8 @@
 ;;
 (ns waiter.util.cache-utils
   (:require [clojure.tools.logging :as log])
-  (:import [com.google.common.cache Cache CacheBuilder RemovalListener RemovalNotification]
-           [java.util.concurrent TimeUnit]))
+  (:import (com.google.common.cache Cache CacheBuilder RemovalListener RemovalNotification)
+           (java.util.concurrent TimeUnit)))
 
 (defn cache-factory
   "Creates a Guava cache.

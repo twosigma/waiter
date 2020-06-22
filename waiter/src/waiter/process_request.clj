@@ -20,7 +20,6 @@
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [full.async :as fa]
-            [metrics.core]
             [metrics.counters :as counters]
             [metrics.histograms :as histograms]
             [metrics.meters :as meters]
@@ -47,7 +46,7 @@
            (java.io ByteArrayOutputStream InputStream IOException)
            (java.nio ByteBuffer)
            (java.util.concurrent TimeoutException)
-           (javax.servlet ServletOutputStream ReadListener ServletInputStream)
+           (javax.servlet ReadListener ServletInputStream ServletOutputStream)
            (org.eclipse.jetty.client HttpClient)
            (org.eclipse.jetty.io EofException)
            (org.eclipse.jetty.server HttpChannel HttpOutput Response)))
