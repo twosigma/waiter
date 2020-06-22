@@ -14,9 +14,9 @@
 ;; limitations under the License.
 ;;
 (ns waiter.zk-test
-  (:import (org.apache.curator.test TestingServer)
+  (:import (org.apache.curator.framework CuratorFrameworkFactory)
            (org.apache.curator.retry BoundedExponentialBackoffRetry)
-           (org.apache.curator.framework CuratorFrameworkFactory)))
+           (org.apache.curator.test TestingServer)))
 
 ;; https://github.com/Factual/skuld/blob/master/test/skuld/zk_test.clj
 (defmacro with-zk

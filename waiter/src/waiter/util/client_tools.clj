@@ -32,12 +32,12 @@
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
-  (:import (java.net HttpCookie URI)
-           (java.io ByteArrayInputStream)
+  (:import (java.io ByteArrayInputStream)
+           (java.net HttpCookie URI)
            (java.nio ByteBuffer)
-           (java.util.concurrent Callable Future Executors)
-           (org.joda.time Period)
-           (org.joda.time.format PeriodFormatterBuilder)))
+           (java.util.concurrent Callable Executors Future)
+           (org.joda.time.format PeriodFormatterBuilder)
+           (org.joda.time Period)))
 
 (def ^:const WAITER-PORT 9091)
 (def ^:const HTTP-SCHEME "http://")

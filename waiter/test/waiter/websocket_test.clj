@@ -21,7 +21,7 @@
             [waiter.cookie-support :as cs]
             [waiter.correlation-id :as cid]
             [waiter.status-codes :refer :all]
-            [waiter.test-helpers]
+            [waiter.test-helpers :refer :all]
             [waiter.websocket :refer :all])
   (:import (java.net HttpCookie SocketTimeoutException URLDecoder)
            (java.util ArrayList Collection)

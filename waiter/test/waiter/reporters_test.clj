@@ -19,12 +19,12 @@
             [clojure.test :refer [deftest is]] ;; not using :refer :all because clojure.test has "report" that conflicts with waiter.reporter/report
             [metrics.counters :as counters]
             [waiter.metrics :as metrics]
-            [waiter.test-helpers :refer :all]
-            [waiter.reporter :refer :all])
+            [waiter.reporter :refer :all]
+            [waiter.test-helpers :refer :all])
   (:import (clojure.lang ExceptionInfo)
            (com.codahale.metrics ConsoleReporter)
            (com.codahale.metrics.graphite GraphiteSender)
-           (java.io PrintStream ByteArrayOutputStream)))
+           (java.io ByteArrayOutputStream PrintStream)))
 
 (deftest console-reporter-bad-schema
   (is (thrown-with-msg? ExceptionInfo #"period-ms missing-required-key"

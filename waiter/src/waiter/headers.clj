@@ -16,8 +16,8 @@
 (ns waiter.headers
   (:require [cheshire.core :as json]
             [clojure.data.codec.base64 :as b64]
-            [clojure.tools.logging :as log]
             [clojure.string :as str]
+            [clojure.tools.logging :as log]
             [plumbing.core :as pc]
             [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils]))

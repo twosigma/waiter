@@ -30,7 +30,7 @@
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils]
             [waiter.work-stealing :as work-stealing])
-  (:import clojure.lang.PersistentQueue))
+  (:import (clojure.lang PersistentQueue)))
 
 (defn- healthy?
   "Predicate on instances containing the :healthy status tag and optionally the :expired status tag."

@@ -14,8 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.scheduler.composite-test
-  (:require [clj-time.core :as t]
-            [clj-time.coerce :as tc]
+  (:require [clj-time.coerce :as tc]
+            [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.string :as str]
             [clojure.test :refer :all]
@@ -23,7 +23,7 @@
             [waiter.scheduler :as scheduler]
             [waiter.scheduler.composite :refer :all]
             [waiter.test-helpers :as test-helpers])
-  (:import [clojure.lang ExceptionInfo]))
+  (:import (clojure.lang ExceptionInfo)))
 
 (deftest test-process-invalid-services
   (let [delete-service-atom (atom [])

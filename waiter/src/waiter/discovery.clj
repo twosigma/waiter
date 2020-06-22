@@ -17,8 +17,7 @@
   (:require [clojure.tools.logging :as log])
   (:import (java.net Inet4Address)
            (org.apache.curator.framework CuratorFramework)
-           (org.apache.curator.x.discovery ServiceCache ServiceDiscovery ServiceDiscoveryBuilder
-                                           ServiceInstance ServiceInstanceBuilder UriSpec)))
+           (org.apache.curator.x.discovery ServiceCache ServiceDiscovery ServiceDiscoveryBuilder ServiceInstance ServiceInstanceBuilder UriSpec)))
 
 (defn- ->service-instance
   [id service-name {:keys [host port]}]

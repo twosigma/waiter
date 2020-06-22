@@ -22,7 +22,7 @@
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [digest]
-            [full.async :refer (<?? <? go-try)]
+            [full.async :refer [<? <?? go-try]]
             [metrics.core]
             [metrics.counters :as counters]
             [metrics.meters :as meters]
@@ -74,17 +74,16 @@
             [waiter.websocket :as ws]
             [waiter.work-stealing :as work-stealing])
   (:import (java.net InetAddress URI)
-           java.util.concurrent.Executors
+           (java.util.concurrent Executors)
            (javax.servlet ServletRequest)
-           org.apache.curator.framework.CuratorFrameworkFactory
-           org.apache.curator.framework.api.CuratorEventType
-           org.apache.curator.framework.api.CuratorListener
-           org.apache.curator.framework.recipes.leader.LeaderLatch
-           org.apache.curator.retry.BoundedExponentialBackoffRetry
-           org.eclipse.jetty.client.HttpClient
-           org.eclipse.jetty.client.util.BasicAuthentication$BasicResult
-           org.eclipse.jetty.websocket.client.WebSocketClient
-           (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse ServletUpgradeRequest)))
+           (org.apache.curator.framework.api CuratorEventType CuratorListener)
+           (org.apache.curator.framework CuratorFrameworkFactory)
+           (org.apache.curator.framework.recipes.leader LeaderLatch)
+           (org.apache.curator.retry BoundedExponentialBackoffRetry)
+           (org.eclipse.jetty.client HttpClient)
+           (org.eclipse.jetty.client.util BasicAuthentication$BasicResult)
+           (org.eclipse.jetty.websocket.client WebSocketClient)
+           (org.eclipse.jetty.websocket.servlet ServletUpgradeRequest ServletUpgradeResponse)))
 
 (defn routes-mapper
   "Returns a map containing a keyword handler and the parsed route-params based on the request uri."

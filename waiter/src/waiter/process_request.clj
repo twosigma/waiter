@@ -47,7 +47,7 @@
            (java.io ByteArrayOutputStream InputStream IOException)
            (java.nio ByteBuffer)
            (java.util.concurrent TimeoutException)
-           (javax.servlet ServletOutputStream ReadListener ServletInputStream)
+           (javax.servlet ReadListener ServletInputStream ServletOutputStream)
            (org.eclipse.jetty.client HttpClient)
            (org.eclipse.jetty.io EofException)
            (org.eclipse.jetty.server HttpChannel HttpOutput Response)))

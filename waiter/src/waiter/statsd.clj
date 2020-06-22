@@ -22,7 +22,7 @@
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
   (:import (clojure.lang PersistentQueue)
-           (java.net InetAddress DatagramPacket DatagramSocket)))
+           (java.net DatagramPacket DatagramSocket InetAddress)))
 
 (defn sanitize
   "Replaces all non-alphanumeric / dash /

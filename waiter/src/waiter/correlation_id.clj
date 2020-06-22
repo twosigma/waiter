@@ -14,8 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.correlation-id
-  (:require [clojure.tools.logging :as log]
-            [clojure.string :as str])
+  (:require [clojure.string :as str]
+            [clojure.tools.logging :as log])
   (:import (clojure.lang Var)
            (java.util Collections)
            (org.apache.log4j Appender EnhancedPatternLayout Logger PatternLayout)))

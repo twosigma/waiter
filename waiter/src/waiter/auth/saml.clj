@@ -26,10 +26,10 @@
             [ring.util.codec :as codec]
             [ring.util.response :as response]
             [waiter.auth.authentication :as auth]
+            [waiter.metrics :as metrics]
             [waiter.status-codes :refer :all]
             [waiter.util.date-utils :as du]
-            [waiter.util.utils :as utils]
-            [waiter.metrics :as metrics])
+            [waiter.util.utils :as utils])
   (:import (java.io ByteArrayInputStream ByteArrayOutputStream)
            (java.security.cert CertificateFactory)
            (java.util.zip Deflater DeflaterOutputStream)

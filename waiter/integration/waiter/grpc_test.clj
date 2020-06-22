@@ -24,9 +24,7 @@
             [waiter.correlation-id :as cid]
             [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all])
-  (:import (com.twosigma.waiter.courier
-             CourierReply CourierSummary GrpcClient
-             GrpcClient$CancellationPolicy GrpcClient$RpcResult StateReply)
+  (:import (com.twosigma.waiter.courier CourierReply CourierSummary GrpcClient GrpcClient$CancellationPolicy GrpcClient$RpcResult StateReply)
            (io.grpc Status)
            (java.util.concurrent CountDownLatch)
            (java.util.function Function)))

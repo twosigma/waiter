@@ -18,7 +18,6 @@
             [clojure.core.async :as async]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
-            [clojure.string :as str]
             [metrics.core :as mc]
             [metrics.counters :as counters]
             [metrics.gauges :as gauges]

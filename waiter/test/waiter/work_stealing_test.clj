@@ -19,9 +19,8 @@
             [clojure.test :refer :all]
             [clojure.walk :as walk]
             [waiter.status-codes :refer :all]
-            [waiter.test-helpers]
-            [waiter.util.semaphore :as semaphore]
             [waiter.test-helpers :refer :all]
+            [waiter.util.semaphore :as semaphore]
             [waiter.util.utils :as utils]
             [waiter.work-stealing :refer :all]))
 

@@ -29,7 +29,7 @@
             [waiter.status-codes :refer :all]
             [waiter.util.utils :as utils])
   (:import (java.util.concurrent ThreadPoolExecutor)
-           (org.ietf.jgss GSSManager GSSCredential GSSContext GSSException)))
+           (org.ietf.jgss GSSContext GSSCredential GSSException GSSManager)))
 
 (def ^:const negotiate-prefix "Negotiate ")
 

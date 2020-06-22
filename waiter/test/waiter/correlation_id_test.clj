@@ -16,11 +16,11 @@
 (ns waiter.correlation-id-test
   (:require [clojure.string :as str]
             [clojure.test :refer :all]
-            [full.async :refer (<?? <? go-try)]
+            [full.async :refer [<? <?? go-try]]
             [waiter.correlation-id :refer :all])
-  (:import java.util.UUID
+  (:import (java.util UUID)
            (org.apache.log4j Appender Category ConsoleAppender EnhancedPatternLayout Logger PatternLayout Priority SimpleLayout)
-           org.apache.log4j.spi.LoggingEvent))
+           (org.apache.log4j.spi LoggingEvent)))
 
 (deftest test-http-object->correlation-id
   (let [test-cases [{:name "http-object->correlation-id:nil-input",

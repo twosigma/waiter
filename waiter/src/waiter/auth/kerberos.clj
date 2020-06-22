@@ -20,8 +20,8 @@
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [waiter.auth.authentication :as auth]
-            [waiter.authorization :as authz]
             [waiter.auth.spnego :as spnego]
+            [waiter.authorization :as authz]
             [waiter.metrics :as metrics]
             [waiter.status-codes :refer :all]
             [waiter.util.utils :as utils])
