@@ -20,7 +20,6 @@
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [full.async :as fa]
-            [metrics.core]
             [metrics.counters :as counters]
             [metrics.histograms :as histograms]
             [metrics.meters :as meters]

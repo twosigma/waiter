@@ -23,7 +23,6 @@
             [clojure.tools.logging :as log]
             [digest]
             [full.async :refer [<? <?? go-try]]
-            [metrics.core]
             [metrics.counters :as counters]
             [metrics.meters :as meters]
             [metrics.timers :as timers]

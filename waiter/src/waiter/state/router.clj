@@ -18,7 +18,6 @@
             [clojure.core.async :as async]
             [clojure.tools.logging :as log]
             [digest]
-            [metrics.core]
             [waiter.discovery :as discovery]
             [waiter.util.date-utils :as du]))
 

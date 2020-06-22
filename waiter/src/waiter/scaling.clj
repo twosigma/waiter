@@ -18,7 +18,6 @@
             [clojure.core.async :as async]
             [clojure.set :as set]
             [clojure.tools.logging :as log]
-            [metrics.core]
             [metrics.counters :as counters]
             [metrics.timers :as timers]
             [plumbing.core :as pc]

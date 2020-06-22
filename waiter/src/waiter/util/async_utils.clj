@@ -17,7 +17,6 @@
   (:require [clojure.core.async :as async]
             [clojure.data.priority-map :as priority-map]
             [clojure.tools.logging :as log]
-            [metrics.core]
             [metrics.histograms :as histograms]
             [waiter.correlation-id :as cid])
   (:import (clojure.core.async.impl.channels ManyToManyChannel)

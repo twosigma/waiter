@@ -18,7 +18,6 @@
             [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.tools.logging :as log]
-            [metrics.core]
             [metrics.counters :as counters]
             [metrics.meters :as meters]
             [metrics.timers :as timers]
