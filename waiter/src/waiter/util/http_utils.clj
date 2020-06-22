@@ -26,11 +26,11 @@
   (:import (java.net URI)
            (java.util ArrayList)
            (org.apache.commons.codec.binary Base64)
-           (org.eclipse.jetty.client.api Authentication$Result Request)
            (org.eclipse.jetty.client HttpClient)
+           (org.eclipse.jetty.client.api Authentication$Result Request)
            (org.eclipse.jetty.http HttpField HttpHeader)
-           (org.eclipse.jetty.http2.client.http HttpClientTransportOverHTTP2)
            (org.eclipse.jetty.http2.client HTTP2Client)
+           (org.eclipse.jetty.http2.client.http HttpClientTransportOverHTTP2)
            (org.eclipse.jetty.util HttpCookieStore$Empty)
            (org.ietf.jgss GSSContext GSSManager GSSName Oid)))
 
