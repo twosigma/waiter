@@ -596,7 +596,7 @@
     (ss/try+
       (let [service (service-id->service this service-id)]
         (kill-service-instance this instance service)
-        (scheduler/log-service-instance instance :kill :info)
+        (scheduler/log-service-instance instance :kill :info [:id :service-id :started-at :healthy? :health-check-status :flags :exit-code :host :port :extra-ports :log-directory :message])
         {:instance-id id
          :killed? true
          :message "Successfully killed instance"

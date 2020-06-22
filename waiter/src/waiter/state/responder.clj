@@ -480,7 +480,7 @@
 
 (defn- update-in-with-log-instance
   [mp log-body event-type log-level key-sequence update-fn func]
-  (scheduler/log-service-instance log-body event-type log-level)
+  (scheduler/log-service-instance log-body event-type log-level [:id :service-id :started-at :healthy? :health-check-status :flags :exit-code :host :port :extra-ports :log-directory :message])
   (update-in mp key-sequence update-fn func))
 
 (defn- unblacklist-instance
@@ -600,7 +600,8 @@
         (fn update-state-by-blacklisting-instance-fn [current-state correlation-id instance-id expiry-time-ms]
           (let [actual-expiry-time (t/plus (t/now) (t/millis expiry-time-ms))]
             (cid/cinfo correlation-id "blacklisting instance" instance-id "for" expiry-time-ms "ms.")
-            (scheduler/log-service-instance (assoc (get (:id->instance current-state) instance-id) :blacklist-period-ms expiry-time-ms) :eject :info)
+            (scheduler/log-service-instance (assoc (get (:id->instance current-state) instance-id) :blacklist-period-ms expiry-time-ms) :eject :info
+                                            [:id :service-id :started-at :healthy? :health-check-status :flags :exit-code :host :port :extra-ports :log-directory :message])
             (trigger-unblacklist-process-fn correlation-id instance-id expiry-time-ms unblacklist-instance-chan)
             (update-instance-id->blacklist-expiry-time-fn current-state #(assoc % instance-id actual-expiry-time))))
         default-load-balancing (:load-balancing initial-state)]
