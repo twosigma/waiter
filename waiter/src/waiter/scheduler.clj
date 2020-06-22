@@ -734,13 +734,13 @@
 
 (defn add-instance-to-buffered-collection!
   "Helper function to add/remove entries into the transient store"
-  ([transient-store max-instances-to-keep service-id instance-entry initial-value-fn remove-fn]
-   (swap! transient-store
-          (fn [service-id->failed-instances]
-            (update-in service-id->failed-instances [service-id]
-                       #(cond-> (or % (initial-value-fn))
-                                (= max-instances-to-keep (count %)) (remove-fn)
-                                true (conj instance-entry)))))))
+  [transient-store max-instances-to-keep service-id instance-entry initial-value-fn remove-fn]
+  (swap! transient-store
+         (fn [service-id->failed-instances]
+           (update-in service-id->failed-instances [service-id]
+                      #(cond-> (or % (initial-value-fn))
+                               (= max-instances-to-keep (count %)) (remove-fn)
+                               true (conj instance-entry))))))
 
 (defn add-to-store-and-track-instance!
   [transient-store max-instances-to-keep service-id instance event-type log-level initial-value-fn remove-fn]
