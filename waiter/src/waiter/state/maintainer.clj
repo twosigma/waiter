@@ -638,7 +638,7 @@
                                                         :num-expired-unhealthy-instances (count expired-unhealthy-instances)
                                                         :num-healthy-instances (count healthy-instances)
                                                         :num-unhealthy-instance-ids (count unhealthy-instance-ids)
-                                                        :service-d service-id}
+                                                        :service-id service-id}
                                                        (if (seq new-instance-ids) (str "New healthy instances: " new-instance-ids ".") "")
                                                        (if (seq rem-instance-ids) (str "Removed healthy instances: " rem-instance-ids ".") "")
                                                        (if (seq unhealthy-instance-ids) (str "Unhealthy instances: " unhealthy-instance-ids ".") ""))))
