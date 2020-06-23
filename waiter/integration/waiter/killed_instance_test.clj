@@ -22,31 +22,36 @@
             [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]))
 
-(deftest ^:parallel ^:integration-slow ^:resource-heavy test-delegate-kill-instance
+(deftest ^:parallel ^:integration-slow ^:resource-heavy test-scale-down-via-delegated-kill
+  ;; relies on simple distribution spreading instances across routers, in particular
+  ;; to a router that is not triggering the kills (i.e. the leader performing scaling logic)
   (testing-using-waiter-url
-    (let [requests-per-thread 5
-          router-count (count (routers waiter-url))
-          parallelism router-count
-          extra-headers {:x-waiter-min-instances 1
-                         :x-waiter-distribution-scheme "simple"
-                         :x-waiter-scale-down-factor 0.99
-                         :x-waiter-scale-up-factor 0.99
-                         :x-kitchen-delay-ms 5000
-                         :x-waiter-name (rand-name)}
-          canceled (promise)
-          request-fn (fn []
-                       (log/info "making kitchen request")
-                       (make-request-with-debug-info extra-headers #(make-kitchen-request waiter-url %)))
-          _ (log/info "making canary request")
-          {:keys [service-id] :as canary-response} (request-fn)]
-      (assert-response-status canary-response http-200-ok)
-      (with-service-cleanup
-        service-id
-        (future (parallelize-requests parallelism requests-per-thread #(request-fn)
-                                      :verbose true :canceled? (partial realized? canceled)))
-        (wait-for #(<= router-count (num-instances waiter-url service-id)) :timeout 180)
-        (deliver canceled :canceled)
-        (wait-for #(= 0 (num-instances waiter-url service-id)) :timeout 180)))))
+    (let [router-count (count (routers waiter-url))]
+      (if (> router-count 1)
+        (let [requests-per-thread 5
+              parallelism router-count
+              min-instances 1
+              extra-headers {:x-kitchen-delay-ms 5000
+                             :x-waiter-distribution-scheme "simple"
+                             :x-waiter-min-instances min-instances
+                             :x-waiter-name (rand-name)
+                             :x-waiter-scale-down-factor 0.99
+                             :x-waiter-scale-up-factor 0.99}
+              canceled (promise)
+              request-fn (fn []
+                           (log/info "making kitchen request")
+                           (make-request-with-debug-info extra-headers #(make-kitchen-request waiter-url %)))
+              _ (log/info "making canary request")
+              {:keys [service-id] :as canary-response} (request-fn)]
+          (assert-response-status canary-response http-200-ok)
+          (with-service-cleanup
+            service-id
+            (future (parallelize-requests parallelism requests-per-thread #(request-fn)
+                                          :verbose true :canceled? (partial realized? canceled)))
+            (wait-for #(<= router-count (num-instances waiter-url service-id)) :timeout 180)
+            (deliver canceled :canceled)
+            (wait-for #(<= min-instances (num-instances waiter-url service-id)) :timeout 180)))
+        (log/warn "skipping test since multiple routers were not detected")))))
 
 (defn- trigger-blacklisting-of-instance [target-url request-headers cookies]
   (log/info "issuing request which will respond with a 503 on" target-url)
