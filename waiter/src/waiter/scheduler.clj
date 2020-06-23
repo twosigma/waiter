@@ -47,7 +47,7 @@
   [& args]
   `(log/log "Scheduler" :debug nil (print-str ~@args)))
 
-(def instance-tracker-keys [:blackist-period-ms
+(def instance-tracker-keys [:blacklist-period-ms
                             :exit-code
                             :extra-ports
                             :flags
