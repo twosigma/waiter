@@ -47,6 +47,37 @@
   [& args]
   `(log/log "Scheduler" :debug nil (print-str ~@args)))
 
+(def instance-tracker-keys [:blacklist-period-ms
+                            :exit-code
+                            :extra-ports
+                            :flags
+                            :health-check-status
+                            :healthy?
+                            :host
+                            :id
+                            :log-directory
+                            :message
+                            :port
+                            :service-id
+                            :started-at])
+
+(defn log-service-instance
+  "Log InstanceTracker-specific messages."
+  [instance event-type log-level]
+  (let [extra-ports (count (:extra-ports instance))
+        instance-to-log (select-keys instance instance-tracker-keys)
+        flags-map (->> instance-to-log
+                       :flags
+                       (map (fn [flag] [(str "flag_" (name flag)) true]))
+                       (into {}))
+        log-map (assoc (merge
+                         (dissoc instance-to-log :flags)
+                         flags-map)
+                    :extra-ports extra-ports
+                    :timestamp (t/now)
+                    :event-type event-type)]
+    (log/log "InstanceTracker" log-level nil (utils/clj->json log-map))))
+
 (defrecord Service
   [^String id
    instances
@@ -554,7 +585,7 @@
                         (assoc instances :active-instances active-instances))))))))
 
 (defn- update-scheduler-state
-  "Queries marathon, sends data on service and instance statuses to router state maintainer, and returns scheduler state"
+  "Queries given scheduler, sends data on service and instance statuses to router state maintainer, and returns scheduler state"
   [scheduler-name get-service->instances-fn service-id->service-description-fn available? failed-check-threshold service-id->health-check-context]
   (let [^DateTime request-services-time (t/now)
         timing-message-fn (fn [] (let [^DateTime now (t/now)]
@@ -737,6 +768,12 @@
                          (= max-instances-to-keep (count %)) (remove-fn)
                          true (conj instance-entry))))))
 
+(defn add-to-store-and-track-failed-instance!
+  [transient-store max-instances-to-keep service-id instance]
+  (log-service-instance instance :fail :info)
+  (add-instance-to-buffered-collection! transient-store max-instances-to-keep service-id instance
+                                        (fn [] #{}) (fn [instances] (-> (sort-instances instances) (rest) (set)))))
+
 (defn environment
   "Returns a new environment variable map with some basic variables added in"
   [service-id {:strs [concurrency-level cpus env mem run-as-user]} service-id->password-fn home-path]
@@ -882,16 +919,17 @@
                  live-service-id->launch-tracker]
       service-id
       (let [healthy-instances (get service-id->healthy-instances service-id)
+            healthy-instances? (set healthy-instances)
             instance-counts' (get service-id->instance-counts service-id instance-counts-zero)
             known-instances' (->> service-id
                                   (get service-id->unhealthy-instances)
                                   (concat healthy-instances))
             known-instance-ids' (->> known-instances' (map :id) set)
             previously-known-instance? (comp known-instance-ids :id)
-            new-instance-ids (->> known-instances'
-                                  (remove previously-known-instance?)
-                                  (sort instance-comparator)
-                                  (mapv :id))
+            new-instances (->> known-instances'
+                               (remove previously-known-instance?)
+                               (sort instance-comparator))
+            new-instance-ids (mapv :id new-instances)
             removed-instance-ids (set/difference known-instance-ids known-instance-ids')
             ;; Compute updated state for not-yet-scheduled instances of this service
             {:keys [new-instance-start-times outstanding-instance-start-times]}
@@ -918,6 +956,9 @@
             (when leader?
               (statsd/histo! metric-group "startup_time"
                              (du/interval->nanoseconds duration)))))
+        (doseq [new-instance new-instances]
+          (when (contains? healthy-instances? new-instance)
+            (log-service-instance new-instance :launch :info)))
         ;; tracker-state' for this service
         (assoc tracker-state
           :instance-counts instance-counts'

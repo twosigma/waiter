@@ -628,11 +628,21 @@
                                                                               (dissoc service-id->instability-issue service-id))]
                                          (when (or (not= (get service-id->healthy-instances service-id) healthy-instances)
                                                    (not= (get service-id->unhealthy-instances service-id) unhealthy-instances))
-                                           (let [curr-instance-ids (set (map :id healthy-instances))
-                                                 prev-instance-ids (set (map :id (get service-id->healthy-instances service-id)))
-                                                 new-instance-ids (filterv (complement prev-instance-ids) curr-instance-ids)
-                                                 rem-instance-ids (filterv (complement curr-instance-ids) prev-instance-ids)
+                                           (let [curr-instances (set healthy-instances)
+                                                 prev-instances (set (get service-id->healthy-instances service-id))
+                                                 new-instances (filter (complement prev-instances) curr-instances)
+                                                 rem-instances (filter (complement curr-instances) prev-instances)
+                                                 new-instance-ids (mapv :id new-instances)
+                                                 rem-instance-ids (mapv :id rem-instances)
+                                                 prev-unhealthy-instances (set (get service-id->unhealthy-instances service-id))
+                                                 new-unhealthy-instances (filter (complement prev-unhealthy-instances) unhealthy-instances)
                                                  unhealthy-instance-ids (mapv :id (get service-id->unhealthy-instances' service-id))]
+                                             (doseq [rem-instance rem-instances]
+                                               (scheduler/log-service-instance rem-instance :remove :info))
+                                             (doseq [new-healthy-instance new-instances]
+                                               (scheduler/log-service-instance new-healthy-instance :healthy :info))
+                                             (doseq [new-unhealthy-instance new-unhealthy-instances]
+                                               (scheduler/log-service-instance new-unhealthy-instance :unhealthy :info))
                                              (log/info "update-healthy-instances:" service-id "has"
                                                        {:num-expired-healthy-instances (count expired-healthy-instances)
                                                         :num-expired-unhealthy-instances (count expired-unhealthy-instances)
@@ -642,6 +652,12 @@
                                                        (if (seq new-instance-ids) (str "New healthy instances: " new-instance-ids ".") "")
                                                        (if (seq rem-instance-ids) (str "Removed healthy instances: " rem-instance-ids ".") "")
                                                        (if (seq unhealthy-instance-ids) (str "Unhealthy instances: " unhealthy-instance-ids ".") ""))))
+                                         (when (not= (get service-id->expired-instances service-id) expired-instances)
+                                            (let [cur-exp-instances (set expired-instances)
+                                                  old-exp-instances (set (get service-id->expired-instances service-id))
+                                                  delta-exp-instances (filter (complement old-exp-instances) cur-exp-instances)]
+                                              (doseq [expired-instance delta-exp-instances]
+                                                (scheduler/log-service-instance expired-instance :expire :info))))
                                          (assoc loop-state
                                            :service-id->deployment-error service-id->deployment-error'
                                            :service-id->expired-instances service-id->expired-instances'
