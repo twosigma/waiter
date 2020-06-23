@@ -47,36 +47,36 @@
   [& args]
   `(log/log "Scheduler" :debug nil (print-str ~@args)))
 
-(def key-seq [:id
-              :service-id
-              :started-at
-              :healthy?
-              :health-check-status
-              :flags
-              :exit-code
-              :host
-              :port
-              :extra-ports
-              :log-directory
-              :message
-              :blackist-period-ms])
+(def instance-tracker-keys [:blackist-period-ms
+                            :exit-code
+                            :extra-ports
+                            :flags
+                            :health-check-status
+                            :healthy?
+                            :host
+                            :id
+                            :log-directory
+                            :message
+                            :port
+                            :service-id
+                            :started-at])
 
 (defn log-service-instance
   "Log InstanceTracker-specific messages."
   [instance event-type log-level]
   (let [extra-ports (count (:extra-ports instance))
-        instance-to-log (select-keys instance key-seq)
+        instance-to-log (select-keys instance instance-tracker-keys)
         flags-map (->> instance-to-log
                        :flags
-                       (map (fn [flag] [flag true]))
-                       (into {}))]
-    (log/log "InstanceTracker" log-level nil (utils/clj->json
-                                               (assoc (merge
-                                                        (dissoc instance-to-log :flags)
-                                                        flags-map)
-                                                 :extra-ports extra-ports
-                                                 :timestamp (t/now)
-                                                 :event-type event-type)))))
+                       (map (fn [flag] [(str "flag_" (name flag)) true]))
+                       (into {}))
+        log-map (assoc (merge
+                         (dissoc instance-to-log :flags)
+                         flags-map)
+                    :extra-ports extra-ports
+                    :timestamp (t/now)
+                    :event-type event-type)]
+    (log/log "InstanceTracker" log-level nil (utils/clj->json log-map))))
 
 (defrecord Service
   [^String id
@@ -768,10 +768,11 @@
                          (= max-instances-to-keep (count %)) (remove-fn)
                          true (conj instance-entry))))))
 
-(defn add-to-store-and-track-instance!
-  [transient-store max-instances-to-keep service-id instance event-type log-level initial-value-fn remove-fn]
-  (log-service-instance instance event-type log-level)
-  (add-instance-to-buffered-collection! transient-store max-instances-to-keep service-id instance initial-value-fn remove-fn))
+(defn add-to-store-and-track-failed-instance!
+  [transient-store max-instances-to-keep service-id instance]
+  (log-service-instance instance :fail :info)
+  (add-instance-to-buffered-collection! transient-store max-instances-to-keep service-id instance
+                                        (fn [] #{}) (fn [instances] (-> (sort-instances instances) (rest) (set)))))
 
 (defn environment
   "Returns a new environment variable map with some basic variables added in"
@@ -956,7 +957,7 @@
               (statsd/histo! metric-group "startup_time"
                              (du/interval->nanoseconds duration)))))
         (doseq [new-instance new-instances]
-          (when (healthy-instances? new-instance)
+          (when (contains? healthy-instances? new-instance)
             (log-service-instance new-instance :launch :info)))
         ;; tracker-state' for this service
         (assoc tracker-state

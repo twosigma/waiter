@@ -206,9 +206,8 @@
                                               (not (killed-by-k8s? newest-failure))
                                               (assoc :exit-code (:exitCode newest-failure)))
                     max-instances-to-keep 10]
-                (scheduler/add-to-store-and-track-instance!
-                  service-id->failed-instances-transient-store max-instances-to-keep service-id newest-failure-instance
-                  :fail :info (fn [] #{}) (fn [instances] (-> (scheduler/sort-instances instances) (rest) (set))))))))))
+                (scheduler/add-to-store-and-track-failed-instance!
+                  service-id->failed-instances-transient-store max-instances-to-keep service-id newest-failure-instance)))))))
     (catch Throwable e
       (log/error e "error converting failed pod to waiter service instance" pod)
       (comment "Returning nil on failure."))))
