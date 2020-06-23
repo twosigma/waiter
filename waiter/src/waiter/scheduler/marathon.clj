@@ -364,7 +364,7 @@
           {:keys [killed?] :as kill-result} (process-kill-instance-request marathon-api service-id id params)]
       (if killed?
         (do
-          (scheduler/log-service-instance instance :kill :info [:id :service-id :started-at :healthy? :health-check-status :flags :exit-code :host :port :extra-ports :log-directory :message])
+          (scheduler/log-service-instance instance :kill :info)
           (swap! service-id->kill-info-store dissoc service-id))
         (swap! service-id->kill-info-store update-in [service-id :kill-failing-since]
                (fn [existing-time] (or existing-time current-time))))

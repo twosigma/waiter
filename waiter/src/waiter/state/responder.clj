@@ -478,10 +478,10 @@
        :response-chan response-chan
        :response response-code})))
 
-(defn- update-in-with-log-instance
-  [mp log-body event-type log-level key-sequence update-fn func]
-  (scheduler/log-service-instance log-body event-type log-level [:id :service-id :started-at :healthy? :health-check-status :flags :exit-code :host :port :extra-ports :log-directory :message])
-  (update-in mp key-sequence update-fn func))
+(defn- clear-rejection-state
+  [current-state log-body event-type log-level path update-fn func]
+  (scheduler/log-service-instance log-body event-type log-level)
+  (update-in current-state path update-fn func))
 
 (defn- unblacklist-instance
   [{:keys [id->instance instance-id->state] :as current-state} update-instance-id->blacklist-expiry-time-fn update-status-tag-fn
@@ -489,7 +489,7 @@
   (log/info "unblacklisting instance" instance-id "as blacklist expired at" expiry-time)
   (cond-> (update-instance-id->blacklist-expiry-time-fn current-state #(dissoc % instance-id))
     (contains? instance-id->state instance-id)
-    (update-in-with-log-instance (get id->instance instance-id) :readmit :info [:instance-id->state instance-id] update-status-tag-fn #(disj % :blacklisted))))
+    (clear-rejection-state (get id->instance instance-id) :readmit :info [:instance-id->state instance-id] update-status-tag-fn #(disj % :blacklisted))))
 
 (defn- expiry-time-reached?
   "Returns true if current-time is greater than or equal to expiry-time."
@@ -600,8 +600,7 @@
         (fn update-state-by-blacklisting-instance-fn [current-state correlation-id instance-id expiry-time-ms]
           (let [actual-expiry-time (t/plus (t/now) (t/millis expiry-time-ms))]
             (cid/cinfo correlation-id "blacklisting instance" instance-id "for" expiry-time-ms "ms.")
-            (scheduler/log-service-instance (assoc (get (:id->instance current-state) instance-id) :blacklist-period-ms expiry-time-ms) :eject :info
-                                            [:id :service-id :started-at :healthy? :health-check-status :flags :exit-code :host :port :extra-ports :log-directory :message])
+            (scheduler/log-service-instance (assoc (get (:id->instance current-state) instance-id) :blackist-period-ms expiry-time-ms) :eject :info)
             (trigger-unblacklist-process-fn correlation-id instance-id expiry-time-ms unblacklist-instance-chan)
             (update-instance-id->blacklist-expiry-time-fn current-state #(assoc % instance-id actual-expiry-time))))
         default-load-balancing (:load-balancing initial-state)]

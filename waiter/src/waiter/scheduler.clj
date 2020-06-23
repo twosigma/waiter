@@ -47,10 +47,36 @@
   [& args]
   `(log/log "Scheduler" :debug nil (print-str ~@args)))
 
-(defmacro log-service-instance
+(def key-seq [:id
+              :service-id
+              :started-at
+              :healthy?
+              :health-check-status
+              :flags
+              :exit-code
+              :host
+              :port
+              :extra-ports
+              :log-directory
+              :message
+              :blackist-period-ms])
+
+(defn log-service-instance
   "Log InstanceTracker-specific messages."
-  [instance event-type log-level key-seq]
-  `(log/log "InstanceTracker" ~log-level nil (utils/clj->json (assoc (select-keys ~instance ~key-seq) :timestamp (t/now) :event-type ~event-type))))
+  [instance event-type log-level]
+  (let [extra-ports (count (:extra-ports instance))
+        instance-to-log (select-keys instance key-seq)
+        flags-map (->> instance-to-log
+                       :flags
+                       (map (fn [flag] [flag true]))
+                       (into {}))]
+    (log/log "InstanceTracker" log-level nil (utils/clj->json
+                                               (assoc (merge
+                                                        (dissoc instance-to-log :flags)
+                                                        flags-map)
+                                                 :extra-ports extra-ports
+                                                 :timestamp (t/now)
+                                                 :event-type event-type)))))
 
 (defrecord Service
   [^String id
@@ -744,7 +770,7 @@
 
 (defn add-to-store-and-track-instance!
   [transient-store max-instances-to-keep service-id instance event-type log-level initial-value-fn remove-fn]
-  (log-service-instance instance event-type log-level [:id :service-id :started-at :healthy? :health-check-status :flags :exit-code :host :port :extra-ports :log-directory :message])
+  (log-service-instance instance event-type log-level)
   (add-instance-to-buffered-collection! transient-store max-instances-to-keep service-id instance initial-value-fn remove-fn))
 
 (defn environment
@@ -892,6 +918,7 @@
                  live-service-id->launch-tracker]
       service-id
       (let [healthy-instances (get service-id->healthy-instances service-id)
+            healthy-instances? (set healthy-instances)
             instance-counts' (get service-id->instance-counts service-id instance-counts-zero)
             known-instances' (->> service-id
                                   (get service-id->unhealthy-instances)
@@ -929,7 +956,8 @@
               (statsd/histo! metric-group "startup_time"
                              (du/interval->nanoseconds duration)))))
         (doseq [new-instance new-instances]
-          (log-service-instance new-instance :launch :info [:id :service-id :started-at :healthy? :health-check-status :flags :exit-code :host :port :extra-ports :log-directory :message]))
+          (when (healthy-instances? new-instance)
+            (log-service-instance new-instance :launch :info)))
         ;; tracker-state' for this service
         (assoc tracker-state
           :instance-counts instance-counts'
