@@ -473,7 +473,8 @@
                                             (filter (fn [[service state]]
                                                       (when-let [gc-service (gc-service? service state current-time)]
                                                         (log/info service "with state" (:state state) "and last modified time"
-                                                                  (du/date-to-str (:last-modified-time state)) "marked for deletion")
+                                                                  (du/date-to-str (:last-modified-time state))
+                                                                  "has been marked for deletion")
                                                         gc-service))
                                                     service->state'))
                             apps-successfully-gced (filter (fn [service]
