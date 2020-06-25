@@ -83,10 +83,14 @@ E.g. a hypothetical implementation which treats the image parameter as docker im
 ```
 The `retrieve-reference-type->stale-info-fn` must then provide an implementation for a function that
   can check staleness of `:image` reference types.
+The returned function, when passed in a reference must return a map containing the following keys:
+- :stale? is true if the provided reference is stale;
+- :update-epoch-time is either nil or the known time when the reference went stale.
+
 E.g. if `retrieve-reference-type->stale-info-fn` returns:
 ```
-  {:image check-image-for-staleness-fn
-   :token check-token-for-staleness-fn}
+  {:image retrieve-image-stale-info-fn
+   :token retrieve-token-stale-info-fn}
 ```
 and we have a service with the following set of references:
 ```
@@ -100,11 +104,10 @@ then the service goes stale when the following condition is true:
 ```
   (and
     # single image expression in the or since there was only one entry in the map
-    (or (check-image-for-staleness-fn {:name "twosigma/courier" :build "20191002"}))
+    (or (:stale? (retrieve-image-stale-info-fn {:name "twosigma/courier" :build "20191002"}))
     # two expressions in the or, one for image and one for token
-    (or (check-image-for-staleness-fn {:name "twosigma/kitchen" :build "20191001"})
-        (check-token-for-staleness-fn {:sources [{:token "foo" :version "v0"}]}))
+    (or (:stale? (retrieve-image-stale-info-fn {:name "twosigma/kitchen" :build "20191001"}))
+        (:stale? (retrieve-token-stale-info-fn {:sources [{:token "foo" :version "v0"}]})))
     # single token expression in the or since there was only one entry in the map
-    (or (check-token-for-staleness-fn
-          {:sources [{:token "bar" :version "v1"} {:token "baz" :version "v2"}]})))
+    (or (:stale? (retrieve-token-stale-info-fn {:sources [{:token "bar" :version "v1"} {:token "baz" :version "v2"}]}))))
 ```

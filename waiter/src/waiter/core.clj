@@ -1076,7 +1076,8 @@
    :service->gc-time-fn (pc/fnk [[:state service-description-builder]
                                  attach-token-defaults-fn service-id->service-description-fn service-id->references-fn
                                  token->token-hash token->token-parameters]
-                          (let [context {:token->token-hash token->token-hash}
+                          (let [context {:token->token-hash token->token-hash
+                                         :token->token-parameters token->token-parameters}
                                 reference-type->stale-info-fn (sd/retrieve-reference-type->stale-info-fn service-description-builder context)]
                             (fn service->gc-time-fn [service-id last-modified-time]
                               (sd/service->gc-time

@@ -2414,6 +2414,185 @@
     (kv/store kv-store token token-data)
     (is (= (token-data->token-hash token-data) (token->token-hash kv-store token)))))
 
+(deftest test-retrieve-token-update-epoch-time
+  (with-redefs [token-data->token-hash #(str "v" (get % "last-update-time"))]
+    (let [token-data {"last-update-time" 90
+                      "previous" {"last-update-time" 80
+                                  "previous" {"last-update-time" 70
+                                              "previous" {"last-update-time" 60
+                                                          "previous" {"last-update-time" 50
+                                                                      "previous" {}}}}}}]
+
+      (testing "no token data"
+        (is (nil? (retrieve-token-update-epoch-time nil "v10")))
+        (is (nil? (retrieve-token-update-epoch-time {} "v20"))))
+
+      (testing "token is current"
+        (is (nil? (retrieve-token-update-epoch-time token-data "v90"))))
+
+      (testing "matching token version found and next update time returned"
+        (is (= 90 (retrieve-token-update-epoch-time token-data "v80")))
+        (is (= 80 (retrieve-token-update-epoch-time token-data "v70")))
+        (is (= 70 (retrieve-token-update-epoch-time token-data "v60")))
+        (is (= 60 (retrieve-token-update-epoch-time token-data "v50"))))
+
+      (testing "matching token version not found return last known update time"
+        (is (= 50 (retrieve-token-update-epoch-time token-data "v40")))
+        (is (= 50 (retrieve-token-update-epoch-time token-data "v30")))
+        (is (= 50 (retrieve-token-update-epoch-time token-data "v20")))))))
+
+(deftest test-retrieve-token-stale-info
+  (with-redefs [token-data->token-hash #(str "v" (get % "last-update-time"))]
+    (let [token->token-parameters {"t1" {"last-update-time" 90
+                                       "previous" {"last-update-time" 40
+                                                   "previous" {}}}
+                                 "t2" {"last-update-time" 80
+                                       "previous" {"last-update-time" 70
+                                                   "previous" {}}}
+                                 "t3" {"last-update-time" 60
+                                       "previous" {"last-update-time" 50
+                                                   "previous" {}}}}
+        token->token-hash #(str "v" (get-in token->token-parameters [% "last-update-time"]))
+        run-retrieve-token-stale-info (partial retrieve-token-stale-info token->token-hash token->token-parameters)]
+
+      (testing "no source tokens"
+        (is (= {:stale? false} (run-retrieve-token-stale-info []))))
+
+      (testing "source tokens active"
+        (let [source-tokens [{:token "t1" :version "v90"}]]
+          (is (= {:stale? false} (run-retrieve-token-stale-info source-tokens))))
+        (let [source-tokens [{:token "t2" :version "v80"}]]
+          (is (= {:stale? false} (run-retrieve-token-stale-info source-tokens))))
+        (let [source-tokens [{:token "t2" :version "v80"} {:token "t1" :version "v90"}]]
+          (is (= {:stale? false} (run-retrieve-token-stale-info source-tokens))))
+        (let [source-tokens [{:token "t1" :version "v90"} {:token "t2" :version "v80"}]]
+          (is (= {:stale? false} (run-retrieve-token-stale-info source-tokens))))
+        (let [source-tokens [{:token "t3" :version "v60"} {:token "t2" :version "v80"} {:token "t1" :version "v90"}]]
+          (is (= {:stale? false} (run-retrieve-token-stale-info source-tokens)))))
+
+      (testing "some source tokens stale"
+        (let [source-tokens [{:token "t2" :version "v80"} {:token "t1" :version "v40"}]]
+          (is (= {:stale? false} (run-retrieve-token-stale-info source-tokens))))
+        (let [source-tokens [{:token "t1" :version "v90"} {:token "t2" :version "v70"}]]
+          (is (= {:stale? false} (run-retrieve-token-stale-info source-tokens))))
+        (let [source-tokens [{:token "t3" :version "v60"} {:token "t2" :version "v70"}]]
+          (is (= {:stale? false} (run-retrieve-token-stale-info source-tokens))))
+        (let [source-tokens [{:token "t-unknown" :version "v40"} {:token "t3" :version "v56"} {:token "t2" :version "v80"}]]
+          (is (= {:stale? false} (run-retrieve-token-stale-info source-tokens))))
+        (let [source-tokens [{:token "t3" :version "v60"} {:token "t2" :version "v80"} {:token "t1" :version "v40"}]]
+          (is (= {:stale? false} (run-retrieve-token-stale-info source-tokens)))))
+
+      (testing "all source tokens stale"
+        (let [source-tokens [{:token "t1" :version "v40"}]]
+          (is (= {:stale? true :update-epoch-time 90} (run-retrieve-token-stale-info source-tokens))))
+        (let [source-tokens [{:token "t2" :version "v70"}]]
+          (is (= {:stale? true :update-epoch-time 80} (run-retrieve-token-stale-info source-tokens))))
+        (let [source-tokens [{:token "t-unknown" :version "v40"}]]
+          (is (= {:stale? true :update-epoch-time nil} (run-retrieve-token-stale-info source-tokens))))
+        (let [source-tokens [{:token "t2" :version "v70"} {:token "t1" :version "v40"}]]
+          (is (= {:stale? true :update-epoch-time 90} (run-retrieve-token-stale-info source-tokens))))
+        (let [source-tokens [{:token "t1" :version "v40"} {:token "t2" :version "v70"}]]
+          (is (= {:stale? true :update-epoch-time 90} (run-retrieve-token-stale-info source-tokens))))
+        (let [source-tokens [{:token "t3" :version "v50"} {:token "t2" :version "v70"}]]
+          (is (= {:stale? true :update-epoch-time 80} (run-retrieve-token-stale-info source-tokens))))
+        (let [source-tokens [{:token "t-unknown" :version "v40"} {:token "t3" :version "v50"} {:token "t2" :version "v70"}]]
+          (is (= {:stale? true :update-epoch-time 80} (run-retrieve-token-stale-info source-tokens))))
+        (let [source-tokens [{:token "t3" :version "v50"} {:token "t2" :version "v70"} {:token "t1" :version "v40"}]]
+          (is (= {:stale? true :update-epoch-time 90} (run-retrieve-token-stale-info source-tokens))))))))
+
+(deftest test-source-tokens->gc-time-secs
+  (let [fallback-period-secs-0 600
+        fallback-period-secs-1 700
+        fallback-period-secs-2 800
+        stale-timeout-mins-0 15
+        stale-timeout-mins-1 25
+        stale-timeout-mins-2 35
+        token-defaults {"fallback-period-secs" fallback-period-secs-0
+                        "stale-timeout-mins" stale-timeout-mins-0}
+        attach-token-defaults-fn (partial merge token-defaults)
+        token->token-parameters {"t1" {"name" "t1"}
+                                 "t2" {"name" "t2"
+                                       "fallback-period-secs" fallback-period-secs-1}
+                                 "t3" {"name" "t3"
+                                       "stale-timeout-mins" stale-timeout-mins-1}
+                                 "t4" {"name" "t4"
+                                       "fallback-period-secs" fallback-period-secs-2
+                                       "stale-timeout-mins" stale-timeout-mins-2}}
+        run-source-tokens->gc-time-secs (partial source-tokens->gc-time-secs token->token-parameters attach-token-defaults-fn)
+        mins->secs #(-> % (t/minutes) (t/in-seconds))]
+
+    (is (= (+ fallback-period-secs-0 (mins->secs stale-timeout-mins-0))
+           (run-source-tokens->gc-time-secs [[{:token "t0"}]])))
+    (is (= (+ fallback-period-secs-0 (mins->secs stale-timeout-mins-0))
+           (run-source-tokens->gc-time-secs [[{:token "t1"}]])))
+    (is (= (+ fallback-period-secs-1 (mins->secs stale-timeout-mins-0))
+           (run-source-tokens->gc-time-secs [[{:token "t2"}]])))
+    (is (= (+ fallback-period-secs-0 (mins->secs stale-timeout-mins-1))
+           (run-source-tokens->gc-time-secs [[{:token "t3"}]])))
+    (is (= (+ fallback-period-secs-2 (mins->secs stale-timeout-mins-2))
+           (run-source-tokens->gc-time-secs [[{:token "t4"}]])))
+    (is (= (+ fallback-period-secs-2 (mins->secs stale-timeout-mins-2))
+           (run-source-tokens->gc-time-secs [[{:token "t0"}] [{:token "t1"}] [{:token "t3"}][{:token "t4"}]])))
+    (is (= (+ fallback-period-secs-2 (mins->secs stale-timeout-mins-2))
+           (run-source-tokens->gc-time-secs [[{:token "t4"} {:token "t0"}]])))
+    (is (= (+ fallback-period-secs-1 (mins->secs stale-timeout-mins-2))
+           (run-source-tokens->gc-time-secs [[{:token "t4"} {:token "t2"}]])))
+    (is (= (+ fallback-period-secs-2 (mins->secs stale-timeout-mins-1))
+           (run-source-tokens->gc-time-secs [[{:token "t4"} {:token "t3"}]])))
+    (is (= (+ fallback-period-secs-1 (mins->secs stale-timeout-mins-1))
+           (run-source-tokens->gc-time-secs [[{:token "t2"} {:token "t3"}]])))))
+
+(deftest test-accumulate-stale-info
+  (doseq [s [true false]]
+    (is (= {:stale? s :update-epoch-time nil}
+           (accumulate-stale-info {:stale? s :update-epoch-time nil} {:stale? false :update-epoch-time 200})))
+    (is (= {:stale? s :update-epoch-time 100}
+           (accumulate-stale-info {:stale? s :update-epoch-time 100} {:stale? false :update-epoch-time 200}))))
+  (doseq [s [true false]]
+    (is (= {:stale? true :update-epoch-time 200}
+           (accumulate-stale-info {:stale? true :update-epoch-time 200} {:stale? s :update-epoch-time nil})))
+    (is (= {:stale? true :update-epoch-time 200}
+           (accumulate-stale-info {:stale? s :update-epoch-time nil} {:stale? true :update-epoch-time 200}))))
+  (is (= {:stale? true :update-epoch-time 400}
+         (accumulate-stale-info {:stale? true :update-epoch-time 200} {:stale? true :update-epoch-time 400}))))
+
+(deftest test-references->stale-info
+  (let [reference-type->stale-info-fn (constantly :stale-info)
+        run-references->stale-info (partial references->stale-info reference-type->stale-info-fn)]
+    (is (= {:stale? false :update-epoch-time nil}
+           (run-references->stale-info [{}])))
+    (is (= {:stale? false :update-epoch-time nil}
+           (run-references->stale-info [{"type1" {:stale-info {:stale? false :update-epoch-time 100}}}])))
+    (is (= {:stale? true :update-epoch-time 100}
+           (run-references->stale-info [{"type1" {:stale-info {:stale? true :update-epoch-time 100}}}])))
+    (is (= {:stale? false :update-epoch-time nil}
+           (run-references->stale-info [{"type1" {:stale-info {:stale? false :update-epoch-time 100}}
+                                         "type2" {:stale-info {:stale? false :update-epoch-time 200}}}])))
+    (is (= {:stale? true :update-epoch-time 100}
+           (run-references->stale-info [{"type1" {:stale-info {:stale? true :update-epoch-time 100}}
+                                         "type2" {:stale-info {:stale? false :update-epoch-time 200}}}])))
+    (is (= {:stale? true :update-epoch-time 500}
+           (run-references->stale-info [{"type1" {:stale-info {:stale? true :update-epoch-time nil}}
+                                         "type2" {:stale-info {:stale? false :update-epoch-time nil}}
+                                         "type3" {:stale-info {:stale? true :update-epoch-time 300}}
+                                         "type4" {:stale-info {:stale? true :update-epoch-time nil}}
+                                         "type5" {:stale-info {:stale? true :update-epoch-time 500}}}])))
+    (is (= {:stale? false :update-epoch-time nil}
+           (run-references->stale-info [{}
+                                        {"type1" {:stale-info {:stale? false :update-epoch-time 100}}}])))
+    (is (= {:stale? false :update-epoch-time nil}
+           (run-references->stale-info [{}
+                                        {"type1" {:stale-info {:stale? false :update-epoch-time 100}}}
+                                        {"type1" {:stale-info {:stale? true :update-epoch-time 100}}}])))
+    (is (= {:stale? true :update-epoch-time 200}
+           (run-references->stale-info [{"type1" {:stale-info {:stale? true :update-epoch-time 100}}}
+                                        {"type2" {:stale-info {:stale? true :update-epoch-time 200}}}])))
+    (is (= {:stale? true :update-epoch-time 400}
+           (run-references->stale-info [{"type1" {:stale-info {:stale? true :update-epoch-time 400}}}
+                                        {"type2" {:stale-info {:stale? true :update-epoch-time nil}}}
+                                        {"type3" {:stale-info {:stale? true :update-epoch-time 300}}}
+                                        {"type4" {:stale-info {:stale? true :update-epoch-time nil}}}])))))
+
 (deftest test-service->gc-time
   (let [fallback-period-secs 150
         profile-fallback-period-secs 100
@@ -2439,15 +2618,18 @@
         service-id->service-description-fn (fn [in-service-id]
                                              (is (str/starts-with? in-service-id service-id))
                                              {"idle-timeout-mins" idle-timeout-mins})
-        token->token-hash (fn [in-token] (str in-token ".latest"))
-        reference-type->stale-info-fn {:token #(retrieve-token-stale-info token->token-hash (:sources %))}
         token->token-data-factory (fn [token->token-data]
-                                    (fn [in-token]
-                                      (get token->token-data in-token)))
-        t1000 (tc/from-long 1000)
-        t2000 (tc/from-long 2000)
-        t3000 (tc/from-long 3000)
-        t4000 (tc/from-long 4000)
+                                    (let [token->token-data (fn [in-token] (get token->token-data in-token))
+                                          token->token-hash (fn [in-token] (str in-token ".latest"))
+                                          token->token-parameters token->token-data]
+                                      {:reference-type->stale-info-fn {:token #(retrieve-token-stale-info token->token-hash token->token-parameters (:sources %))}
+                                       :token->token-data token->token-data
+                                       :token->token-hash token->token-hash
+                                       :token->token-parameters token->token-parameters}))
+        t1000 (tc/from-long 10000)
+        t2000 (tc/from-long 20000)
+        t3000 (tc/from-long 30000)
+        t4000 (tc/from-long 40000)
         last-modified-time (tc/from-long 5000)]
 
     (testing "service created without token"
@@ -2455,8 +2637,17 @@
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s0")))
                                         #{})
-            token->token-data (token->token-data-factory token->token-data)]
-        (is (= (t/plus last-modified-time (t/minutes stale-timeout-mins))
+            {:keys [token->token-data reference-type->stale-info-fn]} (token->token-data-factory token->token-data)]
+        (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
+               (service->gc-time
+                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
+                 attach-token-defaults-fn (str service-id "s0") last-modified-time))))
+      (let [token->token-data {"t1" {"cpus" 1 "last-update-time" (tc/to-long t1000)}}
+            service-id->references-fn (fn [in-service-id]
+                                        (is (= in-service-id (str service-id "s0")))
+                                        #{{}})
+            {:keys [token->token-data reference-type->stale-info-fn]} (token->token-data-factory token->token-data)]
+        (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                (service->gc-time
                  service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
                  attach-token-defaults-fn (str service-id "s0") last-modified-time)))))
@@ -2466,8 +2657,8 @@
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s1")))
                                         #{{:token {:sources [{:token "t-miss" :version "t-miss.old"}]}}})
-            token->token-data (token->token-data-factory token->token-data)]
-        (is (= (-> (tc/from-long 0)
+            {:keys [token->token-data reference-type->stale-info-fn]} (token->token-data-factory token->token-data)]
+        (is (= (-> last-modified-time
                  (t/plus (t/seconds fallback-period-secs))
                  (t/plus (t/minutes stale-timeout-mins)))
                (service->gc-time
@@ -2479,7 +2670,7 @@
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s1")))
                                         #{{:token {:sources [{:token "t1" :version "t1.latest"}]}}})
-            token->token-data (token->token-data-factory token->token-data)]
+            {:keys [token->token-data reference-type->stale-info-fn]} (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                (service->gc-time
                  service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
@@ -2494,7 +2685,7 @@
         (let [service-id->references-fn (fn [in-service-id]
                                           (is (= in-service-id (str service-id "s2")))
                                           #{{}})
-              token->token-data (token->token-data-factory token->token-data)]
+              {:keys [token->token-data reference-type->stale-info-fn]} (token->token-data-factory token->token-data)]
           (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                  (service->gc-time
                    service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
@@ -2506,7 +2697,7 @@
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s3")))
                                         #{{:token {:sources [{:token "t1" :version "t1.latest"} {:token "t2" :version "t2.latest"}]}}})
-            token->token-data (token->token-data-factory token->token-data)]
+            {:keys [token->token-data reference-type->stale-info-fn]} (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                (service->gc-time
                  service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
@@ -2533,7 +2724,7 @@
         (let [service-id->references-fn (fn [in-service-id]
                                           (is (= in-service-id (str service-id "s4")))
                                           #{{:token {:sources [{:token "t1" :version "t1.old"}]}}})
-              token->token-data (token->token-data-factory token->token-data)]
+              {:keys [token->token-data reference-type->stale-info-fn]} (token->token-data-factory token->token-data)]
           (is (= (-> t1000
                    (t/plus (t/seconds expected-fallback-period-secs))
                    (t/plus (t/minutes expected-stale-timeout-mins)))
@@ -2543,7 +2734,7 @@
         (let [service-id->references-fn (fn [in-service-id]
                                           (is (= in-service-id (str service-id "s5")))
                                           #{{:token {:sources [{:token "t2" :version "t2.old"}]}}})
-              token->token-data (token->token-data-factory token->token-data)]
+              {:keys [token->token-data reference-type->stale-info-fn]} (token->token-data-factory token->token-data)]
           (is (= (-> t2000
                    (t/plus (t/seconds fallback-period-secs))
                    (t/plus (t/minutes stale-timeout-mins)))
@@ -2558,7 +2749,7 @@
                                         (is (= in-service-id (str service-id "s5")))
                                         #{{:token {:sources [{:token "t1" :version "t1.old"}]}}
                                           {}})
-            token->token-data (token->token-data-factory token->token-data)]
+            {:keys [token->token-data reference-type->stale-info-fn]} (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                (service->gc-time
                  service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
@@ -2570,7 +2761,7 @@
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s6")))
                                         #{{:token {:sources [{:token "t1" :version "t1.latest"} {:token "t2" :version "t2.old"}]}}})
-            token->token-data (token->token-data-factory token->token-data)]
+            {:keys [token->token-data reference-type->stale-info-fn]} (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                (service->gc-time
                  service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
@@ -2586,7 +2777,7 @@
                                         #{{:token {:sources [{:token "t1" :version "t1.latest"}
                                                              {:token "t2" :version "t2.old"}
                                                              {:token "t3" :version "t3.old"}]}}})
-            token->token-data (token->token-data-factory token->token-data)]
+            {:keys [token->token-data reference-type->stale-info-fn]} (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                (service->gc-time
                  service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
@@ -2600,7 +2791,7 @@
                                         #{{:token {:sources [{:token "t1" :version "t1.old"}
                                                              {:token "t2" :version "t2.old"}
                                                              {:token "t3" :version "t3.latest"}]}}})
-            token->token-data (token->token-data-factory token->token-data)]
+            {:keys [token->token-data reference-type->stale-info-fn]} (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                (service->gc-time
                  service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
@@ -2616,7 +2807,7 @@
                                         #{{:token {:sources [{:token "t1" :version "t1.old"}
                                                              {:token "t2" :version "t2.old"}
                                                              {:token "t3" :version "t3.old"}]}}})
-            token->token-data (token->token-data-factory token->token-data)]
+            {:keys [token->token-data reference-type->stale-info-fn]} (token->token-data-factory token->token-data)]
         (is (= (t/plus t4000 (t/minutes (-> 900 t/seconds t/in-minutes (+ stale-timeout-mins))))
                (service->gc-time
                  service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
@@ -2632,7 +2823,7 @@
                                         #{{:token {:sources [{:token "t1" :version "t1.old"}
                                                              {:token "t3" :version "t3.old"}
                                                              {:token "t2" :version "t2.old"}]}}})
-            token->token-data (token->token-data-factory token->token-data)]
+            {:keys [token->token-data reference-type->stale-info-fn]} (token->token-data-factory token->token-data)]
         (is (= (t/plus t3000 (t/minutes stale-timeout-mins))
                (service->gc-time
                  service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
@@ -2648,7 +2839,7 @@
                                         (is (= in-service-id (str service-id "s9")))
                                         #{{:token {:sources [{:token "t1" :version "t1.latest"} {:token "t2" :version "t2.old"}]}}
                                           {:token {:sources [{:token "t3" :version "t3.old"} {:token "t4" :version "t4.old"}]}}})
-            token->token-data (token->token-data-factory token->token-data)]
+            {:keys [token->token-data reference-type->stale-info-fn]} (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                (service->gc-time
                  service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
@@ -2664,7 +2855,7 @@
                                         (is (= in-service-id (str service-id "s10")))
                                         #{{:token {:sources [{:token "t1" :version "t1.latest"} {:token "t2" :version "t2.latest"}]}}
                                           {:token {:sources [{:token "t3" :version "t3.latest"} {:token "t4" :version "t4.latest"}]}}})
-            token->token-data (token->token-data-factory token->token-data)]
+            {:keys [token->token-data reference-type->stale-info-fn]} (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                (service->gc-time
                  service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
@@ -2680,7 +2871,7 @@
                                         (is (= in-service-id (str service-id "s11")))
                                         #{{:token {:sources [{:token "t1" :version "t1.latest"} {:token "t2" :version "t2.latest"}]}}
                                           {:token {:sources [{:token "t3" :version "t3.old"} {:token "t4" :version "t4.old"}]}}})
-            token->token-data (token->token-data-factory token->token-data)]
+            {:keys [token->token-data reference-type->stale-info-fn]} (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                (service->gc-time
                  service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
@@ -2696,7 +2887,7 @@
                                         (is (= in-service-id (str service-id "s12")))
                                         #{{:token {:sources [{:token "t1" :version "t1.old"} {:token "t2" :version "t2.old"}]}}
                                           {:token {:sources [{:token "t3" :version "t3.old"} {:token "t4" :version "t4.old"}]}}})
-            token->token-data (token->token-data-factory token->token-data)]
+            {:keys [token->token-data reference-type->stale-info-fn]} (token->token-data-factory token->token-data)]
         (is (= (t/plus
                  t4000
                  (t/minutes
@@ -2715,7 +2906,7 @@
             service-id->references-fn (fn [in-service-id]
                                         (is (= in-service-id (str service-id "s1")))
                                         #{{:token {:sources [{:token "t1" :version "t1.latest"}]}}})
-            token->token-data (token->token-data-factory token->token-data)]
+            {:keys [token->token-data reference-type->stale-info-fn]} (token->token-data-factory token->token-data)]
         (is (nil?
               (service->gc-time
                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
