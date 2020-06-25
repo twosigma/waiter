@@ -2440,7 +2440,7 @@
                                              (is (str/starts-with? in-service-id service-id))
                                              {"idle-timeout-mins" idle-timeout-mins})
         token->token-hash (fn [in-token] (str in-token ".latest"))
-        reference-type->stale-info-fn {:token #(service-token-references-stale? token->token-hash (:sources %))}
+        reference-type->stale-info-fn {:token #(retrieve-token-stale-info token->token-hash (:sources %))}
         token->token-data-factory (fn [token->token-data]
                                     (fn [in-token]
                                       (get token->token-data in-token)))

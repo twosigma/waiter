@@ -635,7 +635,7 @@
   [service-description username]
   (assoc service-description "run-as-user" username "permitted-user" username))
 
-(defn service-token-references-stale?
+(defn retrieve-token-stale-info
   "Returns true if every token used to access a service has been updated."
   [token->token-hash source-tokens]
   (and (seq source-tokens)
@@ -675,7 +675,7 @@
        :service-id service-id}))
 
   (retrieve-reference-type->stale-info-fn [_ {:keys [token->token-hash]}]
-    {:token (fn [{:keys [sources]}] (service-token-references-stale? token->token-hash sources))})
+    {:token (fn [{:keys [sources]}] (retrieve-token-stale-info token->token-hash sources))})
 
   (state [_]
     {})
