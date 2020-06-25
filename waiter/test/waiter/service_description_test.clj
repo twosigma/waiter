@@ -2440,7 +2440,7 @@
                                              (is (str/starts-with? in-service-id service-id))
                                              {"idle-timeout-mins" idle-timeout-mins})
         token->token-hash (fn [in-token] (str in-token ".latest"))
-        reference-type->stale-fn {:token #(service-token-references-stale? token->token-hash (:sources %))}
+        reference-type->stale-info-fn {:token #(service-token-references-stale? token->token-hash (:sources %))}
         token->token-data-factory (fn [token->token-data]
                                     (fn [in-token]
                                       (get token->token-data in-token)))
@@ -2458,7 +2458,7 @@
             token->token-data (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes stale-timeout-mins))
                (service->gc-time
-                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
+                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
                  attach-token-defaults-fn (str service-id "s0") last-modified-time)))))
 
     (testing "service created with missing token parameters"
@@ -2471,7 +2471,7 @@
                  (t/plus (t/seconds fallback-period-secs))
                  (t/plus (t/minutes stale-timeout-mins)))
                (service->gc-time
-                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
+                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
                  attach-token-defaults-fn (str service-id "s1") last-modified-time)))))
 
     (testing "service with single token is active"
@@ -2482,7 +2482,7 @@
             token->token-data (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                (service->gc-time
-                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
+                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
                  attach-token-defaults-fn (str service-id "s1") last-modified-time)))))
 
     (testing "direct access service is active"
@@ -2497,7 +2497,7 @@
               token->token-data (token->token-data-factory token->token-data)]
           (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                  (service->gc-time
-                   service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
+                   service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
                    attach-token-defaults-fn (str service-id "s2") last-modified-time))))))
 
     (testing "service with multiple tokens is active"
@@ -2509,7 +2509,7 @@
             token->token-data (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                (service->gc-time
-                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
+                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
                  attach-token-defaults-fn (str service-id "s3") last-modified-time)))))
 
     (testing "service outdated but fallback not configured"
@@ -2538,7 +2538,7 @@
                    (t/plus (t/seconds expected-fallback-period-secs))
                    (t/plus (t/minutes expected-stale-timeout-mins)))
                  (service->gc-time
-                   service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
+                   service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
                    attach-token-defaults-fn (str service-id "s4") last-modified-time))))
         (let [service-id->references-fn (fn [in-service-id]
                                           (is (= in-service-id (str service-id "s5")))
@@ -2548,7 +2548,7 @@
                    (t/plus (t/seconds fallback-period-secs))
                    (t/plus (t/minutes stale-timeout-mins)))
                  (service->gc-time
-                   service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
+                   service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
                    attach-token-defaults-fn (str service-id "s5") last-modified-time))))))
 
     (testing "service outdated with tokens but direct access possible"
@@ -2561,7 +2561,7 @@
             token->token-data (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                (service->gc-time
-                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
+                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
                  attach-token-defaults-fn (str service-id "s5") last-modified-time)))))
 
     (testing "service outdated and fallback configured on one token"
@@ -2573,7 +2573,7 @@
             token->token-data (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                (service->gc-time
-                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
+                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
                  attach-token-defaults-fn (str service-id "s6") last-modified-time)))))
 
     (testing "service outdated on some tokens and fallback and timeout configured on all tokens"
@@ -2589,7 +2589,7 @@
             token->token-data (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                (service->gc-time
-                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
+                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
                  attach-token-defaults-fn (str service-id "s7") last-modified-time))))
       (let [stale-timeout-mins 45
             token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300 "last-update-time" (tc/to-long t1000)}
@@ -2603,7 +2603,7 @@
             token->token-data (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                (service->gc-time
-                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
+                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
                  attach-token-defaults-fn (str service-id "s7") last-modified-time)))))
 
     (testing "service outdated on every token and fallback and timeout configured on all tokens"
@@ -2619,7 +2619,7 @@
             token->token-data (token->token-data-factory token->token-data)]
         (is (= (t/plus t4000 (t/minutes (-> 900 t/seconds t/in-minutes (+ stale-timeout-mins))))
                (service->gc-time
-                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
+                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
                  attach-token-defaults-fn (str service-id "s8") last-modified-time)))))
 
     (testing "service outdated on every token and fallback disabled"
@@ -2635,7 +2635,7 @@
             token->token-data (token->token-data-factory token->token-data)]
         (is (= (t/plus t3000 (t/minutes stale-timeout-mins))
                (service->gc-time
-                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
+                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
                  attach-token-defaults-fn (str service-id "s8") last-modified-time)))))
 
     (testing "service using latest of one partial token among many"
@@ -2651,7 +2651,7 @@
             token->token-data (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                (service->gc-time
-                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
+                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
                  attach-token-defaults-fn (str service-id "s9") last-modified-time)))))
 
     (testing "service using latest versions of multiple tokens"
@@ -2667,7 +2667,7 @@
             token->token-data (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                (service->gc-time
-                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
+                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
                  attach-token-defaults-fn (str service-id "s10") last-modified-time)))))
 
     (testing "service using latest of one set of token entries"
@@ -2683,7 +2683,7 @@
             token->token-data (token->token-data-factory token->token-data)]
         (is (= (t/plus last-modified-time (t/minutes idle-timeout-mins))
                (service->gc-time
-                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
+                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
                  attach-token-defaults-fn (str service-id "s11") last-modified-time)))))
 
     (testing "service outdated and fallback and timeout configured on multiple source tokens"
@@ -2703,7 +2703,7 @@
                    (max (-> 900 t/seconds t/in-minutes (+ stale-timeout-mins))
                         (-> 1200 t/seconds t/in-minutes (+ stale-timeout-mins 15)))))
                (service->gc-time
-                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
+                 service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
                  attach-token-defaults-fn (str service-id "s12") last-modified-time)))))
 
     (testing "service with single token is stale but GC disabled"
@@ -2718,7 +2718,7 @@
             token->token-data (token->token-data-factory token->token-data)]
         (is (nil?
               (service->gc-time
-                service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-fn
+                service-id->service-description-fn service-id->references-fn token->token-data reference-type->stale-info-fn
                 attach-token-defaults-fn (str service-id "s1") last-modified-time)))))))
 
 (defn- synchronize-fn

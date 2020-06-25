@@ -64,12 +64,12 @@ The service GC processes all known references for a service and marks the servic
 An individual reference, i.e. the `reference-type->entry` map computed in a request descriptor,
   is stale if any of its value entries is stale.
 This staleness check on the value is performed using the functions returned from
-  `retrieve-reference-type->stale-fn` of the builder and invoking the corresponding 'type' function on the value.
+  `retrieve-reference-type->stale-info-fn` of the builder and invoking the corresponding 'type' function on the value.
 
 **Note**: A service known to be directly referenced (i.e. has an empty map among its references) never goes stale.
 
 The default implementation of the `ServiceDescriptionBuilder` returns a map with a single entry for `:token`
-  from the `retrieve-reference-type->stale-fn`.
+  from the `retrieve-reference-type->stale-info-fn`.
 The provided `:token` staleness function deems services accessed via tokens to be stale if all tokens
   used to access the service have been updated.
 
@@ -81,9 +81,9 @@ E.g. a hypothetical implementation which treats the image parameter as docker im
   {:image {:name "twosigma/kitchen" :build "20191001"}
    :token {:sources [{"token" "foo" "version" "v1"}]}}
 ```
-The `retrieve-reference-type->stale-fn` must then provide an implementation for a function that
+The `retrieve-reference-type->stale-info-fn` must then provide an implementation for a function that
   can check staleness of `:image` reference types.
-E.g. if `retrieve-reference-type->stale-fn` returns:
+E.g. if `retrieve-reference-type->stale-info-fn` returns:
 ```
   {:image check-image-for-staleness-fn
    :token check-token-for-staleness-fn}

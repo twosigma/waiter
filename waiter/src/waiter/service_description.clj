@@ -619,7 +619,7 @@
   (build [this core-service-description args-map]
     "Returns a map of {:service-id ..., :service-description ..., :core-service-description...}")
 
-  (retrieve-reference-type->stale-fn [this context]
+  (retrieve-reference-type->stale-info-fn [this context]
     "Returns a map of reference type to stale function for references of the specified type.
      The values are functions that have the following signature (fn reference-entry)")
 
@@ -674,7 +674,7 @@
        :service-description service-description
        :service-id service-id}))
 
-  (retrieve-reference-type->stale-fn [_ {:keys [token->token-hash]}]
+  (retrieve-reference-type->stale-info-fn [_ {:keys [token->token-hash]}]
     {:token (fn [{:keys [sources]}] (service-token-references-stale? token->token-hash sources))})
 
   (state [_]
@@ -1254,16 +1254,16 @@
 (defn stale-reference?
   "Returns true if the any entry in the reference has gone stale.
    An empty, i.e. directly accessible, reference is never stale."
-  [reference-type->stale-fn reference]
+  [reference-type->stale-info-fn reference]
   (some (fn [[type entry]]
-          (when-let [stale-fn (reference-type->stale-fn type)]
+          (when-let [stale-fn (reference-type->stale-info-fn type)]
             (stale-fn entry)))
         (seq reference)))
 
 (defn service-references-stale?
   "Returns true if every entry in the references has gone stale."
-  [reference-type->stale-fn references]
-  (every? (fn [reference] (stale-reference? reference-type->stale-fn reference)) references))
+  [reference-type->stale-info-fn references]
+  (every? (fn [reference] (stale-reference? reference-type->stale-info-fn reference)) references))
 
 (defn service->gc-time
   "Computes the time when a given service should be GC-ed.
@@ -1271,13 +1271,13 @@
    If the service is active or was created by on-the-fly, the GC time is calculated using
    the service's idle-timeout-mins and the most recent completion time of the service's requests.
    Else, the GC time is the sum of the fallback period seconds and the stale service timeout."
-  [service-id->service-description-fn service-id->references-fn token->token-parameters reference-type->stale-fn
+  [service-id->service-description-fn service-id->references-fn token->token-parameters reference-type->stale-info-fn
    attach-token-defaults-fn service-id last-modified-time]
   (let [{:strs [idle-timeout-mins]} (service-id->service-description-fn service-id)
         references (service-id->references-fn service-id)]
     (cond
       ;; when stale, use token info to compute GC time
-      (service-references-stale? reference-type->stale-fn references)
+      (service-references-stale? reference-type->stale-info-fn references)
       (let [{:strs [stale-timeout-mins]} (attach-token-defaults-fn {})]
         (log/info service-id "that uses references is stale")
         (if-let [source-tokens (->> references (map :token) (remove nil?) (map :sources) seq)]
