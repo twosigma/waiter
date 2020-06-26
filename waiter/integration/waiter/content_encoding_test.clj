@@ -17,6 +17,7 @@
   (:require [clj-http.client :as clj-http]
             [clj-http.conn-mgr :as conn-mgr]
             [clojure.data.json :as json]
+            [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [waiter.status-codes :refer :all]
@@ -88,8 +89,11 @@
           (assert-response-status response http-200-ok)
           (is (= (get headers "content-type") "text/plain") (str headers))
           (is (= (get headers "content-encoding") "gzip") (str headers))
-          (is (nil? (get headers "transfer-encoding")) (str headers))
-          (is (not (nil? (get headers "content-length"))) (str headers))
+          (let [{:strs [content-length transfer-encoding]} headers]
+            ;; http/1.1 request/responses from Jetty may not always be chunked
+            (is (or (and (nil? content-length) (not (str/blank? transfer-encoding)))
+                    (and (nil? transfer-encoding) (not (str/blank? content-length))))
+                (str "both content-length and transfer-encoding are present, headers: " headers)))
           (is (not (nil? (get headers "x-cid"))) (str headers))
           (let [{:keys [body] :as response}
                 (make-request waiter-url "/gzip" :headers req-headers :decompress-body true :verbose true)
