@@ -122,15 +122,17 @@
 
             ;; Get a service with at least one killed instance.
             (log/info "starting parallel requests")
-            (let [async-create-headers (merge headers {:x-kitchen-delay-ms 120000
-                                                       :x-waiter-async-request-timeout 125000})
+            ;; expect that second instance should be healthy inside 10 minutes
+            (let [async-create-headers (merge headers {:x-kitchen-delay-ms 600000
+                                                       :x-waiter-async-request-timeout 615000})
                   async-request-fn (fn [] (->> #(make-kitchen-request waiter-url % :method :get :path "/async/request")
                                                (make-request-with-debug-info async-create-headers)))
                   async-responses (->> async-request-fn (repeatedly 2) vec)
                   instance-ids (->> async-responses (map :instance-id) set)]
               (assert-response-status (first async-responses) http-202-accepted)
               (assert-response-status (second async-responses) http-202-accepted)
-              (is (> (count instance-ids) 1) (str instance-ids))
+              (is (> (count instance-ids) 1)
+                  (str "async requests not handled by separate instances, instance id: " instance-ids))
               ;; Canceling both of the async requests should scale down to 1 by killing 1 instance.
               (doseq [async-response async-responses]
                 (let [status-endpoint (response->location async-response)
