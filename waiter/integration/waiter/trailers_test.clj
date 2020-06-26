@@ -56,14 +56,13 @@
             (assert-response-status response http-200-ok)
             (is (= http-version (get body-json "protocol")) (str body-json))
             (when (= "http" backend-proto)
-              (is (= "chunked" (get-in body-json ["headers" "Transfer-Encoding"]))
-                  (str body-json))
-              (is (= "chunked" (get-in response [:headers "transfer-encoding"]))
-                  (-> response :headers str)))
-            (is (= {} (get body-json "trailers"))
-                (-> response :headers str))
-            (is (nil? (some-> response :trailers))
-                (-> response :headers str))))
+              ;; http/1.1 request/responses from Jetty may not always be chunked
+              (if-let [te-header (get-in body-json ["headers" "Transfer-Encoding"])]
+                (is (= "chunked" te-header) (str body-json))
+                (is (= (str request-length) (get-in body-json ["headers" "Content-Length"])) (str body-json)))
+              (is (= "chunked" (get-in response [:headers "transfer-encoding"])) (-> response :headers str)))
+            (is (= {} (get body-json "trailers")) (-> response :headers str))
+            (is (nil? (some-> response :trailers)) (-> response :headers str))))
 
         (let [request-trailer-delay-ms 100
               response-trailer-delay-ms 100]
