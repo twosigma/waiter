@@ -933,7 +933,9 @@
                       (= cancel-policy-observer cancel-policy)
                       (assert-grpc-unknown-status status "call was cancelled" assertion-message))
                     (is (nil? summary) assertion-message)
-                    (assert-request-state grpc-client request-headers service-id correlation-id ::client-cancel)))))))))))
+                    (when-not (= cancel-policy-context cancel-policy)
+                      ;; Courier implementation does not always track request states during Context cancellation
+                      (assert-request-state grpc-client request-headers service-id correlation-id ::client-cancel))))))))))))
 
 (deftest ^:parallel ^:integration-slow test-grpc-bidi-streaming-client-exit
   (testing-using-waiter-url
