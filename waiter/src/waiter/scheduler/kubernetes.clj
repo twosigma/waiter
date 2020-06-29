@@ -253,7 +253,9 @@
           restart-count (get-in pod [:status :containerStatuses 0 :restartCount] 0)
           instance-id (pod->instance-id pod restart-count)
           node-name (get-in pod [:spec :nodeName])
-          port0 (get-in pod [:spec :containers 0 :ports 0 :containerPort])
+          has-reverse-proxy? (contains? (get-in pod [:spec :containers]) 2)
+          port0 (cond-> (get-in pod [:spec :containers 0 :ports 0 :containerPort])
+                        has-reverse-proxy? (- 1))
           run-as-user (or (get-in pod [:metadata :labels :waiter/user])
                           ;; falling back to namespace for legacy pods missing the waiter/user label
                           (k8s-object->namespace pod))
@@ -780,12 +782,16 @@
    :periodSeconds health-check-interval-secs
    :timeoutSeconds 1})
 
+(defn generate-port-with-offset
+  [service-id pod-base-port offset]
+  (-> service-id hash (mod 100) (* 10) (+ pod-base-port) (+ offset)))
+
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
   [{:keys [cluster-name fileserver pod-base-port pod-sigkill-delay-secs
            replicaset-api-version service-id->password-fn] :as scheduler}
    service-id
-   {:strs [backend-proto cmd cpus grace-period-secs health-check-authentication health-check-interval-secs
+   {:strs [env backend-proto cmd cpus grace-period-secs health-check-authentication health-check-interval-secs
            health-check-max-consecutive-failures health-check-port-index health-check-proto image
            mem min-instances namespace ports run-as-user]
     :as service-description}
@@ -803,9 +809,10 @@
         ;; delay iff the log-bucket-url setting was given the scheduler config.
         log-bucket-sync-secs (if log-bucket-url (:log-bucket-sync-secs context) 0)
         total-sigkill-delay-secs (+ pod-sigkill-delay-secs log-bucket-sync-secs)
+        has-reverse-proxy? (get env "GRPC_TRANSCODER")
         ;; Make $PORT0 value pseudo-random to ensure clients can't hardcode it.
         ;; Helps maintain compatibility with Marathon, where port assignment is dynamic.
-        port0 (-> service-id hash (mod 100) (* 10) (+ pod-base-port))
+        port0 (generate-port-with-offset service-id pod-base-port (if has-reverse-proxy? 1 0))
         health-check-port (+ port0 health-check-port-index)
         env (into [;; We set these two "MESOS_*" variables to improve interoperability.
                    ;; New clients should prefer using WAITER_SANDBOX.
