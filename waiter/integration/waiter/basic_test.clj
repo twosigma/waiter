@@ -421,7 +421,7 @@
         service-id
         (assert-response-status response http-502-bad-gateway)
         (is (str/includes? (-> response :body str) "Request to service backend failed"))
-        (is (str/includes? (-> response :headers (get "server")) "waiter/"))
+        (assert-waiter-response response)
         (let [{:keys [service-description]} (service-settings waiter-url service-id)
               {:keys [cmd health-check-port-index ports]} service-description]
           (is (= kitchen-command cmd))

@@ -217,6 +217,8 @@
                         :composite {:factory-fn waiter.auth.composite/composite-authenticator
                                     :authentication-providers {"kerberos" {;; see the :kerberos entry for configuration options
                                                                            :todo :config}
+                                                               "provided" {;; see the :provided entry for configuration options
+                                                                           :todo :config}
                                                                "saml" {;; see the :saml entry for configuration options
                                                                        :todo :config}}
                                     ;; The authentication scheme to use if one is not specified
@@ -289,6 +291,11 @@
                                    ;; the maximum number of request waiting for Kerberos auth before server responds
                                    ;; with a 503 temporarily unavailable
                                    :max-queue-length 1000}
+
+                        ;; :kind :provided enables authentication using only the upstream protocols (e.g. JWT, Cookie) provided
+                        ;:kind :provided
+                        :provided {;; The provided authenticator doesn't have any configuration options
+                                   :factory-fn waiter.auth.authentication/provided-authenticator}
 
                         ;; :kind :saml enables authentication using SAML SP-initiated SSO flow
                         ;; https://docs.pingidentity.com/bundle/pf_sm_supportedStandards_pf83/page/task/spInitiatedSsoRedirectPost.html

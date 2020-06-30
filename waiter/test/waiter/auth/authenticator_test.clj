@@ -18,7 +18,9 @@
             [clojure.string :as str]
             [clojure.test :refer :all]
             [waiter.auth.authentication :refer :all]
-            [waiter.cookie-support :as cs])
+            [waiter.cookie-support :as cs]
+            [waiter.status-codes :refer :all]
+            [waiter.util.utils :as utils])
   (:import (waiter.auth.authentication SingleUserAuthenticator)))
 
 (deftest test-one-user-authenticator
@@ -96,3 +98,21 @@
         (is (= {:body {:principal nil :user nil}} (auth-cookie-handler {:headers {}})))
         (is (= {:body {:principal nil :user nil}} (auth-cookie-handler {:headers {"cookie" "foo=bar"}})))
         (is (= {:body {:principal nil :user nil}} (auth-cookie-handler {:headers {"cookie" "x-waiter-auth=foo"}})))))))
+
+(deftest test-provided-authenticator
+  (let [authenticator (provided-authenticator nil)
+        username (System/getProperty "user.name")
+        request-handler (fn [request] (assoc request :processed-by :request-handler))
+        auth-request-handler (wrap-auth-handler authenticator request-handler)]
+    (testing "authenticated request"
+      (let [request {:authorization/method :single-user
+                     :authorization/principal username
+                     :authorization/user username
+                     :headers {"host" "www.test.com"}}
+            response (auth-request-handler request)]
+        (is (= (assoc request :processed-by :request-handler) response))))
+
+    (testing "unauthenticated request"
+      (let [request {:headers {"host" "www.test.com"}}
+            response (auth-request-handler request)]
+        (is (= (utils/attach-waiter-source {:status http-401-unauthorized}) response))))))

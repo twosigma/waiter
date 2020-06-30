@@ -171,8 +171,7 @@
             (let [auth-params-map (build-auth-params-map :single-user run-as-user)]
               (handle-request-auth request-handler request auth-params-map password))
             (= "unauthorized" auth-path)
-            (utils/attach-waiter-source
-              {:headers {"www-authenticate" "SingleUser"} :status http-401-unauthorized})
+            (utils/attach-waiter-source {:status http-401-unauthorized})
             (= "forbidden" auth-path)
             (utils/attach-waiter-source
               {:headers {} :status http-403-forbidden})
@@ -188,6 +187,25 @@
   (log/warn "use of single-user authenticator is strongly discouraged for production use:"
             "requests will use principal" run-as-user)
   (->SingleUserAuthenticator run-as-user password))
+
+;; An authentication middleware that allows services to rely exclusively upon provided
+;; auth methods (e.g. JWT, OIDC) instead of supporting native auth methods (e.g. Kerberos, SAML).
+;; This authentication middleware either allows requests through if the request is already authenticated,
+;; or it triggers a 401 unauthorized response (without ww-authenticate headers) to allow upstream
+;; auth middleware to generate appropriate responses.
+(defrecord ProvidedAuthenticator []
+  Authenticator
+  (wrap-auth-handler [_ request-handler]
+    (fn provided-auth-handler [request]
+      (cond
+        (request-authenticated? request) (request-handler request)
+        ;; rely on upstream processing to add the www-authenticate header
+        :else (utils/attach-waiter-source {:status http-401-unauthorized})))))
+
+(defn provided-authenticator
+  "Factory function for creating ProvidedAuthenticator."
+  [_]
+  (->ProvidedAuthenticator))
 
 (defn wrap-auth-cookie-handler
   "Returns a handler that can authenticate a request that contains a valid x-waiter-auth cookie."
