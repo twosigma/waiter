@@ -194,12 +194,10 @@
     (when (str/blank? oidc-authorize-uri)
       (throw (ex-info "OIDC authorize endpoint not configured!" {})))
     (counters/inc! (metrics/waiter-counter "core" "jwt" "authorize-url"))
-    (let [request-host (utils/request->host request)
-          request-scheme (utils/request->scheme request)
-          code-challenge (utils/b64-encode-sha256 code-verifier)
-          callback-uri (str (name request-scheme) "://" request-host oidc-callback-uri)
+    (let [code-challenge (utils/b64-encode-sha256 code-verifier)
+          callback-uri (utils/retrieve-https-redirect-url request oidc-callback-uri nil)
           callback-uri-encoded (cookie-support/url-encode callback-uri)
-          client-id (utils/authority->host request-host)]
+          client-id (-> request utils/request->host utils/authority->host)]
       (str oidc-authorize-uri "?"
            "client_id=" client-id "&"
            "code_challenge=" code-challenge "&"
