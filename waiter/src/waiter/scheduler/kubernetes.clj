@@ -245,6 +245,18 @@
                  :waiter/pod-expired pod-expired})
       true)))
 
+(defn generate-port-with-offset
+  [service-id pod-base-port direction has-sidecar]
+  (let [base-port (-> service-id hash
+                      (mod 100)
+                      (* 10)
+                      (+ pod-base-port))
+        offset (if has-sidecar 1 0)
+        port-with-offset (if (= direction :forward)
+                           (+ base-port offset)
+                           (- base-port offset))]
+    port-with-offset))
+
 (defn pod->ServiceInstance
   "Convert a Kubernetes Pod JSON response into a Waiter Service Instance record."
   [{:keys [api-server-url] :as scheduler} pod]
@@ -253,9 +265,11 @@
           restart-count (get-in pod [:status :containerStatuses 0 :restartCount] 0)
           instance-id (pod->instance-id pod restart-count)
           node-name (get-in pod [:spec :nodeName])
-          has-reverse-proxy? (contains? (get-in pod [:spec :containers]) 2)
-          port0 (cond-> (get-in pod [:spec :containers 0 :ports 0 :containerPort])
-                        has-reverse-proxy? (- 1))
+          pod-annotations (get-in pod [:metadata :annotations])
+          has-reverse-proxy? (contains? pod-annotations :waiter/reverse-proxy)
+          service-id (k8s-object->service-id pod)
+          pod-base-port (get-in pod [:spec :containers 0 :ports 0 :containerPort])
+          port0 (generate-port-with-offset service-id pod-base-port :backward has-reverse-proxy?)
           run-as-user (or (get-in pod [:metadata :labels :waiter/user])
                           ;; falling back to namespace for legacy pods missing the waiter/user label
                           (k8s-object->namespace pod))
@@ -263,7 +277,6 @@
           {:keys [phase] :as pod-status} (:status pod)
           container-statuses (get pod-status :containerStatuses)
           primary-container-status (first container-statuses)
-          pod-annotations (get-in pod [:metadata :annotations])
           pod-started-at (-> pod (get-in [:status :startTime]) timestamp-str->datetime)]
       (scheduler/make-ServiceInstance
         (cond-> {:extra-ports (->> pod-annotations :waiter/port-count Integer/parseInt range next (mapv #(+ port0 %)))
@@ -281,7 +294,7 @@
                  :k8s/user run-as-user
                  :log-directory (log-dir-path run-as-user restart-count)
                  :port port0
-                 :service-id (k8s-object->service-id pod)
+                 :service-id service-id
                  :started-at pod-started-at}
           node-name (assoc :k8s/node-name node-name)
           phase (assoc :k8s/pod-phase phase)
@@ -782,9 +795,6 @@
    :periodSeconds health-check-interval-secs
    :timeoutSeconds 1})
 
-(defn generate-port-with-offset
-  [service-id pod-base-port offset]
-  (-> service-id hash (mod 100) (* 10) (+ pod-base-port) (+ offset)))
 
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
@@ -809,10 +819,10 @@
         ;; delay iff the log-bucket-url setting was given the scheduler config.
         log-bucket-sync-secs (if log-bucket-url (:log-bucket-sync-secs context) 0)
         total-sigkill-delay-secs (+ pod-sigkill-delay-secs log-bucket-sync-secs)
-        has-reverse-proxy? (get env "GRPC_TRANSCODER")
+        has-reverse-proxy? (some #(= (:name %) "GRPC_TRANSCODER")  service-description)
         ;; Make $PORT0 value pseudo-random to ensure clients can't hardcode it.
         ;; Helps maintain compatibility with Marathon, where port assignment is dynamic.
-        port0 (generate-port-with-offset service-id pod-base-port (if has-reverse-proxy? 1 0))
+        port0 (generate-port-with-offset service-id pod-base-port :forward has-reverse-proxy?)
         health-check-port (+ port0 health-check-port-index)
         env (into [;; We set these two "MESOS_*" variables to improve interoperability.
                    ;; New clients should prefer using WAITER_SANDBOX.
