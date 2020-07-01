@@ -14,6 +14,7 @@
 ;; limitations under the License.
 ;;
 (ns token-syncer.main
+  (:gen-class)
   (:require [clojure.string :as str]
             [clojure.tools.logging :as log]
             [qbits.jet.client.http :as http]
@@ -23,8 +24,7 @@
             [token-syncer.commands.ping :as ping]
             [token-syncer.commands.syncer :as syncer]
             [token-syncer.waiter :as waiter])
-  (:import (org.eclipse.jetty.client HttpClient))
-  (:gen-class))
+  (:import (org.eclipse.jetty.client HttpClient)))
 
 (defn- setup-exception-handler
   "Sets up the UncaughtExceptionHandler."

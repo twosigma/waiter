@@ -17,8 +17,8 @@
   (:require [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.string :as str]
-            [clojure.walk :as walk]
             [clojure.tools.logging :as log]
+            [clojure.walk :as walk]
             [plumbing.core :as pc])
   (:import (java.io File)))
 
