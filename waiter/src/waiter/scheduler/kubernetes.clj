@@ -245,13 +245,17 @@
                  :waiter/pod-expired pod-expired})
       true)))
 
+;(defn- pxx [json]
+;  (spit "o.edn" (str "\n" (with-out-str (clojure.pprint/pprint json))) :append true)
+;  json)
+
 (defn generate-port-with-offset
-  [service-id pod-base-port direction has-sidecar]
-  (let [base-port (-> service-id hash
+  [service-id pod-base-port direction offset]
+  (let [;_ (pxx (str "service-id:" service-id " hash: " (hash service-id) " pod-base-port: " pod-base-port))
+        base-port (-> service-id hash
                       (mod 100)
                       (* 10)
                       (+ pod-base-port))
-        offset (if has-sidecar 1 0)
         port-with-offset (if (= direction :forward)
                            (+ base-port offset)
                            (- base-port offset))]
@@ -267,9 +271,11 @@
           node-name (get-in pod [:spec :nodeName])
           pod-annotations (get-in pod [:metadata :annotations])
           has-reverse-proxy? (contains? pod-annotations :waiter/reverse-proxy)
+          offset (if has-reverse-proxy? 1 0)
           service-id (k8s-object->service-id pod)
           pod-base-port (get-in pod [:spec :containers 0 :ports 0 :containerPort])
-          port0 (generate-port-with-offset service-id pod-base-port :backward has-reverse-proxy?)
+          port0 (generate-port-with-offset service-id pod-base-port :backward offset)
+          ;_ (pxx (str "port0 " port0 "pod-base-port " pod-base-port "service-id " service-id))
           run-as-user (or (get-in pod [:metadata :labels :waiter/user])
                           ;; falling back to namespace for legacy pods missing the waiter/user label
                           (k8s-object->namespace pod))
@@ -801,11 +807,11 @@
   [{:keys [cluster-name fileserver pod-base-port pod-sigkill-delay-secs
            replicaset-api-version service-id->password-fn] :as scheduler}
    service-id
-   {:strs [env backend-proto cmd cpus grace-period-secs health-check-authentication health-check-interval-secs
+   {:strs [backend-proto cmd cpus grace-period-secs health-check-authentication health-check-interval-secs
            health-check-max-consecutive-failures health-check-port-index health-check-proto image
            mem min-instances namespace ports run-as-user]
     :as service-description}
-   {:keys [container-init-commands default-container-image default-namespace log-bucket-url image-aliases]
+   {:keys [container-init-commands default-container-image default-namespace log-bucket-url image-aliases envoy-proxy-constant]
     :as context}]
   (when-not (or image default-container-image)
     (throw (ex-info "Waiter configuration is missing a default image for Kubernetes pods" {})))
@@ -819,10 +825,13 @@
         ;; delay iff the log-bucket-url setting was given the scheduler config.
         log-bucket-sync-secs (if log-bucket-url (:log-bucket-sync-secs context) 0)
         total-sigkill-delay-secs (+ pod-sigkill-delay-secs log-bucket-sync-secs)
-        has-reverse-proxy? (some #(= (:name %) "GRPC_TRANSCODER")  service-description)
+        has-reverse-proxy? (some #(= (:name %) envoy-proxy-constant)  (get service-description "env"))
+        offset (if has-reverse-proxy? 1 0)
         ;; Make $PORT0 value pseudo-random to ensure clients can't hardcode it.
         ;; Helps maintain compatibility with Marathon, where port assignment is dynamic.
-        port0 (generate-port-with-offset service-id pod-base-port :forward has-reverse-proxy?)
+        port0 (generate-port-with-offset service-id pod-base-port :forward offset)
+        ;_ (pxx (generate-port-with-offset "test-app-1234" 8080 :forward 0))
+        ;_ (pxx (str service-id " ---- " pod-base-port " -------- " port0))
         health-check-port (+ port0 health-check-port-index)
         env (into [;; We set these two "MESOS_*" variables to improve interoperability.
                    ;; New clients should prefer using WAITER_SANDBOX.
@@ -1176,7 +1185,8 @@
         service-id->failed-instances-transient-store (atom {})
         replicaset-spec-builder-ctx (assoc replicaset-spec-builder
                                       :log-bucket-sync-secs log-bucket-sync-secs
-                                      :log-bucket-url log-bucket-url)
+                                      :log-bucket-url log-bucket-url
+                                      :envoy-proxy-constant "GRPC_TRANSCODER")
         replicaset-spec-builder-fn (let [f (-> replicaset-spec-builder
                                                :factory-fn
                                                utils/resolve-symbol
