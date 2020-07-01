@@ -16,6 +16,7 @@
 (ns waiter.proto-test
   (:require [clojure.data.json :as json]
             [clojure.test :refer :all]
+            [clojure.tools.logging :as log]
             [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
             [waiter.util.http-utils :as hu]))
@@ -119,9 +120,12 @@
     (is "test completed marker")))
 
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-https-backend-proto-service
-  (testing-using-waiter-url
-    (run-backend-proto-service-test waiter-url "https" "https" "HTTP/1.1")
-    (is "test completed marker")))
+  ;; Disabled on Travis: https://github.com/twosigma/waiter/issues/1137
+  (if-not (= "true" (System/getenv "TRAVIS"))
+    (testing-using-waiter-url
+      (run-backend-proto-service-test waiter-url "https" "https" "HTTP/1.1")
+      (is "test completed marker")))
+  (log/info "Skipping test in the Travis environment"))
 
 (deftest ^:parallel ^:integration-slow ^:resource-heavy ^:explicit test-h2c-backend-proto-service
   (testing-using-waiter-url
@@ -129,9 +133,12 @@
     (is "test completed marker")))
 
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-h2-backend-proto-service
-  (testing-using-waiter-url
-    (run-backend-proto-service-test waiter-url "h2" "https" "HTTP/2.0")
-    (is "test completed marker")))
+  ;; Disabled on Travis: https://github.com/twosigma/waiter/issues/1137
+  (if-not (= "true" (System/getenv "TRAVIS"))
+    (testing-using-waiter-url
+      (run-backend-proto-service-test waiter-url "h2" "https" "HTTP/2.0")
+      (is "test completed marker")))
+  (log/info "Skipping test in the Travis environment"))
 
 (deftest ^:parallel ^:integration-fast test-internal-protocol
   (testing-using-waiter-url
