@@ -71,8 +71,7 @@
                                      %1 %2 %3
                                      {:container-init-commands ["waiter-k8s-init"]
                                       :default-namespace dummy-scheduler-default-namespace
-                                      :default-container-image "twosigma/waiter-test-apps:latest"
-                                      :envoy-proxy-constant "GRPC_TRANSCODER"})
+                                      :default-container-image "twosigma/waiter-test-apps:latest"})
       :retrieve-auth-token-state-fn (constantly nil)
       :retrieve-syncer-state-fn (constantly nil)
       :restart-expiry-threshold 100
@@ -539,7 +538,7 @@
                         :k8s/node-name "node-0.k8s.com"
                         :k8s/pod-phase "Pending"
                         :log-directory "/home/myself/r0"
-                        :port (generate-port-with-offset "test-app-1234" 8080 :backward 0)
+                        :port 8080
                         :service-id "test-app-1234"
                         :started-at (du/str-to-date "2014-09-13T00:24:46Z" k8s-timestamp-format)})
                      (scheduler/make-ServiceInstance
@@ -549,7 +548,7 @@
                         :k8s/container-statuses [{:name "test-app-1234" :ready true :state :running}]
                         :k8s/pod-phase "Running"
                         :log-directory "/home/myself/r0"
-                        :port (generate-port-with-offset "test-app-1234" 8080 :backward 0)
+                        :port 8080
                         :service-id "test-app-1234"
                         :started-at (du/str-to-date "2014-09-13T00:24:46Z" k8s-timestamp-format)})
                      (scheduler/make-ServiceInstance
@@ -559,7 +558,7 @@
                         :k8s/container-statuses [{:name "test-app-1234" :ready true}]
                         :k8s/node-name "node-2.k8s.com"
                         :log-directory "/home/myself/r0"
-                        :port (generate-port-with-offset "test-app-1234" 8080 :backward 0)
+                        :port 8080
                         :service-id "test-app-1234"
                         :started-at (du/str-to-date "2014-09-13T00:24:47Z" k8s-timestamp-format)})]
                     :failed-instances []}
@@ -573,7 +572,7 @@
                         :id "test-app-6789.test-app-6789-abcd1-0"
                         :k8s/container-statuses [{:name "test-app-6789" :ready true}]
                         :log-directory "/home/myself/r0"
-                        :port (generate-port-with-offset "test-app-6789" 8080 :backward 0)
+                        :port 8080
                         :service-id "test-app-6789"
                         :started-at (du/str-to-date "2014-09-13T00:24:35Z" k8s-timestamp-format)})
                      (scheduler/make-ServiceInstance
@@ -582,7 +581,7 @@
                         :id "test-app-6789.test-app-6789-abcd2-1"
                         :k8s/container-statuses [{:name "test-app-6789"}]
                         :log-directory "/home/myself/r1"
-                        :port (generate-port-with-offset "test-app-6789" 8080 :backward 0)
+                        :port 8080
                         :service-id "test-app-6789"
                         :started-at (du/str-to-date "2014-09-13T00:24:37Z" k8s-timestamp-format)})
                      (scheduler/make-ServiceInstance
@@ -591,7 +590,7 @@
                         :id "test-app-6789.test-app-6789-abcd3-0"
                         :k8s/container-statuses [{:name "test-app-6789"}]
                         :log-directory "/home/myself/r0"
-                        :port (generate-port-with-offset "test-app-6789" 8080 :backward 0)
+                        :port 8080
                         :service-id "test-app-6789"
                         :started-at (du/str-to-date "2014-09-13T00:24:38Z" k8s-timestamp-format)})]
                     :failed-instances
@@ -602,7 +601,7 @@
                         :id "test-app-6789.test-app-6789-abcd2-0"
                         :k8s/container-statuses [{:name "test-app-6789"}]
                         :log-directory "/home/myself/r0"
-                        :port (generate-port-with-offset "test-app-6789" 8080 :backward 0)
+                        :port 8080
                         :service-id "test-app-6789"
                         :started-at (du/str-to-date "2014-09-13T00:24:36Z" k8s-timestamp-format)})]})
         dummy-scheduler (make-dummy-scheduler ["test-app-1234" "test-app-6789"] {:container-running-grace-secs 0})
@@ -1635,8 +1634,7 @@
                                  :waiter/cluster "waiter"
                                  :waiter/service-hash "test-app-1234"}
                         :annotations {:waiter/port-count "1"
-                                      :waiter/service-id "test-app-1234"
-                                      :waiter/reverse-proxy true}}
+                                      :waiter/service-id "test-app-1234"}}
              :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
              :status {:podIP "10.141.141.11"
                       :startTime pod-start-time-k8s-str
@@ -1652,7 +1650,7 @@
                       :id "test-app-1234.test-app-1234-abcd1-9"
                       :log-directory "/home/myself/r9"
                       :message nil
-                      :port (generate-port-with-offset "test-app-1234" 8080 :backward 1)
+                      :port 8080
                       :service-id "test-app-1234"
                       :started-at (timestamp-str->datetime pod-start-time-k8s-str)
                       :k8s/api-server-url api-server-url
@@ -1691,6 +1689,14 @@
                                    :restart-expiry-threshold 25)
             instance (pod->ServiceInstance dummy-scheduler pod)]
         (is (= (scheduler/make-ServiceInstance expired-instance-map) instance))))
+
+    (testing "pod with envoy sidecar to instance"
+      (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
+            pod' (merge
+                   (assoc-in pod [:metadata :annotations :waiter/reverse-proxy] true)
+                   (assoc-in pod [:spec :containers 0 :ports 0 :containerPort] 8079))
+            instance (pod->ServiceInstance dummy-scheduler pod)]
+        (is (= (scheduler/make-ServiceInstance instance-map) instance))))
 
     (testing "previously started pod not expired despite instance exceeded running grace period"
       (let [dummy-scheduler (assoc base-scheduler

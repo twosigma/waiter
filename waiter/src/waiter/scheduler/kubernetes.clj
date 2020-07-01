@@ -245,21 +245,18 @@
                  :waiter/pod-expired pod-expired})
       true)))
 
-;(defn- pxx [json]
-;  (spit "o.edn" (str "\n" (with-out-str (clojure.pprint/pprint json))) :append true)
-;  json)
-
 (defn generate-port-with-offset
-  [service-id pod-base-port direction offset]
-  (let [;_ (pxx (str "service-id:" service-id " hash: " (hash service-id) " pod-base-port: " pod-base-port))
-        base-port (-> service-id hash
+  [service-id pod-base-port offset]
+  (let [base-port (-> service-id hash
                       (mod 100)
                       (* 10)
                       (+ pod-base-port))
-        port-with-offset (if (= direction :forward)
-                           (+ base-port offset)
-                           (- base-port offset))]
+        port-with-offset (+ base-port offset)]
     port-with-offset))
+
+(defn get-port-without-offset
+  [pod offset]
+  (- (get-in pod [:spec :containers 0 :ports 0 :containerPort]) offset))
 
 (defn pod->ServiceInstance
   "Convert a Kubernetes Pod JSON response into a Waiter Service Instance record."
@@ -272,10 +269,7 @@
           pod-annotations (get-in pod [:metadata :annotations])
           has-reverse-proxy? (contains? pod-annotations :waiter/reverse-proxy)
           offset (if has-reverse-proxy? 1 0)
-          service-id (k8s-object->service-id pod)
-          pod-base-port (get-in pod [:spec :containers 0 :ports 0 :containerPort])
-          port0 (generate-port-with-offset service-id pod-base-port :backward offset)
-          ;_ (pxx (str "port0 " port0 "pod-base-port " pod-base-port "service-id " service-id))
+          port0 (get-port-without-offset pod offset)
           run-as-user (or (get-in pod [:metadata :labels :waiter/user])
                           ;; falling back to namespace for legacy pods missing the waiter/user label
                           (k8s-object->namespace pod))
@@ -300,7 +294,7 @@
                  :k8s/user run-as-user
                  :log-directory (log-dir-path run-as-user restart-count)
                  :port port0
-                 :service-id service-id
+                 :service-id (k8s-object->service-id pod)
                  :started-at pod-started-at}
           node-name (assoc :k8s/node-name node-name)
           phase (assoc :k8s/pod-phase phase)
@@ -801,17 +795,16 @@
    :periodSeconds health-check-interval-secs
    :timeoutSeconds 1})
 
-
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
   [{:keys [cluster-name fileserver pod-base-port pod-sigkill-delay-secs
-           replicaset-api-version service-id->password-fn] :as scheduler}
+           replicaset-api-version service-id->password-fn reverse-proxy-flag] :as scheduler}
    service-id
    {:strs [backend-proto cmd cpus grace-period-secs health-check-authentication health-check-interval-secs
            health-check-max-consecutive-failures health-check-port-index health-check-proto image
            mem min-instances namespace ports run-as-user]
     :as service-description}
-   {:keys [container-init-commands default-container-image default-namespace log-bucket-url image-aliases envoy-proxy-constant]
+   {:keys [container-init-commands default-container-image default-namespace log-bucket-url image-aliases]
     :as context}]
   (when-not (or image default-container-image)
     (throw (ex-info "Waiter configuration is missing a default image for Kubernetes pods" {})))
@@ -825,13 +818,11 @@
         ;; delay iff the log-bucket-url setting was given the scheduler config.
         log-bucket-sync-secs (if log-bucket-url (:log-bucket-sync-secs context) 0)
         total-sigkill-delay-secs (+ pod-sigkill-delay-secs log-bucket-sync-secs)
-        has-reverse-proxy? (some #(= (:name %) envoy-proxy-constant)  (get service-description "env"))
+        has-reverse-proxy? (some #(= (:name %) reverse-proxy-flag)  (get service-description "env"))
         offset (if has-reverse-proxy? 1 0)
         ;; Make $PORT0 value pseudo-random to ensure clients can't hardcode it.
         ;; Helps maintain compatibility with Marathon, where port assignment is dynamic.
-        port0 (generate-port-with-offset service-id pod-base-port :forward offset)
-        ;_ (pxx (generate-port-with-offset "test-app-1234" 8080 :forward 0))
-        ;_ (pxx (str service-id " ---- " pod-base-port " -------- " port0))
+        port0 (generate-port-with-offset service-id pod-base-port offset)
         health-check-port (+ port0 health-check-port-index)
         env (into [;; We set these two "MESOS_*" variables to improve interoperability.
                    ;; New clients should prefer using WAITER_SANDBOX.
@@ -1186,14 +1177,15 @@
         replicaset-spec-builder-ctx (assoc replicaset-spec-builder
                                       :log-bucket-sync-secs log-bucket-sync-secs
                                       :log-bucket-url log-bucket-url
-                                      :envoy-proxy-constant "GRPC_TRANSCODER")
+                                      :reverse-proxy-flag "GRPC_TRANSCODER")
         replicaset-spec-builder-fn (let [f (-> replicaset-spec-builder
                                                :factory-fn
                                                utils/resolve-symbol
                                                deref)]
                                      (assert (fn? f) "ReplicaSet spec function must be a Clojure fn")
                                      (fn [scheduler service-id service-description]
-                                       (f scheduler service-id service-description replicaset-spec-builder-ctx)))
+                                       (let [scheduler' (assoc scheduler :reverse-proxy-flag "GRPC_TRANSCODER")]
+                                         (f scheduler' service-id service-description replicaset-spec-builder-ctx))))
         watch-options (cond-> default-watch-options
                         (some? watch-retries)
                         (assoc :watch-retries watch-retries))
