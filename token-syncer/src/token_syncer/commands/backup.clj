@@ -14,13 +14,11 @@
 ;; limitations under the License.
 ;;
 (ns token-syncer.commands.backup
-  (:require [clojure.data.json :as json]
-            [clojure.java.io :as io]
-            [clojure.string :as str]
+  (:require [clojure.string :as str]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
-            [plumbing.core :as pc])
-  (:import (java.io File)))
+            [plumbing.core :as pc]
+            [token-syncer.file-utils :as file-utils]))
 
 (defn backup-tokens
   "Reads all the latest token descriptions from the specified cluster and writes it to the specified file.
@@ -30,9 +28,9 @@
   (let [existing-token->token-description (read-from-file filename)
         index-entries (load-token-list cluster-url)
         token->etag (->> index-entries
-                         (map (fn [{:strs [etag token]}] [token etag]))
-                         (into (sorted-map)))
-        _ (log/info "found" (count token->etag) "tokens on" cluster-url ":" (keys token->etag))
+                      (map (fn [{:strs [etag token]}] [token etag]))
+                      (into (sorted-map)))
+        _ (log/info "found" (count token->etag) "token(s) on" cluster-url ":" (keys token->etag))
         current-token->token-description (pc/map-from-keys
                                            (fn [token]
                                              ;; use existing token information if etags match, else load from Waiter
@@ -43,47 +41,14 @@
                                                    (log/info "using existing token description for" token "with etag" existing-etag)
                                                    (get existing-token->token-description token))
                                                  (-> (load-token cluster-url token)
-                                                     (select-keys [:description :token-etag])
-                                                     (walk/stringify-keys)))))
-                                           (keys token->etag))]
-    (->> (cond->> current-token->token-description
-                  accrete-mode
-                  (merge existing-token->token-description))
-         (into (sorted-map))
-         (write-to-file filename))))
-
-(defn read-from-file
-  "Reads the contents of the file as a json string."
-  [filename]
-  (if (.exists ^File (io/as-file filename))
-    (do
-      (log/info "reading contents from" filename)
-      (let [file-content (slurp filename)
-            result (if (str/blank? file-content) {} (json/read-str file-content))]
-        (if (and (map? result)
-                 (every? string? (keys result)))
-          (do
-            (log/info "found" (count result) "tokens in" filename ":" (keys result))
-            result)
-          (log/warn "contents of" filename "will be ignored as it is not a map with string keys:" result))))
-    (log/warn "not reading contents from" filename "as it does not exist!")))
-
-(defn write-to-file
-  "Writes the content to the specified file as a json string."
-  [filename content]
-  (log/info "writing" (count content) "tokens to" filename ":" (keys content))
-  (->> content
-       json/write-str
-       (spit filename)))
-
-(defn init-file-operations-api
-  "Creates the map of methods used to read/write tokens from/to a file."
-  [dry-run]
-  {:read-from-file read-from-file
-   :write-to-file (if dry-run
-                    (fn write-to-file-dry-run-version [filename token->token-description]
-                      (log/info "[dry-run] writing to" filename "content:" token->token-description))
-                    write-to-file)})
+                                                   (select-keys [:description :token-etag])
+                                                   (walk/stringify-keys)))))
+                                           (keys token->etag))
+        backup-result (into (sorted-map)
+                            (cond->> current-token->token-description
+                              accrete-mode (merge existing-token->token-description)))]
+    (log/info "backup has" (count backup-result) "token(s):" (keys backup-result))
+    (write-to-file filename backup-result)))
 
 (def backup-tokens-config
   {:execute-command (fn execute-backup-tokens-command
@@ -93,7 +58,7 @@
                           {:exit-code 1
                            :message (str "expected 2 arguments FILE URL, provided " (count arguments) ": " (vec arguments))}
                           (let [dry-run (get-in parent-context [:options :dry-run])
-                                file-operations-api (init-file-operations-api dry-run)
+                                file-operations-api (file-utils/init-file-operations-api dry-run)
                                 file (first arguments)
                                 cluster-url (second arguments)]
                             (log/info "backing up tokens from" cluster-url "to" file

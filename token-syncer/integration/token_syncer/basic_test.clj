@@ -18,9 +18,12 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [plumbing.core :as pc]
+            [token-syncer.commands.backup :as backup]
             [token-syncer.commands.cleanup :as cleanup]
             [token-syncer.commands.ping :as ping]
+            [token-syncer.commands.restore :as restore]
             [token-syncer.commands.syncer :as syncer]
+            [token-syncer.file-utils :as file-utils]
             [token-syncer.main :as main])
   (:import (java.util UUID)))
 
@@ -947,3 +950,164 @@
 
         (finally
           (cleanup-token waiter-api [cluster-url] token-name))))))
+
+(deftest ^:integration test-restore-updated-token
+  (testing "token restore with outdated token"
+    (let [waiter-urls (waiter-urls)
+          {:keys [load-token store-token] :as waiter-api} (waiter-api)
+          token-name (str "test-restore-updated-token-" (UUID/randomUUID))]
+      (try
+        ;; ARRANGE
+        (let [last-update-time-ms (- (System/currentTimeMillis) 10000)
+              retrieve-token-description (fn [index waiter-url]
+                                           (assoc basic-description
+                                             "cluster" (waiter-url->cluster waiter-url)
+                                             "cpus" (inc index)
+                                             "last-update-time" (cond-> last-update-time-ms
+                                                                  (zero? index) (- 10000))
+                                             "last-update-user" (str "auth-user-" index)
+                                             "owner" "test-user"
+                                             "root" waiter-url))]
+
+          (doall
+            (map-indexed
+              (fn [index waiter-url]
+                (store-token waiter-url token-name nil (retrieve-token-description index waiter-url)))
+              waiter-urls))
+
+          (let [target-cluster-url (first waiter-urls)
+                token-description (retrieve-token-description 1 (second waiter-urls))]
+
+            ;; ACT
+            (let [restore-result (restore/restore-tokens-from-backup
+                                  waiter-api target-cluster-url false {token-name token-description})]
+
+              ;; ASSERT
+              (let [{:keys [description]} (load-token target-cluster-url token-name)]
+                (is (= {:error 0 :skip 0 :success 1} restore-result))
+                (is (= (retrieve-token-description 1 (second waiter-urls)) (dissoc description "previous")))
+                (is (= (retrieve-token-description 0 target-cluster-url) (get description "previous")))))))
+        (finally
+          (cleanup-token waiter-api waiter-urls token-name))))))
+
+(deftest ^:integration test-restore-skip-new-token
+  (testing "token restore with outdated token"
+    (let [waiter-urls (waiter-urls)
+          {:keys [load-token store-token] :as waiter-api} (waiter-api)
+          token-name (str "test-restore-updated-token-" (UUID/randomUUID))]
+      (try
+        ;; ARRANGE
+        (let [last-update-time-ms (- (System/currentTimeMillis) 10000)
+              retrieve-token-description (fn [index waiter-url]
+                                           (assoc basic-description
+                                             "cluster" (waiter-url->cluster waiter-url)
+                                             "cpus" (inc index)
+                                             "last-update-time" (cond-> last-update-time-ms
+                                                                  (zero? index) (+ 10000))
+                                             "last-update-user" (str "auth-user-" index)
+                                             "owner" "test-user"
+                                             "root" waiter-url))]
+
+          (doall
+            (map-indexed
+              (fn [index waiter-url]
+                (store-token waiter-url token-name nil (retrieve-token-description index waiter-url)))
+              waiter-urls))
+
+          (let [target-cluster-url (first waiter-urls)
+                token-description (retrieve-token-description 1 (second waiter-urls))]
+
+            ;; ACT
+            (let [restore-result (restore/restore-tokens-from-backup
+                                   waiter-api target-cluster-url false {token-name token-description})]
+
+              ;; ASSERT
+              (let [{:keys [description]} (load-token target-cluster-url token-name)]
+                (is (= {:error 0 :skip 1 :success 0} restore-result))
+                (is (= (retrieve-token-description 0 target-cluster-url) (dissoc description "previous")))))))
+        (finally
+          (cleanup-token waiter-api waiter-urls token-name))))))
+
+(deftest ^:integration test-restore-missing-token
+  (testing "token restore missing token"
+    (let [waiter-urls (waiter-urls)
+          {:keys [load-token store-token] :as waiter-api} (waiter-api)
+          token-name (str "test-restore-missing-token-" (UUID/randomUUID))]
+      (try
+        ;; ARRANGE
+        (let [last-update-time-ms (- (System/currentTimeMillis) 10000)
+              retrieve-token-description (fn [index waiter-url]
+                                           (assoc basic-description
+                                             "cluster" (waiter-url->cluster waiter-url)
+                                             "cpus" (inc index)
+                                             "last-update-time" (cond-> last-update-time-ms
+                                                                  (zero? index) (- 10000))
+                                             "last-update-user" (str "auth-user-" index)
+                                             "owner" "test-user"
+                                             "root" waiter-url))]
+
+          (doall
+            (map-indexed
+              (fn [index waiter-url]
+                (when (pos? index)
+                  (store-token waiter-url token-name nil (retrieve-token-description index waiter-url))))
+              waiter-urls))
+
+          (let [target-cluster-url (first waiter-urls)
+                token-description (retrieve-token-description 1 (second waiter-urls))]
+
+            ;; ACT
+            (let [restore-result (restore/restore-tokens-from-backup
+                                   waiter-api target-cluster-url false {token-name token-description})]
+
+              ;; ASSERT
+              (let [{:keys [description]} (load-token target-cluster-url token-name)]
+                (is (= {:error 0 :skip 0 :success 1} restore-result))
+                (is (= (retrieve-token-description 1 (second waiter-urls)) (dissoc description "previous")))
+                (is (empty? (get description "previous")))))))
+        (finally
+          (cleanup-token waiter-api waiter-urls token-name))))))
+
+(deftest ^:integration test-restore-from-backup
+  (testing "token restore missing token"
+    (let [waiter-urls (waiter-urls)
+          {:keys [load-token store-token] :as waiter-api} (waiter-api)
+          token-name (str "test-restore-missing-token-" (UUID/randomUUID))]
+      (try
+        ;; ARRANGE
+        (let [last-update-time-ms (- (System/currentTimeMillis) 10000)
+              retrieve-token-description (fn [index waiter-url]
+                                           (assoc basic-description
+                                             "cluster" (waiter-url->cluster waiter-url)
+                                             "cpus" (inc index)
+                                             "last-update-time" (cond-> last-update-time-ms
+                                                                  (zero? index) (- 10000))
+                                             "last-update-user" (str "auth-user-" index)
+                                             "owner" "test-user"
+                                             "root" waiter-url))]
+
+          (doall
+            (map-indexed
+              (fn [index waiter-url]
+                (when (pos? index)
+                  (store-token waiter-url token-name nil (retrieve-token-description index waiter-url))))
+              waiter-urls))
+
+          (let [target-cluster-url (first waiter-urls)
+                source-cluster-url (second waiter-urls)
+                my-temp-file (file-utils/create-temp-file)
+                my-temp-file-path (file-utils/file->path my-temp-file)
+                file-operations-api (file-utils/init-file-operations-api false)]
+            (backup/backup-tokens waiter-api file-operations-api source-cluster-url my-temp-file-path false)
+
+            ;; ACT
+            (let [restore-result (restore/restore-tokens
+                                   waiter-api file-operations-api target-cluster-url my-temp-file-path false)]
+
+              ;; ASSERT
+              (let [{:keys [description]} (load-token target-cluster-url token-name)]
+                (is (= {:error 0 :skip 0 :success 1} restore-result))
+                (is (= (retrieve-token-description 1 (second waiter-urls)) (dissoc description "previous")))
+                (is (empty? (get description "previous")))))))
+        (finally
+          (cleanup-token waiter-api waiter-urls token-name))))))
