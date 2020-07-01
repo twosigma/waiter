@@ -20,8 +20,8 @@
             [clojure.tools.cli :as tools-cli]
             [clojure.walk :as walk]
             [plumbing.core :as pc]
-            [token-syncer.commands.syncer :refer :all]
-            [token-syncer.cli :as cli]))
+            [token-syncer.cli :as cli]
+            [token-syncer.commands.syncer :refer :all]))
 
 (deftest test-retrieve-token->url->token-data
   (let [test-cluster-urls ["www.cluster-1.com" "www.cluster-2.com" "www.cluster-3.com"]

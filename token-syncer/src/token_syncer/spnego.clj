@@ -19,7 +19,7 @@
            (org.apache.commons.codec.binary Base64)
            (org.eclipse.jetty.client.api Authentication$Result Request)
            (org.eclipse.jetty.http HttpHeader)
-           (org.ietf.jgss GSSManager GSSContext GSSName Oid)))
+           (org.ietf.jgss GSSContext GSSManager GSSName Oid)))
 
 (def ^Oid spnego-oid (Oid. "1.3.6.1.5.5.2"))
 
