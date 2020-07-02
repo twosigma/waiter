@@ -45,7 +45,7 @@
                  [io.grpc/grpc-core "1.20.0"
                   :exclusions [com.google.guava/guava]
                   :scope "test"]
-                 [twosigma/jet "0.7.10-20200504_104810-g200ef43"
+                 [twosigma/jet "0.7.10-20200702_185437-gc4443d3"
                   :exclusions [org.mortbay.jetty.alpn/alpn-boot]]
                  [twosigma/clj-http "1.0.2-20180124_201819-gcdf23e5"
                   :exclusions [commons-codec commons-io org.clojure/tools.reader potemkin slingshot]]
