@@ -245,22 +245,9 @@
                  :waiter/pod-expired pod-expired})
       true)))
 
-(defn generate-port-with-offset
-  [service-id pod-base-port offset]
-  (let [base-port (-> service-id hash
-                      (mod 100)
-                      (* 10)
-                      (+ pod-base-port))
-        port-with-offset (+ base-port offset)]
-    port-with-offset))
-
-(defn get-port-without-offset
-  [pod offset]
-  (- (get-in pod [:spec :containers 0 :ports 0 :containerPort]) offset))
-
 (defn pod->ServiceInstance
   "Convert a Kubernetes Pod JSON response into a Waiter Service Instance record."
-  [{:keys [api-server-url custom-options] :as scheduler} pod]
+  [{:keys [api-server-url proxy-options] :as scheduler} pod]
   (try
     (let [;; waiter-app is the first container we register
           restart-count (get-in pod [:status :containerStatuses 0 :restartCount] 0)
@@ -268,10 +255,8 @@
           node-name (get-in pod [:spec :nodeName])
           pod-annotations (get-in pod [:metadata :annotations])
           has-reverse-proxy? (contains? pod-annotations :waiter/reverse-proxy)
-          offset (if (and custom-options has-reverse-proxy?)
-                   (:reverse-proxy-offset custom-options)
-                   0)
-          port0 (get-port-without-offset pod offset)
+          offset (if has-reverse-proxy? (:reverse-proxy-offset proxy-options) 0)
+          port0 (- (get-in pod [:spec :containers 0 :ports 0 :containerPort]) offset)
           run-as-user (or (get-in pod [:metadata :labels :waiter/user])
                           ;; falling back to namespace for legacy pods missing the waiter/user label
                           (k8s-object->namespace pod))
@@ -594,6 +579,7 @@
                                 pod-base-port
                                 pod-sigkill-delay-secs
                                 pod-suffix-length
+                                proxy-options
                                 replicaset-api-version
                                 replicaset-spec-builder-fn
                                 retrieve-auth-token-state-fn
@@ -799,7 +785,7 @@
 
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
-  [{:keys [cluster-name custom-options fileserver pod-base-port pod-sigkill-delay-secs
+  [{:keys [cluster-name fileserver pod-base-port pod-sigkill-delay-secs proxy-options
            replicaset-api-version service-id->password-fn] :as scheduler}
    service-id
    {:strs [backend-proto cmd cpus grace-period-secs health-check-authentication health-check-interval-secs
@@ -820,13 +806,15 @@
         ;; delay iff the log-bucket-url setting was given the scheduler config.
         log-bucket-sync-secs (if log-bucket-url (:log-bucket-sync-secs context) 0)
         total-sigkill-delay-secs (+ pod-sigkill-delay-secs log-bucket-sync-secs)
-        has-reverse-proxy? (some #(= (:name %) (:reverse-proxy-flag custom-options)) (get service-description "env"))
-        offset (if (and custom-options has-reverse-proxy?)
-                 (:reverse-proxy-offset custom-options)
-                 0)
+        has-reverse-proxy? (some #(= (:name %) (:reverse-proxy-flag proxy-options)) (get service-description "env"))
+        offset (if has-reverse-proxy? (:reverse-proxy-offset proxy-options) 0)
         ;; Make $PORT0 value pseudo-random to ensure clients can't hardcode it.
         ;; Helps maintain compatibility with Marathon, where port assignment is dynamic.
-        port0 (generate-port-with-offset service-id pod-base-port offset)
+        port0 (-> service-id hash
+                  (mod 100)
+                  (* 10)
+                  (+ pod-base-port)
+                  (+ offset))
         health-check-port (+ port0 health-check-port-index)
         env (into [;; We set these two "MESOS_*" variables to improve interoperability.
                    ;; New clients should prefer using WAITER_SANDBOX.
@@ -868,7 +856,7 @@
        :spec {:replicas min-instances
               :selector {:matchLabels {:app k8s-name
                                        :waiter/user run-as-user}}
-              :template {:metadata {:annotations {:waiter/port-count (str ports)
+              :template {:metadata {:annotations {:waiter/port-count (str (+ ports offset))
                                                   :waiter/service-id service-id}
                                     :labels {:app k8s-name
                                              :waiter/cluster cluster-name
@@ -937,7 +925,13 @@
            :resources {:limits {:memory memory}
                        :requests {:cpu cpu :memory memory}}
            :volumeMounts [{:mountPath "/srv/www"
-                           :name "user-home"}]})))))
+                           :name "user-home"}]}))
+
+      ;; Optional proxy sidecar container
+      (pos-int? offset)
+      (update-in
+        [:spec :template :metadata :annotations :waiter/base-port]
+        (- port0 offset) ))))
 
 (defn start-auth-renewer
   "Initialize the k8s-api-auth-str atom,
@@ -1138,7 +1132,7 @@
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
   [{:keys [authentication authorizer cluster-name container-running-grace-secs custom-options http-options log-bucket-sync-secs
            log-bucket-url max-patch-retries max-name-length pod-base-port pod-sigkill-delay-secs
-           pod-suffix-length replicaset-api-version replicaset-spec-builder restart-expiry-threshold scheduler-name
+           pod-suffix-length proxy-options replicaset-api-version replicaset-spec-builder restart-expiry-threshold scheduler-name
            scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
            service-id->password-fn start-scheduler-syncer-fn url watch-retries]
     {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver :as context}]
@@ -1225,6 +1219,7 @@
                                            pod-base-port
                                            pod-sigkill-delay-secs
                                            pod-suffix-length
+                                           proxy-options
                                            replicaset-api-version
                                            replicaset-spec-builder-fn
                                            retrieve-auth-token-state-fn

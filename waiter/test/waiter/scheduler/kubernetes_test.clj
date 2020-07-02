@@ -56,8 +56,8 @@
                    :default {:factory-fn 'waiter.authorization/noop-authorizer}}
       :daemon-state (atom nil)
       :cluster-name "waiter"
-      :custom-options {:reverse-proxy-flag "GRPC_TRANSCODER"
-                       :reverse-proxy-offset 1}
+      :proxy-options {:reverse-proxy-flag "GRPC_TRANSCODER"
+                      :reverse-proxy-offset 1}
       :container-running-grace-secs 120
       :fileserver {:port 9090
                    :scheme "http"}
@@ -1696,7 +1696,7 @@
       (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
             pod' (merge
                    (assoc-in pod [:metadata :annotations :waiter/reverse-proxy] true)
-                   (assoc-in pod [:spec :containers 0 :ports 0 :containerPort] 8079))
+                   (assoc-in pod [:spec :containers 0 :ports 0 :containerPort] 8081))
             instance (pod->ServiceInstance dummy-scheduler pod)]
         (is (= (scheduler/make-ServiceInstance instance-map) instance))))
 
