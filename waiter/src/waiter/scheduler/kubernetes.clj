@@ -260,7 +260,7 @@
 
 (defn pod->ServiceInstance
   "Convert a Kubernetes Pod JSON response into a Waiter Service Instance record."
-  [{:keys [api-server-url] :as scheduler} pod]
+  [{:keys [api-server-url custom-options] :as scheduler} pod]
   (try
     (let [;; waiter-app is the first container we register
           restart-count (get-in pod [:status :containerStatuses 0 :restartCount] 0)
@@ -268,7 +268,9 @@
           node-name (get-in pod [:spec :nodeName])
           pod-annotations (get-in pod [:metadata :annotations])
           has-reverse-proxy? (contains? pod-annotations :waiter/reverse-proxy)
-          offset (if has-reverse-proxy? 1 0)
+          offset (if (and custom-options has-reverse-proxy?)
+                   (:reverse-proxy-offset custom-options)
+                   0)
           port0 (get-port-without-offset pod offset)
           run-as-user (or (get-in pod [:metadata :labels :waiter/user])
                           ;; falling back to namespace for legacy pods missing the waiter/user label
@@ -797,8 +799,8 @@
 
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
-  [{:keys [cluster-name fileserver pod-base-port pod-sigkill-delay-secs
-           replicaset-api-version service-id->password-fn reverse-proxy-flag] :as scheduler}
+  [{:keys [cluster-name custom-options fileserver pod-base-port pod-sigkill-delay-secs
+           replicaset-api-version service-id->password-fn] :as scheduler}
    service-id
    {:strs [backend-proto cmd cpus grace-period-secs health-check-authentication health-check-interval-secs
            health-check-max-consecutive-failures health-check-port-index health-check-proto image
@@ -818,8 +820,10 @@
         ;; delay iff the log-bucket-url setting was given the scheduler config.
         log-bucket-sync-secs (if log-bucket-url (:log-bucket-sync-secs context) 0)
         total-sigkill-delay-secs (+ pod-sigkill-delay-secs log-bucket-sync-secs)
-        has-reverse-proxy? (some #(= (:name %) reverse-proxy-flag)  (get service-description "env"))
-        offset (if has-reverse-proxy? 1 0)
+        has-reverse-proxy? (some #(= (:name %) (:reverse-proxy-flag custom-options)) (get service-description "env"))
+        offset (if (and custom-options has-reverse-proxy?)
+                 (:reverse-proxy-offset custom-options)
+                 0)
         ;; Make $PORT0 value pseudo-random to ensure clients can't hardcode it.
         ;; Helps maintain compatibility with Marathon, where port assignment is dynamic.
         port0 (generate-port-with-offset service-id pod-base-port offset)
@@ -1176,16 +1180,14 @@
         service-id->failed-instances-transient-store (atom {})
         replicaset-spec-builder-ctx (assoc replicaset-spec-builder
                                       :log-bucket-sync-secs log-bucket-sync-secs
-                                      :log-bucket-url log-bucket-url
-                                      :reverse-proxy-flag "GRPC_TRANSCODER")
+                                      :log-bucket-url log-bucket-url)
         replicaset-spec-builder-fn (let [f (-> replicaset-spec-builder
                                                :factory-fn
                                                utils/resolve-symbol
                                                deref)]
                                      (assert (fn? f) "ReplicaSet spec function must be a Clojure fn")
                                      (fn [scheduler service-id service-description]
-                                       (let [scheduler' (assoc scheduler :reverse-proxy-flag "GRPC_TRANSCODER")]
-                                         (f scheduler' service-id service-description replicaset-spec-builder-ctx))))
+                                       (f scheduler service-id service-description replicaset-spec-builder-ctx)))
         watch-options (cond-> default-watch-options
                         (some? watch-retries)
                         (assoc :watch-retries watch-retries))

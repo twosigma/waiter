@@ -56,6 +56,8 @@
                    :default {:factory-fn 'waiter.authorization/noop-authorizer}}
       :daemon-state (atom nil)
       :cluster-name "waiter"
+      :custom-options {:reverse-proxy-flag "GRPC_TRANSCODER"
+                       :reverse-proxy-offset 1}
       :container-running-grace-secs 120
       :fileserver {:port 9090
                    :scheme "http"}
