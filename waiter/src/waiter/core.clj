@@ -1854,17 +1854,17 @@
                              (fn wrap-https-redirect-fn
                                [handler]
                                (fn [request]
-                                 (cond
-                                   (and (get-in request [:waiter-discovery :token-metadata "https-redirect"])
-                                        ;; ignore websocket requests
-                                        (= :http (utils/request->scheme request)))
-                                   (do
-                                     (log/info "triggering ssl redirect")
-                                     (-> (ssl/ssl-redirect-response request {})
-                                       (utils/attach-waiter-source)))
-
-                                   :else
-                                   (handler request)))))
+                                 (let [;; ignore websocket requests
+                                       http-request? (= :http (utils/request->scheme request))
+                                       upgrade-insecure-requests? (= "1" (get-in request [:headers "upgrade-insecure-requests"]))
+                                       https-redirect? (get-in request [:waiter-discovery :token-metadata "https-redirect"])]
+                                   (if (and http-request? (or upgrade-insecure-requests? https-redirect?))
+                                     (do
+                                       (log/info "triggering ssl redirect")
+                                       (cond-> (ssl/ssl-redirect-response request {})
+                                         upgrade-insecure-requests? (ru/attach-header "vary" "upgrade-insecure-requests")
+                                         true (utils/attach-waiter-source)))
+                                     (handler request))))))
    :wrap-router-auth-fn (pc/fnk [[:state passwords router-id]]
                           (fn wrap-router-auth-fn [handler]
                             (fn [request]
