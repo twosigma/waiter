@@ -165,4 +165,10 @@
                           "-Xloggc:log/gc.log"]}
              :override-maven {:local-repo ~(System/getenv "WAITER_MAVEN_LOCAL_REPO")}
              :uberjar {:aot :all}}
+  :repositories {"sonatype" {:url "http://oss.sonatype.org/content/repositories/releases"
+                             :snapshots false
+                             :releases {:checksum :fail :update :always}}
+                 "sonatype-snapshots" {:url "https://oss.sonatype.org/content/repositories/jetty-snapshots"
+                                       :snapshots true
+                                       :releases {:checksum :fail :update :always}}}
   :uberjar-name ~(System/getenv "UBERJAR_NAME"))

@@ -33,7 +33,7 @@ else
     echo "WAITER_URI is set to ${WAITER_URI}"
 fi
 
-if [ -z ${WAITER_TEST_KITCHEN_CMD+x} ]; then
+if [[ -z ${WAITER_TEST_KITCHEN_CMD+x} ]]; then
     export WAITER_TEST_KITCHEN_CMD=/opt/kitchen/kitchen
     echo "WAITER_TEST_KITCHEN_CMD is unset, defaulting to ${WAITER_TEST_KITCHEN_CMD}"
 else
@@ -45,7 +45,7 @@ WAITER_DIR=${DIR}/..
 
 # Wait for waiter to be listening
 timeout 180s bash -c "wait_for_waiter ${WAITER_URI}"
-if [ $? -ne 0 ]; then
+if [[ $? -ne 0 ]]; then
   echo "$(date +%H:%M:%S) timed out waiting for waiter to start listening, displaying waiter log"
   cat ${WAITER_DIR}/log/*waiter.log
   exit 1
@@ -55,4 +55,5 @@ curl -s ${WAITER_URI}/settings | jq .port
 
 # Run the integration tests
 cd ${WAITER_DIR}
+lein deps :tree
 lein with-profiles +test-log ${TEST_COMMAND} :${TEST_SELECTOR} ${@:3}
