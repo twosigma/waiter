@@ -237,69 +237,65 @@
         (is (str/includes? (-> response :body str) "Error in retrieving access token"))))))
 
 (deftest test-update-oidc-auth-response
-  (doseq [request-scheme [:http :https]]
-    (let [request-host "www.host.com:8080"
-          request {:headers {"host" request-host}
-                   :query-string "some-query-string"
-                   :scheme request-scheme
-                   :uri "/test"}
-          password [:cached "password"]
-          code-verifier "code-verifier-1234"
-          state-code "status-4567"
-          oidc-authorize-uri "https://www.test.com:9090/authorize"
-          oidc-auth-server (jwt/->JwtAuthServer nil "jwks-url" (atom nil) oidc-authorize-uri nil)
-          current-time-ms (System/currentTimeMillis)
-          redirect-host (if (= :https request-scheme)
-                          request-host
-                          (utils/authority->host request-host))]
-      (with-redefs [cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds]
-                                                        (is (= password in-password))
-                                                        (is (= challenge-cookie-duration-secs age-in-seconds))
-                                                        (assoc response :cookie {name value}))
-                    utils/unique-identifier (constantly "123456")
-                    t/now (constantly (tc/from-long current-time-ms))
-                    create-code-verifier (constantly code-verifier)
-                    create-state-code (fn [state-data in-password]
-                                        (is (= password in-password))
-                                        (is (= {:redirect-uri (str "https://" redirect-host "/test?some-query-string")}
-                                               state-data))
-                                        state-code)]
-        (let [update-response (make-oidc-auth-response-updater oidc-auth-server password request)]
+  (let [request-host "www.host.com:8080"
+        request {:headers {"host" request-host}
+                 :query-string "some-query-string"
+                 :scheme "https"
+                 :uri "/test"}
+        password [:cached "password"]
+        code-verifier "code-verifier-1234"
+        state-code "status-4567"
+        oidc-authorize-uri "https://www.test.com:9090/authorize"
+        oidc-auth-server (jwt/->JwtAuthServer nil "jwks-url" (atom nil) oidc-authorize-uri nil)
+        current-time-ms (System/currentTimeMillis)]
+    (with-redefs [cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds]
+                                                      (is (= password in-password))
+                                                      (is (= challenge-cookie-duration-secs age-in-seconds))
+                                                      (assoc response :cookie {name value}))
+                  utils/unique-identifier (constantly "123456")
+                  t/now (constantly (tc/from-long current-time-ms))
+                  create-code-verifier (constantly code-verifier)
+                  create-state-code (fn [state-data in-password]
+                                      (is (= password in-password))
+                                      (is (= {:redirect-uri (str "https://" request-host "/test?some-query-string")}
+                                             state-data))
+                                      state-code)]
+      (let [update-response (make-oidc-auth-response-updater oidc-auth-server password request)]
 
-          (let [response {:body (utils/unique-identifier)
-                          :status http-200-ok}]
-            (is (= response (update-response response))))
+        (let [response {:body (utils/unique-identifier)
+                        :status http-200-ok}]
+          (is (= response (update-response response))))
 
-          (let [response {:body (utils/unique-identifier)
-                          :status http-401-unauthorized
-                          :waiter/response-source :backend}]
-            (is (= response (update-response response))))
+        (let [response {:body (utils/unique-identifier)
+                        :status http-401-unauthorized
+                        :waiter/response-source :backend}]
+          (is (= response (update-response response))))
 
-          (let [response {:body (utils/unique-identifier)
-                          :status http-401-unauthorized
-                          :waiter/response-source :waiter}
-                code-challenge (utils/b64-encode-sha256 code-verifier)
-                redirect-uri-encoded (cookie-support/url-encode (str "https://" redirect-host oidc-callback-uri))
-                authorize-uri (str oidc-authorize-uri "?"
-                                   "client_id=www.host.com&"
-                                   "code_challenge=" code-challenge "&"
-                                   "code_challenge_method=S256&"
-                                   "nonce=123456&"
-                                   "redirect_uri=" redirect-uri-encoded "&"
-                                   "response_type=code&"
-                                   "scope=openid&"
-                                   "state=" state-code)]
-            (is (= (-> response
-                     (assoc :cookie {oidc-challenge-cookie {:code-verifier code-verifier
-                                                            :expiry-time (-> (t/now)
-                                                                           (t/plus (t/seconds challenge-cookie-duration-secs))
-                                                                           (tc/to-long))}}
-                            :status http-302-moved-temporarily)
-                     (update :headers assoc
-                             "cache-control" "no-store"
-                             "content-security-policy" "default-src 'none'; frame-ancestors 'none'"
-                             "location" authorize-uri))
-                   (update-response response)))))))))
+        (let [response {:body (utils/unique-identifier)
+                        :status http-401-unauthorized
+                        :waiter/response-source :waiter}
+              code-challenge (utils/b64-encode-sha256 code-verifier)
+              redirect-uri-encoded (cookie-support/url-encode (str "https://" request-host oidc-callback-uri))
+              authorize-uri (str oidc-authorize-uri "?"
+                                 "client_id=www.host.com&"
+                                 "code_challenge=" code-challenge "&"
+                                 "code_challenge_method=S256&"
+                                 "nonce=123456&"
+                                 "redirect_uri=" redirect-uri-encoded "&"
+                                 "response_type=code&"
+                                 "scope=openid&"
+                                 "state=" state-code)]
+          (is (= (-> response
+                   (assoc :cookie {oidc-challenge-cookie {:code-verifier code-verifier
+                                                          :expiry-time (-> (t/now)
+                                                                         (t/plus (t/seconds challenge-cookie-duration-secs))
+                                                                         (tc/to-long))}}
+                          :status http-302-moved-temporarily)
+                   (update :headers assoc
+                           "cache-control" "no-store"
+                           "content-security-policy" "default-src 'none'; frame-ancestors 'none'"
+                           "location" authorize-uri))
+                 (update-response response))))))))
 
 (deftest test-wrap-auth-handler
   (with-redefs [trigger-authorize-redirect (fn [_ _ _ response]

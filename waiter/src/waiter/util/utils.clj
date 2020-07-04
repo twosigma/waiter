@@ -569,17 +569,6 @@
   [request]
   (get-in request [:headers "host"]))
 
-(defn retrieve-https-redirect-url
-  "Retrieves the https redirect url at the specified endpoint."
-  [request redirect-uri query-string]
-  (let [request-host (request->host request)
-        request-scheme (request->scheme request)
-        redirect-authority (if (= :https request-scheme)
-                             request-host
-                             (authority->host request-host))]
-    (str "https://" redirect-authority redirect-uri
-         (when query-string (str "?" query-string)))))
-
 (defn same-origin
   "Returns true if the host and origin are non-nil and are equivalent."
   [{:keys [headers] :as request}]

@@ -156,8 +156,11 @@
 (defn trigger-authorize-redirect
   "Triggers a 302 temporary redirect response to the authorize endpoint."
   [jwt-auth-server password {:keys [query-string uri] :as request} response]
-  (let [code-verifier (create-code-verifier)
-        state-data {:redirect-uri (utils/retrieve-https-redirect-url request uri query-string)}
+  (let [request-host (utils/request->host request)
+        request-scheme (utils/request->scheme request)
+        code-verifier (create-code-verifier)
+        state-data {:redirect-uri (str (name request-scheme) "://" request-host uri
+                                       (when query-string (str "?" query-string)))}
         state-code (create-state-code state-data password)
         authorize-uri (jwt/retrieve-authorize-url
                         jwt-auth-server request oidc-callback-uri code-verifier state-code)
