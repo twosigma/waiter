@@ -820,7 +820,8 @@
 
 (deftest ^:parallel ^:integration-fast test-basic-priority-support
   (testing-using-waiter-url
-    (let [headers {:x-waiter-name (rand-name)
+    (let [headers {:x-waiter-concurrency-level 1
+                   :x-waiter-name (rand-name)
                    :x-waiter-distribution-scheme "simple" ;; disallow work-stealing interference from balanced
                    :x-waiter-max-instances 1
                    :x-waiter-min-instances 1}
@@ -830,8 +831,7 @@
         (let [router-url (some-router-url-with-assigned-slots waiter-url service-id)
               response-priorities-atom (atom [])
               num-threads 15
-              request-priorities (vec (shuffle (range num-threads)))
-              request-counter-atom (atom 0)
+              request-priorities-atom (atom num-threads)
               make-prioritized-request (fn [priority delay-ms]
                                          (let [request-headers (assoc headers
                                                                  :x-kitchen-delay-ms delay-ms
@@ -839,12 +839,11 @@
                                            (log/info "making kitchen request")
                                            (make-kitchen-request router-url request-headers :cookies cookies)))]
           (async/thread ; long request to make the following requests queue up
-            (make-prioritized-request -1 5000))
+            (make-prioritized-request -1 10000))
           (Thread/sleep 500)
           (parallelize-requests num-threads 1
                                 (fn []
-                                  (let [index (dec (swap! request-counter-atom inc))
-                                        priority (nth request-priorities index)]
+                                  (let [priority (swap! request-priorities-atom dec)]
                                     (make-prioritized-request priority 1000)
                                     (swap! response-priorities-atom conj priority)))
                                 :verbose true)
