@@ -1140,6 +1140,8 @@
          (or (zero? container-running-grace-secs) (pos-int? container-running-grace-secs))
          (or (nil? custom-options) (map? custom-options))
          (or (nil? proxy-options) (map? proxy-options))
+         (pos-int? (:reverse-proxy-offset proxy-options))
+         (string? (:reverse-proxy-flag proxy-options))
          (or (nil? fileserver-port)
              (and (integer? fileserver-port)
                   (< 0 fileserver-port 65535)))
