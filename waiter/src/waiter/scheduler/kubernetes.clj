@@ -253,7 +253,6 @@
           restart-count (get-in pod [:status :containerStatuses 0 :restartCount] 0)
           instance-id (pod->instance-id pod restart-count)
           node-name (get-in pod [:spec :nodeName])
-          pod-annotations (get-in pod [:metadata :annotations])
           port0 (or (some-> (get-in pod [:metadata :annotations :waiter/base-port]) (Integer/parseInt))
                     (get-in pod [:spec :containers 0 :ports 0 :containerPort]))
           run-as-user (or (get-in pod [:metadata :labels :waiter/user])
@@ -263,6 +262,7 @@
           {:keys [phase] :as pod-status} (:status pod)
           container-statuses (get pod-status :containerStatuses)
           primary-container-status (first container-statuses)
+          pod-annotations (get-in pod [:metadata :annotations])
           pod-started-at (-> pod (get-in [:status :startTime]) timestamp-str->datetime)]
       (scheduler/make-ServiceInstance
         (cond-> {:extra-ports (->> pod-annotations :waiter/port-count Integer/parseInt range next (mapv #(+ port0 %)))
@@ -805,10 +805,9 @@
         ;; delay iff the log-bucket-url setting was given the scheduler config.
         log-bucket-sync-secs (if log-bucket-url (:log-bucket-sync-secs context) 0)
         total-sigkill-delay-secs (+ pod-sigkill-delay-secs log-bucket-sync-secs)
-        has-reverse-proxy? (contains? env (:reverse-proxy-flag proxy-options))
-        offset (if has-reverse-proxy? (:reverse-proxy-offset proxy-options) 0)
-        _ (if (pos-int? offset)
-          (println "COOOO"))
+        {:keys [reverse-proxy-flag reverse-proxy-offset]} proxy-options
+        has-reverse-proxy? (contains? env reverse-proxy-flag)
+        offset (if has-reverse-proxy? reverse-proxy-offset 0)
         ;; Make $PORT0 value pseudo-random to ensure clients can't hardcode it.
         ;; Helps maintain compatibility with Marathon, where port assignment is dynamic.
         base-port (-> service-id hash
@@ -1134,6 +1133,7 @@
   {:pre [(schema/contains-kind-sub-map? authorizer)
          (or (zero? container-running-grace-secs) (pos-int? container-running-grace-secs))
          (or (nil? custom-options) (map? custom-options))
+         (or (nil? proxy-options) (map? proxy-options))
          (or (nil? fileserver-port)
              (and (integer? fileserver-port)
                   (< 0 fileserver-port 65535)))

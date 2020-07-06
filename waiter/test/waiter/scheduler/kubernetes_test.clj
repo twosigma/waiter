@@ -56,8 +56,6 @@
                    :default {:factory-fn 'waiter.authorization/noop-authorizer}}
       :daemon-state (atom nil)
       :cluster-name "waiter"
-      :proxy-options {:reverse-proxy-flag "GRPC_TRANSCODER"
-                      :reverse-proxy-offset 1}
       :container-running-grace-secs 120
       :fileserver {:port 9090
                    :scheme "http"}
@@ -68,6 +66,8 @@
       :pod-base-port 8080
       :pod-sigkill-delay-secs 3
       :pod-suffix-length default-pod-suffix-length
+      :proxy-options {:reverse-proxy-flag "GRPC_TRANSCODER"
+                      :reverse-proxy-offset 1}
       :replicaset-api-version "extensions/v1beta1"
       :replicaset-spec-builder-fn #(waiter.scheduler.kubernetes/default-replicaset-builder
                                      %1 %2 %3
