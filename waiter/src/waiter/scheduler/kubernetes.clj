@@ -254,9 +254,8 @@
           instance-id (pod->instance-id pod restart-count)
           node-name (get-in pod [:spec :nodeName])
           pod-annotations (get-in pod [:metadata :annotations])
-          has-reverse-proxy? (contains? pod-annotations :waiter/reverse-proxy)
-          offset (if has-reverse-proxy? (:reverse-proxy-offset proxy-options) 0)
-          port0 (- (get-in pod [:spec :containers 0 :ports 0 :containerPort]) offset)
+          port0 (or (some-> (get-in pod [:metadata :annotations :waiter/base-port]) (Integer/parseInt))
+                    (get-in pod [:spec :containers 0 :ports 0 :containerPort]))
           run-as-user (or (get-in pod [:metadata :labels :waiter/user])
                           ;; falling back to namespace for legacy pods missing the waiter/user label
                           (k8s-object->namespace pod))
@@ -788,9 +787,9 @@
   [{:keys [cluster-name fileserver pod-base-port pod-sigkill-delay-secs proxy-options
            replicaset-api-version service-id->password-fn] :as scheduler}
    service-id
-   {:strs [backend-proto cmd cpus grace-period-secs health-check-authentication health-check-interval-secs
+   {:strs [backend-proto cmd cpus env grace-period-secs health-check-authentication health-check-interval-secs
            health-check-max-consecutive-failures health-check-port-index health-check-proto image
-           mem min-instances namespace env-service-description ports run-as-user]
+           mem min-instances namespace ports run-as-user]
     :as service-description}
    {:keys [container-init-commands default-container-image default-namespace log-bucket-url image-aliases]
     :as context}]
@@ -806,8 +805,10 @@
         ;; delay iff the log-bucket-url setting was given the scheduler config.
         log-bucket-sync-secs (if log-bucket-url (:log-bucket-sync-secs context) 0)
         total-sigkill-delay-secs (+ pod-sigkill-delay-secs log-bucket-sync-secs)
-        has-reverse-proxy? (some #(= (:name %) (:reverse-proxy-flag proxy-options)) (get service-description "env"))
+        has-reverse-proxy? (contains? env (:reverse-proxy-flag proxy-options))
         offset (if has-reverse-proxy? (:reverse-proxy-offset proxy-options) 0)
+        _ (if (pos-int? offset)
+          (println "COOOO"))
         ;; Make $PORT0 value pseudo-random to ensure clients can't hardcode it.
         ;; Helps maintain compatibility with Marathon, where port assignment is dynamic.
         base-port (-> service-id hash
@@ -831,7 +832,6 @@
                     (for [[k v] base-env]
                       {:name k :value v})
                     [{:name "PORT" :value (str port0)}]
-                    env-service-description
                     (for [i (range ports)]
                       {:name (str "PORT" i) :value (str (+ port0 i))})))
         k8s-name (service-id->k8s-app-name scheduler service-id)
@@ -926,35 +926,7 @@
            :resources {:limits {:memory memory}
                        :requests {:cpu cpu :memory memory}}
            :volumeMounts [{:mountPath "/srv/www"
-                           :name "user-home"}]}))
-
-      ;; Optional proxy sidecar container
-      (pos-int? offset)
-      (->
-        (update-in
-          [:spec :template :spec :container]
-          conj
-          (let [create-config "bash -x create-envoy-config.sh $PORT0 $PORT1 > basic-front-proxy.yaml"
-                start-envoy "getenvoy run standard:1.11.1 -- --config-path ./basic-front-proxy.yaml"]
-            {:command [create-config start-envoy]
-             :env (into [{:name "PORT1" :value port0}
-                         {:name "BASE-PORT" :value base-port}
-                         {:name "PORT0" :value base-port}
-                         {:name "PORT" :value base-port}]
-                        (concat
-                          (for [[k v] base-env]
-                            {:name k :value v})))
-             :image "getenvoy/getenvoy:standard-latest"
-             :imagePullPolicy "IfNotPresent"
-             :name "waiter-reverse-proxy"
-             :ports [{:containerPort base-port}]
-             :resources {:limits {:memory "256 Mi"}
-                         :requests {:cpu "0.1" :memory "256 Mi"}}
-             :volumeMounts [{:mountPath "/home/user/IdeaProjects/waiter_1/waiter"
-                             :name "config"}]}))
-        (update-in
-          [:spec :template :metadata :annotations :waiter/base-port]
-          base-port )))))
+                           :name "user-home"}]})))))
 
 (defn start-auth-renewer
   "Initialize the k8s-api-auth-str atom,

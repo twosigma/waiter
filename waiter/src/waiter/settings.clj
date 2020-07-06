@@ -365,8 +365,6 @@
                                                 :default {:factory-fn 'waiter.authorization/noop-authorizer}}
                                    :cluster-name "waiter"
                                    :container-running-grace-secs 90
-                                   :custom-options {:reverse-proxy-flag "GRPC_TRANSCODER"
-                                                    :reverse-proxy-offset 1}
                                    :fileserver {:cmd ["/bin/fileserver-start"]
                                                 :image "twosigma/waiter-fileserver"
                                                 :resources {:cpu 0.1 :mem 128}

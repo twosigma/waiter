@@ -187,25 +187,6 @@
           replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" dummy-service-description)]
       (is (= "twosigma/waiter-test-apps:latest" (get-in replicaset-spec [:spec :template :spec :containers 0 :image]))))))
 
-(deftest replicaset-spec-with-reverse-proxy
-  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
-                config/retrieve-waiter-principal (constantly "waiter@test.com")]
-    (let [scheduler (make-dummy-scheduler ["test-service-id"])
-          replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id"
-                           (assoc dummy-service-description "env" [
-                                                                   {:name (:reverse-proxy-flag (:proxy-options scheduler))
-                                                                    :value "yes"}]))]
-      (testing "3 pod containers are present"
-        (is (= 3 (count (get-in replicaset-spec [:spec :template :spec :containers])))))
-
-      (testing "replicaset has waiter/base-port annotation"
-        (is (contains? (get-in replicaset-spec [:spec :template :metadata :annotations]) :waiter/base-port)))
-
-      (testing "check if the value of port is correctly assigned"
-        (is (not=
-              (get-in replicaset-spec [:spec :template :spec :container 0 :ports 0 :containerPort])
-              (get-in replicaset-spec [:spec :template :spec :container 2 :ports 0 :containerPort])))))))
-
 (deftest replicaset-spec-custom-image
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
                 config/retrieve-waiter-principal (constantly "waiter@test.com")]
@@ -1714,7 +1695,7 @@
     (testing "pod with envoy sidecar to instance"
       (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
             pod' (merge
-                   (assoc-in pod [:metadata :annotations :waiter/reverse-proxy] true)
+                   (assoc-in pod [:metadata :annotations :waiter/base-port] 8080)
                    (assoc-in pod [:spec :containers 0 :ports 0 :containerPort] 8081))
             instance (pod->ServiceInstance dummy-scheduler pod)]
         (is (= (scheduler/make-ServiceInstance instance-map) instance))))
