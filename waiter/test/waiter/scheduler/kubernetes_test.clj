@@ -134,6 +134,27 @@
               :waiter/service-id "test-service-id"}
              (get-in replicaset-spec [:spec :template :metadata :annotations]))))))
 
+(deftest replicaset-spec-with-reverse-proxy
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
+                config/retrieve-waiter-principal (constantly "waiter@test.com")]
+    (let [scheduler (make-dummy-scheduler ["test-service-id"])
+          replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id"
+                           (assoc dummy-service-description "env" {(:reverse-proxy-flag (:proxy-options scheduler))
+                                                                   "yes"}))]
+
+      (testing "replicaset has waiter/base-port annotation"
+        (is (contains? (get-in replicaset-spec [:spec :template :metadata :annotations]) :waiter/base-port)))
+
+      (testing "base-port and waiter ports are correct"
+        (let [base-port (-> "test-service-id" hash (mod 100) (* 10) (+ (:pod-base-port scheduler)))
+              port0 (+ base-port 1)]
+          (is (= base-port (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/base-port])))
+          (is (= port0 (get-in replicaset-spec [:spec :template :spec :containers 0 :ports 0 :containerPort])))))
+
+      (testing "waiter/port-count annotation is correct"
+        (is (= 3 (-> (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/port-count])
+                     (Integer/parseInt))))))))
+
 (deftest replicaset-spec-liveness-nd-readiness
   (let [basic-probe {:failureThreshold 1
                :httpGet {:path "/status" :port 8330 :scheme "HTTP"}

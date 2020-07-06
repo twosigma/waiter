@@ -784,10 +784,10 @@
 
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
-  [{:keys [cluster-name fileserver pod-base-port pod-sigkill-delay-secs
+  [{:keys [cluster-name fileserver pod-base-port pod-sigkill-delay-secs proxy-options
            replicaset-api-version service-id->password-fn] :as scheduler}
    service-id
-   {:strs [backend-proto cmd cpus grace-period-secs health-check-authentication health-check-interval-secs
+   {:strs [backend-proto cmd cpus env grace-period-secs health-check-authentication health-check-interval-secs
            health-check-max-consecutive-failures health-check-port-index health-check-proto image
            mem min-instances namespace ports run-as-user]
     :as service-description}
@@ -805,9 +805,16 @@
         ;; delay iff the log-bucket-url setting was given the scheduler config.
         log-bucket-sync-secs (if log-bucket-url (:log-bucket-sync-secs context) 0)
         total-sigkill-delay-secs (+ pod-sigkill-delay-secs log-bucket-sync-secs)
+        {:keys [reverse-proxy-flag reverse-proxy-offset]} proxy-options
+        has-reverse-proxy? (contains? env reverse-proxy-flag)
+        offset (if has-reverse-proxy? reverse-proxy-offset 0)
         ;; Make $PORT0 value pseudo-random to ensure clients can't hardcode it.
         ;; Helps maintain compatibility with Marathon, where port assignment is dynamic.
-        port0 (-> service-id hash (mod 100) (* 10) (+ pod-base-port))
+        base-port (-> service-id hash
+                      (mod 100)
+                      (* 10)
+                      (+ pod-base-port))
+        port0 (+ base-port offset)
         health-check-port (+ port0 health-check-port-index)
         env (into [;; We set these two "MESOS_*" variables to improve interoperability.
                    ;; New clients should prefer using WAITER_SANDBOX.
@@ -849,7 +856,7 @@
        :spec {:replicas min-instances
               :selector {:matchLabels {:app k8s-name
                                        :waiter/user run-as-user}}
-              :template {:metadata {:annotations {:waiter/port-count (str ports)
+              :template {:metadata {:annotations {:waiter/port-count (str (+ ports offset))
                                                   :waiter/service-id service-id}
                                     :labels {:app k8s-name
                                              :waiter/cluster cluster-name
@@ -873,7 +880,7 @@
                                                                     health-check-authentication health-check-scheme
                                                                     health-check-url health-check-port
                                                                     health-check-interval-secs)
-                                                                (assoc :failureThreshold 1))
+                                                                  (assoc :failureThreshold 1))
                                               :resources {:limits {:memory memory}
                                                           :requests {:cpu cpus
                                                                      :memory memory}}
@@ -892,12 +899,12 @@
                                    health-check-authentication health-check-scheme
                                    health-check-url health-check-port
                                    health-check-interval-secs)
-                               (assoc
-                                 ;; We increment the threshold value to match Marathon behavior.
-                                 ;; Marathon treats this as a retry count,
-                                 ;; whereas Kubernetes treats it as a run count.
-                                 :failureThreshold (inc health-check-max-consecutive-failures)
-                                 :initialDelaySeconds grace-period-secs)))
+                                 (assoc
+                                   ;; We increment the threshold value to match Marathon behavior.
+                                   ;; Marathon treats this as a retry count,
+                                   ;; whereas Kubernetes treats it as a run count.
+                                   :failureThreshold (inc health-check-max-consecutive-failures)
+                                   :initialDelaySeconds grace-period-secs)))
       ;; Optional fileserver sidecar container
       (integer? (:port fileserver))
       (update-in
@@ -918,7 +925,13 @@
            :resources {:limits {:memory memory}
                        :requests {:cpu cpu :memory memory}}
            :volumeMounts [{:mountPath "/srv/www"
-                           :name "user-home"}]})))))
+                           :name "user-home"}]}))
+
+      ; Optional reverse-proxy envoy sidecar
+      (pos-int? offset)
+      (assoc-in
+        [:spec :template :metadata :annotations :waiter/base-port]
+        base-port))))
 
 (defn start-auth-renewer
   "Initialize the k8s-api-auth-str atom,
