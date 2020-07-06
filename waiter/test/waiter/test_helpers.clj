@@ -187,7 +187,9 @@
       (swap! running-tests #(dissoc % test-name))
       (with-test-out
         (println \tab (blue "FINISH:") test-name (cyan (format-duration elapsed-millis))
-                 (assoc @*report-counters* :running (count @running-tests)))
+                 (cond-> (assoc @*report-counters* :running (count @running-tests))
+                   (< (count @running-tests) 10)
+                   (assoc :running-tests (sort @running-tests))))
         (when test-metrics-url
           (try
             (let [{:keys [full-name name namespace]} (test-name-info (:var m))
