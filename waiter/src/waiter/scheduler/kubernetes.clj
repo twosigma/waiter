@@ -880,7 +880,7 @@
                                                                     health-check-authentication health-check-scheme
                                                                     health-check-url health-check-port
                                                                     health-check-interval-secs)
-                                                                  (assoc :failureThreshold 1))
+                                                                (assoc :failureThreshold 1))
                                               :resources {:limits {:memory memory}
                                                           :requests {:cpu cpus
                                                                      :memory memory}}
@@ -899,12 +899,12 @@
                                    health-check-authentication health-check-scheme
                                    health-check-url health-check-port
                                    health-check-interval-secs)
-                                 (assoc
-                                   ;; We increment the threshold value to match Marathon behavior.
-                                   ;; Marathon treats this as a retry count,
-                                   ;; whereas Kubernetes treats it as a run count.
-                                   :failureThreshold (inc health-check-max-consecutive-failures)
-                                   :initialDelaySeconds grace-period-secs)))
+                               (assoc
+                                 ;; We increment the threshold value to match Marathon behavior.
+                                 ;; Marathon treats this as a retry count,
+                                 ;; whereas Kubernetes treats it as a run count.
+                                 :failureThreshold (inc health-check-max-consecutive-failures)
+                                 :initialDelaySeconds grace-period-secs)))
       ;; Optional fileserver sidecar container
       (integer? (:port fileserver))
       (update-in
