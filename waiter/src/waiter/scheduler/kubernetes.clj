@@ -790,7 +790,7 @@
    service-id
    {:strs [backend-proto cmd cpus grace-period-secs health-check-authentication health-check-interval-secs
            health-check-max-consecutive-failures health-check-port-index health-check-proto image
-           mem min-instances namespace ports run-as-user]
+           mem min-instances namespace env-service-description ports run-as-user]
     :as service-description}
    {:keys [container-init-commands default-container-image default-namespace log-bucket-url image-aliases]
     :as context}]
@@ -810,11 +810,11 @@
         offset (if has-reverse-proxy? (:reverse-proxy-offset proxy-options) 0)
         ;; Make $PORT0 value pseudo-random to ensure clients can't hardcode it.
         ;; Helps maintain compatibility with Marathon, where port assignment is dynamic.
-        port0 (-> service-id hash
-                  (mod 100)
-                  (* 10)
-                  (+ pod-base-port)
-                  (+ offset))
+        base-port (-> service-id hash
+                      (mod 100)
+                      (* 10)
+                      (+ pod-base-port))
+        port0 (+ base-port offset)
         health-check-port (+ port0 health-check-port-index)
         env (into [;; We set these two "MESOS_*" variables to improve interoperability.
                    ;; New clients should prefer using WAITER_SANDBOX.
@@ -831,6 +831,7 @@
                     (for [[k v] base-env]
                       {:name k :value v})
                     [{:name "PORT" :value (str port0)}]
+                    env-service-description
                     (for [i (range ports)]
                       {:name (str "PORT" i) :value (str (+ port0 i))})))
         k8s-name (service-id->k8s-app-name scheduler service-id)
@@ -929,9 +930,31 @@
 
       ;; Optional proxy sidecar container
       (pos-int? offset)
-      (update-in
-        [:spec :template :metadata :annotations :waiter/base-port]
-        (- port0 offset) ))))
+      (->
+        (update-in
+          [:spec :template :spec :container]
+          conj
+          (let [create-config "bash -x create-envoy-config.sh $PORT0 $PORT1 > basic-front-proxy.yaml"
+                start-envoy "getenvoy run standard:1.11.1 -- --config-path ./basic-front-proxy.yaml"]
+            {:command [create-config start-envoy]
+             :env (into [{:name "PORT1" :value port0}
+                         {:name "BASE-PORT" :value base-port}
+                         {:name "PORT0" :value base-port}
+                         {:name "PORT" :value base-port}]
+                        (concat
+                          (for [[k v] base-env]
+                            {:name k :value v})))
+             :image "getenvoy/getenvoy:standard-latest"
+             :imagePullPolicy "IfNotPresent"
+             :name "waiter-reverse-proxy"
+             :ports [{:containerPort base-port}]
+             :resources {:limits {:memory "256 Mi"}
+                         :requests {:cpu "0.1" :memory "256 Mi"}}
+             :volumeMounts [{:mountPath "/home/user/IdeaProjects/waiter_1/waiter"
+                             :name "config"}]}))
+        (update-in
+          [:spec :template :metadata :annotations :waiter/base-port]
+          base-port )))))
 
 (defn start-auth-renewer
   "Initialize the k8s-api-auth-str atom,
