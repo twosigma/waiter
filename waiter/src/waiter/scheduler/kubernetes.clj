@@ -1131,7 +1131,7 @@
   {:pre [(schema/contains-kind-sub-map? authorizer)
          (or (zero? container-running-grace-secs) (pos-int? container-running-grace-secs))
          (or (nil? custom-options) (map? custom-options))
-         (or (nil? proxy-options) (when (map? proxy-options)
+         (or (nil? proxy-options) (and (map? proxy-options)
                                     (pos-int? (:reverse-proxy-offset proxy-options))
                                     (string? (:reverse-proxy-flag proxy-options))))
          (or (nil? fileserver-port)
