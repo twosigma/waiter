@@ -849,7 +849,7 @@
        :spec {:replicas min-instances
               :selector {:matchLabels {:app k8s-name
                                        :waiter/user run-as-user}}
-              :template {:metadata {:annotations {:waiter/port-count (str (+ ports offset))
+              :template {:metadata {:annotations {:waiter/port-count (str ports)
                                                   :waiter/service-id service-id}
                                     :labels {:app k8s-name
                                              :waiter/cluster cluster-name
