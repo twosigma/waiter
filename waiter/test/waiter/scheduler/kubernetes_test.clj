@@ -153,8 +153,9 @@
           (is (= port0 (get-in replicaset-spec [:spec :template :spec :containers 0 :ports 0 :containerPort])))))
 
       (testing "waiter/port-count annotation is correct"
-        (is (= 3 (-> (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/port-count])
-                     (Integer/parseInt))))))))
+        (let [port-count (inc (get service-description "ports"))]
+          (is (= port-count (-> (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/port-count])
+                                (Integer/parseInt)))))))))
 
 (deftest replicaset-spec-liveness-nd-readiness
   (let [basic-probe {:failureThreshold 1
