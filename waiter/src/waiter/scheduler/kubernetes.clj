@@ -253,7 +253,7 @@
           restart-count (get-in pod [:status :containerStatuses 0 :restartCount] 0)
           instance-id (pod->instance-id pod restart-count)
           node-name (get-in pod [:spec :nodeName])
-          port0 (or (some-> (get-in pod [:metadata :annotations :waiter/base-port]) (Integer/parseInt))
+          port0 (or (some-> (get-in pod [:metadata :annotations :waiter/service-port]) (Integer/parseInt))
                     (get-in pod [:spec :containers 0 :ports 0 :containerPort]))
           run-as-user (or (get-in pod [:metadata :labels :waiter/user])
                           ;; falling back to namespace for legacy pods missing the waiter/user label
@@ -810,11 +810,8 @@
         offset (if has-reverse-proxy? reverse-proxy-offset 0)
         ;; Make $PORT0 value pseudo-random to ensure clients can't hardcode it.
         ;; Helps maintain compatibility with Marathon, where port assignment is dynamic.
-        base-port (-> service-id hash
-                      (mod 100)
-                      (* 10)
-                      (+ pod-base-port))
-        port0 (+ base-port offset)
+        service-port (-> service-id hash (mod 100) (* 10) (+ pod-base-port))
+        port0 (+ service-port offset)
         health-check-port (+ port0 health-check-port-index)
         env (into [;; We set these two "MESOS_*" variables to improve interoperability.
                    ;; New clients should prefer using WAITER_SANDBOX.
@@ -857,7 +854,8 @@
               :selector {:matchLabels {:app k8s-name
                                        :waiter/user run-as-user}}
               :template {:metadata {:annotations {:waiter/port-count (str (+ ports offset))
-                                                  :waiter/service-id service-id}
+                                                  :waiter/service-id service-id
+                                                  :waiter/service-port service-port}
                                     :labels {:app k8s-name
                                              :waiter/cluster cluster-name
                                              :waiter/service-hash service-hash
@@ -925,13 +923,7 @@
            :resources {:limits {:memory memory}
                        :requests {:cpu cpu :memory memory}}
            :volumeMounts [{:mountPath "/srv/www"
-                           :name "user-home"}]}))
-
-      ; Optional reverse-proxy envoy sidecar
-      (pos-int? offset)
-      (assoc-in
-        [:spec :template :metadata :annotations :waiter/base-port]
-        base-port))))
+                           :name "user-home"}]})))))
 
 (defn start-auth-renewer
   "Initialize the k8s-api-auth-str atom,
@@ -1139,9 +1131,9 @@
   {:pre [(schema/contains-kind-sub-map? authorizer)
          (or (zero? container-running-grace-secs) (pos-int? container-running-grace-secs))
          (or (nil? custom-options) (map? custom-options))
-         (or (nil? proxy-options) (map? proxy-options))
-         (pos-int? (:reverse-proxy-offset proxy-options))
-         (string? (:reverse-proxy-flag proxy-options))
+         (or (nil? proxy-options) (when (map? proxy-options)
+                                    (pos-int? (:reverse-proxy-offset proxy-options))
+                                    (string? (:reverse-proxy-flag proxy-options))))
          (or (nil? fileserver-port)
              (and (integer? fileserver-port)
                   (< 0 fileserver-port 65535)))
