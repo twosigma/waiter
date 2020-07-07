@@ -132,7 +132,7 @@
           replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description)]
       (is (= {:waiter/port-count "3"
               :waiter/service-id "test-service-id"
-              :waiter/service-port 8330}
+              :waiter/service-port "8330"}
              (get-in replicaset-spec [:spec :template :metadata :annotations]))))))
 
 (deftest replicaset-spec-with-reverse-proxy
@@ -150,7 +150,7 @@
       (testing "service-port and waiter ports are correct"
         (let [service-port (-> "test-service-id" hash (mod 100) (* 10) (+ (:pod-base-port scheduler)))
               port0 (+ service-port 1)]
-          (is (= service-port (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/service-port])))
+          (is (= service-port (Integer/parseInt (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/service-port]))))
           (is (= port0 (get-in replicaset-spec [:spec :template :spec :containers 0 :ports 0 :containerPort])))))
 
       (testing "waiter/port-count annotation is correct"
@@ -1719,7 +1719,7 @@
     (testing "pod with envoy sidecar to instance"
       (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
             pod' (merge
-                   (assoc-in pod [:metadata :annotations :waiter/service-port] 8080)
+                   (assoc-in pod [:metadata :annotations :waiter/service-port] "8080")
                    (assoc-in pod [:spec :containers 0 :ports 0 :containerPort] 8081))
             instance (pod->ServiceInstance dummy-scheduler pod)]
         (is (= (scheduler/make-ServiceInstance instance-map) instance))))
