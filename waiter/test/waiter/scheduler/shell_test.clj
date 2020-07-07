@@ -181,14 +181,9 @@
       (is (= "Hello, World!\n" (slurp (:url (first (filter #(= "stdout" (:name %)) content)))))))))
 
 (deftest test-pid
-  (testing "Getting the pid of a Process"
-
-    (testing "should return nil if it is not a UNIXProcess"
-      (is (nil? (pid (proxy [Process] [])))))
-
-    (testing "should return nil if it catches an Exception"
-      (with-redefs [type (fn [_] (throw (ex-info "ERROR!" {})))]
-        (is (nil? (pid (:process (launch-process "foo" (work-dir) "ls" {})))))))))
+  (testing "Getting the pid of a Process should return nil if it catches an Exception"
+    (with-redefs [type (fn [_] (throw (ex-info "ERROR!" {})))]
+      (is (nil? (pid (Object.)))))))
 
 (defn common-scheduler-config
   []

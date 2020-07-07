@@ -70,7 +70,6 @@
 
 (def jvm-metrics-schema
   {(s/required-key "attribute") s/Any
-   (s/required-key "file") s/Any
    (s/required-key "gc") s/Any
    (s/required-key "memory") s/Any
    (s/required-key "thread") {(s/required-key "blocked") counted-gauge-metric-schema
