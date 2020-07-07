@@ -855,7 +855,7 @@
                                        :waiter/user run-as-user}}
               :template {:metadata {:annotations {:waiter/port-count (str (+ ports offset))
                                                   :waiter/service-id service-id
-                                                  :waiter/service-port service-port}
+                                                  :waiter/service-port (str service-port)}
                                     :labels {:app k8s-name
                                              :waiter/cluster cluster-name
                                              :waiter/service-hash service-hash
