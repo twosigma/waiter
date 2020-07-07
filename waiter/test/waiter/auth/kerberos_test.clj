@@ -26,10 +26,17 @@
 
 (deftest test-get-opt-in-accounts
   (testing "success"
-    (with-redefs [shell/sh (constantly
-                             {:exit 0
-                              :out "test1@N.EXAMPLE.COM\ntest2@N.EXAMPLE.COM"})]
-      (is (= #{"test1" "test2"} (get-opt-in-accounts "host")))))
+    (testing "non-empty response"
+      (with-redefs [shell/sh (constantly
+                               {:exit 0
+                                :out "test1@N.EXAMPLE.COM\ntest2@N.EXAMPLE.COM"})]
+        (is (= #{"test1" "test2"} (get-opt-in-accounts "host")))))
+
+    (testing "empty response"
+      (with-redefs [shell/sh (constantly {:exit 0 :out nil})]
+        (is (nil? (get-opt-in-accounts "host"))))
+      (with-redefs [shell/sh (constantly {:exit 0 :out ""})]
+        (is (nil? (get-opt-in-accounts "host"))))))
 
   (testing "failure"
     (with-redefs [shell/sh (constantly {:exit 1 :err ""})]
