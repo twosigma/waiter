@@ -55,22 +55,33 @@
     (when-let [ntok (.acceptSecContext gss-context intok 0 (alength intok))]
       (encode-output-token ntok))))
 
-(defn response-http-401-unauthorized-negotiate
-  "Tell the client you'd like them to use kerberos"
-  [request]
-  (log/info "triggering 401 negotiate for spnego authentication")
+(defn- response-http-401-unauthorized
+  [request cause]
+  (log/info "triggering 401 response for spnego authentication" cause)
   (counters/inc! (metrics/waiter-counter "core" "response-status" "401"))
   (meters/mark! (metrics/waiter-meter "core" "response-status-rate" "401"))
-  (-> {:headers {"www-authenticate" (str/trim negotiate-prefix)}
-       :message "Unauthorized"
+  (-> {:message "Unauthorized"
        :status http-401-unauthorized}
     (utils/data->error-response request)
     (cookies/cookies-response)))
 
+(defn response-http-401-unauthorized-negotiate
+  "Tell the client you'd like them to use kerberos"
+  [request]
+  (log/info "triggering 401 negotiate for spnego authentication")
+  (-> (response-http-401-unauthorized request "for negotiation")
+    (assoc-in [:headers "www-authenticate"] (str/trim negotiate-prefix))))
+
+(defn response-http-401-unauthorized-spnego-disabled
+  "Tell the client you'd like them to not use kerberos.
+   Does not send the www-authenticate header, relies on upstream handlers to handle the missing negotiate header."
+  [request]
+  (response-http-401-unauthorized request "as it is disabled"))
+
 (defn response-http-503-service-unavailable-temporarily-unavailable
   "Tell the client you're overloaded and would like them to try later"
   [request]
-  (log/info "triggering 401 negotiate for spnego authentication")
+  (log/info "triggering 503 unavailable for spnego authentication")
   (counters/inc! (metrics/waiter-counter "core" "response-status" "503"))
   (meters/mark! (metrics/waiter-meter "core" "response-status-rate" "503"))
   (-> {:message "Too many Kerberos authentication requests"
@@ -140,6 +151,9 @@
   [request-handler ^ThreadPoolExecutor thread-pool-executor max-queue-length password]
   (fn require-gss-handler [request]
     (cond
+      ;; spnego auth disabled for the service
+      (= "false" (get-in request [:waiter-discovery :service-description-template "env" "USE_SPNEGO_AUTH"]))
+      (response-http-401-unauthorized-spnego-disabled request)
       ;; Ensure we are not already queued with lots of Kerberos auth requests
       (too-many-pending-auth-requests? thread-pool-executor max-queue-length)
       (response-http-503-service-unavailable-temporarily-unavailable request)

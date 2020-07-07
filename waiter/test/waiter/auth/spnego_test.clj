@@ -45,6 +45,17 @@
 
     (with-redefs [utils/error-context->text-body #(-> % :message str)]
 
+      (testing "spnego authentication disabled"
+        (with-redefs [too-many-pending-auth-requests? (constantly true)]
+          (let [request (assoc-in standard-request
+                          [:waiter-discovery :service-description-template "env" "USE_SPNEGO_AUTH"] "false")
+                handler (require-gss request-handler thread-pool max-queue-length password)]
+            (is (= {:body "Unauthorized"
+                    :headers {"content-type" "text/plain"}
+                    :status http-401-unauthorized
+                    :waiter/response-source :waiter}
+                   (handler request))))))
+
       (testing "too many pending kerberos requests"
         (with-redefs [too-many-pending-auth-requests? (constantly true)]
           (let [handler (require-gss request-handler thread-pool max-queue-length password)]
