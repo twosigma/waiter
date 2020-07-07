@@ -33,7 +33,13 @@
   (try
     (let [{:keys [exit out err]} (shell/sh "krb5_prestash" "query" "host" host)]
       (if (zero? exit)
-        (set (map #(utils/principal->username %) (str/split-lines out)))
+        (some->> out
+          (str/split-lines)
+          (remove str/blank?) ;; remove empty lines
+          (map #(utils/principal->username %))
+          (remove str/blank?) ;; remove entries we couldn't translate to principals
+          (seq)
+          (set))
         (do
           (log/error "Failed to reload prestash cache: " err)
           nil)))
@@ -46,7 +52,7 @@
   [prestash-cache host]
   (when-let [users (get-opt-in-accounts host)]
     (reset! prestash-cache users)
-    (log/debug "refreshed the prestash cache with" (count users) "users")
+    (log/info "refreshed the prestash cache with" (count users) "users")
     users))
 
 (defn start-prestash-cache-maintainer
