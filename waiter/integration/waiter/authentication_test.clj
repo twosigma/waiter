@@ -500,7 +500,8 @@
         (try
           (let [service-parameters (assoc (kitchen-params)
                                      :authentication "standard"
-                                     :env {"USE_SPNEGO_AUTH" "false"}
+                                     :env {"USE_BEARER_AUTH" "true"
+                                           "USE_SPNEGO_AUTH" "false"}
                                      :name (rand-name)
                                      :run-as-user (retrieve-username))
                 token-response (post-token waiter-url (assoc service-parameters "token" token-name))
@@ -520,8 +521,10 @@
                                #(make-kitchen-request waiter-url % :path "/request-info"))]
                 (assert-response-status response 401)
                 (assert-waiter-response response)
-                (is (not (str/includes? (str (get response [:headers "www-authenticate"])) "Negotiate"))
-                    (str response)))))
+                (let [www-authenticate-header (get-in response [:headers "www-authenticate"])]
+                  (is www-authenticate-header (str response))
+                  (is (not (str/includes? (str www-authenticate-header) "Negotiate")) (str response))
+                  (is (str/includes? (str www-authenticate-header) "Bearer") (str response))))))
           (finally
             (delete-token-and-assert waiter-url token-name)))))
     (log/info "Skipping test as spnego authentication is not available")))
