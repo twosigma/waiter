@@ -253,7 +253,8 @@
           restart-count (get-in pod [:status :containerStatuses 0 :restartCount] 0)
           instance-id (pod->instance-id pod restart-count)
           node-name (get-in pod [:spec :nodeName])
-          port0 (get-in pod [:spec :containers 0 :ports 0 :containerPort])
+          port0 (or (some-> (get-in pod [:metadata :annotations :waiter/service-port]) (Integer/parseInt))
+                    (get-in pod [:spec :containers 0 :ports 0 :containerPort]))
           run-as-user (or (get-in pod [:metadata :labels :waiter/user])
                           ;; falling back to namespace for legacy pods missing the waiter/user label
                           (k8s-object->namespace pod))
@@ -577,6 +578,7 @@
                                 pod-base-port
                                 pod-sigkill-delay-secs
                                 pod-suffix-length
+                                proxy-options
                                 replicaset-api-version
                                 replicaset-spec-builder-fn
                                 retrieve-auth-token-state-fn
@@ -782,10 +784,10 @@
 
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
-  [{:keys [cluster-name fileserver pod-base-port pod-sigkill-delay-secs
+  [{:keys [cluster-name fileserver pod-base-port pod-sigkill-delay-secs proxy-options
            replicaset-api-version service-id->password-fn] :as scheduler}
    service-id
-   {:strs [backend-proto cmd cpus grace-period-secs health-check-authentication health-check-interval-secs
+   {:strs [backend-proto cmd cpus env grace-period-secs health-check-authentication health-check-interval-secs
            health-check-max-consecutive-failures health-check-port-index health-check-proto image
            mem min-instances namespace ports run-as-user]
     :as service-description}
@@ -803,9 +805,13 @@
         ;; delay iff the log-bucket-url setting was given the scheduler config.
         log-bucket-sync-secs (if log-bucket-url (:log-bucket-sync-secs context) 0)
         total-sigkill-delay-secs (+ pod-sigkill-delay-secs log-bucket-sync-secs)
+        {:keys [reverse-proxy-flag reverse-proxy-offset]} proxy-options
+        has-reverse-proxy? (contains? env reverse-proxy-flag)
+        offset (if has-reverse-proxy? reverse-proxy-offset 0)
         ;; Make $PORT0 value pseudo-random to ensure clients can't hardcode it.
         ;; Helps maintain compatibility with Marathon, where port assignment is dynamic.
-        port0 (-> service-id hash (mod 100) (* 10) (+ pod-base-port))
+        service-port (-> service-id hash (mod 100) (* 10) (+ pod-base-port))
+        port0 (+ service-port offset)
         health-check-port (+ port0 health-check-port-index)
         env (into [;; We set these two "MESOS_*" variables to improve interoperability.
                    ;; New clients should prefer using WAITER_SANDBOX.
@@ -847,8 +853,9 @@
        :spec {:replicas min-instances
               :selector {:matchLabels {:app k8s-name
                                        :waiter/user run-as-user}}
-              :template {:metadata {:annotations {:waiter/port-count (str ports)
-                                                  :waiter/service-id service-id}
+              :template {:metadata {:annotations {:waiter/port-count (str (+ ports offset))
+                                                  :waiter/service-id service-id
+                                                  :waiter/service-port (str service-port)}
                                     :labels {:app k8s-name
                                              :waiter/cluster cluster-name
                                              :waiter/service-hash service-hash
@@ -1117,13 +1124,17 @@
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
   [{:keys [authentication authorizer cluster-name container-running-grace-secs custom-options http-options log-bucket-sync-secs
            log-bucket-url max-patch-retries max-name-length pod-base-port pod-sigkill-delay-secs
-           pod-suffix-length replicaset-api-version replicaset-spec-builder restart-expiry-threshold scheduler-name
+           pod-suffix-length proxy-options replicaset-api-version replicaset-spec-builder restart-expiry-threshold scheduler-name
            scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
            service-id->password-fn start-scheduler-syncer-fn url watch-retries]
     {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver :as context}]
   {:pre [(schema/contains-kind-sub-map? authorizer)
          (or (zero? container-running-grace-secs) (pos-int? container-running-grace-secs))
          (or (nil? custom-options) (map? custom-options))
+         (or (nil? proxy-options) (and 
+                                    (map? proxy-options)
+                                    (pos-int? (:reverse-proxy-offset proxy-options))
+                                    (string? (:reverse-proxy-flag proxy-options))))
          (or (nil? fileserver-port)
              (and (integer? fileserver-port)
                   (< 0 fileserver-port 65535)))
@@ -1204,6 +1215,7 @@
                                            pod-base-port
                                            pod-sigkill-delay-secs
                                            pod-suffix-length
+                                           proxy-options
                                            replicaset-api-version
                                            replicaset-spec-builder-fn
                                            retrieve-auth-token-state-fn

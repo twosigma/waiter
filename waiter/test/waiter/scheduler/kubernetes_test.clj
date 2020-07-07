@@ -66,6 +66,8 @@
       :pod-base-port 8080
       :pod-sigkill-delay-secs 3
       :pod-suffix-length default-pod-suffix-length
+      :proxy-options {:reverse-proxy-flag "GRPC_TRANSCODER"
+                      :reverse-proxy-offset 1}
       :replicaset-api-version "extensions/v1beta1"
       :replicaset-spec-builder-fn #(waiter.scheduler.kubernetes/default-replicaset-builder
                                      %1 %2 %3
@@ -129,8 +131,32 @@
                                           {:service-id->service-description-fn (constantly service-description)})
           replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description)]
       (is (= {:waiter/port-count "3"
-              :waiter/service-id "test-service-id"}
+              :waiter/service-id "test-service-id"
+              :waiter/service-port "8330"}
              (get-in replicaset-spec [:spec :template :metadata :annotations]))))))
+
+(deftest replicaset-spec-with-reverse-proxy
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
+                config/retrieve-waiter-principal (constantly "waiter@test.com")]
+    (let [scheduler (make-dummy-scheduler ["test-service-id"])
+          service-description (assoc dummy-service-description "env" {(:reverse-proxy-flag (:proxy-options scheduler))
+                                                                       "yes"})
+          replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id"
+                           service-description)]
+
+      (testing "replicaset has waiter/service-port annotation"
+        (is (contains? (get-in replicaset-spec [:spec :template :metadata :annotations]) :waiter/service-port)))
+
+      (testing "service-port and waiter ports are correct"
+        (let [service-port (-> "test-service-id" hash (mod 100) (* 10) (+ (:pod-base-port scheduler)))
+              port0 (+ service-port 1)]
+          (is (= service-port (Integer/parseInt (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/service-port]))))
+          (is (= port0 (get-in replicaset-spec [:spec :template :spec :containers 0 :ports 0 :containerPort])))))
+
+      (testing "waiter/port-count annotation is correct"
+        (let [port-count (inc (get service-description "ports"))]
+          (is (= port-count (-> (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/port-count])
+                                (Integer/parseInt)))))))))
 
 (deftest replicaset-spec-liveness-nd-readiness
   (let [basic-probe {:failureThreshold 1
@@ -1689,6 +1715,14 @@
                                    :restart-expiry-threshold 25)
             instance (pod->ServiceInstance dummy-scheduler pod)]
         (is (= (scheduler/make-ServiceInstance expired-instance-map) instance))))
+
+    (testing "pod with envoy sidecar to instance"
+      (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
+            pod' (merge
+                   (assoc-in pod [:metadata :annotations :waiter/service-port] "8080")
+                   (assoc-in pod [:spec :containers 0 :ports 0 :containerPort] 8081))
+            instance (pod->ServiceInstance dummy-scheduler pod)]
+        (is (= (scheduler/make-ServiceInstance instance-map) instance))))
 
     (testing "previously started pod not expired despite instance exceeded running grace period"
       (let [dummy-scheduler (assoc base-scheduler
