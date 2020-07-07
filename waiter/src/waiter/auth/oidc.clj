@@ -155,26 +155,34 @@
 
 (defn trigger-authorize-redirect
   "Triggers a 302 temporary redirect response to the authorize endpoint."
-  [jwt-auth-server password {:keys [query-string uri] :as request} response]
+  [jwt-auth-server password {:keys [query-string request-method uri] :as request} response]
   (let [request-host (utils/request->host request)
         request-scheme (utils/request->scheme request)
-        code-verifier (create-code-verifier)
-        state-data {:redirect-uri (str (name request-scheme) "://" request-host uri
-                                       (when query-string (str "?" query-string)))}
-        state-code (create-state-code state-data password)
-        authorize-uri (jwt/retrieve-authorize-url
-                        jwt-auth-server request oidc-callback-uri code-verifier state-code)
-        expiry-time (-> (t/now)
-                      (t/plus (t/seconds challenge-cookie-duration-secs))
-                      (tc/to-long))
-        challenge-cookie-value {:code-verifier code-verifier
-                                :expiry-time expiry-time}]
-    (-> response
-      (assoc :status http-302-moved-temporarily)
-      (update :headers assoc "location" authorize-uri)
-      (update :headers attach-threat-remediation-headers )
-      (cookie-support/add-encoded-cookie
-        password oidc-challenge-cookie challenge-cookie-value challenge-cookie-duration-secs))))
+        make-redirect-uri (fn make-oidc-redirect-uri [transform-host]
+                            (str "https://" (transform-host request-host) uri
+                                 (when query-string (str "?" query-string))))]
+    (if (= :https request-scheme)
+      (let [code-verifier (create-code-verifier)
+            state-data {:redirect-uri (make-redirect-uri identity)}
+            state-code (create-state-code state-data password)
+            authorize-uri (jwt/retrieve-authorize-url
+                            jwt-auth-server request oidc-callback-uri code-verifier state-code)
+            expiry-time (-> (t/now)
+                          (t/plus (t/seconds challenge-cookie-duration-secs))
+                          (tc/to-long))
+            challenge-cookie-value {:code-verifier code-verifier
+                                    :expiry-time expiry-time}]
+        (-> response
+          (assoc :status http-302-moved-temporarily)
+          (update :headers assoc "location" authorize-uri)
+          (update :headers attach-threat-remediation-headers)
+          (cookie-support/add-encoded-cookie
+            password oidc-challenge-cookie challenge-cookie-value challenge-cookie-duration-secs)))
+      ;; trigger SSL redirect to the same page since OIDC auth works only for https requests
+      (let [redirect-uri (make-redirect-uri utils/authority->host)]
+        (-> response
+          (assoc :status (if (= request-method :get) http-302-moved-temporarily http-307-temporary-redirect))
+          (update :headers assoc "location" redirect-uri))))))
 
 (defn make-oidc-auth-response-updater
   "Returns a response updater that rewrites 401 waiter responses to 302 redirects."

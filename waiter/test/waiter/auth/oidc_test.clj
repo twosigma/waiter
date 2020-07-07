@@ -239,8 +239,8 @@
 (deftest test-update-oidc-auth-response
   (let [request-host "www.host.com:8080"
         request {:headers {"host" request-host}
-                 :query-string "some-query-string"
-                 :scheme "https"
+                 :query-string "some=query-string"
+                 :scheme :https
                  :uri "/test"}
         password [:cached "password"]
         code-verifier "code-verifier-1234"
@@ -257,10 +257,23 @@
                   create-code-verifier (constantly code-verifier)
                   create-state-code (fn [state-data in-password]
                                       (is (= password in-password))
-                                      (is (= {:redirect-uri (str "https://" request-host "/test?some-query-string")}
+                                      (is (= {:redirect-uri (str "https://" request-host "/test?some=query-string")}
                                              state-data))
                                       state-code)]
-      (let [update-response (make-oidc-auth-response-updater oidc-auth-server password request)]
+
+      (testing "http request redirected to https"
+        (doseq [request-method [:get :post]]
+          (let [request (assoc request :request-method request-method :scheme :http)
+                update-response (make-oidc-auth-response-updater oidc-auth-server password request)]
+            (let [response {:status http-401-unauthorized
+                            :waiter/response-source :waiter}]
+              (is (= (assoc response
+                       :headers {"location" "https://www.host.com/test?some=query-string"}
+                       :status (if (= request-method :get) http-302-moved-temporarily http-307-temporary-redirect))
+                     (update-response response)))))))
+
+      (let [request (assoc request :scheme :https)
+            update-response (make-oidc-auth-response-updater oidc-auth-server password request)]
 
         (let [response {:body (utils/unique-identifier)
                         :status http-200-ok}]
