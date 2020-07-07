@@ -30,7 +30,7 @@
             [waiter.util.date-utils :as du])
   (:import (com.codahale.metrics MetricFilter MetricRegistry)
            (java.io ByteArrayOutputStream File)
-           (java.net InetAddress URL)
+           (java.net HttpURLConnection InetAddress URL)
            (javax.servlet ServletOutputStream ServletResponse)))
 
 (def expected-html-response-headers {"content-type" "text/html"})
@@ -125,18 +125,19 @@
 (defn- post-json
   [url json]
   (try
-    (let [conn (doto (.openConnection (URL. url))
-                 (.setDoOutput true)
-                 (.setDoInput true)
-                 (.setRequestMethod "POST")
-                 (.setRequestProperty "content-type" "application/json")
-                 (.setUseCaches false)
-                 (.setReadTimeout 10000)
-                 (.setConnectTimeout 10000)
-                 (.connect))]
-      (with-open [writer (io/writer (.getOutputStream conn))]
+    (let [^HttpURLConnection url-connection (.openConnection (URL. url))]
+      (doto url-connection
+        (.setDoOutput true)
+        (.setDoInput true)
+        (.setRequestMethod "POST")
+        (.setRequestProperty "content-type" "application/json")
+        (.setUseCaches false)
+        (.setReadTimeout 10000)
+        (.setConnectTimeout 10000)
+        (.connect))
+      (with-open [writer (io/writer (.getOutputStream url-connection))]
         (.write writer json))
-      (.getResponseCode conn))
+      (.getResponseCode url-connection))
     (catch Throwable e
       (log/error e "Failed to post test metrics json " url json)
       (throw e))))
