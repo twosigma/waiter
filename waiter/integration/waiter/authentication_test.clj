@@ -490,3 +490,38 @@
             (when edit-token?
               (delete-token-and-assert waiter-url waiter-token)))))
       (log/info "OIDC+PKCE authentication is disabled"))))
+
+(deftest ^:parallel ^:integration-fast test-spnego-authentication-disabled
+  (if use-spnego
+    (testing-using-waiter-url
+      (let [{:keys [cookies] :as auth-response} (make-request waiter-url "/waiter-auth")
+            token-name (create-token-name waiter-url (rand-name))]
+        (is (seq cookies) (str auth-response))
+        (try
+          (let [service-parameters (assoc (kitchen-params)
+                                     :authentication "standard"
+                                     :env {"USE_SPNEGO_AUTH" "false"}
+                                     :name (rand-name)
+                                     :run-as-user (retrieve-username))
+                token-response (post-token waiter-url (assoc service-parameters "token" token-name))
+                _ (assert-response-status token-response http-200-ok)
+                {:keys [service-id] :as canary-response}
+                (make-request-with-debug-info
+                  {:x-waiter-token token-name}
+                  #(make-kitchen-request waiter-url % :cookies cookies :path "/request-info"))]
+            (with-service-cleanup
+              service-id
+              (assert-response-status canary-response 200)
+              (assert-backend-response canary-response)
+              (is (= "cookie" (get-in canary-response [:headers "x-waiter-auth-method"])) (str canary-response))
+              (is (= (retrieve-username) (get-in canary-response [:headers "x-waiter-auth-user"])) (str canary-response))
+              (let [response (make-request-with-debug-info
+                               {:x-waiter-token token-name}
+                               #(make-kitchen-request waiter-url % :path "/request-info"))]
+                (assert-response-status response 401)
+                (assert-waiter-response response)
+                (is (not (str/includes? (str (get response [:headers "www-authenticate"])) "Negotiate"))
+                    (str response)))))
+          (finally
+            (delete-token-and-assert waiter-url token-name)))))
+    (log/info "Skipping test as spnego authentication is not available")))
