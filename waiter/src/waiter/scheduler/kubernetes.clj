@@ -247,7 +247,7 @@
 
 (defn pod->ServiceInstance
   "Convert a Kubernetes Pod JSON response into a Waiter Service Instance record."
-  [{:keys [api-server-url proxy-options] :as scheduler} pod]
+  [{:keys [api-server-url] :as scheduler} pod]
   (try
     (let [;; waiter-app is the first container we register
           restart-count (get-in pod [:status :containerStatuses 0 :restartCount] 0)
