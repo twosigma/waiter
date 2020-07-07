@@ -139,9 +139,10 @@
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
                 config/retrieve-waiter-principal (constantly "waiter@test.com")]
     (let [scheduler (make-dummy-scheduler ["test-service-id"])
+          service-description (assoc dummy-service-description "env" {(:reverse-proxy-flag (:proxy-options scheduler))
+                                                                       "yes"})
           replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id"
-                           (assoc dummy-service-description "env" {(:reverse-proxy-flag (:proxy-options scheduler))
-                                                                   "yes"}))]
+                           service-description)]
 
       (testing "replicaset has waiter/service-port annotation"
         (is (contains? (get-in replicaset-spec [:spec :template :metadata :annotations]) :waiter/service-port)))
