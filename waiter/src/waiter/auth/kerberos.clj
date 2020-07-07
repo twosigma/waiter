@@ -36,7 +36,7 @@
         (some->> out
           (str/split-lines)
           (remove str/blank?) ;; remove empty lines
-          (map #(utils/principal->username %))
+          (map utils/principal->username)
           (remove str/blank?) ;; remove entries we couldn't translate to principals
           (seq)
           (set))
