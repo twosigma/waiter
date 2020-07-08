@@ -8,7 +8,7 @@
             [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
             [waiter.util.utils :as utils])
-  (:import (java.net URI URL URLEncoder)))
+  (:import (java.net HttpURLConnection URI URL URLEncoder)))
 
 (deftest ^:parallel ^:integration-fast test-default-composite-authenticator
   (testing-using-waiter-url
@@ -67,15 +67,15 @@
    Return map of waiter acs endpoint, saml-response and relay-state"
   [saml-redirect-location]
   (let [make-connection (fn [request-url]
-                          (let [http-connection (.openConnection (URL. request-url))]
+                          (let [^HttpURLConnection http-connection (.openConnection (URL. request-url))]
                             (.setDoOutput http-connection false)
                             (.setDoInput http-connection true)
                             (.setRequestMethod http-connection "GET")
                             (.connect http-connection)
                             http-connection))
-        conn (make-connection saml-redirect-location)]
-    (is (= http-200-ok (.getResponseCode conn)))
-    (reaver/extract (reaver/parse (slurp (.getInputStream conn))) [:waiter-saml-acs-endpoint :saml-response :relay-state]
+        ^HttpURLConnection http-connection (make-connection saml-redirect-location)]
+    (is (= http-200-ok (.getResponseCode http-connection)))
+    (reaver/extract (reaver/parse (slurp (.getInputStream http-connection))) [:waiter-saml-acs-endpoint :saml-response :relay-state]
                     "form" (reaver/attr :action)
                     "form input[name=SAMLResponse]" (reaver/attr :value)
                     "form input[name=RelayState]" (reaver/attr :value))))
