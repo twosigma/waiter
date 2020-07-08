@@ -923,7 +923,29 @@
            :resources {:limits {:memory memory}
                        :requests {:cpu cpu :memory memory}}
            :volumeMounts [{:mountPath "/srv/www"
-                           :name "user-home"}]})))))
+                           :name "user-home"}]}))
+
+      ;; Optional envoy sidecar container
+      (pos-int? offset)
+      (update-in
+        [:spec :template :spec :container]
+        conj
+        (let [cmd ""]
+             {:command cmd
+              :env (into [{:name "SERVICE-PORT" :value service-port}
+                          {:name "PORT0" :value port0}
+                          {:name "PORT" :value port0}]
+                         (concat
+                           (for [[k v] base-env]
+                                {:name k :value v})))
+              :image "envoy:v1"
+              :imagePullPolicy "IfNotPresent"
+              :name "waiter-reverse-proxy"
+              :ports [{:containerPort base-port}]
+              :resources {:limits {:memory "256 Mi"}
+                          :requests {:cpu "0.1" :memory "256 Mi"}}
+              :volumeMounts [{:mountPath "/srv/www"
+                              :name "user-home"}]})))))
 
 (defn start-auth-renewer
   "Initialize the k8s-api-auth-str atom,
