@@ -155,7 +155,7 @@
                          :x-waiter-max-instances 5
                          :x-waiter-min-instances 1
                          :x-waiter-name (rand-name)
-                         :x-waiter-scale-down-factor 0.25
+                         :x-waiter-scale-down-factor 0.99
                          :x-waiter-scale-up-factor 0.99}
           request-fn (fn [target-url cookies]
                        (make-kitchen-request target-url extra-headers :cookies cookies))
@@ -170,7 +170,7 @@
           (run-scale-service-requests
             waiter-url cookies request-fn requests-per-thread delay-secs service-id
             num-threads expected-instances))
-        (let [num-threads 6
+        (let [num-threads 5
               expected-instances (int (Math/ceil (/ (* 1.0 num-threads) concurrency-level)))]
           (run-scale-service-requests
             waiter-url cookies request-fn requests-per-thread delay-secs service-id
