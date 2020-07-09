@@ -104,10 +104,13 @@
                     http-version (hu/backend-protocol->http-version backend-proto)]
                 (is (= http-version (get body-json "protocol")))
                 (when (= "http" backend-proto)
-                  (is (= "chunked" (get-in body-json ["headers" "Transfer-Encoding"]))
-                      (str body-json))
-                  (is (= "chunked" (get-in response [:headers "transfer-encoding"]))
-                      (-> response :headers str)))
+                  ;; http/1.1 request/responses from Jetty may not always be chunked
+                  (if-let [te-header (get-in body-json ["headers" "Transfer-Encoding"])]
+                    (is (= "chunked" te-header) (str body-json))
+                    (is (= (str request-length) (get-in body-json ["headers" "Content-Length"])) (str body-json)))
+                  (if-let [te-header (get-in response [:headers "transfer-encoding"])]
+                    (is (= "chunked" te-header) (-> response :headers str))
+                    (is (= (str request-length) (get-in response [:headers "content-length"])) (-> response :headers str))))
                 ;; we do not sent trailers to http/1 backends
                 (is (= (if (hu/http2? http-version) request-trailers {})
                        (get body-json "trailers"))
