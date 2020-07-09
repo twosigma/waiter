@@ -1058,7 +1058,7 @@
                                                  :token token})]
       (assert-response-status token-response http-200-ok)
 
-      (testing "https redirects"
+      (testing "SSL redirects"
         (let [request-headers {:x-waiter-token token}
               url (URL. (str "http://" waiter-url))
               endpoint "/request-info"]
@@ -1078,6 +1078,51 @@
               (is (str/starts-with? (str (get headers "server")) "waiter") (str "headers:" headers))))))
 
       (delete-token-and-assert waiter-url token))))
+
+(deftest ^:parallel ^:integration-fast test-token-upgrade-insecure-requests
+  (testing-using-waiter-url
+    (let [token (rand-name)
+          token-response (post-token waiter-url {:cmd (str (kitchen-cmd) " -p $PORT0")
+                                                 :cmd-type "shell"
+                                                 :name token
+                                                 :upgrade-insecure-requests true
+                                                 :version "does-not-matter"
+                                                 :token token})]
+      (assert-response-status token-response http-200-ok)
+
+      (try
+        (testing "SSL redirects"
+          (let [request-headers {:x-waiter-token token}
+                url (URL. (str "http://" waiter-url))
+                endpoint "/request-info"]
+
+            (let [{:keys [headers service-id] :as canary-response}
+                  (make-request-with-debug-info
+                    request-headers #(make-kitchen-request waiter-url % :path endpoint))]
+
+              (with-service-cleanup
+                service-id
+
+                (assert-response-status canary-response http-200-ok)
+                (is (not (str/starts-with? (str (get headers "server")) "waiter")) (str "headers:" headers))
+
+                (testing "get request"
+                  (let [request-headers (assoc request-headers :upgrade-insecure-requests "1")
+                        {:keys [headers] :as response}
+                        (make-kitchen-request waiter-url request-headers :method :get :path endpoint)]
+                    (assert-response-status response http-301-moved-permanently)
+                    (is (= (str "https://" (.getHost url) endpoint) (get headers "location")))
+                    (is (str/starts-with? (str (get headers "server")) "waiter") (str "headers:" headers))))
+
+                (testing "post request"
+                  (let [request-headers (assoc request-headers :upgrade-insecure-requests "1")
+                        {:keys [headers] :as response}
+                        (make-kitchen-request waiter-url request-headers :method :post :path endpoint)]
+                    (assert-response-status response http-307-temporary-redirect)
+                    (is (= (str "https://" (.getHost url) endpoint) (get headers "location")))
+                    (is (str/starts-with? (str (get headers "server")) "waiter") (str "headers:" headers))))))))
+        (finally
+          (delete-token-and-assert waiter-url token))))))
 
 (defmacro run-token-param-support
   [waiter-url request-fn request-headers expected-env]

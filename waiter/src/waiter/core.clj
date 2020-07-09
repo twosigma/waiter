@@ -1856,7 +1856,8 @@
                                (fn [request]
                                  (let [;; ignore websocket requests
                                        http-request? (= :http (utils/request->scheme request))
-                                       upgrade-insecure-requests? (= "1" (get-in request [:headers "upgrade-insecure-requests"]))
+                                       upgrade-insecure-requests? (and (get-in request [:waiter-discovery :token-metadata "upgrade-insecure-requests"])
+                                                                       (= "1" (get-in request [:headers "upgrade-insecure-requests"])))
                                        https-redirect? (get-in request [:waiter-discovery :token-metadata "https-redirect"])]
                                    (if (and http-request? (or upgrade-insecure-requests? https-redirect?))
                                      (do

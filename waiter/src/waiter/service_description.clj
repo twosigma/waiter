@@ -117,6 +117,7 @@
    (s/optional-key "https-redirect") s/Bool
    (s/optional-key "owner") schema/non-empty-string
    (s/optional-key "stale-timeout-mins") (s/both s/Int (s/pred #(<= 0 % (t/in-minutes (t/hours 4))) 'at-most-4-hours))
+   (s/optional-key "upgrade-insecure-requests") s/Bool
    s/Str s/Any})
 
 (def ^:const service-required-keys (->> (keys service-description-schema)
@@ -156,7 +157,8 @@
 (def ^:const system-metadata-keys #{"cluster" "deleted" "last-update-time" "last-update-user" "previous" "root"})
 
 ; keys allowed in user metadata for tokens, these need to be distinct from service description keys
-(def ^:const user-metadata-keys #{"cors-rules" "fallback-period-secs" "https-redirect" "owner" "stale-timeout-mins"})
+(def ^:const user-metadata-keys #{"cors-rules" "fallback-period-secs" "https-redirect" "owner" "stale-timeout-mins"
+                                  "upgrade-insecure-requests"})
 
 ; keys allowed in metadata for tokens, these need to be distinct from service description keys
 (def ^:const token-metadata-keys (set/union system-metadata-keys user-metadata-keys))

@@ -1008,12 +1008,18 @@
                                  "fallback-period-secs" 300
 
                                  ;; By default, Waiter allows non-secure HTTP requests from clients to services.
+                                 ;; When true, forces all HTTP requests to the token to be SSL redirected.
                                  "https-redirect" false
 
                                  ;; Stale services are detected by looking at the version of the
                                  ;; token used to create them, such services will have their idle timeout
                                  ;; reduced to stale-timeout-mins + fallback-period-secs.
-                                 "stale-timeout-mins" 15}}
+                                 "stale-timeout-mins" 15
+
+                                 ;; By default, Waiter ignores any SSL redirects due to the upgrade-insecure-requests header
+                                 ;; When true, forces all HTTP requests containing the upgrade-insecure-requests=1 header to
+                                 ;; the token to be SSL redirected.
+                                 "upgrade-insecure-requests" false}}
 
  ;; Waiter supports making websocket connections to backends.
  ;; The maximum binary and text message sizes in the websocket request or response can be configured
