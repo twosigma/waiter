@@ -926,27 +926,23 @@
                            :name "user-home"}]}))
 
       ;; Optional envoy sidecar container
-      (pos-int? offset)
+      has-reverse-proxy?
       (update-in
         [:spec :template :spec :container]
         conj
-        (let [create-envoy-config "sh -x create-envoy-config.sh ${SERVICE_PORT} ${PORT0} > /etc/envoy/envoy.yaml"
-              start-envoy "exec envoy"]
-             {:command cmd
+        (let [cmd "sh -x create-envoy-config.sh ${SERVICE_PORT} ${PORT0} > /etc/envoy/envoy.yaml ; exec envoy -c /etc/envoy/envoy.yaml --base-id 1"]
+             {:command [cmd]
               :env (into [{:name "SERVICE-PORT" :value service-port}
-                          {:name "PORT0" :value port0}
-                          {:name "PORT" :value port0}]
+                          {:name "PORT0" :value port0}]
                          (concat
                            (for [[k v] base-env]
                                 {:name k :value v})))
-              :image "envoy:v1"
+              :image "envoy-sidecar"
               :imagePullPolicy "IfNotPresent"
-              :name "waiter-reverse-proxy"
-              :ports [{:containerPort base-port}]
+              :name "waiter-envoy-sidecar"
+              :ports [{:containerPort service-port}]
               :resources {:limits {:memory "256 Mi"}
-                          :requests {:cpu "0.1" :memory "256 Mi"}}
-              :volumeMounts [{:mountPath "/srv/www"
-                              :name "user-home"}]})))))
+                          :requests {:cpu "0.1" :memory "256 Mi"}}})))))
 
 (defn start-auth-renewer
   "Initialize the k8s-api-auth-str atom,
