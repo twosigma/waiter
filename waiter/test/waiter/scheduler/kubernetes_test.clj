@@ -156,7 +156,23 @@
       (testing "waiter/port-count annotation is correct"
         (let [port-count (inc (get service-description "ports"))]
           (is (= port-count (-> (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/port-count])
-                                (Integer/parseInt)))))))))
+                                (Integer/parseInt))))))
+
+      (testing "3 containers are present in replicaset"
+        (is (= 3 (count (get-in replicaset-spec [:spec :template :spec :containers])))))
+
+      (testing "resource requests for reverse-proxy are correct"
+        (let [cpu (get-in replicaset-spec [:spec :template :spec :containers 2 :resources :requests :cpu])
+              memory (get-in replicaset-spec [:spec :template :spec :containers 2 :resources :requests :memory])]
+          (is (= "0.1" cpu))
+          (is (= "256 Mi" memory))))
+
+      (testing "resource limits for reverse-proxy are correct"
+        (let [memory-limit (get-in replicaset-spec [:spec :template :spec :containers 2 :resources :limits :memory])]
+          (is (= "256 Mi" memory-limit))))
+
+      (testing "reverse-proxy pod container name is correct"
+        (is (= "waiter-envoy-sidecar" (get-in replicaset-spec [:spec :template :spec :containers 2 :name])))))))
 
 (deftest replicaset-spec-liveness-nd-readiness
   (let [basic-probe {:failureThreshold 1
