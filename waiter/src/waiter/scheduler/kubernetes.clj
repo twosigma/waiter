@@ -930,8 +930,11 @@
       (update-in
         [:spec :template :spec :container]
         conj
-        (let [cmd "sh -x create-envoy-config.sh ${SERVICE_PORT} ${PORT0} > /etc/envoy/envoy.yaml ; exec envoy -c /etc/envoy/envoy.yaml --base-id 1"]
-             {:command [cmd]
+        (let [cmd ["/bin/sh" "-x"]]
+             {:command cmd
+              :args ["./opt/waiter/envoy/bin/run-envoy-sidecar.sh"
+                     "$(SERVICE_PORT)"
+                     "$(PORT0)"]
               :env (into [{:name "SERVICE-PORT" :value service-port}
                           {:name "PORT0" :value port0}]
                          (concat

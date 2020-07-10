@@ -1,7 +1,7 @@
 #!/bin/sh
 
-PORT0=$1
-PORT1=$2
+SERVICE_PORT=$1
+PORT0=$2
 
 
 cat << EOF
@@ -10,10 +10,10 @@ static_resources:
   - address:
       socket_address:
         address: 0.0.0.0
-        port_value: $PORT0
+        port_value: $SERVICE_PORT
     filter_chains:
     - filters:
-      - name: envoy.http_connection_manager 
+      - name: envoy.http_connection_manager
         typed_config:
           "@type": type.googleapis.com/envoy.config.filter.network.http_connection_manager.v2.HttpConnectionManager
           codec_type: auto
@@ -40,7 +40,7 @@ static_resources:
   clusters:
   - name: waiter-app
     connect_timeout: 1s
-    type: logical_dns 
+    type: logical_dns
     dns_lookup_family: V4_ONLY
     lb_policy: round_robin
     load_assignment:
@@ -51,7 +51,7 @@ static_resources:
             address:
               socket_address:
                 address: 0.0.0.0
-                port_value: $PORT1
+                port_value: $PORT0
 admin:
   access_log_path: "/dev/stdout"
   address:
