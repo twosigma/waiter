@@ -337,3 +337,19 @@
                     :interval 15
                     :timeout timeout-secs)))))
         (log/warn "skipping test as INTEGRATION_TEST_BAD_IMAGE is not specified")))))
+
+(deftest ^:parallel ^:integration-fast test-kubernetes-reverse-proxy-sidecar
+  (testing-using-waiter-url
+    (when (using-k8s? waiter-url)
+      (let [{:keys [service-id] :as response}
+            (make-request-with-debug-info
+              {:x-waiter-distribution-scheme "simple"
+               :x-waiter-name (rand-name)
+               :x-waiter-env-GRPC_TRANSCODER "yes"}
+              #(make-kitchen-request waiter-url % :method :get :path "/"))
+            response-headers (or (:headers response) {})]
+        (with-service-cleanup
+          service-id
+          (assert-response-status response http-200-ok)
+          (testing "The envoy x-envoy-expected-rq-timeout-ms header is present"
+            (is (contains? response-headers "x-envoy-expected-rq-timeout-ms"))))))))

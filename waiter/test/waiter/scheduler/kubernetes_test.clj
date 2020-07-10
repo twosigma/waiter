@@ -144,7 +144,9 @@
           replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id"
                            service-description)
           app-container (get-in replicaset-spec [:spec :template :spec :containers 0])
-          sidecar-container (some #(if (= "waiter-envoy-sidecar" (:name %)) %) (get-in replicaset-spec [:spec :template :spec :containers]))]
+          sidecar-container (some
+                              #(if (= "waiter-envoy-sidecar" (:name %)) %)
+                              (get-in replicaset-spec [:spec :template :spec :containers]))]
 
       (testing "replicaset has waiter/service-port annotation"
         (is (contains? (get-in replicaset-spec [:spec :template :metadata :annotations]) :waiter/service-port)))
@@ -152,11 +154,16 @@
       (testing "sidecar container is present in replicaset"
         (is (not= nil sidecar-container)))
 
-      (testing "service-port and waiter ports are correct"
+      (testing "service-port and waiter port values and env variables are correct"
         (let [service-port (-> "test-service-id" hash (mod 100) (* 10) (+ (:pod-base-port scheduler)))
-              port0 (+ service-port 1)]
+              port0 (+ service-port 1)
+              service-port-env (:value (some #(if (= "SERVICE_PORT" (:name %)) %) (:env sidecar-container)))
+              port0-env (:value (some #(if (= "PORT0" (:name %)) %) (:env sidecar-container)))]
           (is (= service-port (Integer/parseInt (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/service-port]))))
-          (is (= port0 (get-in app-container [:ports 0 :containerPort])))))
+          (is (= service-port (get-in sidecar-container [:ports 0 :containerPort])))
+          (is (= service-port service-port-env))
+          (is (= port0 (get-in app-container [:ports 0 :containerPort])))
+          (is (= port0 port0-env))))
 
       (testing "waiter/port-count annotation is correct"
         (let [port-count (inc (get service-description "ports"))]
@@ -174,7 +181,10 @@
           (is (= "256 Mi" memory-limit))))
 
       (testing "reverse-proxy pod container name is correct"
-        (is (= "waiter-envoy-sidecar" (:name sidecar-container)))))))
+        (is (= "waiter-envoy-sidecar" (:name sidecar-container))))
+
+      (testing "reverse-proxy pod container image is correct"
+        (is (= "twosigma/waiter-envoy" (:image sidecar-container)))))))
 
 (deftest replicaset-spec-liveness-nd-readiness
   (let [basic-probe {:failureThreshold 1

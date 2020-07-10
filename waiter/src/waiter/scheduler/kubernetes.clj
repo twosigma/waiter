@@ -928,11 +928,11 @@
       ;; Optional envoy sidecar container
       has-reverse-proxy?
       (update-in
-        [:spec :template :spec :container]
+        [:spec :template :spec :containers]
         conj
         (let [cmd ["/opt/waiter/envoy/bin/envoy-start"]]
              {:command cmd
-              :env (into [{:name "SERVICE-PORT" :value service-port}
+              :env (into [{:name "SERVICE_PORT" :value service-port}
                           {:name "PORT0" :value port0}]
                          (concat
                            (for [[k v] base-env]
