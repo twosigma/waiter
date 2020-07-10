@@ -930,7 +930,7 @@
       (update-in
         [:spec :template :spec :container]
         conj
-        (let [cmd ["/bin/sh" "/opt/waiter/envoy/bin/envoy-start"]]
+        (let [cmd ["/opt/waiter/envoy/bin/envoy-start"]]
              {:command cmd
               :env (into [{:name "SERVICE-PORT" :value service-port}
                           {:name "PORT0" :value port0}]

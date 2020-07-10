@@ -142,37 +142,39 @@
           service-description (assoc dummy-service-description "env" {(:reverse-proxy-flag (:proxy-options scheduler))
                                                                        "yes"})
           replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id"
-                           service-description)]
+                           service-description)
+          app-container (get-in replicaset-spec [:spec :template :spec :containers 0])
+          sidecar-container (some #(if (= "waiter-envoy-sidecar" (:name %)) %) (get-in replicaset-spec [:spec :template :spec :containers]))]
 
       (testing "replicaset has waiter/service-port annotation"
         (is (contains? (get-in replicaset-spec [:spec :template :metadata :annotations]) :waiter/service-port)))
+
+      (testing "sidecar container is present in replicaset"
+        (is (not= nil sidecar-container)))
 
       (testing "service-port and waiter ports are correct"
         (let [service-port (-> "test-service-id" hash (mod 100) (* 10) (+ (:pod-base-port scheduler)))
               port0 (+ service-port 1)]
           (is (= service-port (Integer/parseInt (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/service-port]))))
-          (is (= port0 (get-in replicaset-spec [:spec :template :spec :containers 0 :ports 0 :containerPort])))))
+          (is (= port0 (get-in app-container [:ports 0 :containerPort])))))
 
       (testing "waiter/port-count annotation is correct"
         (let [port-count (inc (get service-description "ports"))]
           (is (= port-count (-> (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/port-count])
                                 (Integer/parseInt))))))
 
-      (testing "3 containers are present in replicaset"
-        (is (= 3 (count (get-in replicaset-spec [:spec :template :spec :containers])))))
-
       (testing "resource requests for reverse-proxy are correct"
-        (let [cpu (get-in replicaset-spec [:spec :template :spec :containers 2 :resources :requests :cpu])
-              memory (get-in replicaset-spec [:spec :template :spec :containers 2 :resources :requests :memory])]
+        (let [cpu (get-in sidecar-container [:resources :requests :cpu])
+              memory (get-in sidecar-container [:resources :requests :memory])]
           (is (= "0.1" cpu))
           (is (= "256 Mi" memory))))
 
       (testing "resource limits for reverse-proxy are correct"
-        (let [memory-limit (get-in replicaset-spec [:spec :template :spec :containers 2 :resources :limits :memory])]
+        (let [memory-limit (get-in sidecar-container [:resources :limits :memory])]
           (is (= "256 Mi" memory-limit))))
 
       (testing "reverse-proxy pod container name is correct"
-        (is (= "waiter-envoy-sidecar" (get-in replicaset-spec [:spec :template :spec :containers 2 :name])))))))
+        (is (= "waiter-envoy-sidecar" (:name sidecar-container)))))))
 
 (deftest replicaset-spec-liveness-nd-readiness
   (let [basic-probe {:failureThreshold 1
