@@ -1,16 +1,12 @@
 #!/bin/sh
 
-SERVICE_PORT=$1
-PORT0=$2
-
-
 cat << EOF
 static_resources:
   listeners:
   - address:
       socket_address:
         address: 0.0.0.0
-        port_value: $SERVICE_PORT
+        port_value: ${SERVICE_PORT}
     filter_chains:
     - filters:
       - name: envoy.http_connection_manager
@@ -51,7 +47,7 @@ static_resources:
             address:
               socket_address:
                 address: 0.0.0.0
-                port_value: $PORT0
+                port_value: ${PORT0}
 admin:
   access_log_path: "/dev/stdout"
   address:

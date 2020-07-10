@@ -1,0 +1,4 @@
+#!/bin/sh
+
+sh -x /opt/waiter/envoy/bin/envoy-config-template.sh > /etc/envoy/envoy.yaml
+exec envoy -c /etc/envoy/envoy.yaml --base-id 1
