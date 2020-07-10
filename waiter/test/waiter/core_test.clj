@@ -1675,20 +1675,6 @@
                   :headers {"Location" "https://token.localtest.me"}
                   :status http-301-moved-permanently
                   :waiter/response-source :waiter}
-                 response))))
-
-      (testing "http request with upgrade-insecure-requests header"
-        (let [test-request {:headers {"host" "token.localtest.me"
-                                      "upgrade-insecure-requests" "1"}
-                            :request-method :get
-                            :scheme :http}
-              {:keys [handled-request response]} (execute-request test-request)]
-          (is (nil? handled-request))
-          (is (= {:body ""
-                  :headers {"Location" "https://token.localtest.me"
-                            "vary" "upgrade-insecure-requests"}
-                  :status http-301-moved-permanently
-                  :waiter/response-source :waiter}
                  response)))))))
 
 (deftest test-request->protocol
