@@ -940,7 +940,7 @@
                          (concat
                            (for [[k v] base-env]
                                 {:name k :value v})))
-              :image "envoy-sidecar"
+              :image "twosigma/waiter-envoy"
               :imagePullPolicy "IfNotPresent"
               :name "waiter-envoy-sidecar"
               :ports [{:containerPort service-port}]
