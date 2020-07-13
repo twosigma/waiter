@@ -338,7 +338,7 @@
                     :timeout timeout-secs)))))
         (log/warn "skipping test as INTEGRATION_TEST_BAD_IMAGE is not specified")))))
 
-(deftest ^:parallel ^:integration-fast test-kubernetes-reverse-proxy-sidecar
+(deftest ^:parallel ^:integration-fast test-kubernetes-reverse-proxy-sidecar-headers
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
       (let [{:keys [service-id] :as response}
@@ -346,10 +346,27 @@
               {:x-waiter-distribution-scheme "simple"
                :x-waiter-name (rand-name)
                :x-waiter-env-GRPC_TRANSCODER "yes"}
-              #(make-kitchen-request waiter-url % :method :get :path "/"))
-            response-headers (or (:headers response) {})]
+              #(make-kitchen-request waiter-url % :method :get :path "/request-info"))]
+        (println (with-out-str (clojure.pprint/pprint response)))
         (with-service-cleanup
           service-id
           (assert-response-status response http-200-ok)
           (testing "The envoy x-envoy-expected-rq-timeout-ms header is present"
-            (is (contains? response-headers "x-envoy-expected-rq-timeout-ms"))))))))
+            (is (contains? (:headers response) "x-envoy-expected-rq-timeout-ms"))))))))
+
+(deftest ^:parallel ^:integration-fast test-kubernetes-reverse-proxy-sidecar-port
+  (testing-using-waiter-url
+    (when (using-k8s? waiter-url)
+      (let [{:keys [service-id] :as response}
+            (make-request-with-debug-info
+              {:x-waiter-distribution-scheme "simple"
+               :x-waiter-name (rand-name)
+               :x-waiter-env-GRPC_TRANSCODER "yes"}
+              #(make-kitchen-request waiter-url % :method :get :path "/environment"))]
+        (println (with-out-str (clojure.pprint/pprint response)))
+        (with-service-cleanup
+          service-id
+          (assert-response-status response http-200-ok)
+          (testing "Port value is correctly offset compared to instance value"
+            (is (= (+ 1 (Integer/parseInt (get (:headers response) "x-waiter-backend-port")))
+                   (Integer/parseInt (get (:body response) "PORT0"))))))))))
