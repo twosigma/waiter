@@ -108,6 +108,15 @@
     (nil? y) x
     :else (max x y)))
 
+(defn nil-safe-min
+  "If an argument is nil, returns the other argument.
+   Else returns the min of the arguments."
+  [x y]
+  (cond
+    (nil? x) y
+    (nil? y) x
+    :else (min x y)))
+
 (defn assoc-if-absent
   "If the specified key, k, is not already associated with a value, v, in the map, m, associate k with v in m."
   [m k v]
@@ -680,19 +689,3 @@
   [principal]
   (when principal
     (first (str/split principal #"@" 2))))
-
-(defn retrieve-update-time
-  "Returns the time at which the specific version of a input map went stale.
-   If no such version can be found, then the stale time is unknown and we, conservatively,
-   use the last known edit time of the history data.
-   Else if the data is not stale or no data is known, nil is returned."
-  [data->version data->update-time data->previous current-data data-version]
-  (when (and (seq current-data)
-             (not= data-version (data->version current-data)))
-    (loop [loop-previous-data (data->previous current-data)
-           loop-update-time (data->update-time current-data)]
-      (if (or (empty? loop-previous-data)
-              (= data-version (data->version loop-previous-data)))
-        loop-update-time
-        (recur (data->previous loop-previous-data)
-               (data->update-time loop-previous-data))))))

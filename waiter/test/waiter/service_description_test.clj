@@ -2553,7 +2553,7 @@
            (accumulate-stale-info {:stale? true :update-epoch-time 200} {:stale? s :update-epoch-time nil})))
     (is (= {:stale? true :update-epoch-time 200}
            (accumulate-stale-info {:stale? s :update-epoch-time nil} {:stale? true :update-epoch-time 200}))))
-  (is (= {:stale? true :update-epoch-time 400}
+  (is (= {:stale? true :update-epoch-time 200}
          (accumulate-stale-info {:stale? true :update-epoch-time 200} {:stale? true :update-epoch-time 400}))))
 
 (deftest test-references->stale-info
@@ -2571,7 +2571,7 @@
     (is (= {:stale? true :update-epoch-time 100}
            (run-references->stale-info [{"type1" {:stale-info {:stale? true :update-epoch-time 100}}
                                          "type2" {:stale-info {:stale? false :update-epoch-time 200}}}])))
-    (is (= {:stale? true :update-epoch-time 500}
+    (is (= {:stale? true :update-epoch-time 300}
            (run-references->stale-info [{"type1" {:stale-info {:stale? true :update-epoch-time nil}}
                                          "type2" {:stale-info {:stale? false :update-epoch-time nil}}
                                          "type3" {:stale-info {:stale? true :update-epoch-time 300}}

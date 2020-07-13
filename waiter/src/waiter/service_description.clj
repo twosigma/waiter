@@ -32,6 +32,7 @@
             [waiter.schema :as schema]
             [waiter.status-codes :refer :all]
             [waiter.util.date-utils :as du]
+            [waiter.util.descriptor-utils :as descriptor-utils]
             [waiter.util.utils :as utils])
   (:import (java.util.regex Pattern)
            (org.joda.time DateTime)
@@ -655,15 +656,18 @@
   [current-token-data token-version]
   (let [token-data->update-time #(get % "last-update-time")
         token-data->previous #(get % "previous")]
-    (utils/retrieve-update-time
+    (descriptor-utils/retrieve-update-time
       token-data->token-hash token-data->update-time token-data->previous current-token-data token-version)))
 
 (defn retrieve-token-stale-info
   "The provided source-tokens are stale if every token used to access a service has been updated.
+   The criteria of every token being updated is a conservative choice since we do not compute the merged
+   results to verify if changing any of the tokens changed the service description and caused the service
+   to go stale earlier.
    Returns a map containing two keys:
    - :stale? is true if the provided source-tokens are stale;
-   - :update-epoch-time is either nil or the most recent time any of the source tokens of
-     with the specified version was edited."
+   - :update-epoch-time is either nil or the max time of the individual update times of when the
+     source tokens with the specified version was edited."
   [token->token-hash token->token-parameters source-tokens]
   ;; safe assumption mark a service stale when every token used to access it is stale
   (let [stale? (and (not (empty? source-tokens)) ;; ensures boolean value
@@ -1248,6 +1252,10 @@
 (defn source-tokens->gc-time-secs
   "Computes the seconds after which a service created using provided source tokens should be GC-ed
    based on the token fallback-period-secs and stale-timeout-mins.
+   The fallback-period-secs and stale-timeout-mins are computed from the latest versions of the tokens
+   as fallback period now applies to the latest service.
+   Using stale-timeout-mins allows users to revert their changes and have their traffic served by
+   the existing service without having to wait for a new instance to get started.
    The function also assumes that source-tokens-seq is non-empty.
    It ignores whether GC has been disabled by configuring idle-timeout-mins=0.
    The caller must take care to handle the scenario where GC has been disabled."
@@ -1267,12 +1275,12 @@
    The result map has the following keys:
    - :stale? true if either of the :stale? entries of the inputs were true;
    - :update-epoch-time
-      if the new info map is stale, contains the max edit epoch time of the two inputs
+      if the new info map is stale, contains the min edit epoch time of the two inputs
       else contains the edit epoch time of the first stale info."
   [current-stale-info {:keys [stale? update-epoch-time]}]
   (cond-> current-stale-info
     stale? (-> (assoc :stale? true)
-               (update :update-epoch-time utils/nil-safe-max update-epoch-time))))
+               (update :update-epoch-time utils/nil-safe-min update-epoch-time))))
 
 (defn- reference->stale-info
   "Returns the stale info for the provided reference.
@@ -1281,7 +1289,7 @@
    - :stale? true if any of entries in the reference has gone stale;
    - :update-epoch-time
       nil if none of the entries in the reference is stale or none of the stale entries have a known stale time
-      else contains the max edit epoch time of the stale entries from the reference."
+      else contains the min edit epoch time of the stale entries from the reference."
   [reference-type->stale-info-fn reference]
   (reduce
     (fn accumulate-reference->stale-info [acc-info [type entry]]
@@ -1311,7 +1319,7 @@
 (defn service->gc-time
   "Computes the time when a given service should be GC-ed.
    If the service is active and has GC disabled (by configuring idle-timeout-mins=0), nil is returned.
-   Else if the service is active or was created by on-the-fly, the GC time is calculated using
+   Else if the service is active or was created without references, the GC time is calculated using
    the service's idle-timeout-mins and the most recent completion time of the service's requests.
    Else, the GC time is the computed from the reference stale time, fallback period seconds and the stale service timeout."
   [service-id->service-description-fn service-id->references-fn token->token-parameters reference-type->stale-info-fn
@@ -1321,13 +1329,16 @@
         {:keys [stale? update-epoch-time]} (references->stale-info reference-type->stale-info-fn references)]
     (cond
       ;; when stale, use token info to compute GC time
+      ;; Note: a service created without references never goes stale
       stale?
       (let [update-time (if update-epoch-time (tc/from-long update-epoch-time) last-modified-time)
             gc-delay-duration (if-let [source-tokens (->> references (map :token) (remove nil?) (map :sources) seq)]
                                 ;; use time from fallback and stale timeout for a service that uses tokens
                                 (t/seconds (source-tokens->gc-time-secs token->token-parameters attach-token-defaults-fn source-tokens))
                                 ;; use the default token stale timeout for a stale service built without tokens
-                                (t/minutes (get (attach-token-defaults-fn {}) "stale-timeout-mins")))]
+                                ;; (this stale-timeout-mins value is configured in the default token values :( )
+                                (let [{:strs [stale-timeout-mins]} (attach-token-defaults-fn {})]
+                                  (t/minutes stale-timeout-mins)))]
         (log/info service-id "that uses references went stale at" (du/date-to-str update-time))
         (t/plus update-time gc-delay-duration))
       ;; when GC is enabled, use idle-timeout
