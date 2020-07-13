@@ -382,7 +382,9 @@
                                              :kubernetes {;; a factory function must be provided
                                                           ;; see the :kubernetes entry for other configuration options
                                                           :factory-fn waiter.scheduler.kubernetes/kubernetes-scheduler
-                                                          :todo :additional-config}}
+                                                          :todo :additional-config
+                                                          :proxy-options {:reverse-proxy-flag "GRPC_TRANSCODER"
+                                                                          :reverse-proxy-offset 1}}}
 
                                 ;; The scheduler to use by default if the service does not specify one explicitly.
                                 ;; This is an optional config and can be nil. When provided it must match one of
@@ -545,6 +547,8 @@
                                  ;; https://github.com/kubernetes/kubernetes/blob/207e9d1/staging/src/k8s.io/apiserver/pkg/storage/names/generate.go#L45
                                  :pod-suffix-length 5
 
+                                 :proxy-options {:reverse-proxy-flag "GRPC_TRANSCODER"
+                                                 :reverse-proxy-offset 1}
                                  ;; Version string used for creating and operating on ReplicaSet objects:
                                  :replicaset-api-version "extensions/v1beta1"
 

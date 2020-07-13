@@ -58,7 +58,9 @@
                                                            :default-namespace "waiter"
                                                            :image-aliases {"alias/integration" "twosigma/integration"}}
                                  :restart-expiry-threshold 2
-                                 :url "http://localhost:8001"}}
+                                 :url "http://localhost:8001"
+                                 :proxy-options {:reverse-proxy-flag "GRPC_TRANSCODER"
+                                                 :reverse-proxy-offset 1}}}
 
  ; ---------- Error Handling ----------
 
