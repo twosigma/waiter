@@ -805,6 +805,10 @@
         ;; delay iff the log-bucket-url setting was given the scheduler config.
         log-bucket-sync-secs (if log-bucket-url (:log-bucket-sync-secs context) 0)
         total-sigkill-delay-secs (+ pod-sigkill-delay-secs log-bucket-sync-secs)
+        proxy-options (if (nil? proxy-options)
+                        {:reverse-proxy-flag "GRPC_TRANSCODER"
+                         :reverse-proxy-offset 1}
+                        proxy-options)
         {:keys [reverse-proxy-flag reverse-proxy-offset]} proxy-options
         has-reverse-proxy? (contains? env reverse-proxy-flag)
         offset (if has-reverse-proxy? reverse-proxy-offset 0)
