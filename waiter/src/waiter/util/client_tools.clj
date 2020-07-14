@@ -680,6 +680,11 @@
   [waiter-url]
   (get-scheduler-settings waiter-url :kubernetes))
 
+(defn get-k8s-proxy-options
+  "Return the kubernetes scheduler's proxy options setting"
+  [waiter-url]
+  (:proxy-options (get-kubernetes-scheduler-settings waiter-url)))
+
 (defn marathon-url
   "Returns the Marathon URL setting"
   [waiter-url]

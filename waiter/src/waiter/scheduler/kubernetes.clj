@@ -805,10 +805,6 @@
         ;; delay iff the log-bucket-url setting was given the scheduler config.
         log-bucket-sync-secs (if log-bucket-url (:log-bucket-sync-secs context) 0)
         total-sigkill-delay-secs (+ pod-sigkill-delay-secs log-bucket-sync-secs)
-        proxy-options (if (nil? proxy-options)
-                        {:reverse-proxy-flag "GRPC_TRANSCODER"
-                         :reverse-proxy-offset 1}
-                        proxy-options)
         {:keys [reverse-proxy-flag reverse-proxy-offset]} proxy-options
         has-reverse-proxy? (contains? env reverse-proxy-flag)
         offset (if has-reverse-proxy? reverse-proxy-offset 0)
@@ -936,8 +932,8 @@
         conj
         (let [cmd ["/opt/waiter/envoy/bin/envoy-start"]]
              {:command cmd
-              :env (into [{:name "SERVICE_PORT" :value service-port}
-                          {:name "PORT0" :value port0}]
+              :env (into [{:name "SERVICE_PORT" :value (str service-port)}
+                          {:name "PORT0" :value (str port0)}]
                          (concat
                            (for [[k v] base-env]
                                 {:name k :value v})))
@@ -945,8 +941,8 @@
               :imagePullPolicy "IfNotPresent"
               :name "waiter-envoy-sidecar"
               :ports [{:containerPort service-port}]
-              :resources {:limits {:memory "256 Mi"}
-                          :requests {:cpu "0.1" :memory "256 Mi"}}})))))
+              :resources {:limits {:memory "256Mi"}
+                          :requests {:cpu "0.1" :memory "256Mi"}}})))))
 
 (defn start-auth-renewer
   "Initialize the k8s-api-auth-str atom,
