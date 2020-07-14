@@ -66,8 +66,13 @@
       :pod-base-port 8080
       :pod-sigkill-delay-secs 3
       :pod-suffix-length default-pod-suffix-length
-      :proxy-options {:reverse-proxy-flag "GRPC_TRANSCODER"
-                      :reverse-proxy-offset 1}
+      :proxy-options {:reverse-proxy-parameters {:cmd "/opt/waiter/envoy/bin/envoy-start"
+                                                 :cpus "0.1"
+                                                 :env {}
+                                                 :flag "REVERSE_PROXY"
+                                                 :image "twosigma/waiter-envoy"
+                                                 :mem "256Mi"
+                                                 :offset 1}}
       :replicaset-api-version "extensions/v1beta1"
       :replicaset-spec-builder-fn #(waiter.scheduler.kubernetes/default-replicaset-builder
                                      %1 %2 %3
@@ -139,7 +144,10 @@
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
                 config/retrieve-waiter-principal (constantly "waiter@test.com")]
     (let [scheduler (make-dummy-scheduler ["test-service-id"])
-          service-description (assoc dummy-service-description "env" {(:reverse-proxy-flag (:proxy-options scheduler))
+          service-description (assoc dummy-service-description "env" {(-> scheduler
+                                                                          :proxy-options
+                                                                          :reverse-proxy-parameters
+                                                                          :flag)
                                                                        "yes"})
           replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id"
                            service-description)

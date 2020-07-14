@@ -59,8 +59,15 @@
                                                            :image-aliases {"alias/integration" "twosigma/integration"}}
                                  :restart-expiry-threshold 2
                                  :url "http://localhost:8001"
-                                 :proxy-options {:reverse-proxy-flag "GRPC_TRANSCODER"
-                                                 :reverse-proxy-offset 1}}}
+
+                                 cmd cpus env flag image mem offset
+                                 :proxy-options {:reverse-proxy-parameters {:cmd "/opt/waiter/envoy/bin/envoy-start"
+                                                                            :cpus "0.1"
+                                                                            :env {}
+                                                                            :flag "REVERSE_PROXY"
+                                                                            :image "twosigma/waiter-envoy"
+                                                                            :mem "256Mi"
+                                                                            :offset 1}}}}
 
  ; ---------- Error Handling ----------
 

@@ -29,5 +29,4 @@ cd "$DIR"
 ./fileserver/bin/build-docker-image.sh
 
 # the envoy reverse-proxy container is independent
-chmod +x ./reverse-proxy/bin/build-docker-image.sh
 ./reverse-proxy/bin/build-docker-image.sh

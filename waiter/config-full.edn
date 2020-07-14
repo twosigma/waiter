@@ -544,9 +544,13 @@
                                  ;; Unless you've custom-patched your Kubernetes code, then this is probably hard-coded to 5 in the controller code.
                                  ;; https://github.com/kubernetes/kubernetes/blob/207e9d1/staging/src/k8s.io/apiserver/pkg/storage/names/generate.go#L45
                                  :pod-suffix-length 5
-
-                                 :proxy-options {:reverse-proxy-flag "GRPC_TRANSCODER"
-                                                 :reverse-proxy-offset 1}
+                                 :proxy-options {:reverse-proxy-parameters {:cmd "/opt/waiter/envoy/bin/envoy-start"
+                                                                            :cpus "0.1"
+                                                                            :env {}
+                                                                            :flag "REVERSE_PROXY"
+                                                                            :image "twosigma/waiter-envoy"
+                                                                            :mem "256Mi"
+                                                                            :offset 1}}
                                  ;; Version string used for creating and operating on ReplicaSet objects:
                                  :replicaset-api-version "extensions/v1beta1"
 

@@ -338,49 +338,47 @@
                     :timeout timeout-secs)))))
         (log/warn "skipping test as INTEGRATION_TEST_BAD_IMAGE is not specified")))))
 
-(deftest ^:parallel ^:integration-fast test-kubernetes-reverse-proxy-sidecar-headers
+(deftest ^:parallel ^:integration-fast test-kubernetes-reverse-proxy-sidecar
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
-      (when-let [proxy-options (get-k8s-proxy-options waiter-url)]
-        (let [{:keys [service-id] :as response}
-              (make-request-with-debug-info
-                {:x-waiter-distribution-scheme "simple"
-                 :x-waiter-name (rand-name)
-                 (keyword (str "x-waiter-env-" (:reverse-proxy-flag proxy-options))) "yes"}
-                #(make-kitchen-request waiter-url % :method :get :path "/request-info"))]
-          (with-service-cleanup
-            service-id
-            (assert-response-status response http-200-ok)
-            (testing "Expected envoy specific headers are present in both request and response"
+      (if-let [{:strs [flag offset]} (-> waiter-url
+                                         get-k8s-proxy-options
+                                         :reverse-proxy-parameters)]
+        (do
+          (let [{:keys [service-id] :as response}
+                (make-request-with-debug-info
+                  {:x-waiter-name (rand-name)
+                   (keyword (str "x-waiter-env-" flag)) "yes"}
+                  #(make-kitchen-request waiter-url % :method :get :path "/request-info"))]
+            (with-service-cleanup
+              service-id
+              (assert-response-status response http-200-ok)
+              (testing "Expected envoy specific headers are present in both request and response"
+                (let [response-body (try-parse-json (:body response))
+                      response-headers (:headers response)]
+                  (is (contains? (get response-body "headers") "x-envoy-expected-rq-timeout-ms"))
+                  (is (contains? response-headers "x-envoy-upstream-service-time"))
+                  (is (= "envoy" (get response-headers "server")))))))
+          (let [{:keys [service-id] :as response}
+                (make-request-with-debug-info
+                  {:x-waiter-name (rand-name)
+                   (keyword (str "x-waiter-env-" flag)) "yes"}
+                  #(make-kitchen-request waiter-url % :method :get :path "/environment"))]
+            (with-service-cleanup
+              service-id
+              (assert-response-status response http-200-ok)
               (let [response-body (try-parse-json (:body response))
                     response-headers (:headers response)]
-                (is (contains? (get response-body "headers") "x-envoy-expected-rq-timeout-ms"))
-                (is (contains? response-headers "x-envoy-upstream-service-time"))
-                (is (= "envoy" (get response-headers "server")))))))))))
-
-(deftest ^:parallel ^:integration-fast test-kubernetes-reverse-proxy-sidecar-env
-  (testing-using-waiter-url
-    (when (using-k8s? waiter-url)
-      (when-let [{:keys [reverse-proxy-flag reverse-proxy-offset]} (get-k8s-proxy-options waiter-url)]
-        (let [{:keys [service-id] :as response}
-              (make-request-with-debug-info
-                {:x-waiter-distribution-scheme "simple"
-                 :x-waiter-name (rand-name)
-                 (keyword (str "x-waiter-env-" reverse-proxy-flag)) "yes"}
-                #(make-kitchen-request waiter-url % :method :get :path "/environment"))]
-          (with-service-cleanup
-            service-id
-            (assert-response-status response http-200-ok)
-            (let [response-body (try-parse-json (:body response))
-                  response-headers (:headers response)]
-              (testing "Port value is correctly offset compared to instance value"
-                (let [response-header-backend-port (-> response-headers
-                                                       (get "x-waiter-backend-port")
-                                                       Integer/parseInt
-                                                       (+ reverse-proxy-offset))
-                      env-response-port0 (-> response-body
-                                             (get "PORT0")
-                                             Integer/parseInt)]
-                  (is (= response-header-backend-port env-response-port0))))
-              (testing "Reverse proxy flag environment variable is present"
-                (is (contains? response-body reverse-proxy-flag))))))))))
+                (testing "Port value is correctly offset compared to instance value"
+                  (let [response-header-backend-port (-> response-headers
+                                                         (get "x-waiter-backend-port")
+                                                         Integer/parseInt)
+                        env-response-port0 (-> response-body
+                                               (get "PORT0")
+                                               Integer/parseInt)]
+                    (is (= (+ offset response-header-backend-port)
+                           env-response-port0))))
+                (testing "Reverse proxy flag environment variable is present"
+                  (is (contains? response-body flag))
+                  (is (= "yes" (get response-body flag))))))))
+        (log/warn "skipping the integration test as proxy-options is not defined")))))

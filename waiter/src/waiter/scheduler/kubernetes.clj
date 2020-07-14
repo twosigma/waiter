@@ -805,9 +805,9 @@
         ;; delay iff the log-bucket-url setting was given the scheduler config.
         log-bucket-sync-secs (if log-bucket-url (:log-bucket-sync-secs context) 0)
         total-sigkill-delay-secs (+ pod-sigkill-delay-secs log-bucket-sync-secs)
-        {:keys [reverse-proxy-flag reverse-proxy-offset]} proxy-options
-        has-reverse-proxy? (contains? env reverse-proxy-flag)
-        offset (if has-reverse-proxy? reverse-proxy-offset 0)
+        {:keys [flag offset] :as reverse-proxy-parameters} (:reverse-proxy-parameters proxy-options)
+        has-reverse-proxy? (contains? env flag)
+        offset (if has-reverse-proxy? offset 0)
         ;; Make $PORT0 value pseudo-random to ensure clients can't hardcode it.
         ;; Helps maintain compatibility with Marathon, where port assignment is dynamic.
         service-port (-> service-id hash (mod 100) (* 10) (+ pod-base-port))
@@ -930,19 +930,21 @@
       (update-in
         [:spec :template :spec :containers]
         conj
-        (let [cmd ["/opt/waiter/envoy/bin/envoy-start"]]
+        (let [{:keys [cmd cpus env image mem]} reverse-proxy-parameters]
              {:command cmd
               :env (into [{:name "SERVICE_PORT" :value (str service-port)}
                           {:name "PORT0" :value (str port0)}]
                          (concat
                            (for [[k v] base-env]
+                                {:name k :value v})
+                           (for [[k v] env]
                                 {:name k :value v})))
-              :image "twosigma/waiter-envoy"
+              :image image
               :imagePullPolicy "IfNotPresent"
               :name "waiter-envoy-sidecar"
               :ports [{:containerPort service-port}]
-              :resources {:limits {:memory "256Mi"}
-                          :requests {:cpu "0.1" :memory "256Mi"}}})))))
+              :resources {:limits {:memory mem}
+                          :requests {:cpu cpus :memory mem}}})))))
 
 (defn start-auth-renewer
   "Initialize the k8s-api-auth-str atom,
@@ -1152,8 +1154,16 @@
          (or (nil? custom-options) (map? custom-options))
          (or (nil? proxy-options) (and 
                                     (map? proxy-options)
-                                    (pos-int? (:reverse-proxy-offset proxy-options))
-                                    (string? (:reverse-proxy-flag proxy-options))))
+                                    (let [{:keys [cmd cpus env flag image mem offset]}
+                                          (:reverse-proxy-parameters proxy-options)]
+                                      (and
+                                        (not (str/blank? cmd))
+                                        (not (str/blank? cpus))
+                                        (map? env)
+                                        (not (str/blank? flag))
+                                        (not (str/blank? image))
+                                        (not (str/blank? mem))
+                                        (pos-int? offset)))))
          (or (nil? fileserver-port)
              (and (integer? fileserver-port)
                   (< 0 fileserver-port 65535)))
