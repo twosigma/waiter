@@ -1241,6 +1241,7 @@
    b. the consent has not expired based on the timestamp in the cookie."
   [clock consent-expiry-days service-id token {:strs [owner]} decoded-consent-cookie]
   (let [[consent-mode auth-timestamp consent-id consent-owner] (vec decoded-consent-cookie)]
+    (log/info "consent cookie decoded as" consent-mode auth-timestamp consent-id consent-owner)
     (and
       consent-id
       auth-timestamp

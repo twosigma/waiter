@@ -86,7 +86,8 @@
                 location (str "/waiter-consent" uri (when-not (str/blank? query-string) (str "?" query-string)))]
             (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "redirect"))
             (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "redirect"))
-            {:headers {"location" location} :status http-303-see-other})
+            (log/info "redirecting to consent page as run-as-user is missing" (.getMessage e))
+            (utils/attach-waiter-source {:headers {"location" location} :status http-303-see-other}))
           (do
             ; For consistency with historical data, count errors looking up the descriptor as a "process error"
             (meters/mark! (metrics/waiter-meter "core" "process-errors"))
