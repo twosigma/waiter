@@ -1,7 +1,11 @@
 #!/bin/sh
 
+echo "Changing the port values in etc/envoy/envoy.yaml to ${SERVICE_PORT} and ${PORT0}"
+
 # change the SERVICE_PORT and PORT0 values in /etc/envoy/envoy.yaml to respective env variables
 sed -i -e "s/SERVICE_PORT/${SERVICE_PORT}/g" -e "s/PORT0/${PORT0}/g" /etc/envoy/envoy.yaml
+
+echo "Starting envoy"
 
 # start envoy with /etc/envoy/envoy.yaml config file
 exec envoy -c /etc/envoy/envoy.yaml --base-id 1
