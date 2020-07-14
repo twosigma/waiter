@@ -578,11 +578,11 @@
                                 pod-base-port
                                 pod-sigkill-delay-secs
                                 pod-suffix-length
-                                proxy-options
                                 replicaset-api-version
                                 replicaset-spec-builder-fn
                                 retrieve-auth-token-state-fn
                                 retrieve-syncer-state-fn
+                                reverse-proxy
                                 service-id->failed-instances-transient-store
                                 service-id->password-fn
                                 service-id->service-description-fn
@@ -782,12 +782,21 @@
    :periodSeconds health-check-interval-secs
    :timeoutSeconds 1})
 
+(defn envoy-sidecar-enabled?
+  "Returns true if the envoy sidecar is enabled, and false otherwise"
+  [{:keys [custom-options]} service-id {:strs [env]} context]
+  (let [reverse-proxy-flag (or (-> custom-options :reverse-proxy-config :flag)
+                               "REVERSE_PROXY")]
+    (if (contains? env reverse-proxy-flag)
+      true
+      false)))
+
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
-  [{:keys [cluster-name fileserver pod-base-port pod-sigkill-delay-secs proxy-options
-           replicaset-api-version service-id->password-fn] :as scheduler}
+  [{:keys [cluster-name custom-options fileserver pod-base-port pod-sigkill-delay-secs
+           replicaset-api-version reverse-proxy service-id->password-fn] :as scheduler}
    service-id
-   {:strs [backend-proto cmd cpus env grace-period-secs health-check-authentication health-check-interval-secs
+   {:strs [backend-proto cmd cpus grace-period-secs health-check-authentication health-check-interval-secs
            health-check-max-consecutive-failures health-check-port-index health-check-proto image
            mem min-instances namespace ports run-as-user]
     :as service-description}
@@ -805,9 +814,11 @@
         ;; delay iff the log-bucket-url setting was given the scheduler config.
         log-bucket-sync-secs (if log-bucket-url (:log-bucket-sync-secs context) 0)
         total-sigkill-delay-secs (+ pod-sigkill-delay-secs log-bucket-sync-secs)
-        {:keys [flag offset] :as reverse-proxy-parameters} (:reverse-proxy-parameters proxy-options)
-        has-reverse-proxy? (contains? env flag)
-        offset (if has-reverse-proxy? offset 0)
+        envoy-sidecar-check-fn (:predicate-fn reverse-proxy)
+        has-reverse-proxy? (envoy-sidecar-check-fn scheduler service-id service-description context)
+        offset (if has-reverse-proxy?
+                 (-> custom-options :reverse-proxy-config :offset)
+                 0)
         ;; Make $PORT0 value pseudo-random to ensure clients can't hardcode it.
         ;; Helps maintain compatibility with Marathon, where port assignment is dynamic.
         service-port (-> service-id hash (mod 100) (* 10) (+ pod-base-port))
@@ -930,7 +941,8 @@
       (update-in
         [:spec :template :spec :containers]
         conj
-        (let [{:keys [cmd cpus env image mem]} reverse-proxy-parameters]
+        (let [{:keys [cmd resources image]} reverse-proxy
+              env (:env service-description)]
              {:command cmd
               :env (into [{:name "SERVICE_PORT" :value (str service-port)}
                           {:name "PORT0" :value (str port0)}]
@@ -943,8 +955,8 @@
               :imagePullPolicy "IfNotPresent"
               :name "waiter-envoy-sidecar"
               :ports [{:containerPort service-port}]
-              :resources {:limits {:memory mem}
-                          :requests {:cpu cpus :memory mem}}})))))
+              :resources {:limits {:memory (str (:mem resources) "Mi")}
+                          :requests {:cpu (str (:cpu resources)) :memory (str (:mem resources) "Mi")}}})))))
 
 (defn start-auth-renewer
   "Initialize the k8s-api-auth-str atom,
@@ -1145,25 +1157,26 @@
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
   [{:keys [authentication authorizer cluster-name container-running-grace-secs custom-options http-options log-bucket-sync-secs
            log-bucket-url max-patch-retries max-name-length pod-base-port pod-sigkill-delay-secs
-           pod-suffix-length proxy-options replicaset-api-version replicaset-spec-builder restart-expiry-threshold scheduler-name
+           pod-suffix-length replicaset-api-version replicaset-spec-builder restart-expiry-threshold reverse-proxy scheduler-name
            scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
            service-id->password-fn start-scheduler-syncer-fn url watch-retries]
     {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver :as context}]
   {:pre [(schema/contains-kind-sub-map? authorizer)
          (or (zero? container-running-grace-secs) (pos-int? container-running-grace-secs))
          (or (nil? custom-options) (map? custom-options))
-         (or (nil? proxy-options) (and 
-                                    (map? proxy-options)
-                                    (let [{:keys [cmd cpus env flag image mem offset]}
-                                          (:reverse-proxy-parameters proxy-options)]
+         (or (nil? reverse-proxy) (and
+                                    (map? reverse-proxy)
+                                    (let [{:keys [cmd image predicate-fn resources scheme]}
+                                          (:reverse-proxy-config reverse-proxy)]
                                       (and
-                                        (not (str/blank? cmd))
-                                        (not (str/blank? cpus))
-                                        (map? env)
-                                        (not (str/blank? flag))
+                                        (vector? cmd)
                                         (not (str/blank? image))
-                                        (not (str/blank? mem))
-                                        (pos-int? offset)))))
+                                        (fn? predicate-fn)
+                                        (and (map? resources)
+                                             (number? (:mem resources))
+                                             (number? (:cpu resources)))
+                                        (not (str/blank? image))
+                                        (not (str/blank? scheme))))))
          (or (nil? fileserver-port)
              (and (integer? fileserver-port)
                   (< 0 fileserver-port 65535)))
@@ -1244,11 +1257,11 @@
                                            pod-base-port
                                            pod-sigkill-delay-secs
                                            pod-suffix-length
-                                           proxy-options
                                            replicaset-api-version
                                            replicaset-spec-builder-fn
                                            retrieve-auth-token-state-fn
                                            retrieve-syncer-state-fn
+                                           reverse-proxy
                                            service-id->failed-instances-transient-store
                                            service-id->password-fn
                                            service-id->service-description-fn

@@ -57,6 +57,8 @@
       :daemon-state (atom nil)
       :cluster-name "waiter"
       :container-running-grace-secs 120
+      :custom-options {:reverse-proxy-config {:flag "REVERSE_PROXY"
+                                              :offset 1}}
       :fileserver {:port 9090
                    :scheme "http"}
       :log-bucket-sync-secs 60
@@ -66,13 +68,6 @@
       :pod-base-port 8080
       :pod-sigkill-delay-secs 3
       :pod-suffix-length default-pod-suffix-length
-      :proxy-options {:reverse-proxy-parameters {:cmd "/opt/waiter/envoy/bin/envoy-start"
-                                                 :cpus "0.1"
-                                                 :env {}
-                                                 :flag "REVERSE_PROXY"
-                                                 :image "twosigma/waiter-envoy"
-                                                 :mem "256Mi"
-                                                 :offset 1}}
       :replicaset-api-version "extensions/v1beta1"
       :replicaset-spec-builder-fn #(waiter.scheduler.kubernetes/default-replicaset-builder
                                      %1 %2 %3
@@ -82,6 +77,11 @@
       :retrieve-auth-token-state-fn (constantly nil)
       :retrieve-syncer-state-fn (constantly nil)
       :restart-expiry-threshold 100
+      :reverse-proxy {:cmd ["/opt/waiter/envoy/bin/envoy-start"]
+                      :image "twosigma/waiter-envoy"
+                      :predicate-fn waiter.scheduler.kubernetes/envoy-sidecar-enabled?
+                      :resources {:cpu 0.1 :mem 256}
+                      :scheme "http"}
       :service-id->failed-instances-transient-store (atom {})
       :service-id->password-fn #(str "password-" %)
       :service-id->service-description-fn (pc/map-from-keys (constantly {"health-check-port-index" 0
@@ -145,8 +145,8 @@
                 config/retrieve-waiter-principal (constantly "waiter@test.com")]
     (let [scheduler (make-dummy-scheduler ["test-service-id"])
           service-description (assoc dummy-service-description "env" {(-> scheduler
-                                                                          :proxy-options
-                                                                          :reverse-proxy-parameters
+                                                                          :custom-options
+                                                                          :reverse-proxy-config
                                                                           :flag)
                                                                        "yes"})
           replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id"

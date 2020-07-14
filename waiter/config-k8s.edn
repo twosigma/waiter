@@ -50,6 +50,8 @@
                     :kubernetes {:authorizer {:kind :sanity-check
                                               :sanity-check {:factory-fn waiter.authorization/sanity-check-authorizer}}
                                  :container-running-grace-secs 90
+                                 :custom-options {:reverse-proxy-config {:flag "REVERSE_PROXY"
+                                                                         :offset 1}}
                                  :fileserver {:port 591}
                                  :log-bucket-sync-secs 5
                                  :log-bucket-url #config/env-default ["WAITER_S3_BUCKET" nil]
@@ -58,15 +60,12 @@
                                                            :default-namespace "waiter"
                                                            :image-aliases {"alias/integration" "twosigma/integration"}}
                                  :restart-expiry-threshold 2
-                                 :url "http://localhost:8001"
-
-                                 :proxy-options {:reverse-proxy-parameters {:cmd "/opt/waiter/envoy/bin/envoy-start"
-                                                                            :cpus "0.1"
-                                                                            :env {}
-                                                                            :flag "REVERSE_PROXY"
-                                                                            :image "twosigma/waiter-envoy"
-                                                                            :mem "256Mi"
-                                                                            :offset 1}}}}
+                                 :reverse-proxy {:cmd ["/opt/waiter/envoy/bin/envoy-start"]
+                                                 :image "twosigma/waiter-envoy"
+                                                 :predicate-fn waiter.scheduler.kubernetes/envoy-sidecar-enabled?
+                                                 :resources {:cpu 0.1 :mem 256}
+                                                 :scheme "http"}
+                                 :url "http://localhost:8001"}
 
  ; ---------- Error Handling ----------
 
