@@ -165,8 +165,8 @@
       (testing "service-port and waiter port values and env variables are correct"
         (let [service-port (-> "test-service-id" hash (mod 100) (* 10) (+ (:pod-base-port scheduler)))
               port0 (+ service-port 1)
-              service-port-env (:value (some #(if (= "SERVICE_PORT" (:name %)) %) (:env sidecar-container)))
-              port0-env (:value (some #(if (= "PORT0" (:name %)) %) (:env sidecar-container)))]
+              service-port-env (Integer/parseInt (:value (some #(if (= "SERVICE_PORT" (:name %)) %) (:env sidecar-container))))
+              port0-env (Integer/parseInt (:value (some #(if (= "PORT0" (:name %)) %) (:env sidecar-container))))]
           (is (= service-port (Integer/parseInt (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/service-port]))))
           (is (= service-port (get-in sidecar-container [:ports 0 :containerPort])))
           (is (= service-port service-port-env))
@@ -182,11 +182,11 @@
         (let [cpu (get-in sidecar-container [:resources :requests :cpu])
               memory (get-in sidecar-container [:resources :requests :memory])]
           (is (= "0.1" cpu))
-          (is (= "256 Mi" memory))))
+          (is (= "256Mi" memory))))
 
       (testing "resource limits for reverse-proxy are correct"
         (let [memory-limit (get-in sidecar-container [:resources :limits :memory])]
-          (is (= "256 Mi" memory-limit))))
+          (is (= "256Mi" memory-limit))))
 
       (testing "reverse-proxy pod container name is correct"
         (is (= "waiter-envoy-sidecar" (:name sidecar-container))))

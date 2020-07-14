@@ -60,7 +60,6 @@
                                  :restart-expiry-threshold 2
                                  :url "http://localhost:8001"
 
-                                 cmd cpus env flag image mem offset
                                  :proxy-options {:reverse-proxy-parameters {:cmd "/opt/waiter/envoy/bin/envoy-start"
                                                                             :cpus "0.1"
                                                                             :env {}
