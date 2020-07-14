@@ -371,7 +371,6 @@
        (when verbose
          (log/info "request url:" request-url)
          (log/info "request headers:" (into (sorted-map) request-headers)))
-       (println (with-out-str (clojure.pprint/pprint request-headers)))
        (let [waiter-auth-cookie (some #(= authentication/AUTH-COOKIE-NAME (:name %)) cookies)
              add-spnego-auth (and (not disable-auth) use-spnego (not waiter-auth-cookie))
              {:keys [body error error-chan headers status trailers]}
