@@ -382,9 +382,7 @@
                                              :kubernetes {;; a factory function must be provided
                                                           ;; see the :kubernetes entry for other configuration options
                                                           :factory-fn waiter.scheduler.kubernetes/kubernetes-scheduler
-                                                          :todo :additional-config
-                                                          :proxy-options {:reverse-proxy-flag "GRPC_TRANSCODER"
-                                                                          :reverse-proxy-offset 1}}}
+                                                          :todo :additional-config}}
 
                                 ;; The scheduler to use by default if the service does not specify one explicitly.
                                 ;; This is an optional config and can be nil. When provided it must match one of
