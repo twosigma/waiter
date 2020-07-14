@@ -1076,12 +1076,13 @@
    :service->gc-time-fn (pc/fnk [[:state service-description-builder]
                                  attach-token-defaults-fn service-id->service-description-fn service-id->references-fn
                                  token->token-hash token->token-parameters]
-                          (let [context {:token->token-hash token->token-hash}
-                                reference-type->stale-fn (sd/retrieve-reference-type->stale-fn service-description-builder context)]
+                          (let [context {:token->token-hash token->token-hash
+                                         :token->token-parameters token->token-parameters}
+                                reference-type->stale-info-fn (sd/retrieve-reference-type->stale-info-fn service-description-builder context)]
                             (fn service->gc-time-fn [service-id last-modified-time]
                               (sd/service->gc-time
                                 service-id->service-description-fn service-id->references-fn token->token-parameters
-                                reference-type->stale-fn attach-token-defaults-fn service-id last-modified-time))))
+                                reference-type->stale-info-fn attach-token-defaults-fn service-id last-modified-time))))
    :service-id->password-fn (pc/fnk [[:scheduler service-id->password-fn*]]
                               service-id->password-fn*)
    :service-id->references-fn (pc/fnk [[:state kv-store]]

@@ -99,6 +99,24 @@
   "Returns true if x is a non-negative integer"
   (and (integer? x) (non-neg? x)))
 
+(defn nil-safe-max
+  "If an argument is nil, returns the other argument.
+   Else returns the max of the arguments."
+  [x y]
+  (cond
+    (nil? x) y
+    (nil? y) x
+    :else (max x y)))
+
+(defn nil-safe-min
+  "If an argument is nil, returns the other argument.
+   Else returns the min of the arguments."
+  [x y]
+  (cond
+    (nil? x) y
+    (nil? y) x
+    :else (min x y)))
+
 (defn assoc-if-absent
   "If the specified key, k, is not already associated with a value, v, in the map, m, associate k with v in m."
   [m k v]

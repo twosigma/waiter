@@ -31,6 +31,8 @@
             [waiter.metrics :as metrics]
             [waiter.schema :as schema]
             [waiter.status-codes :refer :all]
+            [waiter.util.date-utils :as du]
+            [waiter.util.descriptor-utils :as descriptor-utils]
             [waiter.util.utils :as utils])
   (:import (java.util.regex Pattern)
            (org.joda.time DateTime)
@@ -619,7 +621,7 @@
   (build [this core-service-description args-map]
     "Returns a map of {:service-id ..., :service-description ..., :core-service-description...}")
 
-  (retrieve-reference-type->stale-fn [this context]
+  (retrieve-reference-type->stale-info-fn [this context]
     "Returns a map of reference type to stale function for references of the specified type.
      The values are functions that have the following signature (fn reference-entry)")
 
@@ -635,14 +637,49 @@
   [service-description username]
   (assoc service-description "run-as-user" username "permitted-user" username))
 
-(defn service-token-references-stale?
-  "Returns true if every token used to access a service has been updated."
-  [token->token-hash source-tokens]
-  (and (seq source-tokens)
-       ;; safe assumption mark a service stale when every token used to access it is stale
-       (every? (fn [{:keys [token version]}]
-                 (not= (token->token-hash token) version))
-               source-tokens)))
+(let [hash-prefix "E-"]
+  (defn token-data->token-hash
+    "Converts the merged map of service-description and token-metadata to a hash."
+    [token-data]
+    (when (and (seq token-data)
+               (not (get token-data "deleted")))
+      (str hash-prefix (-> token-data
+                         (select-keys token-data-keys)
+                         (dissoc "previous")
+                         parameters->id)))))
+
+(defn retrieve-token-update-epoch-time
+  "Returns the time at which the specific version of a token went stale.
+   If no such version can be found, then the stale time is unknown and we, conservatively,
+   use the last known update time.
+   Else if the token is not stale or no data is known about the token, nil is returned."
+  [current-token-data token-version]
+  (let [token-data->update-time #(get % "last-update-time")
+        token-data->previous #(get % "previous")]
+    (descriptor-utils/retrieve-update-time
+      token-data->token-hash token-data->update-time token-data->previous current-token-data token-version)))
+
+(defn retrieve-token-stale-info
+  "The provided source-tokens are stale if every token used to access a service has been updated.
+   The criteria of every token being updated is a conservative choice since we do not compute the merged
+   results to verify if changing any of the tokens changed the service description and caused the service
+   to go stale earlier.
+   Returns a map containing two keys:
+   - :stale? is true if the provided source-tokens are stale;
+   - :update-epoch-time is either nil or the max time of the individual update times of when the
+     source tokens with the specified version was edited."
+  [token->token-hash token->token-parameters source-tokens]
+  ;; safe assumption mark a service stale when every token used to access it is stale
+  (let [stale? (and (not (empty? source-tokens)) ;; ensures boolean value
+                    (every? (fn [{:keys [token version]}]
+                              (not= (token->token-hash token) version))
+                            source-tokens))]
+    (cond-> {:stale? stale?}
+      stale? (assoc :update-epoch-time
+                    (->> source-tokens
+                      (map (fn [{:keys [token version]}]
+                             (retrieve-token-update-epoch-time (token->token-parameters token) version)))
+                      (reduce utils/nil-safe-max nil))))))
 
 (defrecord DefaultServiceDescriptionBuilder [max-constraints-schema metric-group-mappings profile->defaults
                                              service-description-defaults]
@@ -674,8 +711,8 @@
        :service-description service-description
        :service-id service-id}))
 
-  (retrieve-reference-type->stale-fn [_ {:keys [token->token-hash]}]
-    {:token (fn [{:keys [sources]}] (service-token-references-stale? token->token-hash sources))})
+  (retrieve-reference-type->stale-info-fn [_ {:keys [token->token-hash token->token-parameters]}]
+    {:token (fn [{:keys [sources]}] (retrieve-token-stale-info token->token-hash token->token-parameters sources))})
 
   (state [_]
     {})
@@ -714,17 +751,6 @@
   "Returns the configured health check Url or a default value (available in `default-health-check-path`)"
   [service-description]
   (or (get service-description "health-check-url") default-health-check-path))
-
-(let [hash-prefix "E-"]
-  (defn token-data->token-hash
-    "Converts the merged map of service-description and token-metadata to a hash."
-    [token-data]
-    (when (and (seq token-data)
-               (not (get token-data "deleted")))
-      (str hash-prefix (-> token-data
-                           (select-keys token-data-keys)
-                           (dissoc "previous")
-                           parameters->id)))))
 
 (let [valid-token-re #"[a-zA-Z]([a-zA-Z0-9\-_$\.])+"]
   (defn validate-token
@@ -1223,9 +1249,13 @@
       (> (+ auth-timestamp (-> consent-expiry-days t/days t/in-millis))
          (.getMillis ^DateTime (clock))))))
 
-(defn- source-tokens->gc-time
-  "Computes the time when a service created using provided source tokens should be GC-ed
-   using token last-update-time, fallback-period-secs and stale-timeout-mins.
+(defn source-tokens->gc-time-secs
+  "Computes the seconds after which a service created using provided source tokens should be GC-ed
+   based on the token fallback-period-secs and stale-timeout-mins.
+   The fallback-period-secs and stale-timeout-mins are computed from the latest versions of the tokens
+   as fallback period now applies to the latest service.
+   Using stale-timeout-mins allows users to revert their changes and have their traffic served by
+   the existing service without having to wait for a new instance to get started.
    The function also assumes that source-tokens-seq is non-empty.
    It ignores whether GC has been disabled by configuring idle-timeout-mins=0.
    The caller must take care to handle the scenario where GC has been disabled."
@@ -1237,53 +1267,80 @@
                    (map #(some-> % :token token->token-parameters))
                    (reduce merge {})
                    (attach-token-defaults-fn))]
-             (-> (if-let [most-recent-token-update-time
-                          (some->> source-tokens
-                            (keep #(some-> % :token token->token-parameters (get "last-update-time")))
-                            (seq)
-                            (reduce max))]
-                   (tc/from-long most-recent-token-update-time)
-                   (do
-                     ;; make service available for GC since missing token data means the token has been deleted
-                     (log/warn "unable to retrieve last update time from" source-tokens-seq)
-                     (tc/from-long 0)))
-               (t/plus (t/seconds fallback-period-secs))
-               (t/plus (t/minutes stale-timeout-mins))))))
-    (reduce t/max-date)))
+             (+ fallback-period-secs (-> stale-timeout-mins t/minutes t/in-seconds)))))
+    (reduce max)))
 
-(defn stale-reference?
-  "Returns true if the any entry in the reference has gone stale.
-   An empty, i.e. directly accessible, reference is never stale."
-  [reference-type->stale-fn reference]
-  (some (fn [[type entry]]
-          (when-let [stale-fn (reference-type->stale-fn type)]
-            (stale-fn entry)))
-        (seq reference)))
+(defn accumulate-stale-info
+  "Merges the two stale info maps.
+   The result map has the following keys:
+   - :stale? true if either of the :stale? entries of the inputs were true;
+   - :update-epoch-time
+      if the new info map is stale, contains the min edit epoch time of the two inputs
+      else contains the edit epoch time of the first stale info."
+  [current-stale-info {:keys [stale? update-epoch-time]}]
+  (cond-> current-stale-info
+    stale? (-> (assoc :stale? true)
+               (update :update-epoch-time utils/nil-safe-min update-epoch-time))))
 
-(defn service-references-stale?
-  "Returns true if every entry in the references has gone stale."
-  [reference-type->stale-fn references]
-  (every? (fn [reference] (stale-reference? reference-type->stale-fn reference)) references))
+(defn- reference->stale-info
+  "Returns the stale info for the provided reference.
+   An empty, i.e. directly accessible, reference is never stale.
+   The result map has the following keys:
+   - :stale? true if any of entries in the reference has gone stale;
+   - :update-epoch-time
+      nil if none of the entries in the reference is stale or none of the stale entries have a known stale time
+      else contains the min edit epoch time of the stale entries from the reference."
+  [reference-type->stale-info-fn reference]
+  (reduce
+    (fn accumulate-reference->stale-info [acc-info [type entry]]
+      (if-let [stale-info-fn (reference-type->stale-info-fn type)]
+        (accumulate-stale-info acc-info (stale-info-fn entry))
+        acc-info))
+    {:stale? false :update-epoch-time nil}
+    (seq reference)))
+
+(defn references->stale-info
+  "Returns the stale info for the provided references.
+   The result map has the following keys:
+   - :stale? true if all of references have gone stale;
+   - :update-epoch-time
+      nil if none of the references are stale or none of the stale references have a known stale time
+      else contains the max edit epoch time of the stale references."
+  [reference-type->stale-info-fn references]
+  (let [stale-info-seq (map #(reference->stale-info reference-type->stale-info-fn %) references)
+        stale? (and (not (empty? references))
+                    (every? true? (map :stale? stale-info-seq)))]
+    {:stale? stale?
+     :update-epoch-time (when stale?
+                          (->> stale-info-seq
+                            (map :update-epoch-time stale-info-seq)
+                            (reduce utils/nil-safe-max nil)))}))
 
 (defn service->gc-time
   "Computes the time when a given service should be GC-ed.
-   If the service has GC disabled (by configuring idle-timeout-mins=0), nil is returned.
-   If the service is active or was created by on-the-fly, the GC time is calculated using
+   If the service is active and has GC disabled (by configuring idle-timeout-mins=0), nil is returned.
+   Else if the service is active or was created without references, the GC time is calculated using
    the service's idle-timeout-mins and the most recent completion time of the service's requests.
-   Else, the GC time is the sum of the fallback period seconds and the stale service timeout."
-  [service-id->service-description-fn service-id->references-fn token->token-parameters reference-type->stale-fn
+   Else, the GC time is the computed from the reference stale time, fallback period seconds and the stale service timeout."
+  [service-id->service-description-fn service-id->references-fn token->token-parameters reference-type->stale-info-fn
    attach-token-defaults-fn service-id last-modified-time]
   (let [{:strs [idle-timeout-mins]} (service-id->service-description-fn service-id)
-        references (service-id->references-fn service-id)]
+        references (service-id->references-fn service-id)
+        {:keys [stale? update-epoch-time]} (references->stale-info reference-type->stale-info-fn references)]
     (cond
       ;; when stale, use token info to compute GC time
-      (service-references-stale? reference-type->stale-fn references)
-      (let [{:strs [stale-timeout-mins]} (attach-token-defaults-fn {})]
-        (log/info service-id "that uses references is stale")
-        (if-let [source-tokens (->> references (map :token) (remove nil?) (map :sources) seq)]
-          (source-tokens->gc-time token->token-parameters attach-token-defaults-fn source-tokens)
-          ;; use the default token stale timeout for a stale service built without tokens
-          (t/plus last-modified-time (t/minutes stale-timeout-mins))))
+      ;; Note: a service created without references never goes stale
+      stale?
+      (let [update-time (if update-epoch-time (tc/from-long update-epoch-time) last-modified-time)
+            gc-delay-duration (if-let [source-tokens (->> references (map :token) (remove nil?) (map :sources) seq)]
+                                ;; use time from fallback and stale timeout for a service that uses tokens
+                                (t/seconds (source-tokens->gc-time-secs token->token-parameters attach-token-defaults-fn source-tokens))
+                                ;; use the default token stale timeout for a stale service built without tokens
+                                ;; (this stale-timeout-mins value is configured in the default token values :( )
+                                (let [{:strs [stale-timeout-mins]} (attach-token-defaults-fn {})]
+                                  (t/minutes stale-timeout-mins)))]
+        (log/info service-id "that uses references went stale at" (du/date-to-str update-time))
+        (t/plus update-time gc-delay-duration))
       ;; when GC is enabled, use idle-timeout
       (pos? idle-timeout-mins)
       (t/plus last-modified-time (t/minutes idle-timeout-mins)))))
