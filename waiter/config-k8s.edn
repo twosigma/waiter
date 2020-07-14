@@ -65,7 +65,7 @@
                                                  :predicate-fn waiter.scheduler.kubernetes/envoy-sidecar-enabled?
                                                  :resources {:cpu 0.1 :mem 256}
                                                  :scheme "http"}
-                                 :url "http://localhost:8001"}
+                                 :url "http://localhost:8001"}}
 
  ; ---------- Error Handling ----------
 
