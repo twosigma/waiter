@@ -1,11 +1,14 @@
 #!/bin/sh
+# This script takes no argument and uses SERVICE_PORT and PORT0 environment variables
+# to setup /etc/envoy/envoy.yaml file.
+# SERVICE_PORT and PORT0 must be set
 
-echo "Changing the port values in etc/envoy/envoy.yaml to ${SERVICE_PORT} and ${PORT0}"
+echo "$(date -Is) Changing the port values in etc/envoy/envoy.yaml to ${SERVICE_PORT} and ${PORT0}"
 
 # change the SERVICE_PORT and PORT0 values in /etc/envoy/envoy.yaml to respective env variables
 sed -i -e "s/SERVICE_PORT/${SERVICE_PORT}/g" -e "s/PORT0/${PORT0}/g" /etc/envoy/envoy.yaml
 
-echo "Starting envoy"
+echo "$(date -Is) Starting envoy"
 
 # start envoy with /etc/envoy/envoy.yaml config file
 exec envoy -c /etc/envoy/envoy.yaml --base-id 1
