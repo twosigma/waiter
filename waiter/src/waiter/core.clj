@@ -922,15 +922,16 @@
                                          [:state clock passwords]
                                          token->token-metadata]
                                   (fn assoc-run-as-user-approved? [{:keys [headers]} service-id]
-                                    (let [{:strs [cookie host]} headers
-                                          token (when-not (headers/contains-waiter-header headers sd/on-the-fly-service-description-keys)
-                                                  (utils/authority->host host))
-                                          token-metadata (when token (token->token-metadata token))
-                                          service-consent-cookie (cookie-support/cookie-value cookie "x-waiter-consent")
-                                          decoded-cookie (when service-consent-cookie
-                                                           (some #(cookie-support/decode-cookie-cached service-consent-cookie %1)
-                                                                 passwords))]
-                                      (sd/assoc-run-as-user-approved? clock consent-expiry-days service-id token token-metadata decoded-cookie))))
+                                    (let [{:strs [cookie host]} headers]
+                                      (if-let [service-consent-cookie (cookie-support/cookie-value cookie "x-waiter-consent")]
+                                        (let [token (when-not (headers/contains-waiter-header headers sd/on-the-fly-service-description-keys)
+                                                      (utils/authority->host host))
+                                              token-metadata (when token (token->token-metadata token))
+                                              decoded-cookie (some #(cookie-support/decode-cookie-cached service-consent-cookie %1) passwords)]
+                                          (sd/assoc-run-as-user-approved? clock consent-expiry-days service-id token token-metadata decoded-cookie))
+                                        (do
+                                          (log/info "no x-waiter-consent cookie in request")
+                                          nil)))))
    :async-request-terminate-fn (pc/fnk [[:state async-request-store-atom]]
                                  (fn async-request-terminate [request-id]
                                    (async-req/async-request-terminate async-request-store-atom request-id)))
