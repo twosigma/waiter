@@ -544,7 +544,7 @@
                                  ;; Unless you've custom-patched your Kubernetes code, then this is probably hard-coded to 5 in the controller code.
                                  ;; https://github.com/kubernetes/kubernetes/blob/207e9d1/staging/src/k8s.io/apiserver/pkg/storage/names/generate.go#L45
                                  :pod-suffix-length 5
-                                 :reverse-proxy {:cmd ["/opt/waiter/envoy/bin/envoy-start"]
+                                 :reverse-proxy {:cmd ["/bin/sh" "/opt/waiter/envoy/bin/envoy-start"]
                                                  :image "twosigma/waiter-envoy"
                                                  :predicate-fn waiter.scheduler.kubernetes/envoy-sidecar-enabled?
                                                  :resources {:cpu 0.1 :mem 256}

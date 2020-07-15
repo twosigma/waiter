@@ -6,11 +6,11 @@ cd "$DIR"
 TEST_APPS_IMAGE=twosigma/waiter-test-apps
 
 pushd ./courier
-mvn clean package
+sudo mvn clean package
 popd
 
 pushd ./sediment
-mvn clean package
+sudo mvn clean package
 popd
 
 echo "Building docker image for ${TEST_APPS_IMAGE}"

@@ -17,6 +17,7 @@ spec:
       containers:
         - name: waiter-envoy-sidecar
           command:
+            - /bin/sh
             - /opt/waiter/envoy/bin/envoy-start
           env:
             - name: PORT0

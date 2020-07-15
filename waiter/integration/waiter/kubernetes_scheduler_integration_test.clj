@@ -341,16 +341,19 @@
 (deftest ^:parallel ^:integration-fast test-kubernetes-reverse-proxy-sidecar
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
+      (println (get-kubernetes-scheduler-settings waiter-url))
+      (println (contains? (get-kubernetes-scheduler-settings waiter-url) :reverse-proxy))
       (if (contains? (get-kubernetes-scheduler-settings waiter-url) :reverse-proxy)
-        (let [reverse-proxy-flag "REVERSE_PROXY"
+        (let [_ (println "123123")
+              reverse-proxy-flag "REVERSE_PROXY"
               reverse-proxy-offset 1
               x-waiter-name (rand-name)
               _ (log/info "making canary request")
               {:keys [cookies service-id] :as response} (make-request-with-debug-info
                                                           {:x-waiter-name x-waiter-name
                                                            (keyword (str "x-waiter-env-" reverse-proxy-flag)) "yes"}
-                                                          #(make-kitchen-request waiter-url % :method :get :path "/"))]
-
+                                                          #(make-kitchen-request waiter-url % :method :get :path "/request-info"))]
+          (println response)
           (with-service-cleanup
             service-id
             (assert-service-on-all-routers waiter-url service-id cookies)
@@ -369,9 +372,9 @@
                   (is (= "envoy" (get response-headers "server"))))))
 
             (let [response (make-request-with-debug-info
-                               {:x-waiter-name x-waiter-name
-                                (keyword (str "x-waiter-env-" reverse-proxy-flag)) "yes"}
-                               #(make-kitchen-request waiter-url % :method :get :path "/environment"))]
+                             {:x-waiter-name x-waiter-name
+                              (keyword (str "x-waiter-env-" reverse-proxy-flag)) "yes"}
+                             #(make-kitchen-request waiter-url % :method :get :path "/environment"))]
               (assert-response-status response http-200-ok)
               (let [response-body (try-parse-json (:body response))
                     response-headers (:headers response)]
@@ -387,4 +390,4 @@
                 (testing "Reverse proxy flag environment variable is present"
                   (is (contains? response-body reverse-proxy-flag))
                   (is (= "yes" (get response-body reverse-proxy-flag))))))))
-          (log/warn "skipping the integration test as :reverse-proxy-flag is not defined")))))
+        (log/warn "skipping the integration test as :reverse-proxy-flag is not defined")))))
