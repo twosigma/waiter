@@ -386,5 +386,5 @@
                            env-response-port0))))
                 (testing "Reverse proxy flag environment variable is present"
                   (is (contains? response-body reverse-proxy-flag))
-                  (is (= "yes" (get response-body reverse-proxy-flag)))))))
-          (log/warn "skipping the integration test as :reverse-proxy-flag is not defined"))))))
+                  (is (= "yes" (get response-body reverse-proxy-flag))))))))
+          (log/warn "skipping the integration test as :reverse-proxy-flag is not defined")))))
