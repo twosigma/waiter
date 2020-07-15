@@ -814,7 +814,9 @@
         log-bucket-sync-secs (if log-bucket-url (:log-bucket-sync-secs context) 0)
         total-sigkill-delay-secs (+ pod-sigkill-delay-secs log-bucket-sync-secs)
         envoy-sidecar-check-fn (:predicate-fn reverse-proxy)
-        has-reverse-proxy? (envoy-sidecar-check-fn scheduler service-id service-description context)
+        has-reverse-proxy? (if envoy-sidecar-check-fn
+                             (envoy-sidecar-check-fn scheduler service-id service-description context)
+                             false)
         offset (if has-reverse-proxy? 1 0)
         ;; Make $PORT0 value pseudo-random to ensure clients can't hardcode it.
         ;; Helps maintain compatibility with Marathon, where port assignment is dynamic.
