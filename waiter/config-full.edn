@@ -505,9 +505,6 @@
                                  ;; before they transition to the running state.
                                  :container-running-grace-secs 90
 
-
-                                 :custom-options {:reverse-proxy-config {:flag "REVERSE_PROXY"
-                                                                         :offset 1}}
                                  ;; Configuration for creating and querying a sidecar container in each Waiter Service Instance's Kuberentes pod
                                  ;; running a server for directory listings (in JSON) and serving file contents.
                                  ;; Waiter expects the directory listings in the format returned by nginx's autoindex module when configured for JSON.

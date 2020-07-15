@@ -50,8 +50,6 @@
                     :kubernetes {:authorizer {:kind :sanity-check
                                               :sanity-check {:factory-fn waiter.authorization/sanity-check-authorizer}}
                                  :container-running-grace-secs 90
-                                 :custom-options {:reverse-proxy-config {:flag "REVERSE_PROXY"
-                                                                         :offset 1}}
                                  :fileserver {:port 591}
                                  :log-bucket-sync-secs 5
                                  :log-bucket-url #config/env-default ["WAITER_S3_BUCKET" nil]

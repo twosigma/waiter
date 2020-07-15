@@ -57,8 +57,6 @@
       :daemon-state (atom nil)
       :cluster-name "waiter"
       :container-running-grace-secs 120
-      :custom-options {:reverse-proxy-config {:flag "REVERSE_PROXY"
-                                              :offset 1}}
       :fileserver {:port 9090
                    :scheme "http"}
       :log-bucket-sync-secs 60
@@ -144,11 +142,7 @@
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
                 config/retrieve-waiter-principal (constantly "waiter@test.com")]
     (let [scheduler (make-dummy-scheduler ["test-service-id"])
-          service-description (assoc dummy-service-description "env" {(-> scheduler
-                                                                          :custom-options
-                                                                          :reverse-proxy-config
-                                                                          :flag)
-                                                                       "yes"})
+          service-description (assoc dummy-service-description "env" {"REVERSE_PROXY" "yes"})
           replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id"
                            service-description)
           app-container (get-in replicaset-spec [:spec :template :spec :containers 0])

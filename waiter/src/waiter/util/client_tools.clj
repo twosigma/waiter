@@ -679,11 +679,6 @@
   [waiter-url]
   (get-scheduler-settings waiter-url :kubernetes))
 
-(defn get-k8s-custom-options
-  "Return the kubernetes scheduler's custom options setting"
-  [waiter-url]
-  (:custom-options (get-kubernetes-scheduler-settings waiter-url)))
-
 (defn marathon-url
   "Returns the Marathon URL setting"
   [waiter-url]

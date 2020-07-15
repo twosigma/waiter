@@ -784,16 +784,15 @@
 
 (defn envoy-sidecar-enabled?
   "Returns true if the envoy sidecar is enabled, and false otherwise"
-  [{:keys [custom-options]} service-id {:strs [env]} context]
-  (let [reverse-proxy-flag (or (-> custom-options :reverse-proxy-config :flag)
-                               "REVERSE_PROXY")]
+  [_ _ {:strs [env]} _]
+  (let [reverse-proxy-flag "REVERSE_PROXY"]
     (if (contains? env reverse-proxy-flag)
       true
       false)))
 
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
-  [{:keys [cluster-name custom-options fileserver pod-base-port pod-sigkill-delay-secs
+  [{:keys [cluster-name fileserver pod-base-port pod-sigkill-delay-secs
            replicaset-api-version reverse-proxy service-id->password-fn] :as scheduler}
    service-id
    {:strs [backend-proto cmd cpus grace-period-secs health-check-authentication health-check-interval-secs
@@ -816,9 +815,7 @@
         total-sigkill-delay-secs (+ pod-sigkill-delay-secs log-bucket-sync-secs)
         envoy-sidecar-check-fn (:predicate-fn reverse-proxy)
         has-reverse-proxy? (envoy-sidecar-check-fn scheduler service-id service-description context)
-        offset (if has-reverse-proxy?
-                 (-> custom-options :reverse-proxy-config :offset)
-                 0)
+        offset (if has-reverse-proxy? 1 0)
         ;; Make $PORT0 value pseudo-random to ensure clients can't hardcode it.
         ;; Helps maintain compatibility with Marathon, where port assignment is dynamic.
         service-port (-> service-id hash (mod 100) (* 10) (+ pod-base-port))
@@ -1164,19 +1161,7 @@
   {:pre [(schema/contains-kind-sub-map? authorizer)
          (or (zero? container-running-grace-secs) (pos-int? container-running-grace-secs))
          (or (nil? custom-options) (map? custom-options))
-         (or (nil? reverse-proxy) (and
-                                    (map? reverse-proxy)
-                                    (let [{:keys [cmd image predicate-fn resources scheme]}
-                                          (:reverse-proxy-config reverse-proxy)]
-                                      (and
-                                        (vector? cmd)
-                                        (not (str/blank? image))
-                                        (fn? predicate-fn)
-                                        (and (map? resources)
-                                             (number? (:mem resources))
-                                             (number? (:cpu resources)))
-                                        (not (str/blank? image))
-                                        (not (str/blank? scheme))))))
+         (or (nil? reverse-proxy) (schema/valid-reverse-proxy-config reverse-proxy))
          (or (nil? fileserver-port)
              (and (integer? fileserver-port)
                   (< 0 fileserver-port 65535)))
