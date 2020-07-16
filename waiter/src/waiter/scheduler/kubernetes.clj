@@ -26,6 +26,7 @@
             [clojure.zip :as zip]
             [metrics.timers :as timers]
             [plumbing.core :as pc]
+            [schema.core :as s]
             [slingshot.slingshot :as ss]
             [waiter.authorization :as authz]
             [waiter.metrics :as metrics]
@@ -107,6 +108,7 @@
   [replicaset-json]
   (try
     (pc/letk
+
       [[spec
         [:metadata name namespace [:annotations waiter/service-id]]
         [:status {replicas 0} {availableReplicas 0} {readyReplicas 0} {unavailableReplicas 0}]]
@@ -796,20 +798,21 @@
     conj
     (let [{:keys [cmd resources image]} reverse-proxy
           user-env (:env service-description)
-          env-vector (-> user-env
-                         (merge base-env)
-                         (assoc "PORT0" (str port0) "SERVICE_PORT" (str service-port)))
+          env-map (-> user-env
+                  (merge base-env)
+                  (assoc "PORT0" (str port0) "SERVICE_PORT" (str service-port)))
           env (into []
-                    (concat (for [[k v] env-vector]
-                              {:name k :value v})))]
-      {:command cmd
-       :env env
-       :image image
-       :imagePullPolicy "IfNotPresent"
-       :name "waiter-envoy-sidecar"
-       :ports [{:containerPort service-port}]
-       :resources {:limits {:memory (str (:mem resources) "Mi")}
-                   :requests {:cpu (str (:cpu resources)) :memory (str (:mem resources) "Mi")}}})))
+                    (concat (for [[k v] env-map]
+                              {:name k :value v})))
+          envoy-container {:command cmd
+                           :env env
+                           :image image
+                           :imagePullPolicy "IfNotPresent"
+                           :name "waiter-envoy-sidecar"
+                           :ports [{:containerPort service-port}]
+                           :resources {:limits {:memory (str (:mem resources) "Mi")}
+                                       :requests {:cpu (str (:cpu resources)) :memory (str (:mem resources) "Mi")}}}]
+      envoy-container)))
 
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
@@ -834,11 +837,10 @@
         ;; delay iff the log-bucket-url setting was given the scheduler config.
         log-bucket-sync-secs (if log-bucket-url (:log-bucket-sync-secs context) 0)
         total-sigkill-delay-secs (+ pod-sigkill-delay-secs log-bucket-sync-secs)
-        envoy-sidecar-check-fn (when reverse-proxy
-                                 (-> reverse-proxy
-                                     :predicate-fn
-                                     utils/resolve-symbol
-                                     deref))
+        envoy-sidecar-check-fn (some-> reverse-proxy
+                                       :predicate-fn
+                                       utils/resolve-symbol
+                                       deref)
         has-reverse-proxy? (when reverse-proxy
                              (envoy-sidecar-check-fn scheduler service-id service-description context))
         offset (if has-reverse-proxy? 1 0)
@@ -1169,7 +1171,7 @@
   {:pre [(schema/contains-kind-sub-map? authorizer)
          (or (zero? container-running-grace-secs) (pos-int? container-running-grace-secs))
          (or (nil? custom-options) (map? custom-options))
-         (or (nil? reverse-proxy) (schema/valid-reverse-proxy-config reverse-proxy))
+         (or (nil? reverse-proxy) (nil? (s/check schema/valid-reverse-proxy-config reverse-proxy)))
          (or (nil? fileserver-port)
              (and (integer? fileserver-port)
                   (< 0 fileserver-port 65535)))

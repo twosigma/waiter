@@ -14,10 +14,11 @@ spec:
       labels:
         app: waiter-envoy-sidecar
     spec:
+      #hostNetwork: true      use this option if you want to create an envoy sidecar on host network for testing
       containers:
         - name: waiter-envoy-sidecar
           command:
-            - /bin/sh
+            - sh
             - /opt/waiter/envoy/bin/envoy-start
           env:
             - name: PORT0

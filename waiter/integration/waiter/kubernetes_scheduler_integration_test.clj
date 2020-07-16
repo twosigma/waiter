@@ -348,7 +348,9 @@
               request-headers {:x-waiter-name x-waiter-name
                                (keyword (str "x-waiter-env-" reverse-proxy-flag)) "yes"}
               _ (log/info "making canary request")
-              {:keys [cookies service-id] :as response} (make-request-with-debug-info request-headers #(make-kitchen-request waiter-url % :method :get :path "/status"))]
+              {:keys [cookies service-id] :as response} (make-request-with-debug-info
+                                                          request-headers
+                                                          #(make-kitchen-request waiter-url % :method :get :path "/status"))]
           (with-service-cleanup
             service-id
             (assert-service-on-all-routers waiter-url service-id cookies)
