@@ -3,6 +3,22 @@
 # to setup /etc/envoy/envoy.yaml file.
 # SERVICE_PORT and PORT0 must be set
 
+# check if SERVICE_PORT is present
+if [ "$SERVICE_PORT" ]; then
+  echo "$(date -Is) SERVICE_PORT is set"
+else
+  echo "$(date -Is) SERVICE_PORT is not set. Exiting envoy-start"
+  exit 1
+fi
+
+# check if PORT0 is present
+if [ "$PORT0" ]; then
+  echo "$(date -Is) PORT0 is set"
+else
+  echo "$(date -Is) PORT0 is not set. Exiting envoy-start"
+  exit 1
+fi
+
 echo "$(date -Is) Changing the port values in etc/envoy/envoy.yaml to ${SERVICE_PORT} and ${PORT0}"
 
 # change the SERVICE_PORT and PORT0 values in /etc/envoy/envoy.yaml to respective env variables

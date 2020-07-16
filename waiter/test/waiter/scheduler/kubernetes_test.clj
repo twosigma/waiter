@@ -75,11 +75,6 @@
       :retrieve-auth-token-state-fn (constantly nil)
       :retrieve-syncer-state-fn (constantly nil)
       :restart-expiry-threshold 100
-      :reverse-proxy {:cmd ["/opt/waiter/envoy/bin/envoy-start"]
-                      :image "twosigma/waiter-envoy"
-                      :predicate-fn waiter.scheduler.kubernetes/envoy-sidecar-enabled?
-                      :resources {:cpu 0.1 :mem 256}
-                      :scheme "http"}
       :service-id->failed-instances-transient-store (atom {})
       :service-id->password-fn #(str "password-" %)
       :service-id->service-description-fn (pc/map-from-keys (constantly {"health-check-port-index" 0
@@ -141,8 +136,14 @@
 (deftest replicaset-spec-with-reverse-proxy
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
                 config/retrieve-waiter-principal (constantly "waiter@test.com")]
-    (let [scheduler (make-dummy-scheduler ["test-service-id"])
-          service-description (assoc dummy-service-description "env" {"REVERSE_PROXY" "yes"})
+    (let [scheduler (make-dummy-scheduler ["test-service-id"] {:reverse-proxy {:cmd ["/opt/waiter/envoy/bin/envoy-start"]
+                                                                               :image "twosigma/waiter-envoy"
+                                                                               :predicate-fn 'waiter.scheduler.kubernetes/envoy-sidecar-enabled?
+                                                                               :resources {:cpu 0.1 :mem 256}
+                                                                               :scheme "http"}})
+          service-description (assoc dummy-service-description "env" {"REVERSE_PROXY" "yes"
+                                                                      "PORT0" "to-be-overwritten"
+                                                                      "SERVICE_PORT" "to-be-overwritten"})
           replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id"
                            service-description)
           app-container (get-in replicaset-spec [:spec :template :spec :containers 0])
@@ -155,6 +156,12 @@
 
       (testing "sidecar container is present in replicaset"
         (is (not= nil sidecar-container)))
+
+      (testing "user defined environment variables are correctly overwritten"
+        (is (nil? (some #(when (or
+                                 (= (:name %) "PORT0")
+                                 (= (:name %) "SERVICE_PORT"))
+                           (= "to-be-overwritten" (:value %))) (:env sidecar-container)))))
 
       (testing "service-port and waiter port values and env variables are correct"
         (let [service-port (-> "test-service-id" hash (mod 100) (* 10) (+ (:pod-base-port scheduler)))

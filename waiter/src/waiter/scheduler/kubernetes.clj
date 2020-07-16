@@ -786,9 +786,30 @@
   "Returns true if the envoy sidecar is enabled, and false otherwise"
   [_ _ {:strs [env]} _]
   (let [reverse-proxy-flag "REVERSE_PROXY"]
-    (if (contains? env reverse-proxy-flag)
-      true
-      false)))
+    (contains? env reverse-proxy-flag)))
+
+(defn attach-envoy-sidecar
+  "Attaches envoy sidecar to replicaset"
+  [replicaset reverse-proxy service-description base-env service-port port0]
+  (update-in replicaset
+    [:spec :template :spec :containers]
+    conj
+    (let [{:keys [cmd resources image]} reverse-proxy
+          user-env (:env service-description)
+          env-vector (-> user-env
+                         (merge base-env)
+                         (assoc "PORT0" (str port0) "SERVICE_PORT" (str service-port)))
+          env (into []
+                    (concat (for [[k v] env-vector]
+                              {:name k :value v})))]
+      {:command cmd
+       :env env
+       :image image
+       :imagePullPolicy "IfNotPresent"
+       :name "waiter-envoy-sidecar"
+       :ports [{:containerPort service-port}]
+       :resources {:limits {:memory (str (:mem resources) "Mi")}
+                   :requests {:cpu (str (:cpu resources)) :memory (str (:mem resources) "Mi")}}})))
 
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
@@ -813,10 +834,13 @@
         ;; delay iff the log-bucket-url setting was given the scheduler config.
         log-bucket-sync-secs (if log-bucket-url (:log-bucket-sync-secs context) 0)
         total-sigkill-delay-secs (+ pod-sigkill-delay-secs log-bucket-sync-secs)
-        envoy-sidecar-check-fn (:predicate-fn reverse-proxy)
-        has-reverse-proxy? (if envoy-sidecar-check-fn
-                             (envoy-sidecar-check-fn scheduler service-id service-description context)
-                             false)
+        envoy-sidecar-check-fn (when reverse-proxy
+                                 (-> reverse-proxy
+                                     :predicate-fn
+                                     utils/resolve-symbol
+                                     deref))
+        has-reverse-proxy? (when reverse-proxy
+                             (envoy-sidecar-check-fn scheduler service-id service-description context))
         offset (if has-reverse-proxy? 1 0)
         ;; Make $PORT0 value pseudo-random to ensure clients can't hardcode it.
         ;; Helps maintain compatibility with Marathon, where port assignment is dynamic.
@@ -937,25 +961,7 @@
 
       ;; Optional envoy sidecar container
       has-reverse-proxy?
-      (update-in
-        [:spec :template :spec :containers]
-        conj
-        (let [{:keys [cmd resources image]} reverse-proxy
-              env (:env service-description)]
-             {:command cmd
-              :env (into [{:name "SERVICE_PORT" :value (str service-port)}
-                          {:name "PORT0" :value (str port0)}]
-                         (concat
-                           (for [[k v] base-env]
-                                {:name k :value v})
-                           (for [[k v] env]
-                                {:name k :value v})))
-              :image image
-              :imagePullPolicy "IfNotPresent"
-              :name "waiter-envoy-sidecar"
-              :ports [{:containerPort service-port}]
-              :resources {:limits {:memory (str (:mem resources) "Mi")}
-                          :requests {:cpu (str (:cpu resources)) :memory (str (:mem resources) "Mi")}}})))))
+      (attach-envoy-sidecar reverse-proxy service-description base-env service-port port0))))
 
 (defn start-auth-renewer
   "Initialize the k8s-api-auth-str atom,
