@@ -108,7 +108,6 @@
   [replicaset-json]
   (try
     (pc/letk
-
       [[spec
         [:metadata name namespace [:annotations waiter/service-id]]
         [:status {replicas 0} {availableReplicas 0} {readyReplicas 0} {unavailableReplicas 0}]]

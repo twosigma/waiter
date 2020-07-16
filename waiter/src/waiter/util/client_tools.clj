@@ -502,7 +502,6 @@
                       (ensure-cid-in-headers)
                       (walk/stringify-keys))
                   debug (assoc :x-waiter-debug true))]
-    (println headers)
     (make-request waiter-url path
                   :body body
                   :cookies cookies
