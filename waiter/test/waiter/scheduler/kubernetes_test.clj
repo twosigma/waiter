@@ -66,8 +66,6 @@
       :pod-base-port 8080
       :pod-sigkill-delay-secs 3
       :pod-suffix-length default-pod-suffix-length
-      :proxy-options {:reverse-proxy-flag "GRPC_TRANSCODER"
-                      :reverse-proxy-offset 1}
       :replicaset-api-version "extensions/v1beta1"
       :replicaset-spec-builder-fn #(waiter.scheduler.kubernetes/default-replicaset-builder
                                      %1 %2 %3
@@ -138,25 +136,64 @@
 (deftest replicaset-spec-with-reverse-proxy
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
                 config/retrieve-waiter-principal (constantly "waiter@test.com")]
-    (let [scheduler (make-dummy-scheduler ["test-service-id"])
-          service-description (assoc dummy-service-description "env" {(:reverse-proxy-flag (:proxy-options scheduler))
-                                                                       "yes"})
+    (let [scheduler (make-dummy-scheduler ["test-service-id"] {:reverse-proxy {:cmd ["/opt/waiter/envoy/bin/envoy-start"]
+                                                                               :image "twosigma/waiter-envoy"
+                                                                               :predicate-fn 'waiter.scheduler.kubernetes/envoy-sidecar-enabled?
+                                                                               :resources {:cpu 0.1 :mem 256}
+                                                                               :scheme "http"}})
+          service-description (assoc dummy-service-description "env" {"REVERSE_PROXY" "yes"
+                                                                      "PORT0" "to-be-overwritten"
+                                                                      "SERVICE_PORT" "to-be-overwritten"})
           replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id"
-                           service-description)]
+                           service-description)
+          app-container (get-in replicaset-spec [:spec :template :spec :containers 0])
+          sidecar-container (some
+                              #(if (= "waiter-envoy-sidecar" (:name %)) %)
+                              (get-in replicaset-spec [:spec :template :spec :containers]))]
 
       (testing "replicaset has waiter/service-port annotation"
         (is (contains? (get-in replicaset-spec [:spec :template :metadata :annotations]) :waiter/service-port)))
 
-      (testing "service-port and waiter ports are correct"
+      (testing "sidecar container is present in replicaset"
+        (is (not= nil sidecar-container)))
+
+      (testing "user defined environment variables are correctly overwritten"
+        (is (nil? (some #(when (or
+                                 (= (:name %) "PORT0")
+                                 (= (:name %) "SERVICE_PORT"))
+                           (= "to-be-overwritten" (:value %))) (:env sidecar-container)))))
+
+      (testing "service-port and waiter port values and env variables are correct"
         (let [service-port (-> "test-service-id" hash (mod 100) (* 10) (+ (:pod-base-port scheduler)))
-              port0 (+ service-port 1)]
+              port0 (+ service-port 1)
+              service-port-env (Integer/parseInt (:value (some #(if (= "SERVICE_PORT" (:name %)) %) (:env sidecar-container))))
+              port0-env (Integer/parseInt (:value (some #(if (= "PORT0" (:name %)) %) (:env sidecar-container))))]
           (is (= service-port (Integer/parseInt (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/service-port]))))
-          (is (= port0 (get-in replicaset-spec [:spec :template :spec :containers 0 :ports 0 :containerPort])))))
+          (is (= service-port (get-in sidecar-container [:ports 0 :containerPort])))
+          (is (= service-port service-port-env))
+          (is (= port0 (get-in app-container [:ports 0 :containerPort])))
+          (is (= port0 port0-env))))
 
       (testing "waiter/port-count annotation is correct"
         (let [port-count (inc (get service-description "ports"))]
           (is (= port-count (-> (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/port-count])
-                                (Integer/parseInt)))))))))
+                                (Integer/parseInt))))))
+
+      (testing "resource requests for reverse-proxy are correct"
+        (let [cpu (get-in sidecar-container [:resources :requests :cpu])
+              memory (get-in sidecar-container [:resources :requests :memory])]
+          (is (= "0.1" cpu))
+          (is (= "256Mi" memory))))
+
+      (testing "resource limits for reverse-proxy are correct"
+        (let [memory-limit (get-in sidecar-container [:resources :limits :memory])]
+          (is (= "256Mi" memory-limit))))
+
+      (testing "reverse-proxy pod container name is correct"
+        (is (= "waiter-envoy-sidecar" (:name sidecar-container))))
+
+      (testing "reverse-proxy pod container image is correct"
+        (is (= "twosigma/waiter-envoy" (:image sidecar-container)))))))
 
 (deftest replicaset-spec-liveness-nd-readiness
   (let [basic-probe {:failureThreshold 1

@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  labels:
+    app: waiter-envoy-sidecar
+  name: waiter-envoy-sidecar
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: waiter-envoy-sidecar
+  template:
+    metadata:
+      labels:
+        app: waiter-envoy-sidecar
+    spec:
+      #hostNetwork: true      use this option if you want to create an envoy sidecar on host network for testing
+      containers:
+        - name: waiter-envoy-sidecar
+          command:
+            - /opt/waiter/envoy/bin/envoy-start
+          env:
+            - name: PORT0
+              value: "10000"
+            - name: SERVICE_PORT
+              value: "9999"
+          ports:
+            - containerPort: 9999
+          imagePullPolicy: IfNotPresent
+          image: twosigma/waiter-envoy
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 0.2
+              memory: 256Mi

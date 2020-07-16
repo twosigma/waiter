@@ -105,6 +105,14 @@
   [{:keys [kind] :as config}]
   (nil? (s/check {(s/required-key :factory-fn) s/Symbol, s/Keyword s/Any} (get config kind))))
 
+(def valid-reverse-proxy-config
+  {:cmd [s/Str]
+   :image s/Str
+   :predicate-fn s/Symbol
+   :resources {:cpu s/Num
+               :mem s/Int}
+   :scheme s/Str})
+
 (def valid-jwt-issuer-config
   "Validator for the JWT issuer field.
    The issuer field is either

@@ -27,3 +27,6 @@ cd "$DIR"
 
 # the fileserver container is independent
 ./fileserver/bin/build-docker-image.sh
+
+# the envoy reverse-proxy container is independent
+./reverse-proxy/bin/build-docker-image.sh
