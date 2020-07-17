@@ -42,7 +42,7 @@
                  ;; avoids the following:
                  ;; WARNING!!! version ranges found for:
                  ;; [com.twosigma.waiter/courier ...] -> [io.grpc/grpc-netty-shaded "1.20.0"] -> [io.grpc/grpc-core "[1.20.0,1.20.0]"]
-                 [io.grpc/grpc-core "1.30.2"
+                 [io.grpc/grpc-core "1.20.0"
                   :exclusions [com.google.guava/guava]
                   :scope "test"]
                  [twosigma/jet "0.7.10-20200709_171405-gea4b7b6"
