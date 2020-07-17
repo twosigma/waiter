@@ -24,12 +24,12 @@
                  [prismatic/plumbing "0.5.5"]
                  [ring/ring-core "1.7.1"
                   :exclusions [org.clojure/tools.reader]]
-                 [twosigma/jet "0.7.10-20190831_055713-gf193d34"
+                 [twosigma/jet "0.7.10-20200709_171405-gea4b7b6"
                   :exclusions [org.eclipse.jetty/jetty-client
                                org.eclipse.jetty.alpn/alpn-api
                                org.eclipse.jetty.http2/http2-client
                                org.eclipse.jetty.websocket/websocket-client
-                               org.eclipse.jetty/jetty-alpn-openjdk8-client
+                               org.eclipse.jetty/jetty-alpn-java-client
                                org.mortbay.jetty.alpn/alpn-boot]]]
   :jvm-opts ["-server"
              "-XX:+UseG1GC"
