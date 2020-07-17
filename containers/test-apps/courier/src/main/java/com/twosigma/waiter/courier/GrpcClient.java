@@ -166,6 +166,8 @@ public class GrpcClient {
         return ManagedChannelBuilder
             .forAddress(host, port)
             .usePlaintext()
+            .keepAliveTime(1000, TimeUnit.MILLISECONDS)
+            .keepAliveTimeout(2000, TimeUnit.MILLISECONDS)
             .build();
     }
 
