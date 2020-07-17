@@ -295,8 +295,8 @@
                                     (dissoc "cookie")
                                     (assoc "x-cid" correlation-id))
                   grpc-client (initialize-grpc-client correlation-id host h2c-port)
-                  sleep-ms 1000
-                  deadline-ms 10000
+                  sleep-ms 100000
+                  deadline-ms 200000
                   rpc-result (.sendPackage grpc-client request-headers id from content sleep-ms deadline-ms)
                   ^CourierReply reply (.result rpc-result)
                   ^Status status (.status rpc-result)
