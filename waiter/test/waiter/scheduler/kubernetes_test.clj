@@ -260,26 +260,36 @@
       (is (= "custom/image" (get-in replicaset-spec [:spec :template :spec :containers 0 :image]))))))
 
 (deftest test-default-pdb-spec-builder
-  (let [pdb-api-version "pdb/api-version"
-        rs-selector {:a "b" :c "d"}
-        rs-spec {:apiVersion "rs/api-version"
-                 :kind "kind/ReplicaSet"
-                 :metadata {:name "replicaset-1234"}
-                 :spec {:selector rs-selector}}
-        replicaset-uid "replicaset-1234-uid"
-        actual-spec (default-pdb-spec-builder pdb-api-version rs-spec replicaset-uid)
-        expected-spec {:apiVersion "pdb/api-version"
-                       :kind "PodDisruptionBudget"
-                       :metadata {:name "replicaset-1234-pdb"
-                                  :ownerReferences [{:apiVersion "rs/api-version"
-                                                     :blockOwnerDeletion true
-                                                     :controller false
-                                                     :kind "kind/ReplicaSet"
-                                                     :name "replicaset-1234"
-                                                     :uid "replicaset-1234-uid"}]}
-                       :spec {:minAvailable 1
-                              :selector rs-selector}}]
-    (is (= expected-spec actual-spec))))
+  (doseq [{:keys [min-available replicas]}
+          [{:min-available 1 :replicas 1} ;; ideally we do not expect it to be called for 1 replica
+           {:min-available 1 :replicas 2}
+           {:min-available 2 :replicas 3}
+           {:min-available 2 :replicas 4}
+           {:min-available 3 :replicas 5}]]
+    (let [pdb-api-version "pdb/api-version"
+          service-id "test-service-id"
+          rs-selector {:a "b" :c "d"}
+          rs-spec {:apiVersion "rs/api-version"
+                   :kind "kind/ReplicaSet"
+                   :metadata {:annotations {:waiter/service-id service-id}
+                              :name "replicaset-1234"}
+                   :spec {:replicas replicas
+                          :selector rs-selector}}
+          replicaset-uid "replicaset-1234-uid"
+          actual-spec (default-pdb-spec-builder pdb-api-version rs-spec replicaset-uid)
+          expected-spec {:apiVersion "pdb/api-version"
+                         :kind "PodDisruptionBudget"
+                         :metadata {:annotations {:waiter/service-id service-id}
+                                    :name "replicaset-1234-pdb"
+                                    :ownerReferences [{:apiVersion "rs/api-version"
+                                                       :blockOwnerDeletion true
+                                                       :controller false
+                                                       :kind "kind/ReplicaSet"
+                                                       :name "replicaset-1234"
+                                                       :uid "replicaset-1234-uid"}]}
+                         :spec {:minAvailable min-available
+                                :selector rs-selector}}]
+      (is (= expected-spec actual-spec)))))
 
 (deftest test-prepare-health-check-probe
   (with-redefs [scheduler/retrieve-auth-headers (constantly {"Authorization" "Basic foo:bar"})]

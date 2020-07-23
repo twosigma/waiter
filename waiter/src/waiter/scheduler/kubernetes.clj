@@ -538,7 +538,6 @@
       (when (> min-instances 1)
         (let [pdb-spec (pdb-spec-builder-fn pdb-api-version rs-spec replicaset-uid)
               request-url (str api-server-url "/apis/" pdb-api-version "/namespaces/" request-namespace "/poddisruptionbudgets")]
-          (log/info "creating pod disruption budget with min available instance of one for" service-id)
           (api-request request-url scheduler
                        :body (utils/clj->json pdb-spec)
                        :request-method :post))))
@@ -979,17 +978,25 @@
   (let [rs-api-version (get rs-spec :apiVersion)
         rs-kind (get rs-spec :kind)
         rs-name (get-in rs-spec [:metadata :name])
-        rs-selector (get-in rs-spec [:spec :selector])]
+        rs-replicas (get-in rs-spec [:spec :replicas])
+        rs-selector (get-in rs-spec [:spec :selector])
+        service-id (k8s-object->service-id rs-spec)
+        min-available (quot (inc rs-replicas) 2)]
+    (log/info "creating pod disruption budget"
+              {:min-available min-available
+               :replicaset-name rs-name
+               :service-id service-id})
     {:apiVersion pdb-api-version
      :kind "PodDisruptionBudget"
-     :metadata {:name (str rs-name "-pdb")
+     :metadata {:annotations {:waiter/service-id service-id}
+                :name (str rs-name "-pdb")
                 :ownerReferences [{:apiVersion rs-api-version
                                    :blockOwnerDeletion true
                                    :controller false
                                    :kind rs-kind
                                    :name rs-name
                                    :uid replicaset-uid}]}
-     :spec {:minAvailable 1
+     :spec {:minAvailable min-available
             :selector rs-selector}}))
 
 (defn start-auth-renewer
