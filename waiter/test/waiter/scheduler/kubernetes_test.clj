@@ -17,6 +17,7 @@
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.data]
+            [clojure.data.json :as json]
             [clojure.pprint]
             [clojure.string :as str]
             [clojure.test :refer :all]
@@ -63,6 +64,8 @@
       :log-bucket-url "http://waiter.example.com:8888/waiter-service-logs"
       :max-patch-retries 5
       :max-name-length 63
+      :pdb-api-version "policy/v1beta1"
+      :pdb-spec-builder-fn waiter.scheduler.kubernetes/default-pdb-spec-builder
       :pod-base-port 8080
       :pod-sigkill-delay-secs 3
       :pod-suffix-length default-pod-suffix-length
@@ -106,7 +109,7 @@
     (fn sanitizer [x]
       (cond
         (instance? Service x)
-        (dissoc x :k8s/app-name :k8s/namespace)
+        (dissoc x :k8s/app-name :k8s/namespace :k8s/replicaset-uid)
         (instance? ServiceInstance x)
         (dissoc x :k8s/api-server-url :k8s/app-name :k8s/namespace :k8s/pod-name :k8s/restart-count :k8s/user)
         :else x))
@@ -256,6 +259,28 @@
                             (assoc dummy-service-description "image" "custom/image"))]
       (is (= "custom/image" (get-in replicaset-spec [:spec :template :spec :containers 0 :image]))))))
 
+(deftest test-default-pdb-spec-builder
+  (let [pdb-api-version "pdb/api-version"
+        rs-selector {:a "b" :c "d"}
+        rs-spec {:apiVersion "rs/api-version"
+                 :kind "kind/ReplicaSet"
+                 :metadata {:name "replicaset-1234"}
+                 :spec {:selector rs-selector}}
+        replicaset-uid "replicaset-1234-uid"
+        actual-spec (default-pdb-spec-builder pdb-api-version rs-spec replicaset-uid)
+        expected-spec {:apiVersion "pdb/api-version"
+                       :kind "PodDisruptionBudget"
+                       :metadata {:name "replicaset-1234-pdb"
+                                  :ownerReferences [{:apiVersion "rs/api-version"
+                                                     :blockOwnerDeletion true
+                                                     :controller false
+                                                     :kind "kind/ReplicaSet"
+                                                     :name "replicaset-1234"
+                                                     :uid "replicaset-1234-uid"}]}
+                       :spec {:minAvailable 1
+                              :selector rs-selector}}]
+    (is (= expected-spec actual-spec))))
+
 (deftest test-prepare-health-check-probe
   (with-redefs [scheduler/retrieve-auth-headers (constantly {"Authorization" "Basic foo:bar"})]
     (let [service-id->password-fn (constantly "waiter-password")
@@ -353,7 +378,8 @@
                                :labels {:app "test-app-1234"
                                         :waiter/cluster "waiter"
                                         :waiter/service-hash "test-app-1234"}
-                               :annotations {:waiter/service-id "test-app-1234"}}
+                               :annotations {:waiter/service-id "test-app-1234"}
+                               :uid "test-app-1234-uid"}
                     :spec {:replicas 2
                            :selector {:matchLabels {:app "test-app-1234"
                                                     :waiter/cluster "waiter"}}}
@@ -365,7 +391,8 @@
                                :labels {:app "test-app-6789"
                                         :waiter/cluster "waiter"
                                         :waiter/service-hash "test-app-6789"}
-                               :annotations {:waiter/service-id "test-app-6789"}}
+                               :annotations {:waiter/service-id "test-app-6789"}
+                               :uid "test-app-6789-uid"}
                     :spec {:replicas 3
                            :selector {:matchLabels {:app "test-app-6789"
                                                     :waiter/cluster "waiter"}}}
@@ -388,7 +415,8 @@
                                :labels {:app "test-app-abcd"
                                         :waiter/cluster "waiter"
                                         :waiter/service-hash "test-app-abcd"}
-                               :annotations {:waiter/service-id "test-app-abcd"}}
+                               :annotations {:waiter/service-id "test-app-abcd"}
+                               :uid "test-app-abcd-uid"}
                     :spec {:replicas 2
                            :selector {:matchLabels {:app "test-app-abcd"
                                                     :waiter/cluster "waiter"}}}
@@ -401,7 +429,8 @@
                                :labels {:app "test-app-wxyz"
                                         :waiter/cluster "waiter"
                                         :waiter/service-hash "test-app-wxyz"}
-                               :annotations {:waiter/service-id "test-app-wxyz"}}
+                               :annotations {:waiter/service-id "test-app-wxyz"}
+                               :uid "test-app-wxyz-uid"}
                     :spec {:replicas 3
                            :selector {:matchLabels {:app "test-app-wxyz"
                                                     :waiter/cluster "waiter"}}}
@@ -425,7 +454,8 @@
                                :labels {:app "test-app-4321"
                                         :waiter/cluster "waiter"
                                         :waiter/service-hash "test-app-4321"}
-                               :annotations {:waiter/service-id "test-app-4321"}}
+                               :annotations {:waiter/service-id "test-app-4321"}
+                               :uid "test-app-4321-uid"}
                     :spec {:replicas 3
                            :selector {:matchLabels {:app "test-app-4321"
                                                     :waiter/cluster "waiter"}}}
@@ -445,7 +475,8 @@
                                :labels {:app "test-app-9999"
                                         :waiter/cluster "waiter"
                                         :waiter/service-hash "test-app-9999"}
-                               :annotations {:waiter/service-id "test-app-9999"}}
+                               :annotations {:waiter/service-id "test-app-9999"}
+                               :uid "test-app-9999-uid"}
                     :spec {:replicas 0
                            :selector {:matchLabels {:app "test-app-9999"
                                                     :waiter/cluster "waiter"}}}
@@ -476,7 +507,8 @@
                                       :waiter/cluster "waiter"
                                       :waiter/user "myself"
                                       :waiter/service-hash "test-app-1234"}
-                             :annotations {:waiter/service-id "test-app-1234"}}
+                             :annotations {:waiter/service-id "test-app-1234"}
+                             :uid "test-app-1234-uid"}
                   :spec {:replicas 2}
                   :status {:replicas 2
                            :readyReplicas 2
@@ -486,7 +518,8 @@
                              :labels {:app "test-app-6789"
                                       :waiter/cluster "waiter"
                                       :waiter/service-hash "test-app-6789"}
-                             :annotations {:waiter/service-id "test-app-6789"}}
+                             :annotations {:waiter/service-id "test-app-6789"}
+                             :uid "test-app-6789-uid"}
                   :spec {:replicas 3}
                   :status {:replicas 3
                            :readyReplicas 1
@@ -696,7 +729,8 @@
                                                  :labels {:app service-id
                                                           :waiter/cluster "waiter"
                                                           :waiter/service-hash service-id}
-                                                 :annotations {:waiter/service-id service-id}}
+                                                 :annotations {:waiter/service-id service-id}
+                                                 :uid (str service-id "-uid")}
                                       :spec {:replicas 1}
                                       :status {:replicas 1
                                                :readyReplicas 1
@@ -764,7 +798,8 @@
                              :labels {:app service-id
                                       :waiter/cluster "waiter"
                                       :waiter/service-hash service-id}
-                             :annotations {:waiter/service-id service-id}}
+                             :annotations {:waiter/service-id service-id}
+                             :uid (str service-id "-uid")}
                   :spec {:replicas 2
                          :selector {:matchLabels {:app service-id
                                                   :waiter/cluster "waiter"}}}
@@ -814,11 +849,45 @@
                                                    (throw-exception))]
                          (scheduler/create-service-if-new dummy-scheduler descriptor))]
             (is (nil? actual))))
+
         (testing "successful create"
-          (let [actual (with-redefs [api-request (constantly service)
-                                     replicaset->Service identity]
-                         (scheduler/create-service-if-new dummy-scheduler descriptor))]
-            (is (= service actual))))))))
+          (let [apis-url "https://k8s-api.example//apis"
+                make-api-request (fn [api-calls-atom]
+                                   (fn [url _ & {:keys [body request-method] :or {request-method :get}}]
+                                     (swap! api-calls-atom conj {:kind (-> body json/read-str (get "kind"))
+                                                                 :request-method request-method
+                                                                 :url url})
+                                     service))]
+            (testing "without pod disruption budget"
+              (let [api-calls-atom (atom [])
+                    actual (with-redefs [api-request (make-api-request api-calls-atom)
+                                         replicaset->Service identity]
+                             (scheduler/create-service-if-new dummy-scheduler descriptor))
+                    api-calls @api-calls-atom]
+                (is (= 1 (count api-calls)))
+                (is (= {:kind "ReplicaSet"
+                        :request-method :post
+                        :url (str apis-url "/extensions/v1beta1/namespaces/waiter/replicasets")}
+                       (first api-calls)))
+                (is (= service actual))))
+
+            (testing "with pod disruption budget"
+              (let [descriptor (assoc-in descriptor [:service-description "min-instances"] 2)
+                    api-calls-atom (atom [])
+                    actual (with-redefs [api-request (make-api-request api-calls-atom)
+                                         replicaset->Service identity]
+                             (scheduler/create-service-if-new dummy-scheduler descriptor))
+                    api-calls @api-calls-atom]
+                (is (= 2 (count api-calls)))
+                (is (= {:kind "ReplicaSet"
+                        :request-method :post
+                        :url (str apis-url "/extensions/v1beta1/namespaces/waiter/replicasets")}
+                       (first api-calls)))
+                (is (= {:kind "PodDisruptionBudget"
+                        :request-method :post
+                        :url (str apis-url "/policy/v1beta1/namespaces/waiter/poddisruptionbudgets")}
+                       (second api-calls)))
+                (is (= service actual))))))))))
 
 (deftest test-keywords-in-replicaset-spec
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
@@ -1053,6 +1122,13 @@
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :max-patch-retries -1)))))
           (testing "bad max name length"
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :max-name-length 0)))))
+          (testing "bad PodDisruptionBudget api version"
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pdb-api-version 1)))))
+          (testing "bad PodDisruptionBudget spec factory function"
+            (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:pdb-spec-builder :factory-fn] nil))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:pdb-spec-builder :factory-fn] "not a symbol"))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:pdb-spec-builder :factory-fn] :not-a-symbol))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:pdb-spec-builder :factory-fn] 'not.a.namespace/not-a-fn)))))
           (testing "bad ReplicaSet spec factory function"
             (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:replicaset-spec-builder :factory-fn] nil))))
             (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:replicaset-spec-builder :factory-fn] "not a symbol"))))
@@ -1075,6 +1151,12 @@
 
         (testing "should work with valid configuration"
           (is (instance? KubernetesScheduler (kubernetes-scheduler base-config))))
+
+        (testing "should work with PodDisruptionBudget api version"
+          (is (instance? KubernetesScheduler (kubernetes-scheduler (assoc base-config :pdb-api-version "/policy.pdb-v1")))))
+        (testing "should work with PodDisruptionBudget spec factory function"
+          (let [config (assoc-in base-config [:pdb-spec-builder :factory-fn] 'waiter.scheduler.kubernetes/default-pdb-spec-builder)]
+            (is (instance? KubernetesScheduler (kubernetes-scheduler config)))))
 
         (testing "should retain custom plugin options"
           (is (= custom-options (-> base-config kubernetes-scheduler :custom-options))))
@@ -1114,7 +1196,8 @@
                              :labels {:app "test-app-1234"
                                       :waiter/cluster "waiter"
                                       :waiter/service-hash "test-app-1234"}
-                             :annotations {:waiter/service-id "test-app-1234"}}
+                             :annotations {:waiter/service-id "test-app-1234"}
+                             :uid "test-app-1234-uid"}
                   :spec {:replicas 2
                          :selector {:matchLabels {:app "test-app-1234"
                                                   :waiter/cluster "waiter"}}}
@@ -1130,7 +1213,8 @@
                                        :waiter/cluster "waiter"
                                        :waiter/service-hash "test-app-1234"}
                               :annotations {:waiter/service-id "test-app-1234"}
-                              :resourceVersion "1001"}
+                              :resourceVersion "1001"
+                              :uid "test-app-1234-uid"}
                    :spec {:replicas 2
                           :selector {:matchLabels {:app "test-app-1234"
                                                    :waiter/cluster "waiter"}}}
@@ -1144,7 +1228,8 @@
                                        :waiter/cluster "waiter"
                                        :waiter/service-hash "test-app-1234"}
                               :annotations {:waiter/service-id "test-app-1234"}
-                              :resourceVersion "1002"}
+                              :resourceVersion "1002"
+                              :uid "test-app-1234-uid"}
                    :spec {:replicas 3
                           :selector {:matchLabels {:app "test-app-1234"
                                                    :waiter/cluster "waiter"}}}
@@ -1158,7 +1243,8 @@
                                        :waiter/cluster "waiter"
                                        :waiter/service-hash "test-app-1234"}
                               :annotations {:waiter/service-id "test-app-1234"}
-                              :resourceVersion "1003"}
+                              :resourceVersion "1003"
+                              :uid "test-app-1234-uid"}
                    :spec {:replicas 2
                           :selector {:matchLabels {:app "test-app-1234"
                                                    :waiter/cluster "waiter"}}}
@@ -1176,7 +1262,8 @@
                                       :waiter/cluster "waiter"
                                       :waiter/service-hash "test-app-1234"}
                              :annotations {:waiter/port-count "1"
-                                           :waiter/service-id "test-app-1234"}}
+                                           :waiter/service-id "test-app-1234"}
+                             :uid "test-app-1234-abcd1-uid"}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]
                          :nodeName "node-1.k8s.com"}
                   :status {:podIP "10.141.141.11"
@@ -1190,7 +1277,8 @@
                                       :waiter/cluster "waiter"
                                       :waiter/service-hash "test-app-1234"}
                              :annotations {:waiter/port-count "1"
-                                           :waiter/service-id "test-app-1234"}}
+                                           :waiter/service-id "test-app-1234"}
+                             :uid "test-app-1234-abcd2-uid"}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.12"
                            :startTime "2014-09-13T00:24:47Z"
@@ -1206,7 +1294,8 @@
                                        :waiter/service-hash "test-app-1234"}
                               :annotations {:waiter/port-count "1"
                                             :waiter/service-id "test-app-1234"}
-                              :resourceVersion "1001"}
+                              :resourceVersion "1001"
+                              :uid "test-app-1234-abcd2-uid"}
                    :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                    :status {:podIP "10.141.141.12"
                             :startTime "2014-09-13T00:24:47Z"
@@ -1221,7 +1310,8 @@
                                        :waiter/service-hash "test-app-1234"}
                               :annotations {:waiter/port-count "1"
                                             :waiter/service-id "test-app-1234"}
-                              :resourceVersion "1002"}
+                              :resourceVersion "1002"
+                              :uid "test-app-1234-abcd3-uid"}
                    :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                    :status {:podIP "10.141.141.13"
                             :startTime "2014-09-13T00:24:48Z"
@@ -1354,7 +1444,8 @@
                              :labels {:app "test-app-1234"
                                       :waiter/cluster "waiter"
                                       :waiter/service-hash "test-app-1234"}
-                             :annotations {:waiter/service-id "test-app-1234"}}
+                             :annotations {:waiter/service-id "test-app-1234"}
+                             :uid "test-app-1234-uid"}
                   :spec {:replicas 2
                          :selector {:matchLabels {:app "test-app-1234"
                                                   :waiter/cluster "waiter"}}}
@@ -1370,7 +1461,8 @@
                                        :waiter/cluster "waiter"
                                        :waiter/service-hash "test-app-1234"}
                               :annotations {:waiter/service-id "test-app-1234"}
-                              :resourceVersion "1001"}
+                              :resourceVersion "1001"
+                              :uid "test-app-1234-uid"}
                    :spec {:replicas 2
                           :selector {:matchLabels {:app "test-app-1234"
                                                    :waiter/cluster "waiter"}}}
@@ -1384,7 +1476,8 @@
                                        :waiter/cluster "waiter"
                                        :waiter/service-hash "test-app-1234"}
                               :annotations {:waiter/service-id "test-app-1234"}
-                              :resourceVersion "1002"}
+                              :resourceVersion "1002"
+                              :uid "test-app-1234-uid"}
                    :spec {:replicas 3
                           :selector {:matchLabels {:app "test-app-1234"
                                                    :waiter/cluster "waiter"}}}
@@ -1398,7 +1491,8 @@
                                        :waiter/cluster "waiter"
                                        :waiter/service-hash "test-app-1234"}
                               :annotations {:waiter/service-id "test-app-1234"}
-                              :resourceVersion "1004"}
+                              :resourceVersion "1004"
+                              :uid "test-app-1234-uid"}
                    :spec {:replicas 2
                           :selector {:matchLabels {:app "test-app-1234"
                                                    :waiter/cluster "waiter"}}}
@@ -1416,7 +1510,8 @@
                                       :waiter/cluster "waiter"
                                       :waiter/service-hash "test-app-1234"}
                              :annotations {:waiter/port-count "1"
-                                           :waiter/service-id "test-app-1234"}}
+                                           :waiter/service-id "test-app-1234"}
+                             :uid "test-app-1234-abcd1-uid"}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.11"
                            :startTime "2014-09-13T00:24:46Z"
@@ -1429,7 +1524,8 @@
                                       :waiter/cluster "waiter"
                                       :waiter/service-hash "test-app-1234"}
                              :annotations {:waiter/port-count "1"
-                                           :waiter/service-id "test-app-1234"}}
+                                           :waiter/service-id "test-app-1234"}
+                             :uid "test-app-1234-abcd2-uid"}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.12"
                            :startTime "2014-09-13T00:24:47Z"
@@ -1446,7 +1542,8 @@
                                       :waiter/cluster "waiter"
                                       :waiter/service-hash "test-app-1234"}
                              :annotations {:waiter/port-count "1"
-                                           :waiter/service-id "test-app-1234"}}
+                                           :waiter/service-id "test-app-1234"}
+                             :uid "test-app-1234-abcd1-uid"}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.11"
                            :startTime "2014-09-13T00:24:46Z"
@@ -1459,7 +1556,8 @@
                                       :waiter/cluster "waiter"
                                       :waiter/service-hash "test-app-1234"}
                              :annotations {:waiter/port-count "1"
-                                           :waiter/service-id "test-app-1234"}}
+                                           :waiter/service-id "test-app-1234"}
+                             :uid "test-app-1234-abcd2-uid"}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.12"
                            :startTime "2014-09-13T00:24:47Z"
@@ -1473,7 +1571,8 @@
                                       :waiter/service-hash "test-app-1234"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-1234"}
-                             :resourceVersion "1002"}
+                             :resourceVersion "1002"
+                             :uid "test-app-1234-abcd3-uid"}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.13"
                            :startTime "2014-09-13T00:24:48Z"
