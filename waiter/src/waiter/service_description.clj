@@ -655,9 +655,12 @@
    Else if the token is not stale or no data is known about the token, nil is returned."
   [current-token-data token-version]
   (let [token-data->update-time #(get % "last-update-time")
-        token-data->previous #(get % "previous")]
-    (descriptor-utils/retrieve-update-time
-      token-data->token-hash token-data->update-time token-data->previous current-token-data token-version)))
+        token-data->previous #(get % "previous")
+        update-time (descriptor-utils/retrieve-update-time
+                      token-data->token-hash token-data->update-time token-data->previous current-token-data token-version)]
+    (cond-> update-time
+      (string? update-time)
+      (-> du/str-to-date tc/to-long))))
 
 (defn retrieve-token-stale-info
   "The provided source-tokens are stale if every token used to access a service has been updated.
