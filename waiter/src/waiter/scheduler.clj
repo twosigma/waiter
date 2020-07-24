@@ -429,13 +429,17 @@
                                 (utils/assoc-if-absent "outstanding" 0)
                                 (update "last-request-time" du/max-time (get cur-data "last-request-time"))))
         gc-service?-fn (fn [service-id {:keys [last-modified-time state]} current-time]
-                         (let [outstanding (get state "outstanding")]
-                           (and (number? outstanding)
-                                (zero? outstanding)
-                                (let [gc-time (service->gc-time-fn service-id last-modified-time)]
-                                  (log/debug service-id "gc time:" (du/date-to-str gc-time) "current:" (du/date-to-str current-time))
-                                  (when gc-time
-                                    (t/after? current-time gc-time))))))
+                         (try
+                           (let [outstanding (get state "outstanding")]
+                             (and (number? outstanding)
+                                  (zero? outstanding)
+                                  (let [gc-time (service->gc-time-fn service-id last-modified-time)]
+                                    (log/debug service-id "gc time:" (du/date-to-str gc-time) "current:" (du/date-to-str current-time))
+                                    (when gc-time
+                                      (t/after? current-time gc-time)))))
+                           (catch Exception ex
+                             (log/error ex "error while computing GC time for" service-id)
+                             false)))
         perform-gc-fn (fn [service-id]
                         (log/info "deleting idle service" service-id)
                         (try

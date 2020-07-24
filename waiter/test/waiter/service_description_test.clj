@@ -25,7 +25,8 @@
             [waiter.kv :as kv]
             [waiter.service-description :refer :all]
             [waiter.status-codes :refer :all]
-            [waiter.util.cache-utils :as cu])
+            [waiter.util.cache-utils :as cu]
+            [waiter.util.date-utils :as du])
   (:import (clojure.lang ExceptionInfo)
            (org.joda.time DateTime)))
 
@@ -2439,7 +2440,11 @@
       (testing "matching token version not found return last known update time"
         (is (= 50 (retrieve-token-update-epoch-time token-data "v40")))
         (is (= 50 (retrieve-token-update-epoch-time token-data "v30")))
-        (is (= 50 (retrieve-token-update-epoch-time token-data "v20")))))))
+        (is (= 50 (retrieve-token-update-epoch-time token-data "v20")))))
+
+    (testing "string last-update-time"
+      (let [token-data {"last-update-time" (-> 90 tc/from-long du/date-to-str)}]
+        (is (= 90 (retrieve-token-update-epoch-time token-data "v10")))))))
 
 (deftest test-retrieve-token-stale-info
   (with-redefs [token-data->token-hash #(str "v" (get % "last-update-time"))]
