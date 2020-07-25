@@ -268,10 +268,12 @@
            {:min-available 3 :replicas 5}]]
     (let [pdb-api-version "pdb/api-version"
           service-id "test-service-id"
+          rs-labels {:l1 "v1" :l2 "v2"}
           rs-selector {:a "b" :c "d"}
           rs-spec {:apiVersion "rs/api-version"
                    :kind "kind/ReplicaSet"
                    :metadata {:annotations {:waiter/service-id service-id}
+                              :labels rs-labels
                               :name "replicaset-1234"}
                    :spec {:replicas replicas
                           :selector rs-selector}}
@@ -281,6 +283,7 @@
           expected-spec {:apiVersion "pdb/api-version"
                          :kind "PodDisruptionBudget"
                          :metadata {:annotations {:waiter/service-id service-id}
+                                    :labels rs-labels
                                     :name (str "replicaset-1234-pdb-" pdb-hash)
                                     :ownerReferences [{:apiVersion "rs/api-version"
                                                        :blockOwnerDeletion true

@@ -977,6 +977,7 @@
   [pdb-api-version rs-spec replicaset-uid]
   (let [rs-api-version (get rs-spec :apiVersion)
         rs-kind (get rs-spec :kind)
+        rs-labels (get-in rs-spec [:metadata :labels])
         rs-name (get-in rs-spec [:metadata :name])
         rs-replicas (get-in rs-spec [:spec :replicas])
         rs-selector (get-in rs-spec [:spec :selector])
@@ -990,6 +991,7 @@
     {:apiVersion pdb-api-version
      :kind "PodDisruptionBudget"
      :metadata {:annotations {:waiter/service-id service-id}
+                :labels rs-labels
                 :name (str rs-name "-pdb-" pdb-hash)
                 :ownerReferences [{:apiVersion rs-api-version
                                    :blockOwnerDeletion true
