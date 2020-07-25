@@ -872,8 +872,23 @@
                                                                  :request-method request-method
                                                                  :url url})
                                      service))]
+
             (testing "without pod disruption budget"
               (let [api-calls-atom (atom [])
+                    actual (with-redefs [api-request (make-api-request api-calls-atom)
+                                         replicaset->Service identity]
+                             (scheduler/create-service-if-new dummy-scheduler descriptor))
+                    api-calls @api-calls-atom]
+                (is (= 1 (count api-calls)))
+                (is (= {:kind "ReplicaSet"
+                        :request-method :post
+                        :url (str apis-url "/extensions/v1beta1/namespaces/waiter/replicasets")}
+                       (first api-calls)))
+                (is (= service actual)))
+
+              (let [descriptor (assoc-in descriptor [:service-description "min-instances"] 2)
+                    api-calls-atom (atom [])
+                    dummy-scheduler (make-dummy-scheduler [service-id] {:pdb-spec-builder-fn nil})
                     actual (with-redefs [api-request (make-api-request api-calls-atom)
                                          replicaset->Service identity]
                              (scheduler/create-service-if-new dummy-scheduler descriptor))
@@ -1167,10 +1182,16 @@
           (is (instance? KubernetesScheduler (kubernetes-scheduler base-config))))
 
         (testing "should work with PodDisruptionBudget api version"
-          (is (instance? KubernetesScheduler (kubernetes-scheduler (assoc base-config :pdb-api-version "/policy.pdb-v1")))))
+          (let [scheduler (kubernetes-scheduler (assoc base-config :pdb-api-version "/policy.pdb-v1"))]
+            (is (instance? KubernetesScheduler scheduler))
+            (is (= "/policy.pdb-v1" (:pdb-api-version scheduler)))
+            (is (nil? (:pdb-spec-builder-fn scheduler)))))
         (testing "should work with PodDisruptionBudget spec factory function"
-          (let [config (assoc-in base-config [:pdb-spec-builder :factory-fn] 'waiter.scheduler.kubernetes/default-pdb-spec-builder)]
-            (is (instance? KubernetesScheduler (kubernetes-scheduler config)))))
+          (let [config (assoc-in base-config [:pdb-spec-builder :factory-fn] 'waiter.scheduler.kubernetes/default-pdb-spec-builder)
+                scheduler (kubernetes-scheduler config)]
+            (is (instance? KubernetesScheduler scheduler))
+            (is (= "policy/v1beta1" (:pdb-api-version scheduler)))
+            (is (fn? (:pdb-spec-builder-fn scheduler)))))
 
         (testing "should retain custom plugin options"
           (is (= custom-options (-> base-config kubernetes-scheduler :custom-options))))

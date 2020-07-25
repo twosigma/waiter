@@ -534,13 +534,14 @@
       (throw (ex-info "failed to create service"
                       {:service-description service-description
                        :service-id service-id})))
-    (let [{:strs [min-instances]} service-description]
-      (when (> min-instances 1)
-        (let [pdb-spec (pdb-spec-builder-fn pdb-api-version rs-spec replicaset-uid)
-              request-url (str api-server-url "/apis/" pdb-api-version "/namespaces/" request-namespace "/poddisruptionbudgets")]
-          (api-request request-url scheduler
-                       :body (utils/clj->json pdb-spec)
-                       :request-method :post))))
+    (when pdb-spec-builder-fn
+      (let [{:strs [min-instances]} service-description]
+        (when (> min-instances 1)
+          (let [pdb-spec (pdb-spec-builder-fn pdb-api-version rs-spec replicaset-uid)
+                request-url (str api-server-url "/apis/" pdb-api-version "/namespaces/" request-namespace "/poddisruptionbudgets")]
+            (api-request request-url scheduler
+                         :body (utils/clj->json pdb-spec)
+                         :request-method :post)))))
     service))
 
 (defn- delete-service
@@ -1248,13 +1249,13 @@
                                       :log-bucket-sync-secs log-bucket-sync-secs
                                       :log-bucket-url log-bucket-url)
         pdb-api-version (or pdb-api-version "policy/v1beta1")
-        pdb-spec-builder-fn (let [f (or (some-> pdb-spec-builder
-                                          :factory-fn
-                                          utils/resolve-symbol
-                                          deref)
-                                        default-pdb-spec-builder)]
-                              (assert (fn? f) "PodDisruptionBudget spec function must be a Clojure fn")
-                              f)
+        pdb-spec-builder-factory-fn (:factory-fn pdb-spec-builder)
+        pdb-spec-builder-fn (when pdb-spec-builder-factory-fn
+                              (let [f (-> pdb-spec-builder-factory-fn
+                                        utils/resolve-symbol
+                                        deref)]
+                                (assert (fn? f) "PodDisruptionBudget spec function must be a Clojure fn")
+                                f))
         replicaset-spec-builder-fn (let [f (-> replicaset-spec-builder
                                                :factory-fn
                                                utils/resolve-symbol
