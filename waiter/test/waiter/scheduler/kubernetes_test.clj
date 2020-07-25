@@ -277,10 +277,11 @@
                           :selector rs-selector}}
           replicaset-uid "replicaset-1234-uid"
           actual-spec (default-pdb-spec-builder pdb-api-version rs-spec replicaset-uid)
+          pdb-hash (-> replicaset-uid (hash) (mod 9000) (+ 1000))
           expected-spec {:apiVersion "pdb/api-version"
                          :kind "PodDisruptionBudget"
                          :metadata {:annotations {:waiter/service-id service-id}
-                                    :name "replicaset-1234-pdb"
+                                    :name (str "replicaset-1234-pdb-" pdb-hash)
                                     :ownerReferences [{:apiVersion "rs/api-version"
                                                        :blockOwnerDeletion true
                                                        :controller false

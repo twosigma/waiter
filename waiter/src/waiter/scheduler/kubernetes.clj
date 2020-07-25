@@ -981,7 +981,8 @@
         rs-replicas (get-in rs-spec [:spec :replicas])
         rs-selector (get-in rs-spec [:spec :selector])
         service-id (k8s-object->service-id rs-spec)
-        min-available (quot (inc rs-replicas) 2)]
+        min-available (quot (inc rs-replicas) 2)
+        pdb-hash (-> replicaset-uid (hash) (mod 9000) (+ 1000))]
     (log/info "creating pod disruption budget"
               {:min-available min-available
                :replicaset-name rs-name
@@ -989,7 +990,7 @@
     {:apiVersion pdb-api-version
      :kind "PodDisruptionBudget"
      :metadata {:annotations {:waiter/service-id service-id}
-                :name (str rs-name "-pdb")
+                :name (str rs-name "-pdb-" pdb-hash)
                 :ownerReferences [{:apiVersion rs-api-version
                                    :blockOwnerDeletion true
                                    :controller false
