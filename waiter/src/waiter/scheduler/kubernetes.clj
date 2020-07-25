@@ -538,10 +538,17 @@
       (let [{:strs [min-instances]} service-description]
         (when (> min-instances 1)
           (let [pdb-spec (pdb-spec-builder-fn pdb-api-version rs-spec replicaset-uid)
-                request-url (str api-server-url "/apis/" pdb-api-version "/namespaces/" request-namespace "/poddisruptionbudgets")]
-            (api-request request-url scheduler
-                         :body (utils/clj->json pdb-spec)
-                         :request-method :post)))))
+                request-url (str api-server-url "/apis/" pdb-api-version "/namespaces/" request-namespace "/poddisruptionbudgets")
+                with-retries (utils/retry-strategy {:delay-multiplier 1.0 :initial-delay-ms 100 :max-retries 2})]
+            (try
+              (with-retries
+                (fn create-pdb []
+                  (api-request request-url scheduler
+                               :body (utils/clj->json pdb-spec)
+                               :request-method :post)))
+              (catch Exception ex
+                (log/error ex "unable to create pod disruption budget for service"
+                           {:pdb-api-version pdb-api-version :replicaset-uid replicaset-uid :service-id service-id})))))))
     service))
 
 (defn- delete-service
