@@ -109,9 +109,8 @@
   (try
     (pc/letk
       [[spec
-        [:metadata name namespace [:annotations waiter/service-id]]
-        [:status {replicas 0} {availableReplicas 0} {readyReplicas 0} {unavailableReplicas 0}]]
-       replicaset-json
+        [:metadata name namespace uid [:annotations waiter/service-id]]
+        [:status {replicas 0} {availableReplicas 0} {readyReplicas 0} {unavailableReplicas 0}]] replicaset-json
        requested (get spec :replicas 0)
        staged (- replicas (+ availableReplicas unavailableReplicas))]
       (scheduler/make-Service
@@ -119,6 +118,7 @@
          :instances requested
          :k8s/app-name name
          :k8s/namespace namespace
+         :k8s/replicaset-uid uid
          :task-count replicas
          :task-stats {:healthy readyReplicas
                       :running (- replicas staged)
@@ -516,7 +516,7 @@
 (defn create-service
   "Reify a Waiter Service as a Kubernetes ReplicaSet."
   [{:keys [service-description service-id]}
-   {:keys [api-server-url replicaset-api-version replicaset-spec-builder-fn] :as scheduler}]
+   {:keys [api-server-url pdb-api-version pdb-spec-builder-fn replicaset-api-version replicaset-spec-builder-fn] :as scheduler}]
   (let [{:strs [cmd-type]} service-description]
     (when (= "docker" cmd-type)
       (throw (ex-info "Unsupported command type on service"
@@ -525,16 +525,30 @@
                        :service-id service-id}))))
   (let [rs-spec (replicaset-spec-builder-fn scheduler service-id service-description)
         request-namespace (k8s-object->namespace rs-spec)
-        request-url (str api-server-url "/apis/" replicaset-api-version "/namespaces/"
-                         request-namespace "/replicasets")
+        request-url (str api-server-url "/apis/" replicaset-api-version "/namespaces/" request-namespace "/replicasets")
         response-json (api-request request-url scheduler
                                    :body (utils/clj->json rs-spec)
                                    :request-method :post)
-        service (some-> response-json replicaset->Service)]
+        {:keys [k8s/replicaset-uid] :as service} (some-> response-json replicaset->Service)]
     (when-not service
       (throw (ex-info "failed to create service"
                       {:service-description service-description
                        :service-id service-id})))
+    (when pdb-spec-builder-fn
+      (let [{:strs [min-instances]} service-description]
+        (when (> min-instances 1)
+          (let [pdb-spec (pdb-spec-builder-fn pdb-api-version rs-spec replicaset-uid)
+                request-url (str api-server-url "/apis/" pdb-api-version "/namespaces/" request-namespace "/poddisruptionbudgets")
+                with-retries (utils/retry-strategy {:delay-multiplier 1.0 :initial-delay-ms 100 :max-retries 2})]
+            (try
+              (with-retries
+                (fn create-pdb []
+                  (api-request request-url scheduler
+                               :body (utils/clj->json pdb-spec)
+                               :request-method :post)))
+              (catch Exception ex
+                (log/error ex "unable to create pod disruption budget for service"
+                           {:pdb-api-version pdb-api-version :replicaset-uid replicaset-uid :service-id service-id})))))))
     service))
 
 (defn- delete-service
@@ -576,6 +590,8 @@
                                 log-bucket-url
                                 max-patch-retries
                                 max-name-length
+                                pdb-api-version
+                                pdb-spec-builder-fn
                                 pod-base-port
                                 pod-sigkill-delay-secs
                                 pod-suffix-length
@@ -964,6 +980,36 @@
       has-reverse-proxy?
       (attach-envoy-sidecar reverse-proxy service-description base-env service-port port0))))
 
+(defn default-pdb-spec-builder
+  "Factory function which creates a Kubernetes PodDisruptionBudget spec for the given ReplicaSet."
+  [pdb-api-version rs-spec replicaset-uid]
+  (let [rs-api-version (get rs-spec :apiVersion)
+        rs-kind (get rs-spec :kind)
+        rs-labels (get-in rs-spec [:metadata :labels])
+        rs-name (get-in rs-spec [:metadata :name])
+        rs-replicas (get-in rs-spec [:spec :replicas])
+        rs-selector (get-in rs-spec [:spec :selector])
+        service-id (k8s-object->service-id rs-spec)
+        min-available (quot (inc rs-replicas) 2)
+        pdb-hash (-> replicaset-uid (hash) (mod 9000) (+ 1000))]
+    (log/info "creating pod disruption budget"
+              {:min-available min-available
+               :replicaset-name rs-name
+               :service-id service-id})
+    {:apiVersion pdb-api-version
+     :kind "PodDisruptionBudget"
+     :metadata {:annotations {:waiter/service-id service-id}
+                :labels rs-labels
+                :name (str rs-name "-pdb-" pdb-hash)
+                :ownerReferences [{:apiVersion rs-api-version
+                                   :blockOwnerDeletion true
+                                   :controller false
+                                   :kind rs-kind
+                                   :name rs-name
+                                   :uid replicaset-uid}]}
+     :spec {:minAvailable min-available
+            :selector rs-selector}}))
+
 (defn start-auth-renewer
   "Initialize the k8s-api-auth-str atom,
    and optionally start a chime to periodically refresh the value."
@@ -1162,7 +1208,7 @@
   "Returns a new KubernetesScheduler with the provided configuration. Validates the
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
   [{:keys [authentication authorizer cluster-name container-running-grace-secs custom-options http-options log-bucket-sync-secs
-           log-bucket-url max-patch-retries max-name-length pod-base-port pod-sigkill-delay-secs
+           log-bucket-url max-patch-retries max-name-length pdb-api-version pdb-spec-builder pod-base-port pod-sigkill-delay-secs
            pod-suffix-length replicaset-api-version replicaset-spec-builder restart-expiry-threshold reverse-proxy scheduler-name
            scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
            service-id->password-fn start-scheduler-syncer-fn url watch-retries]
@@ -1182,6 +1228,8 @@
          (utils/non-neg-int? max-patch-retries)
          (pos-int? max-name-length)
          (not (str/blank? cluster-name))
+         (or (nil? pdb-api-version) (not (str/blank? pdb-api-version)))
+         (or (nil? pdb-spec-builder) (symbol? (:factory-fn pdb-spec-builder)))
          (integer? pod-base-port)
          (< 0 pod-base-port 65527) ; max port is 65535, and we need to reserve up to 10 ports
          (integer? pod-sigkill-delay-secs)
@@ -1207,6 +1255,14 @@
         replicaset-spec-builder-ctx (assoc replicaset-spec-builder
                                       :log-bucket-sync-secs log-bucket-sync-secs
                                       :log-bucket-url log-bucket-url)
+        pdb-api-version (or pdb-api-version "policy/v1beta1")
+        pdb-spec-builder-factory-fn (:factory-fn pdb-spec-builder)
+        pdb-spec-builder-fn (when pdb-spec-builder-factory-fn
+                              (let [f (-> pdb-spec-builder-factory-fn
+                                        utils/resolve-symbol
+                                        deref)]
+                                (assert (fn? f) "PodDisruptionBudget spec function must be a Clojure fn")
+                                f))
         replicaset-spec-builder-fn (let [f (-> replicaset-spec-builder
                                                :factory-fn
                                                utils/resolve-symbol
@@ -1248,6 +1304,8 @@
                                            log-bucket-url
                                            max-patch-retries
                                            max-name-length
+                                           pdb-api-version
+                                           pdb-spec-builder-fn
                                            pod-base-port
                                            pod-sigkill-delay-secs
                                            pod-suffix-length
