@@ -23,14 +23,15 @@
 
 (deftest test-sanitize
   (let [test-cluster-url "http://www.test-cluster.com"
-        limit 2
+        limit 3
         loaded-tokens-atom (atom #{})
         stored-tokens-atom (atom #{})
         waiter-api {:load-token (fn [cluster-url token]
                                   (swap! loaded-tokens-atom conj token)
                                   (is (= test-cluster-url cluster-url))
-                                  {:description {"metric-group" token "name" token}
-                                   :token-etag (str "etag-" token)})
+                                  (when-not (= token "token-1")
+                                    {:description {"metric-group" token "name" token}
+                                     :token-etag (str "etag-" token)}))
                     :load-token-list (fn [cluster-url]
                                        (is (= test-cluster-url cluster-url))
                                        [{"etag" "etag-token-1"
@@ -51,19 +52,27 @@
                                         {"deleted" false
                                          "etag" "etag-token-E"
                                          "last-update-time" (utils/millis->iso8601 50000)
-                                         "token" "token-E"}])
+                                         "token" "token-E"}
+                                        {"deleted" false
+                                         "etag" "etag-token-6"
+                                         "last-update-time" (utils/millis->iso8601 60000)
+                                         "token" "token-6"}])
                     :store-token (fn [cluster-url token token-etag description]
                                    (swap! stored-tokens-atom conj token)
                                    (is (= test-cluster-url cluster-url))
                                    (is (= (str "etag-" token) token-etag))
-                                   (is (= {"metric-group" token "name" token} description)))}
+                                   (is (= {"metric-group" token "name" token} description))
+                                   {:headers {"etag" (str token-etag (when (= token "token-3") "-new"))}
+                                    :status 200})}
         regex (re-pattern "token-\\d+")
-        actual-result (sanitize-tokens waiter-api test-cluster-url limit regex)
-        expected-result #{"token-1" "token-3"}]
+        actual-result (sanitize-tokens waiter-api test-cluster-url limit regex)]
 
-    (is (= expected-result actual-result))
-    (is (= expected-result @loaded-tokens-atom))
-    (is (= expected-result @stored-tokens-atom))))
+    (is (= {:missing #{"token-1"}
+            :processed #{"token-1" "token-3" "token-4"}
+            :updated #{"token-3"}}
+           actual-result))
+    (is (= #{"token-1" "token-3" "token-4"} @loaded-tokens-atom))
+    (is (= #{"token-3" "token-4"} @stored-tokens-atom))))
 
 (deftest test-sanitize-tokens-config
   (let [test-command-config (assoc sanitize-tokens-config :command-name "test-command")

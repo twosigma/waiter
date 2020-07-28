@@ -21,9 +21,20 @@
    It posts the token description to the cluster to sanitize stored data on the cluster."
   [{:keys [load-token store-token]} cluster-url token]
   (let [{:keys [description token-etag]} (load-token cluster-url token)]
-    (when (seq description)
-      (log/info "sanitizing token" token "with etag" token-etag "and description" description)
-      (store-token cluster-url token token-etag description))))
+    (if (seq description)
+      (do
+        (log/info "sanitizing token" token "with etag" token-etag "and description" description)
+        (let [store-response (store-token cluster-url token token-etag description)
+              result-etag (get-in store-response [:headers "etag"])
+              updated? (not= token-etag result-etag)]
+          (if updated?
+            (log/info "token" token "updated after sanitize operation to etag" result-etag)
+            (log/info "token" token "did not update as result of the sanitize operation"))
+          {:response store-response
+           :updated? updated?}))
+      (do
+        (log/info "no token description found for" token)
+        nil))))
 
 (defn sanitize-tokens
   "Reads the latest tokens from the specified cluster and sanitizes up to limit tokens."
@@ -32,15 +43,23 @@
         selected-index-entries (->> all-index-entries
                                  (filter #(re-matches regex (get % "token")))
                                  (take limit))
-        result-tokens-atom (atom #{})]
+        processed-tokens-atom (atom #{})
+        missing-tokens-atom (atom #{})
+        updated-tokens-atom (atom #{})]
     (log/info "processing" (count selected-index-entries) "of" (count all-index-entries) "token(s) on" cluster-url)
     (doseq [{:strs [etag last-update-time token]} selected-index-entries]
       (log/info "processing token" token "with etag" etag "last updated on" last-update-time)
-      (when (sanitize-token waiter-api cluster-url token)
-        (swap! result-tokens-atom conj token)
-        (log/info "sanitized token" token "on" cluster-url)))
-    (log/info "sanitized" (count @result-tokens-atom) "token(s) on cluster" cluster-url)
-    @result-tokens-atom))
+      (if-let [sanitize-response (sanitize-token waiter-api cluster-url token)]
+        (when (:updated? sanitize-response)
+          (swap! updated-tokens-atom conj token))
+        (swap! missing-tokens-atom conj token))
+      (swap! processed-tokens-atom conj token))
+    (log/info "sanitized" (count @updated-tokens-atom) "token(s) on cluster" cluster-url)
+    (let [result-summary {:missing @missing-tokens-atom
+                          :processed @processed-tokens-atom
+                          :updated @updated-tokens-atom}]
+      (log/info "result summary" result-summary)
+      result-summary)))
 
 (def sanitize-tokens-config
   {:execute-command (fn execute-sanitize-tokens-command
