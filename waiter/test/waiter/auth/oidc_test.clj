@@ -333,7 +333,7 @@
                                       :jwt-auth-server (Object.)
                                       :oidc-authorize-uri "http://www.test.com/authorize"}
                   oidc-auth-handler (wrap-auth-handler oidc-authenticator request-handler)]
-              (doseq [status [200 301 400 401 403]]
+              (doseq [status [http-200-ok http-301-moved-permanently http-400-bad-request http-401-unauthorized http-403-forbidden]]
                 (doseq [waiter-api-call? [true false]]
                   (doseq [user-agent ["chrome" "mozilla" "jetty" "curl"]]
                     (let [request {:headers {"host" "www.test.com:1234"
@@ -359,7 +359,7 @@
                                   :jwt-auth-server (Object.)
                                   :oidc-authorize-uri "http://www.test.com/authorize"}
               oidc-auth-handler (wrap-auth-handler oidc-authenticator request-handler)]
-          (doseq [status [200 301 400 401 403]]
+          (doseq [status [http-200-ok http-301-moved-permanently http-400-bad-request http-401-unauthorized http-403-forbidden]]
             (doseq [waiter-api-call? [true false]]
               (doseq [user-agent ["chrome" "mozilla" "jetty" "curl"]]
                 (is (= {:authorization/principal "auth-principal"
@@ -384,7 +384,7 @@
                                     :jwt-auth-server (Object.)
                                     :oidc-authorize-uri "http://www.test.com/authorize"}
                 oidc-auth-handler (wrap-auth-handler oidc-authenticator request-handler)]
-            (doseq [status [200 301 400 401 403]]
+            (doseq [status [http-200-ok http-301-moved-permanently http-400-bad-request http-401-unauthorized http-403-forbidden]]
               (doseq [waiter-api-call? [true false]]
                 (is (= {:headers {"host" "www.test.com:1234"}
                         :processed-by (if (= status http-401-unauthorized)
@@ -395,7 +395,38 @@
                         :waiter/response-source :waiter}
                        (oidc-auth-handler {:headers {"host" "www.test.com:1234"}
                                            :status status
-                                           :waiter-api-call? waiter-api-call?})))))))))))
+                                           :waiter-api-call? waiter-api-call?}))))))))
+
+      (testing "oidc challenge cookies"
+        (with-redefs [supports-redirect? (constantly true)]
+          (let [challenge-cookies (map #(str oidc-challenge-cookie-prefix % "=v" %) (range (inc num-challenge-cookies-allowed)))
+                oidc-authenticator {:allow-oidc-auth-api? true
+                                    :allow-oidc-auth-services? true
+                                    :jwt-auth-server (Object.)
+                                    :oidc-authorize-uri "http://www.test.com/authorize"}
+                oidc-auth-handler (wrap-auth-handler oidc-authenticator request-handler)]
+            (let [cookie-header (str/join ";" (take num-challenge-cookies-allowed challenge-cookies))]
+              (is (= {:headers {"cookie" cookie-header
+                                "host" "www.test.com:1234"}
+                      :processed-by :oidc-updater
+                      :status http-401-unauthorized
+                      :waiter-api-call? false
+                      :waiter/response-source :waiter}
+                     (oidc-auth-handler {:headers {"cookie" cookie-header
+                                                   "host" "www.test.com:1234"}
+                                         :status http-401-unauthorized
+                                         :waiter-api-call? false}))))
+            (let [cookie-header (str/join ";" (take (inc num-challenge-cookies-allowed) challenge-cookies))]
+              (is (= {:headers {"cookie" cookie-header
+                                "host" "www.test.com:1234"}
+                      :processed-by :request-handler
+                      :status http-401-unauthorized
+                      :waiter-api-call? false
+                      :waiter/response-source :waiter}
+                     (oidc-auth-handler {:headers {"cookie" cookie-header
+                                                   "host" "www.test.com:1234"}
+                                         :status http-401-unauthorized
+                                         :waiter-api-call? false}))))))))))
 
 (deftest test-supports-redirect?
   (let [oidc-authority "www.auth.com:1234"
@@ -419,6 +450,17 @@
     (is (not (supports-redirect-helper? {:headers {"user-agent" "python-requests"}})))
     (is (supports-redirect-helper? {:headers {"user-agent" "chrome"}}))
     (is (supports-redirect-helper? {:headers {"user-agent" "mozilla"}}))))
+
+(deftest test-too-many-oidc-challenge-cookies?
+  (let [challenge-cookies (map #(str oidc-challenge-cookie-prefix % "=v" %) (range 25))]
+    (is (not (too-many-oidc-challenge-cookies? {:headers {}} 10)))
+    (is (not (too-many-oidc-challenge-cookies? {:headers {"cookie" ""}} 10)))
+    (is (not (too-many-oidc-challenge-cookies? {:headers {"cookie" (first challenge-cookies)}} 10)))
+    (is (not (too-many-oidc-challenge-cookies? {:headers {"cookie" [(first challenge-cookies)]}} 10)))
+    (is (not (too-many-oidc-challenge-cookies? {:headers {"cookie" (take 5 challenge-cookies)}} 10)))
+    (is (not (too-many-oidc-challenge-cookies? {:headers {"cookie" (str/join ";" (take 5 challenge-cookies))}} 10)))
+    (is (too-many-oidc-challenge-cookies? {:headers {"cookie" (take 15 challenge-cookies)}} 10))
+    (is (too-many-oidc-challenge-cookies? {:headers {"cookie" (str/join ";" (take 15 challenge-cookies))}} 10))))
 
 (deftest test-create-oidc-authenticator
   (let [jwt-auth-server (jwt/map->JwtAuthServer {})

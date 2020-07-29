@@ -32,6 +32,8 @@
 
 (def ^:const challenge-cookie-duration-secs 60)
 
+(def ^:const num-challenge-cookies-allowed 20)
+
 (def ^:const code-verifier-length 128)
 
 (def ^:const content-security-policy-value "default-src 'none'; frame-ancestors 'none'")
@@ -240,6 +242,18 @@
                  (= "." accept-redirect-auth)
                  (some #(= oidc-authority %) (str/split accept-redirect-auth #" ")))))))
 
+(defn too-many-oidc-challenge-cookies?
+  "Returns true if the request already contains too many OIDC challenge cookies."
+  [request num-allowed]
+  (let [cookie-header (get-in request [:headers "cookie"])
+        request-cookies (cond->> cookie-header
+                          (not (string? cookie-header)) (str/join ";"))
+        num-challenge-cookies (count
+                                (filter #(str/starts-with? % oidc-challenge-cookie-prefix)
+                                        (str/split (str request-cookies) #";")))]
+    (log/info "request has" num-challenge-cookies "oidc challenge cookies")
+    (> num-challenge-cookies num-allowed)))
+
 (defn wrap-auth-handler
   "Wraps the request handler with a handler to trigger OIDC+PKCE authentication."
   [{:keys [allow-oidc-auth-api? allow-oidc-auth-services? jwt-auth-server oidc-authorize-uri password]} request-handler]
@@ -249,7 +263,9 @@
         (or (auth/request-authenticated? request)
             (not (oidc-enabled-on-service? allow-oidc-auth-api? allow-oidc-auth-services? request))
             ;; OIDC auth is no-op when request cannot be redirected
-            (not (supports-redirect? oidc-authority request)))
+            (not (supports-redirect? oidc-authority request))
+            ;; OIDC auth is avoided if client already has too many challenge cookies
+            (too-many-oidc-challenge-cookies? request num-challenge-cookies-allowed))
         (request-handler request)
 
         :else
