@@ -30,7 +30,9 @@
 
 (deftest test-validate-oidc-callback-request
   (let [password [:cached "password"]
-        state-map {:redirect-uri "https://www.test.com/redirect-uri"}
+        identifier (utils/unique-identifier)
+        state-map {:identifier identifier
+                   :redirect-uri "https://www.test.com/redirect-uri"}
         state-code (create-state-code state-map password)
         access-code (str "access-code-" (rand-int 1000))
         challenge-cookie (str "challenge-cookie-" (rand-int 1000))
@@ -43,7 +45,7 @@
                                                  {:code-verifier (str "decoded:" cookie-value)
                                                   :expiry-time not-expired-time-ms})
                   t/now (constantly (tc/from-long current-time-ms))]
-      (let [request {:headers {"cookie" (str oidc-challenge-cookie "=" challenge-cookie)}
+      (let [request {:headers {"cookie" (str oidc-challenge-cookie-prefix identifier "=" challenge-cookie)}
                      :query-string (str "code=" access-code "&state=" state-code)}]
         (is (= {:code access-code
                 :code-verifier (str "decoded:" challenge-cookie)
@@ -54,7 +56,7 @@
                                                  (is (= password in-password))
                                                  (str "decoded:" cookie-value))
                   t/now (constantly (tc/from-long current-time-ms))]
-      (let [request {:headers {"cookie" (str oidc-challenge-cookie "=" challenge-cookie)}
+      (let [request {:headers {"cookie" (str oidc-challenge-cookie-prefix identifier "=" challenge-cookie)}
                      :query-string (str "code=" access-code "&state=" state-code)}]
         (is (thrown-with-msg?
               ExceptionInfo #"Decoded challenge cookie is invalid"
@@ -65,7 +67,7 @@
                                                  {:code-verifier (str "decoded:" cookie-value)
                                                   :expiry-time (str not-expired-time-ms)})
                   t/now (constantly (tc/from-long current-time-ms))]
-      (let [request {:headers {"cookie" (str oidc-challenge-cookie "=" challenge-cookie)}
+      (let [request {:headers {"cookie" (str oidc-challenge-cookie-prefix identifier "=" challenge-cookie)}
                      :query-string (str "code=" access-code "&state=" state-code)}]
         (is (thrown-with-msg?
               ExceptionInfo #"The challenge cookie has invalid format"
@@ -76,7 +78,7 @@
                                                  {:code-verifier (str "decoded:" cookie-value)
                                                   :expiry-time expired-time-ms})
                   t/now (constantly (tc/from-long current-time-ms))]
-      (let [request {:headers {"cookie" (str oidc-challenge-cookie "=" challenge-cookie)}
+      (let [request {:headers {"cookie" (str oidc-challenge-cookie-prefix identifier "=" challenge-cookie)}
                      :query-string (str "code=" access-code "&state=" state-code)}]
         (is (thrown-with-msg?
               ExceptionInfo #"The challenge cookie has expired"
@@ -87,7 +89,7 @@
                                                  {:code-verifier nil
                                                   :expiry-time not-expired-time-ms})
                   t/now (constantly (tc/from-long current-time-ms))]
-      (let [request {:headers {"cookie" (str oidc-challenge-cookie "=" challenge-cookie)}
+      (let [request {:headers {"cookie" (str oidc-challenge-cookie-prefix identifier "=" challenge-cookie)}
                      :query-string (str "code=" access-code "&state=" state-code)}]
         (is (thrown-with-msg?
               ExceptionInfo #"No challenge code available from cookie"
@@ -98,19 +100,19 @@
                                                  {:code-verifier " "
                                                   :expiry-time not-expired-time-ms})
                   t/now (constantly (tc/from-long current-time-ms))]
-      (let [request {:headers {"cookie" (str oidc-challenge-cookie "=" challenge-cookie)}
+      (let [request {:headers {"cookie" (str oidc-challenge-cookie-prefix identifier "=" challenge-cookie)}
                      :query-string (str "code=" access-code "&state=" state-code)}]
         (is (thrown-with-msg?
               ExceptionInfo #"No challenge code available from cookie"
               (validate-oidc-callback-request password request)))))
 
-    (let [request {:headers {"cookie" (str oidc-challenge-cookie "=" challenge-cookie)}
+    (let [request {:headers {"cookie" (str oidc-challenge-cookie-prefix identifier "=" challenge-cookie)}
                    :query-string (str "state=" state-code)}]
       (is (thrown-with-msg?
             ExceptionInfo #"Query parameter code is missing"
             (validate-oidc-callback-request password request))))
 
-    (let [request {:headers {"cookie" (str oidc-challenge-cookie "=" challenge-cookie)}
+    (let [request {:headers {"cookie" (str oidc-challenge-cookie-prefix identifier "=" challenge-cookie)}
                    :query-string (str "code=" access-code)}]
       (is (thrown-with-msg?
             ExceptionInfo #"Query parameter state is missing"
@@ -122,7 +124,7 @@
             ExceptionInfo #"No challenge cookie set"
             (validate-oidc-callback-request password request))))
 
-    (let [request {:headers {"cookie" (str oidc-challenge-cookie "=" challenge-cookie)}
+    (let [request {:headers {"cookie" (str oidc-challenge-cookie-prefix identifier "=" challenge-cookie)}
                    :query-string (str "code=" access-code "&state=invalid" state-code)}]
       (is (thrown-with-msg?
             ExceptionInfo #"Unable to parse state"
@@ -130,7 +132,7 @@
 
     (let [state-map {:callback-uri "https://www.test.com/redirect-uri"}
           state-code (create-state-code state-map password)
-          request {:headers {"cookie" (str oidc-challenge-cookie "=" challenge-cookie)}
+          request {:headers {"cookie" (str oidc-challenge-cookie-prefix identifier "=" challenge-cookie)}
                    :query-string (str "code=" access-code "&state=" state-code)}]
       (is (thrown-with-msg?
             ExceptionInfo #"The state query parameter is invalid"
@@ -138,7 +140,9 @@
 
 (deftest test-oidc-callback-request-handler
   (let [password [:cached "password"]
-        state-map {:redirect-uri "https://www.test.com/redirect-uri"}
+        identifier (utils/unique-identifier)
+        state-map {:identifier identifier
+                   :redirect-uri "https://www.test.com/redirect-uri"}
         state-code (create-state-code state-map password)
         access-code (str "access-code-" (rand-int 1000))
         challenge-cookie (str "challenge-cookie-" (rand-int 1000))
@@ -166,7 +170,7 @@
                   jwt/extract-claims (constantly {:expiry-time (+ current-time-secs 1000)
                                                   :subject "john.doe"})
                   t/now (constantly (tc/from-long current-time-ms))]
-      (let [request {:headers {"cookie" (str oidc-challenge-cookie "=" challenge-cookie)}
+      (let [request {:headers {"cookie" (str oidc-challenge-cookie-prefix identifier "=" challenge-cookie)}
                      :query-string (str "code=" access-code "&state=" state-code)
                      :scheme :https}
             oidc-authenticator {:password password
@@ -175,8 +179,8 @@
             response (async/<!! response-chan)]
         (is (= {:cookies {"x-waiter-auth" {:age 1000
                                            :value ["john.doe" current-time-ms {:jwt-access-token access-token}]}
-                          "x-waiter-oidc-challenge" {:age 0
-                                                     :value ""}}
+                          (str oidc-challenge-cookie-prefix identifier) {:age 0
+                                                                         :value ""}}
                 :headers {"cache-control" "no-store"
                           "content-security-policy" "default-src 'none'; frame-ancestors 'none'"
                           "location" "https://www.test.com/redirect-uri"}
@@ -200,7 +204,7 @@
                   jwt/validate-access-token (fn [& _]
                                               (throw (ex-info "Created from validate-access-token" {})))]
       (let [request {:headers {"accept" "application/json"
-                               "cookie" (str oidc-challenge-cookie "=" challenge-cookie)}
+                               "cookie" (str oidc-challenge-cookie-prefix identifier "=" challenge-cookie)}
                      :query-string (str "code=" access-code "&state=" state-code)
                      :scheme :https}
             oidc-authenticator {:password password
@@ -223,7 +227,7 @@
                                                (async/>!! result-chan (ex-info "Created from request-access-token" {}))
                                                result-chan))]
       (let [request {:headers {"accept" "application/json"
-                               "cookie" (str oidc-challenge-cookie "=" challenge-cookie)}
+                               "cookie" (str oidc-challenge-cookie-prefix identifier "=" challenge-cookie)}
                      :query-string (str "code=" access-code "&state=" state-code)
                      :scheme :https}
             oidc-authenticator {:password password
@@ -247,17 +251,20 @@
         state-code "status-4567"
         oidc-authorize-uri "https://www.test.com:9090/authorize"
         oidc-auth-server (jwt/->JwtAuthServer nil "jwks-url" (atom nil) oidc-authorize-uri nil)
-        current-time-ms (System/currentTimeMillis)]
+        current-time-ms (System/currentTimeMillis)
+        identifier-prefix "code-identifier-"]
     (with-redefs [cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds]
                                                       (is (= password in-password))
                                                       (is (= challenge-cookie-duration-secs age-in-seconds))
                                                       (assoc response :cookie {name value}))
                   utils/unique-identifier (constantly "123456")
                   t/now (constantly (tc/from-long current-time-ms))
+                  create-code-identifier (fn [code-verifier] (str identifier-prefix code-verifier))
                   create-code-verifier (constantly code-verifier)
                   create-state-code (fn [state-data in-password]
                                       (is (= password in-password))
-                                      (is (= {:redirect-uri (str "https://" request-host "/test?some=query-string")}
+                                      (is (= {:identifier (str identifier-prefix code-verifier)
+                                              :redirect-uri (str "https://" request-host "/test?some=query-string")}
                                              state-data))
                                       state-code)]
 
@@ -299,10 +306,11 @@
                                  "scope=openid&"
                                  "state=" state-code)]
           (is (= (-> response
-                   (assoc :cookie {oidc-challenge-cookie {:code-verifier code-verifier
-                                                          :expiry-time (-> (t/now)
-                                                                         (t/plus (t/seconds challenge-cookie-duration-secs))
-                                                                         (tc/to-long))}}
+                   (assoc :cookie {(str oidc-challenge-cookie-prefix identifier-prefix code-verifier)
+                                   {:code-verifier code-verifier
+                                    :expiry-time (-> (t/now)
+                                                   (t/plus (t/seconds challenge-cookie-duration-secs))
+                                                   (tc/to-long))}}
                           :status http-302-moved-temporarily)
                    (update :headers assoc
                            "cache-control" "no-store"

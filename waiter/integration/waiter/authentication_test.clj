@@ -390,10 +390,10 @@
   [set-cookie assertion-message]
   `(let [set-cookie# ~set-cookie
          assertion-message# ~assertion-message]
-     (is (str/includes? set-cookie# "x-waiter-oidc-challenge=") assertion-message#)
-     (is (str/includes? set-cookie# "Max-Age=") assertion-message#)
-     (is (str/includes? set-cookie# "Path=/") assertion-message#)
-     (is (str/includes? set-cookie# "HttpOnly=true") assertion-message#)))
+     (is (str/starts-with? set-cookie# "x-waiter-oidc-challenge-") assertion-message#)
+     (is (str/includes? set-cookie# ";Max-Age=") assertion-message#)
+     (is (str/includes? set-cookie# ";Path=/") assertion-message#)
+     (is (str/includes? set-cookie# ";HttpOnly=true") assertion-message#)))
 
 (defn- follow-authorize-redirects
   "Asserts for query parameters on the redirect url.
@@ -480,7 +480,7 @@
                                   :headers callback-request-headers)]
                 (assert-response-status callback-response http-302-moved-temporarily)
                 (is (= 2 (count cookies)))
-                (is (zero? (:max-age (first (filter #(= (:name %) "x-waiter-oidc-challenge") cookies)))))
+                (is (zero? (:max-age (first (filter #(str/starts-with? (:name %) "x-waiter-oidc-challenge-") cookies)))))
                 (is (pos? (:max-age (first (filter #(= (:name %) "x-waiter-auth") cookies)))))
                 (let [{:strs [location]} (:headers callback-response)
                       assertion-message (str {:headers (:headers callback-response)
