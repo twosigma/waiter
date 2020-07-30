@@ -32,8 +32,6 @@
 
 (def ^:const challenge-cookie-duration-secs 60)
 
-(def ^:const num-challenge-cookies-allowed 20)
-
 (def ^:const code-verifier-length 128)
 
 (def ^:const content-security-policy-value "default-src 'none'; frame-ancestors 'none'")
@@ -256,7 +254,9 @@
 
 (defn wrap-auth-handler
   "Wraps the request handler with a handler to trigger OIDC+PKCE authentication."
-  [{:keys [allow-oidc-auth-api? allow-oidc-auth-services? jwt-auth-server oidc-authorize-uri password]} request-handler]
+  [{:keys [allow-oidc-auth-api? allow-oidc-auth-services? jwt-auth-server oidc-authorize-uri
+           oidc-num-challenge-cookies-allowed-in-request password]}
+   request-handler]
   (let [oidc-authority (-> oidc-authorize-uri (URI.) (.getAuthority))]
     (fn oidc-auth-handler [request]
       (cond
@@ -265,7 +265,7 @@
             ;; OIDC auth is no-op when request cannot be redirected
             (not (supports-redirect? oidc-authority request))
             ;; OIDC auth is avoided if client already has too many challenge cookies
-            (too-many-oidc-challenge-cookies? request num-challenge-cookies-allowed))
+            (too-many-oidc-challenge-cookies? request oidc-num-challenge-cookies-allowed-in-request))
         (request-handler request)
 
         :else
@@ -274,19 +274,22 @@
           (make-oidc-auth-response-updater jwt-auth-server password request))))))
 
 (defrecord OidcAuthenticator [allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri
-                              jwt-auth-server jwt-validator password])
+                              jwt-auth-server jwt-validator oidc-num-challenge-cookies-allowed-in-request password])
 
 (defn create-oidc-authenticator
   "Factory function for creating OIDC authenticator middleware"
   [jwt-auth-server jwt-validator
-   {:keys [allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri password]
+   {:keys [allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri
+           oidc-num-challenge-cookies-allowed-in-request password]
     :or {allow-oidc-auth-api? false
-         allow-oidc-auth-services? false}}]
+         allow-oidc-auth-services? false
+         oidc-num-challenge-cookies-allowed-in-request 20}}]
   {:pre [(satisfies? jwt/AuthServer jwt-auth-server)
          (some? jwt-validator)
          (boolean? allow-oidc-auth-api?)
          (boolean? allow-oidc-auth-services?)
+         (integer? oidc-num-challenge-cookies-allowed-in-request)
          (not (str/blank? oidc-authorize-uri))
          (not-empty password)]}
   (->OidcAuthenticator allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri
-                       jwt-auth-server jwt-validator password))
+                       jwt-auth-server jwt-validator oidc-num-challenge-cookies-allowed-in-request password))

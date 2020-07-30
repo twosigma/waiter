@@ -542,6 +542,48 @@
               (delete-token-and-assert waiter-url waiter-token)))))
       (log/info "OIDC+PKCE authentication is disabled"))))
 
+(deftest ^:parallel ^:integration-fast test-oidc-authentication-too-many-challenge-cookies
+  (testing-using-waiter-url
+    (if (oidc-auth-enabled? waiter-url)
+      (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)
+            oidc-token-from-env (System/getenv "WAITER_TEST_TOKEN_OIDC")
+            edit-oidc-token-from-env? (Boolean/valueOf (System/getenv "WAITER_TEST_TOKEN_OIDC_EDIT"))
+            waiter-token (or oidc-token-from-env (create-token-name waiter-url (rand-name)))
+            edit-token? (or (str/blank? oidc-token-from-env) edit-oidc-token-from-env?)
+            _ (when edit-token?
+                (let [service-parameters (assoc (kitchen-params)
+                                           :env {"USE_OIDC_AUTH" "true"}
+                                           :name (rand-name)
+                                           :run-as-user (retrieve-username))
+                      token-response (post-token waiter-url (assoc service-parameters :token waiter-token))]
+                  (assert-response-status token-response http-200-ok)))
+            ;; absence of Negotiate header also triggers an unauthorized response
+            oidc-num-challenge-cookies-allowed-in-request
+            (-> waiter-url
+              waiter-settings
+              (get-in [:authenticator-config :jwt :oidc-num-challenge-cookies-allowed-in-request] 100))
+            request-headers {"authorization" "SingleUser unauthorized"
+                             "accept-redirect" "yes"
+                             "cookie" (->> (range oidc-num-challenge-cookies-allowed-in-request)
+                                        (map #(str "x-waiter-oidc-challenge-" % "=v" %))
+                                        (str/join ";"))
+                             "host" waiter-token
+                             "x-forwarded-proto" "https"}
+            port (waiter-settings-port waiter-url)
+            target-url (str waiter-host ":" port)]
+        (try
+          (let [initial-response
+                (make-request-with-debug-info
+                  request-headers
+                  #(make-request target-url (str "/request-" (rand-int 1000))
+                                 :disable-auth true :headers % :method :get))]
+            (assert-waiter-response initial-response)
+            (assert-response-status initial-response http-401-unauthorized))
+          (finally
+            (when edit-token?
+              (delete-token-and-assert waiter-url waiter-token)))))
+      (log/info "OIDC+PKCE authentication is disabled"))))
+
 (deftest ^:parallel ^:integration-fast test-spnego-authentication-disabled
   (if use-spnego
     (testing-using-waiter-url
