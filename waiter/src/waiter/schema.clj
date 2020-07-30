@@ -139,6 +139,7 @@
      (s/required-key :jwks-url) non-empty-string
      (s/optional-key :max-expiry-duration-ms) positive-int
      (s/optional-key :oidc-authorize-uri) non-empty-string
+     (s/optional-key :oidc-num-challenge-cookies-allowed-in-request) positive-int
      (s/optional-key :oidc-token-uri) non-empty-string
      (s/required-key :subject-key) s/Keyword
      (s/optional-key :subject-regex) s/Regex

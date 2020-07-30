@@ -19,6 +19,7 @@
             [clojure.core.async :as async]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
+            [digest]
             [waiter.auth.authentication :as auth]
             [waiter.auth.jwt :as jwt]
             [waiter.cookie-support :as cookie-support]
@@ -35,9 +36,14 @@
 
 (def ^:const content-security-policy-value "default-src 'none'; frame-ancestors 'none'")
 
-(def ^:const oidc-challenge-cookie "x-waiter-oidc-challenge")
+(def ^:const oidc-challenge-cookie-prefix "x-waiter-oidc-challenge-")
 
 (def ^:const oidc-callback-uri "/oidc/v1/callback")
+
+(defn create-code-identifier
+  "Returns a string generated using the code verifier to use as an identifier for the OIDC workflow."
+  [code-verifier]
+  (digest/md5 code-verifier))
 
 ;; code_verifier = high-entropy cryptographic random STRING using the unreserved characters
 ;;   [A-Z] / [a-z] / [0-9] / "-" / "." / "_" / "~"
@@ -64,9 +70,6 @@
 (defn validate-oidc-callback-request
   [password {:keys [headers] :as request}]
   (let [{:strs [code state]} (-> request ru/query-params-request :query-params)
-        challenge-cookie (some-> headers
-                           (get "cookie")
-                           (cookie-support/cookie-value oidc-challenge-cookie))
         bad-request-map {:log-level :info
                          :query-param-state state
                          :status http-400-bad-request}]
@@ -74,29 +77,38 @@
       (throw (ex-info "Query parameter code is missing" bad-request-map)))
     (when (str/blank? state)
       (throw (ex-info "Query parameter state is missing" bad-request-map)))
-    (when (str/blank? challenge-cookie)
-      (throw (ex-info "No challenge cookie set" bad-request-map)))
-    (let [state-map (try
-                      (parse-state-code state password)
-                      (catch Throwable throwable
-                        (throw (ex-info "Unable to parse state"
-                                        bad-request-map throwable))))]
-      (when-not (and (map? state-map) (string? (get state-map :redirect-uri)))
+    (let [{:keys [identifier] :as state-map}
+          (try
+            (parse-state-code state password)
+            (catch Throwable throwable
+              (throw (ex-info "Unable to parse state"
+                              bad-request-map throwable))))]
+      (when-not (and (map? state-map)
+                     (string? (get state-map :redirect-uri))
+                     (string? identifier)
+                     (not (str/blank? identifier)))
         (throw (ex-info "The state query parameter is invalid" bad-request-map)))
-      (let [decoded-value (cookie-support/decode-cookie challenge-cookie password)]
-        (when-not (map? decoded-value)
-          (throw (ex-info "Decoded challenge cookie is invalid" bad-request-map)))
-        (let [{:keys [code-verifier expiry-time]} decoded-value]
-          (when-not (integer? expiry-time)
-            (throw (ex-info "The challenge cookie has invalid format" bad-request-map)))
-          (when-not (->> expiry-time (tc/from-long) (t/before? (t/now)))
-            (throw (ex-info "The challenge cookie has expired" bad-request-map)))
-          (when (or (not (string? code-verifier))
-                    (str/blank? code-verifier))
-            (throw (ex-info "No challenge code available from cookie" bad-request-map)))
-          {:code code
-           :code-verifier code-verifier
-           :state-map state-map})))))
+      (let [oidc-challenge-cookie (str oidc-challenge-cookie-prefix identifier)
+            challenge-cookie (some-> headers
+                               (get "cookie")
+                               (cookie-support/cookie-value oidc-challenge-cookie))]
+        (when (str/blank? challenge-cookie)
+          (throw (ex-info "No challenge cookie set"
+                          (assoc bad-request-map :cookie-name oidc-challenge-cookie))))
+        (let [decoded-value (cookie-support/decode-cookie challenge-cookie password)]
+          (when-not (map? decoded-value)
+            (throw (ex-info "Decoded challenge cookie is invalid" bad-request-map)))
+          (let [{:keys [code-verifier expiry-time]} decoded-value]
+            (when-not (integer? expiry-time)
+              (throw (ex-info "The challenge cookie has invalid format" bad-request-map)))
+            (when-not (->> expiry-time (tc/from-long) (t/before? (t/now)))
+              (throw (ex-info "The challenge cookie has expired" bad-request-map)))
+            (when (or (not (string? code-verifier))
+                      (str/blank? code-verifier))
+              (throw (ex-info "No challenge code available from cookie" bad-request-map)))
+            {:code code
+             :code-verifier code-verifier
+             :state-map state-map}))))))
 
 (defn attach-threat-remediation-headers
   "Threat remediation by
@@ -138,7 +150,8 @@
                     auth-cookie-age-in-seconds (- expiry-time (jwt/current-time-secs))]
                 (auth/handle-request-auth
                   (constantly
-                    (let [{:keys [redirect-uri]} state-map]
+                    (let [{:keys [identifier redirect-uri]} state-map
+                          oidc-challenge-cookie (str oidc-challenge-cookie-prefix identifier)]
                       (-> {:headers (attach-threat-remediation-headers {"location" redirect-uri})
                            :status http-302-moved-temporarily}
                         (cookie-support/add-encoded-cookie password oidc-challenge-cookie "" 0)
@@ -163,13 +176,16 @@
                                  (when query-string (str "?" query-string))))]
     (if (= :https request-scheme)
       (let [code-verifier (create-code-verifier)
-            state-data {:redirect-uri (make-redirect-uri identity)}
+            cookie-identifier (create-code-identifier code-verifier)
+            state-data {:identifier cookie-identifier
+                        :redirect-uri (make-redirect-uri identity)}
             state-code (create-state-code state-data password)
             authorize-uri (jwt/retrieve-authorize-url
                             jwt-auth-server request oidc-callback-uri code-verifier state-code)
             expiry-time (-> (t/now)
                           (t/plus (t/seconds challenge-cookie-duration-secs))
                           (tc/to-long))
+            oidc-challenge-cookie (str oidc-challenge-cookie-prefix cookie-identifier)
             challenge-cookie-value {:code-verifier code-verifier
                                     :expiry-time expiry-time}]
         (-> response
@@ -224,16 +240,32 @@
                  (= "." accept-redirect-auth)
                  (some #(= oidc-authority %) (str/split accept-redirect-auth #" ")))))))
 
+(defn too-many-oidc-challenge-cookies?
+  "Returns true if the request already contains too many OIDC challenge cookies."
+  [request num-allowed]
+  (let [cookie-header (get-in request [:headers "cookie"])
+        request-cookies (cond->> cookie-header
+                          (not (string? cookie-header)) (str/join ";"))
+        num-challenge-cookies (count
+                                (filter #(str/starts-with? % oidc-challenge-cookie-prefix)
+                                        (str/split (str request-cookies) #";")))]
+    (log/info "request has" num-challenge-cookies "oidc challenge cookies")
+    (> num-challenge-cookies num-allowed)))
+
 (defn wrap-auth-handler
   "Wraps the request handler with a handler to trigger OIDC+PKCE authentication."
-  [{:keys [allow-oidc-auth-api? allow-oidc-auth-services? jwt-auth-server oidc-authorize-uri password]} request-handler]
+  [{:keys [allow-oidc-auth-api? allow-oidc-auth-services? jwt-auth-server oidc-authorize-uri
+           oidc-num-challenge-cookies-allowed-in-request password]}
+   request-handler]
   (let [oidc-authority (-> oidc-authorize-uri (URI.) (.getAuthority))]
     (fn oidc-auth-handler [request]
       (cond
         (or (auth/request-authenticated? request)
             (not (oidc-enabled-on-service? allow-oidc-auth-api? allow-oidc-auth-services? request))
             ;; OIDC auth is no-op when request cannot be redirected
-            (not (supports-redirect? oidc-authority request)))
+            (not (supports-redirect? oidc-authority request))
+            ;; OIDC auth is avoided if client already has too many challenge cookies
+            (too-many-oidc-challenge-cookies? request oidc-num-challenge-cookies-allowed-in-request))
         (request-handler request)
 
         :else
@@ -242,19 +274,22 @@
           (make-oidc-auth-response-updater jwt-auth-server password request))))))
 
 (defrecord OidcAuthenticator [allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri
-                              jwt-auth-server jwt-validator password])
+                              jwt-auth-server jwt-validator oidc-num-challenge-cookies-allowed-in-request password])
 
 (defn create-oidc-authenticator
   "Factory function for creating OIDC authenticator middleware"
   [jwt-auth-server jwt-validator
-   {:keys [allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri password]
+   {:keys [allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri
+           oidc-num-challenge-cookies-allowed-in-request password]
     :or {allow-oidc-auth-api? false
-         allow-oidc-auth-services? false}}]
+         allow-oidc-auth-services? false
+         oidc-num-challenge-cookies-allowed-in-request 20}}]
   {:pre [(satisfies? jwt/AuthServer jwt-auth-server)
          (some? jwt-validator)
          (boolean? allow-oidc-auth-api?)
          (boolean? allow-oidc-auth-services?)
+         (integer? oidc-num-challenge-cookies-allowed-in-request)
          (not (str/blank? oidc-authorize-uri))
          (not-empty password)]}
   (->OidcAuthenticator allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri
-                       jwt-auth-server jwt-validator password))
+                       jwt-auth-server jwt-validator oidc-num-challenge-cookies-allowed-in-request password))

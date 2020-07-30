@@ -390,10 +390,10 @@
   [set-cookie assertion-message]
   `(let [set-cookie# ~set-cookie
          assertion-message# ~assertion-message]
-     (is (str/includes? set-cookie# "x-waiter-oidc-challenge=") assertion-message#)
-     (is (str/includes? set-cookie# "Max-Age=") assertion-message#)
-     (is (str/includes? set-cookie# "Path=/") assertion-message#)
-     (is (str/includes? set-cookie# "HttpOnly=true") assertion-message#)))
+     (is (str/starts-with? set-cookie# "x-waiter-oidc-challenge-") assertion-message#)
+     (is (str/includes? set-cookie# ";Max-Age=") assertion-message#)
+     (is (str/includes? set-cookie# ";Path=/") assertion-message#)
+     (is (str/includes? set-cookie# ";HttpOnly=true") assertion-message#)))
 
 (defn- follow-authorize-redirects
   "Asserts for query parameters on the redirect url.
@@ -480,12 +480,105 @@
                                   :headers callback-request-headers)]
                 (assert-response-status callback-response http-302-moved-temporarily)
                 (is (= 2 (count cookies)))
-                (is (zero? (:max-age (first (filter #(= (:name %) "x-waiter-oidc-challenge") cookies)))))
+                (is (zero? (:max-age (first (filter #(str/starts-with? (:name %) "x-waiter-oidc-challenge-") cookies)))))
                 (is (pos? (:max-age (first (filter #(= (:name %) "x-waiter-auth") cookies)))))
                 (let [{:strs [location]} (:headers callback-response)
                       assertion-message (str {:headers (:headers callback-response)
                                               :status (:status callback-response)})]
                   (is (= (str "https://" waiter-token "/request-info") location) assertion-message)))))
+          (finally
+            (when edit-token?
+              (delete-token-and-assert waiter-url waiter-token)))))
+      (log/info "OIDC+PKCE authentication is disabled"))))
+
+(deftest ^:parallel ^:integration-fast test-oidc-authentication-unique-challenge-cookies
+  (testing-using-waiter-url
+    (if (oidc-auth-enabled? waiter-url)
+      (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)
+            oidc-token-from-env (System/getenv "WAITER_TEST_TOKEN_OIDC")
+            edit-oidc-token-from-env? (Boolean/valueOf (System/getenv "WAITER_TEST_TOKEN_OIDC_EDIT"))
+            waiter-token (or oidc-token-from-env (create-token-name waiter-url (rand-name)))
+            edit-token? (or (str/blank? oidc-token-from-env) edit-oidc-token-from-env?)
+            _ (when edit-token?
+                (let [service-parameters (assoc (kitchen-params)
+                                           :env {"USE_OIDC_AUTH" "true"}
+                                           :name (rand-name)
+                                           :run-as-user (retrieve-username))
+                      token-response (post-token waiter-url (assoc service-parameters :token waiter-token))]
+                  (assert-response-status token-response http-200-ok)))
+            ;; absence of Negotiate header also triggers an unauthorized response
+            request-headers {"authorization" "SingleUser unauthorized"
+                             "accept-redirect" "yes"
+                             "host" waiter-token
+                             "x-forwarded-proto" "https"}
+            port (waiter-settings-port waiter-url)
+            target-url (str waiter-host ":" port)
+            response-atom (atom [])
+            challenge-cookies-atom (atom #{})
+            num-threads 5
+            num-iterations 2]
+        (try
+          (parallelize-requests
+            num-threads num-iterations
+            (fn test-oidc-authentication-challenge-cookies-task []
+              (let [initial-response
+                    (make-request-with-debug-info
+                      request-headers
+                      #(make-request target-url (str "/request-" (rand-int 1000))
+                                     :disable-auth true :headers % :method :get))]
+                (swap! response-atom conj initial-response))))
+          (doseq [initial-response @response-atom]
+            (assert-response-status initial-response http-302-moved-temporarily)
+            (let [{:strs [location set-cookie]} (:headers initial-response)
+                  assertion-message (str {:headers (:headers initial-response)
+                                          :set-cookie set-cookie
+                                          :status (:status initial-response)})]
+              (is (not (str/blank? location)) assertion-message)
+              (assert-oidc-challenge-cookie set-cookie assertion-message)
+              (swap! challenge-cookies-atom conj (str (first (str/split set-cookie #"=" 2))))))
+          (is (= (* num-threads num-iterations) (count @challenge-cookies-atom)) (str @challenge-cookies-atom))
+          (finally
+            (when edit-token?
+              (delete-token-and-assert waiter-url waiter-token)))))
+      (log/info "OIDC+PKCE authentication is disabled"))))
+
+(deftest ^:parallel ^:integration-fast test-oidc-authentication-too-many-challenge-cookies
+  (testing-using-waiter-url
+    (if (oidc-auth-enabled? waiter-url)
+      (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)
+            oidc-token-from-env (System/getenv "WAITER_TEST_TOKEN_OIDC")
+            edit-oidc-token-from-env? (Boolean/valueOf (System/getenv "WAITER_TEST_TOKEN_OIDC_EDIT"))
+            waiter-token (or oidc-token-from-env (create-token-name waiter-url (rand-name)))
+            edit-token? (or (str/blank? oidc-token-from-env) edit-oidc-token-from-env?)
+            _ (when edit-token?
+                (let [service-parameters (assoc (kitchen-params)
+                                           :env {"USE_OIDC_AUTH" "true"}
+                                           :name (rand-name)
+                                           :run-as-user (retrieve-username))
+                      token-response (post-token waiter-url (assoc service-parameters :token waiter-token))]
+                  (assert-response-status token-response http-200-ok)))
+            ;; absence of Negotiate header also triggers an unauthorized response
+            oidc-num-challenge-cookies-allowed-in-request
+            (-> waiter-url
+              waiter-settings
+              (get-in [:authenticator-config :jwt :oidc-num-challenge-cookies-allowed-in-request] 100))
+            request-headers {"authorization" "SingleUser unauthorized"
+                             "accept-redirect" "yes"
+                             "cookie" (->> (range oidc-num-challenge-cookies-allowed-in-request)
+                                        (map #(str "x-waiter-oidc-challenge-" % "=v" %))
+                                        (str/join ";"))
+                             "host" waiter-token
+                             "x-forwarded-proto" "https"}
+            port (waiter-settings-port waiter-url)
+            target-url (str waiter-host ":" port)]
+        (try
+          (let [initial-response
+                (make-request-with-debug-info
+                  request-headers
+                  #(make-request target-url (str "/request-" (rand-int 1000))
+                                 :disable-auth true :headers % :method :get))]
+            (assert-waiter-response initial-response)
+            (assert-response-status initial-response http-401-unauthorized))
           (finally
             (when edit-token?
               (delete-token-and-assert waiter-url waiter-token)))))
