@@ -23,6 +23,7 @@
             [token-syncer.commands.cleanup :as cleanup]
             [token-syncer.commands.ping :as ping]
             [token-syncer.commands.restore :as restore]
+            [token-syncer.commands.sanitize :as sanitize]
             [token-syncer.commands.syncer :as syncer]
             [token-syncer.waiter :as waiter])
   (:import (org.eclipse.jetty.client HttpClient)))
@@ -118,6 +119,7 @@
                                          "cleanup-tokens" cleanup/cleanup-tokens-config
                                          "ping-token" ping/ping-token-config
                                          "restore-tokens" restore/restore-tokens-config
+                                         "sanitize-tokens" sanitize/sanitize-tokens-config
                                          "sync-clusters" syncer/sync-clusters-config}}
           {:keys [exit-code message]} (cli/process-command token-syncer-command-config context args)]
       (exit exit-code message))

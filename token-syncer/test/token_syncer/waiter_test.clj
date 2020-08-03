@@ -18,14 +18,15 @@
             [clojure.data.json :as json]
             [clojure.test :refer :all]
             [qbits.jet.client.http :as http]
+            [token-syncer.utils :as utils]
             [token-syncer.waiter :refer :all]))
 
 (defn- send-json-response
   [body-data & {:keys [headers status]}]
   (let [body-chan (async/promise-chan)]
     (->> body-data
-         json/write-str
-         (async/put! body-chan))
+      json/write-str
+      (async/put! body-chan))
     (cond-> {:body body-chan
              :headers (or headers {})}
       status (assoc :status status))))
@@ -68,8 +69,8 @@
                                          :fold-chunked-response? true
                                          :query-string test-query-params}
                                         (-> in-options
-                                            (dissoc :auth)
-                                            (update :headers dissoc "x-cid"))))
+                                          (dissoc :auth)
+                                          (update :headers dissoc "x-cid"))))
                                  (let [response-chan (async/promise-chan)
                                        response (cond-> {}
                                                   (not (:auth in-options))
@@ -132,8 +133,8 @@
     (testing "successful response"
       (let [token-response {"foo" "bar", "lorem" "ipsum"}
             current-time-ms (-> (System/currentTimeMillis)
-                                (mod 1000)
-                                (* 1000))
+                              (mod 1000)
+                              (* 1000))
             last-modified-str current-time-ms]
         (with-redefs [make-http-request (fn [in-http-client-wrapper in-endopint-url & in-options]
                                           (is (= http-client-wrapper in-http-client-wrapper))
@@ -144,6 +145,39 @@
                                                               :status 200))]
           (is (= {:description {"foo" "bar",
                                 "lorem" "ipsum"}
+                  :headers {"etag" last-modified-str}
+                  :status 200
+                  :token-etag current-time-ms}
+                 (load-token http-client-wrapper test-cluster-url test-token))))))
+
+    (testing "successful response with last-update-time"
+      (let [token-response {"last-update-time" (utils/millis->iso8601 55000)
+                            "name" "fee"
+                            "previous" {"last-update-time" (utils/millis->iso8601 44000)
+                                        "name" "fie"
+                                        "previous" {"last-update-time" (utils/millis->iso8601 33000)
+                                                    "name" "foe"
+                                                    "previous" {"last-update-time" (utils/millis->iso8601 22000)
+                                                                "name" "fum"}}}}
+            current-time-ms (-> (System/currentTimeMillis)
+                              (mod 1000)
+                              (* 1000))
+            last-modified-str current-time-ms]
+        (with-redefs [make-http-request (fn [in-http-client-wrapper in-endopint-url & in-options]
+                                          (is (= http-client-wrapper in-http-client-wrapper))
+                                          (is (= (str test-cluster-url "/token") in-endopint-url))
+                                          (is (= expected-options (apply hash-map in-options)))
+                                          (send-json-response token-response
+                                                              :headers {"etag" last-modified-str}
+                                                              :status 200))]
+          (is (= {:description {"last-update-time" 55000
+                                "name" "fee"
+                                "previous" {"last-update-time" 44000
+                                            "name" "fie"
+                                            "previous" {"last-update-time" 33000
+                                                        "name" "foe"
+                                                        "previous" {"last-update-time" 22000
+                                                                    "name" "fum"}}}}
                   :headers {"etag" last-modified-str}
                   :status 200
                   :token-etag current-time-ms}
