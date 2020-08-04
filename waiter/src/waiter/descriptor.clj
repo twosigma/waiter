@@ -66,7 +66,7 @@
 (defn wrap-descriptor
   "Adds the descriptor to the request/response.
   Redirects users in the case of missing user/run-as-requestor."
-  [handler request->descriptor-fn start-new-service-fn fallback-state-atom]
+  [handler request->descriptor-fn service-invocation-authorized?  start-new-service-fn fallback-state-atom]
   (fn [request]
     (tl/try-let [request-descriptor (request->descriptor-fn request)]
       (let [{:keys [descriptor latest-descriptor]} request-descriptor
@@ -77,8 +77,12 @@
           (counters/inc! (metrics/service-counter latest-service-id "request-counts" "fallback" "source"))
           (counters/inc! (metrics/service-counter fallback-service-id "request-counts" "fallback" "target"))
           (when-not (service-exists? @fallback-state-atom latest-service-id)
-            (log/info "starting" latest-service-id "before causing request to fallback to" fallback-service-id)
-            (start-new-service-fn latest-descriptor)))
+            (let [auth-user (:authorization/user request)]
+              (if (service-invocation-authorized? auth-user latest-descriptor)
+                (do
+                  (log/info "starting" latest-service-id "before causing request to fallback to" fallback-service-id)
+                  (start-new-service-fn latest-descriptor))
+                (log/info "not starting" latest-service-id "as" auth-user "is not authorized to make a request to the service")))))
         (handler request))
       (catch Exception e
         (if (missing-run-as-user? e)
@@ -310,6 +314,41 @@
               previous-descriptor))
           (recur (utils/dissoc-in descriptor [:component->previous-descriptor-fns component])))))))
 
+(defn perform-authorization-checks
+  "Performs authorization checks on whether the currently authenticated user is allowed to invoke the service."
+  [can-run-as? auth-user {:keys [service-authentication-disabled service-description service-id service-preauthorized]}]
+  (let [{:strs [run-as-user permitted-user]} service-description]
+    (when-not (or service-authentication-disabled
+                  service-preauthorized
+                  (and auth-user (can-run-as? auth-user run-as-user)))
+      (throw (ex-info "Authenticated user cannot run service"
+                      {:authenticated-user auth-user
+                       :log-level :warn
+                       :run-as-user run-as-user
+                       :service-description service-description
+                       :service-id service-id
+                       :status http-403-forbidden})))
+    (when-not (request-authorized? auth-user permitted-user)
+      (throw (ex-info "This user isn't allowed to invoke this service"
+                      {:authenticated-user auth-user
+                       :log-level :warn
+                       :service-description service-description
+                       :service-id service-id
+                       :status http-403-forbidden})))))
+
+(defn service-invocation-authorized?
+  "Predicate variant of the perform-authorization-checks function.
+   Returns true if user is allowed to invoke the service, false otherwise."
+  [can-run-as?-fn auth-user descriptor]
+  (try
+    (perform-authorization-checks can-run-as?-fn auth-user descriptor)
+    true
+    (catch Exception ex
+      (let [{:keys [log-level] :or {log-level :info} :as error-data} (ex-data ex)
+            error-message (ex-message ex)]
+        (log/logp log-level error-message (select-keys error-data [:authenticated-user :service-id])))
+      false)))
+
 (let [request->descriptor-timer (metrics/waiter-timer "core" "request->descriptor")]
   (defn request->descriptor
     "Extract the service descriptor from a request.
@@ -330,22 +369,8 @@
               (descriptor->previous-descriptor kv-store service-description-builder descriptor))
             fallback-state @fallback-state-atom
             descriptor (resolve-descriptor
-                         descriptor->previous-descriptor search-history-length request-time fallback-state latest-descriptor)
-            {:keys [service-authentication-disabled service-description service-preauthorized]} descriptor
-            {:strs [run-as-user permitted-user]} service-description]
-        (when-not (or service-authentication-disabled
-                      service-preauthorized
-                      (and auth-user (can-run-as? auth-user run-as-user)))
-          (throw (ex-info "Authenticated user cannot run service"
-                          {:authenticated-user auth-user
-                           :run-as-user run-as-user
-                           :status http-403-forbidden
-                           :log-level :warn})))
-        (when-not (request-authorized? auth-user permitted-user)
-          (throw (ex-info "This user isn't allowed to invoke this service"
-                          {:authenticated-user auth-user
-                           :service-description service-description
-                           :status http-403-forbidden
-                           :log-level :warn})))
+                         descriptor->previous-descriptor search-history-length request-time fallback-state latest-descriptor)]
+        ;; authorization checks for both the latest service as well as the fallback service
+        (perform-authorization-checks can-run-as? auth-user descriptor)
         {:descriptor descriptor
          :latest-descriptor latest-descriptor}))))

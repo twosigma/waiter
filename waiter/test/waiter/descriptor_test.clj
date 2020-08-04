@@ -33,9 +33,16 @@
   (let [latest-service-id "latest-service-id"
         fallback-service-id "fallback-service-id"
         default-handler (fn [_] {:status http-200-ok})
-        latest-descriptor {:service-id latest-service-id}]
+        auth-user "test-auth-user"
+        latest-descriptor {:service-id latest-service-id}
+        make-service-invocation-authorized? (fn [auth-result]
+                                              (fn [in-auth-user in-descriptor]
+                                                (is (= auth-user in-auth-user))
+                                                (is (= latest-descriptor in-descriptor))
+                                                auth-result))]
     (testing "latest-service-request"
-      (let [request {:request-id (str "req-" (rand-int 1000))}
+      (let [request {:authorization/user auth-user
+                     :request-id (str "req-" (rand-int 1000))}
             descriptor {:service-id latest-service-id}
             request->descriptor-fn (fn [in-request]
                                      (is (= request in-request))
@@ -45,14 +52,16 @@
                                    (is (= latest-descriptor in-descriptor))
                                    (deliver started-service-id-promise (:service-id in-descriptor))
                                    (throw (UnsupportedOperationException. "Not expecting call in test")))
+            service-invocation-authorized? (make-service-invocation-authorized? true)
             fallback-state-atom (atom {:available-service-ids #{} :healthy-service-ids #{}})
-            handler (wrap-descriptor default-handler request->descriptor-fn start-new-service-fn fallback-state-atom)
+            handler (wrap-descriptor default-handler request->descriptor-fn service-invocation-authorized? start-new-service-fn fallback-state-atom)
             response (handler request)]
         (is (= {:descriptor descriptor :latest-service-id latest-service-id :status http-200-ok} response))
         (is (= :no-service (deref started-service-id-promise 0 :no-service)))))
 
     (testing "fallback-with-latest-service-exists"
-      (let [request {:request-id (str "req-" (rand-int 1000))}
+      (let [request {:authorization/user auth-user
+                     :request-id (str "req-" (rand-int 1000))}
             descriptor {:service-id fallback-service-id}
             request->descriptor-fn (fn [in-request]
                                      (is (= request in-request))
@@ -62,27 +71,44 @@
                                    (is (= latest-descriptor in-descriptor))
                                    (deliver started-service-id-promise (:service-id in-descriptor))
                                    (throw (UnsupportedOperationException. "Not expecting call in test")))
+            service-invocation-authorized? (make-service-invocation-authorized? true)
             fallback-state-atom (atom {:available-service-ids #{latest-service-id} :healthy-service-ids #{}})
-            handler (wrap-descriptor default-handler request->descriptor-fn start-new-service-fn fallback-state-atom)
+            handler (wrap-descriptor default-handler request->descriptor-fn service-invocation-authorized? start-new-service-fn fallback-state-atom)
             response (handler request)]
         (is (= {:descriptor descriptor :latest-service-id latest-service-id :status http-200-ok} response))
         (is (= :no-service (deref started-service-id-promise 0 :no-service)))))
 
     (testing "fallback-with-latest-service-does-not-exist"
-      (let [request {:request-id (str "req-" (rand-int 1000))}
+      (let [request {:authorization/user auth-user
+                     :request-id (str "req-" (rand-int 1000))}
             descriptor {:service-id fallback-service-id}
             request->descriptor-fn (fn [in-request]
                                      (is (= request in-request))
-                                     {:descriptor descriptor :latest-descriptor latest-descriptor})
-            started-service-id-promise (promise)
-            start-new-service-fn (fn [in-descriptor]
-                                   (is (= latest-descriptor in-descriptor))
-                                   (deliver started-service-id-promise (:service-id in-descriptor)))
-            fallback-state-atom (atom {:available-service-ids #{} :healthy-service-ids #{}})
-            handler (wrap-descriptor default-handler request->descriptor-fn start-new-service-fn fallback-state-atom)
-            response (handler request)]
-        (is (= {:descriptor descriptor :latest-service-id latest-service-id :status http-200-ok} response))
-        (is (= latest-service-id (deref started-service-id-promise 0 :no-service)))))))
+                                     {:descriptor descriptor :latest-descriptor latest-descriptor})]
+
+        (testing "and request authorized"
+          (let [started-service-id-promise (promise)
+                start-new-service-fn (fn [in-descriptor]
+                                       (is (= latest-descriptor in-descriptor))
+                                       (deliver started-service-id-promise (:service-id in-descriptor)))
+                service-invocation-authorized? (make-service-invocation-authorized? true)
+                fallback-state-atom (atom {:available-service-ids #{} :healthy-service-ids #{}})
+                handler (wrap-descriptor default-handler request->descriptor-fn service-invocation-authorized? start-new-service-fn fallback-state-atom)
+                response (handler request)]
+            (is (= {:descriptor descriptor :latest-service-id latest-service-id :status http-200-ok} response))
+            (is (= latest-service-id (deref started-service-id-promise 0 :no-service)))))
+
+        (testing "and request not authorized"
+          (let [started-service-id-promise (promise)
+                start-new-service-fn (fn [in-descriptor]
+                                       (is (= latest-descriptor in-descriptor))
+                                       (deliver started-service-id-promise (:service-id in-descriptor)))
+                service-invocation-authorized? (make-service-invocation-authorized? false)
+                fallback-state-atom (atom {:available-service-ids #{} :healthy-service-ids #{}})
+                handler (wrap-descriptor default-handler request->descriptor-fn service-invocation-authorized? start-new-service-fn fallback-state-atom)
+                response (handler request)]
+            (is (= {:descriptor descriptor :latest-service-id latest-service-id :status http-200-ok} response))
+            (is (= :no-service (deref started-service-id-promise 0 :no-service)))))))))
 
 (deftest test-fallback-maintainer
   (let [current-healthy-service-ids #{"service-1" "service-3"}
@@ -1042,3 +1068,47 @@
         (is (nil? (descriptor->previous-descriptor
                     kv-store builder
                     prev-descriptor-2)))))))
+
+(deftest test-service-invocation-authorized?
+  (let [can-run-as? #(= %1 %2)
+        auth-user "test-auth-user"
+        other-user "test-other-user"]
+
+    (let [descriptor {:service-authentication-disabled true}]
+      (is (false? (service-invocation-authorized? can-run-as? auth-user descriptor))))
+
+    (let [descriptor {:service-authentication-disabled false
+                      :service-preauthorized true}]
+      (is (false? (service-invocation-authorized? can-run-as? auth-user descriptor))))
+
+    (let [descriptor {:service-authentication-disabled false
+                      :service-preauthorized false
+                      :service-description {"run-as-user" other-user}}]
+      (is (false? (service-invocation-authorized? can-run-as? auth-user descriptor))))
+
+    (let [descriptor {:service-authentication-disabled false
+                      :service-preauthorized false
+                      :service-description {"permitted-user" other-user
+                                            "run-as-user" auth-user}}]
+      (is (false? (service-invocation-authorized? can-run-as? auth-user descriptor))))
+
+    (let [descriptor {:service-authentication-disabled false
+                      :service-description {"permitted-user" auth-user
+                                            "run-as-user" auth-user}
+                      :service-preauthorized false}]
+      (is (true? (service-invocation-authorized? can-run-as? auth-user descriptor))))
+
+    (let [descriptor {:service-authentication-disabled true
+                      :service-description {"permitted-user" auth-user}}]
+      (is (true? (service-invocation-authorized? can-run-as? auth-user descriptor))))
+
+    (let [descriptor {:service-authentication-disabled false
+                      :service-description {"permitted-user" auth-user}
+                      :service-preauthorized true}]
+      (is (true? (service-invocation-authorized? can-run-as? auth-user descriptor))))
+
+    (let [descriptor {:service-authentication-disabled false
+                      :service-description {"permitted-user" "*"
+                                            "run-as-user" auth-user}
+                      :service-preauthorized false}]
+      (is (true? (service-invocation-authorized? can-run-as? auth-user descriptor))))))

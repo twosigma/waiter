@@ -1092,6 +1092,10 @@
                                          service-id->service-description-fn*)
    :service-id->source-tokens-entries-fn (pc/fnk [[:state kv-store]]
                                            (partial sd/service-id->source-tokens-entries kv-store))
+   :service-invocation-authorized?-fn (pc/fnk [can-run-as?-fn]
+                                        (fn service-invocation-authorized?-fn
+                                          [auth-user descriptor]
+                                          (descriptor/service-invocation-authorized? can-run-as?-fn auth-user descriptor)))
    :start-new-service-fn (pc/fnk [[:scheduler scheduler]
                                   [:state start-service-cache scheduler-interactions-thread-pool]
                                   service-id->service-description-fn store-service-description-fn]
@@ -1848,10 +1852,11 @@
                                   (handler (assoc request :skip-authentication true)))
                                 (fn []
                                   (handler request))))))
-   :wrap-descriptor-fn (pc/fnk [[:routines request->descriptor-fn start-new-service-fn]
+   :wrap-descriptor-fn (pc/fnk [[:routines request->descriptor-fn service-invocation-authorized?-fn start-new-service-fn]
                                 [:state fallback-state-atom]]
                          (fn wrap-descriptor-fn [handler]
-                           (descriptor/wrap-descriptor handler request->descriptor-fn start-new-service-fn fallback-state-atom)))
+                           (descriptor/wrap-descriptor handler request->descriptor-fn service-invocation-authorized?-fn
+                                                       start-new-service-fn fallback-state-atom)))
    :wrap-https-redirect-fn (pc/fnk []
                              (fn wrap-https-redirect-fn
                                [handler]
