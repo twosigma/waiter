@@ -6,7 +6,6 @@ addons:
   apt:
     packages:
     - nginx
-  artifacts: true
 
 branches:
   only:
