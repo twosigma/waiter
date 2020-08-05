@@ -2417,34 +2417,34 @@
 
 (deftest test-retrieve-token-update-epoch-time
   (with-redefs [token-data->token-hash #(str "v" (get % "last-update-time"))]
-    (let [token-data {"last-update-time" 90
-                      "previous" {"last-update-time" 80
-                                  "previous" {"last-update-time" 70
-                                              "previous" {"last-update-time" 60
-                                                          "previous" {"last-update-time" 50
-                                                                      "previous" {}}}}}}]
+    (let [token "test-token"]
+      (let [token-data {"last-update-time" 90
+                        "previous" {"last-update-time" 80
+                                    "previous" {"last-update-time" 70
+                                                "previous" {"last-update-time" 60
+                                                            "previous" {"last-update-time" 50
+                                                                        "previous" {}}}}}}]
+        (testing "no token data"
+          (is (nil? (retrieve-token-update-epoch-time token nil "v10")))
+          (is (nil? (retrieve-token-update-epoch-time token {} "v20"))))
 
-      (testing "no token data"
-        (is (nil? (retrieve-token-update-epoch-time nil "v10")))
-        (is (nil? (retrieve-token-update-epoch-time {} "v20"))))
+        (testing "token is current"
+          (is (nil? (retrieve-token-update-epoch-time token token-data "v90"))))
 
-      (testing "token is current"
-        (is (nil? (retrieve-token-update-epoch-time token-data "v90"))))
+        (testing "matching token version found and next update time returned"
+          (is (= 90 (retrieve-token-update-epoch-time token token-data "v80")))
+          (is (= 80 (retrieve-token-update-epoch-time token token-data "v70")))
+          (is (= 70 (retrieve-token-update-epoch-time token token-data "v60")))
+          (is (= 60 (retrieve-token-update-epoch-time token token-data "v50"))))
 
-      (testing "matching token version found and next update time returned"
-        (is (= 90 (retrieve-token-update-epoch-time token-data "v80")))
-        (is (= 80 (retrieve-token-update-epoch-time token-data "v70")))
-        (is (= 70 (retrieve-token-update-epoch-time token-data "v60")))
-        (is (= 60 (retrieve-token-update-epoch-time token-data "v50"))))
+        (testing "matching token version not found return last known update time"
+          (is (= 50 (retrieve-token-update-epoch-time token token-data "v40")))
+          (is (= 50 (retrieve-token-update-epoch-time token token-data "v30")))
+          (is (= 50 (retrieve-token-update-epoch-time token token-data "v20")))))
 
-      (testing "matching token version not found return last known update time"
-        (is (= 50 (retrieve-token-update-epoch-time token-data "v40")))
-        (is (= 50 (retrieve-token-update-epoch-time token-data "v30")))
-        (is (= 50 (retrieve-token-update-epoch-time token-data "v20")))))
-
-    (testing "string last-update-time"
       (let [token-data {"last-update-time" (-> 90 tc/from-long du/date-to-str)}]
-        (is (= 90 (retrieve-token-update-epoch-time token-data "v10")))))))
+        (testing "string last-update-time"
+          (is (= 90 (retrieve-token-update-epoch-time token token-data "v10"))))))))
 
 (deftest test-retrieve-token-stale-info
   (with-redefs [token-data->token-hash #(str "v" (get % "last-update-time"))]

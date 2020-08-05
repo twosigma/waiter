@@ -653,14 +653,16 @@
    If no such version can be found, then the stale time is unknown and we, conservatively,
    use the last known update time.
    Else if the token is not stale or no data is known about the token, nil is returned."
-  [current-token-data token-version]
+  [token current-token-data token-version]
   (let [token-data->update-time #(get % "last-update-time")
         token-data->previous #(get % "previous")
         update-time (descriptor-utils/retrieve-update-time
                       token-data->token-hash token-data->update-time token-data->previous current-token-data token-version)]
-    (cond-> update-time
-      (string? update-time)
-      (-> du/str-to-date tc/to-long))))
+    (if (string? update-time)
+      (do
+        (log/warn token "has string last update time" update-time)
+        (-> update-time du/str-to-date tc/to-long))
+      update-time)))
 
 (defn retrieve-token-stale-info
   "The provided source-tokens are stale if every token used to access a service has been updated.
@@ -681,7 +683,7 @@
       stale? (assoc :update-epoch-time
                     (->> source-tokens
                       (map (fn [{:keys [token version]}]
-                             (retrieve-token-update-epoch-time (token->token-parameters token) version)))
+                             (retrieve-token-update-epoch-time token (token->token-parameters token) version)))
                       (reduce utils/nil-safe-max nil))))))
 
 (defrecord DefaultServiceDescriptionBuilder [max-constraints-schema metric-group-mappings profile->defaults
