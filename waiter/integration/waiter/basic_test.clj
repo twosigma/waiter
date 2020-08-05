@@ -311,7 +311,6 @@
   (testing-using-waiter-url
     (let [headers {:authentication "standard"
                    :backend-proto "h2c"
-                   :blacklist-on-503 false
                    :cmd "foo"
                    :cmd-type "shell"
                    :concurrency-level 10

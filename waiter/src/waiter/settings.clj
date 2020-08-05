@@ -134,7 +134,6 @@
    (s/required-key :service-description-defaults) {(s/required-key "allowed-params") #{schema/non-empty-string}
                                                    (s/required-key "authentication") schema/non-empty-string
                                                    (s/required-key "backend-proto") schema/valid-backend-proto
-                                                   (s/required-key "blacklist-on-503") s/Bool
                                                    (s/required-key "concurrency-level") schema/positive-int
                                                    (s/required-key "distribution-scheme") (s/enum "balanced" "simple")
                                                    (s/required-key "env") {s/Str s/Str}
@@ -431,7 +430,6 @@
    :service-description-defaults {"allowed-params" #{}
                                   "authentication" "standard"
                                   "backend-proto" "http"
-                                  "blacklist-on-503" true
                                   "concurrency-level" 1
                                   "distribution-scheme" "balanced"
                                   "env" {}

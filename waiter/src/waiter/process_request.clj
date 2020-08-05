@@ -678,10 +678,10 @@
   (when (utils/request->debug-enabled? request)
     (log/info "backend response status:" (:status response) "and headers:" (:headers response)))
   (let [{:keys [service-description service-id]} descriptor
-        {:strs [backend-proto blacklist-on-503 metric-group]} service-description
+        {:strs [backend-proto metric-group]} service-description
         waiter-debug-enabled? (utils/request->debug-enabled? request)
         resp-chan (async/chan 5)]
-    (when (and blacklist-on-503 (hu/service-unavailable? request response))
+    (when (hu/service-unavailable? request response)
       (log/info "service unavailable according to response status"
                 {:instance instance
                  :response (select-keys response [:headers :status])})
