@@ -690,7 +690,6 @@
                               :service-description {"allowed-params" [],
                                                     "authentication" "standard",
                                                     "backend-proto" "http",
-                                                    "blacklist-on-503" true,
                                                     "cmd" "/opt/bin/kitchen -p $PORT0",
                                                     "cmd-type" "shell",
                                                     "concurrency-level" 1,

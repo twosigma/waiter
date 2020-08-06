@@ -745,7 +745,6 @@
  :service-description-defaults {"allowed-params" #{}
                                 "authentication" "standard"
                                 "backend-proto" "http"
-                                "blacklist-on-503" true
                                 "concurrency-level" 1
                                 "distribution-scheme" "balanced"
                                 "env" {"FOO" "bar"
