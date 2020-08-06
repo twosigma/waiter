@@ -40,6 +40,8 @@
 
 (def ^:const oidc-callback-uri "/oidc/v1/callback")
 
+(def ^:const oidc-enabled-uri "/.well-known/oidc/v1/openid-enabled")
+
 (defn create-code-identifier
   "Returns a string generated using the code verifier to use as an identifier for the OIDC workflow."
   [code-verifier]
@@ -212,15 +214,44 @@
       response)))
 
 (defn oidc-enabled-on-service?
-  "Returns true if OIDC auth is enabled for the service."
-  [allow-oidc-auth-api? allow-oidc-auth-services? {:keys [waiter-api-call?] :as request}]
+  "Returns true if OIDC auth is enabled for the service.
+   Result depends on whether OIDC auth is configured explicitly based on env variable or computed using allow-oidc-auth-services?"
+  [allow-oidc-auth-services? request]
+  ;; service requests will enable OIDC auth based on env variable or when absent, allow-oidc-auth-services?
   (let [use-oidc-auth-env (get-in request [:waiter-discovery :service-description-template "env" "USE_OIDC_AUTH"])]
-    (or
-      ;; service requests will enable OIDC auth based on env variable or when absent, allow-oidc-auth-services?
-      (and (not waiter-api-call?)
-           (if (some? use-oidc-auth-env) (= "true" use-oidc-auth-env) allow-oidc-auth-services?))
-      ;; waiter api requests will enable OIDC auth based on allow-oidc-auth-api?
-      (and waiter-api-call? allow-oidc-auth-api?))))
+    (if (some? use-oidc-auth-env) (= "true" use-oidc-auth-env) allow-oidc-auth-services?)))
+
+(defn oidc-enabled-request-handler
+  "Handler for the query that responds whether OIDC is enabled on the host.
+   It returns a 200 response when OIDC authentication is enabled for the request host.
+   It returns a 404 response when OIDC authentication is not enabled for request host.
+   It returns a 501 response when OIDC authentication is not configured on Waiter."
+  [{:keys [allow-oidc-auth-api? allow-oidc-auth-services?] :as oidc-authenticator} waiter-hostnames request]
+  (if (nil? oidc-authenticator)
+    (utils/exception->response
+      (throw (ex-info "OIDC authentication disabled" {:status http-501-not-implemented}))
+      request)
+    (let [client-id (or (get-in request [:waiter-discovery :token])
+                        (some-> request utils/request->host utils/authority->host))
+          waiter-host? (contains? waiter-hostnames client-id)
+          enabled? (if waiter-host?
+                     (true? allow-oidc-auth-api?)
+                     (oidc-enabled-on-service? allow-oidc-auth-services? request))
+          response-status (if enabled? http-200-ok http-404-not-found)]
+      (utils/clj->json-response
+        {:client-id client-id
+         :enabled enabled?
+         :token? (not waiter-host?)}
+        :status response-status))))
+
+(defn oidc-enabled-on-request?
+  "Returns true if OIDC auth is enabled for the request."
+  [allow-oidc-auth-api? allow-oidc-auth-services? {:keys [waiter-api-call?] :as request}]
+  (or
+    ;; delegate to oidc-enabled-on-service? for service requests
+    (and (not waiter-api-call?) (oidc-enabled-on-service? allow-oidc-auth-services? request))
+    ;; waiter api requests will enable OIDC auth based on allow-oidc-auth-api?
+    (and waiter-api-call? allow-oidc-auth-api?)))
 
 ;; Accept-Redirect request header "yes" means the user-agent will follow redirects.
 ;; Accept-Redirect-Auth request header indicates which authorities the user-agent is willing to redirect to and authenticate at.
@@ -261,7 +292,7 @@
     (fn oidc-auth-handler [request]
       (cond
         (or (auth/request-authenticated? request)
-            (not (oidc-enabled-on-service? allow-oidc-auth-api? allow-oidc-auth-services? request))
+            (not (oidc-enabled-on-request? allow-oidc-auth-api? allow-oidc-auth-services? request))
             ;; OIDC auth is no-op when request cannot be redirected
             (not (supports-redirect? oidc-authority request))
             ;; OIDC auth is avoided if client already has too many challenge cookies

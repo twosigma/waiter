@@ -89,6 +89,7 @@
   ;; Please include/update a corresponding unit test anytime the routes data structure is modified
   [{:keys [uri]}]
   (let [routes ["/" {"" :welcome-handler-fn
+                     (subs oidc/oidc-enabled-uri 1) :oidc-enabled-handler-fn
                      "app-name" :app-name-handler-fn
                      "apps" {"" :service-list-handler-fn
                              ["/" :service-id] :service-handler-fn
@@ -568,11 +569,13 @@
   "Creates a function that determines for a given request whether or not
   the request is intended for Waiter itself or a service of Waiter."
   [valid-waiter-hostnames]
-  (let [valid-waiter-hostnames (set/union valid-waiter-hostnames #{"localhost" "127.0.0.1"})]
+  (let [valid-waiter-hostnames (set/union valid-waiter-hostnames #{"localhost" "127.0.0.1"})
+        waiter-api-full-names #{"/app-name" oidc/oidc-callback-uri oidc/oidc-enabled-uri
+                                "/service-id" "/token" "/waiter-ping"}]
     (fn waiter-request? [{:keys [uri headers]}]
       (let [{:strs [host]} headers]
         ; special urls that are always for Waiter (FIXME)
-        (or (#{"/app-name" oidc/oidc-callback-uri "/service-id" "/token" "/waiter-ping"} uri)
+        (or (contains? waiter-api-full-names uri)
             (some #(str/starts-with? (str uri) %)
                   ["/waiter-async/complete/" "/waiter-async/result/" "/waiter-async/status/" "/waiter-auth/"
                    "/waiter-consent" "/waiter-interstitial"])
@@ -1474,6 +1477,11 @@
    :oidc-callback-handler-fn (pc/fnk [[:state oidc-authenticator]]
                                (fn oidc-callback-handler-fn [request]
                                  (oidc/oidc-callback-request-handler oidc-authenticator request)))
+   :oidc-enabled-handler-fn (pc/fnk [[:state oidc-authenticator waiter-hostnames]
+                                     wrap-service-discovery-fn]
+                              (wrap-service-discovery-fn
+                                (fn oidc-enabled-handler-fn [request]
+                                  (oidc/oidc-enabled-request-handler oidc-authenticator waiter-hostnames request))))
    :not-found-handler-fn (pc/fnk [] handler/not-found-handler)
    :ping-service-handler (pc/fnk [[:daemons router-state-maintainer]
                                   [:state fallback-state-atom user-agent-version]
