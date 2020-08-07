@@ -471,7 +471,7 @@
   (let [jwt-auth-server (jwt/map->JwtAuthServer {})
         jwt-validator (jwt/map->JwtValidator {})
         make-jwt-authenticator (fn [config]
-                                   (create-oidc-authenticator jwt-auth-server jwt-validator config))
+                                 (create-oidc-authenticator jwt-auth-server jwt-validator config))
         config {:oidc-authorize-uri "http://www.test.com/oidc/authorize"
                 :password [:cached "test-password"]}]
     (testing "valid configuration"
@@ -487,3 +487,49 @@
       (is (thrown? Throwable (make-jwt-authenticator (dissoc config :oidc-authorize-uri))))
       (is (thrown? Throwable (make-jwt-authenticator (assoc config :oidc-num-challenge-cookies-allowed-in-request "20"))))
       (is (thrown? Throwable (make-jwt-authenticator (dissoc config :password)))))))
+
+(deftest test-oidc-enabled-on-request?
+  (doseq [allow-oidc-auth-api? [true false]]
+    (doseq [allow-oidc-auth-services? [true false]]
+      (doseq [env-value [true false]]
+        (let [assertion-message (str {:env-value env-value
+                                      :allow-oidc-auth-api? allow-oidc-auth-api?
+                                      :allow-oidc-auth-services? allow-oidc-auth-services?})]
+          (let [request {:waiter-api-call? false
+                         :waiter-discovery {:service-description-template {"env" {"USE_OIDC_AUTH" (str env-value)}}}}]
+            (is (= env-value (oidc-enabled-on-request? allow-oidc-auth-api? allow-oidc-auth-services? request))
+                assertion-message))
+          (let [request {:waiter-api-call? false
+                         :waiter-discovery {:service-description-template {}}}]
+            (is (= allow-oidc-auth-services? (oidc-enabled-on-request? allow-oidc-auth-api? allow-oidc-auth-services? request))
+                assertion-message))
+          (let [request {:waiter-api-call? true
+                         :waiter-discovery {:service-description-template {}}}]
+            (is (= allow-oidc-auth-api? (oidc-enabled-on-request? allow-oidc-auth-api? allow-oidc-auth-services? request))
+                assertion-message)))))))
+
+(deftest test-oidc-enabled-request-handler
+  (is (thrown-with-msg? ExceptionInfo #"OIDC authentication disabled"
+                        (oidc-enabled-request-handler nil #{} {})))
+  (doseq [expected-result [true false]]
+    (is (= {:body (utils/clj->json {:client-id "www.test.com"
+                                    :enabled expected-result
+                                    :token? true})
+            :headers {"content-type" "application/json"}
+            :status (if expected-result http-200-ok http-404-not-found)
+            :waiter/response-source :waiter}
+           (let [oidc-authenticator {}
+                 request {:headers {"host" "www.w8r.com:1234"}
+                          :waiter-discovery {:service-description-template {"env" {"USE_OIDC_AUTH" (str expected-result)}}
+                                             :token "www.test.com"}}]
+             (oidc-enabled-request-handler oidc-authenticator #{} request))))
+    (is (= {:body (utils/clj->json {:client-id "www.w8r.com"
+                                    :enabled expected-result
+                                    :token? false})
+            :headers {"content-type" "application/json"}
+            :status (if expected-result http-200-ok http-404-not-found)
+            :waiter/response-source :waiter}
+           (let [oidc-authenticator {:allow-oidc-auth-api? expected-result}
+                 waiter-hostnames #{"www.w8r.com"}
+                 request {:headers {"host" "www.w8r.com:1234"}}]
+             (oidc-enabled-request-handler oidc-authenticator waiter-hostnames request))))))

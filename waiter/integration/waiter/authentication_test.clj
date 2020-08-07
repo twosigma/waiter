@@ -4,6 +4,7 @@
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
+            [clojure.walk :as walk]
             [reaver :as reaver]
             [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
@@ -390,47 +391,55 @@
   [set-cookie assertion-message]
   `(let [set-cookie# ~set-cookie
          assertion-message# ~assertion-message]
-     (is (str/starts-with? set-cookie# "x-waiter-oidc-challenge-") assertion-message#)
-     (is (str/includes? set-cookie# ";Max-Age=") assertion-message#)
-     (is (str/includes? set-cookie# ";Path=/") assertion-message#)
-     (is (str/includes? set-cookie# ";HttpOnly=true") assertion-message#)))
+     (if (str/blank? set-cookie#)
+       (is false "set-cookie is blank")
+       (do
+         (is (str/starts-with? set-cookie# "x-waiter-oidc-challenge-") assertion-message#)
+         (is (str/includes? set-cookie# ";Max-Age=") assertion-message#)
+         (is (str/includes? set-cookie# ";Path=/") assertion-message#)
+         (is (str/includes? set-cookie# ";HttpOnly=true") assertion-message#)))))
 
 (defn- follow-authorize-redirects
   "Asserts for query parameters on the redirect url.
    Then makes requests and follows redirects until the oidc callback url is returned as a redirect."
   [authorize-redirect-location]
 
-  (is (str/includes? authorize-redirect-location "client_id="))
-  (is (str/includes? authorize-redirect-location "code_challenge="))
-  (is (str/includes? authorize-redirect-location "code_challenge_method="))
-  (is (str/includes? authorize-redirect-location "redirect_uri="))
-  (is (str/includes? authorize-redirect-location "response_type="))
-  (is (str/includes? authorize-redirect-location "scope="))
-  (is (str/includes? authorize-redirect-location "state="))
+  (if (str/blank? authorize-redirect-location)
+    (do
+      (is false "authorize redirect location is blank")
+      nil)
+    (do
+      (is (str/includes? authorize-redirect-location "client_id="))
+      (is (str/includes? authorize-redirect-location "code_challenge="))
+      (is (str/includes? authorize-redirect-location "code_challenge_method="))
+      (is (str/includes? authorize-redirect-location "redirect_uri="))
+      (is (str/includes? authorize-redirect-location "response_type="))
+      (is (str/includes? authorize-redirect-location "scope="))
+      (is (str/includes? authorize-redirect-location "state="))
 
-  (loop [iteration 1
-         authorize-location authorize-redirect-location]
-    (log/info "redirecting to" authorize-location)
-    (let [authorize-uri (URI. authorize-location)
-          authorize-protocol (.getScheme authorize-uri)
-          authorize-authority (.getAuthority authorize-uri)
-          authorize-path (str (.getPath authorize-uri) "?" (.getQuery authorize-uri))
-          authorize-response (make-request authorize-authority authorize-path :protocol authorize-protocol)
-          _ (assert-response-status authorize-response #{http-301-moved-permanently
-                                                         http-302-moved-temporarily
-                                                         http-307-temporary-redirect
-                                                         http-308-permanent-redirect})
-          assertion-message (str {:headers (:headers authorize-response)
-                                  :status (:status authorize-response)
-                                  :uri authorize-location})
-          {:strs [location]} (:headers authorize-response)]
-      (is (not (str/blank? location)) assertion-message)
-      (if (or (>= iteration 10)
-              (and (str/includes? location "/oidc/v1/callback?")
-                   (str/includes? location "code=")
-                   (str/includes? location "state=")))
-        location
-        (recur (inc iteration) location)))))
+      (loop [iteration 1
+             authorize-location authorize-redirect-location]
+        (log/info "redirecting to" authorize-location)
+        (let [authorize-uri (URI. authorize-location)
+              authorize-protocol (.getScheme authorize-uri)
+              authorize-authority (.getAuthority authorize-uri)
+              authorize-path (str (.getPath authorize-uri) "?" (.getQuery authorize-uri))
+              authorize-response (make-request authorize-authority authorize-path :protocol authorize-protocol)
+              _ (assert-response-status authorize-response #{http-301-moved-permanently
+                                                             http-302-moved-temporarily
+                                                             http-307-temporary-redirect
+                                                             http-308-permanent-redirect})
+              assertion-message (str {:headers (:headers authorize-response)
+                                      :status (:status authorize-response)
+                                      :uri authorize-location})
+              {:strs [location]} (:headers authorize-response)]
+          (is (not (str/blank? location)) assertion-message)
+          (if (or (>= iteration 10)
+                  (and (str/includes? location "/oidc/v1/callback?")
+                       (str/includes? location "code=")
+                       (str/includes? location "state=")))
+            location
+            (recur (inc iteration) location)))))))
 
 (deftest ^:parallel ^:integration-fast test-oidc-authentication-redirect
   (testing-using-waiter-url
@@ -467,7 +476,7 @@
             (is (not (str/blank? location)) assertion-message)
             (assert-oidc-challenge-cookie set-cookie assertion-message)
 
-            (let [callback-location (follow-authorize-redirects location)]
+            (when-let [callback-location (follow-authorize-redirects location)]
               (is (not (str/blank? callback-location)) assertion-message)
               (is (str/includes? callback-location "/oidc/v1/callback?") assertion-message)
               (let [callback-uri (URI. callback-location)
@@ -557,11 +566,9 @@
                                            :run-as-user (retrieve-username))
                       token-response (post-token waiter-url (assoc service-parameters :token waiter-token))]
                   (assert-response-status token-response http-200-ok)))
+            settings (waiter-settings waiter-url)
+            oidc-num-challenge-cookies-allowed-in-request (get-in settings [:authenticator-config :jwt :oidc-num-challenge-cookies-allowed-in-request] 100)
             ;; absence of Negotiate header also triggers an unauthorized response
-            oidc-num-challenge-cookies-allowed-in-request
-            (-> waiter-url
-              waiter-settings
-              (get-in [:authenticator-config :jwt :oidc-num-challenge-cookies-allowed-in-request] 100))
             request-headers {"authorization" "SingleUser unauthorized"
                              "accept-redirect" "yes"
                              "cookie" (->> (range oidc-num-challenge-cookies-allowed-in-request)
@@ -579,6 +586,27 @@
                                  :disable-auth true :headers % :method :get))]
             (assert-waiter-response initial-response)
             (assert-response-status initial-response http-401-unauthorized))
+          (testing "oidc enabled endpoint"
+            (let [response (make-request-with-debug-info
+                             {:x-waiter-token waiter-token}
+                             #(make-kitchen-request waiter-url % :path "/.well-known/oidc/v1/openid-enabled"))]
+              (is (= {:client-id waiter-token :enabled true :token? true}
+                     (some-> response :body try-parse-json walk/keywordize-keys)))
+              (assert-response-status response http-200-ok)
+              (assert-waiter-response response))
+            (let [{:keys [allow-oidc-auth-api?]} (get-in settings [:authenticator-config :jwt])
+                  {:keys [hostname]} settings
+                  request-host (if (string? hostname) hostname (first hostname))
+                  request-headers {"host" request-host}
+                  response (make-kitchen-request waiter-url request-headers :path "/.well-known/oidc/v1/openid-enabled")]
+              (is (= {:client-id request-host :enabled (true? allow-oidc-auth-api?) :token? false}
+                     (some-> response :body try-parse-json walk/keywordize-keys))
+                  (str {:allow-oidc-auth-api? allow-oidc-auth-api?
+                        :waiter-host (:host settings)
+                        :waiter-hostname (:hostname settings)
+                        :waiter-url waiter-url}))
+              (assert-response-status response (if allow-oidc-auth-api? http-200-ok http-404-not-found))
+              (assert-waiter-response response)))
           (finally
             (when edit-token?
               (delete-token-and-assert waiter-url waiter-token)))))
@@ -605,14 +633,14 @@
                   #(make-kitchen-request waiter-url % :cookies cookies :path "/request-info"))]
             (with-service-cleanup
               service-id
-              (assert-response-status canary-response 200)
+              (assert-response-status canary-response http-200-ok)
               (assert-backend-response canary-response)
               (is (= "cookie" (get-in canary-response [:headers "x-waiter-auth-method"])) (str canary-response))
               (is (= (retrieve-username) (get-in canary-response [:headers "x-waiter-auth-user"])) (str canary-response))
               (let [response (make-request-with-debug-info
                                {:x-waiter-token token-name}
                                #(make-kitchen-request waiter-url % :path "/request-info"))]
-                (assert-response-status response 401)
+                (assert-response-status response http-401-unauthorized)
                 (assert-waiter-response response)
                 (let [www-authenticate-header (get-in response [:headers "www-authenticate"])]
                   (is www-authenticate-header (str response))
