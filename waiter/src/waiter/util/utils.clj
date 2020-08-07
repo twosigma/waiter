@@ -379,8 +379,8 @@
         processed-headers (into {} (for [[k v] headers] [(name k) (str v)]))]
     (condp = log-level
       :info (log/info (.getMessage wrapped-ex))
-      :warn (log/warn (.getMessage wrapped-ex))
-      (log/error wrapped-ex))
+      :warn (log/warn wrapped-ex response-msg)
+      (log/error wrapped-ex response-msg))
     (-> {:details data
          :headers processed-headers
          :message response-msg
