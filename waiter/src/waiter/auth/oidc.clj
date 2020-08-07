@@ -161,9 +161,10 @@
                   request auth-params-map password auth-cookie-age-in-seconds)))
             (catch Throwable throwable
               (utils/exception->response
-                (ex-info "Error in retrieving access token"
+                (ex-info (str "Error in retrieving access token: " (ex-message throwable))
                          (-> (ex-data throwable)
-                           (utils/assoc-if-absent :log-level :info)
+                           (utils/assoc-if-absent :friendly-error-message "Error in retrieving access token")
+                           (utils/assoc-if-absent :log-level :warn)
                            (utils/assoc-if-absent :status http-401-unauthorized))
                          throwable)
                 request))))))))
