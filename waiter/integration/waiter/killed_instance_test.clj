@@ -68,8 +68,8 @@
         responder-state (get-in service-state [:state :responder-state])
         instance-keyword (keyword instance-id)
         instance-state (get-in responder-state [:instance-id->state instance-keyword])]
-    (when (some #(= "blacklisted" %) (:status-tags instance-state))
-      (get-in responder-state [:instance-id->blacklist-expiry-time instance-keyword]))))
+    (when (some #(= "ejected" %) (:status-tags instance-state))
+      (get-in responder-state [:instance-id->eject-expiry-time instance-keyword]))))
 
 (deftest ^:parallel ^:integration-fast ^:explicit test-instance-ejected-on-503
   ;; Verifies the instance ejected on a 503 response behavior.

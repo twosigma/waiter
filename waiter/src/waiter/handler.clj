@@ -141,7 +141,7 @@
       (catch Exception ex
         (utils/exception->response ex request)))))
 
-(defn blacklist-instance
+(defn eject-instance
   [notify-instance-killed-fn populate-maintainer-chan! request]
   (async/go
     (try
@@ -157,16 +157,16 @@
                            :log-level :info
                            :status http-400-bad-request}))
           (let [response-chan (async/promise-chan)
-                _ (service/blacklist-instance! populate-maintainer-chan! service-id instance-id period-in-ms response-chan)
-                _ (log/info "Waiting for response from blacklist channel...")
+                _ (service/eject-instance! populate-maintainer-chan! service-id instance-id period-in-ms response-chan)
+                _ (log/info "Waiting for response from eject channel...")
                 response-code (async/alt!
                                 response-chan ([code] code)
                                 (async/timeout (-> 30 t/seconds t/in-millis)) ([_] :timeout)
                                 :priority true)
-                successful? (= response-code :blacklisted)]
+                successful? (= response-code :ejected)]
             (cid/cloghelper
               (if successful? :info :warn)
-              "Blacklist" instance-id "of" service-id "response:" (name response-code))
+              "eject" instance-id "of" service-id "response:" (name response-code))
             (if successful?
               (do
                 (when (= "killed" reason)
@@ -177,17 +177,17 @@
                                                              (du/str-to-date started-at)))))]
                     (notify-instance-killed-fn instance)))
                 (utils/clj->json-response {:instance-id instance-id
-                                           :blacklist-period period-in-ms}))
+                                           :eject-period period-in-ms}))
               (let [response-status (if (= :in-use response-code) http-423-locked http-503-service-unavailable)]
-                (utils/clj->json-response {:message "Unable to blacklist instance."
+                (utils/clj->json-response {:message "Unable to eject instance."
                                            :instance-id instance-id
                                            :reason response-code}
                                           :status response-status))))))
       (catch Exception ex
         (utils/exception->response ex request)))))
 
-(defn get-blacklisted-instances
-  "Return the blacklisted instances for a given service-id at this router."
+(defn get-ejected-instances
+  "Return the ejected instances for a given service-id at this router."
   [populate-maintainer-chan! service-id request]
   (async/go
     (try
@@ -200,9 +200,9 @@
                             response-chan ([state] state)
                             (async/timeout (-> 30 t/seconds t/in-millis)) ([_] {})
                             :priority true)
-            blacklisted-instances (vec (keys (:instance-id->blacklist-expiry-time current-state)))]
-        (log/info service-id "has" (count blacklisted-instances) "blacklisted instance(s).")
-        (utils/clj->json-response {:blacklisted-instances blacklisted-instances}))
+            ejected-instances (vec (keys (:instance-id->eject-expiry-time current-state)))]
+        (log/info service-id "has" (count ejected-instances) "ejected instance(s).")
+        (utils/clj->json-response {:ejected-instances ejected-instances}))
       (catch Exception ex
         (utils/exception->response ex request)))))
 

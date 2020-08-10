@@ -29,8 +29,8 @@
                                              :kind s/Keyword
                                              s/Keyword schema/require-symbol-factory-fn}
                                             schema/contains-kind-sub-map?)
-   (s/required-key :blacklist-config) {(s/required-key :blacklist-backoff-base-time-ms) schema/positive-int
-                                       (s/required-key :max-blacklist-time-ms) schema/positive-int}
+   (s/required-key :eject-config) {(s/required-key :eject-backoff-base-time-ms) schema/positive-int
+                                   (s/required-key :max-eject-time-ms) schema/positive-int}
    (s/required-key :cors-config) (s/constrained
                                    {:kind s/Keyword
                                     (s/optional-key :exposed-headers) [schema/non-empty-string]
@@ -270,8 +270,8 @@
                  :exposed-headers ["etag", "x-cid"]
                  :max-age 3600
                  :token-parameter {:factory-fn 'waiter.cors/token-parameter-based-validator}}
-   :blacklist-config {:blacklist-backoff-base-time-ms 10000
-                      :max-blacklist-time-ms 300000}
+   :eject-config {:eject-backoff-base-time-ms 10000
+                  :max-eject-time-ms 300000}
    ;; To be considered part of the same cluster, routers need to
    ;; 1. have the same leader-latch-path to participate in leadership election
    ;; 2. have the same discovery path with the same cluster name to allow computing router endpoints
