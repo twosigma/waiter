@@ -51,7 +51,7 @@
                     :marathon {
                                ;; The URL for your Marathon HTTP API:
                                :url #config/env "WAITER_MARATHON"
-                               :mesos-slave-port 5051
+                               :mesos-agent-port 5051
                                :http-options {:conn-timeout 10000
                                               :socket-timeout 10000
                                               :spnego-auth false}

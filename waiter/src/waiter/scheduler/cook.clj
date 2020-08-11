@@ -534,7 +534,7 @@
 
 (defn cook-scheduler
   "Creates and starts cook scheduler with associated daemons."
-  [{:keys [allowed-users failed-tracker-interval-ms http-options impersonate mesos-slave-port search-interval-days url
+  [{:keys [allowed-users failed-tracker-interval-ms http-options impersonate mesos-agent-port search-interval-days url
            ;; entries from the context
            scheduler-name scheduler-state-chan scheduler-syncer-interval-secs start-scheduler-syncer-fn] :as config}]
   {:pre [(seq allowed-users)
@@ -549,7 +549,7 @@
                       hu/http-client-factory)
         cook-api {:http-client http-client
                   :impersonate impersonate
-                  :slave-port mesos-slave-port
+                  :mesos-agent-port mesos-agent-port
                   :spnego-auth (:spnego-auth http-options false)
                   :url url}
         search-interval (t/days search-interval-days)

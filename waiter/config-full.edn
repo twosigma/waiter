@@ -437,7 +437,7 @@
                            ;; The port on which the mesos agents are listening.
                            ;; This is an optional parameter.
                            ;; When absent log directory and log url support will be disabled.
-                           :mesos-slave-port 5051
+                           :mesos-agent-port 5051
 
                            ;; The time range to use while querying for running and waiting Cook jobs
                            :search-interval-days 10
@@ -610,15 +610,15 @@
                                                              ;; E.g., it may be necessary to delegate launching the user's command to a waiter-init script.
                                                              :container-init-commands ["waiter-mesos-init"]}
 
-                               ;; The port on which the mesos agents are listening.
-                               ;; This is an optional parameter.
-                               ;; When absent log directory and log url support will be disabled.
-                               :mesos-slave-port 5051
-
                                ;; The base directory where the agent directories are being written.
                                ;; This is an optional parameter.
                                ;; When absent log directory and log url support will be disabled.
-                               :slave-directory "/home/mesos/agent/workspace/"
+                               :mesos-agent-directory "/home/mesos/agent/workspace/"
+
+                               ;; The port on which the mesos agents are listening.
+                               ;; This is an optional parameter.
+                               ;; When absent log directory and log url support will be disabled.
+                               :mesos-agent-port 5051
 
                                ;; Controls the rate at which any mismatch in task count and instances is
                                ;; corrected by triggering new deployments

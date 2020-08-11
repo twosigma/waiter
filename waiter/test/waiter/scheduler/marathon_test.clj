@@ -204,7 +204,7 @@
                                                   :healthy? true,
                                                   :host "10.141.141.11",
                                                   :id "test-app-1234.A",
-                                                  :log-directory "/slave-dir/S234842/frameworks/F123445/executors/test-app-1234.A/runs/latest",
+                                                  :log-directory "/agent-dir/S234842/frameworks/F123445/executors/test-app-1234.A/runs/latest",
                                                   :message nil,
                                                   :port 31045,
                                                   :service-id "test-app-1234",
@@ -224,7 +224,7 @@
                                                   :healthy? false,
                                                   :host "10.141.141.13",
                                                   :id "test-app-1234.C",
-                                                  :log-directory "/slave-dir/S651616/frameworks/F123445/executors/test-app-1234.C/runs/latest",
+                                                  :log-directory "/agent-dir/S651616/frameworks/F123445/executors/test-app-1234.C/runs/latest",
                                                   :message nil,
                                                   :port 41234,
                                                   :service-id "test-app-1234",
@@ -238,7 +238,7 @@
                                 marathon-response
                                 [:app]
                                 (fn [] framework-id)
-                                {:slave-directory "/slave-dir"}
+                                {:mesos-agent-directory "/agent-dir"}
                                 service-id->failed-instances-transient-store)]
           (is (= expected-response actual-response) (str name))
           (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store []))))))
@@ -394,7 +394,7 @@
                                        :version "2014-09-12T23:28:21.737Z"})
         framework-id "framework-id"
         health-check-url "/status"
-        slave-directory "/slave"
+        mesos-agent-directory "/agent"
         common-extractor-fn (fn [instance-id marathon-task-response]
                               (let [{:keys [appId host message slaveId]} marathon-task-response]
                                 (cond-> {:service-id appId
@@ -402,7 +402,7 @@
                                          :health-check-path health-check-url}
                                   (and framework-id slaveId)
                                   (assoc :log-directory
-                                         (str slave-directory "/" slaveId "/frameworks/" framework-id
+                                         (str mesos-agent-directory "/" slaveId "/frameworks/" framework-id
                                               "/executors/" instance-id "/runs/latest"))
                                   message
                                   (assoc :message (str/trim message)))))
@@ -537,9 +537,9 @@
 
 (deftest test-retrieve-directory-content-from-host
   (let [host "www.example.com"
-        mesos-slave-port 5051
+        mesos-agent-port 5051
         directory "/path/to/instance2/directory"
-        mesos-api (mesos/api-factory (Object.) {} mesos-slave-port directory)]
+        mesos-api (mesos/api-factory (Object.) {} mesos-agent-port directory)]
     (with-redefs [mesos/list-directory-content
                   (fn [in-mesos-api in-host in-directory]
                     (is (= mesos-api in-mesos-api))
@@ -779,8 +779,8 @@
                                                           :container-init-commands ["waiter-mesos-init"]}
                             :home-path-prefix "/home/"
                             :http-options {:conn-timeout 10000 :socket-timeout 10000}
-                            :mesos-slave-port 5051
-                            :slave-directory "/foo"
+                            :mesos-agent-port 5051
+                            :mesos-agent-directory "/foo"
                             :sync-deployment {:interval-ms 15000
                                               :timeout-cycles 4}
                             :url "url"}
@@ -795,8 +795,8 @@
         (is (thrown? Throwable (create-marathon-scheduler (assoc valid-config :framework-id-ttl 0))))
         (is (thrown? Throwable (create-marathon-scheduler (assoc valid-config :home-path-prefix nil))))
         (is (thrown? Throwable (create-marathon-scheduler (assoc valid-config :http-options {}))))
-        (is (thrown? Throwable (create-marathon-scheduler (assoc valid-config :mesos-slave-port 0))))
-        (is (thrown? Throwable (create-marathon-scheduler (assoc valid-config :slave-directory ""))))
+        (is (thrown? Throwable (create-marathon-scheduler (assoc valid-config :mesos-agent-port 0))))
+        (is (thrown? Throwable (create-marathon-scheduler (assoc valid-config :mesos-agent-directory ""))))
         (is (thrown? Throwable (create-marathon-scheduler (assoc valid-config :sync-deployment {:interval-ms 0}))))
         (is (thrown? Throwable (create-marathon-scheduler (assoc valid-config :url nil)))))
 

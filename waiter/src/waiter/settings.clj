@@ -355,7 +355,7 @@
                              :instance-priorities {:delta 5
                                                    :max 75
                                                    :min 25}
-                             :mesos-slave-port 5051
+                             :mesos-agent-port 5051
                              :search-interval-days 10}
                       :kubernetes {; Default values are not provided below for the following keys:
                                    ; :authentication [:fileserver :port] :log-bucket-url :url
