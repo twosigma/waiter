@@ -31,7 +31,7 @@
 (defn compute-help-required
   "Computes the number of slots (requests that can be made to instances) of help required at a router given the values for:
      outstanding: the number of outstanding requests at the router;
-     slots-available: the number of slots available (where available = not in use and not blacklisted) from those assigned
+     slots-available: the number of slots available (where available = not in use and not ejected) from those assigned
                       to the router by the distribution algorithm;
      slots-in-use: the number of slots used by the router from those that were assigned to it by the distribution
                    algorithm at some point in time, it may include slots from instances that the router no longer owns; and
@@ -48,7 +48,7 @@
 (defn help-required?
   "Determines whether a given router needs help based on the values of:
      outstanding: the number of outstanding requests at the router;
-     slots-available: the number of slots available (where available = not in use and not blacklisted) from those assigned
+     slots-available: the number of slots available (where available = not in use and not ejected) from those assigned
                       to the router by the distribution algorithm;
      slots-in-use: the number of slots used by the router from those that were assigned to it by the distribution
                    algorithm at some point in time, it may include slots from instances that the router no longer owns; and

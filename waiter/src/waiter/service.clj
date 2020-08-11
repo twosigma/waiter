@@ -33,43 +33,43 @@
 
 (def ^:const status-check-path "/status")
 
-;;; Service instance blacklisting, work-stealing, access and creation
+;;; Service instance ejecting, work-stealing, access and creation
 
-;; Attempt to blacklist instances
-(defmacro blacklist-instance!
-  "Sends a rpc to the router state to blacklist the given instance.
-   Throws an exception if a blacklist channel cannot be found for the specfied service."
-  [populate-maintainer-chan! service-id instance-id blacklist-period-ms response-chan]
+;; Attempt to eject instances
+(defmacro eject-instance!
+  "Sends a rpc to the router state to eject the given instance.
+   Throws an exception if a eject channel cannot be found for the specfied service."
+  [populate-maintainer-chan! service-id instance-id eject-period-ms response-chan]
   `(let [response-chan# (async/promise-chan)]
-     (log/info "Requesting blacklist channel for" ~service-id)
+     (log/info "Requesting eject channel for" ~service-id)
      (->> {:cid (cid/get-correlation-id)
-           :method :blacklist
+           :method :eject
            :response-chan response-chan#
            :service-id ~service-id}
           (~populate-maintainer-chan!))
-     (if-let [blacklist-chan# (async/<! response-chan#)]
+     (if-let [eject-chan# (async/<! response-chan#)]
        (do
-         (log/info "Received blacklist channel, making blacklist request.")
-         (when-not (au/offer! blacklist-chan# [{:instance-id ~instance-id
-                                                :blacklist-period-ms ~blacklist-period-ms
+         (log/info "Received eject channel, making eject request.")
+         (when-not (au/offer! eject-chan# [{:instance-id ~instance-id
+                                                :eject-period-ms ~eject-period-ms
                                                 :cid (cid/get-correlation-id)}
                                                ~response-chan])
-           (throw (ex-info "Unable to put instance-id on blacklist chan."
+           (throw (ex-info "Unable to put instance-id on eject chan."
                            {:instance-id ~instance-id, :service-id ~service-id}))))
        (do
-         (log/error "Unable to find blacklist chan for service" ~service-id)
+         (log/error "Unable to find eject chan for service" ~service-id)
          (throw (ex-info "Service not found" {:instance-id ~instance-id
                                               :service-id ~service-id
                                               :status http-400-bad-request}))))))
 
-(defn blacklist-instance-go
-  "Sends a rpc to the router state to blacklist the lock on the given instance."
-  [populate-maintainer-chan! service-id instance-id blacklist-period-ms response-chan]
+(defn eject-instance-go
+  "Sends a rpc to the router state to eject the lock on the given instance."
+  [populate-maintainer-chan! service-id instance-id eject-period-ms response-chan]
   (async/go
     (try
-      (blacklist-instance! populate-maintainer-chan! service-id instance-id blacklist-period-ms response-chan)
+      (eject-instance! populate-maintainer-chan! service-id instance-id eject-period-ms response-chan)
       (catch Exception e
-        (log/error e "Error while blacklisting instance" instance-id)))))
+        (log/error e "Error while ejecting instance" instance-id)))))
 
 ;; Offer instances obtained via work-stealing mechanism
 (defmacro offer-instance!

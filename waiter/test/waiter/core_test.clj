@@ -48,7 +48,7 @@
   [resource request-method & params]
   {:request-method request-method :uri resource :params (first params)})
 
-(deftest test-peers-acknowledged-blacklist-requests?
+(deftest test-peers-acknowledged-eject-requests?
   (let [service-id "service-id"
         instance-id "service-id.instance-id"
         endpoint "router/endpoint"
@@ -76,16 +76,16 @@
     (doseq [{:keys [name short-circuit router-ids expected-result expected-routers-connected]} test-cases]
       (testing (str "Test " name)
         (let [invoked-routers-atom (atom [])
-              make-blacklist-request-fn (fn [in-dest-router-id in-dest-endpoint instance reason]
-                                          (swap! invoked-routers-atom conj in-dest-router-id)
-                                          (is (= service-id (:service-id instance)))
-                                          (is (= instance-id (:id instance)))
-                                          (is (= "blacklist-reason" reason))
-                                          (is (= endpoint in-dest-endpoint))
-                                          (if (str/includes? in-dest-router-id "fail") {:status http-400-bad-request} {:status http-200-ok}))
-              actual-result (peers-acknowledged-blacklist-requests?
+              make-eject-request-fn (fn [in-dest-router-id in-dest-endpoint instance reason]
+                                      (swap! invoked-routers-atom conj in-dest-router-id)
+                                      (is (= service-id (:service-id instance)))
+                                      (is (= instance-id (:id instance)))
+                                      (is (= "eject-reason" reason))
+                                      (is (= endpoint in-dest-endpoint))
+                                      (if (str/includes? in-dest-router-id "fail") {:status http-400-bad-request} {:status http-200-ok}))
+              actual-result (peers-acknowledged-eject-requests?
                               {:id instance-id, :service-id service-id} short-circuit router-ids endpoint
-                              make-blacklist-request-fn "blacklist-reason")]
+                              make-eject-request-fn "eject-reason")]
           (is (= expected-routers-connected @invoked-routers-atom))
           (is (= expected-result actual-result)))))))
 
@@ -936,10 +936,10 @@
            (exec-routes-mapper "/apps/test-service/resume")))
     (is (= {:handler :service-suspend-handler-fn, :route-params {:service-id "test-service"}}
            (exec-routes-mapper "/apps/test-service/suspend")))
-    (is (= {:handler :blacklist-instance-handler-fn}
-           (exec-routes-mapper "/blacklist")))
-    (is (= {:handler :blacklisted-instances-list-handler-fn, :route-params {:service-id "test-service"}}
-           (exec-routes-mapper "/blacklist/test-service")))
+    (is (= {:handler :eject-instance-handler-fn}
+           (exec-routes-mapper "/eject")))
+    (is (= {:handler :ejected-instances-list-handler-fn, :route-params {:service-id "test-service"}}
+           (exec-routes-mapper "/ejected/test-service")))
     (is (= {:handler :favicon-handler-fn}
            (exec-routes-mapper "/favicon.ico")))
     (is (= {:handler :metrics-request-handler-fn}

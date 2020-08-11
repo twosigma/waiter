@@ -46,17 +46,17 @@
               {:keys [headers]} (make-request-fn {:x-kitchen-act-busy "true"})
               router-id (get headers "x-waiter-router-id")
               backend-id (get headers "x-waiter-backend-id")
-              blacklist-time-millis (get-in (waiter-settings waiter-url) [:blacklist-config :blacklist-backoff-base-time-ms])]
+              eject-time-millis (get-in (waiter-settings waiter-url) [:ejection-config :eject-backoff-base-time-ms])]
 
-          (is (integer? blacklist-time-millis))
+          (is (integer? eject-time-millis))
 
-          ;; We shouldn't see the same instance for blacklist-time-millis from the same router
+          ;; We shouldn't see the same instance for eject-time-millis from the same router
           (let [canceled (promise)
                 results (parallelize-requests
                           parallelism
                           100
                           #(let [{:keys [headers]} (make-request-fn {:x-kitchen-delay-ms 1000})]
-                             (if (-> (System/currentTimeMillis) (- start-millis) (< (- blacklist-time-millis 1000)))
+                             (if (-> (System/currentTimeMillis) (- start-millis) (< (- eject-time-millis 1000)))
                                (and (= backend-id (get headers "x-waiter-backend-id"))
                                     (= router-id (get headers "x-waiter-router-id")))
                                (do (deliver canceled :canceled)

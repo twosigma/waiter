@@ -111,9 +111,9 @@
    When an instance receives a veto or is not killed, we will iteratively search for another instance to successfully kill.
    The function stops and returns true when a successful kill is made.
    Else, it terminates after we have exhausted all candidate instances to kill or when a kill attempt returns a non-truthy value."
-  [notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn scheduler populate-maintainer-chan! timeout-config
+  [notify-instance-killed-fn peers-acknowledged-eject-requests-fn scheduler populate-maintainer-chan! timeout-config
    service-id correlation-id num-instances-to-kill thread-pool response-chan]
-  (let [{:keys [blacklist-backoff-base-time-ms inter-kill-request-wait-time-ms max-blacklist-time-ms]} timeout-config]
+  (let [{:keys [eject-backoff-base-time-ms inter-kill-request-wait-time-ms max-eject-time-ms]} timeout-config]
     (cid/with-correlation-id
       correlation-id
       (async/go
@@ -128,7 +128,7 @@
                 (let [instance (service/get-rand-inst populate-maintainer-chan! service-id (reason-map-fn) exclude-ids-set
                                                       inter-kill-request-wait-time-ms)]
                   (if-let [instance-id (:id instance)]
-                    (if (peers-acknowledged-blacklist-requests-fn instance true blacklist-backoff-base-time-ms :prepare-to-kill)
+                    (if (peers-acknowledged-eject-requests-fn instance true eject-backoff-base-time-ms :prepare-to-kill)
                       (do
                         (log/info "scaling down instance candidate" instance)
                         (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "attempt"))
@@ -146,7 +146,7 @@
                               (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "success"))
                               (service/release-instance! populate-maintainer-chan! instance (result-map-fn :killed))
                               (notify-instance-killed-fn instance)
-                              (peers-acknowledged-blacklist-requests-fn instance false max-blacklist-time-ms :killed))
+                              (peers-acknowledged-eject-requests-fn instance false max-eject-time-ms :killed))
                             (do
                               (log/info "failed kill attempt, releasing instance" instance-id)
                               (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "kill-fail"))
@@ -169,7 +169,7 @@
 
 (defn kill-instance-handler
   "Handler that supports killing instances of a particular service on a specific router."
-  [notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn scheduler populate-maintainer-chan! timeout-config
+  [notify-instance-killed-fn peers-acknowledged-eject-requests-fn scheduler populate-maintainer-chan! timeout-config
    scale-service-thread-pool {:keys [route-params] {:keys [src-router-id]} :basic-authentication}]
   (let [{:keys [service-id]} route-params
         correlation-id (cid/get-correlation-id)]
@@ -178,7 +178,7 @@
       (let [response-chan (async/promise-chan)
             instance-killed? (async/<!
                                (execute-scale-down-request
-                                 notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
+                                 notify-instance-killed-fn peers-acknowledged-eject-requests-fn
                                  scheduler populate-maintainer-chan! timeout-config service-id correlation-id 1
                                  scale-service-thread-pool response-chan))
             {:keys [instance-id status] :as kill-response} (or (async/poll! response-chan)
@@ -212,7 +212,7 @@
    While a scale-up request can cause many new instances to be spawned, a scale-down request can end up killing at most one instance.
    Killing of an instance may be delegated to peer routers via delegate-instance-kill-request-fn if no instance is available locally.
    The executor also respects inter-kill-request-wait-time-ms between successive scale-down operations."
-  [notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn delegate-instance-kill-request-fn service-id->service-description-fn
+  [notify-instance-killed-fn peers-acknowledged-eject-requests-fn delegate-instance-kill-request-fn service-id->service-description-fn
    scheduler populate-maintainer-chan! quanta-constraints {:keys [inter-kill-request-wait-time-ms] :as timeout-config}
    scale-service-thread-pool service-id]
   {:pre [(>= inter-kill-request-wait-time-ms 0)]}
@@ -280,7 +280,7 @@
                                   (t/after? (t/now) (t/plus last-scale-down-time inter-kill-request-wait-time-in-millis)))
                             (if (or (async/<!
                                       (execute-scale-down-request
-                                        notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
+                                        notify-instance-killed-fn peers-acknowledged-eject-requests-fn
                                         scheduler populate-maintainer-chan! timeout-config service-id iter-correlation-id
                                         num-instances-to-kill scale-service-thread-pool response-chan))
                                     (delegate-instance-kill-request-fn service-id))

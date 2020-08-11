@@ -252,7 +252,7 @@
 (defn retrieve-local-stats-for-service
   "Returns a map containing local metrics for the specified service along with the service-id."
   [service-id]
-  {:instances-blacklisted (counters/value (service-counter service-id "instance-counts" "blacklisted"))
+  {:instances-ejected (counters/value (service-counter service-id "instance-counts" "ejected"))
    :instances-failed (counters/value (service-counter service-id "instance-counts" "failed"))
    :outstanding-requests (counters/value (service-counter service-id "request-counts" "outstanding"))
    :service-id service-id

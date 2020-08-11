@@ -24,37 +24,37 @@
             [waiter.util.cache-utils :as cu])
   (:import (java.util.concurrent Executors Future)))
 
-(defn- mock-blacklisting-instance
+(defn- mock-ejecting-instance
   [instance-rpc-chan test-service-id callback-fn]
   (async/thread
     (try
       (let [{:keys [method response-chan service-id]} (async/<!! instance-rpc-chan)
-            blacklist-chan (async/chan 1)]
-        (is (= :blacklist method))
+            eject-chan (async/chan 1)]
+        (is (= :eject method))
         (is (= test-service-id service-id))
-        (async/>!! response-chan blacklist-chan)
-        (callback-fn (async/<!! blacklist-chan)))
+        (async/>!! response-chan eject-chan)
+        (callback-fn (async/<!! eject-chan)))
       (catch Exception e
         (log/info e)
         (.printStackTrace e)))))
 
-(deftest test-blacklist-instance
-  (testing "basic blacklist"
+(deftest test-eject-instance
+  (testing "basic eject"
     (let [instance-rpc-chan (async/chan 1)
           populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
           service-id "test-id"
           instance-id "test-id.12345"
           instance {:service-id service-id :id instance-id}
-          custom-blacklist-period-ms 5000
+          custom-eject-period-ms 5000
           response-chan (async/promise-chan)]
-      (mock-blacklisting-instance
+      (mock-ejecting-instance
         instance-rpc-chan
         service-id
-        (fn [[{:keys [cid blacklist-period-ms instance-id]} _]]
+        (fn [[{:keys [cid eject-period-ms instance-id]} _]]
           (is (= (:id instance) instance-id))
           (is (not (nil? cid)))
-          (is (= custom-blacklist-period-ms blacklist-period-ms))))
-      (blacklist-instance-go populate-maintainer-chan! service-id instance-id custom-blacklist-period-ms response-chan)
+          (is (= custom-eject-period-ms eject-period-ms))))
+      (eject-instance-go populate-maintainer-chan! service-id instance-id custom-eject-period-ms response-chan)
       (async/<!! (async/timeout 10)))))
 
 (defn- mock-offering-instance

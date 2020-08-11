@@ -1468,7 +1468,7 @@
           (is (= {"content-type" "text/html"} headers))
           (is (= body "template:some-content")))))))
 
-(deftest test-blacklist-instance-cannot-find-channel
+(deftest test-eject-instance-cannot-find-channel
   (let [notify-instance-killed-fn (fn [instance] (throw (ex-info "Unexpected call" {:instance instance})))
         instance-rpc-chan (async/chan)
         populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
@@ -1477,11 +1477,11 @@
                          (utils/clj->json
                            {"instance" {"id" "test-instance-id", "service-id" test-service-id}
                             "period-in-ms" 1000
-                            "reason" "blacklist"}))}
-        response-chan (blacklist-instance notify-instance-killed-fn populate-maintainer-chan! request)]
+                            "reason" "eject"}))}
+        response-chan (eject-instance notify-instance-killed-fn populate-maintainer-chan! request)]
     (async/thread
       (let [{:keys [cid method response-chan service-id]} (async/<!! instance-rpc-chan)]
-        (is (= :blacklist method))
+        (is (= :eject method))
         (is (= test-service-id service-id))
         (is cid)
         (is (instance? ManyToManyChannel response-chan))
@@ -1489,7 +1489,7 @@
     (let [{:keys [status]} (async/<!! response-chan)]
       (is (= http-400-bad-request status)))))
 
-(deftest test-blacklist-killed-instance
+(deftest test-eject-killed-instance
   (let [notify-instance-chan (async/promise-chan)
         notify-instance-killed-fn (fn [instance] (async/>!! notify-instance-chan instance))
         instance-rpc-chan (async/chan)
@@ -1504,29 +1504,29 @@
                             "period-in-ms" 1000
                             "reason" "killed"}))}]
     (with-redefs []
-      (let [response-chan (blacklist-instance notify-instance-killed-fn populate-maintainer-chan! request)
-            blacklist-chan (async/promise-chan)]
+      (let [response-chan (eject-instance notify-instance-killed-fn populate-maintainer-chan! request)
+            eject-chan (async/promise-chan)]
         (async/thread
           (let [{:keys [cid method response-chan service-id]} (async/<!! instance-rpc-chan)]
-            (is (= :blacklist method))
+            (is (= :eject method))
             (is (= test-service-id service-id))
             (is cid)
             (is (instance? ManyToManyChannel response-chan))
-            (async/>!! response-chan blacklist-chan)))
+            (async/>!! response-chan eject-chan)))
         (async/thread
-          (let [[{:keys [blacklist-period-ms instance-id]} repsonse-chan] (async/<!! blacklist-chan)]
-            (is (= 1000 blacklist-period-ms))
+          (let [[{:keys [eject-period-ms instance-id]} repsonse-chan] (async/<!! eject-chan)]
+            (is (= 1000 eject-period-ms))
             (is (= (:id instance) instance-id))
-            (async/>!! repsonse-chan :blacklisted)))
+            (async/>!! repsonse-chan :ejected)))
         (let [{:keys [status]} (async/<!! response-chan)]
           (is (= http-200-ok status))
           (is (= instance (async/<!! notify-instance-chan))))))))
 
-(deftest test-get-blacklisted-instances-cannot-find-channel
+(deftest test-get-ejected-instances-cannot-find-channel
   (let [instance-rpc-chan (async/chan)
         populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
         test-service-id "test-service-id"
-        response-chan (get-blacklisted-instances populate-maintainer-chan! test-service-id {})]
+        response-chan (get-ejected-instances populate-maintainer-chan! test-service-id {})]
     (async/thread
       (let [{:keys [cid method response-chan service-id]} (async/<!! instance-rpc-chan)]
         (is (= :query-state method))

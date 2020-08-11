@@ -59,7 +59,7 @@
   "Only the following instances can be killed:
    - without slots used and not killed|locked, or
    - expired and idle or processing lingering requests.
-   If there are expired instances, only choose healthy instances that are blacklisted or expired.
+   If there are expired instances, only choose healthy instances that are ejected or expired.
    If there are expired and starting instances, only kill unhealthy instances that are not starting."
   [request-id->use-reason-map earliest-request-threshold-time expired-instances? starting-instances?
    {:keys [slots-used status-tags] :as state}]
@@ -68,7 +68,7 @@
            (and (expired? state)
                 (only-lingering-requests? request-id->use-reason-map earliest-request-threshold-time)))
        (or (not (and expired-instances? (contains? status-tags :healthy)))
-           (some #(contains? status-tags %) [:blacklisted :expired]))
+           (some #(contains? status-tags %) [:ejected :expired]))
        (or (not (and expired-instances? starting-instances?))
            (and (contains? status-tags :unhealthy)
                 (not (contains? status-tags :starting))))))
@@ -95,7 +95,7 @@
    - choose amongst the oldest idle expired instances
    - choose among expired instances with lingering requests
    - choose amongst the idle unhealthy instances
-   - choose amongst the idle blacklisted instances
+   - choose amongst the idle ejected instances
    - choose amongst the idle youngest healthy instances."
   [id->instance instance-id->state acceptable-instance-id? instance-id->request-id->use-reason-map
    load-balancing lingering-request-threshold-ms]
@@ -106,7 +106,7 @@
                                                     (zero? slots-used)
                                                     (contains? status-tags :expired)
                                                     (contains? status-tags :unhealthy)
-                                                    (contains? status-tags :blacklisted)
+                                                    (contains? status-tags :ejected)
                                                     (cond-> (or (some-> instance-id
                                                                   id->instance
                                                                   :started-at
@@ -168,7 +168,7 @@
 (defn- state->slots-available
   "Computes the slots available from the instance state."
   [{:keys [slots-assigned slots-used status-tags]}]
-  (if (some #(contains? status-tags %1) #{:blacklisted, :killed, :locked})
+  (if (some #(contains? status-tags %1) #{:ejected, :killed, :locked})
     0
     (max 0 (int (- slots-assigned slots-used)))))
 
@@ -266,10 +266,10 @@
                                     (fn [acc instance-id]
                                       (let [slots-assigned (get my-instance-id->slots instance-id 0)
                                             slots-used (get-in instance-id->state [instance-id :slots-used] 0)
-                                            ; do not change blacklisted/locked state
+                                            ; do not change ejected/locked state
                                             status-tags (let [existing-status-tags (get-in instance-id->state [instance-id :status-tags])
                                                               was-locked? (:locked existing-status-tags)
-                                                              was-blacklisted? (:blacklisted existing-status-tags)
+                                                              was-ejected? (:ejected existing-status-tags)
                                                               healthy? (contains? healthy-instance-ids instance-id)
                                                               unhealthy? (contains? unhealthy-instance-ids instance-id)
                                                               expired? (contains? expired-instance-ids instance-id)
@@ -282,11 +282,11 @@
                                                               starting? (conj! :starting)
                                                               (or healthy? unhealthy?) (disj! :killed)
                                                               was-locked? (conj! :locked)
-                                                              was-blacklisted? (conj! :blacklisted))))]
+                                                              was-ejected? (conj! :ejected))))]
                                         ; cleanup instances who have no useful state
                                         (if (and (zero? slots-assigned)
                                                  (zero? slots-used)
-                                                 (not-any? #(contains? #{:blacklisted, :expired, :healthy, :locked, :unhealthy} %) status-tags))
+                                                 (not-any? #(contains? #{:ejected, :expired, :healthy, :locked, :unhealthy} %) status-tags))
                                           acc
                                           (assoc! acc instance-id {:slots-assigned slots-assigned
                                                                    :slots-used slots-used
@@ -400,8 +400,8 @@
 (defn handle-release-instance-request
   "Handles a release instance request."
   [{:keys [instance-id->consecutive-failures instance-id->request-id->use-reason-map request-id->work-stealer] :as current-state} service-id
-   update-slot-state-fn update-status-tag-fn update-state-by-blacklisting-instance-fn update-instance-id->blacklist-expiry-time-fn
-   work-stealing-received-in-flight-counter max-blacklist-time-ms blacklist-backoff-base-time-ms max-backoff-exponent
+   update-slot-state-fn update-status-tag-fn update-state-by-ejecting-instance-fn update-instance-id->eject-expiry-time-fn
+   work-stealing-received-in-flight-counter max-eject-time-ms eject-backoff-base-time-ms max-backoff-exponent
    [{instance-id :id :as instance-to-release} {:keys [cid request-id status] :as reservation-result}]]
   (let [{:keys [reason] :as reason-map} (get-in instance-id->request-id->use-reason-map [instance-id request-id])
         work-stealing-data (get request-id->work-stealer request-id)]
@@ -425,38 +425,38 @@
           (when work-stealing-data
             (complete-work-stealing-offer! service-id work-stealing-data status work-stealing-received-in-flight-counter)))
         (if (#{:instance-error :killed :instance-busy} status)
-          ; mark as blacklisted and track the instance
+          ; mark as ejected and track the instance
           (let [consecutive-failures (inc (get instance-id->consecutive-failures instance-id 0))
-                expiry-time-ms (min max-blacklist-time-ms
+                expiry-time-ms (min max-eject-time-ms
                                     (if (= :killed status)
-                                      max-blacklist-time-ms
-                                      (* blacklist-backoff-base-time-ms
+                                      max-eject-time-ms
+                                      (* eject-backoff-base-time-ms
                                          (Math/pow 2 (min max-backoff-exponent (dec consecutive-failures))))))]
             (cid/cinfo cid instance-id "with status" status "has" consecutive-failures "consecutive failures")
             (-> current-state'
-              ; mark instance as blacklisted and killed based on status.
-              (update-in [:instance-id->state instance-id] update-status-tag-fn #(cond-> (conj % :blacklisted) (= :killed status) (conj :killed)))
-              ; track the blacklist expiry time
-              (update-state-by-blacklisting-instance-fn cid instance-id expiry-time-ms)
+              ; mark instance as ejected and killed based on status.
+              (update-in [:instance-id->state instance-id] update-status-tag-fn #(cond-> (conj % :ejected) (= :killed status) (conj :killed)))
+              ; track the eject expiry time
+              (update-state-by-ejecting-instance-fn cid instance-id expiry-time-ms)
               ; track the consecutive failure count
               (update-in [:instance-id->consecutive-failures] #(assoc % instance-id consecutive-failures))))
           ; else: clear out any failure records if instance has successfully processed a request
           (-> current-state'
-            (update-instance-id->blacklist-expiry-time-fn #(if (= :not-killed status) % (dissoc % instance-id)))
+            (update-instance-id->eject-expiry-time-fn #(if (= :not-killed status) % (dissoc % instance-id)))
             (update-in [:instance-id->consecutive-failures] #(if (= :not-killed status) % (dissoc % instance-id)))
-            (update-in [:instance-id->state instance-id] update-status-tag-fn #(disj % :blacklisted))))))))
+            (update-in [:instance-id->state instance-id] update-status-tag-fn #(disj % :ejected))))))))
 
-(defn handle-blacklist-request
-  "Handle a request to blacklist an instance."
+(defn handle-eject-request
+  "Handle a request to eject an instance."
   [{:keys [instance-id->request-id->use-reason-map instance-id->state] :as current-state}
-   update-status-tag-fn update-state-by-blacklisting-instance-fn lingering-request-threshold-ms
-   [{:keys [instance-id blacklist-period-ms cid]} response-chan]]
+   update-status-tag-fn update-state-by-ejecting-instance-fn lingering-request-threshold-ms
+   [{:keys [instance-id eject-period-ms cid]} response-chan]]
   (cid/with-correlation-id
     cid
-    (log/info "attempt to blacklist" instance-id "which has"
+    (log/info "attempt to eject" instance-id "which has"
               (count (get instance-id->request-id->use-reason-map instance-id)) "uses with state:"
               (get instance-id->state instance-id))
-    ;; cannot blacklist if the instance is not killable
+    ;; cannot eject if the instance is not killable
     (let [instance-not-allowed? (and (contains? instance-id->state instance-id)
                                      (let [request-id->use-reason-map (instance-id->request-id->use-reason-map instance-id)
                                            earliest-request-threshold-time (t/minus (t/now) (t/millis lingering-request-threshold-ms))
@@ -466,13 +466,13 @@
                                        (not
                                          (killable? request-id->use-reason-map earliest-request-threshold-time
                                                     has-expired-instances has-starting-instances state))))
-          response-code (if instance-not-allowed? :in-use :blacklisted)]
-      {:current-state' (if (= :blacklisted response-code)
+          response-code (if instance-not-allowed? :in-use :ejected)]
+      {:current-state' (if (= :ejected response-code)
                          (-> current-state
-                           ; mark instance as blacklisted and set the expiry time
+                           ; mark instance as ejected and set the expiry time
                            (update-in [:instance-id->state instance-id] sanitize-instance-state)
-                           (update-in [:instance-id->state instance-id] update-status-tag-fn #(conj % :blacklisted))
-                           (update-state-by-blacklisting-instance-fn cid instance-id blacklist-period-ms))
+                           (update-in [:instance-id->state instance-id] update-status-tag-fn #(conj % :ejected))
+                           (update-state-by-ejecting-instance-fn cid instance-id eject-period-ms))
                          current-state)
        :response-chan response-chan
        :response response-code})))
@@ -482,42 +482,42 @@
   (scheduler/log-service-instance log-body event-type log-level)
   (update-in current-state path update-fn func))
 
-(defn- unblacklist-instance
-  [{:keys [id->instance instance-id->state] :as current-state} update-instance-id->blacklist-expiry-time-fn update-status-tag-fn
+(defn- uneject-instance
+  [{:keys [id->instance instance-id->state] :as current-state} update-instance-id->eject-expiry-time-fn update-status-tag-fn
    instance-id expiry-time]
-  (log/info "unblacklisting instance" instance-id "as blacklist expired at" expiry-time)
-  (cond-> (update-instance-id->blacklist-expiry-time-fn current-state #(dissoc % instance-id))
+  (log/info "unejecting instance" instance-id "as eject expired at" expiry-time)
+  (cond-> (update-instance-id->eject-expiry-time-fn current-state #(dissoc % instance-id))
     (contains? instance-id->state instance-id)
-    (clear-rejection-state (get id->instance instance-id) :readmit :info [:instance-id->state instance-id] update-status-tag-fn #(disj % :blacklisted))))
+    (clear-rejection-state (get id->instance instance-id) :readmit :info [:instance-id->state instance-id] update-status-tag-fn #(disj % :ejected))))
 
 (defn- expiry-time-reached?
   "Returns true if current-time is greater than or equal to expiry-time."
   [expiry-time current-time]
   (and expiry-time (not (t/after? expiry-time current-time))))
 
-(defn- handle-unblacklist-request
-  "Handle a request to unblacklist an instance."
-  [{:keys [instance-id->blacklist-expiry-time] :as current-state} update-status-tag-fn
-   update-instance-id->blacklist-expiry-time-fn {:keys [instance-id]}]
-  (let [expiry-time (get instance-id->blacklist-expiry-time instance-id)]
+(defn- handle-uneject-request
+  "Handle a request to uneject an instance."
+  [{:keys [instance-id->eject-expiry-time] :as current-state} update-status-tag-fn
+   update-instance-id->eject-expiry-time-fn {:keys [instance-id]}]
+  (let [expiry-time (get instance-id->eject-expiry-time instance-id)]
     (if (expiry-time-reached? expiry-time (t/now))
-      (unblacklist-instance current-state update-instance-id->blacklist-expiry-time-fn update-status-tag-fn
+      (uneject-instance current-state update-instance-id->eject-expiry-time-fn update-status-tag-fn
                             instance-id expiry-time)
       current-state)))
 
-(defn- handle-unblacklist-cleanup-request
-  "Handle cleanup of expired blacklisted instances."
-  [{:keys [instance-id->blacklist-expiry-time] :as current-state} cleanup-time update-status-tag-fn
-   update-instance-id->blacklist-expiry-time-fn]
-  (let [expired-instance-id->expiry-time (->> instance-id->blacklist-expiry-time
+(defn- handle-uneject-cleanup-request
+  "Handle cleanup of expired ejected instances."
+  [{:keys [instance-id->eject-expiry-time] :as current-state} cleanup-time update-status-tag-fn
+   update-instance-id->eject-expiry-time-fn]
+  (let [expired-instance-id->expiry-time (->> instance-id->eject-expiry-time
                                            (filter #(expiry-time-reached? (val %) cleanup-time))
                                            (into {}))]
     (if (seq expired-instance-id->expiry-time)
-      (letfn [(unblacklist-instance-fn [new-state [instance-id expiry-time]]
-                (unblacklist-instance new-state update-instance-id->blacklist-expiry-time-fn update-status-tag-fn
+      (letfn [(uneject-instance-fn [new-state [instance-id expiry-time]]
+                (uneject-instance new-state update-instance-id->eject-expiry-time-fn update-status-tag-fn
                                       instance-id expiry-time))]
-        (log/warn "found" (count expired-instance-id->expiry-time) "instances blacklisted beyond time of" cleanup-time)
-        (reduce unblacklist-instance-fn current-state expired-instance-id->expiry-time))
+        (log/warn "found" (count expired-instance-id->expiry-time) "instances ejected beyond time of" cleanup-time)
+        (reduce uneject-instance-fn current-state expired-instance-id->expiry-time))
       current-state)))
 
 (defn- handle-scaling-state-request
@@ -554,18 +554,18 @@
   "go block that maintains the available instances for one service.
   Instances are reserved using the reserve-instance-chan,
   instances are released using the release-instance-chan,
-  instances are blacklisted using the blacklist-instance-chan,
+  instances are ejected using the eject-instance-chan,
   updated state is passed into the block through the update-state-chan,
   state queries are passed into the block through the query-state-chan."
-  [service-id trigger-unblacklist-process-fn
-   {:keys [blacklist-backoff-base-time-ms lingering-request-threshold-ms max-blacklist-time-ms]}
-   {:keys [blacklist-instance-chan exit-chan kill-instance-chan query-state-chan release-instance-chan
-           reserve-instance-chan scaling-state-chan unblacklist-instance-chan update-state-chan work-stealing-chan]}
+  [service-id trigger-uneject-process-fn
+   {:keys [eject-backoff-base-time-ms lingering-request-threshold-ms max-eject-time-ms]}
+   {:keys [eject-instance-chan exit-chan kill-instance-chan query-state-chan release-instance-chan
+           reserve-instance-chan scaling-state-chan uneject-instance-chan update-state-chan work-stealing-chan]}
    initial-state]
   {:pre [(some? (:load-balancing initial-state))]}
   (when (some nil? (vals initial-state))
     (throw (ex-info "Initial state contains nil values!" initial-state)))
-  (let [max-backoff-exponent (->> (/ (Math/log max-blacklist-time-ms) (Math/log blacklist-backoff-base-time-ms))
+  (let [max-backoff-exponent (->> (/ (Math/log max-eject-time-ms) (Math/log eject-backoff-base-time-ms))
                                Math/exp
                                inc
                                (max 1)
@@ -575,47 +575,47 @@
         responder-release-timer (metrics/service-timer service-id "service-chan-responder-release")
         responder-kill-timer (metrics/service-timer service-id "service-chan-responder-kill")
         responder-update-timer (metrics/service-timer service-id "service-chan-responder-update")
-        responder-blacklist-timer (metrics/service-timer service-id "service-chan-responder-blacklist")
-        responder-unblacklist-timer (metrics/service-timer service-id "service-chan-responder-unblacklist")
+        responder-eject-timer (metrics/service-timer service-id "service-chan-responder-eject")
+        responder-uneject-timer (metrics/service-timer service-id "service-chan-responder-uneject")
         slots-available-counter (metrics/service-counter service-id "instance-counts" "slots-available")
         slots-assigned-counter (metrics/service-counter service-id "instance-counts" "slots-assigned")
         slots-in-use-counter (metrics/service-counter service-id "instance-counts" "slots-in-use")
         update-responder-state-timer (metrics/service-timer service-id "update-responder-state")
         update-responder-state-meter (metrics/service-meter service-id "update-responder-state")
-        blacklisted-instance-counter (metrics/service-counter service-id "instance-counts" "blacklisted")
+        ejected-instance-counter (metrics/service-counter service-id "instance-counts" "ejected")
         in-use-instance-counter (metrics/service-counter service-id "instance-counts" "in-use")
         requests-outstanding-counter (metrics/service-counter service-id "request-counts" "outstanding")
         work-stealing-received-in-flight-counter (metrics/service-counter service-id "work-stealing" "received-from" "in-flight")
         update-slot-state-fn #(update-slot-state %1 %2 %3 slots-in-use-counter slots-available-counter)
         update-status-tag-fn #(update-status-tag %1 %2 slots-available-counter)
-        update-instance-id->blacklist-expiry-time-fn
-        (fn update-instance-id->blacklist-expiry-time-fn [current-state transform-fn]
-          (update-in current-state [:instance-id->blacklist-expiry-time]
-                                   (fn inner-update-instance-id->blacklist-expiry-time-fn [instance-id->blacklist-expiry-time]
-                                     (let [instance-id->blacklist-expiry-time' (transform-fn instance-id->blacklist-expiry-time)]
-                                       (metrics/reset-counter blacklisted-instance-counter (count instance-id->blacklist-expiry-time'))
-                                       instance-id->blacklist-expiry-time'))))
-        update-state-by-blacklisting-instance-fn
-        (fn update-state-by-blacklisting-instance-fn [current-state correlation-id instance-id expiry-time-ms]
+        update-instance-id->eject-expiry-time-fn
+        (fn update-instance-id->eject-expiry-time-fn [current-state transform-fn]
+          (update-in current-state [:instance-id->eject-expiry-time]
+                                   (fn inner-update-instance-id->eject-expiry-time-fn [instance-id->eject-expiry-time]
+                                     (let [instance-id->eject-expiry-time' (transform-fn instance-id->eject-expiry-time)]
+                                       (metrics/reset-counter ejected-instance-counter (count instance-id->eject-expiry-time'))
+                                       instance-id->eject-expiry-time'))))
+        update-state-by-ejecting-instance-fn
+        (fn update-state-by-ejecting-instance-fn [current-state correlation-id instance-id expiry-time-ms]
           (let [actual-expiry-time (t/plus (t/now) (t/millis expiry-time-ms))]
-            (cid/cinfo correlation-id "blacklisting instance" instance-id "for" expiry-time-ms "ms.")
+            (cid/cinfo correlation-id "ejecting instance" instance-id "for" expiry-time-ms "ms.")
             (scheduler/log-service-instance (assoc (get (:id->instance current-state) instance-id) :blackist-period-ms expiry-time-ms) :eject :info)
-            (trigger-unblacklist-process-fn correlation-id instance-id expiry-time-ms unblacklist-instance-chan)
-            (update-instance-id->blacklist-expiry-time-fn current-state #(assoc % instance-id actual-expiry-time))))
+            (trigger-uneject-process-fn correlation-id instance-id expiry-time-ms uneject-instance-chan)
+            (update-instance-id->eject-expiry-time-fn current-state #(assoc % instance-id actual-expiry-time))))
         default-load-balancing (:load-balancing initial-state)]
     (async/go
       (try
         (log/info "service-chan-responder started for" service-id "with initial state:" initial-state)
-        ; `instance-id->blacklist-expiry-time` maintains a list of recently 'killed' or 'erroneous' instances (via the :killed or :instance-error status while releasing an instance).
+        ; `instance-id->eject-expiry-time` maintains a list of recently 'killed' or 'erroneous' instances (via the :killed or :instance-error status while releasing an instance).
         ; Such instances are guaranteed not to be served up as an available instance until sufficient time has elapsed since their last use.
-        ; Killed instances are blacklisted for max-blacklist-time-ms milliseconds.
-        ; Erroneous instances are blacklisted using an exponential delay based on number of successive failures and blacklist-backoff-base-time-ms.
+        ; Killed instances are ejected for max-eject-time-ms milliseconds.
+        ; Erroneous instances are ejected using an exponential delay based on number of successive failures and eject-backoff-base-time-ms.
         ; If inside this period the instance gets actually killed, it will no longer show up as a live instance from the scheduler.
         ; After the time period has elapsed and the instance is not actually killed, it will start showing up in the state.
         ; This can possibly happen as either the previous kill request for that instance backend has failed or the temporary error at the instance has gone away.
         ; status-tags inside instance-id->state contains only
         ; :healthy|:unhealthy => instance is known to be (un)healthy from state updates
-        ; :blacklisted => instance was blacklisted based on its response
+        ; :ejected => instance was ejected based on its response
         ; :killed => instance was marked as successfully killed
         ; :locked => instance has been locked and cannot be used to satify any other request (e.g. used for a kill request)
         ; :expired => instance has exceeded its age and is being prepared to be replaced
@@ -625,7 +625,7 @@
                (merge {:deployment-error nil
                        :id->instance {}
                        :instability-issue nil
-                       :instance-id->blacklist-expiry-time {}
+                       :instance-id->eject-expiry-time {}
                        :instance-id->consecutive-failures {}
                        :instance-id->request-id->use-reason-map {}
                        :instance-id->state {}
@@ -644,7 +644,7 @@
                          chans (concat [update-state-chan scaling-state-chan]
                                        (when (or slots-available? (seq work-stealing-queue) deployment-error)
                                          [reserve-instance-chan])
-                                       [release-instance-chan blacklist-instance-chan unblacklist-instance-chan kill-instance-chan
+                                       [release-instance-chan eject-instance-chan uneject-instance-chan kill-instance-chan
                                         work-stealing-chan query-state-chan exit-chan])
                          [data chan-selected] (async/alts! chans :priority true)]
                      (cond->
@@ -683,9 +683,9 @@
                            responder-release-timer
                            (handle-release-instance-request
                              current-state service-id update-slot-state-fn update-status-tag-fn
-                             update-state-by-blacklisting-instance-fn update-instance-id->blacklist-expiry-time-fn
-                             work-stealing-received-in-flight-counter max-blacklist-time-ms
-                             blacklist-backoff-base-time-ms max-backoff-exponent data))
+                             update-state-by-ejecting-instance-fn update-instance-id->eject-expiry-time-fn
+                             work-stealing-received-in-flight-counter max-eject-time-ms
+                             eject-backoff-base-time-ms max-backoff-exponent data))
 
                          scaling-state-chan
                          (let [{:keys [scaling-state]} data]
@@ -705,25 +705,25 @@
                                (handle-update-state-request
                                  data update-responder-state-timer update-responder-state-meter slots-assigned-counter
                                  slots-available-counter slots-in-use-counter)
-                               ;; cleanup items from blacklist map in-case they have not been cleaned
-                               (handle-unblacklist-cleanup-request
-                                 data-time update-status-tag-fn update-instance-id->blacklist-expiry-time-fn))))
+                               ;; cleanup items from eject map in-case they have not been cleaned
+                               (handle-uneject-cleanup-request
+                                 data-time update-status-tag-fn update-instance-id->eject-expiry-time-fn))))
 
-                         blacklist-instance-chan
+                         eject-instance-chan
                          (let [{:keys [current-state' response-chan response]}
                                (timers/start-stop-time!
-                                 responder-blacklist-timer
-                                 (handle-blacklist-request
-                                   current-state update-status-tag-fn update-state-by-blacklisting-instance-fn
+                                 responder-eject-timer
+                                 (handle-eject-request
+                                   current-state update-status-tag-fn update-state-by-ejecting-instance-fn
                                    lingering-request-threshold-ms data))]
                            (async/put! response-chan response)
                            current-state')
 
-                         unblacklist-instance-chan
+                         uneject-instance-chan
                          (timers/start-stop-time!
-                           responder-unblacklist-timer
-                           (handle-unblacklist-request
-                             current-state update-status-tag-fn update-instance-id->blacklist-expiry-time-fn data)))
+                           responder-uneject-timer
+                           (handle-uneject-request
+                             current-state update-status-tag-fn update-instance-id->eject-expiry-time-fn data)))
 
                        ;; cleanup items from work-stealing queue one at a time if they are not needed
                        (and (seq work-stealing-queue)
@@ -740,21 +740,21 @@
           (log/error e "Fatal error in service-chan-responder for" service-id)
           (System/exit 1))))))
 
-(defn trigger-unblacklist-process
-  "Launches a go-block that sends a message to unblacklist-instance-chan to unblacklist instance-id after blacklist-period-ms have elapsed."
-  [correlation-id instance-id blacklist-period-ms unblacklist-instance-chan]
+(defn trigger-uneject-process
+  "Launches a go-block that sends a message to uneject-instance-chan to uneject instance-id after eject-period-ms have elapsed."
+  [correlation-id instance-id eject-period-ms uneject-instance-chan]
   (async/go
     (try
-      (async/<! (async/timeout blacklist-period-ms))
-      (cid/cinfo correlation-id "requesting instance" instance-id "to be unblacklisted")
-      (async/>! unblacklist-instance-chan {:instance-id instance-id})
+      (async/<! (async/timeout eject-period-ms))
+      (cid/cinfo correlation-id "requesting instance" instance-id "to be unejected")
+      (async/>! uneject-instance-chan {:instance-id instance-id})
       (catch Throwable th
-        (log/error th "unexpected error inside trigger-unblacklist-process"
-                   {:blacklist-period-ms blacklist-period-ms :cid correlation-id :instance-id instance-id})))))
+        (log/error th "unexpected error inside trigger-uneject-process"
+                   {:eject-period-ms eject-period-ms :cid correlation-id :instance-id instance-id})))))
 
 (defn prepare-and-start-service-chan-responder
   "Starts the service channel responder."
-  [service-id service-description instance-request-properties blacklist-config]
+  [service-id service-description instance-request-properties ejection-config]
   (log/debug "[prepare-and-start-service-chan-responder] starting" service-id)
   (let [{:keys [lingering-request-threshold-ms queue-timeout-ms]} instance-request-properties
         timeout-request-fn (fn [service-id c [reason-map resp-chan _ request-queue-timeout-ms]]
@@ -785,17 +785,17 @@
                      :reserve-instance-chan out
                      :kill-instance-chan (async/chan 1024)
                      :release-instance-chan (async/chan 1024)
-                     :blacklist-instance-chan (async/chan 1024)
+                     :eject-instance-chan (async/chan 1024)
                      :query-state-chan (async/chan 1024)
                      :scaling-state-chan (au/latest-chan)
-                     :unblacklist-instance-chan (async/chan 1024)
+                     :uneject-instance-chan (async/chan 1024)
                      :update-state-chan (au/latest-chan)
                      :work-stealing-chan (async/chan 1024)
                      :exit-chan (async/chan 1)}]
-    (let [timeout-config (-> (select-keys blacklist-config [:blacklist-backoff-base-time-ms :max-blacklist-time-ms])
+    (let [timeout-config (-> (select-keys ejection-config [:eject-backoff-base-time-ms :max-eject-time-ms])
                            (assoc :lingering-request-threshold-ms lingering-request-threshold-ms))
           {:strs [load-balancing]} service-description
           load-balancing (keyword load-balancing)
           initial-state {:load-balancing load-balancing}]
-      (start-service-chan-responder service-id trigger-unblacklist-process timeout-config channel-map initial-state))
+      (start-service-chan-responder service-id trigger-uneject-process timeout-config channel-map initial-state))
     channel-map))

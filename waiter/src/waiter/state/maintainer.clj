@@ -36,7 +36,7 @@
   [channel-map method]
   (let [maintainer-chan-keyword :maintainer-chan-map
         method-chan (case method
-                      :blacklist [maintainer-chan-keyword :blacklist-instance-chan]
+                      :eject [maintainer-chan-keyword :eject-instance-chan]
                       :kill [maintainer-chan-keyword :kill-instance-chan]
                       :offer [maintainer-chan-keyword :work-stealing-chan]
                       :query-state [maintainer-chan-keyword :query-state-chan]
@@ -88,7 +88,7 @@
    Requests for service-chan-responder channels is passed into instance-rpc-chan
    It is expected that messages on the channel have a map with keys
       `:cid`, `:method`, `:response-chan`, and `:service-id`.
-   The `method` should be either `:blacklist`, `:kill`, `:query-state`, `:reserve`,
+   The `method` should be either `:eject`, `:kill`, `:query-state`, `:reserve`,
       `:release`, or `:scaling-state`.
    The `service-id` is the service for the request and `response-chan` will have the
        corresponding channel placed onto it by invoking `(retrieve-channel channel-map method)`.

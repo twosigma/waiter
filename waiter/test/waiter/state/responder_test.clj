@@ -60,28 +60,28 @@
                       :expected [instance-2]
                       :reason :serve-request
                       :instance-id->state (instance-id->state-fn healthy-instance-ids [])}
-                     {:name "find-instance-to-offer:serving-healthy-unblacklisted-instance-with-no-unhealthy-instances"
+                     {:name "find-instance-to-offer:serving-healthy-unejected-instance-with-no-unhealthy-instances"
                       :expected [instance-3]
                       :reason :serve-request
                       :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
-                                            (update-in ["inst-2" :status-tags] conj :blacklisted))}
-                     {:name "find-instance-to-offer:serving-healthy-unblacklisted-instance-with-no-unhealthy-instances:limited-sorted-instance-ids"
+                                            (update-in ["inst-2" :status-tags] conj :ejected))}
+                     {:name "find-instance-to-offer:serving-healthy-unejected-instance-with-no-unhealthy-instances:limited-sorted-instance-ids"
                       :expected [instance-5]
                       :reason :serve-request
                       :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
-                                            (update-in ["inst-2" :status-tags] conj :blacklisted))
+                                            (update-in ["inst-2" :status-tags] conj :ejected))
                       :sorted-instance-ids (drop 3 all-sorted-instance-ids)}
-                     {:name "find-instance-to-offer:serving-healthy-unblacklisted-instance-with-no-unhealthy-instances:limited-sorted-instance-ids-2"
+                     {:name "find-instance-to-offer:serving-healthy-unejected-instance-with-no-unhealthy-instances:limited-sorted-instance-ids-2"
                       :expected [instance-6]
                       :reason :serve-request
                       :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
-                                            (update-in ["inst-2" :status-tags] conj :blacklisted))
+                                            (update-in ["inst-2" :status-tags] conj :ejected))
                       :sorted-instance-ids (drop 5 all-sorted-instance-ids)}
-                     {:name "find-instance-to-offer:serving-healthy-instance-with-no-unhealthy-instances:exclude-blacklisted-locked-and-killed"
+                     {:name "find-instance-to-offer:serving-healthy-instance-with-no-unhealthy-instances:exclude-ejected-locked-and-killed"
                       :expected [instance-6]
                       :reason :serve-request
                       :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
-                                            (update-in ["inst-2" :status-tags] conj :blacklisted)
+                                            (update-in ["inst-2" :status-tags] conj :ejected)
                                             (update-in ["inst-3" :status-tags] conj :killed)
                                             (update-in ["inst-5" :status-tags] conj :locked))}
                      {:name "find-instance-to-offer:serving-healthy-instance-with-no-unhealthy-instances-but-all-excluded"
@@ -173,30 +173,30 @@
                       :reason :kill-instance
                       :instance-id->state (-> (instance-id->state-fn healthy-instance-ids unhealthy-instance-ids)
                                             (update-in ["inst-7" :status-tags] conj :killed))}
-                     {:name "find-instance-to-offer:killing-unhealthy-instance-with-some-unhealthy-instances:exclude-killed-include-blacklisted"
+                     {:name "find-instance-to-offer:killing-unhealthy-instance-with-some-unhealthy-instances:exclude-killed-include-ejected"
                       :expected [instance-4]
                       :reason :kill-instance
                       :instance-id->state (-> (instance-id->state-fn healthy-instance-ids unhealthy-instance-ids)
-                                            (update-in ["inst-4" :status-tags] conj :blacklisted)
+                                            (update-in ["inst-4" :status-tags] conj :ejected)
                                             (update-in ["inst-7" :status-tags] conj :killed))}
                      {:name "find-instance-to-offer:killing-unhealthy-instance-with-some-unhealthy-and-excluded-instances"
                       :expected [instance-4]
                       :reason :kill-instance
                       :instance-id->state (instance-id->state-fn healthy-instance-ids unhealthy-instance-ids)
                       :exclude-ids-set #{"inst-1" "inst-2" "inst-7" "inst-8"}}
-                     {:name "find-instance-to-offer:killing-healthy-blacklisted-instance-with-no-unhealthy-instances"
+                     {:name "find-instance-to-offer:killing-healthy-ejected-instance-with-no-unhealthy-instances"
                       :expected [instance-8]
                       :reason :kill-instance
                       :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
-                                            (update-in ["inst-8" :status-tags] conj :blacklisted))}
+                                            (update-in ["inst-8" :status-tags] conj :ejected))}
                      {:name "find-instance-to-offer:killing-healthy-instance-with-no-unhealthy-instances:exclude-locked-and-killed"
                       :expected [instance-2]
                       :reason :kill-instance
                       :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
-                                            (update-in ["inst-2" :status-tags] conj :blacklisted)
+                                            (update-in ["inst-2" :status-tags] conj :ejected)
                                             (update-in ["inst-3" :status-tags] conj :killed)
                                             (update-in ["inst-8" :status-tags] conj :locked))}
-                     {:name "find-instance-to-offer:killing-healthy-blacklisted-instance-with-no-unhealthy-instances:exclude-locked-and-killed"
+                     {:name "find-instance-to-offer:killing-healthy-ejected-instance-with-no-unhealthy-instances:exclude-locked-and-killed"
                       :expected [instance-6]
                       :reason :kill-instance
                       :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
@@ -273,14 +273,14 @@
                                             (update-in ["inst-6"] assoc :slots-used 1)
                                             (update-in ["inst-8"] assoc :slots-used 1))}
                      {:expected [instance-6]
-                      :name "find-instance-to-offer:youngest-healthy-blacklisted-instance-in-presence-of-busy-expired-instance"
+                      :name "find-instance-to-offer:youngest-healthy-ejected-instance-in-presence-of-busy-expired-instance"
                       :reason :kill-instance
                       :instance-id->request-id->use-reason-map {"inst-2" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request :time time-active}}}
                       :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
                                             (update-in ["inst-2" :status-tags] conj :expired)
                                             (update-in ["inst-2"] assoc :slots-used 1)
-                                            (update-in ["inst-5" :status-tags] conj :blacklisted)
-                                            (update-in ["inst-6" :status-tags] conj :blacklisted))}
+                                            (update-in ["inst-5" :status-tags] conj :ejected)
+                                            (update-in ["inst-6" :status-tags] conj :ejected))}
                      {:expected [instance-7]
                       :name "find-instance-to-offer:youngest-unhealthy-instance-in-presence-of-busy-expired-instance"
                       :reason :kill-instance
@@ -306,12 +306,12 @@
                                             (update-in ["inst-2"] assoc :slots-used 1))}
 
                      {:expected [instance-3]
-                      :name "find-instance-to-offer:only-healthy-and-unknown-blacklisted-instance"
+                      :name "find-instance-to-offer:only-healthy-and-unknown-ejected-instance"
                       :reason :kill-instance
                       :id->instance (pc/map-from-vals :id [instance-2 instance-3])
                       :instance-id->request-id->use-reason-map {}
                       :instance-id->state (-> (instance-id->state-fn (map :id [instance-2 instance-3 instance-5]) [])
-                                            (update-in ["inst-5" :status-tags] (constantly #{:blacklisted}))
+                                            (update-in ["inst-5" :status-tags] (constantly #{:ejected}))
                                             (update-in ["inst-5"] assoc :slots-assigned 0))}
                      )]
     (doseq [{:keys [exclude-ids-set expected id->instance instance-id->request-id->use-reason-map
@@ -351,22 +351,22 @@
                 (is (some #(= actual %) expected))))))))))
 
 (let [service-id "s1"
-      {:keys [blacklist-backoff-base-time-ms lingering-request-threshold-ms max-blacklist-time-ms] :as timeout-config}
-      {:blacklist-backoff-base-time-ms 10000.0 :lingering-request-threshold-ms 60000 :max-blacklist-time-ms 100000}
+      {:keys [eject-backoff-base-time-ms lingering-request-threshold-ms max-eject-time-ms] :as timeout-config}
+      {:eject-backoff-base-time-ms 10000.0 :lingering-request-threshold-ms 60000 :max-eject-time-ms 100000}
       id-counter (atom 0)]
 
   (defn- make-queue [items]
     (apply conj (PersistentQueue/EMPTY) items))
 
   (defn- retrieve-channel-config []
-    {:blacklist-instance-chan (async/chan 1)
+    {:eject-instance-chan (async/chan 1)
      :exit-chan (async/chan 1)
      :kill-instance-chan (async/chan 1)
      :query-state-chan (async/chan 1)
      :release-instance-chan (async/chan 1)
      :reserve-instance-chan (async/chan 1)
      :scaling-state-chan (async/chan 1)
-     :unblacklist-instance-chan (async/chan 10)
+     :uneject-instance-chan (async/chan 10)
      :update-state-chan (async/chan 1)
      :work-stealing-chan (async/chan 1)})
 
@@ -398,7 +398,7 @@
                            (is (= expected actual) (str "Checking: " (name item-key))))))]
         (check-fn :deployment-error)
         (check-fn :id->instance)
-        (check-fn :instance-id->blacklist-expiry-time)
+        (check-fn :instance-id->eject-expiry-time)
         (check-fn :instance-id->request-id->use-reason-map)
         (check-fn :instance-id->consecutive-failures)
         (check-fn :instance-id->state)
@@ -407,8 +407,8 @@
         (check-fn :sorted-instance-ids)
         (check-fn :work-stealing-queue)
         (let [expected-counter-map (cond-> {}
-                                     (:instance-id->blacklist-expiry-time expected-state)
-                                     (assoc "blacklisted" (count (:instance-id->blacklist-expiry-time expected-state)))
+                                     (:instance-id->eject-expiry-time expected-state)
+                                     (assoc "ejected" (count (:instance-id->eject-expiry-time expected-state)))
                                      (:instance-id->state expected-state)
                                      (merge (let [[slots-assigned slots-used slots-available] (compute-slots-values (:instance-id->state expected-state))]
                                               {"slots-assigned" slots-assigned "slots-available" slots-available "slots-in-use" slots-used})))]
@@ -483,13 +483,13 @@
   (defn- release-instance-fn [release-instance-chan instance-id id status]
     (async/>!! release-instance-chan [{:id instance-id} {:cid (str "cid-" id) :request-id (str "req-" id) :status status}]))
 
-  (defn- check-blacklist-instance-fn [blacklist-instance-chan instance-id expected-result]
-    (let [blacklist-instance-response-chan (async/promise-chan)]
-      (async/>!! blacklist-instance-chan [{:instance-id instance-id
-                                           :blacklist-period-ms blacklist-backoff-base-time-ms
+  (defn- check-eject-instance-fn [eject-instance-chan instance-id expected-result]
+    (let [eject-instance-response-chan (async/promise-chan)]
+      (async/>!! eject-instance-chan [{:instance-id instance-id
+                                           :eject-period-ms eject-backoff-base-time-ms
                                            :cid "cid"}
-                                          blacklist-instance-response-chan])
-      (let [response (async/<!! blacklist-instance-response-chan)]
+                                          eject-instance-response-chan])
+      (let [response (async/<!! eject-instance-response-chan)]
         (when (not= expected-result response)
           (println "Expected:" expected-result " actual:" response))
         (is (= expected-result response))
@@ -499,23 +499,23 @@
     (reset! id-counter id-counter-value)
     (let [initial-state (utils/assoc-if-absent initial-state :load-balancing :oldest)
           channel-config (retrieve-channel-config)
-          trigger-unblacklist-process-atom (atom {})
-          trigger-unblacklist-process-fn (fn [_ instance-id blacklist-period-ms _]
-                                           (swap! trigger-unblacklist-process-atom assoc instance-id blacklist-period-ms))]
+          trigger-uneject-process-atom (atom {})
+          trigger-uneject-process-fn (fn [_ instance-id eject-period-ms _]
+                                           (swap! trigger-uneject-process-atom assoc instance-id eject-period-ms))]
       (let [slots-assigned-counter (metrics/service-counter service-id "instance-counts" "slots-assigned")
             slots-available-counter (metrics/service-counter service-id "instance-counts" "slots-available")
             slots-in-use-counter (metrics/service-counter service-id "instance-counts" "slots-in-use")
-            blacklisted-instance-counter (metrics/service-counter service-id "instance-counts" "blacklisted")
+            ejected-instance-counter (metrics/service-counter service-id "instance-counts" "ejected")
             in-use-instance-counter (metrics/service-counter service-id "instance-counts" "in-use")
             work-stealing-received-in-flight-counter (metrics/service-counter service-id "work-stealing" "received-from" "in-flight")]
         (update-slots-metrics (:instance-id->state initial-state) slots-assigned-counter slots-available-counter slots-in-use-counter)
-        (metrics/reset-counter blacklisted-instance-counter (count (:instance-id->blacklist-expiry-time initial-state)))
+        (metrics/reset-counter ejected-instance-counter (count (:instance-id->eject-expiry-time initial-state)))
         (metrics/reset-counter in-use-instance-counter (count (:instance-id->request-id->use-reason-map initial-state)))
         (metrics/reset-counter work-stealing-received-in-flight-counter
                                (+ (count (:work-stealing-queue initial-state)) (count (:request-id->work-stealer initial-state)))))
       ;; start the service-chan-responder
-      (start-service-chan-responder service-id trigger-unblacklist-process-fn timeout-config channel-config initial-state)
-      (assoc channel-config :trigger-unblacklist-process-atom trigger-unblacklist-process-atom)))
+      (start-service-chan-responder service-id trigger-uneject-process-fn timeout-config channel-config initial-state)
+      (assoc channel-config :trigger-uneject-process-atom trigger-uneject-process-atom)))
 
   (let [instance-h1 {:id "s1.h1" :started-at (DateTime. 10000)}
         instance-h2 {:id "s1.h2" :started-at (DateTime. 20000)}
@@ -546,7 +546,7 @@
                             :expired-instances [instance-h1 instance-h3]
                             :my-instance->slots {instance-h1 1 instance-h2 1 instance-h3 1}}]
           (async/>!! update-state-chan [update-state (t/now)]))
-        (check-state-fn query-state-chan {:instance-id->blacklist-expiry-time {}
+        (check-state-fn query-state-chan {:instance-id->eject-expiry-time {}
                                           :instance-id->request-id->use-reason-map {}
                                           :instance-id->consecutive-failures {}
                                           :instance-id->state (-> {}
@@ -565,7 +565,7 @@
                             :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.h4" "s1.h5" "s1.u1"]
                             :my-instance->slots {instance-h1 2 instance-h2 1 instance-h3 2 instance-h4 2}}]
           (async/>!! update-state-chan [update-state (t/now)]))
-        (check-state-fn query-state-chan {:instance-id->blacklist-expiry-time {}
+        (check-state-fn query-state-chan {:instance-id->eject-expiry-time {}
                                           :instance-id->request-id->use-reason-map {}
                                           :instance-id->consecutive-failures {}
                                           :instance-id->state (-> {}
@@ -595,7 +595,7 @@
                               :my-instance->slots {}}]
             (async/>!! update-state-chan [update-state (t/now)]))
           (check-state-fn query-state-chan {:deployment-error deployment-error
-                                            :instance-id->blacklist-expiry-time {}
+                                            :instance-id->eject-expiry-time {}
                                             :instance-id->request-id->use-reason-map {}
                                             :instance-id->consecutive-failures {}
                                             :instance-id->state (-> {}
@@ -611,7 +611,7 @@
             (check-reserve-request-instance-fn reserve-instance-chan deployment-error) ; chanel should be open only when there are deployment errors
             (check-reserve-request-instance-fn reserve-instance-chan :no-matching-instance-found :expect-deadlock true))
           (check-state-fn query-state-chan {:deployment-error deployment-error
-                                            :instance-id->blacklist-expiry-time {}
+                                            :instance-id->eject-expiry-time {}
                                             :instance-id->request-id->use-reason-map {}
                                             :instance-id->consecutive-failures {}
                                             :instance-id->state (-> {}
@@ -632,7 +632,7 @@
                             :expired-instances [instance-h1 instance-h3]
                             :my-instance->slots {instance-h1 1 instance-h2 1 instance-h3 1}}]
           (async/>!! update-state-chan [update-state (t/now)]))
-        (check-state-fn query-state-chan {:instance-id->blacklist-expiry-time {}
+        (check-state-fn query-state-chan {:instance-id->eject-expiry-time {}
                                           :instance-id->request-id->use-reason-map {}
                                           :instance-id->consecutive-failures {}
                                           :instance-id->state (-> {}
@@ -650,7 +650,7 @@
                             :sorted-instance-ids ["s1.h1" "s1.u1" "s1.h2" "s1.h4" "s1.h5"]
                             :my-instance->slots {instance-h1 2 instance-h2 1 instance-h4 2}}]
           (async/>!! update-state-chan [update-state (t/now)]))
-        (check-state-fn query-state-chan {:instance-id->blacklist-expiry-time {}
+        (check-state-fn query-state-chan {:instance-id->eject-expiry-time {}
                                           :instance-id->request-id->use-reason-map {}
                                           :instance-id->consecutive-failures {}
                                           :instance-id->state (-> {}
@@ -664,8 +664,8 @@
                                           :work-stealing-queue (make-queue [])})
         (async/>!! exit-chan :exit)))
 
-    (deftest test-start-service-chan-responder-blacklist-expired-instance
-      (let [{:keys [exit-chan query-state-chan update-state-chan blacklist-instance-chan trigger-unblacklist-process-atom unblacklist-instance-chan]}
+    (deftest test-start-service-chan-responder-eject-expired-instance
+      (let [{:keys [exit-chan query-state-chan update-state-chan eject-instance-chan trigger-uneject-process-atom uneject-instance-chan]}
             (launch-service-chan-responder 0 {})]
         ; update state and verify whether state changes are reflected correctly
         (let [update-state {:healthy-instances [instance-h1 instance-h2 instance-h3]
@@ -673,7 +673,7 @@
                             :expired-instances [instance-h1 instance-h3]
                             :my-instance->slots {instance-h1 1 instance-h2 1 instance-h3 1}}]
           (async/>!! update-state-chan [update-state (t/now)]))
-        (check-state-fn query-state-chan {:instance-id->blacklist-expiry-time {}
+        (check-state-fn query-state-chan {:instance-id->eject-expiry-time {}
                                           :instance-id->request-id->use-reason-map {}
                                           :instance-id->consecutive-failures {}
                                           :instance-id->state (-> {}
@@ -691,49 +691,49 @@
         (let [start-time (t/now)
               current-time-atom (atom start-time)]
           (with-redefs [t/now (fn [] @current-time-atom)]
-            (check-blacklist-instance-fn blacklist-instance-chan "s1.h1" :blacklisted)
-            (check-blacklist-instance-fn blacklist-instance-chan "s1.h3" :blacklisted)
+            (check-eject-instance-fn eject-instance-chan "s1.h1" :ejected)
+            (check-eject-instance-fn eject-instance-chan "s1.h3" :ejected)
             (check-state-fn query-state-chan
-                            {:instance-id->blacklist-expiry-time {"s1.h1" (t/plus start-time (t/millis blacklist-backoff-base-time-ms))
-                                                                  "s1.h3" (t/plus start-time (t/millis blacklist-backoff-base-time-ms))}
+                            {:instance-id->eject-expiry-time {"s1.h1" (t/plus start-time (t/millis eject-backoff-base-time-ms))
+                                                                  "s1.h3" (t/plus start-time (t/millis eject-backoff-base-time-ms))}
                              :instance-id->request-id->use-reason-map {}
                              :instance-id->consecutive-failures {}
                              :instance-id->state (-> {}
-                                                   (update-slot-state-fn "s1.h1" 1 0 #{:blacklisted :expired :healthy})
+                                                   (update-slot-state-fn "s1.h1" 1 0 #{:ejected :expired :healthy})
                                                    (update-slot-state-fn "s1.h2" 1 0)
-                                                   (update-slot-state-fn "s1.h3" 1 0 #{:blacklisted :expired :healthy})
+                                                   (update-slot-state-fn "s1.h3" 1 0 #{:ejected :expired :healthy})
                                                    (update-slot-state-fn "s1.u1" 0 0 #{:unhealthy}))})
-            (check-blacklist-instance-fn blacklist-instance-chan "s1.h4" :blacklisted)
+            (check-eject-instance-fn eject-instance-chan "s1.h4" :ejected)
             (let [update-state {:healthy-instances [instance-h1 instance-h2]
                                 :unhealthy-instances [instance-u1]
                                 :expired-instances [instance-h1 instance-h4]
                                 :my-instance->slots {instance-h1 1 instance-h2 1}}]
               (async/>!! update-state-chan [update-state (t/now)]))
-            (let [expiry-time (t/plus start-time (t/millis blacklist-backoff-base-time-ms))]
+            (let [expiry-time (t/plus start-time (t/millis eject-backoff-base-time-ms))]
               (check-state-fn query-state-chan
-                              {:instance-id->blacklist-expiry-time {"s1.h1" expiry-time
+                              {:instance-id->eject-expiry-time {"s1.h1" expiry-time
                                                                     "s1.h3" expiry-time
                                                                     "s1.h4" expiry-time}
                                :instance-id->request-id->use-reason-map {}
                                :instance-id->consecutive-failures {}
                                :instance-id->state (-> {}
-                                                     (update-slot-state-fn "s1.h1" 1 0 #{:blacklisted :expired :healthy})
+                                                     (update-slot-state-fn "s1.h1" 1 0 #{:ejected :expired :healthy})
                                                      (update-slot-state-fn "s1.h2" 1 0)
-                                                     (update-slot-state-fn "s1.h3" 0 0 #{:blacklisted})
-                                                     (update-slot-state-fn "s1.h4" 0 0 #{:blacklisted :expired})
+                                                     (update-slot-state-fn "s1.h3" 0 0 #{:ejected})
+                                                     (update-slot-state-fn "s1.h4" 0 0 #{:ejected :expired})
                                                      (update-slot-state-fn "s1.u1" 0 0 #{:unhealthy}))})
-              (is (= {"s1.h1" blacklist-backoff-base-time-ms
-                      "s1.h3" blacklist-backoff-base-time-ms
-                      "s1.h4" blacklist-backoff-base-time-ms}
-                     @trigger-unblacklist-process-atom)))
-            ; clear the blacklist buffer
+              (is (= {"s1.h1" eject-backoff-base-time-ms
+                      "s1.h3" eject-backoff-base-time-ms
+                      "s1.h4" eject-backoff-base-time-ms}
+                     @trigger-uneject-process-atom)))
+            ; clear the eject buffer
             (do
-              (reset! current-time-atom (t/plus start-time (t/millis (* 8 max-blacklist-time-ms))))
-              (async/>!! unblacklist-instance-chan {:instance-id "s1.h1"})
-              (async/>!! unblacklist-instance-chan {:instance-id "s1.h3"})
-              (async/>!! unblacklist-instance-chan {:instance-id "s1.h4"}))
+              (reset! current-time-atom (t/plus start-time (t/millis (* 8 max-eject-time-ms))))
+              (async/>!! uneject-instance-chan {:instance-id "s1.h1"})
+              (async/>!! uneject-instance-chan {:instance-id "s1.h3"})
+              (async/>!! uneject-instance-chan {:instance-id "s1.h4"}))
             (check-state-fn query-state-chan
-                            {:instance-id->blacklist-expiry-time {}
+                            {:instance-id->eject-expiry-time {}
                              :instance-id->request-id->use-reason-map {}
                              :instance-id->consecutive-failures {}
                              :instance-id->state (-> {}
@@ -749,7 +749,7 @@
                               :my-instance->slots {instance-h2 1}}]
             (async/>!! update-state-chan [update-state (t/now)]))
           (check-state-fn query-state-chan
-                          {:instance-id->blacklist-expiry-time {}
+                          {:instance-id->eject-expiry-time {}
                            :instance-id->request-id->use-reason-map {}
                            :instance-id->consecutive-failures {}
                            :instance-id->state (update-slot-state-fn {} "s1.h2" 1 0)})
@@ -765,7 +765,7 @@
                             :expired-instances [instance-h2]
                             :my-instance->slots {instance-h1 1 instance-h2 2 instance-h3 1}}]
           (async/>!! update-state-chan [update-state (t/now)]))
-        (check-state-fn query-state-chan {:instance-id->blacklist-expiry-time {}
+        (check-state-fn query-state-chan {:instance-id->eject-expiry-time {}
                                           :instance-id->request-id->use-reason-map {}
                                           :instance-id->consecutive-failures {}
                                           :instance-id->state (-> {}
@@ -773,7 +773,7 @@
                                                                 (update-slot-state-fn "s1.h2" 2 0 #{:expired :healthy})
                                                                 (update-slot-state-fn "s1.h3" 1 0))})
         (check-kill-request-instance-fn kill-instance-chan "s1.h2")
-        (check-state-fn query-state-chan {:instance-id->blacklist-expiry-time {}
+        (check-state-fn query-state-chan {:instance-id->eject-expiry-time {}
                                           :instance-id->request-id->use-reason-map {"s1.h2" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :kill-instance}}}
                                           :instance-id->consecutive-failures {}
                                           :instance-id->state (-> {}
@@ -787,7 +787,7 @@
                             :expired-instances [instance-h2]
                             :my-instance->slots {instance-h1 1 instance-h2 4 instance-h3 4}}]
           (async/>!! update-state-chan [update-state (t/now)]))
-        (check-state-fn query-state-chan {:instance-id->blacklist-expiry-time {}
+        (check-state-fn query-state-chan {:instance-id->eject-expiry-time {}
                                           :instance-id->request-id->use-reason-map {"s1.h2" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :kill-instance}}}
                                           :instance-id->consecutive-failures {}
                                           :instance-id->state (-> {}
@@ -802,7 +802,7 @@
                             :expired-instances [instance-h2]
                             :my-instance->slots {instance-h1 1 instance-h2 4 instance-h3 2}}]
           (async/>!! update-state-chan [update-state (t/now)]))
-        (check-state-fn query-state-chan {:instance-id->blacklist-expiry-time {}
+        (check-state-fn query-state-chan {:instance-id->eject-expiry-time {}
                                           :instance-id->request-id->use-reason-map {"s1.h2" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :kill-instance}}}
                                           :instance-id->consecutive-failures {}
                                           :instance-id->state (-> {}
@@ -810,7 +810,7 @@
                                                                 (update-slot-state-fn "s1.h2" 4 0 #{:expired :healthy :locked})
                                                                 (update-slot-state-fn "s1.h3" 2 0))})
         (release-instance-fn release-instance-chan "s1.h2" 1 :not-killed)
-        (check-state-fn query-state-chan {:instance-id->blacklist-expiry-time {}
+        (check-state-fn query-state-chan {:instance-id->eject-expiry-time {}
                                           :instance-id->request-id->use-reason-map {}
                                           :instance-id->consecutive-failures {}
                                           :instance-id->state (-> {}
@@ -824,7 +824,7 @@
     (deftest test-start-service-chan-responder-reserve-instances
       (let [{:keys [exit-chan query-state-chan reserve-instance-chan]}
             (launch-service-chan-responder 0 {:id->instance id->instance-data
-                                              :instance-id->blacklist-expiry-time {}
+                                              :instance-id->eject-expiry-time {}
                                               :instance-id->request-id->use-reason-map {}
                                               :instance-id->consecutive-failures {}
                                               :instance-id->state (-> {}
@@ -838,7 +838,7 @@
         ; reserve a few instances
         (doseq [instance-id ["s1.h1" "s1.h1" "s1.h2" "s1.h3" "s1.h3" "s1.h4"]]
           (check-reserve-request-instance-fn reserve-instance-chan instance-id))
-        (check-state-fn query-state-chan {:instance-id->blacklist-expiry-time {}
+        (check-state-fn query-state-chan {:instance-id->eject-expiry-time {}
                                           :instance-id->request-id->use-reason-map {"s1.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}
                                                                                              "req-2" {:cid "cid-2" :request-id "req-2" :reason :serve-request}}
                                                                                     "s1.h2" {"req-3" {:cid "cid-3" :request-id "req-3" :reason :serve-request}}
@@ -859,7 +859,7 @@
     (deftest test-start-service-chan-responder-reserve-expired-instance
       (let [{:keys [exit-chan query-state-chan reserve-instance-chan update-state-chan]}
             (launch-service-chan-responder 0 {:id->instance id->instance-data
-                                              :instance-id->blacklist-expiry-time {}
+                                              :instance-id->eject-expiry-time {}
                                               :instance-id->request-id->use-reason-map {}
                                               :instance-id->consecutive-failures {}
                                               :instance-id->state (-> {}
@@ -873,7 +873,7 @@
         ; reserve expired instance
         (doseq [instance-id ["s1.h1" "s1.h1" "s1.h2"]]
           (check-reserve-request-instance-fn reserve-instance-chan instance-id))
-        (check-state-fn query-state-chan {:instance-id->blacklist-expiry-time {}
+        (check-state-fn query-state-chan {:instance-id->eject-expiry-time {}
                                           :instance-id->request-id->use-reason-map {"s1.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}
                                                                                              "req-2" {:cid "cid-2" :request-id "req-2" :reason :serve-request}}
                                                                                     "s1.h2" {"req-3" {:cid "cid-3" :request-id "req-3" :reason :serve-request}}}
@@ -889,7 +889,7 @@
     (deftest test-start-service-chan-responder-slot-state-consistency
       (let [{:keys [exit-chan kill-instance-chan query-state-chan release-instance-chan reserve-instance-chan update-state-chan]}
             (launch-service-chan-responder 6 {:id->instance id->instance-data
-                                              :instance-id->blacklist-expiry-time {}
+                                              :instance-id->eject-expiry-time {}
                                               :instance-id->request-id->use-reason-map {"s1.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}
                                                                                                  "req-2" {:cid "cid-2" :request-id "req-2" :reason :serve-request}}
                                                                                         "s1.h2" {"req-3" {:cid "cid-3" :request-id "req-3" :reason :serve-request}}
@@ -921,7 +921,7 @@
         (check-kill-request-instance-fn kill-instance-chan "s1.u1" :exclude-ids-set #{"s1.u2"})
         ; check that state is still as expected
         (check-state-fn query-state-chan
-                        {:instance-id->blacklist-expiry-time {}
+                        {:instance-id->eject-expiry-time {}
                          :instance-id->request-id->use-reason-map {"s1.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}
                                                                             "req-2" {:cid "cid-2" :request-id "req-2" :reason :serve-request}}
                                                                    "s1.h2" {"req-3" {:cid "cid-3" :request-id "req-3" :reason :serve-request}}
@@ -946,9 +946,9 @@
         (async/>!! exit-chan :exit)))
 
     (deftest test-start-service-chan-responder-release-killed-reservation
-      (let [{:keys [exit-chan kill-instance-chan query-state-chan release-instance-chan trigger-unblacklist-process-atom unblacklist-instance-chan]}
+      (let [{:keys [exit-chan kill-instance-chan query-state-chan release-instance-chan trigger-uneject-process-atom uneject-instance-chan]}
             (launch-service-chan-responder 11 {:id->instance id->instance-data
-                                               :instance-id->blacklist-expiry-time {}
+                                               :instance-id->eject-expiry-time {}
                                                :instance-id->request-id->use-reason-map {"s1.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}
                                                                                                   "req-2" {:cid "cid-2" :request-id "req-2" :reason :serve-request}}
                                                                                          "s1.h2" {"req-3" {:cid "cid-3" :request-id "req-3" :reason :serve-request}}
@@ -975,7 +975,7 @@
           (with-redefs [t/now (fn [] @current-time-atom)]
             (release-instance-fn release-instance-chan "s1.u2" 10 :killed)
             (check-state-fn query-state-chan
-                            {:instance-id->blacklist-expiry-time {"s1.u2" (t/plus start-time (t/millis max-blacklist-time-ms))}
+                            {:instance-id->eject-expiry-time {"s1.u2" (t/plus start-time (t/millis max-eject-time-ms))}
                              :instance-id->request-id->use-reason-map {"s1.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}
                                                                                 "req-2" {:cid "cid-2" :request-id "req-2" :reason :serve-request}}
                                                                        "s1.h2" {"req-3" {:cid "cid-3" :request-id "req-3" :reason :serve-request}}
@@ -992,16 +992,16 @@
                                                    (update-slot-state-fn "s1.h3" 8 4)
                                                    (update-slot-state-fn "s1.h4" 0 1 #{})
                                                    (update-slot-state-fn "s1.u1" 0 0 #{:locked :unhealthy})
-                                                   (update-slot-state-fn "s1.u2" 0 0 #{:blacklisted :killed :unhealthy}))
+                                                   (update-slot-state-fn "s1.u2" 0 0 #{:ejected :killed :unhealthy}))
                              :load-balancing :oldest
                              :request-id->work-stealer {}
                              :work-stealing-queue (make-queue [])})
-            (is (= {"s1.u2" max-blacklist-time-ms}
-                   @trigger-unblacklist-process-atom))
+            (is (= {"s1.u2" max-eject-time-ms}
+                   @trigger-uneject-process-atom))
             (release-instance-fn release-instance-chan "s1.u1" 11 :killed)
             (check-state-fn query-state-chan
-                            {:instance-id->blacklist-expiry-time {"s1.u1" (t/plus start-time (t/millis max-blacklist-time-ms))
-                                                                  "s1.u2" (t/plus start-time (t/millis max-blacklist-time-ms))}
+                            {:instance-id->eject-expiry-time {"s1.u1" (t/plus start-time (t/millis max-eject-time-ms))
+                                                                  "s1.u2" (t/plus start-time (t/millis max-eject-time-ms))}
                              :instance-id->request-id->use-reason-map {"s1.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}
                                                                                 "req-2" {:cid "cid-2" :request-id "req-2" :reason :serve-request}}
                                                                        "s1.h2" {"req-3" {:cid "cid-3" :request-id "req-3" :reason :serve-request}}
@@ -1016,22 +1016,22 @@
                                                    (update-slot-state-fn "s1.h2" 1 1)
                                                    (update-slot-state-fn "s1.h3" 8 4)
                                                    (update-slot-state-fn "s1.h4" 0 1 #{})
-                                                   (update-slot-state-fn "s1.u1" 0 0 #{:blacklisted :killed :unhealthy})
-                                                   (update-slot-state-fn "s1.u2" 0 0 #{:blacklisted :killed :unhealthy}))
+                                                   (update-slot-state-fn "s1.u1" 0 0 #{:ejected :killed :unhealthy})
+                                                   (update-slot-state-fn "s1.u2" 0 0 #{:ejected :killed :unhealthy}))
                              :request-id->work-stealer {}
                              :work-stealing-queue (make-queue [])})
-            (is (= {"s1.u1" max-blacklist-time-ms
-                    "s1.u2" max-blacklist-time-ms}
-                   @trigger-unblacklist-process-atom))
+            (is (= {"s1.u1" max-eject-time-ms
+                    "s1.u2" max-eject-time-ms}
+                   @trigger-uneject-process-atom))
             (do
-              (reset! current-time-atom (t/plus start-time (t/millis (+ 1000000 max-blacklist-time-ms))))
+              (reset! current-time-atom (t/plus start-time (t/millis (+ 1000000 max-eject-time-ms))))
               ; no more unhealthy instances to kill all healthy instances are busy
               (check-kill-request-instance-fn kill-instance-chan :no-matching-instance-found :expect-deadlock true)
-              (async/>!! unblacklist-instance-chan {:instance-id "s1.u1"})
-              (async/>!! unblacklist-instance-chan {:instance-id "s1.u2"}))
-            ; ensure blacklist was cleared due to expiry of period
+              (async/>!! uneject-instance-chan {:instance-id "s1.u1"})
+              (async/>!! uneject-instance-chan {:instance-id "s1.u2"}))
+            ; ensure eject was cleared due to expiry of period
             (check-state-fn query-state-chan
-                            {:instance-id->blacklist-expiry-time {}
+                            {:instance-id->eject-expiry-time {}
                              :instance-id->request-id->use-reason-map {"s1.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}
                                                                                 "req-2" {:cid "cid-2" :request-id "req-2" :reason :serve-request}}
                                                                        "s1.h2" {"req-3" {:cid "cid-3" :request-id "req-3" :reason :serve-request}}
@@ -1053,10 +1053,10 @@
                              :work-stealing-queue (make-queue [])}))
           (async/>!! exit-chan :exit))))
 
-    (deftest test-start-service-chan-responder-failed-blacklist
-      (let [{:keys [blacklist-instance-chan exit-chan]}
+    (deftest test-start-service-chan-responder-failed-eject
+      (let [{:keys [eject-instance-chan exit-chan]}
             (launch-service-chan-responder 12 {:id->instance id->instance-data
-                                               :instance-id->blacklist-expiry-time {}
+                                               :instance-id->eject-expiry-time {}
                                                :instance-id->request-id->use-reason-map {"s1.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}
                                                                                                   "req-2" {:cid "cid-2" :request-id "req-2" :reason :serve-request}}
                                                                                          "s1.h2" {"req-3" {:cid "cid-3" :request-id "req-3" :reason :serve-request}}
@@ -1074,14 +1074,14 @@
                                                                      (update-slot-state-fn "s1.u1" 0 0 #{:killed :unhealthy})
                                                                      (update-slot-state-fn "s1.u2" 0 0 #{:killed :unhealthy}))
                                                :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.h4" "s1.u1" "s1.u2"]})]
-        ; try blacklisting an instance in-use
-        (check-blacklist-instance-fn blacklist-instance-chan "s1.h1" :in-use)
+        ; try ejecting an instance in-use
+        (check-eject-instance-fn eject-instance-chan "s1.h1" :in-use)
         (async/>!! exit-chan :exit)))
 
     (deftest test-start-service-chan-responder-release-success-instances
       (let [{:keys [exit-chan query-state-chan release-instance-chan update-state-chan]}
             (launch-service-chan-responder 12 {:id->instance id->instance-data
-                                               :instance-id->blacklist-expiry-time {}
+                                               :instance-id->eject-expiry-time {}
                                                :instance-id->request-id->use-reason-map {"s1.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}
                                                                                                   "req-2" {:cid "cid-2" :request-id "req-2" :reason :serve-request}}
                                                                                          "s1.h2" {"req-3" {:cid "cid-3" :request-id "req-3" :reason :serve-request}}
@@ -1114,7 +1114,7 @@
         (release-instance-fn release-instance-chan "s1.h3" 107 :success)
         (release-instance-fn release-instance-chan "s1.h4" 106 :success)
         (check-state-fn query-state-chan
-                        {:instance-id->blacklist-expiry-time {}
+                        {:instance-id->eject-expiry-time {}
                          :instance-id->request-id->use-reason-map {"s1.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}}
                                                                    "s1.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}
                                                                             "req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}
@@ -1133,7 +1133,7 @@
     (deftest test-start-service-chan-responder-make-in-use-instance-unhealthy
       (let [{:keys [exit-chan kill-instance-chan query-state-chan release-instance-chan update-state-chan]}
             (launch-service-chan-responder 12 {:id->instance id->instance-data
-                                               :instance-id->blacklist-expiry-time {}
+                                               :instance-id->eject-expiry-time {}
                                                :instance-id->request-id->use-reason-map {"s1.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}}
                                                                                          "s1.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}
                                                                                                   "req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}
@@ -1153,7 +1153,7 @@
                             :my-instance->slots {instance-h1 1 instance-h2 1}}]
           (async/>!! update-state-chan [update-state (t/now)]))
         (check-state-fn query-state-chan
-                        {:instance-id->blacklist-expiry-time {}
+                        {:instance-id->eject-expiry-time {}
                          :instance-id->request-id->use-reason-map {"s1.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}}
                                                                    "s1.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}
                                                                             "req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}
@@ -1171,7 +1171,7 @@
         (release-instance-fn release-instance-chan "s1.h3" 5 :success)
         (release-instance-fn release-instance-chan "s1.h3" 8 :success)
         (check-state-fn query-state-chan
-                        {:instance-id->blacklist-expiry-time {}
+                        {:instance-id->eject-expiry-time {}
                          :instance-id->request-id->use-reason-map {"s1.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}}
                                                                    "s1.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}}}
                          :instance-id->consecutive-failures {}
@@ -1188,7 +1188,7 @@
         (check-kill-request-instance-fn kill-instance-chan "s1.h4")
         (check-kill-request-instance-fn kill-instance-chan "s1.h2")
         (check-state-fn query-state-chan
-                        {:instance-id->blacklist-expiry-time {}
+                        {:instance-id->eject-expiry-time {}
                          :instance-id->request-id->use-reason-map {"s1.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}}
                                                                    "s1.h2" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :kill-instance}}
                                                                    "s1.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}}
@@ -1207,9 +1207,9 @@
         (async/>!! exit-chan :exit)))
 
     (deftest test-start-service-chan-responder-release-failed-instances
-      (let [{:keys [exit-chan kill-instance-chan query-state-chan release-instance-chan trigger-unblacklist-process-atom unblacklist-instance-chan]}
+      (let [{:keys [exit-chan kill-instance-chan query-state-chan release-instance-chan trigger-uneject-process-atom uneject-instance-chan]}
             (launch-service-chan-responder 12 {:id->instance id->instance-data
-                                               :instance-id->blacklist-expiry-time {}
+                                               :instance-id->eject-expiry-time {}
                                                :instance-id->request-id->use-reason-map {"s1.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}}
                                                                                          "s1.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}
                                                                                                   "req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}
@@ -1222,7 +1222,7 @@
                                                                      (update-slot-state-fn "s1.h4" 0 0)
                                                                      (update-slot-state-fn "s1.u3" 0 0 #{:unhealthy}))
                                                :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.h4" "s1.u3"]})]
-        ; fail remaining requests except 2 and explicitly blacklist another instance
+        ; fail remaining requests except 2 and explicitly eject another instance
         (let [start-time (t/now)
               current-time-atom (atom start-time)]
           (with-redefs [t/now (fn [] @current-time-atom)]
@@ -1230,27 +1230,27 @@
             (release-instance-fn release-instance-chan "s1.h3" 4 :instance-busy)
             (release-instance-fn release-instance-chan "s1.h3" 8 :instance-busy)
             (check-state-fn query-state-chan
-                            {:instance-id->blacklist-expiry-time {"s1.h1" (t/plus start-time (t/millis blacklist-backoff-base-time-ms))
-                                                                  "s1.h3" (t/plus start-time (t/millis (* (Math/pow 2 (dec 2)) blacklist-backoff-base-time-ms)))}
+                            {:instance-id->eject-expiry-time {"s1.h1" (t/plus start-time (t/millis eject-backoff-base-time-ms))
+                                                                  "s1.h3" (t/plus start-time (t/millis (* (Math/pow 2 (dec 2)) eject-backoff-base-time-ms)))}
                              :instance-id->request-id->use-reason-map {"s1.h3" {"req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}}}
                              :instance-id->consecutive-failures {"s1.h1" 1 "s1.h3" 2 "s1.u1" 1 "s1.u2" 1}
                              :instance-id->state (-> {}
-                                                   (update-slot-state-fn "s1.h1" 1 0 #{:blacklisted :healthy})
+                                                   (update-slot-state-fn "s1.h1" 1 0 #{:ejected :healthy})
                                                    (update-slot-state-fn "s1.h2" 1 0)
-                                                   (update-slot-state-fn "s1.h3" 8 1 #{:blacklisted :healthy})
+                                                   (update-slot-state-fn "s1.h3" 8 1 #{:ejected :healthy})
                                                    (update-slot-state-fn "s1.h4" 0 0)
                                                    (update-slot-state-fn "s1.u3" 0 0 #{:unhealthy}))})
-            (is (= {"s1.h1" blacklist-backoff-base-time-ms
-                    "s1.h3" (* (Math/pow 2 (dec 2)) blacklist-backoff-base-time-ms)}
-                   @trigger-unblacklist-process-atom))
+            (is (= {"s1.h1" eject-backoff-base-time-ms
+                    "s1.h3" (* (Math/pow 2 (dec 2)) eject-backoff-base-time-ms)}
+                   @trigger-uneject-process-atom))
             (do
               ; kill unhealthy instance
               (check-kill-request-instance-fn kill-instance-chan "s1.u3")
-              (reset! current-time-atom (t/plus start-time (t/millis (* 2 max-blacklist-time-ms))))
-              (async/>!! unblacklist-instance-chan {:instance-id "s1.h1"})
-              (async/>!! unblacklist-instance-chan {:instance-id "s1.h3"})
+              (reset! current-time-atom (t/plus start-time (t/millis (* 2 max-eject-time-ms))))
+              (async/>!! uneject-instance-chan {:instance-id "s1.h1"})
+              (async/>!! uneject-instance-chan {:instance-id "s1.h3"})
               (check-state-fn query-state-chan
-                              {:instance-id->blacklist-expiry-time {}
+                              {:instance-id->eject-expiry-time {}
                                :instance-id->request-id->use-reason-map {"s1.h3" {"req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}}
                                                                          "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                                :instance-id->consecutive-failures {"s1.h1" 1 "s1.h3" 2 "s1.u1" 1 "s1.u2" 1}
@@ -1269,7 +1269,7 @@
     (deftest test-start-service-chan-responder-kill-known-healthy-instance:even-with-no-slots
       (let [{:keys [exit-chan kill-instance-chan query-state-chan]}
             (launch-service-chan-responder 13 {:id->instance id->instance-data
-                                               :instance-id->blacklist-expiry-time {}
+                                               :instance-id->eject-expiry-time {}
                                                :instance-id->request-id->use-reason-map {"s1.h3" {"req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}}
                                                                                          "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                                                :instance-id->consecutive-failures {"s1.u2" 1
@@ -1284,12 +1284,12 @@
                                                                      (update-slot-state-fn "s1.h4" 0 0)
                                                                      (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))
                                                :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.h4" "s1.u3"]})]
-        ; kill a healthy instance and clear the blacklist buffer
+        ; kill a healthy instance and clear the eject buffer
         (let [current-time (t/now)]
-          (with-redefs [t/now (fn [] (t/plus current-time (t/millis (* 4 max-blacklist-time-ms))))]
+          (with-redefs [t/now (fn [] (t/plus current-time (t/millis (* 4 max-eject-time-ms))))]
             (check-kill-request-instance-fn kill-instance-chan "s1.h4")))
         (check-state-fn query-state-chan
-                        {:instance-id->blacklist-expiry-time {}
+                        {:instance-id->eject-expiry-time {}
                          :instance-id->request-id->use-reason-map {"s1.h3" {"req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}}
                                                                    "s1.h4" {"req-14" {:cid "cid-14" :request-id "req-14" :reason :kill-instance}}
                                                                    "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
@@ -1308,7 +1308,7 @@
     (deftest test-start-service-chan-responder-kill-healthy-instance
       (let [{:keys [exit-chan kill-instance-chan query-state-chan]}
             (launch-service-chan-responder 13 {:id->instance id->instance-data
-                                               :instance-id->blacklist-expiry-time {}
+                                               :instance-id->eject-expiry-time {}
                                                :instance-id->request-id->use-reason-map {"s1.h3" {"req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}}
                                                                                          "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                                                :instance-id->consecutive-failures {"s1.u2" 1
@@ -1322,12 +1322,12 @@
                                                                      (update-slot-state-fn "s1.h3" 8 1)
                                                                      (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))
                                                :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]})]
-        ; kill a healthy instance and clear the blacklist buffer
+        ; kill a healthy instance and clear the eject buffer
         (let [current-time (t/now)]
-          (with-redefs [t/now (fn [] (t/plus current-time (t/millis (* 4 max-blacklist-time-ms))))]
+          (with-redefs [t/now (fn [] (t/plus current-time (t/millis (* 4 max-eject-time-ms))))]
             (check-kill-request-instance-fn kill-instance-chan "s1.h2")))
         (check-state-fn query-state-chan
-                        {:instance-id->blacklist-expiry-time {}
+                        {:instance-id->eject-expiry-time {}
                          :instance-id->request-id->use-reason-map {"s1.h2" {"req-14" {:cid "cid-14" :request-id "req-14" :reason :kill-instance}}
                                                                    "s1.h3" {"req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}}
                                                                    "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
@@ -1345,7 +1345,7 @@
     (deftest test-start-service-chan-responder-kill-expired-instance-from-other-router
       (let [{:keys [exit-chan kill-instance-chan query-state-chan update-state-chan]}
             (->> {:id->instance id->instance-data
-                  :instance-id->blacklist-expiry-time {}
+                  :instance-id->eject-expiry-time {}
                   :instance-id->request-id->use-reason-map {"s1.h1" {"req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}}}
                   :instance-id->consecutive-failures {"s1.u2" 1
                                                       "s1.u1" 1
@@ -1366,7 +1366,7 @@
           (async/>!! update-state-chan [update-state (t/now)]))
         (check-state-fn query-state-chan
                         {:id->instance (select-keys id->instance-data #{"s1.h1" "s1.h2" "s1.h3" "s1.h4" "s1.u2" "s1.u3"})
-                         :instance-id->blacklist-expiry-time {}
+                         :instance-id->eject-expiry-time {}
                          :instance-id->request-id->use-reason-map {"s1.h1" {"req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}}}
                          :instance-id->consecutive-failures {"s1.u2" 1
                                                              "s1.h1" 1
@@ -1384,7 +1384,7 @@
                          :work-stealing-queue (make-queue [])})
         ; s1.u2 should be killed because it is not starting
         (let [current-time (t/now)]
-          (with-redefs [t/now (fn [] (t/plus current-time (t/millis (* 4 max-blacklist-time-ms))))]
+          (with-redefs [t/now (fn [] (t/plus current-time (t/millis (* 4 max-eject-time-ms))))]
             (check-kill-request-instance-fn kill-instance-chan "s1.u2")))
         ; s1.u3 becomes healthy
         (let [update-state {:healthy-instances [instance-h1 instance-h2 instance-u3]
@@ -1393,10 +1393,10 @@
           (async/>!! update-state-chan [update-state (t/now)]))
         ; expired instance should be killed
         (let [current-time (t/now)]
-          (with-redefs [t/now (fn [] (t/plus current-time (t/millis (* 4 max-blacklist-time-ms))))]
+          (with-redefs [t/now (fn [] (t/plus current-time (t/millis (* 4 max-eject-time-ms))))]
             (check-kill-request-instance-fn kill-instance-chan "s1.h3")))
         (check-state-fn query-state-chan
-                        {:instance-id->blacklist-expiry-time {}
+                        {:instance-id->eject-expiry-time {}
                          :instance-id->request-id->use-reason-map {"s1.u2" {"req-14" {:cid "cid-14" :request-id "req-14" :reason :kill-instance}}
                                                                    "s1.h3" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :kill-instance}}
                                                                    "s1.h1" {"req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}}
@@ -1413,7 +1413,7 @@
     (deftest test-start-service-chan-responder-clear-failures
       (let [{:keys [exit-chan query-state-chan release-instance-chan]}
             (launch-service-chan-responder 14 {:id->instance id->instance-data
-                                               :instance-id->blacklist-expiry-time {}
+                                               :instance-id->eject-expiry-time {}
                                                :instance-id->request-id->use-reason-map {"s1.h3" {"req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}}
                                                                                          "s1.h2" {"req-14" {:cid "cid-14" :request-id "req-14" :reason :kill-instance}}
                                                                                          "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
@@ -1430,7 +1430,7 @@
         ; successful release should clear out the failures counter
         (release-instance-fn release-instance-chan "s1.h3" 5 :success)
         (check-state-fn query-state-chan
-                        {:instance-id->blacklist-expiry-time {}
+                        {:instance-id->eject-expiry-time {}
                          :instance-id->request-id->use-reason-map {"s1.h2" {"req-14" {:cid "cid-14" :request-id "req-14" :reason :kill-instance}}
                                                                    "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                          :instance-id->consecutive-failures {"s1.h1" 1 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
@@ -1447,7 +1447,7 @@
     (deftest test-start-service-chan-responder-release-without-killing
       (let [{:keys [exit-chan query-state-chan release-instance-chan]}
             (launch-service-chan-responder 14 {:id->instance id->instance-data
-                                               :instance-id->blacklist-expiry-time {}
+                                               :instance-id->eject-expiry-time {}
                                                :instance-id->request-id->use-reason-map {"s1.h2" {"req-14" {:cid "cid-14" :request-id "req-14" :reason :kill-instance}}
                                                                                          "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                                                :instance-id->consecutive-failures {"s1.h1" 1 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
@@ -1460,7 +1460,7 @@
         ; release instance without killing
         (release-instance-fn release-instance-chan "s1.h2" 14 :not-killed)
         (check-state-fn query-state-chan
-                        {:instance-id->blacklist-expiry-time {}
+                        {:instance-id->eject-expiry-time {}
                          :instance-id->request-id->use-reason-map {"s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                          :instance-id->consecutive-failures {"s1.h1" 1 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
                          :instance-id->state (-> {}
@@ -1470,10 +1470,10 @@
                                                (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))})
         (async/>!! exit-chan :exit)))
 
-    (deftest test-start-service-chan-responder-blacklist-owned-instance
-      (let [{:keys [blacklist-instance-chan exit-chan query-state-chan release-instance-chan trigger-unblacklist-process-atom unblacklist-instance-chan]}
+    (deftest test-start-service-chan-responder-eject-owned-instance
+      (let [{:keys [eject-instance-chan exit-chan query-state-chan release-instance-chan trigger-uneject-process-atom uneject-instance-chan]}
             (launch-service-chan-responder 14 {:id->instance id->instance-data
-                                               :instance-id->blacklist-expiry-time {}
+                                               :instance-id->eject-expiry-time {}
                                                :instance-id->request-id->use-reason-map {"s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                                                :instance-id->consecutive-failures {"s1.h1" 1 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
                                                :instance-id->state (-> {}
@@ -1483,32 +1483,32 @@
                                                                      (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))
                                                :load-balancing :oldest
                                                :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]})]
-        ; try blacklisting an instance successfully
+        ; try ejecting an instance successfully
         (let [start-time (t/now)
               current-time-atom (atom start-time)]
           (with-redefs [t/now (fn [] @current-time-atom)]
-            (check-blacklist-instance-fn blacklist-instance-chan "s1.h2" :blacklisted)
+            (check-eject-instance-fn eject-instance-chan "s1.h2" :ejected)
             ; repeated call should also succeed
-            (check-blacklist-instance-fn blacklist-instance-chan "s1.h2" :blacklisted)
+            (check-eject-instance-fn eject-instance-chan "s1.h2" :ejected)
             (check-state-fn query-state-chan
-                            {:instance-id->blacklist-expiry-time {"s1.h2" (t/plus start-time (t/millis blacklist-backoff-base-time-ms))}
+                            {:instance-id->eject-expiry-time {"s1.h2" (t/plus start-time (t/millis eject-backoff-base-time-ms))}
                              :instance-id->request-id->use-reason-map {"s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                              :instance-id->consecutive-failures {"s1.h1" 1 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
                              :instance-id->state (-> {}
                                                    (update-slot-state-fn "s1.h1" 1 0)
-                                                   (update-slot-state-fn "s1.h2" 1 0 #{:blacklisted :healthy})
+                                                   (update-slot-state-fn "s1.h2" 1 0 #{:ejected :healthy})
                                                    (update-slot-state-fn "s1.h3" 8 0)
                                                    (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))})
-            (is (= {"s1.h2" blacklist-backoff-base-time-ms}
-                   @trigger-unblacklist-process-atom))
-            ; clear the blacklist buffer with a dummy state call
+            (is (= {"s1.h2" eject-backoff-base-time-ms}
+                   @trigger-uneject-process-atom))
+            ; clear the eject buffer with a dummy state call
             (do
-              (reset! current-time-atom (t/plus start-time (t/millis (* 8 max-blacklist-time-ms))))
-              (async/>!! unblacklist-instance-chan {:instance-id "s1.h2"}))
+              (reset! current-time-atom (t/plus start-time (t/millis (* 8 max-eject-time-ms))))
+              (async/>!! uneject-instance-chan {:instance-id "s1.h2"}))
             ; dummy release call should not throw an error
             (release-instance-fn release-instance-chan "s1.hUnknown" 114 :success)
             (check-state-fn query-state-chan
-                            {:instance-id->blacklist-expiry-time {}
+                            {:instance-id->eject-expiry-time {}
                              :instance-id->request-id->use-reason-map {"s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                              :instance-id->consecutive-failures {"s1.h1" 1 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
                              :instance-id->state (-> {}
@@ -1518,10 +1518,10 @@
                                                    (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))}))
           (async/>!! exit-chan :exit))))
 
-    (deftest test-start-service-chan-responder-blacklist-external-instance
-      (let [{:keys [blacklist-instance-chan exit-chan query-state-chan release-instance-chan trigger-unblacklist-process-atom unblacklist-instance-chan]}
+    (deftest test-start-service-chan-responder-eject-external-instance
+      (let [{:keys [eject-instance-chan exit-chan query-state-chan release-instance-chan trigger-uneject-process-atom uneject-instance-chan]}
             (launch-service-chan-responder 14 {:id->instance id->instance-data
-                                               :instance-id->blacklist-expiry-time {}
+                                               :instance-id->eject-expiry-time {}
                                                :instance-id->request-id->use-reason-map {"s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                                                :instance-id->consecutive-failures {"s1.h1" 1 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
                                                :instance-id->state (-> {}
@@ -1531,37 +1531,37 @@
                                                                      (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))
                                                :load-balancing :oldest
                                                :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]})]
-        ; try blacklisting an external instance successfully
+        ; try ejecting an external instance successfully
         (let [start-time (t/now)
               current-time-atom (atom start-time)]
           (with-redefs [t/now (fn [] @current-time-atom)]
-            (check-blacklist-instance-fn blacklist-instance-chan "s1.h8" :blacklisted)
+            (check-eject-instance-fn eject-instance-chan "s1.h8" :ejected)
             ; repeated call should also succeed
-            (check-blacklist-instance-fn blacklist-instance-chan "s1.h9" :blacklisted)
+            (check-eject-instance-fn eject-instance-chan "s1.h9" :ejected)
             (check-state-fn query-state-chan
-                            {:instance-id->blacklist-expiry-time {"s1.h8" (t/plus start-time (t/millis blacklist-backoff-base-time-ms))
-                                                                  "s1.h9" (t/plus start-time (t/millis blacklist-backoff-base-time-ms))}
+                            {:instance-id->eject-expiry-time {"s1.h8" (t/plus start-time (t/millis eject-backoff-base-time-ms))
+                                                                  "s1.h9" (t/plus start-time (t/millis eject-backoff-base-time-ms))}
                              :instance-id->request-id->use-reason-map {"s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                              :instance-id->consecutive-failures {"s1.h1" 1 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
                              :instance-id->state (-> {}
                                                    (update-slot-state-fn "s1.h1" 1 0)
                                                    (update-slot-state-fn "s1.h2" 1 0 #{:healthy})
                                                    (update-slot-state-fn "s1.h3" 8 0)
-                                                   (update-slot-state-fn "s1.h8" 0 0 #{:blacklisted})
-                                                   (update-slot-state-fn "s1.h9" 0 0 #{:blacklisted})
+                                                   (update-slot-state-fn "s1.h8" 0 0 #{:ejected})
+                                                   (update-slot-state-fn "s1.h9" 0 0 #{:ejected})
                                                    (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))})
-            (is (= {"s1.h8" blacklist-backoff-base-time-ms
-                    "s1.h9" blacklist-backoff-base-time-ms}
-                   @trigger-unblacklist-process-atom))
-            ; clear the blacklist buffer with a dummy state call
+            (is (= {"s1.h8" eject-backoff-base-time-ms
+                    "s1.h9" eject-backoff-base-time-ms}
+                   @trigger-uneject-process-atom))
+            ; clear the eject buffer with a dummy state call
             (do
-              (reset! current-time-atom (t/plus start-time (t/millis (* 8 max-blacklist-time-ms))))
-              (async/>!! unblacklist-instance-chan {:instance-id "s1.h8"})
-              (async/>!! unblacklist-instance-chan {:instance-id "s1.h9"}))
+              (reset! current-time-atom (t/plus start-time (t/millis (* 8 max-eject-time-ms))))
+              (async/>!! uneject-instance-chan {:instance-id "s1.h8"})
+              (async/>!! uneject-instance-chan {:instance-id "s1.h9"}))
             ; dummy release call should not throw an error
             (release-instance-fn release-instance-chan "s1.hUnknown" 114 :success)
             (check-state-fn query-state-chan
-                            {:instance-id->blacklist-expiry-time {}
+                            {:instance-id->eject-expiry-time {}
                              :instance-id->request-id->use-reason-map {"s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                              :instance-id->consecutive-failures {"s1.h1" 1 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
                              :instance-id->state (-> {}
@@ -1575,10 +1575,10 @@
                              :work-stealing-queue (make-queue [])}))
           (async/>!! exit-chan :exit))))
 
-    (deftest test-start-service-chan-responder-cause-unowned-instance-blacklist
+    (deftest test-start-service-chan-responder-cause-unowned-instance-eject
       (let [{:keys [exit-chan query-state-chan reserve-instance-chan update-state-chan]}
             (launch-service-chan-responder 14 {:id->instance id->instance-data
-                                               :instance-id->blacklist-expiry-time {}
+                                               :instance-id->eject-expiry-time {}
                                                :instance-id->request-id->use-reason-map {"s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                                                :instance-id->consecutive-failures {"s1.h1" 1 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
                                                :instance-id->state (-> {}
@@ -1587,11 +1587,11 @@
                                                                      (update-slot-state-fn "s1.h3" 8 0)
                                                                      (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))
                                                :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]})]
-        ; blacklist an instance which gets remove from state it should not introduce any errors
+        ; eject an instance which gets remove from state it should not introduce any errors
         (check-reserve-request-instance-fn reserve-instance-chan "s1.h1")
         (check-reserve-request-instance-fn reserve-instance-chan "s1.h2")
         (check-state-fn query-state-chan
-                        {:instance-id->blacklist-expiry-time {}
+                        {:instance-id->eject-expiry-time {}
                          :instance-id->request-id->use-reason-map {"s1.h1" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :serve-request}}
                                                                    "s1.h2" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}}
                                                                    "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
@@ -1610,7 +1610,7 @@
                             :my-instance->slots {instance-h2 1 instance-h3 8}}]
           (async/>!! update-state-chan [update-state (t/now)]))
         (check-state-fn query-state-chan
-                        {:instance-id->blacklist-expiry-time {}
+                        {:instance-id->eject-expiry-time {}
                          :instance-id->request-id->use-reason-map {"s1.h1" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :serve-request}}
                                                                    "s1.h2" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}}
                                                                    "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
@@ -1625,9 +1625,9 @@
                          :work-stealing-queue (make-queue [])})
         (async/>!! exit-chan :exit)))
 
-    (deftest test-start-service-chan-responder-cause-instance-blacklist
-      (let [{:keys [exit-chan query-state-chan release-instance-chan trigger-unblacklist-process-atom unblacklist-instance-chan]}
-            (launch-service-chan-responder 16 {:instance-id->blacklist-expiry-time {}
+    (deftest test-start-service-chan-responder-cause-instance-eject
+      (let [{:keys [exit-chan query-state-chan release-instance-chan trigger-uneject-process-atom uneject-instance-chan]}
+            (launch-service-chan-responder 16 {:instance-id->eject-expiry-time {}
                                                :instance-id->request-id->use-reason-map {"s1.h1" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :serve-request}}
                                                                                          "s1.h2" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}}
                                                                                          "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
@@ -1643,24 +1643,24 @@
           (with-redefs [t/now (fn [] @current-time-atom)]
             (release-instance-fn release-instance-chan "s1.h1" 15 :instance-error)
             (check-state-fn query-state-chan
-                            {:instance-id->blacklist-expiry-time {"s1.h1" (t/plus start-time (t/millis (* (Math/pow 2 (dec 2)) blacklist-backoff-base-time-ms)))}
+                            {:instance-id->eject-expiry-time {"s1.h1" (t/plus start-time (t/millis (* (Math/pow 2 (dec 2)) eject-backoff-base-time-ms)))}
                              :instance-id->request-id->use-reason-map {"s1.h2" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}}
                                                                        "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                              :instance-id->consecutive-failures {"s1.h1" 2 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
                              :instance-id->state (-> {}
-                                                   (update-slot-state-fn "s1.h1" 0 0 #{:blacklisted})
+                                                   (update-slot-state-fn "s1.h1" 0 0 #{:ejected})
                                                    (update-slot-state-fn "s1.h2" 1 1)
                                                    (update-slot-state-fn "s1.h3" 8 0)
                                                    (update-slot-state-fn "s1.u3" 0 0 #{:locked}))})
-            (is (= {"s1.h1" (* (Math/pow 2 (dec 2)) blacklist-backoff-base-time-ms)}
-                   @trigger-unblacklist-process-atom))
+            (is (= {"s1.h1" (* (Math/pow 2 (dec 2)) eject-backoff-base-time-ms)}
+                   @trigger-uneject-process-atom))
             (do
-              (reset! current-time-atom (t/plus start-time (t/millis (* 8 max-blacklist-time-ms))))
-              (async/>!! unblacklist-instance-chan {:instance-id "s1.h1"}))
+              (reset! current-time-atom (t/plus start-time (t/millis (* 8 max-eject-time-ms))))
+              (async/>!! uneject-instance-chan {:instance-id "s1.h1"}))
             (testing "check that releasing instance still works as expected"
               (release-instance-fn release-instance-chan "s1.h2" 16 :success)
               (check-state-fn query-state-chan
-                              {:instance-id->blacklist-expiry-time {}
+                              {:instance-id->eject-expiry-time {}
                                :instance-id->request-id->use-reason-map {"s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                                :instance-id->consecutive-failures {"s1.h1" 2 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
                                :instance-id->state (-> {}
@@ -1676,7 +1676,7 @@
     (deftest test-start-service-chan-responder-locked-healthy-instance-not-used-to-service-request
       (let [{:keys [exit-chan query-state-chan reserve-instance-chan]}
             (launch-service-chan-responder 14 {:id->instance id->instance-data
-                                               :instance-id->blacklist-expiry-time {}
+                                               :instance-id->eject-expiry-time {}
                                                :instance-id->request-id->use-reason-map {"s1.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
                                                                                          "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                                                :instance-id->consecutive-failures {"s1.h1" 1 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
@@ -1691,7 +1691,7 @@
         (check-reserve-request-instance-fn reserve-instance-chan "s1.h3")
         (check-reserve-request-instance-fn reserve-instance-chan "s1.h3")
         (check-state-fn query-state-chan
-                        {:instance-id->blacklist-expiry-time {}
+                        {:instance-id->eject-expiry-time {}
                          :instance-id->request-id->use-reason-map {"s1.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
                                                                    "s1.h2" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :serve-request}}
                                                                    "s1.h3" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}
@@ -1710,7 +1710,7 @@
 
     (deftest test-start-service-chan-responder-instance-cleanup-during-state-update
       (let [{:keys [exit-chan query-state-chan update-state-chan]}
-            (launch-service-chan-responder 14 {:instance-id->blacklist-expiry-time {}
+            (launch-service-chan-responder 14 {:instance-id->eject-expiry-time {}
                                                :instance-id->request-id->use-reason-map {"s1.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
                                                                                          "s1.h2" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :serve-request}}
                                                                                          "s1.h3" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}
@@ -1728,7 +1728,7 @@
                                                                      (update-slot-state-fn "s1.h4" 5 0)
                                                                      (update-slot-state-fn "s1.h5" 4 0)
                                                                      (update-slot-state-fn "s1.h6" 7 0)
-                                                                     (update-slot-state-fn "s1.h7" 0 0 #{:blacklisted})
+                                                                     (update-slot-state-fn "s1.h7" 0 0 #{:ejected})
                                                                      (update-slot-state-fn "s1.u1" 0 0 #{:unhealthy})
                                                                      (update-slot-state-fn "s1.u2" 0 0 #{:killed :unhealthy})
                                                                      (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy})
@@ -1741,7 +1741,7 @@
                             :my-instance->slots {instance-h2 1 instance-h3 8 instance-h5 9 instance-h6 1}}]
           (async/>!! update-state-chan [update-state (t/now)]))
         (check-state-fn query-state-chan
-                        {:instance-id->blacklist-expiry-time {}
+                        {:instance-id->eject-expiry-time {}
                          :instance-id->request-id->use-reason-map {"s1.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
                                                                    "s1.h2" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :serve-request}}
                                                                    "s1.h3" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}
@@ -1757,7 +1757,7 @@
                                                (update-slot-state-fn "s1.h3" 8 2)
                                                (update-slot-state-fn "s1.h5" 9 0)
                                                (update-slot-state-fn "s1.h6" 1 0)
-                                               (update-slot-state-fn "s1.h7" 0 0 #{:blacklisted})
+                                               (update-slot-state-fn "s1.h7" 0 0 #{:ejected})
                                                (update-slot-state-fn "s1.u1" 0 0 #{:unhealthy})
                                                (update-slot-state-fn "s1.u2" 0 0 #{:unhealthy})
                                                (update-slot-state-fn "s1.u3" 0 0 #{:locked}))
@@ -1769,7 +1769,7 @@
     (deftest test-start-service-chan-responder-offer-workstealing-instance-promptly-rejected
       (let [{:keys [exit-chan query-state-chan work-stealing-chan]}
             (launch-service-chan-responder 14 {:id->instance id->instance-data
-                                               :instance-id->blacklist-expiry-time {}
+                                               :instance-id->eject-expiry-time {}
                                                :instance-id->request-id->use-reason-map {"s1.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
                                                                                          "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                                                :instance-id->consecutive-failures {"s1.h1" 1 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
@@ -1787,7 +1787,7 @@
               ]
           (check-state-fn query-state-chan
                           {:id->instance id->instance-data
-                           :instance-id->blacklist-expiry-time {}
+                           :instance-id->eject-expiry-time {}
                            :instance-id->request-id->use-reason-map {"s1.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
                                                                      "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                            :instance-id->consecutive-failures {"s1.h1" 1 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
@@ -1807,7 +1807,7 @@
 
     (deftest test-start-service-chan-responder-offer-workstealing-instance-accepted
       (let [initial-state {:id->instance id->instance-data
-                           :instance-id->blacklist-expiry-time {}
+                           :instance-id->eject-expiry-time {}
                            :instance-id->request-id->use-reason-map {"s1.h1" {"req-11" {:cid "cid-11" :request-id "req-11" :reason :kill-instance}}
                                                                      "s1.h2" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :serve-request}}
                                                                      "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
@@ -1837,7 +1837,7 @@
 
     (deftest test-start-service-chan-responder-offer-workstealing-instance-rejected
       (let [initial-state {:id->instance id->instance-data
-                           :instance-id->blacklist-expiry-time {}
+                           :instance-id->eject-expiry-time {}
                            :instance-id->request-id->use-reason-map {"s1.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
                                                                      "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                            :instance-id->consecutive-failures {"s1.h1" 1 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
@@ -1869,7 +1869,7 @@
                                       (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))
             {:keys [exit-chan]}
             (launch-service-chan-responder 17 {:id->instance id->instance-data
-                                               :instance-id->blacklist-expiry-time {}
+                                               :instance-id->eject-expiry-time {}
                                                :instance-id->request-id->use-reason-map {"s1.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
                                                                                          "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                                                :instance-id->consecutive-failures {"s1.h1" 1 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
@@ -1892,7 +1892,7 @@
             response-chan-3 (async/chan 1)
             {:keys [exit-chan query-state-chan release-instance-chan]}
             (launch-service-chan-responder 17 {:id->instance id->instance-data
-                                               :instance-id->blacklist-expiry-time {}
+                                               :instance-id->eject-expiry-time {}
                                                :instance-id->request-id->use-reason-map {"s1.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
                                                                                          "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                                                :instance-id->consecutive-failures {"s1.h1" 1 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
@@ -1911,7 +1911,7 @@
         (async/>!! release-instance-chan [:dummy "data"]) ;; dummy request to trigger work-stealing node clearing
         (check-state-fn query-state-chan
                         {:id->instance id->instance-data
-                         :instance-id->blacklist-expiry-time {}
+                         :instance-id->eject-expiry-time {}
                          :instance-id->request-id->use-reason-map {"s1.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
                                                                    "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                          :instance-id->consecutive-failures {"s1.h1" 1 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
@@ -1930,7 +1930,7 @@
         (async/>!! release-instance-chan [:dummy "data"]) ;; dummy request to trigger work-stealing node clearing
         (check-state-fn query-state-chan
                         {:id->instance id->instance-data
-                         :instance-id->blacklist-expiry-time {}
+                         :instance-id->eject-expiry-time {}
                          :instance-id->request-id->use-reason-map {"s1.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
                                                                    "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                          :instance-id->consecutive-failures {"s1.h1" 1 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
@@ -1948,7 +1948,7 @@
         (async/>!! release-instance-chan [:dummy "data"]) ;; dummy request to trigger work-stealing node clearing
         (check-state-fn query-state-chan
                         {:id->instance id->instance-data
-                         :instance-id->blacklist-expiry-time {}
+                         :instance-id->eject-expiry-time {}
                          :instance-id->request-id->use-reason-map {"s1.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
                                                                    "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                          :instance-id->consecutive-failures {"s1.h1" 1 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
@@ -1978,7 +1978,7 @@
                                       (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))
             {:keys [exit-chan query-state-chan release-instance-chan reserve-instance-chan]}
             (launch-service-chan-responder 17 {:id->instance id->instance-data
-                                               :instance-id->blacklist-expiry-time {}
+                                               :instance-id->eject-expiry-time {}
                                                :instance-id->request-id->use-reason-map {"s1.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
                                                                                          "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                                                :instance-id->consecutive-failures {"s1.h1" 1 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
@@ -1992,7 +1992,7 @@
         (is (= 3 (counters/value (metrics/service-counter service-id "work-stealing" "received-from" "in-flight"))))
         (check-state-fn query-state-chan
                         {:id->instance id->instance-data
-                         :instance-id->blacklist-expiry-time {}
+                         :instance-id->eject-expiry-time {}
                          :instance-id->request-id->use-reason-map {"s1.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}
                                                                             "req-18" {:cid "cid-18" :request-id "req-18" :reason :serve-request}}
                                                                    "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
@@ -2006,7 +2006,7 @@
         (check-reserve-request-instance-fn reserve-instance-chan "s1.h2")
         (check-state-fn query-state-chan
                         {:id->instance id->instance-data
-                         :instance-id->blacklist-expiry-time {}
+                         :instance-id->eject-expiry-time {}
                          :instance-id->request-id->use-reason-map {"s1.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}
                                                                             "req-18" {:cid "cid-18" :request-id "req-18" :reason :serve-request}}
                                                                    "s1.h2" {"req-19" {:cid "cid-19" :request-id "req-19" :reason :serve-request}}
@@ -2024,7 +2024,7 @@
         (async/>!! release-instance-chan [:dummy "data"]) ;; dummy request to trigger work-stealing node clearing
         (check-state-fn query-state-chan
                         {:id->instance id->instance-data
-                         :instance-id->blacklist-expiry-time {}
+                         :instance-id->eject-expiry-time {}
                          :instance-id->request-id->use-reason-map {"s1.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}
                                                                             "req-18" {:cid "cid-18" :request-id "req-18" :reason :serve-request}}
                                                                    "s1.h2" {"req-19" {:cid "cid-19" :request-id "req-19" :reason :serve-request}}
@@ -2053,7 +2053,7 @@
                                       (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))
             {:keys [exit-chan query-state-chan release-instance-chan reserve-instance-chan]}
             (launch-service-chan-responder 17 {:id->instance id->instance-data
-                                               :instance-id->blacklist-expiry-time {}
+                                               :instance-id->eject-expiry-time {}
                                                :instance-id->request-id->use-reason-map {"s1.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
                                                                                          "s1.h2" {"req-08" {:cid "cid-08" :request-id "req-08" :reason :serve-request}}
                                                                                          "s1.h3" {"req-09" {:cid "cid-09" :request-id "req-09" :reason :serve-request}
@@ -2071,7 +2071,7 @@
         (is (= 3 (counters/value (metrics/service-counter service-id "work-stealing" "received-from" "in-flight"))))
         (check-state-fn query-state-chan
                         {:id->instance id->instance-data
-                         :instance-id->blacklist-expiry-time {}
+                         :instance-id->eject-expiry-time {}
                          :instance-id->request-id->use-reason-map {"s1.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}
                                                                             "req-18" {:cid "cid-18" :request-id "req-18" :reason :serve-request}}
                                                                    "s1.h2" {"req-08" {:cid "cid-08" :request-id "req-08" :reason :serve-request}}
@@ -2088,7 +2088,7 @@
         (check-reserve-request-instance-fn reserve-instance-chan "s1.h2")
         (check-state-fn query-state-chan
                         {:id->instance id->instance-data
-                         :instance-id->blacklist-expiry-time {}
+                         :instance-id->eject-expiry-time {}
                          :instance-id->request-id->use-reason-map {"s1.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}
                                                                             "req-18" {:cid "cid-18" :request-id "req-18" :reason :serve-request}}
                                                                    "s1.h2" {"req-08" {:cid "cid-08" :request-id "req-08" :reason :serve-request}
@@ -2109,7 +2109,7 @@
         (async/>!! release-instance-chan [:dummy "data"]) ;; dummy request to trigger work-stealing node clearing
         (check-state-fn query-state-chan
                         {:id->instance id->instance-data
-                         :instance-id->blacklist-expiry-time {}
+                         :instance-id->eject-expiry-time {}
                          :instance-id->request-id->use-reason-map {"s1.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}
                                                                             "req-18" {:cid "cid-18" :request-id "req-18" :reason :serve-request}}
                                                                    "s1.h2" {"req-08" {:cid "cid-08" :request-id "req-08" :reason :serve-request}
@@ -2140,7 +2140,7 @@
                                       (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))
             {:keys [exit-chan query-state-chan release-instance-chan]}
             (launch-service-chan-responder 19 {:id->instance id->instance-data
-                                               :instance-id->blacklist-expiry-time {}
+                                               :instance-id->eject-expiry-time {}
                                                :instance-id->request-id->use-reason-map {"s1.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}
                                                                                                   "req-18" {:cid "cid-18" :request-id "req-18" :reason :serve-request}}
                                                                                          "s1.h2" {"req-19" {:cid "cid-19" :request-id "req-19" :reason :serve-request}}
@@ -2154,7 +2154,7 @@
         (release-instance-fn release-instance-chan "s1.h2" 19 :success)
         (check-state-fn query-state-chan
                         {:id->instance id->instance-data
-                         :instance-id->blacklist-expiry-time {}
+                         :instance-id->eject-expiry-time {}
                          :instance-id->request-id->use-reason-map {"s1.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}
                                                                             "req-18" {:cid "cid-18" :request-id "req-18" :reason :serve-request}}
                                                                    "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
@@ -2169,7 +2169,7 @@
         (release-instance-fn release-instance-chan "s1.h1" 18 :success)
         (check-state-fn query-state-chan
                         {:id->instance id->instance-data
-                         :instance-id->blacklist-expiry-time {}
+                         :instance-id->eject-expiry-time {}
                          :instance-id->request-id->use-reason-map {"s1.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
                                                                    "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                          :instance-id->consecutive-failures {"s1.u2" 1 "s1.u1" 1 "s1.u3" 1} ;; h1 loses its failure entry
@@ -2194,7 +2194,7 @@
                                       (update-slot-state-fn "s1.u3" 0 0 #{:locked :unhealthy}))
             {:keys [exit-chan query-state-chan release-instance-chan]}
             (launch-service-chan-responder 19 {:id->instance id->instance-data
-                                               :instance-id->blacklist-expiry-time {}
+                                               :instance-id->eject-expiry-time {}
                                                :instance-id->request-id->use-reason-map {"s1.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}
                                                                                                   "req-18" {:cid "cid-18" :request-id "req-18" :reason :serve-request}}
                                                                                          "s1.h2" {"req-19" {:cid "cid-19" :request-id "req-19" :reason :serve-request}}
@@ -2211,24 +2211,24 @@
             (release-instance-fn release-instance-chan "s1.h2" 19 :instance-error)
             (check-state-fn query-state-chan
                             {:id->instance id->instance-data
-                             :instance-id->blacklist-expiry-time {"s1.h2" (t/plus current-time (t/millis blacklist-backoff-base-time-ms))}
+                             :instance-id->eject-expiry-time {"s1.h2" (t/plus current-time (t/millis eject-backoff-base-time-ms))}
                              :instance-id->request-id->use-reason-map {"s1.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}
                                                                                 "req-18" {:cid "cid-18" :request-id "req-18" :reason :serve-request}}
                                                                        "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                              :instance-id->consecutive-failures {"s1.h1" 1 "s1.h2" 1 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
-                             :instance-id->state (update-slot-state-fn test-instance-id->state "s1.h2" 1 0 #{:blacklisted :healthy})
+                             :instance-id->state (update-slot-state-fn test-instance-id->state "s1.h2" 1 0 #{:ejected :healthy})
                              :load-balancing :oldest
                              :request-id->work-stealer {"req-18" (make-work-stealing-data "cid-15" "s1.h1" response-chan-1 "test-router-1")}
                              :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]
                              :work-stealing-queue (make-queue [])})
             (is (= :instance-error (async/<!! response-chan-2))))
-          (with-redefs [t/now (fn [] (t/plus current-time (t/millis (* 8 max-blacklist-time-ms))))]
+          (with-redefs [t/now (fn [] (t/plus current-time (t/millis (* 8 max-eject-time-ms))))]
             (check-state-fn query-state-chan nil)))
         (async/>!! exit-chan :exit)))
 
     (deftest test-start-service-chan-responder-release-async-request-assigned-instance
       (let [initial-state {:id->instance id->instance-data
-                           :instance-id->blacklist-expiry-time {}
+                           :instance-id->eject-expiry-time {}
                            :instance-id->request-id->use-reason-map {"s1.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}}
                                                                      "s1.h2" {"req-3" {:cid "cid-3" :request-id "req-3" :reason :serve-request}}
                                                                      "s1.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}
@@ -2263,7 +2263,7 @@
       (let [response-chan-1 (async/chan 4)
             response-chan-2 (async/chan 1)
             initial-state {:id->instance id->instance-data
-                           :instance-id->blacklist-expiry-time {}
+                           :instance-id->eject-expiry-time {}
                            :instance-id->request-id->use-reason-map {"s1.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}}
                                                                      "s1.h2" {"req-3" {:cid "cid-3" :request-id "req-3" :reason :serve-request}}
                                                                      "s1.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}
@@ -2301,14 +2301,14 @@
         (is (= :success (async/<!! response-chan-1))) ; work-stealing instance released successfully
         (async/>!! exit-chan :exit)))
 
-    (deftest test-start-service-chan-responder-successfully-release-blacklisted-instance
-      (let [initial-state {:instance-id->blacklist-expiry-time {"s1.h1" (t/plus (t/now) (t/millis 100000))}
+    (deftest test-start-service-chan-responder-successfully-release-ejected-instance
+      (let [initial-state {:instance-id->eject-expiry-time {"s1.h1" (t/plus (t/now) (t/millis 100000))}
                            :instance-id->request-id->use-reason-map {"s1.h1" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}}
                                                                      "s1.h2" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :serve-request}}
                                                                      "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                            :instance-id->consecutive-failures {"s1.h1" 2 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
                            :instance-id->state (-> {}
-                                                 (update-slot-state-fn "s1.h1" 2 1 #{:blacklisted :healthy})
+                                                 (update-slot-state-fn "s1.h1" 2 1 #{:ejected :healthy})
                                                  (update-slot-state-fn "s1.h2" 2 1 #{:healthy})
                                                  (update-slot-state-fn "s1.h3" 8 0)
                                                  (update-slot-state-fn "s1.u3" 0 0 #{:locked}))}
@@ -2319,20 +2319,20 @@
           (release-instance-fn release-instance-chan "s1.h1" 16 :success)
           (check-state-fn query-state-chan
                           (-> initial-state
-                            (utils/dissoc-in [:instance-id->blacklist-expiry-time "s1.h1"])
+                            (utils/dissoc-in [:instance-id->eject-expiry-time "s1.h1"])
                             (utils/dissoc-in [:instance-id->request-id->use-reason-map "s1.h1" "req-16"])
                             (utils/dissoc-in [:instance-id->consecutive-failures "s1.h1"])
                             (update-in [:instance-id->state] #(update-slot-state-fn %1 "s1.h1" 2 0)))))
         (async/>!! exit-chan :exit)))
 
-    (deftest test-start-service-chan-responder-successfully-release-borrowed-blacklisted-instance
-      (let [initial-state {:instance-id->blacklist-expiry-time {"s1.h1" (t/plus (t/now) (t/millis 100000))}
+    (deftest test-start-service-chan-responder-successfully-release-borrowed-ejected-instance
+      (let [initial-state {:instance-id->eject-expiry-time {"s1.h1" (t/plus (t/now) (t/millis 100000))}
                            :instance-id->request-id->use-reason-map {"s1.h1" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}}
                                                                      "s1.h2" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :serve-request}}
                                                                      "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                            :instance-id->consecutive-failures {"s1.h1" 2 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
                            :instance-id->state (-> {}
-                                                 (update-slot-state-fn "s1.h1" 0 1 #{:blacklisted :healthy})
+                                                 (update-slot-state-fn "s1.h1" 0 1 #{:ejected :healthy})
                                                  (update-slot-state-fn "s1.h2" 2 1 #{:healthy})
                                                  (update-slot-state-fn "s1.h3" 8 0)
                                                  (update-slot-state-fn "s1.u3" 0 0 #{:locked}))}
@@ -2343,14 +2343,14 @@
           (release-instance-fn release-instance-chan "s1.h1" 16 :success)
           (check-state-fn query-state-chan
                           (-> initial-state
-                            (utils/dissoc-in [:instance-id->blacklist-expiry-time "s1.h1"])
+                            (utils/dissoc-in [:instance-id->eject-expiry-time "s1.h1"])
                             (utils/dissoc-in [:instance-id->request-id->use-reason-map "s1.h1" "req-16"])
                             (utils/dissoc-in [:instance-id->consecutive-failures "s1.h1"])
                             (update-in [:instance-id->state] #(update-slot-state-fn %1 "s1.h1" 0 0)))))
         (async/>!! exit-chan :exit)))
 
-    (deftest test-start-service-chan-responder-slot-counts-for-locked-and-blacklisted-instance
-      (let [initial-state {:instance-id->blacklist-expiry-time {"s1.h1" (t/plus (t/now) (t/millis 100000))}
+    (deftest test-start-service-chan-responder-slot-counts-for-locked-and-ejected-instance
+      (let [initial-state {:instance-id->eject-expiry-time {"s1.h1" (t/plus (t/now) (t/millis 100000))}
                            :instance-id->request-id->use-reason-map {"s1.h1" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}}
                                                                      "s1.h2" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :serve-request}}
                                                                      "s1.h4" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}
@@ -2358,7 +2358,7 @@
                                                                               "req-11" {:cid "cid-11" :request-id "req-11" :reason :serve-request}}}
                            :instance-id->consecutive-failures {"s1.h1" 2 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
                            :instance-id->state (-> {}
-                                                 (update-slot-state-fn "s1.h1" 2 1 #{:blacklisted :healthy})
+                                                 (update-slot-state-fn "s1.h1" 2 1 #{:ejected :healthy})
                                                  (update-slot-state-fn "s1.h2" 3 1 #{:healthy})
                                                  (update-slot-state-fn "s1.h3" 7 0)
                                                  (update-slot-state-fn "s1.h4" 11 0 #{:locked})
@@ -2372,13 +2372,13 @@
 
     (deftest test-start-service-chan-responder-successfully-release-work-stealing-instance-success-async
       (let [response-chan-1 (async/chan 4)
-            initial-state {:instance-id->blacklist-expiry-time {}
+            initial-state {:instance-id->eject-expiry-time {}
                            :instance-id->request-id->use-reason-map {"s1.h1" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}}
                                                                      "s1.h2" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :serve-request}}
                                                                      "s1.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}}}
                            :instance-id->consecutive-failures {}
                            :instance-id->state (-> {}
-                                                 (update-slot-state-fn "s1.h1" 0 1 #{:blacklisted :healthy})
+                                                 (update-slot-state-fn "s1.h1" 0 1 #{:ejected :healthy})
                                                  (update-slot-state-fn "s1.h2" 2 1 #{:healthy})
                                                  (update-slot-state-fn "s1.u3" 0 0 #{:locked}))
                            :request-id->work-stealer {"req-4" (make-work-stealing-data "cid-4" "s1.h3" response-chan-1 "test-router-1")}}
@@ -2407,7 +2407,7 @@
         (async/>!! exit-chan :exit)))
 
     (deftest test-start-service-chan-responder-no-instances-assigned-hence-none-available-for-kill
-      (let [initial-state {:instance-id->blacklist-expiry-time {}
+      (let [initial-state {:instance-id->eject-expiry-time {}
                            :instance-id->request-id->use-reason-map {}
                            :instance-id->consecutive-failures {}
                            :instance-id->state {}
@@ -2422,7 +2422,7 @@
         (async/>!! exit-chan :exit)))
 
     (deftest test-start-service-chan-responder-no-slots-assigned-hence-none-available-for-kill
-      (let [initial-state {:instance-id->blacklist-expiry-time {}
+      (let [initial-state {:instance-id->eject-expiry-time {}
                            :instance-id->request-id->use-reason-map {}
                            :instance-id->consecutive-failures {}
                            :instance-id->state (-> {}
@@ -2443,14 +2443,14 @@
 
     (deftest test-start-service-chan-responder-no-idle-instance-available-for-kill
       (let [response-chan-1 (async/chan 4)
-            initial-state {:instance-id->blacklist-expiry-time {}
+            initial-state {:instance-id->eject-expiry-time {}
                            :instance-id->request-id->use-reason-map {"s1.h1" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}}
                                                                      "s1.h2" {"req-14" {:cid "cid-14" :request-id "req-14" :reason :serve-request}
                                                                               "req-15" {:cid "cid-15" :request-id "req-15" :reason :serve-request}}
                                                                      "s1.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}}}
                            :instance-id->consecutive-failures {}
                            :instance-id->state (-> {}
-                                                 (update-slot-state-fn "s1.h1" 0 1 #{:blacklisted :healthy})
+                                                 (update-slot-state-fn "s1.h1" 0 1 #{:ejected :healthy})
                                                  (update-slot-state-fn "s1.h2" 2 2 #{:healthy})
                                                  (update-slot-state-fn "s1.h5" 0 0 #{:healthy})
                                                  (update-slot-state-fn "s1.u3" 0 0 #{:locked}))
@@ -2464,9 +2464,9 @@
 
         (async/>!! exit-chan :exit)))
 
-    (deftest test-start-service-chan-responder-blacklisted-instance-cleanup
+    (deftest test-start-service-chan-responder-ejected-instance-cleanup
       (let [current-time (t/now)
-            initial-state {:instance-id->blacklist-expiry-time {"s1.h1" (t/minus current-time (t/millis 1000))
+            initial-state {:instance-id->eject-expiry-time {"s1.h1" (t/minus current-time (t/millis 1000))
                                                                 "s1.h2" (t/minus current-time (t/millis 2000))
                                                                 "s1.h3" (t/minus current-time (t/millis 3000))
                                                                 "s1.h4" (t/plus current-time (t/millis 10000))}
@@ -2477,17 +2477,17 @@
                                                                               "req-11" {:cid "cid-11" :request-id "req-11" :reason :serve-request}}}
                            :instance-id->consecutive-failures {"s1.h1" 2 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
                            :instance-id->state (-> {}
-                                                 (update-slot-state-fn "s1.h1" 2 1 #{:blacklisted :healthy})
-                                                 (update-slot-state-fn "s1.h2" 3 1 #{:blacklisted :healthy})
-                                                 (update-slot-state-fn "s1.h3" 7 0 #{:blacklisted})
-                                                 (update-slot-state-fn "s1.h4" 11 0 #{:blacklisted :locked})
+                                                 (update-slot-state-fn "s1.h1" 2 1 #{:ejected :healthy})
+                                                 (update-slot-state-fn "s1.h2" 3 1 #{:ejected :healthy})
+                                                 (update-slot-state-fn "s1.h3" 7 0 #{:ejected})
+                                                 (update-slot-state-fn "s1.h4" 11 0 #{:ejected :locked})
                                                  (update-slot-state-fn "s1.h5" 0 2))}
             {:keys [exit-chan query-state-chan update-state-chan]}
             (launch-service-chan-responder 16 initial-state)]
 
         (check-state-fn query-state-chan initial-state)
 
-        (testing "check unblacklist cleanup during state update"
+        (testing "check uneject cleanup during state update"
           (let [update-state {:healthy-instances [instance-h1 instance-h2 instance-h5 instance-h6]
                               :unhealthy-instances [instance-u1 instance-u2]
                               :my-instance->slots {instance-h1 5 instance-h2 2 instance-h3 8
@@ -2496,13 +2496,13 @@
 
           (check-state-fn query-state-chan
                           (-> initial-state
-                            (assoc :instance-id->blacklist-expiry-time {"s1.h4" (t/plus current-time (t/millis 10000))}
+                            (assoc :instance-id->eject-expiry-time {"s1.h4" (t/plus current-time (t/millis 10000))}
                                    :instance-id->consecutive-failures {"s1.h1" 2 "s1.u1" 1 "s1.u2" 1}
                                    :instance-id->state (-> {}
                                                          (update-slot-state-fn "s1.h1" 5 1 #{:healthy})
                                                          (update-slot-state-fn "s1.h2" 2 1 #{:healthy})
                                                          (update-slot-state-fn "s1.h3" 8 0 #{})
-                                                         (update-slot-state-fn "s1.h4" 2 0 #{:blacklisted :locked})
+                                                         (update-slot-state-fn "s1.h4" 2 0 #{:ejected :locked})
                                                          (update-slot-state-fn "s1.h5" 1 2 #{:healthy})
                                                          (update-slot-state-fn "s1.u1" 0 0 #{:unhealthy})
                                                          (update-slot-state-fn "s1.u2" 0 0 #{:unhealthy}))))))
@@ -2513,7 +2513,7 @@
     (deftest test-start-service-chan-responder-work-stealing-reject
       (let [response-chan-1 (async/promise-chan)
             response-chan-2 (async/promise-chan)
-            initial-state {:instance-id->blacklist-expiry-time {}
+            initial-state {:instance-id->eject-expiry-time {}
                            :instance-id->request-id->use-reason-map {"s1.h1" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}}}
                            :instance-id->consecutive-failures {}
                            :instance-id->state (update-slot-state-fn {} "s1.h1" 1 1 #{:healthy})
@@ -2558,7 +2558,7 @@
                                                      "s1.h3" {"req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request :time time-2}}
                                                      "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance :time time-0}}}
             initial-state {:id->instance id->instance-data
-                           :instance-id->blacklist-expiry-time {}
+                           :instance-id->eject-expiry-time {}
                            :instance-id->request-id->use-reason-map instance-id->request-id->use-reason-map
                            :instance-id->consecutive-failures {}
                            :instance-id->state (-> {}
@@ -2569,7 +2569,7 @@
                            :load-balancing :oldest
                            :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]}
             {:keys [exit-chan kill-instance-chan query-state-chan]} (launch-service-chan-responder 13 initial-state)]
-        ; kill a healthy instance and clear the blacklist buffer
+        ; kill a healthy instance and clear the eject buffer
         (with-redefs [t/now (fn [] current-time)]
           (check-kill-request-instance-fn kill-instance-chan "s1.h1"))
         (->> (-> initial-state
@@ -2598,7 +2598,7 @@
                                                      "s1.h3" {"req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request :time time-2}}
                                                      "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance :time time-1}}}
             initial-state {:id->instance id->instance-data
-                           :instance-id->blacklist-expiry-time {}
+                           :instance-id->eject-expiry-time {}
                            :instance-id->request-id->use-reason-map instance-id->request-id->use-reason-map
                            :instance-id->consecutive-failures {}
                            :instance-id->state (-> {}
@@ -2610,7 +2610,7 @@
                            :load-balancing :oldest
                            :sorted-instance-ids ["s1.h0" "s1.h1" "s1.h2" "s1.h3" "s1.u3"]}
             {:keys [exit-chan kill-instance-chan query-state-chan]} (launch-service-chan-responder 13 initial-state)]
-        ; kill a healthy instance and clear the blacklist buffer
+        ; kill a healthy instance and clear the eject buffer
         (with-redefs [t/now (fn [] current-time)]
           (check-kill-request-instance-fn kill-instance-chan "s1.h3"))
         (->> (-> initial-state
@@ -2626,7 +2626,7 @@
           (check-state-fn query-state-chan))
         (async/>!! exit-chan :exit)))
 
-    (deftest test-start-service-chan-responder-blacklist-expired-instance
+    (deftest test-start-service-chan-responder-eject-expired-instance
       (let [current-time (t/now)
             time-0 (->> (+ lingering-request-threshold-ms 20000) (t/millis) (t/minus current-time))
             time-1 (->> (+ lingering-request-threshold-ms 10000) (t/millis) (t/minus current-time))
@@ -2638,7 +2638,7 @@
                                                               "req-3" {:cid "cid-3" :request-id "req-3" :reason :serve-request :time time-3}}
                                                      "s1.h3" {"req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request :time time-2}}}
             initial-state {:id->instance id->instance-data
-                           :instance-id->blacklist-expiry-time {}
+                           :instance-id->eject-expiry-time {}
                            :instance-id->request-id->use-reason-map instance-id->request-id->use-reason-map
                            :instance-id->consecutive-failures {}
                            :instance-id->state (-> {}
@@ -2647,35 +2647,35 @@
                                                  (update-slot-state-fn "s1.h3" 8 1 #{:expired :healthy}))
                            :load-balancing :oldest
                            :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3"]}
-            {:keys [blacklist-instance-chan exit-chan query-state-chan]} (launch-service-chan-responder 13 initial-state)]
-        ; try blacklisting an instance
+            {:keys [eject-instance-chan exit-chan query-state-chan]} (launch-service-chan-responder 13 initial-state)]
+        ; try ejecting an instance
         (with-redefs [t/now (fn [] current-time)]
-          (testing "blacklist with lingering and active requests"
-            (check-blacklist-instance-fn blacklist-instance-chan "s1.h2" :in-use)
+          (testing "eject with lingering and active requests"
+            (check-eject-instance-fn eject-instance-chan "s1.h2" :in-use)
             (check-state-fn query-state-chan initial-state)
 
-            (check-blacklist-instance-fn blacklist-instance-chan "s1.h3" :in-use)
+            (check-eject-instance-fn eject-instance-chan "s1.h3" :in-use)
             (check-state-fn query-state-chan initial-state))
 
-          (testing "blacklist with only lingering requests"
-            (check-blacklist-instance-fn blacklist-instance-chan "s1.h1" :blacklisted)
+          (testing "eject with only lingering requests"
+            (check-eject-instance-fn eject-instance-chan "s1.h1" :ejected)
             (->> (-> initial-state
-                   (update :instance-id->blacklist-expiry-time assoc "s1.h1" (t/plus current-time (t/millis blacklist-backoff-base-time-ms)))
-                   (update :instance-id->state update-slot-state-fn "s1.h1" 4 2 #{:blacklisted :expired :healthy}))
+                   (update :instance-id->eject-expiry-time assoc "s1.h1" (t/plus current-time (t/millis eject-backoff-base-time-ms)))
+                   (update :instance-id->state update-slot-state-fn "s1.h1" 4 2 #{:ejected :expired :healthy}))
               (check-state-fn query-state-chan)))
 
           (async/>!! exit-chan :exit))))
 
-    (deftest test-start-service-chan-responder-kill-healthy-instance-in-presence-of-blacklisted
+    (deftest test-start-service-chan-responder-kill-healthy-instance-in-presence-of-ejected
       (let [current-time (t/now)
             initial-state {:id->instance id->instance-data
-                           :instance-id->blacklist-expiry-time {}
+                           :instance-id->eject-expiry-time {}
                            :instance-id->request-id->use-reason-map {}
                            :instance-id->consecutive-failures {}
                            :instance-id->state (-> {}
                                                  (update-slot-state-fn "s1.h1" 3 0 #{:healthy})
                                                  (update-slot-state-fn "s1.h2" 3 0 #{:healthy})
-                                                 (update-slot-state-fn "s1.h3" 0 0 #{:blacklisted}))
+                                                 (update-slot-state-fn "s1.h3" 0 0 #{:ejected}))
                            :load-balancing :oldest
                            :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3"]}
             {:keys [kill-instance-chan exit-chan query-state-chan]} (launch-service-chan-responder 13 initial-state)]
@@ -2686,21 +2686,21 @@
           (->> (-> initial-state
                  (assoc :instance-id->request-id->use-reason-map
                         {"s1.h3" {"req-14" {:cid "cid-14" :request-id "req-14" :reason :kill-instance}}})
-                 (update-in [:instance-id->state] #(update-slot-state-fn %1 "s1.h3" 0 0 #{:blacklisted :locked})))
+                 (update-in [:instance-id->state] #(update-slot-state-fn %1 "s1.h3" 0 0 #{:ejected :locked})))
             (check-state-fn query-state-chan))
 
           (async/>!! exit-chan :exit))))
 
-    (deftest test-start-service-chan-responder-kill-healthy-instance-in-presence-of-unknown-blacklisted
+    (deftest test-start-service-chan-responder-kill-healthy-instance-in-presence-of-unknown-ejected
       (let [current-time (t/now)
             initial-state {:id->instance (dissoc id->instance-data "s1.h3")
-                           :instance-id->blacklist-expiry-time {}
+                           :instance-id->eject-expiry-time {}
                            :instance-id->request-id->use-reason-map {}
                            :instance-id->consecutive-failures {}
                            :instance-id->state (-> {}
                                                  (update-slot-state-fn "s1.h1" 3 0 #{:healthy})
                                                  (update-slot-state-fn "s1.h2" 3 0 #{:healthy})
-                                                 (update-slot-state-fn "s1.h3" 0 0 #{:blacklisted}))
+                                                 (update-slot-state-fn "s1.h3" 0 0 #{:ejected}))
                            :load-balancing :oldest
                            :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3"]}
             {:keys [kill-instance-chan exit-chan query-state-chan]} (launch-service-chan-responder 13 initial-state)]
@@ -2719,13 +2719,13 @@
     (deftest test-start-service-chan-responder-scaling-state-updates-oldest-load-balancing
       (let [current-time (t/now)
             initial-state {:id->instance id->instance-data
-                           :instance-id->blacklist-expiry-time {}
+                           :instance-id->eject-expiry-time {}
                            :instance-id->request-id->use-reason-map {}
                            :instance-id->consecutive-failures {}
                            :instance-id->state (-> {}
                                                  (update-slot-state-fn "s1.h1" 3 0 #{:healthy})
                                                  (update-slot-state-fn "s1.h2" 3 0 #{:healthy})
-                                                 (update-slot-state-fn "s1.h3" 0 0 #{:blacklisted}))
+                                                 (update-slot-state-fn "s1.h3" 0 0 #{:ejected}))
                            :load-balancing :oldest
                            :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.h4" "s1.h5" "s1.h6" "s1.u1" "s1.u2" "s1.u3"]}
             {:keys [exit-chan query-state-chan scaling-state-chan]} (launch-service-chan-responder 13 initial-state)]
@@ -2745,13 +2745,13 @@
     (deftest test-start-service-chan-responder-scaling-state-updates-random-load-balancing
       (let [current-time (t/now)
             initial-state {:id->instance id->instance-data
-                           :instance-id->blacklist-expiry-time {}
+                           :instance-id->eject-expiry-time {}
                            :instance-id->request-id->use-reason-map {}
                            :instance-id->consecutive-failures {}
                            :instance-id->state (-> {}
                                                  (update-slot-state-fn "s1.h1" 3 0 #{:healthy})
                                                  (update-slot-state-fn "s1.h2" 3 0 #{:healthy})
-                                                 (update-slot-state-fn "s1.h3" 0 0 #{:blacklisted}))
+                                                 (update-slot-state-fn "s1.h3" 0 0 #{:ejected}))
                            :load-balancing :random
                            :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.h4" "s1.h5" "s1.h6" "s1.u1" "s1.u2" "s1.u3"]}
             {:keys [exit-chan query-state-chan scaling-state-chan]} (launch-service-chan-responder 13 initial-state)]
@@ -2771,13 +2771,13 @@
     (deftest test-start-service-chan-responder-scaling-state-updates-youngest-load-balancing
       (let [current-time (t/now)
             initial-state {:id->instance id->instance-data
-                           :instance-id->blacklist-expiry-time {}
+                           :instance-id->eject-expiry-time {}
                            :instance-id->request-id->use-reason-map {}
                            :instance-id->consecutive-failures {}
                            :instance-id->state (-> {}
                                                  (update-slot-state-fn "s1.h1" 3 0 #{:healthy})
                                                  (update-slot-state-fn "s1.h2" 3 0 #{:healthy})
-                                                 (update-slot-state-fn "s1.h3" 0 0 #{:blacklisted}))
+                                                 (update-slot-state-fn "s1.h3" 0 0 #{:ejected}))
                            :load-balancing :youngest
                            :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.h4" "s1.h5" "s1.h6" "s1.u1" "s1.u2" "s1.u3"]}
             {:keys [exit-chan query-state-chan scaling-state-chan]} (launch-service-chan-responder 13 initial-state)]
@@ -2797,7 +2797,7 @@
     (deftest test-start-service-chan-responder-load-balancing-random
       (let [current-time (t/now)
             initial-state {:id->instance id->instance-data
-                           :instance-id->blacklist-expiry-time {}
+                           :instance-id->eject-expiry-time {}
                            :instance-id->request-id->use-reason-map {}
                            :instance-id->consecutive-failures {}
                            :instance-id->state (-> {}
@@ -2849,7 +2849,7 @@
     (deftest test-start-service-chan-responder-load-balancing-youngest
       (let [current-time (t/now)
             initial-state {:id->instance id->instance-data
-                           :instance-id->blacklist-expiry-time {}
+                           :instance-id->eject-expiry-time {}
                            :instance-id->request-id->use-reason-map {}
                            :instance-id->consecutive-failures {}
                            :instance-id->state (-> {}
@@ -2897,15 +2897,15 @@
 
           (async/>!! exit-chan :exit))))))
 
-(deftest test-trigger-unblacklist-process
+(deftest test-trigger-uneject-process
   (let [correlation-id "test-correlation-id"
         test-instance-id "test-instance-id"
-        unblacklist-instance-chan (async/chan 1)
-        blacklist-period-ms 200
+        uneject-instance-chan (async/chan 1)
+        eject-period-ms 200
         current-time (t/now)]
     (with-redefs [t/now (fn [] current-time)]
-      (trigger-unblacklist-process correlation-id test-instance-id blacklist-period-ms unblacklist-instance-chan))
-    (let [{:keys [instance-id]} (async/<!! unblacklist-instance-chan)
+      (trigger-uneject-process correlation-id test-instance-id eject-period-ms uneject-instance-chan))
+    (let [{:keys [instance-id]} (async/<!! uneject-instance-chan)
           received-time (t/now)]
       (is (= test-instance-id instance-id))
-      (is (not (t/before? received-time (t/plus current-time (t/millis blacklist-period-ms))))))))
+      (is (not (t/before? received-time (t/plus current-time (t/millis eject-period-ms))))))))

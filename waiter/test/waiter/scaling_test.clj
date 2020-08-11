@@ -113,9 +113,9 @@
       (let [test-service-id "test-service-id"
             src-router-id "src-router-id"
             inter-kill-request-wait-time-ms 10
-            timeout-config {:blacklist-backoff-base-time-ms 10000
+            timeout-config {:eject-backoff-base-time-ms 10000
                             :inter-kill-request-wait-time-ms inter-kill-request-wait-time-ms
-                            :max-blacklist-time-ms 60000}
+                            :max-eject-time-ms 60000}
             scheduler-interactions-thread-pool (Executors/newFixedThreadPool 1)
             make-scheduler (fn [operation-tracker-atom]
                              (reify scheduler/ServiceScheduler
@@ -133,16 +133,16 @@
                                  (is (= test-service-id service-id))
                                  {:instance-id id, :killed? success-flag, :message message, :service-id service-id,
                                   :status (if success-flag http-200-ok http-404-not-found)})))
-            peers-acknowledged-blacklist-requests-fn (fn [{:keys [service-id]} short-circuit? blacklist-period-ms reason]
-                                                       (if (= (:blacklist-backoff-base-time-ms timeout-config) blacklist-period-ms)
-                                                         (do
-                                                           (is short-circuit?)
-                                                           (is (= :prepare-to-kill reason)))
-                                                         (do
-                                                           (is (not short-circuit?))
-                                                           (is (= :killed reason))))
-                                                       (is (= test-service-id service-id))
-                                                       true)]
+            peers-acknowledged-eject-requests-fn (fn [{:keys [service-id]} short-circuit? eject-period-ms reason]
+                                                   (if (= (:eject-backoff-base-time-ms timeout-config) eject-period-ms)
+                                                     (do
+                                                       (is short-circuit?)
+                                                       (is (= :prepare-to-kill reason)))
+                                                     (do
+                                                       (is (not short-circuit?))
+                                                       (is (= :killed reason))))
+                                                   (is (= test-service-id service-id))
+                                                   true)]
         (testing "successfully-kill-instance"
           (let [instance-rpc-chan (async/chan 1)
                 populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
@@ -164,7 +164,7 @@
                     (cid/with-correlation-id
                       correlation-id
                       (kill-instance-handler
-                        notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
+                        notify-instance-killed-fn peers-acknowledged-eject-requests-fn
                         scheduler populate-maintainer-chan! timeout-config scheduler-interactions-thread-pool
                         {:basic-authentication {:src-router-id src-router-id} :route-params {:service-id test-service-id}}))
                     {:keys [body headers status]} (async/<!! response-chan)]
@@ -193,7 +193,7 @@
                   (cid/with-correlation-id
                     correlation-id
                     (kill-instance-handler
-                      notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
+                      notify-instance-killed-fn peers-acknowledged-eject-requests-fn
                       scheduler populate-maintainer-chan! timeout-config scheduler-interactions-thread-pool
                       {:basic-authentication {:src-router-id src-router-id} :route-params {:service-id test-service-id}}))
                   {:keys [body headers status]} (async/<!! response-chan)]
@@ -226,7 +226,7 @@
                   (cid/with-correlation-id
                     correlation-id
                     (kill-instance-handler
-                      notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
+                      notify-instance-killed-fn peers-acknowledged-eject-requests-fn
                       scheduler populate-maintainer-chan! timeout-config scheduler-interactions-thread-pool
                       {:basic-authentication {:src-router-id src-router-id} :route-params {:service-id test-service-id}}))
                   {:keys [body headers status]} (async/<!! response-chan)]
@@ -255,9 +255,9 @@
     (with-redefs [t/now (fn [] current-time)]
       (let [test-service-id "test-service-id"
             inter-kill-request-wait-time-ms 10
-            timeout-config {:blacklist-backoff-base-time-ms 10000
+            timeout-config {:eject-backoff-base-time-ms 10000
                             :inter-kill-request-wait-time-ms inter-kill-request-wait-time-ms
-                            :max-blacklist-time-ms 60000}
+                            :max-eject-time-ms 60000}
             make-scheduler (fn [operation-tracker-atom]
                              (reify scheduler/ServiceScheduler
                                (scale-service [_ service-id scale-to-instances force]
@@ -272,16 +272,16 @@
                                  (is id)
                                  (is (= test-service-id service-id))
                                  {:instance-id id, :killed? success-flag, :service-id service-id})))
-            peers-acknowledged-blacklist-requests-fn (fn [{:keys [service-id]} short-circuit? blacklist-period-ms reason]
-                                                       (if (= (:blacklist-backoff-base-time-ms timeout-config) blacklist-period-ms)
-                                                         (do
-                                                           (is short-circuit?)
-                                                           (is (= :prepare-to-kill reason)))
-                                                         (do
-                                                           (is (not short-circuit?))
-                                                           (is (= :killed reason))))
-                                                       (is (= test-service-id service-id))
-                                                       true)
+            peers-acknowledged-eject-requests-fn (fn [{:keys [service-id]} short-circuit? eject-period-ms reason]
+                                                   (if (= (:eject-backoff-base-time-ms timeout-config) eject-period-ms)
+                                                     (do
+                                                       (is short-circuit?)
+                                                       (is (= :prepare-to-kill reason)))
+                                                     (do
+                                                       (is (not short-circuit?))
+                                                       (is (= :killed reason))))
+                                                   (is (= test-service-id service-id))
+                                                   true)
             delegate-instance-kill-request-fn (fn [service-id]
                                                 (is (= test-service-id service-id))
                                                 false)
@@ -296,25 +296,25 @@
             run-service-scaling-executor (fn [scheduler populate-maintainer-chan! scale-service-thread-pool &
                                               {:keys [delegate-instance-kill-request-fn
                                                       notify-instance-killed-fn
-                                                      peers-acknowledged-blacklist-requests-fn]
+                                                      peers-acknowledged-eject-requests-fn]
                                                :or {delegate-instance-kill-request-fn delegate-instance-kill-request-fn
                                                     notify-instance-killed-fn notify-instance-killed-fn
-                                                    peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn}}]
+                                                    peers-acknowledged-eject-requests-fn peers-acknowledged-eject-requests-fn}}]
                                            (service-scaling-executor
-                                             notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn delegate-instance-kill-request-fn
+                                             notify-instance-killed-fn peers-acknowledged-eject-requests-fn delegate-instance-kill-request-fn
                                              service-id->service-description-fn scheduler populate-maintainer-chan! quanta-constraints
                                              timeout-config scale-service-thread-pool test-service-id))]
         (testing "basic-equilibrium-with-no-scaling"
           (let [instance-rpc-chan (async/chan 1)
                 populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
-                peers-acknowledged-blacklist-requests-fn (fn [_ _ _ _] (throw (Exception. "unexpected call")))
+                peers-acknowledged-eject-requests-fn (fn [_ _ _ _] (throw (Exception. "unexpected call")))
                 scheduler-operation-tracker-atom (atom [])
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
                 scale-service-thread-pool (Executors/newFixedThreadPool 2)
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
                   scheduler populate-maintainer-chan! scale-service-thread-pool
-                  :peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn)]
+                  :peers-acknowledged-eject-requests-fn peers-acknowledged-eject-requests-fn)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan {:correlation-id (first *testing-contexts*) :service-id test-service-id, :scale-amount 0})
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
@@ -324,14 +324,14 @@
         (testing "scale-up:pending"
           (let [instance-rpc-chan (async/chan 1)
                 populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
-                peers-acknowledged-blacklist-requests-fn (fn [_ _ _ _] (throw (Exception. "unexpected call")))
+                peers-acknowledged-eject-requests-fn (fn [_ _ _ _] (throw (Exception. "unexpected call")))
                 scheduler-operation-tracker-atom (atom [])
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
                 scale-service-thread-pool (Executors/newFixedThreadPool 2)
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
                   scheduler populate-maintainer-chan! scale-service-thread-pool
-                  :peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn)]
+                  :peers-acknowledged-eject-requests-fn peers-acknowledged-eject-requests-fn)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan (make-scaling-message test-service-id 10 30 25 30 nil))
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
@@ -342,14 +342,14 @@
         (testing "scale-up:trigger:above-quanta"
           (let [instance-rpc-chan (async/chan 1)
                 populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
-                peers-acknowledged-blacklist-requests-fn (fn [_ _ _ _] (throw (Exception. "unexpected call")))
+                peers-acknowledged-eject-requests-fn (fn [_ _ _ _] (throw (Exception. "unexpected call")))
                 scheduler-operation-tracker-atom (atom [])
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
                 scale-service-thread-pool (Executors/newFixedThreadPool 2)
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
                   scheduler populate-maintainer-chan! scale-service-thread-pool
-                  :peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn)]
+                  :peers-acknowledged-eject-requests-fn peers-acknowledged-eject-requests-fn)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan (make-scaling-message test-service-id 10 30 25 20 nil))
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
@@ -360,14 +360,14 @@
         (testing "scale-up:trigger:below-quanta"
           (let [instance-rpc-chan (async/chan 1)
                 populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
-                peers-acknowledged-blacklist-requests-fn (fn [_ _ _ _] (throw (Exception. "unexpected call")))
+                peers-acknowledged-eject-requests-fn (fn [_ _ _ _] (throw (Exception. "unexpected call")))
                 scheduler-operation-tracker-atom (atom [])
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
                 scale-service-thread-pool (Executors/newFixedThreadPool 2)
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
                   scheduler populate-maintainer-chan! scale-service-thread-pool
-                  :peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn)]
+                  :peers-acknowledged-eject-requests-fn peers-acknowledged-eject-requests-fn)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan (make-scaling-message test-service-id 4 24 22 20 nil))
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
@@ -378,14 +378,14 @@
         (testing "scale-force:trigger"
           (let [instance-rpc-chan (async/chan 1)
                 populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
-                peers-acknowledged-blacklist-requests-fn (fn [_ _ _ _] (throw (Exception. "unexpected call")))
+                peers-acknowledged-eject-requests-fn (fn [_ _ _ _] (throw (Exception. "unexpected call")))
                 scheduler-operation-tracker-atom (atom [])
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
                 scale-service-thread-pool (Executors/newFixedThreadPool 2)
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
                   scheduler populate-maintainer-chan! scale-service-thread-pool
-                  :peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn)]
+                  :peers-acknowledged-eject-requests-fn peers-acknowledged-eject-requests-fn)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan (make-scaling-message test-service-id -5 25 20 20 nil))
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
@@ -494,17 +494,17 @@
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
                 scale-service-thread-pool (Executors/newFixedThreadPool 2)
                 response-chan (async/promise-chan)
-                peers-acknowledged-blacklist-requests-fn
-                (fn [{:keys [id]} short-circuit? blacklist-period-ms reason]
+                peers-acknowledged-eject-requests-fn
+                (fn [{:keys [id]} short-circuit? eject-period-ms reason]
                   (is (= "instance-1" id))
                   (is short-circuit?)
-                  (is (= (:blacklist-backoff-base-time-ms timeout-config) blacklist-period-ms))
+                  (is (= (:eject-backoff-base-time-ms timeout-config) eject-period-ms))
                   (is (= :prepare-to-kill reason))
                   false)
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
                   scheduler populate-maintainer-chan! scale-service-thread-pool
-                  :peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn)
+                  :peers-acknowledged-eject-requests-fn peers-acknowledged-eject-requests-fn)
                 latch (CountDownLatch. 1)]
             (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}]
               (mock-reservation-system
@@ -539,12 +539,12 @@
                 notify-instance-killed-fn (fn [{:keys [id service-id]}]
                                             (is (= "instance-2" id))
                                             (is (= test-service-id service-id)))
-                peers-acknowledged-blacklist-requests-fn (fn [{:keys [id]} _ _ _] (not= "instance-1" id))
+                peers-acknowledged-eject-requests-fn (fn [{:keys [id]} _ _ _] (not= "instance-1" id))
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
                   scheduler populate-maintainer-chan! scale-service-thread-pool
                   :notify-instance-killed-fn notify-instance-killed-fn
-                  :peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn)
+                  :peers-acknowledged-eject-requests-fn peers-acknowledged-eject-requests-fn)
                 latch (CountDownLatch. 1)]
             (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}
                   instance-2 {:id "instance-2", :service-id test-service-id, :success-flag true}]
@@ -581,11 +581,11 @@
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
                 scale-service-thread-pool (Executors/newFixedThreadPool 2)
                 response-chan (async/promise-chan)
-                peers-acknowledged-blacklist-requests-fn (fn [{:keys [id]} _ _ _] (not= "instance-1" id))
+                peers-acknowledged-eject-requests-fn (fn [{:keys [id]} _ _ _] (not= "instance-1" id))
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
                   scheduler populate-maintainer-chan! scale-service-thread-pool
-                  :peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn)
+                  :peers-acknowledged-eject-requests-fn peers-acknowledged-eject-requests-fn)
                 latch (CountDownLatch. 1)]
             (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}
                   instance-2 {:id "instance-2", :service-id test-service-id, :success-flag false}]
