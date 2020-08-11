@@ -754,7 +754,7 @@
 
 (defn prepare-and-start-service-chan-responder
   "Starts the service channel responder."
-  [service-id service-description instance-request-properties eject-config]
+  [service-id service-description instance-request-properties ejection-config]
   (log/debug "[prepare-and-start-service-chan-responder] starting" service-id)
   (let [{:keys [lingering-request-threshold-ms queue-timeout-ms]} instance-request-properties
         timeout-request-fn (fn [service-id c [reason-map resp-chan _ request-queue-timeout-ms]]
@@ -792,7 +792,7 @@
                      :update-state-chan (au/latest-chan)
                      :work-stealing-chan (async/chan 1024)
                      :exit-chan (async/chan 1)}]
-    (let [timeout-config (-> (select-keys eject-config [:eject-backoff-base-time-ms :max-eject-time-ms])
+    (let [timeout-config (-> (select-keys ejection-config [:eject-backoff-base-time-ms :max-eject-time-ms])
                            (assoc :lingering-request-threshold-ms lingering-request-threshold-ms))
           {:strs [load-balancing]} service-description
           load-balancing (keyword load-balancing)

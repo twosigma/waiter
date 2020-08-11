@@ -46,7 +46,7 @@
               {:keys [headers]} (make-request-fn {:x-kitchen-act-busy "true"})
               router-id (get headers "x-waiter-router-id")
               backend-id (get headers "x-waiter-backend-id")
-              eject-time-millis (get-in (waiter-settings waiter-url) [:eject-config :eject-backoff-base-time-ms])]
+              eject-time-millis (get-in (waiter-settings waiter-url) [:ejection-config :eject-backoff-base-time-ms])]
 
           (is (integer? eject-time-millis))
 

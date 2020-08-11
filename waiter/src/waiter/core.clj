@@ -756,7 +756,7 @@
                   (not (str/blank? router-id-prefix))
                   (str (str/replace router-id-prefix #"[@.]" "-") "-")))
    :scaling-timeout-config (pc/fnk [[:settings
-                                     [:eject-config eject-backoff-base-time-ms max-eject-time-ms]
+                                     [:ejection-config eject-backoff-base-time-ms max-eject-time-ms]
                                      [:scaling inter-kill-request-wait-time-ms]]]
                              {:eject-backoff-base-time-ms eject-backoff-base-time-ms
                               :inter-kill-request-wait-time-ms inter-kill-request-wait-time-ms
@@ -1361,14 +1361,14 @@
                                 service->gc-time-fn)))
    :service-chan-maintainer (pc/fnk [[:routines service-id->service-description-fn
                                       start-work-stealing-balancer-fn stop-work-stealing-balancer-fn]
-                                     [:settings eject-config instance-request-properties]
+                                     [:settings ejection-config instance-request-properties]
                                      [:state query-service-maintainer-chan]
                                      router-state-maintainer]
                               (let [start-service
                                     (fn start-service [populate-maintainer-chan! service-id]
                                       (let [service-description (service-id->service-description-fn service-id)
                                             maintainer-chan-map (responder/prepare-and-start-service-chan-responder
-                                                                  service-id service-description instance-request-properties eject-config)
+                                                                  service-id service-description instance-request-properties ejection-config)
                                             work-stealing-chan-map (start-work-stealing-balancer-fn populate-maintainer-chan! service-id)]
                                         {:maintainer-chan-map maintainer-chan-map
                                          :work-stealing-chan-map work-stealing-chan-map}))

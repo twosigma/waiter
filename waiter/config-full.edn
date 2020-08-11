@@ -778,13 +778,13 @@
  ; Waiter maintains a list of recently "killed" and "erroneous" (e.g. an error occurred while streaming the response)
  ; instances. Such instances are guaranteed not to be served up as an available instance until sufficient time has
  ; elapsed since their last use. This is referred to as ejecting an instance:
- :eject-config {
-                ;; Erroneous instances are ejected using an exponential delay based on the number of successive
-                ;; failures and eject-backoff-base-time-ms (milliseconds):
-                :eject-backoff-base-time-ms 10000
+ :ejection-config {
+                   ;; Erroneous instances are ejected using an exponential delay based on the number of successive
+                   ;; failures and eject-backoff-base-time-ms (milliseconds):
+                   :eject-backoff-base-time-ms 10000
 
-                ;; Killed instances are ejected for max-eject-time-ms (milliseconds):
-                :max-eject-time-ms 300000}
+                   ;; Killed instances are ejected for max-eject-time-ms (milliseconds):
+                   :max-eject-time-ms 300000}
 
  :instance-request-properties {
                                ;; Waiter monitors the state of an async request at specified intervals.
