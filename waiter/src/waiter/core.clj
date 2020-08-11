@@ -98,8 +98,8 @@
                              ["/" :service-id "/refresh"] :service-refresh-handler-fn
                              ["/" :service-id "/resume"] :service-resume-handler-fn
                              ["/" :service-id "/suspend"] :service-suspend-handler-fn}
-                     "eject" {"" :eject-instance-handler-fn
-                              ["/" :service-id] :ejected-instances-list-handler-fn}
+                     "eject" :eject-instance-handler-fn
+                     "ejected" {["/" :service-id] :ejected-instances-list-handler-fn}
                      "favicon.ico" :favicon-handler-fn
                      "metrics" :metrics-request-handler-fn
                      (subs oidc/oidc-callback-uri 1) :oidc-callback-handler-fn

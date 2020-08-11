@@ -939,7 +939,7 @@
     (is (= {:handler :eject-instance-handler-fn}
            (exec-routes-mapper "/eject")))
     (is (= {:handler :ejected-instances-list-handler-fn, :route-params {:service-id "test-service"}}
-           (exec-routes-mapper "/eject/test-service")))
+           (exec-routes-mapper "/ejected/test-service")))
     (is (= {:handler :favicon-handler-fn}
            (exec-routes-mapper "/favicon.ico")))
     (is (= {:handler :metrics-request-handler-fn}
