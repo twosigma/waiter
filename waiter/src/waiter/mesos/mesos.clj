@@ -18,24 +18,24 @@
             [waiter.util.http-utils :as hu])
   (:import org.eclipse.jetty.client.HttpClient))
 
-(defrecord MesosApi [^HttpClient http-client spnego-auth slave-port slave-directory])
+(defrecord MesosApi [^HttpClient http-client spnego-auth mesos-agent-port mesos-agent-directory])
 
 (defn api-factory
   "Factory method for MesosApi."
-  [http-client {:keys [spnego-auth]} slave-port slave-directory]
-  (->MesosApi http-client spnego-auth slave-port slave-directory))
+  [http-client {:keys [spnego-auth]} mesos-agent-port mesos-agent-directory]
+  (->MesosApi http-client spnego-auth mesos-agent-port mesos-agent-directory))
 
 (defn build-sandbox-path
   "Builds the sandbox directory path of the instance on a Mesos agent."
-  [{:keys [slave-directory]} slave-id framework-id instance-id]
-  (when (and slave-directory slave-id framework-id instance-id)
-    (str slave-directory "/" slave-id "/frameworks/" framework-id
+  [{:keys [mesos-agent-directory]} agent-id framework-id instance-id]
+  (when (and mesos-agent-directory agent-id framework-id instance-id)
+    (str mesos-agent-directory "/" agent-id "/frameworks/" framework-id
          "/executors/" instance-id "/runs/latest")))
 
 (defn list-directory-content
   "Lists files and directories contained in the path."
-  [{:keys [http-client slave-port spnego-auth]} host directory]
-  (hu/http-request http-client (str "http://" host ":" slave-port "/files/browse")
+  [{:keys [http-client mesos-agent-port spnego-auth]} host directory]
+  (hu/http-request http-client (str "http://" host ":" mesos-agent-port "/files/browse")
                    :query-string {"path" directory}
                    :request-method :get
                    :spnego-auth spnego-auth
@@ -43,9 +43,9 @@
 
 (defn build-directory-download-link
   "Generates a download link to the directory on the specified mesos agent."
-  [{:keys [slave-port]} host directory]
-  (when (and slave-port host directory)
-    (str "http://" host ":" slave-port "/files/download?path=" directory)))
+  [{:keys [mesos-agent-port]} host directory]
+  (when (and mesos-agent-port host directory)
+    (str "http://" host ":" mesos-agent-port "/files/download?path=" directory)))
 
 (defn- process-directory-entry
   "Converts an individual directory entry into a map representing the entry."
@@ -66,9 +66,9 @@
 
 (defn get-agent-state
   "Returns information about the frameworks, executors and the agent’s master."
-  [{:keys [http-client slave-port spnego-auth]} host]
-  (when (and slave-port host)
-    (hu/http-request http-client (str "http://" host ":" slave-port "/state.json")
+  [{:keys [http-client mesos-agent-port spnego-auth]} host]
+  (when (and mesos-agent-port host)
+    (hu/http-request http-client (str "http://" host ":" mesos-agent-port "/state.json")
                      :request-method :get
                      :spnego-auth spnego-auth
                      :throw-exceptions false)))

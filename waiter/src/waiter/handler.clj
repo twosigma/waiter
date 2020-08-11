@@ -615,7 +615,7 @@
       (throw (ex-info "Unsupported request method" {:log-level :info :request-method request-method :status http-405-method-not-allowed})))))
 
 (defn service-view-logs-handler
-  "Redirects user to the log directory on the slave"
+  "Redirects user to the log directory on the instance host."
   [scheduler service-id generate-log-url-fn request]
   (try
     (let [{:strs [instance-id host directory]} (-> request ru/query-params-request :query-params)

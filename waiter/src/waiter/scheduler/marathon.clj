@@ -604,14 +604,14 @@
   "Returns a new MarathonScheduler with the provided configuration.
    Validates the configuration against marathon-scheduler-schema and throws if it's not valid."
   [{:keys [authorizer home-path-prefix http-options force-kill-after-ms framework-id-ttl
-           marathon-descriptor-builder mesos-slave-port slave-directory sync-deployment url
+           marathon-descriptor-builder mesos-agent-directory mesos-agent-port sync-deployment url
            ;; functions provided in the context
            is-waiter-service?-fn leader?-fn scheduler-name scheduler-state-chan scheduler-syncer-interval-secs
            service-id->password-fn service-id->service-description-fn start-scheduler-syncer-fn]}]
   {:pre [(schema/contains-kind-sub-map? authorizer)
          (not (str/blank? url))
-         (or (nil? slave-directory) (not (str/blank? slave-directory)))
-         (or (nil? mesos-slave-port) (pos-int? mesos-slave-port))
+         (or (nil? mesos-agent-directory) (not (str/blank? mesos-agent-directory)))
+         (or (nil? mesos-agent-port) (pos-int? mesos-agent-port))
          (pos-int? framework-id-ttl)
          (pos-int? (:conn-timeout http-options))
          (pos-int? (:socket-timeout http-options))
@@ -627,15 +627,15 @@
          (fn? service-id->service-description-fn)
          (fn? start-scheduler-syncer-fn)
          (symbol? (:factory-fn marathon-descriptor-builder))]}
-  (when (or (not slave-directory) (not mesos-slave-port))
-    (log/info "scheduler mesos-slave-port or slave-directory is missing, log directory and url support will be disabled"))
+  (when (or (not mesos-agent-directory) (not mesos-agent-port))
+    (log/info "scheduler mesos-agent-port or mesos-agent-directory is missing, log directory and url support will be disabled"))
   (let [authorizer (utils/create-component authorizer)
         http-client (-> http-options
                       (utils/assoc-if-absent :client-name "waiter-marathon")
                       (utils/assoc-if-absent :user-agent "waiter-marathon")
                       hu/http-client-factory)
         marathon-api (marathon/api-factory http-client http-options url)
-        mesos-api (mesos/api-factory http-client http-options mesos-slave-port slave-directory)
+        mesos-api (mesos/api-factory http-client http-options mesos-agent-port mesos-agent-directory)
         service-id->failed-instances-transient-store (atom {})
         service-id->last-force-kill-store (atom {})
         service-id->out-of-sync-state-store (atom {})

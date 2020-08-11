@@ -979,12 +979,10 @@
 
 (defn retrieve-debug-response-headers
   [waiter-url]
-  (let [settings (waiter-settings waiter-url)
-        mesos-slave-port (get-in settings [:scheduler-config :mesos-slave-port])
-        slave-directory (get-in settings [:scheduler-config :slave-directory])]
+  (let [{:keys [mesos-agent-directory mesos-agent-port]} (get-marathon-scheduler-settings waiter-url)]
     (cond-> ["x-waiter-backend-id" "x-waiter-backend-host" "x-waiter-backend-port" "x-waiter-backend-proto"
              "x-waiter-backend-response-ns" "x-waiter-get-available-instance-ns" "x-waiter-router-id"]
-      (and mesos-slave-port slave-directory)
+      (and mesos-agent-port mesos-agent-directory)
       (concat ["x-waiter-backend-directory" "x-waiter-backend-log-url"]))))
 
 (defn rand-router-url

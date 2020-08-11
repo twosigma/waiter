@@ -297,7 +297,7 @@
                      :home-path-prefix "/home/path/"
                      :is-waiter-service?-fn (constantly true)
                      :marathon-api (Object.)
-                     :mesos-api {:slave-port 5051}
+                     :mesos-api {:mesos-agent-port 5051}
                      :retrieve-framework-id-fn (constantly nil)
                      :retrieve-syncer-state-fn (constantly {})
                      :scheduler-name "marathon"
