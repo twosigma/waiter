@@ -554,7 +554,7 @@
                                                  :resources {:cpu 0.1 :mem 256}
                                                  :scheme "http"}
                                  ;; Version string used for creating and operating on ReplicaSet objects:
-                                 :replicaset-api-version "extensions/v1beta1"
+                                 :replicaset-api-version "apps/v1"
 
                                  ;; The number of pod restart at which the instance will start being treated as expired:
                                  :restart-expiry-threshold 2

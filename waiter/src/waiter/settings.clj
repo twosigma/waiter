@@ -378,7 +378,7 @@
                                    ; https://mesosphere.github.io/marathon/docs/health-checks.html#taskkillgraceperiodseconds
                                    :pod-sigkill-delay-secs 3
                                    :pod-suffix-length 5
-                                   :replicaset-api-version "extensions/v1beta1"
+                                   :replicaset-api-version "apps/v1"
                                    :replicaset-spec-builder {:factory-fn 'waiter.scheduler.kubernetes/default-replicaset-builder
                                                              :container-init-commands ["waiter-k8s-init"]
                                                              :default-container-image "twosigma/waiter-test-apps:latest"}
