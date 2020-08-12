@@ -69,7 +69,7 @@
       :pod-base-port 8080
       :pod-sigkill-delay-secs 3
       :pod-suffix-length default-pod-suffix-length
-      :replicaset-api-version "extensions/v1beta1"
+      :replicaset-api-version "apps/v1"
       :replicaset-spec-builder-fn #(waiter.scheduler.kubernetes/default-replicaset-builder
                                      %1 %2 %3
                                      {:container-init-commands ["waiter-k8s-init"]
@@ -380,13 +380,13 @@
   (let [test-cases
         [{:api-server-response
           {:kind "ReplicaSetList"
-           :apiVersion "extensions/v1beta1"
+           :apiVersion "apps/v1"
            :items []}
           :expected-result nil}
 
          {:api-server-response
           {:kind "ReplicaSetList"
-           :apiVersion "extensions/v1beta1"
+           :apiVersion "apps/v1"
            :items [{:metadata {:name "test-app-1234"
                                :namespace "myself"
                                :labels {:app "test-app-1234"
@@ -423,7 +423,7 @@
                                     :task-stats {:running 3 :healthy 1 :unhealthy 2 :staged 0}})]}
          {:api-server-response
           {:kind "ReplicaSetList"
-           :apiVersion "extensions/v1beta1"
+           :apiVersion "apps/v1"
            :items [{:metadata {:name "test-app-abcd"
                                :namespace "myself"
                                :labels {:app "test-app-abcd"
@@ -462,7 +462,7 @@
 
          {:api-server-response
           {:kind "ReplicaSetList"
-           :apiVersion "extensions/v1beta1"
+           :apiVersion "apps/v1"
            :items [{:metadata {:name "test-app-4321"
                                :namespace "myself"
                                :labels {:app "test-app-4321"
@@ -483,7 +483,7 @@
 
          {:api-server-response
           {:kind "ReplicaSetList"
-           :apiVersion "extensions/v1beta1"
+           :apiVersion "apps/v1"
            :items [{:metadata {:name "test-app-9999"
                                :namespace "myself"
                                :labels {:app "test-app-9999"
@@ -514,7 +514,7 @@
 (deftest test-scheduler-get-service->instances
   (let [rs-response
         {:kind "ReplicaSetList"
-         :apiVersion "extensions/v1beta1"
+         :apiVersion "apps/v1"
          :items [{:metadata {:name "test-app-1234"
                              :namespace "myself"
                              :labels {:app "test-app-1234"
@@ -737,7 +737,7 @@
                     :started-at (du/str-to-date "2014-09-13T00:24:56Z" k8s-timestamp-format)})
         dummy-scheduler (make-dummy-scheduler [service-id])
         api-server-response {:kind "ReplicaSetList"
-                             :apiVersion "extensions/v1beta1"
+                             :apiVersion "apps/v1"
                              :items [{:metadata {:name service-id
                                                  :namespace "myself"
                                                  :labels {:app service-id
@@ -802,11 +802,11 @@
   (let [service-id "test-app-1234"
         empty-response
         {:kind "ReplicaSetList"
-         :apiVersion "extensions/v1beta1"
+         :apiVersion "apps/v1"
          :items []}
         non-empty-response
         {:kind "ReplicaSetList"
-         :apiVersion "extensions/v1beta1"
+         :apiVersion "apps/v1"
          :items [{:metadata {:name service-id
                              :namespace "myself"
                              :labels {:app service-id
@@ -882,7 +882,7 @@
                 (is (= 1 (count api-calls)))
                 (is (= {:kind "ReplicaSet"
                         :request-method :post
-                        :url (str apis-url "/extensions/v1beta1/namespaces/waiter/replicasets")}
+                        :url (str apis-url "/apps/v1/namespaces/waiter/replicasets")}
                        (first api-calls)))
                 (is (= service actual)))
 
@@ -896,7 +896,7 @@
                 (is (= 1 (count api-calls)))
                 (is (= {:kind "ReplicaSet"
                         :request-method :post
-                        :url (str apis-url "/extensions/v1beta1/namespaces/waiter/replicasets")}
+                        :url (str apis-url "/apps/v1/namespaces/waiter/replicasets")}
                        (first api-calls)))
                 (is (= service actual))))
 
@@ -910,7 +910,7 @@
                 (is (= 2 (count api-calls)))
                 (is (= {:kind "ReplicaSet"
                         :request-method :post
-                        :url (str apis-url "/extensions/v1beta1/namespaces/waiter/replicasets")}
+                        :url (str apis-url "/apps/v1/namespaces/waiter/replicasets")}
                        (first api-calls)))
                 (is (= {:kind "PodDisruptionBudget"
                         :request-method :post
@@ -1128,7 +1128,7 @@
                     :pod-base-port 8080
                     :pod-sigkill-delay-secs 3
                     :pod-suffix-length default-pod-suffix-length
-                    :replicaset-api-version "extensions/v1beta1"
+                    :replicaset-api-version "apps/v1"
                     :replicaset-spec-builder {:factory-fn 'waiter.scheduler.kubernetes/default-replicaset-builder
                                               :container-init-commands ["waiter-k8s-init"]
                                               :default-container-image "twosigma/waiter-test-apps:latest"}
@@ -1224,7 +1224,7 @@
   (let [service-id "test-app-1234"
         rs-response
         {:kind "ReplicaSetList"
-         :apiVersion "extensions/v1beta1"
+         :apiVersion "apps/v1"
          :metadata {:resourceVersion "1000"}
          :items [{:metadata {:name "test-app-1234"
                              :namespace "myself"
@@ -1472,7 +1472,7 @@
 
         rs-response
         {:kind "ReplicaSetList"
-         :apiVersion "extensions/v1beta1"
+         :apiVersion "apps/v1"
          :metadata {:resourceVersion "1000"}
          :items [{:metadata {:name "test-app-1234"
                              :namespace "myself"
