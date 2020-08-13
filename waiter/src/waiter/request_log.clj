@@ -57,7 +57,7 @@
            protocol request-type status waiter-api-call?] :as response}]
   (let [{:keys [service-id service-description source-tokens]} descriptor
         token (some->> source-tokens (map #(get % "token")) seq (str/join ","))
-        {:strs [metric-group profile run-as-user version]} service-description
+        {:strs [image metric-group profile run-as-user version]} service-description
         {:strs [content-length content-type grpc-status location server]} headers
         {:keys [k8s/node-name k8s/pod-name]} instance]
     (cond-> {}
@@ -73,6 +73,7 @@
                         :service-version version)
       get-instance-latency-ns (assoc :get-instance-latency-ns get-instance-latency-ns)
       grpc-status (assoc :grpc-status grpc-status)
+      image (assoc :service-image image)
       instance (assoc :instance-host (:host instance)
                       :instance-port (:port instance))
       (:id instance) (assoc :instance-id (:id instance))

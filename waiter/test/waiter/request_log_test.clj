@@ -59,7 +59,8 @@
                   :authorization/principal "principal@DOMAIN.COM"
                   :backend-response-latency-ns 1000
                   :descriptor {:service-id "service-id"
-                               :service-description {"metric-group" "service-metric-group"
+                               :service-description {"image" "service-image"
+                                                     "metric-group" "service-metric-group"
                                                      "name" "service-name"
                                                      "profile" "test-profile"
                                                      "run-as-user" "john.doe"
@@ -108,6 +109,7 @@
             :run-as-user "john.doe"
             :server "foo-bar"
             :service-id "service-id"
+            :service-image "service-image"
             :service-name "service-name"
             :service-profile "test-profile"
             :service-version "service-version"
