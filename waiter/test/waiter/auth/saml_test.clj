@@ -129,7 +129,8 @@
                   :body ""
                   :headers {"location" "redirect-url"
                             "set-cookie" (str "x-waiter-auth=" ["my-user@domain" (tc/to-long test-time)])}
-                  :status http-303-see-other}
+                  :status http-303-see-other
+                  :waiter/response-source :waiter}
                  (saml-auth-redirect-handler saml-authenticator dummy-request'))))))
 
     (testing "has saml-auth-data no expiry"
@@ -152,7 +153,8 @@
                   :body ""
                   :headers {"location" "redirect-url"
                             "set-cookie" (str "x-waiter-auth=" ["my-user@domain" (tc/to-long test-time)])}
-                  :status http-303-see-other}
+                  :status http-303-see-other
+                  :waiter/response-source :waiter}
                  (saml-auth-redirect-handler saml-authenticator dummy-request'))))))
 
     (testing "has saml-auth-data short expiry"
@@ -175,7 +177,8 @@
                   :body ""
                   :headers {"location" "redirect-url"
                             "set-cookie" (str "x-waiter-auth=" ["my-user@domain" (tc/to-long test-time)])}
-                  :status http-303-see-other}
+                  :status http-303-see-other
+                  :waiter/response-source :waiter}
                  (saml-auth-redirect-handler saml-authenticator dummy-request'))))))))
 
 (defn- saml-response-from-xml
@@ -197,7 +200,8 @@
                                         :saml-auth-data {:min-session-not-on-or-after expiry-time
                                                          :redirect-url "request-url"
                                                          :saml-principal "user1@example.com"}}
-                                 :status http-200-ok}]
+                                 :status http-200-ok
+                                 :waiter/response-source :waiter}]
     (with-redefs [nippy/freeze (fn [data _] (.getBytes (str data)))
                   t/now (fn [] test-time)
                   render-authenticated-redirect-template identity

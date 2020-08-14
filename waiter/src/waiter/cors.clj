@@ -75,12 +75,13 @@
                                                                   :log-level :warn})))
             (log/info "cors preflight request allowed" summary)
             (let [{:strs [access-control-request-headers]} headers]
-              {:status http-200-ok
-               :headers {"access-control-allow-origin" origin
-                         "access-control-allow-headers" access-control-request-headers
-                         "access-control-allow-methods" (str/join ", " (or allowed-methods schema/http-methods))
-                         "access-control-allow-credentials" "true"
-                         "access-control-max-age" (str max-age)}}))))
+              (utils/attach-waiter-source
+                {:headers {"access-control-allow-origin" origin
+                           "access-control-allow-headers" access-control-request-headers
+                           "access-control-allow-methods" (str/join ", " (or allowed-methods schema/http-methods))
+                           "access-control-allow-credentials" "true"
+                           "access-control-max-age" (str max-age)}
+                 :status http-200-ok})))))
       (handler request))))
 
 (defn wrap-cors-request

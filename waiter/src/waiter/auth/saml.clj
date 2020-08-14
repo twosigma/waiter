@@ -210,9 +210,10 @@
                           :redirect-url request-url
                           :saml-principal saml-principal'}
                          password)]
-    {:body (render-authenticated-redirect-template {:auth-redirect-uri (str scheme "://" host auth-redirect-endpoint)
-                                                    :saml-auth-data saml-auth-data})
-     :status http-200-ok }))
+    (utils/attach-waiter-source
+      {:body (render-authenticated-redirect-template {:auth-redirect-uri (str scheme "://" host auth-redirect-endpoint)
+                                                      :saml-auth-data saml-auth-data})
+       :status http-200-ok})))
 
 (defn saml-auth-redirect-handler
   "Endpoint for POST back to Waiter with SAML authentication data. If data is still valid,
@@ -243,9 +244,11 @@
                                        (t/interval auth-cookie-expiry-date)
                                        t/in-seconds)
           auth-params-map (auth/build-auth-params-map :saml saml-principal)]
-      (auth/handle-request-auth (constantly {:body ""
-                                             :headers {"location" redirect-url}
-                                             :status http-303-see-other})
+      (auth/handle-request-auth (constantly
+                                  (utils/attach-waiter-source
+                                    {:body ""
+                                     :headers {"location" redirect-url}
+                                     :status http-303-see-other}))
                                 request auth-params-map password auth-cookie-age-in-seconds))
     (throw (ex-info "Missing saml-auth-data from SAML authenticated redirect message"
                     {:status http-400-bad-request}))))
