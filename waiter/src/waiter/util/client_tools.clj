@@ -331,8 +331,11 @@
   (when value
     (let [cookie-list (HttpCookie/parse value)]
       (map (fn [^HttpCookie cookie]
-             {:max-age (.getMaxAge cookie)
+             {:http-only? (.isHttpOnly cookie)
+              :max-age (.getMaxAge cookie)
               :name (.getName cookie)
+              :path (.getPath cookie)
+              :secure? (.getSecure cookie)
               :value (.getValue cookie)}) cookie-list))))
 
 (defn parse-cookies

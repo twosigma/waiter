@@ -151,6 +151,7 @@
   [set-cookie assertion-message]
   `(let [set-cookie# ~set-cookie
          assertion-message# ~assertion-message]
+     (is (str/includes? set-cookie# "auth-expires-at=") assertion-message#)
      (is (str/includes? set-cookie# "x-waiter-auth=") assertion-message#)
      (is (str/includes? set-cookie# "Max-Age=") assertion-message#)
      (is (str/includes? set-cookie# "Path=/") assertion-message#)
@@ -473,6 +474,7 @@
               (assert-response-status initial-response http-302-moved-temporarily)
               (let [{:strs [location set-cookie]} (:headers initial-response)
                     assertion-message (str {:headers (:headers initial-response)
+                                            :oidc-auth-env oidc-auth-env
                                             :set-cookie set-cookie
                                             :status (:status initial-response)})]
                 (is (not (str/blank? location)) assertion-message)
@@ -490,16 +492,34 @@
                                       :cookies cookies
                                       :headers callback-request-headers)]
                     (assert-response-status callback-response http-302-moved-temporarily)
-                    (is (= 2 (count cookies)))
-                    (is (zero? (:max-age (first (filter #(str/starts-with? (:name %) "x-waiter-oidc-challenge-") cookies)))))
-                    (let [x-waiter-auth-cookie (first (filter #(= (:name %) "x-waiter-auth") cookies))
-                          x-waiter-auth-max-age (:max-age x-waiter-auth-cookie)
-                          one-day-in-secs (-> 1 t/days t/in-seconds)
-                          assertion-message (str {:auth-cookie x-waiter-auth-cookie
-                                                  :oidc-auth-env oidc-auth-env})]
-                      (if (= "strict" oidc-auth-env)
-                        (is (< x-waiter-auth-max-age one-day-in-secs) assertion-message)
-                        (is (= x-waiter-auth-max-age one-day-in-secs) assertion-message)))
+                    (is (= 3 (count cookies)))
+                    (if-let [oidc-challenge-cookie (first (filter #(str/starts-with? (:name %) "x-waiter-oidc-challenge-") cookies))]
+                      (do
+                        (is (true? (:http-only? oidc-challenge-cookie)))
+                        (is (zero? (:max-age oidc-challenge-cookie)))
+                        (is (= "/" (:path oidc-challenge-cookie)))
+                        (is (false? (:secure? oidc-challenge-cookie))))
+                      (is false "OIDC challenge cookie is missing"))
+                    (if-let [waiter-auth-cookie (first (filter #(= (:name %) "x-waiter-auth") cookies))]
+                      (let [x-waiter-auth-max-age (:max-age waiter-auth-cookie)
+                            one-day-in-secs (-> 1 t/days t/in-seconds)]
+                        (is (true? (:http-only? waiter-auth-cookie)))
+                        (if (= "strict" oidc-auth-env)
+                          (is (< x-waiter-auth-max-age one-day-in-secs) assertion-message)
+                          (is (= x-waiter-auth-max-age one-day-in-secs) assertion-message))
+                        (is (= "/" (:path waiter-auth-cookie)))
+                        (is (false? (:secure? waiter-auth-cookie))))
+                      (is false "x-waiter-auth cookie is missing"))
+                    (if-let [auth-expires-at-cookie (first (filter #(= (:name %) "x-auth-expires-at") cookies))]
+                      (do
+                        (is (false? (:http-only? auth-expires-at-cookie)))
+                        (is (pos? (:max-age auth-expires-at-cookie)))
+                        (is (= "/" (:path auth-expires-at-cookie)))
+                        (is (false? (:secure? auth-expires-at-cookie)))
+                        (when-let [waiter-auth-cookie (first (filter #(= (:name %) "x-waiter-auth") cookies))]
+                          (is (= (:max-age waiter-auth-cookie) (:max-age auth-expires-at-cookie)))
+                          (is (= (:path waiter-auth-cookie) (:path auth-expires-at-cookie)))))
+                      (is false "x-auth-expires-at cookie is missing"))
                     (let [{:strs [location]} (:headers callback-response)
                           assertion-message (str {:headers (:headers callback-response)
                                                   :status (:status callback-response)})]

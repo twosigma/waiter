@@ -100,6 +100,7 @@
 (deftest test-auth-redirect-endpoint
   (let [saml-authenticator (dummy-saml-authenticator)
         test-time (clj-time.format/parse "2019-05-14")
+        test-time-secs (tc/to-epoch test-time)
         {:keys [password]} valid-config]
     (testing "bad saml-auth-data"
       (with-redefs [t/now (fn [] time-now)
@@ -110,12 +111,17 @@
                                                             (merge {:request-method :post
                                                                     :body (string->stream "saml-auth-data=my-saml-auth-data")})))))))
     (testing "has saml-auth-data"
-      (with-redefs [cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds http-only?]
-                                                        (is (= password in-password))
-                                                        (is (= (-> 1 t/days t/in-seconds) age-in-seconds))
-                                                        (is http-only?)
-                                                        (update response :headers
-                                                                assoc "set-cookie" (str name "=" value)))
+      (with-redefs [cookie-support/add-cookie (fn [response name value age-in-seconds http-only?]
+                                                (is (= (-> 1 t/days t/in-seconds) age-in-seconds))
+                                                (is (if (= name auth/AUTH-COOKIE-EXPIRES-AT)
+                                                      (false? http-only?)
+                                                      (true? http-only?)))
+                                                (-> response
+                                                  (update-in [:headers "set-cookie"] #(or % []))
+                                                  (update-in [:headers "set-cookie"] conj (str name "=" value))))
+                    cookie-support/encode-cookie (fn [cookie-value in-password]
+                                                   (is (= password in-password))
+                                                   cookie-value)
                     utils/base-64-string->map (fn [data in-password]
                                                 (is (= password in-password))
                                                 (when (= "my-saml-auth-data" data)
@@ -123,24 +129,32 @@
                     t/now (fn [] test-time)]
         (let [dummy-request' (-> (merge-with merge dummy-request {:headers {"content-type" "application/x-www-form-urlencoded"}})
                                (merge {:request-method :post
-                                       :body (string->stream "saml-auth-data=my-saml-auth-data")}))]
+                                       :body (string->stream "saml-auth-data=my-saml-auth-data")}))
+              expires-at (-> 1 t/days t/in-seconds (+ test-time-secs))]
           (is (= {:authorization/method :saml
                   :authorization/principal "my-user@domain"
                   :authorization/user "my-user"
                   :body ""
                   :headers {"location" "redirect-url"
-                            "set-cookie" (str "x-waiter-auth=" ["my-user@domain" (tc/to-long test-time)])}
+                            "set-cookie" [(str "x-auth-expires-at=" (str expires-at))
+                                          (str "x-waiter-auth=" ["my-user@domain" (tc/to-long test-time)
+                                                                 {:expires-at expires-at}])]}
                   :status http-303-see-other
                   :waiter/response-source :waiter}
                  (saml-auth-redirect-handler saml-authenticator dummy-request'))))))
 
     (testing "has saml-auth-data no expiry"
-      (with-redefs [cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds http-only?]
-                                                        (is (= password in-password))
+      (with-redefs [cookie-support/add-cookie (fn [response name value age-in-seconds http-only?]
                                                         (is (= (-> 1 t/days t/in-seconds) age-in-seconds))
-                                                        (is http-only?)
-                                                        (update response :headers
-                                                                assoc "set-cookie" (str name "=" value)))
+                                                        (is (if (= name auth/AUTH-COOKIE-EXPIRES-AT)
+                                                              (false? http-only?)
+                                                              (true? http-only?)))
+                                                        (-> response
+                                                          (update-in [:headers "set-cookie"] #(or % []))
+                                                          (update-in [:headers "set-cookie"] conj (str name "=" value))))
+                    cookie-support/encode-cookie (fn [cookie-value in-password]
+                                                   (is (= password in-password))
+                                                   cookie-value)
                     utils/base-64-string->map (fn [data in-password]
                                                 (is (= password in-password))
                                                 (when (= "my-saml-auth-data" data)
@@ -148,24 +162,32 @@
                     t/now (fn [] test-time)]
         (let [dummy-request' (-> (merge-with merge dummy-request {:headers {"content-type" "application/x-www-form-urlencoded"}})
                                (merge {:request-method :post
-                                       :body (string->stream "saml-auth-data=my-saml-auth-data")}))]
+                                       :body (string->stream "saml-auth-data=my-saml-auth-data")}))
+              expires-at (-> 1 t/days t/in-seconds (+ test-time-secs))]
           (is (= {:authorization/method :saml
                   :authorization/principal "my-user@domain"
                   :authorization/user "my-user"
                   :body ""
                   :headers {"location" "redirect-url"
-                            "set-cookie" (str "x-waiter-auth=" ["my-user@domain" (tc/to-long test-time)])}
+                            "set-cookie" [(str "x-auth-expires-at=" (str expires-at))
+                                          (str "x-waiter-auth=" ["my-user@domain" (tc/to-long test-time)
+                                                                 {:expires-at expires-at}])]}
                   :status http-303-see-other
                   :waiter/response-source :waiter}
                  (saml-auth-redirect-handler saml-authenticator dummy-request'))))))
 
     (testing "has saml-auth-data short expiry"
-      (with-redefs [cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds http-only?]
-                                                        (is (= password in-password))
-                                                        (is (= (-> 1 t/hours t/in-seconds) age-in-seconds))
-                                                        (is http-only?)
-                                                        (update response :headers
-                                                                assoc "set-cookie" (str name "=" value)))
+      (with-redefs [cookie-support/add-cookie (fn [response name value age-in-seconds http-only?]
+                                                (is (= (-> 1 t/hours t/in-seconds) age-in-seconds))
+                                                (is (if (= name auth/AUTH-COOKIE-EXPIRES-AT)
+                                                      (false? http-only?)
+                                                      (true? http-only?)))
+                                                (-> response
+                                                  (update-in [:headers "set-cookie"] #(or % []))
+                                                  (update-in [:headers "set-cookie"] conj (str name "=" value))))
+                    cookie-support/encode-cookie (fn [cookie-value in-password]
+                                                   (is (= password in-password))
+                                                   cookie-value)
                     utils/base-64-string->map (fn [data in-password]
                                                 (is (= password in-password))
                                                 (when (= "my-saml-auth-data" data)
@@ -173,13 +195,16 @@
                     t/now (fn [] test-time)]
         (let [dummy-request' (-> (merge-with merge dummy-request {:headers {"content-type" "application/x-www-form-urlencoded"}})
                                (merge {:request-method :post
-                                       :body (string->stream "saml-auth-data=my-saml-auth-data")}))]
+                                       :body (string->stream "saml-auth-data=my-saml-auth-data")}))
+              expires-at (-> 1 t/hours t/in-seconds (+ test-time-secs))]
           (is (= {:authorization/method :saml
                   :authorization/principal "my-user@domain"
                   :authorization/user "my-user"
                   :body ""
                   :headers {"location" "redirect-url"
-                            "set-cookie" (str "x-waiter-auth=" ["my-user@domain" (tc/to-long test-time)])}
+                            "set-cookie" [(str "x-auth-expires-at=" (str expires-at))
+                                          (str "x-waiter-auth=" ["my-user@domain" (tc/to-long test-time)
+                                                                 {:expires-at expires-at}])]}
                   :status http-303-see-other
                   :waiter/response-source :waiter}
                  (saml-auth-redirect-handler saml-authenticator dummy-request'))))))))

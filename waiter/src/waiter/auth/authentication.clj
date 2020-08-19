@@ -23,6 +23,8 @@
             [waiter.status-codes :refer :all]
             [waiter.util.utils :as utils]))
 
+(def ^:const AUTH-COOKIE-EXPIRES-AT "x-auth-expires-at")
+
 (def ^:const AUTH-COOKIE-NAME "x-waiter-auth")
 
 (defprotocol Authenticator
@@ -53,11 +55,16 @@
 
 (defn- add-cached-auth
   [response password principal age-in-seconds auth-metadata]
-  (let [cookie-value (cond-> [principal (tc/to-long (t/now))]
-                       auth-metadata (conj auth-metadata))
-        cookie-expiry (or age-in-seconds (-> 1 t/days t/in-seconds))]
-    (cookie-support/add-encoded-cookie
-      response password AUTH-COOKIE-NAME cookie-value cookie-expiry true)))
+  (let [creation-time (t/now)
+        creation-time-long (tc/to-long creation-time)
+        creation-epoch-time (tc/to-epoch creation-time)
+        cookie-expiry (or age-in-seconds (-> 1 t/days t/in-seconds))
+        expiry-epoch-time (+ creation-epoch-time cookie-expiry)
+        cookie-metadata (assoc auth-metadata :expires-at expiry-epoch-time)
+        cookie-value (cond-> [principal creation-time-long cookie-metadata])]
+    (-> response
+      (cookie-support/add-cookie AUTH-COOKIE-EXPIRES-AT (str expiry-epoch-time) cookie-expiry false)
+      (cookie-support/add-encoded-cookie password AUTH-COOKIE-NAME cookie-value cookie-expiry true))))
 
 (defn select-auth-params
   "Returns a map that contains only the auth params from the input map"
@@ -137,9 +144,11 @@
     (decode-auth-cookie password)))
 
 (defn remove-auth-cookie
-  "Removes the auth cookie"
+  "Removes the auth cookies"
   [cookie-string]
-  (cookie-support/remove-cookie cookie-string AUTH-COOKIE-NAME))
+  (-> cookie-string
+    (cookie-support/remove-cookie AUTH-COOKIE-EXPIRES-AT)
+    (cookie-support/remove-cookie AUTH-COOKIE-NAME)))
 
 (defn select-auth-header
   "Filters and return the first authorization header that passes the predicate."

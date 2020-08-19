@@ -767,11 +767,28 @@
       (is (not= "cookie" (get headers "x-waiter-auth-method")) (str headers))
       (is (contains? headers "x-waiter-auth-principal") (str headers))
       (is (contains? headers "x-waiter-auth-user") (str headers))
+      (is (str/includes? set-cookie "auth-expires-at="))
       (is (str/includes? set-cookie "x-waiter-auth="))
       (is (str/includes? set-cookie "Max-Age="))
       (is (str/includes? set-cookie "Path=/"))
       (is (str/includes? set-cookie "HttpOnly=true"))
       (is (= (System/getProperty "user.name") (str body)))
+      (if-let [waiter-auth-cookie (first (filter #(= (:name %) "x-waiter-auth") cookies))]
+        (do
+          (is (true? (:http-only? waiter-auth-cookie)))
+          (is (pos? (:max-age waiter-auth-cookie)))
+          (is (= "/" (:path waiter-auth-cookie)))
+          (is (false? (:secure? waiter-auth-cookie))))
+        (is false "x-waiter-auth cookie is missing"))
+      (if-let [auth-expires-at-cookie (first (filter #(= (:name %) "x-auth-expires-at") cookies))]
+        (do
+          (is (false? (:http-only? auth-expires-at-cookie)))
+          (is (pos? (:max-age auth-expires-at-cookie)))
+          (is (= "/" (:path auth-expires-at-cookie)))
+          (is (false? (:secure? auth-expires-at-cookie)))
+          (when-let [waiter-auth-cookie (first (filter #(= (:name %) "x-waiter-auth") cookies))]
+            (is (= (:max-age waiter-auth-cookie) (:max-age auth-expires-at-cookie)))))
+        (is false "x-auth-expires-at cookie is missing"))
 
       (let [{:keys [body headers] :as response} (make-request waiter-url "/waiter-auth" :cookies cookies)
             set-cookie (get headers "set-cookie")]

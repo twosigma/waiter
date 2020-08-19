@@ -63,11 +63,11 @@
   (let [value-bytes (b64/encode (nippy/freeze value {:password password :compressor nil}))]
     (String. ^bytes value-bytes "utf-8")))
 
-(defn add-encoded-cookie
-  "Inserts the provided name-value pair as a Set-Cookie header in the response"
-  [response password name value age-in-seconds http-only?]
+(defn add-cookie
+  "Inserts the provided name-value pair as a Set-Cookie header in the response."
+  [response name value age-in-seconds http-only?]
   (letfn [(add-cookie-into-response [response]
-            (let [encoded-cookie (UrlEncoded/encodeString (encode-cookie value password))
+            (let [encoded-cookie (UrlEncoded/encodeString value)
                   path "/"
                   set-cookie-header (str name "=" encoded-cookie ";Max-Age=" age-in-seconds ";Path=" path
                                          (when http-only? ";HttpOnly=true"))
@@ -78,6 +78,12 @@
                                :else (conj existing-header set-cookie-header))]
               (assoc-in response [:headers "set-cookie"] new-header)))]
     (ru/update-response response add-cookie-into-response)))
+
+(defn add-encoded-cookie
+  "Inserts the provided name-value pair as a Set-Cookie header in the response after encoding the value."
+  [response password name value age-in-seconds http-only?]
+  (let [encoded-value (encode-cookie value password)]
+    (add-cookie response name encoded-value age-in-seconds http-only?)))
 
 (defn decode-cookie
   "Decode Waiter encoded cookie."

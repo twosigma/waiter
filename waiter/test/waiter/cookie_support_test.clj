@@ -17,6 +17,7 @@
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.data.codec.base64 :as b64]
+            [clojure.string :as str]
             [clojure.test :refer :all]
             [taoensso.nippy :as nippy]
             [waiter.cookie-support :refer :all])
@@ -52,6 +53,8 @@
         user-cookie (str "user=" (UrlEncoded/encodeString "data:john") cookie-attrs)]
     (with-redefs [b64/encode (fn [^String data-string] (.getBytes data-string))
                   nippy/freeze (fn [input _] (str "data:" input))]
+      (is (= {:headers {"set-cookie" (str/replace user-cookie ";HttpOnly=true" "")}}
+             (add-encoded-cookie {} [:cached "password"] "user" "john" max-age-sec false)))
       (is (= {:headers {"set-cookie" user-cookie}}
              (add-encoded-cookie {} [:cached "password"] "user" "john" max-age-sec true)))
       (is (= {:headers {"set-cookie" ["foo=bar" user-cookie]}}
