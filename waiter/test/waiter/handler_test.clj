@@ -1138,8 +1138,9 @@
                                    "run-as-user" test-user
                                    "source-tokens" [(sd/source-tokens-entry test-token test-service-description)])
                             service-description->service-id)
-        add-encoded-cookie (fn [response cookie-name cookie-value consent-expiry-days]
-                             (assoc-in response [:cookie cookie-name] {:value cookie-value, :age consent-expiry-days}))
+        add-encoded-cookie (fn [response cookie-name cookie-value consent-expiry-days http-only?]
+                             (is http-only?)
+                             (assoc-in response [:cookie cookie-name] {:value cookie-value :age consent-expiry-days}))
         consent-expiry-days 1
         consent-cookie-value (fn consent-cookie-value [mode service-id token {:strs [owner]}]
                                (when mode

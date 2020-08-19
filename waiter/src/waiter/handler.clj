@@ -909,7 +909,7 @@
           (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "approve-success"))
           (-> {:body (str "Added cookie " cookie-name), :headers {}, :status http-200-ok }
             (utils/attach-waiter-source)
-            (add-encoded-cookie cookie-name cookie-value consent-expiry-days)))))
+            (add-encoded-cookie cookie-name cookie-value consent-expiry-days true)))))
     (catch Exception ex
       (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "approve-error"))
       (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "approve-error"))

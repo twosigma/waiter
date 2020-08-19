@@ -110,9 +110,10 @@
                                                             (merge {:request-method :post
                                                                     :body (string->stream "saml-auth-data=my-saml-auth-data")})))))))
     (testing "has saml-auth-data"
-      (with-redefs [cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds]
+      (with-redefs [cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds http-only?]
                                                         (is (= password in-password))
                                                         (is (= (-> 1 t/days t/in-seconds) age-in-seconds))
+                                                        (is http-only?)
                                                         (update response :headers
                                                                 assoc "set-cookie" (str name "=" value)))
                     utils/base-64-string->map (fn [data in-password]
@@ -134,9 +135,10 @@
                  (saml-auth-redirect-handler saml-authenticator dummy-request'))))))
 
     (testing "has saml-auth-data no expiry"
-      (with-redefs [cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds]
+      (with-redefs [cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds http-only?]
                                                         (is (= password in-password))
                                                         (is (= (-> 1 t/days t/in-seconds) age-in-seconds))
+                                                        (is http-only?)
                                                         (update response :headers
                                                                 assoc "set-cookie" (str name "=" value)))
                     utils/base-64-string->map (fn [data in-password]
@@ -158,9 +160,10 @@
                  (saml-auth-redirect-handler saml-authenticator dummy-request'))))))
 
     (testing "has saml-auth-data short expiry"
-      (with-redefs [cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds]
+      (with-redefs [cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds http-only?]
                                                         (is (= password in-password))
                                                         (is (= (-> 1 t/hours t/in-seconds) age-in-seconds))
+                                                        (is http-only?)
                                                         (update response :headers
                                                                 assoc "set-cookie" (str name "=" value)))
                     utils/base-64-string->map (fn [data in-password]

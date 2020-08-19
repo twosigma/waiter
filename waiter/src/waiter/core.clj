@@ -1806,8 +1806,9 @@
                                                    [:state clock passwords]
                                                    wrap-secure-request-fn]
                                             (let [password (first passwords)]
-                                              (letfn [(add-encoded-cookie [response cookie-name value expiry-days]
-                                                        (cookie-support/add-encoded-cookie response password cookie-name value (-> expiry-days t/days t/in-seconds)))
+                                              (letfn [(add-encoded-cookie [response cookie-name value expiry-days http-only?]
+                                                        (let [age-in-seconds (-> expiry-days t/days t/in-seconds)]
+                                                          (cookie-support/add-encoded-cookie response password cookie-name value age-in-seconds http-only?)))
                                                       (consent-cookie-value [mode service-id token token-metadata]
                                                         (sd/consent-cookie-value clock mode service-id token token-metadata))]
                                                 (wrap-secure-request-fn

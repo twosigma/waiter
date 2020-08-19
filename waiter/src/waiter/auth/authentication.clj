@@ -57,7 +57,7 @@
                        auth-metadata (conj auth-metadata))
         cookie-expiry (or age-in-seconds (-> 1 t/days t/in-seconds))]
     (cookie-support/add-encoded-cookie
-      response password AUTH-COOKIE-NAME cookie-value cookie-expiry)))
+      response password AUTH-COOKIE-NAME cookie-value cookie-expiry true)))
 
 (defn select-auth-params
   "Returns a map that contains only the auth params from the input map"
