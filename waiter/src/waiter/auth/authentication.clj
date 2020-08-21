@@ -21,11 +21,16 @@
             [waiter.cookie-support :as cookie-support]
             [waiter.middleware :as middleware]
             [waiter.status-codes :refer :all]
+            [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils]))
 
 (def ^:const AUTH-COOKIE-EXPIRES-AT "x-auth-expires-at")
 
 (def ^:const AUTH-COOKIE-NAME "x-waiter-auth")
+
+(def ^:const auth-expires-at-uri "/.well-known/auth/expires-at")
+
+(def ^:const auth-keep-alive-uri "/.well-known/auth/keep-alive")
 
 (defprotocol Authenticator
   (wrap-auth-handler [this request-handler]
@@ -116,20 +121,24 @@
 (defn decoded-auth-valid?
   "Verifies whether the decoded authenticated cookie is valid as per the following rules:
    The decoded value must be a sequence in the format: [auth-principal auth-time].
-   In addition, the auth-principal must be a string and the auth-time must be less than a day old."
-  [[auth-principal auth-time auth-metadata :as decoded-auth-cookie]]
+   In addition, the auth-principal must be a string and the expires at time must be greater than current time."
+  [[auth-principal auth-time {:keys [expires-at] :as auth-metadata} :as decoded-auth-cookie]]
   (log/debug "well-formed?" decoded-auth-cookie
              (<= 2 (count decoded-auth-cookie) 3)
              (integer? auth-time)
              (string? auth-principal)
-             (or (nil? auth-metadata) (map? auth-metadata)))
+             (or (nil? auth-metadata) (map? auth-metadata))
+             (integer? expires-at))
   (let [well-formed? (and decoded-auth-cookie
                           (<= 2 (count decoded-auth-cookie) 3)
                           (integer? auth-time)
                           (string? auth-principal)
-                          (or (nil? auth-metadata) (map? auth-metadata)))
-        one-day-in-millis (-> 1 t/days t/in-millis)]
-    (and well-formed? (> (+ auth-time one-day-in-millis) (System/currentTimeMillis)))))
+                          (or (nil? auth-metadata) (map? auth-metadata))
+                          (integer? expires-at))
+        result (and well-formed? (> (* 1000 expires-at) (System/currentTimeMillis)))]
+    (when-not result
+      (log/info "decoded auth cookie is not valid"))
+    result))
 
 (defn get-auth-cookie-value
   "Retrieves the auth cookie."
@@ -210,3 +219,62 @@
               handler' (middleware/wrap-merge handler auth-params-map)]
           (handler' request))
         (handler request)))))
+
+(defn process-auth-expires-at-request
+  "Handler to allow a client to update it's knowledge of when user's cookie-based credentials expire.
+   Returns a json response containing the expires-at key containing the expiration time in UTC epoch seconds.
+   Relies on the metadata in the x-waiter-auth cookie."
+  [password {:keys [headers]}]
+  (let [decoded-auth-cookie (get-and-decode-auth-cookie-value headers password)
+        [auth-principal _ auth-metadata] decoded-auth-cookie
+        {:keys [expires-at]} auth-metadata
+        expires-at (or (when (decoded-auth-valid? decoded-auth-cookie) expires-at) 0)]
+    (log/info auth-principal "cookie expires at" expires-at)
+    (utils/attach-waiter-source (utils/clj->json-response {:expires-at expires-at
+                                                           :principal auth-principal}))))
+
+(defn process-auth-keep-alive-request
+  "Handler to eagerly trigger authentication workflow even if cookie has not yet expired.
+   This allows clients to pre-emptively refresh credentials before they expire.
+   Presence of done parameter is used to avoid infinite auth redirect loops and will return 204 No Content.
+   Invalid offset parameters result in a 400 error.
+   Missing offset or soon to expire cookie (based on offset) will trigger in the authentication workflow.
+   If cookie is expected to be live longer than offset value, return 204 No Content."
+  [password auth-handler {:keys [headers] :as request}]
+  (let [{:strs [done offset]} (-> request ru/query-params-request :query-params)
+        offset-parsed (utils/parse-int offset)
+        decoded-auth-cookie (get-and-decode-auth-cookie-value headers password)
+        [auth-principal _ cookie-metadata] decoded-auth-cookie
+        current-epoch-time (tc/to-epoch (t/now))
+        {:keys [expires-at]} cookie-metadata
+        ;; handle legacy cookies which will not have this value set
+        expires-at (or expires-at current-epoch-time)]
+    (log/info auth-principal "cookie expires at" expires-at "offset is" offset-parsed)
+    (cond
+      ;; avoid infinite redirect loop
+      done
+      (utils/attach-waiter-source {:status http-204-no-content})
+
+      ;; offset parameter provided, but cannot be parsed
+      (and offset (nil? offset-parsed))
+      (utils/clj->json-response {:message "Unable to parse offset parameter"
+                                 :parameter {:offset offset}}
+                                :status http-400-bad-request)
+
+      ;; offset parameter must be positive when provided
+      (and offset-parsed (not (pos? offset-parsed)))
+      (utils/clj->json-response {:message "Invalid offset parameter"
+                                 :parameter {:offset offset-parsed}}
+                                :status http-400-bad-request)
+
+      ;; trigger auth workflow if cookie has already expired or adding offset will cause it to expire
+      (or (nil? offset)
+          (not (decoded-auth-valid? decode-auth-cookie))
+          (>= (+ current-epoch-time offset-parsed) expires-at))
+      (-> request
+        (update-in [:headers "cookie"] remove-auth-cookie)
+        (auth-handler))
+
+      ;; default response
+      :else
+      (utils/attach-waiter-source {:status http-204-no-content}))))

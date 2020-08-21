@@ -920,6 +920,12 @@
   (let [exec-routes-mapper (fn [uri] (routes-mapper {:uri uri}))]
     (is (= {:handler :welcome-handler-fn}
            (exec-routes-mapper "/")))
+    (is (= {:handler :auth-expires-at-handler-fn}
+           (exec-routes-mapper auth/auth-expires-at-uri)))
+    (is (= {:handler :auth-keep-alive-handler-fn}
+           (exec-routes-mapper auth/auth-keep-alive-uri)))
+    (is (= {:handler :oidc-enabled-handler-fn}
+           (exec-routes-mapper oidc/oidc-enabled-uri)))
     (is (= {:handler :app-name-handler-fn}
            (exec-routes-mapper "/app-name")))
     (is (= {:handler :service-list-handler-fn}

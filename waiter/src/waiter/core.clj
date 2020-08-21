@@ -89,6 +89,8 @@
   ;; Please include/update a corresponding unit test anytime the routes data structure is modified
   [{:keys [uri]}]
   (let [routes ["/" {"" :welcome-handler-fn
+                     (subs auth/auth-expires-at-uri 1) :auth-expires-at-handler-fn
+                     (subs auth/auth-keep-alive-uri 1) :auth-keep-alive-handler-fn
                      (subs oidc/oidc-enabled-uri 1) :oidc-enabled-handler-fn
                      "app-name" :app-name-handler-fn
                      "apps" {"" :service-list-handler-fn
@@ -1423,6 +1425,17 @@
                               (wrap-secure-request-fn
                                 (fn async-status-handler-fn [request]
                                   (handler/async-status-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))))
+   :auth-expires-at-handler-fn (pc/fnk [[:state passwords]]
+                                 (let [password (first passwords)]
+                                   (fn auth-expires-at-handler-fn [request]
+                                     (auth/process-auth-expires-at-request password request))))
+   :auth-keep-alive-handler-fn (pc/fnk [[:state passwords]
+                                        wrap-secure-request-fn]
+                                 (let [password (first passwords)
+                                       default-handler (constantly (utils/attach-waiter-source {:status http-204-no-content}))
+                                       auth-handler (wrap-secure-request-fn default-handler)]
+                                   (fn auth-keep-alive-handler-fn [request]
+                                     (auth/process-auth-keep-alive-request password auth-handler request))))
    :default-websocket-handler-fn (pc/fnk [[:daemons populate-maintainer-chan!]
                                           [:routines determine-priority-fn service-id->password-fn start-new-service-fn]
                                           [:settings instance-request-properties]
