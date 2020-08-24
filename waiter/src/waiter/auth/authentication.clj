@@ -269,7 +269,7 @@
 
       ;; trigger auth workflow if cookie has already expired or adding offset will cause it to expire
       (or (nil? offset)
-          (not (decoded-auth-valid? decode-auth-cookie))
+          (not (decoded-auth-valid? decoded-auth-cookie))
           (>= (+ current-epoch-time offset-parsed) expires-at))
       (-> request
         (update-in [:headers "cookie"] remove-auth-cookie)

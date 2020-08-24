@@ -351,7 +351,7 @@
             method multipart protocol query-params scheme trailers-fn verbose]
      :or {body nil
           cookies []
-          disable-auth false
+          disable-auth nil
           headers {}
           method :get
           query-params {}
@@ -375,7 +375,9 @@
          (log/info "request url:" request-url)
          (log/info "request headers:" (into (sorted-map) request-headers)))
        (let [waiter-auth-cookie (some #(= authentication/AUTH-COOKIE-NAME (:name %)) cookies)
-             add-spnego-auth (and (not disable-auth) use-spnego (not waiter-auth-cookie))
+             add-spnego-auth (and use-spnego
+                                  (or (false? disable-auth)
+                                      (and (nil? disable-auth) (not waiter-auth-cookie))))
              {:keys [body error error-chan headers status trailers]}
              (async/<!! (http/request
                           client
