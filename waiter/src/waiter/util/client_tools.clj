@@ -345,6 +345,25 @@
     (vec (cond (coll? set-cookie-header-value) (mapcat parse-set-cookie-string set-cookie-header-value)
                (string? set-cookie-header-value) (parse-set-cookie-string set-cookie-header-value)))))
 
+(defmacro assert-waiter-authentication-cookies
+  "Validates the waiter authentication cookies."
+  [cookies]
+  `(let [cookies# ~cookies]
+     (if-let [waiter-auth-cookie# (first (filter #(= (:name %) "x-waiter-auth") cookies#))]
+       (do
+         (is (= {:http-only? true :path "/" :secure? false}
+                (select-keys waiter-auth-cookie# [:http-only? :path :secure?])))
+         (is (pos? (:max-age waiter-auth-cookie#))))
+       (is false "x-waiter-auth cookie is missing"))
+     (if-let [auth-expires-at-cookie# (first (filter #(= (:name %) "x-auth-expires-at") cookies#))]
+       (do
+         (is (= {:http-only? false :path "/" :secure? false}
+                (select-keys auth-expires-at-cookie# [:http-only? :path :secure?])))
+         (is (pos? (:max-age auth-expires-at-cookie#)))
+         (when-let [waiter-auth-cookie# (first (filter #(= (:name %) "x-waiter-auth") cookies#))]
+           (is (= (:max-age waiter-auth-cookie#) (:max-age auth-expires-at-cookie#)))))
+       (is false "x-auth-expires-at cookie is missing"))))
+
 (defn make-request
   ([waiter-url path &
     {:keys [body client cookies content-type disable-auth form-params headers

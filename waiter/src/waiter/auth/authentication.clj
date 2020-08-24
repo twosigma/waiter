@@ -66,7 +66,7 @@
         cookie-expiry (or age-in-seconds (-> 1 t/days t/in-seconds))
         expiry-epoch-time (+ creation-epoch-time cookie-expiry)
         cookie-metadata (assoc auth-metadata :expires-at expiry-epoch-time)
-        cookie-value (cond-> [principal creation-time-long cookie-metadata])]
+        cookie-value [principal creation-time-long cookie-metadata]]
     (-> response
       (cookie-support/add-cookie AUTH-COOKIE-EXPIRES-AT (str expiry-epoch-time) cookie-expiry false)
       (cookie-support/add-encoded-cookie password AUTH-COOKIE-NAME cookie-value cookie-expiry true))))

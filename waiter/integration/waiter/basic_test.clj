@@ -757,26 +757,6 @@
               service-description-overrides (-> service-settings :service-description-overrides :overrides)]
           (is (not service-description-overrides)))))))
 
-(defmacro assert-waiter-authentication-cookies
-  [cookies]
-  `(let [cookies# ~cookies]
-     (if-let [waiter-auth-cookie# (first (filter #(= (:name %) "x-waiter-auth") cookies#))]
-        (do
-          (is (true? (:http-only? waiter-auth-cookie#)))
-          (is (pos? (:max-age waiter-auth-cookie#)))
-          (is (= "/" (:path waiter-auth-cookie#)))
-          (is (false? (:secure? waiter-auth-cookie#))))
-        (is false "x-waiter-auth cookie is missing"))
-     (if-let [auth-expires-at-cookie# (first (filter #(= (:name %) "x-auth-expires-at") cookies#))]
-       (do
-         (is (false? (:http-only? auth-expires-at-cookie#)))
-         (is (pos? (:max-age auth-expires-at-cookie#)))
-         (is (= "/" (:path auth-expires-at-cookie#)))
-         (is (false? (:secure? auth-expires-at-cookie#)))
-         (when-let [waiter-auth-cookie# (first (filter #(= (:name %) "x-waiter-auth") cookies#))]
-           (is (= (:max-age waiter-auth-cookie#) (:max-age auth-expires-at-cookie#)))))
-       (is false "x-auth-expires-at cookie is missing"))))
-
 (deftest ^:parallel ^:integration-fast basic-waiter-auth-test
   (testing-using-waiter-url
     (log/info "Basic waiter-auth test")
