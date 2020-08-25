@@ -492,7 +492,7 @@
                                       :cookies cookies
                                       :headers callback-request-headers)]
                     (assert-response-status callback-response http-302-moved-temporarily)
-                    (is (= 3 (count cookies)))
+                    (is (= 3 (count cookies)) (str cookies))
                     (if-let [oidc-challenge-cookie (first (filter #(str/starts-with? (:name %) "x-waiter-oidc-challenge-") cookies))]
                       (is (= {:http-only? true :max-age 0 :path "/" :secure? false}
                              (select-keys oidc-challenge-cookie [:http-only? :max-age :path :secure?])))
