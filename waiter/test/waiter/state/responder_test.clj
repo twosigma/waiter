@@ -17,7 +17,6 @@
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.test :refer :all]
-            [clojure.tools.logging :as log]
             [digest]
             [metrics.counters :as counters]
             [plumbing.core :as pc]
@@ -377,7 +376,7 @@
         (when (not= expected-counter-value actual-counter-value)
           (println (first *testing-vars*) ":" counter-name "expected:" expected-counter-value "actual:" actual-counter-value))
         (is (= expected-counter-value actual-counter-value)
-            (str "Mismatch in " counter-name " counter value. Expected: " expected-counter-value " Actual: " actual-counter-value)))))
+            (str "Mismatch in" counter-name "counter value. Expected: " expected-counter-value " Actual: " actual-counter-value)))))
 
   (defn- check-state-fn [query-state-chan expected-state]
     (Thread/sleep 1) ; allow previous chaneel messages to get processed
@@ -413,7 +412,6 @@
                                      (:instance-id->state expected-state)
                                      (merge (let [[slots-assigned slots-used slots-available] (compute-slots-values (:instance-id->state expected-state))]
                                               {"slots-assigned" slots-assigned "slots-available" slots-available "slots-in-use" slots-used})))]
-          (log/info "expected counters" expected-counter-map)
           (assert-instance-counters expected-counter-map))
         actual-state)))
 
