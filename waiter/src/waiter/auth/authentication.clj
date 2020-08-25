@@ -59,17 +59,18 @@
                     {:status http-400-bad-request}))))
 
 (defn- add-cached-auth
+  "Adds the Waiter auth related cookies into the response."
   [response password principal age-in-seconds auth-metadata]
   (let [creation-time (t/now)
-        creation-time-long (tc/to-long creation-time)
-        creation-epoch-time (tc/to-epoch creation-time)
-        cookie-expiry (or age-in-seconds (-> 1 t/days t/in-seconds))
-        expiry-epoch-time (+ creation-epoch-time cookie-expiry)
-        cookie-metadata (assoc auth-metadata :expires-at expiry-epoch-time)
-        cookie-value [principal creation-time-long cookie-metadata]]
+        creation-time-millis (tc/to-long creation-time)
+        creation-time-secs (tc/to-epoch creation-time)
+        cookie-age-in-seconds (or age-in-seconds (-> 1 t/days t/in-seconds))
+        expiry-time-secs (+ creation-time-secs cookie-age-in-seconds)
+        cookie-metadata (assoc auth-metadata :expires-at expiry-time-secs)
+        cookie-value [principal creation-time-millis cookie-metadata]]
     (-> response
-      (cookie-support/add-cookie AUTH-COOKIE-EXPIRES-AT (str expiry-epoch-time) cookie-expiry false)
-      (cookie-support/add-encoded-cookie password AUTH-COOKIE-NAME cookie-value cookie-expiry true))))
+      (cookie-support/add-cookie AUTH-COOKIE-EXPIRES-AT (str expiry-time-secs) cookie-age-in-seconds false)
+      (cookie-support/add-encoded-cookie password AUTH-COOKIE-NAME cookie-value cookie-age-in-seconds true))))
 
 (defn select-auth-params
   "Returns a map that contains only the auth params from the input map"
@@ -221,16 +222,17 @@
         (handler request)))))
 
 (defn process-auth-expires-at-request
-  "Handler to allow a client to update it's knowledge of when user's cookie-based credentials expire.
+  "Handler to allow a client to update its knowledge of when a user's cookie-based credentials expire.
    Returns a json response containing the expires-at key containing the expiration time in UTC epoch seconds.
    Relies on the metadata in the x-waiter-auth cookie."
   [password {:keys [headers]}]
   (let [decoded-auth-cookie (get-and-decode-auth-cookie-value headers password)
         [auth-principal _ auth-metadata] decoded-auth-cookie
         {:keys [expires-at]} auth-metadata
-        expires-at (or (when (decoded-auth-valid? decoded-auth-cookie) expires-at) 0)]
-    (log/info auth-principal "cookie expires at" expires-at)
-    (utils/attach-waiter-source (utils/clj->json-response {:expires-at expires-at
+        cookie-valid? (decoded-auth-valid? decoded-auth-cookie)
+        sanitized-expires-at (or (when cookie-valid? expires-at) 0)]
+    (log/info "waiter auth cookie parsed" {:auth-principal auth-principal :cookie-valid? cookie-valid? :expires-at expires-at})
+    (utils/attach-waiter-source (utils/clj->json-response {:expires-at sanitized-expires-at
                                                            :principal auth-principal}))))
 
 (defn process-auth-keep-alive-request
@@ -238,7 +240,7 @@
    This allows clients to pre-emptively refresh credentials before they expire.
    Presence of done parameter is used to avoid infinite auth redirect loops and will return 204 No Content.
    Invalid offset parameters result in a 400 error.
-   Missing offset or soon to expire cookie (based on offset) will trigger in the authentication workflow.
+   Missing offset, soon to expire cookie (based on offset) or invalid auth cookie will trigger the authentication workflow.
    If cookie is expected to be live longer than offset value, return 204 No Content."
   [password auth-handler {:keys [headers] :as request}]
   (let [{:strs [done offset]} (-> request ru/query-params-request :query-params)
@@ -267,7 +269,10 @@
                                  :parameter {:offset offset-parsed}}
                                 :status http-400-bad-request)
 
-      ;; trigger auth workflow if cookie has already expired or adding offset will cause it to expire
+      ;; trigger auth workflow if
+      ;; - offset query parameter is missing;
+      ;; - cookie has already expired; or
+      ;; - including offset time will cause the cookie to expire
       (or (nil? offset)
           (not (decoded-auth-valid? decoded-auth-cookie))
           (>= (+ current-epoch-time offset-parsed) expires-at))

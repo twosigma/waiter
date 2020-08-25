@@ -561,7 +561,7 @@
     (when value
       (Integer/parseInt (str value)))
     (catch Exception _
-      (log/warn "cannot convert value to an int:" value)
+      (log/info "cannot convert value to an int:" value)
       nil)))
 
 (defn param-contains?
