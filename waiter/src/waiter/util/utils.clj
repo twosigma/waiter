@@ -556,12 +556,12 @@
 
 (defn parse-int
   "Returns either the input as an integer or nil if there was an error in parsing."
-  [header-value]
+  [value]
   (try
-    (when header-value
-      (Integer/parseInt (str header-value)))
+    (when value
+      (Integer/parseInt (str value)))
     (catch Exception _
-      (log/warn "cannot convert header to an int:" header-value)
+      (log/warn "cannot convert value to an int:" value)
       nil)))
 
 (defn param-contains?

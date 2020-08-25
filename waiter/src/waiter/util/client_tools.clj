@@ -345,22 +345,27 @@
     (vec (cond (coll? set-cookie-header-value) (mapcat parse-set-cookie-string set-cookie-header-value)
                (string? set-cookie-header-value) (parse-set-cookie-string set-cookie-header-value)))))
 
+(defn extract-cookie
+  "Extracts the cookie with the provided name from the provided cookie list."
+  [cookie-list cookie-name]
+  (first (filter #(= (:name %) cookie-name) cookie-list)))
+
 (defmacro assert-waiter-authentication-cookies
   "Validates the waiter authentication cookies."
   [cookies]
   `(let [cookies# ~cookies]
-     (if-let [waiter-auth-cookie# (first (filter #(= (:name %) "x-waiter-auth") cookies#))]
+     (if-let [waiter-auth-cookie# (extract-cookie cookies# "x-waiter-auth")]
        (do
          (is (= {:http-only? true :path "/" :secure? false}
                 (select-keys waiter-auth-cookie# [:http-only? :path :secure?])))
          (is (pos? (:max-age waiter-auth-cookie#))))
        (is false "x-waiter-auth cookie is missing"))
-     (if-let [auth-expires-at-cookie# (first (filter #(= (:name %) "x-auth-expires-at") cookies#))]
+     (if-let [auth-expires-at-cookie# (extract-cookie cookies# "x-auth-expires-at")]
        (do
          (is (= {:http-only? false :path "/" :secure? false}
                 (select-keys auth-expires-at-cookie# [:http-only? :path :secure?])))
          (is (pos? (:max-age auth-expires-at-cookie#)))
-         (when-let [waiter-auth-cookie# (first (filter #(= (:name %) "x-waiter-auth") cookies#))]
+         (when-let [waiter-auth-cookie# (extract-cookie cookies# "x-waiter-auth")]
            (is (= (:max-age waiter-auth-cookie#) (:max-age auth-expires-at-cookie#)))))
        (is false "x-auth-expires-at cookie is missing"))))
 
@@ -956,7 +961,7 @@
 (defn auth-cookie
   "Retrieves and returns the value of the x-waiter-auth cookie"
   [waiter-url]
-  (:value (first (filter #(= "x-waiter-auth" (:name %)) (all-cookies waiter-url)))))
+  (:value (extract-cookie (all-cookies waiter-url) "x-waiter-auth")))
 
 (defn statsd-state
   "Fetches and returns the statsd state."

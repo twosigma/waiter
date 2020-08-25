@@ -787,8 +787,8 @@
 
         (testing "well-known auth endpoints"
           (let [{:strs [x-waiter-auth-principal]} headers
-                auth-expires-at-cookie (first (filter #(= (:name %) "x-auth-expires-at") cookies))
-                waiter-auth-cookie (first (filter #(= (:name %) "x-waiter-auth") cookies))
+                auth-expires-at-cookie (extract-cookie cookies "x-auth-expires-at")
+                waiter-auth-cookie (extract-cookie cookies "x-waiter-auth")
                 request-cookies (remove #(= (:name %) "x-auth-expires-at") cookies)]
             (let [response (make-request waiter-url "/.well-known/auth/expires-at"
                                          :cookies request-cookies
@@ -807,8 +807,8 @@
                                 :query-params {"done" "true"})]
               (assert-response-status response http-204-no-content)
               (assert-waiter-response response)
-              (is (nil? (first (filter #(= (:name %) "x-auth-expires-at") cookies))))
-              (is (nil? (first (filter #(= (:name %) "x-waiter-auth") cookies)))))
+              (is (nil? (extract-cookie cookies "x-auth-expires-at")))
+              (is (nil? (extract-cookie cookies "x-waiter-auth"))))
             (let [{:keys [cookies] :as response}
                   (make-request waiter-url "/.well-known/auth/keep-alive"
                                 :cookies request-cookies
@@ -817,8 +817,8 @@
                                 :query-params {"offset" "10"})]
               (assert-response-status response http-204-no-content)
               (assert-waiter-response response)
-              (is (nil? (first (filter #(= (:name %) "x-auth-expires-at") cookies))))
-              (is (nil? (first (filter #(= (:name %) "x-waiter-auth") cookies)))))
+              (is (nil? (extract-cookie cookies "x-auth-expires-at")))
+              (is (nil? (extract-cookie cookies "x-waiter-auth"))))
             (let [{:keys [cookies] :as response}
                   (make-request waiter-url "/.well-known/auth/keep-alive"
                                 :cookies request-cookies
@@ -826,8 +826,8 @@
                                 :headers {"x-waiter-debug" true}
                                 :method :get
                                 :query-params {"offset" "100000000"})
-                  response-auth-expires-at-cookie (first (filter #(= (:name %) "x-auth-expires-at") cookies))
-                  response-waiter-auth-cookie (first (filter #(= (:name %) "x-waiter-auth") cookies))]
+                  response-auth-expires-at-cookie (extract-cookie cookies "x-auth-expires-at")
+                  response-waiter-auth-cookie (extract-cookie cookies "x-waiter-auth")]
               (assert-response-status response http-204-no-content)
               (assert-waiter-response response)
               (assert-waiter-authentication-cookies cookies)
@@ -840,8 +840,8 @@
                                 :headers {"x-waiter-debug" true}
                                 :method :get
                                 :query-params {})
-                  response-auth-expires-at-cookie (first (filter #(= (:name %) "x-auth-expires-at") cookies))
-                  response-waiter-auth-cookie (first (filter #(= (:name %) "x-waiter-auth") cookies))]
+                  response-auth-expires-at-cookie (extract-cookie cookies "x-auth-expires-at")
+                  response-waiter-auth-cookie (extract-cookie cookies "x-waiter-auth")]
               (assert-response-status response http-204-no-content)
               (assert-waiter-response response)
               (assert-waiter-authentication-cookies cookies)
