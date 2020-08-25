@@ -56,7 +56,9 @@
            get-instance-latency-ns handle-request-latency-ns headers instance instance-proto latest-service-id
            protocol request-type status waiter-api-call?] :as response}]
   (let [{:keys [service-id service-description source-tokens]} descriptor
-        token (some->> source-tokens (map #(get % "token")) seq (str/join ","))
+        token (or (some->> source-tokens (map #(get % "token")) seq (str/join ","))
+                  ;; allow non-proxy requests to provide tokens for use in the request log
+                  (:waiter/token response))
         {:strs [image metric-group profile run-as-user version]} service-description
         {:strs [content-length content-type grpc-status location server]} headers
         {:keys [k8s/node-name k8s/pod-name]} instance]
