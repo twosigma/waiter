@@ -589,12 +589,10 @@
       :get (let [{:strs [can-manage-as-user] :as request-params} (-> req ru/query-params-request :query-params)
                  include-deleted (utils/param-contains? request-params "include" "deleted")
                  show-metadata (utils/param-contains? request-params "include" "metadata")
-                 include-run-as-requester? (when (contains? request-params "run-as-requester")
-                                             (utils/request-flag request-params "run-as-requester"))
-                 include-requires-parameters? (when (contains? request-params "requires-parameters")
-                                                (utils/request-flag request-params "requires-parameters"))
-                 boolean-xnor (fn [b1 b2] (or (and b1 b2)
-                                              (and (not b1) (not b2))))
+                 include-run-as-requester (when (contains? request-params "run-as-requester")
+                                            (utils/request-flag request-params "run-as-requester"))
+                 include-requires-parameters (when (contains? request-params "requires-parameters")
+                                               (utils/request-flag request-params "requires-parameters"))
                  owner-param (get request-params "owner")
                  owners (cond
                           (string? owner-param) #{owner-param}
@@ -628,12 +626,10 @@
                                                         :error-on-missing false
                                                         :include-deleted include-deleted)]
                                  (and (every? #(% token-parameters) parameter-filter-predicates)
-                                      (or (nil? include-run-as-requester?)
-                                          (boolean-xnor include-run-as-requester?
-                                                        (sd/run-as-requester? token-parameters)))
-                                      (or (nil? include-requires-parameters?)
-                                          (boolean-xnor include-requires-parameters?
-                                                        (sd/requires-parameters? token-parameters)))))))
+                                      (or (nil? include-run-as-requester)
+                                          (= include-run-as-requester (sd/run-as-requester? token-parameters)))
+                                      (or (nil? include-requires-parameters)
+                                          (= include-requires-parameters (sd/requires-parameters? token-parameters)))))))
                            (map
                              (fn [[token entry]]
                                (-> (if show-metadata
