@@ -636,6 +636,18 @@
   [service-description username]
   (assoc service-description "run-as-user" username "permitted-user" username))
 
+(defn run-as-requester?
+  "Returns true if the service description maps to a run-as-requester service."
+  [{:strs [run-as-user]}]
+  (= "*" run-as-user))
+
+(defn requires-parameters?
+  "Returns true if the service description maps to a parameterized service whose parameters do not have a default value."
+  [{:strs [allowed-params env]}]
+  (boolean
+    (and (seq allowed-params)
+         (seq (set/difference allowed-params (set (keys env)))))))
+
 (let [hash-prefix "E-"]
   (defn token-data->token-hash
     "Converts the merged map of service-description and token-metadata to a hash."
