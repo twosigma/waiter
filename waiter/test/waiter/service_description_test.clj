@@ -3026,3 +3026,26 @@
                                                   "t2" {"last-update-time" 150}
                                                   "t3" {"last-update-time" 250}}}}]
     (is (= 250 (retrieve-most-recently-modified-token-update-time descriptor)))))
+
+(deftest test-run-as-requester?
+  (is (false? (run-as-requester? {})))
+  (is (false? (run-as-requester? {"run-as-user" "john.doe*"})))
+  (is (false? (run-as-requester? {"run-as-user" "jane.doe*"})))
+  (is (true? (run-as-requester? {"run-as-user" "*"})))
+  (is (false? (run-as-requester? {"run-as-user" "john.doe*" "permitted-user" "*"})))
+  (is (false? (run-as-requester? {"run-as-user" "jane.doe*" "permitted-user" "*"})))
+  (is (true? (run-as-requester? {"run-as-user" "*" "permitted-user" "*"}))))
+
+(deftest test-requires-parameters?
+  (is (false? (requires-parameters? {"allowed-params" #{}})))
+  (is (true? (requires-parameters? {"allowed-params" #{"LOREM"}})))
+  (is (false? (requires-parameters? {"allowed-params" #{"LOREM"} "env" {"LOREM" "v1"}})))
+  (is (false? (requires-parameters? {"allowed-params" #{"LOREM"} "env" {"LOREM" "v1" "IPSUM" "v2"}})))
+  (is (true? (requires-parameters? {"allowed-params" #{"LOREM" "IPSUM"}})))
+  (is (true? (requires-parameters? {"allowed-params" #{"LOREM" "IPSUM"} "env" {"LOREM" "v1"}})))
+  (is (false? (requires-parameters? {"allowed-params" #{"LOREM" "IPSUM"} "env" {"LOREM" "v1" "IPSUM" "v2"}})))
+  (is (false? (requires-parameters? {})))
+  (is (false? (requires-parameters? {"env" {"LOREM" "v1"}})))
+  (is (false? (requires-parameters? {"env" {"LOREM" "v1" "IPSUM" "v2"}})))
+  (is (false? (requires-parameters? {"run-as-user" "john.doe*"})))
+  (is (false? (requires-parameters? {"run-as-user" "jane.doe*"}))))

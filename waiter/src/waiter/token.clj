@@ -589,6 +589,10 @@
       :get (let [{:strs [can-manage-as-user] :as request-params} (-> req ru/query-params-request :query-params)
                  include-deleted (utils/param-contains? request-params "include" "deleted")
                  show-metadata (utils/param-contains? request-params "include" "metadata")
+                 include-run-as-requester (when (contains? request-params "run-as-requester")
+                                            (utils/request-flag request-params "run-as-requester"))
+                 include-requires-parameters (when (contains? request-params "requires-parameters")
+                                               (utils/request-flag request-params "requires-parameters"))
                  owner-param (get request-params "owner")
                  owners (cond
                           (string? owner-param) #{owner-param}
@@ -621,7 +625,11 @@
                                                         kv-store token
                                                         :error-on-missing false
                                                         :include-deleted include-deleted)]
-                                 (every? #(% token-parameters) parameter-filter-predicates))))
+                                 (and (every? #(% token-parameters) parameter-filter-predicates)
+                                      (or (nil? include-run-as-requester)
+                                          (= include-run-as-requester (sd/run-as-requester? token-parameters)))
+                                      (or (nil? include-requires-parameters)
+                                          (= include-requires-parameters (sd/requires-parameters? token-parameters)))))))
                            (map
                              (fn [[token entry]]
                                (-> (if show-metadata
