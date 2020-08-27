@@ -294,7 +294,8 @@
           (not (decoded-auth-valid? decoded-auth-cookie))
           (>= (+ current-epoch-time offset-parsed) expires-at))
       (-> request
-        (update-in [:headers "cookie"] remove-auth-cookie)
+        (update-in [:headers "cookie"] remove-auth-cookie) ;; remove existing auth cookies
+        (assoc :waiter-api-call? false) ;; trigger auth as if it is a proxy request
         (auth-handler)
         (ru/update-response
           (fn [response]
