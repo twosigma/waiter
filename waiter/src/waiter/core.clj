@@ -290,19 +290,17 @@
                                                 (cid/cinfo correlation-id "request trailers:" trailers-data)
                                                 trailers-data)))))
             response (handler request)
-            add-headers (fn [{:keys [authorization/method authorization/principal authorization/user descriptor instance] :as response}]
+            add-headers (fn [{:keys [descriptor instance] :as response}]
                           (let [{:strs [backend-proto]} (:service-description descriptor)
                                 backend-directory (:log-directory instance)
                                 backend-log-url (when backend-directory
                                                   (generate-log-url-fn instance))
                                 request-date (when request-time
                                                (du/date-to-str request-time du/formatter-rfc822))]
-                            (update response :headers
+                            (update (auth/attach-authorization-headers response)
+                                    :headers
                                     (fn [headers]
                                       (cond-> headers
-                                        method (assoc "x-waiter-auth-method" (name method))
-                                        principal (assoc "x-waiter-auth-principal" (str principal))
-                                        user (assoc "x-waiter-auth-user" (str user))
                                         client-protocol (assoc "x-waiter-client-protocol" (name client-protocol))
                                         internal-protocol (assoc "x-waiter-internal-protocol" (name internal-protocol))
                                         request-time (assoc "x-waiter-request-date" request-date)
@@ -1431,10 +1429,11 @@
                                    (fn auth-expires-at-handler-fn [request]
                                      (auth/process-auth-expires-at-request password request))))
    :auth-keep-alive-handler-fn (pc/fnk [[:state passwords]
-                                        wrap-secure-request-fn]
+                                        wrap-secure-request-fn wrap-service-discovery-fn]
                                  (let [password (first passwords)
-                                       default-handler (constantly (utils/attach-waiter-source {:status http-204-no-content}))
-                                       auth-handler (wrap-secure-request-fn default-handler)]
+                                       auth-handler (-> (constantly (utils/attach-waiter-source {:status http-204-no-content}))
+                                                      (wrap-secure-request-fn)
+                                                      (wrap-service-discovery-fn))]
                                    (fn auth-keep-alive-handler-fn [request]
                                      (auth/process-auth-keep-alive-request password auth-handler request))))
    :default-websocket-handler-fn (pc/fnk [[:daemons populate-maintainer-chan!]

@@ -235,6 +235,16 @@
     (utils/attach-waiter-source (utils/clj->json-response {:expires-at sanitized-expires-at
                                                            :principal auth-principal}))))
 
+(defn attach-authorization-headers
+  "Attaches authentication description headers into the response."
+  [{:keys [authorization/method authorization/principal authorization/user] :as response}]
+  (update response :headers
+          (fn [headers]
+            (cond-> headers
+              method (assoc "x-waiter-auth-method" (name method))
+              principal (assoc "x-waiter-auth-principal" (str principal))
+              user (assoc "x-waiter-auth-user" (str user))))))
+
 (defn process-auth-keep-alive-request
   "Handler to eagerly trigger authentication workflow even if cookie has not yet expired.
    This allows clients to pre-emptively refresh credentials before they expire.
@@ -250,24 +260,29 @@
         current-epoch-time (tc/to-epoch (t/now))
         {:keys [expires-at]} cookie-metadata
         ;; handle legacy cookies which will not have this value set
-        expires-at (or expires-at current-epoch-time)]
+        expires-at (or expires-at current-epoch-time)
+        waiter-token (some-> request utils/request->host utils/authority->host)]
     (log/info auth-principal "cookie expires at" expires-at "offset is" offset-parsed)
     (cond
       ;; avoid infinite redirect loop
       done
-      (utils/attach-waiter-source {:status http-204-no-content})
+      (-> {:status http-204-no-content}
+        (utils/attach-waiter-source)
+        (assoc :waiter/token waiter-token))
 
       ;; offset parameter provided, but cannot be parsed
       (and offset (nil? offset-parsed))
-      (utils/clj->json-response {:message "Unable to parse offset parameter"
-                                 :parameter {:offset offset}}
-                                :status http-400-bad-request)
+      (-> {:message "Unable to parse offset parameter"
+           :parameter {:offset offset}}
+        (utils/clj->json-response :status http-400-bad-request)
+        (assoc :waiter/token waiter-token))
 
       ;; offset parameter must be positive when provided
       (and offset-parsed (not (pos? offset-parsed)))
-      (utils/clj->json-response {:message "Invalid offset parameter"
-                                 :parameter {:offset offset-parsed}}
-                                :status http-400-bad-request)
+      (-> {:message "Invalid offset parameter"
+           :parameter {:offset offset-parsed}}
+        (utils/clj->json-response :status http-400-bad-request)
+        (assoc :waiter/token waiter-token))
 
       ;; trigger auth workflow if
       ;; - offset query parameter is missing;
@@ -278,8 +293,15 @@
           (>= (+ current-epoch-time offset-parsed) expires-at))
       (-> request
         (update-in [:headers "cookie"] remove-auth-cookie)
-        (auth-handler))
+        (auth-handler)
+        (ru/update-response
+          (fn [response]
+            (-> response
+              (attach-authorization-headers)
+              (assoc :waiter/token waiter-token)))))
 
       ;; default response
       :else
-      (utils/attach-waiter-source {:status http-204-no-content}))))
+      (-> {:status http-204-no-content}
+        (utils/attach-waiter-source)
+        (assoc :waiter/token waiter-token)))))

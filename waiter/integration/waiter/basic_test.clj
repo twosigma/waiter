@@ -761,7 +761,8 @@
   (testing-using-waiter-url
     (log/info "Basic waiter-auth test")
     (let [{:keys [body cookies headers] :as response} (make-request waiter-url "/waiter-auth")
-          set-cookie (get headers "set-cookie")]
+          set-cookie (get headers "set-cookie")
+          current-user (retrieve-username)]
       (assert-response-status response http-200-ok)
       (is (contains? headers "x-waiter-auth-method") (str headers))
       (is (not= "cookie" (get headers "x-waiter-auth-method")) (str headers))
@@ -819,7 +820,7 @@
               (assert-waiter-response response)
               (is (nil? (extract-cookie cookies "x-auth-expires-at")))
               (is (nil? (extract-cookie cookies "x-waiter-auth"))))
-            (let [{:keys [cookies] :as response}
+            (let [{:keys [cookies headers] :as response}
                   (make-request waiter-url "/.well-known/auth/keep-alive"
                                 :cookies request-cookies
                                 :disable-auth false
@@ -831,6 +832,9 @@
               (assert-response-status response http-204-no-content)
               (assert-waiter-response response)
               (assert-waiter-authentication-cookies cookies)
+              (is (contains? headers "x-waiter-auth-method") (str headers))
+              (is (contains? headers "x-waiter-auth-principal") (str headers))
+              (is (= (get headers "x-waiter-auth-user") current-user) (str headers))
               (is response-auth-expires-at-cookie)
               (is (not= waiter-auth-cookie response-waiter-auth-cookie)))
             (let [{:keys [cookies] :as response}
@@ -845,6 +849,9 @@
               (assert-response-status response http-204-no-content)
               (assert-waiter-response response)
               (assert-waiter-authentication-cookies cookies)
+              (is (contains? headers "x-waiter-auth-method") (str headers))
+              (is (contains? headers "x-waiter-auth-principal") (str headers))
+              (is (= (get headers "x-waiter-auth-user") current-user) (str headers))
               (is response-auth-expires-at-cookie)
               (is (not= waiter-auth-cookie response-waiter-auth-cookie)))))))))
 
