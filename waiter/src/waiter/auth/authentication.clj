@@ -123,23 +123,25 @@
   "Verifies whether the decoded authenticated cookie is valid as per the following rules:
    The decoded value must be a sequence in the format: [auth-principal auth-time].
    In addition, the auth-principal must be a string and the expires at time must be greater than current time."
-  [[auth-principal auth-time {:keys [expires-at] :as auth-metadata} :as decoded-auth-cookie]]
-  (log/debug "well-formed?" decoded-auth-cookie
-             (<= 2 (count decoded-auth-cookie) 3)
-             (integer? auth-time)
-             (string? auth-principal)
-             (or (nil? auth-metadata) (map? auth-metadata))
-             (integer? expires-at))
-  (let [well-formed? (and decoded-auth-cookie
-                          (<= 2 (count decoded-auth-cookie) 3)
-                          (integer? auth-time)
-                          (string? auth-principal)
-                          (or (nil? auth-metadata) (map? auth-metadata))
-                          (integer? expires-at))
-        result (and well-formed? (> (* 1000 expires-at) (System/currentTimeMillis)))]
-    (when-not result
-      (log/info "decoded auth cookie is not valid"))
-    result))
+  [[auth-principal auth-time auth-metadata :as decoded-auth-cookie]]
+  (let [expires-at (when (map? auth-metadata)
+                     (get auth-metadata :expires-at))]
+    (log/debug "well-formed?" decoded-auth-cookie
+               (<= 2 (count decoded-auth-cookie) 3)
+               (integer? auth-time)
+               (string? auth-principal)
+               (or (nil? auth-metadata) (map? auth-metadata))
+               (integer? expires-at))
+    (let [well-formed? (and decoded-auth-cookie
+                            (<= 2 (count decoded-auth-cookie) 3)
+                            (integer? auth-time)
+                            (string? auth-principal)
+                            (map? auth-metadata)
+                            (integer? expires-at))
+          result (and well-formed? (> (* 1000 expires-at) (System/currentTimeMillis)))]
+      (when-not result
+        (log/info "decoded auth cookie is not valid" decoded-auth-cookie))
+      result)))
 
 (defn get-auth-cookie-value
   "Retrieves the auth cookie."
