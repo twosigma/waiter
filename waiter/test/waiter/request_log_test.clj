@@ -85,7 +85,8 @@
                   :protocol "HTTP/2.0"
                   :request-type "test-request"
                   :status http-200-ok
-                  :waiter-api-call? false}]
+                  :waiter-api-call? false
+                  :waiter/token "test-token3"}]
     (is (= {:authentication-method "cookie"
             :backend-response-latency-ns 1000
             :backend-protocol "HTTP/2.0"

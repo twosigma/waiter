@@ -33,7 +33,7 @@
            (clojure.lang ExceptionInfo)
            (java.io OutputStreamWriter)
            (java.lang Process)
-           (java.net ServerSocket)
+           (java.net ServerSocket URI)
            (java.nio ByteBuffer)
            (java.nio.charset StandardCharsets)
            (java.security MessageDigest)
@@ -574,6 +574,12 @@
   [authority & {:keys [default]}]
   (let [port-index (str/index-of (str authority) ":")]
     (if port-index (subs authority (inc port-index)) (str default))))
+
+(defn uri-string->host
+  "Parses the uri-string as a URI and extracts the authority from it."
+  [uri-string]
+  ;; we do not use (.getHost) on URI directly since our test tokens don't parse as hosts
+  (some-> uri-string (URI.) (.getAuthority) (authority->host)))
 
 (defn request->scheme
   "Extracts the scheme from the request, and returns it as a keyword."

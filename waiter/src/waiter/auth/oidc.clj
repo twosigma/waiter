@@ -27,8 +27,7 @@
             [waiter.util.http-utils :as hu]
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils])
-  (:import (java.net URI)
-           (java.security SecureRandom)))
+  (:import (java.security SecureRandom)))
 
 (def ^:const challenge-cookie-duration-secs 60)
 
@@ -153,9 +152,11 @@
                 (auth/handle-request-auth
                   (constantly
                     (let [{:keys [identifier redirect-uri]} state-map
+                          waiter-token (utils/uri-string->host redirect-uri)
                           oidc-challenge-cookie (str oidc-challenge-cookie-prefix identifier)]
                       (-> {:headers (attach-threat-remediation-headers {"location" redirect-uri})
-                           :status http-302-moved-temporarily}
+                           :status http-302-moved-temporarily
+                           :waiter/token waiter-token}
                         (cookie-support/add-encoded-cookie password oidc-challenge-cookie "" 0)
                         (utils/attach-waiter-source))))
                   request auth-params-map password auth-cookie-age-in-seconds)))
@@ -289,7 +290,7 @@
   [{:keys [allow-oidc-auth-api? allow-oidc-auth-services? jwt-auth-server oidc-authorize-uri
            oidc-num-challenge-cookies-allowed-in-request password]}
    request-handler]
-  (let [oidc-authority (-> oidc-authorize-uri (URI.) (.getAuthority))]
+  (let [oidc-authority (utils/uri-string->host oidc-authorize-uri)]
     (fn oidc-auth-handler [request]
       (cond
         (or (auth/request-authenticated? request)

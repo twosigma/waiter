@@ -189,7 +189,8 @@
                 :authorization/principal "john.doe"
                 :authorization/user "john.doe"
                 :authorization/metadata {:jwt-access-token access-token}
-                :waiter/response-source :waiter}
+                :waiter/response-source :waiter
+                :waiter/token "www.test.com"}
                response))))
 
     (with-redefs [cookie-support/decode-cookie (fn [cookie-value in-password]
