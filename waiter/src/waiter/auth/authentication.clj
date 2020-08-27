@@ -22,7 +22,8 @@
             [waiter.middleware :as middleware]
             [waiter.status-codes :refer :all]
             [waiter.util.ring-utils :as ru]
-            [waiter.util.utils :as utils]))
+            [waiter.util.utils :as utils])
+  (:import (java.net URI)))
 
 (def ^:const AUTH-COOKIE-EXPIRES-AT "x-auth-expires-at")
 
@@ -31,6 +32,10 @@
 (def ^:const auth-expires-at-uri "/.well-known/auth/expires-at")
 
 (def ^:const auth-keep-alive-uri "/.well-known/auth/keep-alive")
+
+(def ^:const auth-keep-alive-done-parameter "done=true")
+
+(def ^:const auth-keep-alive-done-parameter-replacement "waiter-redirect=true")
 
 (defprotocol Authenticator
   (wrap-auth-handler [this request-handler]
@@ -183,20 +188,21 @@
   Authenticator
   (wrap-auth-handler [_ request-handler]
     (let [single-user-prefix "SingleUser "]
-      (fn anonymous-handler [request]
+      (fn anonymous-handler [{:keys [headers] :as request}]
         (let [auth-header (select-auth-header request #(str/starts-with? % single-user-prefix))
+              {:strs [x-waiter-single-user]} headers
               auth-path (when auth-header
                           (str/trim (subs auth-header (count single-user-prefix))))]
           (cond
+            (or (= "unauthorized" x-waiter-single-user) (= "unauthorized" auth-path))
+            (utils/attach-waiter-source
+              {:headers {"www-authenticate" "SingleUser"} :status http-401-unauthorized})
+            (or (= "forbidden" x-waiter-single-user) (= "forbidden" auth-path))
+            (utils/attach-waiter-source
+              {:headers {} :status http-403-forbidden})
             (str/blank? auth-path)
             (let [auth-params-map (build-auth-params-map :single-user run-as-user)]
               (handle-request-auth request-handler request auth-params-map password))
-            (= "unauthorized" auth-path)
-            (utils/attach-waiter-source
-              {:headers {"www-authenticate" "SingleUser"} :status http-401-unauthorized})
-            (= "forbidden" auth-path)
-            (utils/attach-waiter-source
-              {:headers {} :status http-403-forbidden})
             :else
             (utils/attach-waiter-source
               {:headers {"x-waiter-single-user" (str "unknown operation: " auth-path)} :status http-400-bad-request})))))))
@@ -247,6 +253,20 @@
               principal (assoc "x-waiter-auth-principal" (str principal))
               user (assoc "x-waiter-auth-user" (str user))))))
 
+(defn remove-done-param-from-keep-alive-https-redirect
+  "Removes the done=true query parameter from the response when it is an https redirect to the keep-alive endpoint."
+  [{:keys [headers status] :as response}]
+  (let [{:strs [location]} headers
+        location-uri (when-not (str/blank? location)
+                       (URI. location))]
+    (cond-> response
+      (and location-uri
+           (contains? #{http-302-moved-temporarily http-307-temporary-redirect} status)
+           (= "https" (.getScheme location-uri))
+           (= auth-keep-alive-uri (.getPath location-uri)))
+      (assoc-in [:headers "location"]
+                (str/replace location auth-keep-alive-done-parameter auth-keep-alive-done-parameter-replacement)))))
+
 (defn process-auth-keep-alive-request
   "Handler to eagerly trigger authentication workflow even if cookie has not yet expired.
    This allows clients to pre-emptively refresh credentials before they expire.
@@ -254,7 +274,7 @@
    Invalid offset parameters result in a 400 error.
    Missing offset, soon to expire cookie (based on offset) or invalid auth cookie will trigger the authentication workflow.
    If cookie is expected to be live longer than offset value, return 204 No Content."
-  [password auth-handler {:keys [headers] :as request}]
+  [password auth-handler {:keys [headers query-string] :as request}]
   (let [{:strs [done offset]} (-> request ru/query-params-request :query-params)
         offset-parsed (utils/parse-int offset)
         decoded-auth-cookie (get-and-decode-auth-cookie-value headers password)
@@ -293,15 +313,22 @@
       (or (nil? offset)
           (not (decoded-auth-valid? decoded-auth-cookie))
           (>= (+ current-epoch-time offset-parsed) expires-at))
-      (-> request
-        (update-in [:headers "cookie"] remove-auth-cookie) ;; remove existing auth cookies
-        (assoc :waiter-api-call? false) ;; trigger auth as if it is a proxy request
-        (auth-handler)
-        (ru/update-response
-          (fn [response]
-            (-> response
-              (attach-authorization-headers)
-              (assoc :waiter/token waiter-token)))))
+      (do
+        (log/info "initiating authentication flow for keep-alive")
+        (-> request
+          ;; ensure loop back to this endpoint terminates
+          (assoc :query-string (str query-string (when query-string "&") auth-keep-alive-done-parameter))
+          ;; remove existing auth cookies
+          (update-in [:headers "cookie"] remove-auth-cookie)
+          ;; trigger auth as if it is a proxy request
+          (assoc :waiter-api-call? false)
+          (auth-handler)
+          (ru/update-response
+            (fn [response]
+              (-> response
+                (remove-done-param-from-keep-alive-https-redirect)
+                (attach-authorization-headers)
+                (assoc :waiter/token waiter-token))))))
 
       ;; default response
       :else

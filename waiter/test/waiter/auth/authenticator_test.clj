@@ -18,7 +18,8 @@
             [clojure.string :as str]
             [clojure.test :refer :all]
             [waiter.auth.authentication :refer :all]
-            [waiter.cookie-support :as cs])
+            [waiter.cookie-support :as cs]
+            [waiter.status-codes :refer :all])
   (:import (waiter.auth.authentication SingleUserAuthenticator)))
 
 (deftest test-one-user-authenticator
@@ -113,3 +114,27 @@
         (let [auth-cookie-handler (wrap-auth-cookie-handler password request-handler)]
           (is (= {:body {:principal nil :user nil}}
                  (auth-cookie-handler {:headers {"cookie" "x-waiter-auth=test-auth-cookie"}}))))))))
+
+(deftest test-remove-done-param-from-keep-alive-https-redirect
+  (doseq [test-status [http-200-ok http-301-moved-permanently http-401-unauthorized]]
+    (let [response {:headers {"location" "https://www.test.com/.well-known/auth/keep-alive?done=true&offset=1000&foo=bar"}
+                    :status test-status}]
+      (is (= response
+             (remove-done-param-from-keep-alive-https-redirect response)))))
+  (doseq [test-status [http-302-moved-temporarily http-307-temporary-redirect]]
+    (let [response {:status test-status}]
+      (is (= response
+             (remove-done-param-from-keep-alive-https-redirect response))))
+    (let [response {:headers {"location" "http://www.test.com/.well-known/auth/keep-alive?done=true&offset=1000&foo=bar"}
+                    :status test-status}]
+      (is (= response
+             (remove-done-param-from-keep-alive-https-redirect response))))
+    (let [response {:headers {"location" "https://www.test.com/.well-known/auth/keep-alive?offset=1000&foo=bar"}
+                    :status test-status}]
+      (is (= response
+             (remove-done-param-from-keep-alive-https-redirect response))))
+    (let [response {:headers {"location" "https://www.test.com/.well-known/auth/keep-alive?done=true&offset=1000&foo=bar"}
+                    :status test-status}]
+      (is (= {:headers {"location" "https://www.test.com/.well-known/auth/keep-alive?waiter-redirect=true&offset=1000&foo=bar"}
+              :status test-status}
+             (remove-done-param-from-keep-alive-https-redirect response))))))

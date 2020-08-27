@@ -508,7 +508,32 @@
                     (let [{:strs [location]} (:headers callback-response)
                           assertion-message (str {:headers (:headers callback-response)
                                                   :status (:status callback-response)})]
-                      (is (= (str "https://" waiter-token "/request-info") location) assertion-message)))))
+                      (is (= (str "https://" waiter-token "/request-info") location) assertion-message))
+
+                    (testing "keep-alive support"
+                      (let [request-cookies cookies
+                            {:keys [cookies headers] :as response}
+                            (make-request waiter-url "/.well-known/auth/keep-alive"
+                                          :cookies request-cookies
+                                          :disable-auth true
+                                          :headers {"accept-redirect" "yes"
+                                                    "host" waiter-token
+                                                    "x-waiter-debug" true
+                                                    "x-waiter-single-user" "unauthorized"}
+                                          :method :get
+                                          :query-params {"offset" "100000000"})
+                            {:strs [location]} headers
+                            response-auth-expires-at-cookie (extract-cookie cookies "x-auth-expires-at")
+                            response-waiter-auth-cookie (extract-cookie cookies "x-waiter-auth")]
+                        (assert-waiter-response response)
+                        (is (not (str/blank? location)) (str response))
+                        (when location
+                          (let [location-uri (URI. location)]
+                            (is (= "https" (.getScheme location-uri)) (str response))
+                            (is (= "/.well-known/auth/keep-alive" (.getPath location-uri)) (str response))
+                            (is (-> location-uri (.getRawQuery) (str) (str/includes? "done") not) (str response))))
+                        (is (nil? response-auth-expires-at-cookie))
+                        (is (nil? response-waiter-auth-cookie)))))))
               (finally
                 (when edit-token?
                   (delete-token-and-assert waiter-url waiter-token)))))))
