@@ -572,8 +572,9 @@
   the request is intended for Waiter itself or a service of Waiter."
   [valid-waiter-hostnames]
   (let [valid-waiter-hostnames (set/union valid-waiter-hostnames #{"localhost" "127.0.0.1"})
-        waiter-api-full-names #{"/app-name" oidc/oidc-callback-uri oidc/oidc-enabled-uri
-                                "/service-id" "/token" "/waiter-ping"}]
+        waiter-api-full-names #{auth/auth-expires-at-uri auth/auth-keep-alive-uri
+                                oidc/oidc-enabled-uri oidc/oidc-callback-uri
+                                "/app-name" "/service-id" "/token" "/waiter-ping"}]
     (fn waiter-request? [{:keys [uri headers]}]
       (let [{:strs [host]} headers]
         ; special urls that are always for Waiter (FIXME)
