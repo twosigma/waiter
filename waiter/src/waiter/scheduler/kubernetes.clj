@@ -298,8 +298,10 @@
       (log/error e "error converting pod to waiter service instance" pod)
       (comment "Returning nil on failure."))))
 
-(defn- pod-logs-live? [pod]
-  "Returns true if the given pod has its log fileserver running."
+(defn- pod-logs-live?
+  "Returns true if the given pod has its log fileserver running.
+   Assumes that the pod is configured to run with the fileserver container at index 1."
+  [pod]
   (and (some? pod)
        (nil? (get-in pod [:status :containerStatuses 1 :state :terminated]))))
 
@@ -586,6 +588,7 @@
                                 custom-options
                                 daemon-state
                                 fileserver
+                                fileserver-container-enabled?-fn
                                 http-client
                                 log-bucket-url
                                 max-patch-retries
@@ -698,8 +701,7 @@
          :message "Error while scaling waiter service"})))
 
   (retrieve-directory-content
-    [{:keys [http-client log-bucket-url watch-state]
-      {:keys [port scheme]} :fileserver :as scheduler}
+    [{{:keys [port scheme]} :fileserver :keys [fileserver-container-enabled?-fn] :as scheduler}
      service-id instance-id host browse-path]
     (let [{:keys [_ pod-name restart-number]} (unpack-instance-id instance-id)
           instance-base-dir (str "r" restart-number)
@@ -710,11 +712,16 @@
                         (str "/")
                         (not (str/starts-with? browse-path "/"))
                         (->> (str "/")))
-          {:strs [run-as-user]} (retrieve-service-description scheduler service-id)
+          {:strs [run-as-user] :as service-description} (retrieve-service-description scheduler service-id)
           pod (get-in @watch-state [:service-id->pod-id->pod service-id pod-name])]
       (ss/try+
-        (if (pod-logs-live? pod)
+        (cond
+          ;; fileserver is disabled on pod: return no logs information
+          (not (fileserver-container-enabled?-fn service-description))
+          nil
+
           ;; the pod is live: try accessing logs through sidecar
+          (pod-logs-live? pod)
           (when port
             (let [target-url (str scheme "://" host ":" port "/" instance-base-dir browse-path)
                   result (hu/http-request
@@ -725,7 +732,9 @@
                 (if (= "file" entry-type)
                   (assoc entry :url (str target-url entry-name))
                   (assoc entry :path (str browse-path entry-name))))))
+
           ;; the pod is not live: try accessing logs through S3
+          :else
           (when log-bucket-url
             (let [prefix (str run-as-user "/" service-id "/" pod-name "/" instance-base-dir browse-path)
                   query-string (str "delimiter=/&prefix=" prefix)
@@ -831,7 +840,7 @@
 
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
-  [{:keys [cluster-name fileserver pod-base-port pod-sigkill-delay-secs
+  [{:keys [cluster-name fileserver fileserver-container-enabled?-fn pod-base-port pod-sigkill-delay-secs
            replicaset-api-version reverse-proxy service-id->password-fn] :as scheduler}
    service-id
    {:strs [backend-proto cmd cpus grace-period-secs health-check-authentication health-check-interval-secs
@@ -885,7 +894,9 @@
         health-check-scheme (-> (or health-check-proto backend-proto) hu/backend-proto->scheme str/upper-case)
         health-check-url (sd/service-description->health-check-url service-description)
         memory (str mem "Mi")
-        service-hash (service-id->service-hash service-id)]
+        service-hash (service-id->service-hash service-id)
+        fileserver-enabled? (and (fileserver-container-enabled?-fn service-description)
+                                 (-> fileserver :port integer?))]
     (cond->
       {:kind "ReplicaSet"
        :apiVersion replicaset-api-version
@@ -897,6 +908,7 @@
                   :annotations {:waiter/service-id service-id}
                   :labels {:app k8s-name
                            :waiter/cluster cluster-name
+                           :waiter/fileserver (if fileserver-enabled? "enabled" "disabled")
                            :waiter/service-hash service-hash
                            :waiter/user run-as-user}
                   :name k8s-name
@@ -955,7 +967,8 @@
                                  :failureThreshold (inc health-check-max-consecutive-failures)
                                  :initialDelaySeconds grace-period-secs)))
       ;; Optional fileserver sidecar container
-      (integer? (:port fileserver))
+      ;; fileserver port must be provided and the container must be enabled on the service
+      fileserver-enabled?
       (update-in
         [:spec :template :spec :containers]
         conj
@@ -1212,7 +1225,9 @@
            pod-suffix-length replicaset-api-version replicaset-spec-builder restart-expiry-threshold reverse-proxy scheduler-name
            scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
            service-id->password-fn start-scheduler-syncer-fn url watch-retries]
-    {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver :as context}]
+    {:keys [fileserver-container-enabled?]} :replicaset-spec-builder
+    {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver
+    :as context}]
   {:pre [(schema/contains-kind-sub-map? authorizer)
          (or (zero? container-running-grace-secs) (pos-int? container-running-grace-secs))
          (or (nil? custom-options) (map? custom-options))
@@ -1221,6 +1236,8 @@
              (and (integer? fileserver-port)
                   (< 0 fileserver-port 65535)))
          (re-matches #"https?" fileserver-scheme)
+         (or (nil? fileserver-container-enabled?)
+             (symbol? fileserver-container-enabled?))
          (pos-int? (:socket-timeout http-options))
          (pos-int? (:conn-timeout http-options))
          (and (number? log-bucket-sync-secs) (<= 0 log-bucket-sync-secs 300))
@@ -1287,7 +1304,10 @@
                                              scheduler-name
                                              get-service->instances-fn
                                              scheduler-state-chan
-                                             scheduler-syncer-interval-secs)]
+                                             scheduler-syncer-interval-secs)
+        fileserver-container-enabled?-fn (if (some? fileserver-container-enabled?)
+                                           (utils/resolve-symbol! fileserver-container-enabled?)
+                                           (constantly true))]
 
     (let [daemon-state (atom nil)
           auth-renewer (when authentication
@@ -1300,6 +1320,7 @@
                                            custom-options
                                            daemon-state
                                            fileserver
+                                           fileserver-container-enabled?-fn
                                            http-client
                                            log-bucket-url
                                            max-patch-retries
