@@ -124,6 +124,11 @@
     #(instance? Pattern %) regex-pattern
     :else (s/constrained [(s/either non-empty-string regex-pattern)] not-empty)))
 
+(def valid-oidc-mode
+  "Validator for the OIDC mode.
+   Valid values are :disabled, :relaxed or :strict."
+  (s/pred #(contains? #{:relaxed :strict} %) 'invalid-oidc-mode))
+
 (def valid-jwt-authenticator-config
   "Validator for the Zookeeper connection configuration. We allow either
   a non-empty string (representing a connection string), or the keyword
@@ -139,6 +144,7 @@
      (s/required-key :jwks-url) non-empty-string
      (s/optional-key :max-expiry-duration-ms) positive-int
      (s/optional-key :oidc-authorize-uri) non-empty-string
+     (s/optional-key :oidc-default-mode) valid-oidc-mode
      (s/optional-key :oidc-num-challenge-cookies-allowed-in-request) positive-int
      (s/optional-key :oidc-token-uri) non-empty-string
      (s/required-key :subject-key) s/Keyword

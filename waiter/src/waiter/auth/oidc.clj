@@ -78,16 +78,17 @@
       (throw (ex-info "Query parameter code is missing" bad-request-map)))
     (when (str/blank? state)
       (throw (ex-info "Query parameter state is missing" bad-request-map)))
-    (let [{:keys [identifier] :as state-map}
+    (let [{:keys [identifier oidc-mode redirect-uri] :as state-map}
           (try
             (parse-state-code state password)
             (catch Throwable throwable
               (throw (ex-info "Unable to parse state"
                               bad-request-map throwable))))]
       (when-not (and (map? state-map)
-                     (string? (get state-map :redirect-uri))
+                     (string? redirect-uri)
                      (string? identifier)
-                     (not (str/blank? identifier)))
+                     (not (str/blank? identifier))
+                     (contains? #{:relaxed :strict} oidc-mode))
         (throw (ex-info "The state query parameter is invalid" bad-request-map)))
       (let [oidc-challenge-cookie (str oidc-challenge-cookie-prefix identifier)
             challenge-cookie (some-> headers
@@ -146,9 +147,12 @@
                     _ (when (instance? Throwable result-map-or-throwable)
                         (throw result-map-or-throwable))
                     {:keys [expiry-time subject]} result-map-or-throwable
-                    _ (log/info "authenticated subject is" subject)
-                    auth-params-map (auth/build-auth-params-map :oidc subject {:jwt-access-token access-token})
-                    auth-cookie-age-in-seconds (- expiry-time (jwt/current-time-secs))]
+                    {:keys [oidc-mode]} state-map
+                    _ (log/info "authenticated subject is" subject "and oidc mode is" oidc-mode)
+                    ;; use token expiry time only in strict mode, else allow default value for cookie age to be chosen
+                    auth-cookie-age-in-seconds (when (= :strict oidc-mode)
+                                                 (- expiry-time (jwt/current-time-secs)))
+                    auth-params-map (auth/build-auth-params-map :oidc subject {:jwt-access-token access-token})]
                 (auth/handle-request-auth
                   (constantly
                     (let [{:keys [identifier redirect-uri]} state-map
@@ -172,7 +176,7 @@
 
 (defn trigger-authorize-redirect
   "Triggers a 302 temporary redirect response to the authorize endpoint."
-  [jwt-auth-server password {:keys [query-string request-method uri] :as request} response]
+  [jwt-auth-server oidc-mode password {:keys [query-string request-method uri] :as request} response]
   (let [request-host (utils/request->host request)
         request-scheme (utils/request->scheme request)
         make-redirect-uri (fn make-oidc-redirect-uri [transform-host]
@@ -182,6 +186,7 @@
       (let [code-verifier (create-code-verifier)
             cookie-identifier (create-code-identifier code-verifier)
             state-data {:identifier cookie-identifier
+                        :oidc-mode oidc-mode
                         :redirect-uri (make-redirect-uri identity)}
             state-code (create-state-code state-data password)
             authorize-uri (jwt/retrieve-authorize-url
@@ -206,29 +211,35 @@
 
 (defn make-oidc-auth-response-updater
   "Returns a response updater that rewrites 401 waiter responses to 302 redirects."
-  [jwt-auth-server password request]
+  [jwt-auth-server oidc-mode password request]
   (fn update-oidc-auth-response [{:keys [status] :as response}]
     (if (and (= status http-401-unauthorized)
              (utils/waiter-generated-response? response))
       ;; issue 302 redirect
-      (trigger-authorize-redirect jwt-auth-server password request response)
+      (trigger-authorize-redirect jwt-auth-server oidc-mode password request response)
       ;; non-401 response, avoid authentication challenge
       response)))
 
-(defn oidc-enabled-on-service?
-  "Returns true if OIDC auth is enabled for the service.
-   Result depends on whether OIDC auth is configured explicitly based on env variable or computed using allow-oidc-auth-services?"
-  [allow-oidc-auth-services? request]
+(defn retrieve-oidc-mode-on-service
+  "Returns the OIDC mode, one of :disabled :relaxed or :strict, if OIDC auth is enabled for the service.
+   Result depends on whether OIDC auth is configured explicitly based on env variable or
+   computed using allow-oidc-auth-services? and oidc-default-mode."
+  [allow-oidc-auth-services? oidc-default-mode request]
   ;; service requests will enable OIDC auth based on env variable or when absent, allow-oidc-auth-services?
   (let [use-oidc-auth-env (get-in request [:waiter-discovery :service-description-template "env" "USE_OIDC_AUTH"])]
-    (if (some? use-oidc-auth-env) (= "true" use-oidc-auth-env) allow-oidc-auth-services?)))
+    (if (some? use-oidc-auth-env)
+      (cond
+        (contains? #{"relaxed" "true"} use-oidc-auth-env) :relaxed
+        (= "strict" use-oidc-auth-env) :strict
+        :else :disabled)
+      (if allow-oidc-auth-services? oidc-default-mode :disabled))))
 
 (defn oidc-enabled-request-handler
   "Handler for the query that responds whether OIDC is enabled on the host.
    It returns a 200 response when OIDC authentication is enabled for the request host.
    It returns a 404 response when OIDC authentication is not enabled for request host.
    It returns a 501 response when OIDC authentication is not configured on Waiter."
-  [{:keys [allow-oidc-auth-api? allow-oidc-auth-services?] :as oidc-authenticator} waiter-hostnames request]
+  [{:keys [allow-oidc-auth-api? allow-oidc-auth-services? oidc-default-mode] :as oidc-authenticator} waiter-hostnames request]
   (if (nil? oidc-authenticator)
     (utils/exception->response
       (throw (ex-info "OIDC authentication disabled" {:status http-501-not-implemented}))
@@ -238,7 +249,7 @@
           waiter-host? (contains? waiter-hostnames client-id)
           enabled? (if waiter-host?
                      (true? allow-oidc-auth-api?)
-                     (oidc-enabled-on-service? allow-oidc-auth-services? request))
+                     (not= :disabled (retrieve-oidc-mode-on-service allow-oidc-auth-services? oidc-default-mode request)))
           response-status (if enabled? http-200-ok http-404-not-found)]
       (utils/clj->json-response
         {:client-id client-id
@@ -246,14 +257,14 @@
          :token? (not waiter-host?)}
         :status response-status))))
 
-(defn oidc-enabled-on-request?
+(defn request->oidc-mode
   "Returns true if OIDC auth is enabled for the request."
-  [allow-oidc-auth-api? allow-oidc-auth-services? {:keys [waiter-api-call?] :as request}]
-  (or
-    ;; delegate to oidc-enabled-on-service? for service requests
-    (and (not waiter-api-call?) (oidc-enabled-on-service? allow-oidc-auth-services? request))
+  [allow-oidc-auth-api? allow-oidc-auth-services? oidc-default-mode {:keys [waiter-api-call?] :as request}]
+  (if waiter-api-call?
     ;; waiter api requests will enable OIDC auth based on allow-oidc-auth-api?
-    (and waiter-api-call? allow-oidc-auth-api?)))
+    (if allow-oidc-auth-api? oidc-default-mode :disabled)
+    ;; delegate to oidc-enabled-on-service? for service requests
+    (retrieve-oidc-mode-on-service allow-oidc-auth-services? oidc-default-mode request)))
 
 ;; Accept-Redirect request header "yes" means the user-agent will follow redirects.
 ;; Accept-Redirect-Auth request header indicates which authorities the user-agent is willing to redirect to and authenticate at.
@@ -288,34 +299,36 @@
 (defn wrap-auth-handler
   "Wraps the request handler with a handler to trigger OIDC+PKCE authentication."
   [{:keys [allow-oidc-auth-api? allow-oidc-auth-services? jwt-auth-server oidc-authorize-uri
-           oidc-num-challenge-cookies-allowed-in-request password]}
+           oidc-default-mode oidc-num-challenge-cookies-allowed-in-request password]}
    request-handler]
   (let [oidc-authority (utils/uri-string->host oidc-authorize-uri)]
     (fn oidc-auth-handler [request]
-      (cond
-        (or (auth/request-authenticated? request)
-            (not (oidc-enabled-on-request? allow-oidc-auth-api? allow-oidc-auth-services? request))
-            ;; OIDC auth is no-op when request cannot be redirected
-            (not (supports-redirect? oidc-authority request))
-            ;; OIDC auth is avoided if client already has too many challenge cookies
-            (too-many-oidc-challenge-cookies? request oidc-num-challenge-cookies-allowed-in-request))
-        (request-handler request)
-
-        :else
-        (ru/update-response
+      (let [oidc-mode-delay (delay (request->oidc-mode allow-oidc-auth-api? allow-oidc-auth-services? oidc-default-mode request))]
+        (cond
+          (or (auth/request-authenticated? request)
+              (= :disabled @oidc-mode-delay)
+              ;; OIDC auth is no-op when request cannot be redirected
+              (not (supports-redirect? oidc-authority request))
+              ;; OIDC auth is avoided if client already has too many challenge cookies
+              (too-many-oidc-challenge-cookies? request oidc-num-challenge-cookies-allowed-in-request))
           (request-handler request)
-          (make-oidc-auth-response-updater jwt-auth-server password request))))))
 
-(defrecord OidcAuthenticator [allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri
+          :else
+          (ru/update-response
+            (request-handler request)
+            (make-oidc-auth-response-updater jwt-auth-server @oidc-mode-delay password request)))))))
+
+(defrecord OidcAuthenticator [allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri oidc-default-mode
                               jwt-auth-server jwt-validator oidc-num-challenge-cookies-allowed-in-request password])
 
 (defn create-oidc-authenticator
   "Factory function for creating OIDC authenticator middleware"
   [jwt-auth-server jwt-validator
-   {:keys [allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri
+   {:keys [allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri oidc-default-mode
            oidc-num-challenge-cookies-allowed-in-request password]
     :or {allow-oidc-auth-api? false
          allow-oidc-auth-services? false
+         oidc-default-mode :relaxed
          oidc-num-challenge-cookies-allowed-in-request 20}}]
   {:pre [(satisfies? jwt/AuthServer jwt-auth-server)
          (some? jwt-validator)
@@ -323,6 +336,7 @@
          (boolean? allow-oidc-auth-services?)
          (integer? oidc-num-challenge-cookies-allowed-in-request)
          (not (str/blank? oidc-authorize-uri))
+         (contains? #{:relaxed :strict} oidc-default-mode)
          (not-empty password)]}
-  (->OidcAuthenticator allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri
+  (->OidcAuthenticator allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri oidc-default-mode
                        jwt-auth-server jwt-validator oidc-num-challenge-cookies-allowed-in-request password))

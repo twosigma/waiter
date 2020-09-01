@@ -32,6 +32,7 @@
   (let [password [:cached "password"]
         identifier (utils/unique-identifier)
         state-map {:identifier identifier
+                   :oidc-mode :strict
                    :redirect-uri "https://www.test.com/redirect-uri"}
         state-code (create-state-code state-map password)
         access-code (str "access-code-" (rand-int 1000))
@@ -139,107 +140,109 @@
             (validate-oidc-callback-request password request))))))
 
 (deftest test-oidc-callback-request-handler
-  (let [password [:cached "password"]
-        identifier (utils/unique-identifier)
-        state-map {:identifier identifier
-                   :redirect-uri "https://www.test.com/redirect-uri"}
-        state-code (create-state-code state-map password)
-        access-code (str "access-code-" (rand-int 1000))
-        challenge-cookie (str "challenge-cookie-" (rand-int 1000))
-        access-token (str "access-token-" (rand-int 1000))
-        subject-key :subject
-        current-time-ms (System/currentTimeMillis)
-        current-time-secs (/ current-time-ms 1000)]
+  (doseq [oidc-mode [:relaxed :strict]]
+    (let [password [:cached "password"]
+          identifier (utils/unique-identifier)
+          state-map {:identifier identifier
+                     :oidc-mode oidc-mode
+                     :redirect-uri "https://www.test.com/redirect-uri"}
+          state-code (create-state-code state-map password)
+          access-code (str "access-code-" (rand-int 1000))
+          challenge-cookie (str "challenge-cookie-" (rand-int 1000))
+          access-token (str "access-token-" (rand-int 1000))
+          subject-key :subject
+          current-time-ms (System/currentTimeMillis)
+          current-time-secs (/ current-time-ms 1000)]
 
-    (with-redefs [cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds]
-                                                      (is (= password in-password))
-                                                      (assoc-in response
-                                                                [:cookies name]
-                                                                {:age (int age-in-seconds)
-                                                                 :value value}))
-                  cookie-support/decode-cookie (fn [cookie-value in-password]
-                                                 (is (= password in-password))
-                                                 {:code-verifier (str "decoded:" cookie-value)
-                                                  :expiry-time (+ current-time-ms 10000)})
-                  jwt/current-time-secs (constantly current-time-secs)
-                  jwt/get-key-id->jwk (constantly {})
-                  jwt/request-access-token (fn [& _]
-                                             (let [result-chan (async/promise-chan)]
-                                               (async/>!! result-chan access-token)
-                                               result-chan))
-                  jwt/extract-claims (constantly {:expiry-time (+ current-time-secs 1000)
-                                                  :subject "john.doe"})
-                  t/now (constantly (tc/from-long current-time-ms))]
-      (let [request {:headers {"cookie" (str oidc-challenge-cookie-prefix identifier "=" challenge-cookie)}
-                     :query-string (str "code=" access-code "&state=" state-code)
-                     :scheme :https}
-            oidc-authenticator {:password password
-                                :subject-key subject-key}
-            response-chan (oidc-callback-request-handler oidc-authenticator request)
-            response (async/<!! response-chan)]
-        (is (= {:cookies {"x-waiter-auth" {:age 1000
-                                           :value ["john.doe" current-time-ms {:jwt-access-token access-token}]}
-                          (str oidc-challenge-cookie-prefix identifier) {:age 0
-                                                                         :value ""}}
-                :headers {"cache-control" "no-store"
-                          "content-security-policy" "default-src 'none'; frame-ancestors 'none'"
-                          "location" "https://www.test.com/redirect-uri"}
-                :status http-302-moved-temporarily
-                :authorization/method :oidc
-                :authorization/principal "john.doe"
-                :authorization/user "john.doe"
-                :authorization/metadata {:jwt-access-token access-token}
-                :waiter/response-source :waiter
-                :waiter/token "www.test.com"}
-               response))))
+      (with-redefs [cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds]
+                                                        (is (= password in-password))
+                                                        (assoc-in response
+                                                                  [:cookies name]
+                                                                  {:age (int age-in-seconds)
+                                                                   :value value}))
+                    cookie-support/decode-cookie (fn [cookie-value in-password]
+                                                   (is (= password in-password))
+                                                   {:code-verifier (str "decoded:" cookie-value)
+                                                    :expiry-time (+ current-time-ms 10000)})
+                    jwt/current-time-secs (constantly current-time-secs)
+                    jwt/get-key-id->jwk (constantly {})
+                    jwt/request-access-token (fn [& _]
+                                               (let [result-chan (async/promise-chan)]
+                                                 (async/>!! result-chan access-token)
+                                                 result-chan))
+                    jwt/extract-claims (constantly {:expiry-time (+ current-time-secs 1000)
+                                                    :subject "john.doe"})
+                    t/now (constantly (tc/from-long current-time-ms))]
+        (let [request {:headers {"cookie" (str oidc-challenge-cookie-prefix identifier "=" challenge-cookie)}
+                       :query-string (str "code=" access-code "&state=" state-code)
+                       :scheme :https}
+              oidc-authenticator {:password password
+                                  :subject-key subject-key}
+              response-chan (oidc-callback-request-handler oidc-authenticator request)
+              response (async/<!! response-chan)]
+          (is (= {:cookies {"x-waiter-auth" {:age (if (= :strict oidc-mode) 1000 (-> 1 t/days t/in-seconds))
+                                             :value ["john.doe" current-time-ms {:jwt-access-token access-token}]}
+                            (str oidc-challenge-cookie-prefix identifier) {:age 0
+                                                                           :value ""}}
+                  :headers {"cache-control" "no-store"
+                            "content-security-policy" "default-src 'none'; frame-ancestors 'none'"
+                            "location" "https://www.test.com/redirect-uri"}
+                  :status http-302-moved-temporarily
+                  :authorization/method :oidc
+                  :authorization/principal "john.doe"
+                  :authorization/user "john.doe"
+                  :authorization/metadata {:jwt-access-token access-token}
+                  :waiter/response-source :waiter
+                  :waiter/token "www.test.com"}
+                 response))))
 
-    (with-redefs [cookie-support/decode-cookie (fn [cookie-value in-password]
-                                                 (is (= password in-password))
-                                                 {:code-verifier (str "decoded:" cookie-value)
-                                                  :expiry-time (+ current-time-ms 10000)})
-                  jwt/get-key-id->jwk (constantly {})
-                  jwt/request-access-token (fn [& _]
-                                             (let [result-chan (async/promise-chan)]
-                                               (async/>!! result-chan access-token)
-                                               result-chan))
-                  jwt/validate-access-token (fn [& _]
-                                              (throw (ex-info "Created from validate-access-token" {})))]
-      (let [request {:headers {"accept" "application/json"
-                               "cookie" (str oidc-challenge-cookie-prefix identifier "=" challenge-cookie)}
-                     :query-string (str "code=" access-code "&state=" state-code)
-                     :scheme :https}
-            oidc-authenticator {:password password
-                                :subject-key subject-key}
-            response-chan (oidc-callback-request-handler oidc-authenticator request)
-            response (async/<!! response-chan)]
-        (is (= {:headers {"content-type" "application/json"}
-                :status http-401-unauthorized
-                :waiter/response-source :waiter}
-               (dissoc response :body)))
-        (is (str/includes? (-> response :body str) "Error in retrieving access token"))))
+      (with-redefs [cookie-support/decode-cookie (fn [cookie-value in-password]
+                                                   (is (= password in-password))
+                                                   {:code-verifier (str "decoded:" cookie-value)
+                                                    :expiry-time (+ current-time-ms 10000)})
+                    jwt/get-key-id->jwk (constantly {})
+                    jwt/request-access-token (fn [& _]
+                                               (let [result-chan (async/promise-chan)]
+                                                 (async/>!! result-chan access-token)
+                                                 result-chan))
+                    jwt/validate-access-token (fn [& _]
+                                                (throw (ex-info "Created from validate-access-token" {})))]
+        (let [request {:headers {"accept" "application/json"
+                                 "cookie" (str oidc-challenge-cookie-prefix identifier "=" challenge-cookie)}
+                       :query-string (str "code=" access-code "&state=" state-code)
+                       :scheme :https}
+              oidc-authenticator {:password password
+                                  :subject-key subject-key}
+              response-chan (oidc-callback-request-handler oidc-authenticator request)
+              response (async/<!! response-chan)]
+          (is (= {:headers {"content-type" "application/json"}
+                  :status http-401-unauthorized
+                  :waiter/response-source :waiter}
+                 (dissoc response :body)))
+          (is (str/includes? (-> response :body str) "Error in retrieving access token"))))
 
-    (with-redefs [cookie-support/decode-cookie (fn [cookie-value in-password]
-                                                 (is (= password in-password))
-                                                 {:code-verifier (str "decoded:" cookie-value)
-                                                  :expiry-time (+ current-time-ms 10000)})
-                  jwt/get-key-id->jwk (constantly {})
-                  jwt/request-access-token (fn [& _]
-                                             (let [result-chan (async/promise-chan)]
-                                               (async/>!! result-chan (ex-info "Created from request-access-token" {}))
-                                               result-chan))]
-      (let [request {:headers {"accept" "application/json"
-                               "cookie" (str oidc-challenge-cookie-prefix identifier "=" challenge-cookie)}
-                     :query-string (str "code=" access-code "&state=" state-code)
-                     :scheme :https}
-            oidc-authenticator {:password password
-                                :subject-key subject-key}
-            response-chan (oidc-callback-request-handler oidc-authenticator request)
-            response (async/<!! response-chan)]
-        (is (= {:headers {"content-type" "application/json"}
-                :status http-401-unauthorized
-                :waiter/response-source :waiter}
-               (dissoc response :body)))
-        (is (str/includes? (-> response :body str) "Error in retrieving access token"))))))
+      (with-redefs [cookie-support/decode-cookie (fn [cookie-value in-password]
+                                                   (is (= password in-password))
+                                                   {:code-verifier (str "decoded:" cookie-value)
+                                                    :expiry-time (+ current-time-ms 10000)})
+                    jwt/get-key-id->jwk (constantly {})
+                    jwt/request-access-token (fn [& _]
+                                               (let [result-chan (async/promise-chan)]
+                                                 (async/>!! result-chan (ex-info "Created from request-access-token" {}))
+                                                 result-chan))]
+        (let [request {:headers {"accept" "application/json"
+                                 "cookie" (str oidc-challenge-cookie-prefix identifier "=" challenge-cookie)}
+                       :query-string (str "code=" access-code "&state=" state-code)
+                       :scheme :https}
+              oidc-authenticator {:password password
+                                  :subject-key subject-key}
+              response-chan (oidc-callback-request-handler oidc-authenticator request)
+              response (async/<!! response-chan)]
+          (is (= {:headers {"content-type" "application/json"}
+                  :status http-401-unauthorized
+                  :waiter/response-source :waiter}
+                 (dissoc response :body)))
+          (is (str/includes? (-> response :body str) "Error in retrieving access token")))))))
 
 (deftest test-update-oidc-auth-response
   (let [request-host "www.host.com:8080"
@@ -254,73 +257,75 @@
         oidc-auth-server (jwt/->JwtAuthServer nil "jwks-url" (atom nil) oidc-authorize-uri nil)
         current-time-ms (System/currentTimeMillis)
         identifier-prefix "code-identifier-"]
-    (with-redefs [cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds]
-                                                      (is (= password in-password))
-                                                      (is (= challenge-cookie-duration-secs age-in-seconds))
-                                                      (assoc response :cookie {name value}))
-                  utils/unique-identifier (constantly "123456")
-                  t/now (constantly (tc/from-long current-time-ms))
-                  create-code-identifier (fn [code-verifier] (str identifier-prefix code-verifier))
-                  create-code-verifier (constantly code-verifier)
-                  create-state-code (fn [state-data in-password]
-                                      (is (= password in-password))
-                                      (is (= {:identifier (str identifier-prefix code-verifier)
-                                              :redirect-uri (str "https://" request-host "/test?some=query-string")}
-                                             state-data))
-                                      state-code)]
+    (doseq [oidc-default-mode [:relaxed :strict]]
+      (with-redefs [cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds]
+                                                        (is (= password in-password))
+                                                        (is (= challenge-cookie-duration-secs age-in-seconds))
+                                                        (assoc response :cookie {name value}))
+                    utils/unique-identifier (constantly "123456")
+                    t/now (constantly (tc/from-long current-time-ms))
+                    create-code-identifier (fn [code-verifier] (str identifier-prefix code-verifier))
+                    create-code-verifier (constantly code-verifier)
+                    create-state-code (fn [state-data in-password]
+                                        (is (= password in-password))
+                                        (is (= {:identifier (str identifier-prefix code-verifier)
+                                                :oidc-mode oidc-default-mode
+                                                :redirect-uri (str "https://" request-host "/test?some=query-string")}
+                                               state-data))
+                                        state-code)]
 
-      (testing "http request redirected to https"
-        (doseq [request-method [:get :post]]
-          (let [request (assoc request :request-method request-method :scheme :http)
-                update-response (make-oidc-auth-response-updater oidc-auth-server password request)]
-            (let [response {:status http-401-unauthorized
-                            :waiter/response-source :waiter}]
-              (is (= (assoc response
-                       :headers {"location" "https://www.host.com/test?some=query-string"}
-                       :status (if (= request-method :get) http-302-moved-temporarily http-307-temporary-redirect))
-                     (update-response response)))))))
+        (testing "http request redirected to https"
+          (doseq [request-method [:get :post]]
+            (let [request (assoc request :request-method request-method :scheme :http)
+                  update-response (make-oidc-auth-response-updater oidc-auth-server oidc-default-mode password request)]
+              (let [response {:status http-401-unauthorized
+                              :waiter/response-source :waiter}]
+                (is (= (assoc response
+                         :headers {"location" "https://www.host.com/test?some=query-string"}
+                         :status (if (= request-method :get) http-302-moved-temporarily http-307-temporary-redirect))
+                       (update-response response)))))))
 
-      (let [request (assoc request :scheme :https)
-            update-response (make-oidc-auth-response-updater oidc-auth-server password request)]
+        (let [request (assoc request :scheme :https)
+              update-response (make-oidc-auth-response-updater oidc-auth-server oidc-default-mode password request)]
 
-        (let [response {:body (utils/unique-identifier)
-                        :status http-200-ok}]
-          (is (= response (update-response response))))
+          (let [response {:body (utils/unique-identifier)
+                          :status http-200-ok}]
+            (is (= response (update-response response))))
 
-        (let [response {:body (utils/unique-identifier)
-                        :status http-401-unauthorized
-                        :waiter/response-source :backend}]
-          (is (= response (update-response response))))
+          (let [response {:body (utils/unique-identifier)
+                          :status http-401-unauthorized
+                          :waiter/response-source :backend}]
+            (is (= response (update-response response))))
 
-        (let [response {:body (utils/unique-identifier)
-                        :status http-401-unauthorized
-                        :waiter/response-source :waiter}
-              code-challenge (utils/b64-encode-sha256 code-verifier)
-              redirect-uri-encoded (cookie-support/url-encode (str "https://" request-host oidc-callback-uri))
-              authorize-uri (str oidc-authorize-uri "?"
-                                 "client_id=www.host.com&"
-                                 "code_challenge=" code-challenge "&"
-                                 "code_challenge_method=S256&"
-                                 "nonce=123456&"
-                                 "redirect_uri=" redirect-uri-encoded "&"
-                                 "response_type=code&"
-                                 "scope=openid&"
-                                 "state=" state-code)]
-          (is (= (-> response
-                   (assoc :cookie {(str oidc-challenge-cookie-prefix identifier-prefix code-verifier)
-                                   {:code-verifier code-verifier
-                                    :expiry-time (-> (t/now)
-                                                   (t/plus (t/seconds challenge-cookie-duration-secs))
-                                                   (tc/to-long))}}
-                          :status http-302-moved-temporarily)
-                   (update :headers assoc
-                           "cache-control" "no-store"
-                           "content-security-policy" "default-src 'none'; frame-ancestors 'none'"
-                           "location" authorize-uri))
-                 (update-response response))))))))
+          (let [response {:body (utils/unique-identifier)
+                          :status http-401-unauthorized
+                          :waiter/response-source :waiter}
+                code-challenge (utils/b64-encode-sha256 code-verifier)
+                redirect-uri-encoded (cookie-support/url-encode (str "https://" request-host oidc-callback-uri))
+                authorize-uri (str oidc-authorize-uri "?"
+                                   "client_id=www.host.com&"
+                                   "code_challenge=" code-challenge "&"
+                                   "code_challenge_method=S256&"
+                                   "nonce=123456&"
+                                   "redirect_uri=" redirect-uri-encoded "&"
+                                   "response_type=code&"
+                                   "scope=openid&"
+                                   "state=" state-code)]
+            (is (= (-> response
+                     (assoc :cookie {(str oidc-challenge-cookie-prefix identifier-prefix code-verifier)
+                                     {:code-verifier code-verifier
+                                      :expiry-time (-> (t/now)
+                                                     (t/plus (t/seconds challenge-cookie-duration-secs))
+                                                     (tc/to-long))}}
+                            :status http-302-moved-temporarily)
+                     (update :headers assoc
+                             "cache-control" "no-store"
+                             "content-security-policy" "default-src 'none'; frame-ancestors 'none'"
+                             "location" authorize-uri))
+                   (update-response response)))))))))
 
 (deftest test-wrap-auth-handler
-  (with-redefs [trigger-authorize-redirect (fn [_ _ _ response]
+  (with-redefs [trigger-authorize-redirect (fn [_ _ _ _ response]
                                              (assoc response :processed-by :oidc-updater))]
     (let [request-handler (fn [request] (assoc request
                                           :processed-by :request-handler
@@ -480,34 +485,48 @@
       (is (instance? OidcAuthenticator (make-jwt-authenticator (assoc config :allow-oidc-auth-api? true))))
       (is (instance? OidcAuthenticator (make-jwt-authenticator (assoc config :allow-oidc-auth-api? false))))
       (is (instance? OidcAuthenticator (make-jwt-authenticator (assoc config :allow-oidc-auth-services? true))))
-      (is (instance? OidcAuthenticator (make-jwt-authenticator (assoc config :allow-oidc-auth-services? false)))))
+      (is (instance? OidcAuthenticator (make-jwt-authenticator (assoc config :allow-oidc-auth-services? false))))
+      (doseq [oidc-default-mode [:relaxed :strict]]
+        (is (instance? OidcAuthenticator (make-jwt-authenticator (assoc config :oidc-default-mode oidc-default-mode))))))
 
     (testing "invalid configuration"
       (is (thrown? Throwable (make-jwt-authenticator (assoc config :allow-oidc-auth-api? "true"))))
       (is (thrown? Throwable (make-jwt-authenticator (assoc config :allow-oidc-auth-services? "true"))))
       (is (thrown? Throwable (make-jwt-authenticator (dissoc config :oidc-authorize-uri))))
+      (is (thrown? Throwable (make-jwt-authenticator (assoc config :oidc-default-mode :disabled))))
       (is (thrown? Throwable (make-jwt-authenticator (assoc config :oidc-num-challenge-cookies-allowed-in-request "20"))))
       (is (thrown? Throwable (make-jwt-authenticator (dissoc config :password)))))))
 
 (deftest test-oidc-enabled-on-request?
   (doseq [allow-oidc-auth-api? [true false]]
     (doseq [allow-oidc-auth-services? [true false]]
-      (doseq [env-value [true false]]
-        (let [assertion-message (str {:env-value env-value
-                                      :allow-oidc-auth-api? allow-oidc-auth-api?
-                                      :allow-oidc-auth-services? allow-oidc-auth-services?})]
-          (let [request {:waiter-api-call? false
-                         :waiter-discovery {:service-description-template {"env" {"USE_OIDC_AUTH" (str env-value)}}}}]
-            (is (= env-value (oidc-enabled-on-request? allow-oidc-auth-api? allow-oidc-auth-services? request))
-                assertion-message))
-          (let [request {:waiter-api-call? false
-                         :waiter-discovery {:service-description-template {}}}]
-            (is (= allow-oidc-auth-services? (oidc-enabled-on-request? allow-oidc-auth-api? allow-oidc-auth-services? request))
-                assertion-message))
-          (let [request {:waiter-api-call? true
-                         :waiter-discovery {:service-description-template {}}}]
-            (is (= allow-oidc-auth-api? (oidc-enabled-on-request? allow-oidc-auth-api? allow-oidc-auth-services? request))
-                assertion-message)))))))
+      (doseq [oidc-default-mode [:strict :relaxed]]
+        (let [assertion-message {:allow-oidc-auth-api? allow-oidc-auth-api?
+                                 :allow-oidc-auth-services? allow-oidc-auth-services?
+                                 :oidc-default-mode oidc-default-mode}]
+          (doseq [env-value [:disabled :relaxed :strict]]
+            (let [assertion-message (str (assoc assertion-message :env-value env-value))
+                  request {:waiter-api-call? false
+                           :waiter-discovery {:service-description-template {"env" {"USE_OIDC_AUTH" (name env-value)}}}}]
+              (is (= env-value (request->oidc-mode allow-oidc-auth-api? allow-oidc-auth-services? oidc-default-mode request))
+                  assertion-message)))
+          (doseq [env-value [true false]]
+            (let [assertion-message (str (assoc assertion-message :env-value env-value))]
+              (let [request {:waiter-api-call? false
+                             :waiter-discovery {:service-description-template {"env" {"USE_OIDC_AUTH" (str env-value)}}}}]
+                (is (= (if env-value :relaxed :disabled)
+                       (request->oidc-mode allow-oidc-auth-api? allow-oidc-auth-services? oidc-default-mode request))
+                    assertion-message))
+              (let [request {:waiter-api-call? false
+                             :waiter-discovery {:service-description-template {}}}]
+                (is (= (if allow-oidc-auth-services? oidc-default-mode :disabled)
+                       (request->oidc-mode allow-oidc-auth-api? allow-oidc-auth-services? oidc-default-mode request))
+                    assertion-message))
+              (let [request {:waiter-api-call? true
+                             :waiter-discovery {:service-description-template {}}}]
+                (is (= (if allow-oidc-auth-api? oidc-default-mode :disabled)
+                       (request->oidc-mode allow-oidc-auth-api? allow-oidc-auth-services? oidc-default-mode request))
+                    assertion-message)))))))))
 
 (deftest test-oidc-enabled-request-handler
   (is (thrown-with-msg? ExceptionInfo #"OIDC authentication disabled"

@@ -259,6 +259,10 @@
                               :max-expiry-duration-ms 86400000
                               ;; (optional) url of the authorization server authorize endpoint:
                               :oidc-authorize-uri "http://127.0.0.1:8040/authorize"
+                              ;; (optional) one of :relaxed or :strict
+                              ;; in relaxed mode, the Waiter auth cookie after OIDC auth has an expiry time of 1 day
+                              ;; in strict mode, the Waiter auth cookie after OIDC auth has an expiry time provided in the JWT access token
+                              :oidc-default-mode :relaxed
                               ;; (optional) maximum number of OIDC challenge cookies in the request beyond which
                               ;; the OIDC auth flow will not be triggered on 401 responses.
                               ;; The default value is 20
