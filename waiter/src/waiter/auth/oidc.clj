@@ -20,11 +20,9 @@
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [digest]
-            [schema.core :as s]
             [waiter.auth.authentication :as auth]
             [waiter.auth.jwt :as jwt]
             [waiter.cookie-support :as cookie-support]
-            [waiter.schema :as schema]
             [waiter.status-codes :refer :all]
             [waiter.util.http-utils :as hu]
             [waiter.util.ring-utils :as ru]
@@ -338,7 +336,7 @@
          (boolean? allow-oidc-auth-services?)
          (integer? oidc-num-challenge-cookies-allowed-in-request)
          (not (str/blank? oidc-authorize-uri))
-         (nil? (s/check schema/valid-oidc-mode oidc-default-mode))
+         (contains? #{:relaxed :strict} oidc-default-mode)
          (not-empty password)]}
   (->OidcAuthenticator allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri oidc-default-mode
                        jwt-auth-server jwt-validator oidc-num-challenge-cookies-allowed-in-request password))
