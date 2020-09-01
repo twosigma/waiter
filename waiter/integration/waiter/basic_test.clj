@@ -823,7 +823,7 @@
             (let [{:keys [cookies headers] :as response}
                   (make-request waiter-url "/.well-known/auth/keep-alive"
                                 :cookies request-cookies
-                                :disable-auth false
+                                :disable-auth false ;; avoid eagerly sending kerberos authorization headers
                                 :headers {"x-waiter-debug" true}
                                 :method :get
                                 :query-params {"offset" "100000000"})
@@ -840,7 +840,7 @@
             (let [{:keys [cookies] :as response}
                   (make-request waiter-url "/.well-known/auth/keep-alive"
                                 :cookies request-cookies
-                                :disable-auth false
+                                :disable-auth false ;; avoid eagerly sending kerberos authorization headers
                                 :headers {"x-waiter-debug" true}
                                 :method :get
                                 :query-params {})

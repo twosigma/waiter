@@ -516,7 +516,7 @@
                             (make-request waiter-url "/.well-known/auth/keep-alive"
                                           :cookies request-cookies
                                           :disable-auth true
-                                          :headers {"accept-redirect" "yes"
+                                          :headers {"accept-redirect" "yes" ;; allow OIDC auth to trigger redirects when required
                                                     "host" waiter-token
                                                     "x-waiter-debug" true
                                                     "x-waiter-single-user" "unauthorized"}

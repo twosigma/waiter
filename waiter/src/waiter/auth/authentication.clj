@@ -74,6 +74,7 @@
         cookie-metadata (assoc auth-metadata :expires-at expiry-time-secs)
         cookie-value [principal creation-time-millis cookie-metadata]]
     (-> response
+      ;; x-auth-expires-at cookie allows javascript code to introspect when the auth cookie will expire and eagerly re-authenticate
       (cookie-support/add-cookie AUTH-COOKIE-EXPIRES-AT (str expiry-time-secs) cookie-age-in-seconds false)
       (cookie-support/add-encoded-cookie password AUTH-COOKIE-NAME cookie-value cookie-age-in-seconds true))))
 
@@ -129,24 +130,20 @@
    The decoded value must be a sequence in the format: [auth-principal auth-time].
    In addition, the auth-principal must be a string and the expires at time must be greater than current time."
   [[auth-principal auth-time auth-metadata :as decoded-auth-cookie]]
-  (let [expires-at (when (map? auth-metadata)
-                     (get auth-metadata :expires-at))]
-    (log/debug "well-formed?" decoded-auth-cookie
-               (<= 2 (count decoded-auth-cookie) 3)
-               (integer? auth-time)
-               (string? auth-principal)
-               (or (nil? auth-metadata) (map? auth-metadata))
-               (integer? expires-at))
-    (let [well-formed? (and decoded-auth-cookie
-                            (<= 2 (count decoded-auth-cookie) 3)
-                            (integer? auth-time)
-                            (string? auth-principal)
-                            (map? auth-metadata)
-                            (integer? expires-at))
-          result (and well-formed? (> (* 1000 expires-at) (System/currentTimeMillis)))]
-      (when-not result
-        (log/info "decoded auth cookie is not valid" decoded-auth-cookie))
-      result)))
+  (if decoded-auth-cookie
+    (let [expires-at (when (map? auth-metadata)
+                       (get auth-metadata :expires-at))]
+      (let [well-formed? (and decoded-auth-cookie
+                              (<= 2 (count decoded-auth-cookie) 3)
+                              (integer? auth-time)
+                              (string? auth-principal)
+                              (map? auth-metadata)
+                              (integer? expires-at))
+            result (and well-formed? (> (-> expires-at t/seconds t/in-millis) (System/currentTimeMillis)))]
+        (when-not result
+          (log/info "decoded auth cookie is not valid" decoded-auth-cookie))
+        result))
+    false))
 
 (defn get-auth-cookie-value
   "Retrieves the auth cookie."
@@ -187,6 +184,10 @@
 (defrecord SingleUserAuthenticator [run-as-user password]
   Authenticator
   (wrap-auth-handler [_ request-handler]
+    ;; authentication behavior can be controlled by the following headers:
+    ;; - Authorization: SingleUser <mode>, or
+    ;; - x-waiter-single-user <mode>
+    ;; The second header is provided to allow for scenarios wheere authorization header is not provided in the request.
     (let [single-user-prefix "SingleUser "]
       (fn anonymous-handler [{:keys [headers] :as request}]
         (let [auth-header (select-auth-header request #(str/starts-with? % single-user-prefix))
@@ -254,7 +255,9 @@
               user (assoc "x-waiter-auth-user" (str user))))))
 
 (defn remove-done-param-from-keep-alive-https-redirect
-  "Removes the done=true query parameter from the response when it is an https redirect to the keep-alive endpoint."
+  "Removes the done=true query parameter from the response when it is an https redirect to the keep-alive endpoint.
+   Keeping the done=true parameter would prevent authentication to be triggered for soon to expire cookies after
+   the requests comes back with https."
   [{:keys [headers status] :as response}]
   (let [{:strs [location]} headers
         location-uri (when-not (str/blank? location)
@@ -283,28 +286,28 @@
         {:keys [expires-at]} cookie-metadata
         ;; handle legacy cookies which will not have this value set
         expires-at (or expires-at current-epoch-time)
-        waiter-token (some-> request utils/request->host utils/authority->host)]
+        request-host (some-> request utils/request->host utils/authority->host)]
     (log/info auth-principal "cookie expires at" expires-at "offset is" offset-parsed)
     (cond
       ;; avoid infinite redirect loop
       done
       (-> {:status http-204-no-content}
         (utils/attach-waiter-source)
-        (assoc :waiter/token waiter-token))
+        (assoc :waiter/token request-host))
 
       ;; offset parameter provided, but cannot be parsed
       (and offset (nil? offset-parsed))
       (-> {:message "Unable to parse offset parameter"
            :parameter {:offset offset}}
         (utils/clj->json-response :status http-400-bad-request)
-        (assoc :waiter/token waiter-token))
+        (assoc :waiter/token request-host))
 
       ;; offset parameter must be positive when provided
       (and offset-parsed (not (pos? offset-parsed)))
       (-> {:message "Invalid offset parameter"
            :parameter {:offset offset-parsed}}
         (utils/clj->json-response :status http-400-bad-request)
-        (assoc :waiter/token waiter-token))
+        (assoc :waiter/token request-host))
 
       ;; trigger auth workflow if
       ;; - offset query parameter is missing;
@@ -316,22 +319,23 @@
       (do
         (log/info "initiating authentication flow for keep-alive")
         (-> request
-          ;; ensure loop back to this endpoint terminates
+          ;; ensure loop back to this endpoint terminates instead of continuously triggering re-authentication
           (assoc :query-string (str query-string (when query-string "&") auth-keep-alive-done-parameter))
-          ;; remove existing auth cookies
+          ;; remove existing auth cookies to force re-authentication even if current cookie is valid
           (update-in [:headers "cookie"] remove-auth-cookie)
-          ;; trigger auth as if it is a proxy request
+          ;; trigger auth as if it is a proxy request, e.g. OIDC and JWT auth behavior may be different for Proxy and Waiter api requests
           (assoc :waiter-api-call? false)
           (auth-handler)
           (ru/update-response
             (fn [response]
-              (-> response
-                (remove-done-param-from-keep-alive-https-redirect)
-                (attach-authorization-headers)
-                (assoc :waiter/token waiter-token))))))
+              (cond-> (-> response
+                        (remove-done-param-from-keep-alive-https-redirect)
+                        (assoc :waiter/token request-host))
+                (utils/request-flag headers "x-waiter-debug")
+                (attach-authorization-headers))))))
 
       ;; default response
       :else
       (-> {:status http-204-no-content}
         (utils/attach-waiter-source)
-        (assoc :waiter/token waiter-token)))))
+        (assoc :waiter/token request-host)))))
