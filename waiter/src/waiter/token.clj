@@ -334,8 +334,9 @@
             (make-peer-requests-fn "tokens/refresh"
                                    :body (utils/clj->json {:owner token-owner, :token token})
                                    :method :post)
-            (utils/clj->json-response {:delete token, :hard-delete hard-delete, :success true}
-                                      :headers {"etag" version-hash}))
+            (-> {:delete token, :hard-delete hard-delete, :success true}
+              (utils/clj->json-response :headers {"etag" version-hash})
+              (assoc :waiter/token token)))
           (throw (ex-info (str "Token " token " does not exist")
                           {:status http-404-not-found :token token :log-level :warn}))))
       (throw (ex-info "Couldn't find token in request" {:status http-400-bad-request :token token :log-level :warn})))))
@@ -357,21 +358,22 @@
       ;;NB do not ever return the password to the user
       (let [epoch-time->date-time (fn [epoch-time] (DateTime. epoch-time))]
         (log/info "successfully retrieved token" token)
-        (utils/clj->json-response
-          (cond-> (merge service-parameter-template
-                         (select-keys token-metadata sd/user-metadata-keys))
-            show-metadata
-            (merge (cond-> (loop [loop-token-metadata (select-keys token-metadata sd/system-metadata-keys)
-                                  nested-last-update-time-path ["last-update-time"]]
-                             (if (get-in loop-token-metadata nested-last-update-time-path)
-                               (recur (update-in loop-token-metadata nested-last-update-time-path epoch-time->date-time)
-                                      (concat ["previous"] nested-last-update-time-path))
-                               loop-token-metadata))
-                     (not (contains? token-metadata "cluster"))
-                     (assoc "cluster" (get-default-cluster cluster-calculator))
-                     (not (contains? token-metadata "root"))
-                     (assoc "root" token-root))))
-          :headers {"etag" token-hash}))
+        (-> (utils/clj->json-response
+              (cond-> (merge service-parameter-template
+                             (select-keys token-metadata sd/user-metadata-keys))
+                show-metadata
+                (merge (cond-> (loop [loop-token-metadata (select-keys token-metadata sd/system-metadata-keys)
+                                      nested-last-update-time-path ["last-update-time"]]
+                                 (if (get-in loop-token-metadata nested-last-update-time-path)
+                                   (recur (update-in loop-token-metadata nested-last-update-time-path epoch-time->date-time)
+                                          (concat ["previous"] nested-last-update-time-path))
+                                   loop-token-metadata))
+                         (not (contains? token-metadata "cluster"))
+                         (assoc "cluster" (get-default-cluster cluster-calculator))
+                         (not (contains? token-metadata "root"))
+                         (assoc "root" token-root))))
+              :headers {"etag" token-hash})
+          (assoc :waiter/token token)))
       (throw (ex-info (str "Couldn't find token " token)
                       {:headers {}
                        :status http-404-not-found
@@ -531,10 +533,11 @@
           existing-editable-token-data (token-description->editable-token-parameters existing-token-description)]
       (if (and (not admin-mode?)
                (= existing-editable-token-data new-user-editable-token-data))
-        (utils/clj->json-response
-          {:message (str "No changes detected for " token)
-           :service-description (:service-parameter-template existing-token-description)}
-          :headers {"etag" (token-description->token-hash existing-token-description)})
+        (-> (utils/clj->json-response
+              {:message (str "No changes detected for " token)
+               :service-description (:service-parameter-template existing-token-description)}
+              :headers {"etag" (token-description->token-hash existing-token-description)})
+          (assoc :waiter/token token))
         (let [token-limit (if admin-mode?
                             (do
                               (log/info "will not enforce count limit on owner tokens in admin mode" {:owner owner})
@@ -551,12 +554,13 @@
                                        (not (get existing-token-metadata "deleted")))
                                 "updated "
                                 "created ")]
-            (utils/clj->json-response
-              {:message (str "Successfully " creation-mode token)
-               :service-description new-service-parameter-template}
-              :headers {"etag" (token-description->token-hash
-                                 {:service-parameter-template new-service-parameter-template
-                                  :token-metadata new-token-metadata})})))))))
+            (-> (utils/clj->json-response
+                  {:message (str "Successfully " creation-mode token)
+                   :service-description new-service-parameter-template}
+                  :headers {"etag" (token-description->token-hash
+                                     {:service-parameter-template new-service-parameter-template
+                                      :token-metadata new-token-metadata})})
+              (assoc :waiter/token token))))))))
 
 (defn handle-token-request
   "Ring handler for dealing with tokens.
