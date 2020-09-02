@@ -444,7 +444,7 @@
 (deftest ^:parallel ^:integration-fast test-oidc-authentication-redirect
   (testing-using-waiter-url
     (if (oidc-auth-enabled? waiter-url)
-      (doseq [oidc-auth-env ["true" "relaxed" "strict"]]
+      (doseq [oidc-auth-env ["true" "relaxed"]] ;; TODO handle enabling test for strict
         (testing (str "OIDC auth with env " oidc-auth-env)
           (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)
                 oidc-token-from-env (System/getenv "WAITER_TEST_TOKEN_OIDC")
