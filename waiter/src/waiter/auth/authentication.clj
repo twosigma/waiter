@@ -33,10 +33,6 @@
 
 (def ^:const auth-keep-alive-uri "/.well-known/auth/keep-alive")
 
-(def ^:const auth-keep-alive-done-parameter "done=true")
-
-(def ^:const auth-keep-alive-done-parameter-replacement "waiter-redirect=true")
-
 (defprotocol Authenticator
   (wrap-auth-handler [this request-handler]
     "Attaches middleware that enables the application to perform authentication.
@@ -254,88 +250,93 @@
               principal (assoc "x-waiter-auth-principal" (str principal))
               user (assoc "x-waiter-auth-user" (str user))))))
 
-(defn remove-done-param-from-keep-alive-https-redirect
-  "Removes the done=true query parameter from the response when it is an https redirect to the keep-alive endpoint.
-   Keeping the done=true parameter would prevent authentication to be triggered for soon to expire cookies after
-   the requests comes back with https."
-  [{:keys [headers status] :as response}]
-  (let [{:strs [location]} headers
-        location-uri (when-not (str/blank? location)
-                       (URI. location))]
-    (cond-> response
-      (and location-uri
-           (contains? #{http-302-moved-temporarily http-307-temporary-redirect} status)
-           (= "https" (.getScheme location-uri))
-           (= auth-keep-alive-uri (.getPath location-uri)))
-      (assoc-in [:headers "location"]
-                (str/replace location auth-keep-alive-done-parameter auth-keep-alive-done-parameter-replacement)))))
+(let [auth-keep-alive-done-parameter "done=true"
+      auth-keep-alive-done-parameter-replacement "waiter-redirect=true"]
 
-(defn process-auth-keep-alive-request
-  "Handler to eagerly trigger authentication workflow even if cookie has not yet expired.
-   This allows clients to pre-emptively refresh credentials before they expire.
-   Presence of done parameter is used to avoid infinite auth redirect loops and will return 204 No Content.
-   Invalid offset parameters result in a 400 error.
-   Missing offset, soon to expire cookie (based on offset) or invalid auth cookie will trigger the authentication workflow.
-   If cookie is expected to be live longer than offset value, return 204 No Content."
-  [password auth-handler {:keys [headers query-string] :as request}]
-  (let [{:strs [done offset]} (-> request ru/query-params-request :query-params)
-        offset-parsed (utils/parse-int offset)
-        decoded-auth-cookie (get-and-decode-auth-cookie-value headers password)
-        [auth-principal _ cookie-metadata] decoded-auth-cookie
-        current-epoch-time (tc/to-epoch (t/now))
-        {:keys [expires-at]} cookie-metadata
-        ;; handle legacy cookies which will not have this value set
-        expires-at (or expires-at current-epoch-time)
-        request-host (some-> request utils/request->host utils/authority->host)]
-    (log/info auth-principal "cookie expires at" expires-at "offset is" offset-parsed)
-    (cond
-      ;; avoid infinite redirect loop
-      done
-      (-> {:status http-204-no-content}
-        (utils/attach-waiter-source)
-        (assoc :waiter/token request-host))
+  (defn remove-done-param-from-keep-alive-https-redirect
+    "Removes the done=true query parameter from the response when it is an https redirect to the keep-alive endpoint.
+     Keeping the done=true parameter would prevent authentication from being triggered for soon-to-expire cookies after
+     the requests comes back with https.
+     To simplify processing of the query string, we replace the done=true parameter with another parameter,
+     waiter-redirect=true, reflecting that the request was redirected."
+    [{:keys [headers status] :as response}]
+    (let [{:strs [location]} headers
+          location-uri (when-not (str/blank? location)
+                         (URI. location))]
+      (cond-> response
+        (and location-uri
+             (contains? #{http-302-moved-temporarily http-307-temporary-redirect} status)
+             (= "https" (.getScheme location-uri))
+             (= auth-keep-alive-uri (.getPath location-uri)))
+        (assoc-in [:headers "location"]
+                  (str/replace location auth-keep-alive-done-parameter auth-keep-alive-done-parameter-replacement)))))
 
-      ;; offset parameter provided, but cannot be parsed
-      (and offset (nil? offset-parsed))
-      (-> {:message "Unable to parse offset parameter"
-           :parameter {:offset offset}}
-        (utils/clj->json-response :status http-400-bad-request)
-        (assoc :waiter/token request-host))
+  (defn process-auth-keep-alive-request
+    "Handler to eagerly trigger authentication workflow even if cookie has not yet expired.
+     This allows clients to pre-emptively refresh credentials before they expire.
+     Presence of done parameter is used to avoid infinite auth redirect loops and will return 204 No Content.
+     Invalid offset parameters result in a 400 error.
+     Missing offset, soon to expire cookie (based on offset) or invalid auth cookie will trigger the authentication workflow.
+     If cookie is expected to be live longer than offset value, return 204 No Content."
+    [password auth-handler {:keys [headers query-string] :as request}]
+    (let [{:strs [done offset]} (-> request ru/query-params-request :query-params)
+          offset-parsed (utils/parse-int offset)
+          decoded-auth-cookie (get-and-decode-auth-cookie-value headers password)
+          [auth-principal _ cookie-metadata] decoded-auth-cookie
+          current-epoch-time (tc/to-epoch (t/now))
+          {:keys [expires-at]} cookie-metadata
+          ;; handle legacy cookies which will not have this value set
+          expires-at (or expires-at current-epoch-time)
+          request-host (some-> request utils/request->host utils/authority->host)]
+      (log/info auth-principal "cookie expires at" expires-at "offset is" offset-parsed)
+      (cond
+        ;; avoid infinite redirect loop
+        done
+        (-> {:status http-204-no-content}
+          (utils/attach-waiter-source)
+          (assoc :waiter/token request-host))
 
-      ;; offset parameter must be positive when provided
-      (and offset-parsed (not (pos? offset-parsed)))
-      (-> {:message "Invalid offset parameter"
-           :parameter {:offset offset-parsed}}
-        (utils/clj->json-response :status http-400-bad-request)
-        (assoc :waiter/token request-host))
+        ;; offset parameter provided, but cannot be parsed
+        (and offset (nil? offset-parsed))
+        (-> {:message "Unable to parse offset parameter"
+             :parameter {:offset offset}}
+          (utils/clj->json-response :status http-400-bad-request)
+          (assoc :waiter/token request-host))
 
-      ;; trigger auth workflow if
-      ;; - offset query parameter is missing;
-      ;; - cookie has already expired; or
-      ;; - including offset time will cause the cookie to expire
-      (or (nil? offset)
-          (not (decoded-auth-valid? decoded-auth-cookie))
-          (>= (+ current-epoch-time offset-parsed) expires-at))
-      (do
-        (log/info "initiating authentication flow for keep-alive")
-        (-> request
-          ;; ensure loop back to this endpoint terminates instead of continuously triggering re-authentication
-          (assoc :query-string (str query-string (when query-string "&") auth-keep-alive-done-parameter))
-          ;; remove existing auth cookies to force re-authentication even if current cookie is valid
-          (update-in [:headers "cookie"] remove-auth-cookie)
-          ;; trigger auth as if it is a proxy request, e.g. OIDC and JWT auth behavior may be different for Proxy and Waiter api requests
-          (assoc :waiter-api-call? false)
-          (auth-handler)
-          (ru/update-response
-            (fn [response]
-              (cond-> (-> response
-                        (remove-done-param-from-keep-alive-https-redirect)
-                        (assoc :waiter/token request-host))
-                (utils/request-flag headers "x-waiter-debug")
-                (attach-authorization-headers))))))
+        ;; offset parameter must be positive when provided
+        (and offset-parsed (not (pos? offset-parsed)))
+        (-> {:message "Invalid offset parameter"
+             :parameter {:offset offset-parsed}}
+          (utils/clj->json-response :status http-400-bad-request)
+          (assoc :waiter/token request-host))
 
-      ;; default response
-      :else
-      (-> {:status http-204-no-content}
-        (utils/attach-waiter-source)
-        (assoc :waiter/token request-host)))))
+        ;; trigger auth workflow if
+        ;; - offset query parameter is missing;
+        ;; - cookie has already expired; or
+        ;; - including offset time will cause the cookie to expire
+        (or (nil? offset)
+            (not (decoded-auth-valid? decoded-auth-cookie))
+            (>= (+ current-epoch-time offset-parsed) expires-at))
+        (do
+          (log/info "initiating authentication flow for keep-alive")
+          (-> request
+            ;; ensure loop back to this endpoint terminates instead of continuously triggering re-authentication
+            (assoc :query-string (str query-string (when query-string "&") auth-keep-alive-done-parameter))
+            ;; remove existing auth cookies to force re-authentication even if current cookie is valid
+            (update-in [:headers "cookie"] remove-auth-cookie)
+            ;; trigger auth as if it is a proxy request, e.g. OIDC and JWT auth behavior may be different for Proxy and Waiter api requests
+            (assoc :waiter-api-call? false)
+            (auth-handler)
+            (ru/update-response
+              (fn [response]
+                (cond-> (-> response
+                          (remove-done-param-from-keep-alive-https-redirect)
+                          (assoc :waiter/token request-host))
+                  (utils/request-flag headers "x-waiter-debug")
+                  (attach-authorization-headers))))))
+
+        ;; default response
+        :else
+        (-> {:status http-204-no-content}
+          (utils/attach-waiter-source)
+          (assoc :waiter/token request-host))))))
