@@ -59,6 +59,7 @@
       :cluster-name "waiter"
       :container-running-grace-secs 120
       :fileserver {:port 9090
+                   :predicate-fn fileserver-container-enabled?
                    :scheme "http"}
       :log-bucket-sync-secs 60
       :log-bucket-url "http://waiter.example.com:8888/waiter-service-logs"
@@ -123,6 +124,33 @@
        (clojure.pprint/pprint
          (clojure.data/diff expected# actual#)))
      (is (= expected# actual#))))
+
+(deftest replicaset-spec-fileserver-container-and-metadata
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
+                config/retrieve-waiter-principal (constantly "waiter@test.com")]
+    (doseq [fileserver-enabled [true false]]
+      (let [{:strs [run-as-user] :as service-description} (assoc dummy-service-description "health-check-port-index" 2 "ports" 3)
+            test-service-id "waiter-testservice123456789"
+            scheduler (make-dummy-scheduler
+                        [test-service-id]
+                        {:fileserver {:port 9090
+                                      :predicate-fn (constantly fileserver-enabled)
+                                      :scheme "http"}
+                         :service-id->service-description-fn (constantly service-description)})
+            replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler test-service-id service-description)]
+        (is (= {:waiter/service-id test-service-id}
+               (get-in replicaset-spec [:metadata :annotations])))
+        (is (= {:app test-service-id
+                :waiter/cluster dummy-scheduler-default-namespace
+                :waiter/fileserver (if fileserver-enabled "enabled" "disabled")
+                :waiter/service-hash test-service-id
+                :waiter/user run-as-user}
+               (get-in replicaset-spec [:metadata :labels])))
+        (let [fileserver-containers (filter #(= "waiter-fileserver" (:name %))
+                                           (get-in replicaset-spec [:spec :template :spec :containers]))]
+          (if fileserver-enabled
+            (is (= 1 (count fileserver-containers)))
+            (is (empty? fileserver-containers))))))))
 
 (deftest replicaset-spec-health-check-port-index
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
@@ -1163,6 +1191,10 @@
             (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:replicaset-spec-builder :factory-fn] "not a symbol"))))
             (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:replicaset-spec-builder :factory-fn] :not-a-symbol))))
             (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:replicaset-spec-builder :factory-fn] 'not.a.namespace/not-a-fn)))))
+          (testing "bad replicaset-spec-builder fileserver predicate-fn"
+            (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:fileserver :predicate-fn] false))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:fileserver :predicate-fn]
+                                                                   'waiter.scheduler.kubernetes-test/does-not-exist?)))))
           (testing "bad base port number"
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-base-port -1))))
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-base-port "8080"))))
@@ -1180,6 +1212,11 @@
 
         (testing "should work with valid configuration"
           (is (instance? KubernetesScheduler (kubernetes-scheduler base-config))))
+
+        (testing "should work with valid fileserver predicate-fn?"
+          (let [scheduler (kubernetes-scheduler (assoc-in base-config [:fileserver :predicate-fn]
+                                                          'waiter.scheduler.kubernetes/fileserver-container-enabled?))]
+            (is (instance? KubernetesScheduler scheduler))))
 
         (testing "should work with PodDisruptionBudget api version"
           (let [scheduler (kubernetes-scheduler (assoc base-config :pdb-api-version "/policy.pdb-v1"))]

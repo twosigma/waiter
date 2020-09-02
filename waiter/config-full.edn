@@ -523,6 +523,7 @@
                                  :fileserver {:cmd ["/bin/fileserver-start"]
                                               :image "twosigma/waiter-fileserver:latest"
                                               :port 9090
+                                              :predicate-fn waiter.scheduler.kubernetes/fileserver-container-enabled?
                                               :resources {:cpu 0.1 :mem 128}
                                               :scheme "http"}
 
