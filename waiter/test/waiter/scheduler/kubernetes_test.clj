@@ -1927,6 +1927,14 @@
             instance (pod->ServiceInstance dummy-scheduler pod)]
         (is (= (scheduler/make-ServiceInstance instance-map) instance))))
 
+    (testing "pod with envoy sidecar to instance"
+      (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
+            pod' (-> pod
+                     (assoc-in [:metadata :annotations :waiter/service-port] "8080")
+                     (assoc-in [:spec :containers 0 :ports 0 :containerPort] 8081))
+            instance (pod->ServiceInstance dummy-scheduler pod')]
+        (is (= (scheduler/make-ServiceInstance instance-map) instance))))
+
     (testing "pod with expired annotation"
       (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
             pod' (assoc-in pod [:metadata :annotations :waiter/pod-expired] "true")
@@ -1949,14 +1957,6 @@
                                    :restart-expiry-threshold 25)
             instance (pod->ServiceInstance dummy-scheduler pod)]
         (is (= (scheduler/make-ServiceInstance expired-instance-map) instance))))
-
-    (testing "pod with envoy sidecar to instance"
-      (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
-            pod' (merge
-                   (assoc-in pod [:metadata :annotations :waiter/service-port] "8080")
-                   (assoc-in pod [:spec :containers 0 :ports 0 :containerPort] 8081))
-            instance (pod->ServiceInstance dummy-scheduler pod)]
-        (is (= (scheduler/make-ServiceInstance instance-map) instance))))
 
     (testing "previously started pod not expired despite instance exceeded running grace period"
       (let [dummy-scheduler (assoc base-scheduler
