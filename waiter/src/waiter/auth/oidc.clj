@@ -161,7 +161,7 @@
                       (-> {:headers (attach-threat-remediation-headers {"location" redirect-uri})
                            :status http-302-moved-temporarily
                            :waiter/token waiter-token}
-                        (cookie-support/add-encoded-cookie password oidc-challenge-cookie "" 0 true)
+                        (cookie-support/add-encoded-cookie password oidc-challenge-cookie "" 0)
                         (utils/attach-waiter-source))))
                   request auth-params-map password auth-cookie-age-in-seconds)))
             (catch Throwable throwable
@@ -202,7 +202,7 @@
           (update :headers assoc "location" authorize-uri)
           (update :headers attach-threat-remediation-headers)
           (cookie-support/add-encoded-cookie
-            password oidc-challenge-cookie challenge-cookie-value challenge-cookie-duration-secs true)))
+            password oidc-challenge-cookie challenge-cookie-value challenge-cookie-duration-secs)))
       ;; trigger SSL redirect to the same page since OIDC auth works only for https requests
       (let [redirect-uri (make-redirect-uri utils/authority->host)]
         (-> response

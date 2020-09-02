@@ -268,10 +268,9 @@
         current-time-ms (System/currentTimeMillis)
         identifier-prefix "code-identifier-"]
     (doseq [oidc-default-mode [:relaxed :strict]]
-      (with-redefs [cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds http-only?]
+      (with-redefs [cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds]
                                                         (is (= password in-password))
                                                         (is (= challenge-cookie-duration-secs age-in-seconds))
-                                                        (is http-only?)
                                                         (assoc response :cookie {name value}))
                     utils/unique-identifier (constantly "123456")
                     t/now (constantly (tc/from-long current-time-ms))

@@ -81,9 +81,9 @@
 
 (defn add-encoded-cookie
   "Inserts the provided name-value pair as a Set-Cookie header in the response after encoding the value."
-  [response password name value age-in-seconds http-only?]
+  [response password name value age-in-seconds]
   (let [encoded-value (encode-cookie value password)]
-    (add-cookie response name encoded-value age-in-seconds http-only?)))
+    (add-cookie response name encoded-value age-in-seconds true)))
 
 (defn decode-cookie
   "Decode Waiter encoded cookie."
