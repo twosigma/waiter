@@ -281,7 +281,7 @@
      Invalid offset parameters result in a 400 error.
      Missing offset, soon to expire cookie (based on offset) or invalid auth cookie will trigger the authentication workflow.
      If cookie is expected to be live longer than offset value, return 204 No Content."
-    [password auth-handler {:keys [headers query-string] :as request}]
+    [token->token-parameters password auth-handler {:keys [headers query-string] :as request}]
     (let [{:strs [done offset]} (-> request ru/query-params-request :query-params)
           offset-parsed (utils/parse-int offset)
           decoded-auth-cookie (get-and-decode-auth-cookie-value headers password)
@@ -290,27 +290,30 @@
           {:keys [expires-at]} cookie-metadata
           ;; handle legacy cookies which will not have this value set
           expires-at (or expires-at current-epoch-time)
-          request-host (some-> request utils/request->host utils/authority->host)]
+          request-host (some-> request utils/request->host utils/authority->host)
+          waiter-token? (not-empty (token->token-parameters request-host))]
       (log/info auth-principal "cookie expires at" expires-at "offset is" offset-parsed)
       (cond
         ;; avoid infinite redirect loop
         done
-        (-> {:status http-204-no-content}
-          (utils/attach-waiter-source)
+        (cond-> (utils/attach-waiter-source {:status http-204-no-content})
+          waiter-token?
           (assoc :waiter/token request-host))
 
         ;; offset parameter provided, but cannot be parsed
         (and offset (nil? offset-parsed))
-        (-> {:message "Unable to parse offset parameter"
-             :parameter {:offset offset}}
-          (utils/clj->json-response :status http-400-bad-request)
+        (cond-> (utils/clj->json-response {:message "Unable to parse offset parameter"
+                                       :parameter {:offset offset}}
+                                      :status http-400-bad-request)
+          waiter-token?
           (assoc :waiter/token request-host))
 
         ;; offset parameter must be positive when provided
         (and offset-parsed (not (pos? offset-parsed)))
-        (-> {:message "Invalid offset parameter"
-             :parameter {:offset offset-parsed}}
-          (utils/clj->json-response :status http-400-bad-request)
+        (cond-> (utils/clj->json-response {:message "Invalid offset parameter"
+                                           :parameter {:offset offset-parsed}}
+                                          :status http-400-bad-request)
+          waiter-token?
           (assoc :waiter/token request-host))
 
         ;; trigger auth workflow if
@@ -327,19 +330,21 @@
             (assoc :query-string (str query-string (when query-string "&") auth-keep-alive-done-parameter))
             ;; remove existing auth cookies to force re-authentication even if current cookie is valid
             (update-in [:headers "cookie"] remove-auth-cookie)
-            ;; trigger auth as if it is a proxy request, e.g. OIDC and JWT auth behavior may be different for Proxy and Waiter api requests
-            (assoc :waiter-api-call? false)
+            ;; trigger auth as if it is a proxy request for token-based requests,
+            ;; e.g. OIDC and JWT auth behavior may be different for Proxy and Waiter api requests
+            (assoc :waiter-api-call? (not waiter-token?))
             (auth-handler)
             (ru/update-response
               (fn [response]
                 (cond-> (-> response
-                          (remove-done-param-from-keep-alive-https-redirect)
-                          (assoc :waiter/token request-host))
+                          (remove-done-param-from-keep-alive-https-redirect))
+                  waiter-token?
+                  (assoc :waiter/token request-host)
                   (utils/request-flag headers "x-waiter-debug")
                   (attach-authorization-headers))))))
 
         ;; default response
         :else
-        (-> {:status http-204-no-content}
-          (utils/attach-waiter-source)
+        (cond-> (utils/attach-waiter-source {:status http-204-no-content})
+          waiter-token?
           (assoc :waiter/token request-host))))))
