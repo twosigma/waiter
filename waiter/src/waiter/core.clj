@@ -1429,14 +1429,17 @@
                                    (fn auth-expires-at-handler-fn [request]
                                      (auth/process-auth-expires-at-request password request))))
    :auth-keep-alive-handler-fn (pc/fnk [[:routines token->token-parameters]
-                                        [:state passwords]
+                                        [:state passwords waiter-hostnames]
                                         wrap-secure-request-fn wrap-service-discovery-fn]
-                                 (let [password (first passwords)
+                                 (let [waiter-hostnames (cond-> waiter-hostnames
+                                                          (contains? waiter-hostnames "localhost")
+                                                          (conj "127.0.0.1"))
+                                       password (first passwords)
                                        auth-handler (-> (constantly (utils/attach-waiter-source {:status http-204-no-content}))
                                                       (wrap-secure-request-fn)
                                                       (wrap-service-discovery-fn))]
                                    (fn auth-keep-alive-handler-fn [request]
-                                     (auth/process-auth-keep-alive-request token->token-parameters password auth-handler request))))
+                                     (auth/process-auth-keep-alive-request token->token-parameters waiter-hostnames password auth-handler request))))
    :default-websocket-handler-fn (pc/fnk [[:daemons populate-maintainer-chan!]
                                           [:routines determine-priority-fn service-id->password-fn start-new-service-fn]
                                           [:settings instance-request-properties]

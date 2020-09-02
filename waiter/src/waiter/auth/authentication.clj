@@ -19,7 +19,9 @@
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [waiter.cookie-support :as cookie-support]
+            [waiter.headers :as headers]
             [waiter.middleware :as middleware]
+            [waiter.service-description :as sd]
             [waiter.status-codes :refer :all]
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils])
@@ -281,7 +283,7 @@
      Invalid offset parameters result in a 400 error.
      Missing offset, soon to expire cookie (based on offset) or invalid auth cookie will trigger the authentication workflow.
      If cookie is expected to be live longer than offset value, return 204 No Content."
-    [token->token-parameters password auth-handler {:keys [headers query-string] :as request}]
+    [token->token-parameters waiter-hostnames password auth-handler {:keys [headers query-string] :as request}]
     (let [{:strs [done offset]} (-> request ru/query-params-request :query-params)
           offset-parsed (utils/parse-int offset)
           decoded-auth-cookie (get-and-decode-auth-cookie-value headers password)
@@ -290,15 +292,22 @@
           {:keys [expires-at]} cookie-metadata
           ;; handle legacy cookies which will not have this value set
           expires-at (or expires-at current-epoch-time)
-          request-host (some-> request utils/request->host utils/authority->host)
-          waiter-token? (not-empty (token->token-parameters request-host))]
+          {:keys [passthrough-headers waiter-headers]} (headers/split-headers headers)
+          {:keys [token]} (sd/retrieve-token-from-service-description-or-hostname
+                            waiter-headers passthrough-headers waiter-hostnames)
+          waiter-token? (and token (not-empty (token->token-parameters token)))]
       (log/info auth-principal "cookie expires at" expires-at "offset is" offset-parsed)
       (cond
+        ;; invalid token returns a 404
+        (and token (not waiter-token?))
+        (utils/clj->json-response {:message (str "Unknown token: " token)}
+                                  :status http-404-not-found)
+
         ;; avoid infinite redirect loop
         done
         (cond-> (utils/attach-waiter-source {:status http-204-no-content})
           waiter-token?
-          (assoc :waiter/token request-host))
+          (assoc :waiter/token token))
 
         ;; offset parameter provided, but cannot be parsed
         (and offset (nil? offset-parsed))
@@ -306,7 +315,7 @@
                                        :parameter {:offset offset}}
                                       :status http-400-bad-request)
           waiter-token?
-          (assoc :waiter/token request-host))
+          (assoc :waiter/token token))
 
         ;; offset parameter must be positive when provided
         (and offset-parsed (not (pos? offset-parsed)))
@@ -314,7 +323,7 @@
                                            :parameter {:offset offset-parsed}}
                                           :status http-400-bad-request)
           waiter-token?
-          (assoc :waiter/token request-host))
+          (assoc :waiter/token token))
 
         ;; trigger auth workflow if
         ;; - offset query parameter is missing;
@@ -339,7 +348,7 @@
                 (cond-> (-> response
                           (remove-done-param-from-keep-alive-https-redirect))
                   waiter-token?
-                  (assoc :waiter/token request-host)
+                  (assoc :waiter/token token)
                   (utils/request-flag headers "x-waiter-debug")
                   (attach-authorization-headers))))))
 
@@ -347,4 +356,4 @@
         :else
         (cond-> (utils/attach-waiter-source {:status http-204-no-content})
           waiter-token?
-          (assoc :waiter/token request-host))))))
+          (assoc :waiter/token token))))))
