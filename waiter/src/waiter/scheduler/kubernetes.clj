@@ -300,7 +300,7 @@
 
 (defn- pod-logs-live?
   "Returns true if the given pod has its log fileserver running.
-   Assumes that the pod is configured to run with the fileserver container at index 1."
+   Assumes that the pod is configured to run with the fileserver container and that the container is at index 1."
   [pod]
   (and (some? pod)
        (nil? (get-in pod [:status :containerStatuses 1 :state :terminated]))))
@@ -721,16 +721,15 @@
 
           ;; the pod is live: try accessing logs through sidecar
           (pod-logs-live? pod)
-          (when port
-            (let [target-url (str scheme "://" host ":" port "/" instance-base-dir browse-path)
-                  result (hu/http-request
-                           http-client
-                           target-url
-                           :accept "application/json")]
-              (for [{entry-name :name entry-type :type :as entry} result]
-                (if (= "file" entry-type)
-                  (assoc entry :url (str target-url entry-name))
-                  (assoc entry :path (str browse-path entry-name))))))
+          (let [target-url (str scheme "://" host ":" port "/" instance-base-dir browse-path)
+                result (hu/http-request
+                         http-client
+                         target-url
+                         :accept "application/json")]
+            (for [{entry-name :name entry-type :type :as entry} result]
+              (if (= "file" entry-type)
+                (assoc entry :url (str target-url entry-name))
+                (assoc entry :path (str browse-path entry-name)))))
 
           ;; the pod is not live: try accessing logs through S3
           :else
@@ -895,8 +894,7 @@
         memory (str mem "Mi")
         service-hash (service-id->service-hash service-id)
         fileserver-predicate-fn (-> fileserver :predicate-fn)
-        fileserver-enabled? (and (-> fileserver :port integer?)
-                                 (fileserver-predicate-fn scheduler service-id service-description context))]
+        fileserver-enabled? (fileserver-predicate-fn scheduler service-id service-description context)]
     (cond->
       {:kind "ReplicaSet"
        :apiVersion replicaset-api-version
@@ -1217,6 +1215,11 @@
                                   (assoc-in state [:rs-metadata :version :watch] version))))))}
       (merge options))))
 
+(defn fileserver-container-enabled?
+  "Returns true when the port is configured on the fileserver configuration."
+  [{:keys [fileserver]} _ _ _]
+  (-> fileserver :port integer?))
+
 (defn kubernetes-scheduler
   "Returns a new KubernetesScheduler with the provided configuration. Validates the
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
@@ -1306,7 +1309,7 @@
                                              scheduler-syncer-interval-secs)
         fileserver (update fileserver :predicate-fn (fn [predicate-fn]
                                                       (if (nil? predicate-fn)
-                                                        (constantly true)
+                                                        fileserver-container-enabled?
                                                         (utils/resolve-symbol! predicate-fn))))]
 
     (let [daemon-state (atom nil)

@@ -48,8 +48,6 @@
 
 (def dummy-scheduler-default-namespace "waiter")
 
-(defn fileserver-container-enabled? [_ _ _ _] true)
-
 (defn- make-dummy-scheduler
   ([service-ids] (make-dummy-scheduler service-ids {}))
   ([service-ids args]
@@ -1217,7 +1215,7 @@
 
         (testing "should work with valid fileserver predicate-fn?"
           (let [scheduler (kubernetes-scheduler (assoc-in base-config [:fileserver :predicate-fn]
-                                                          'waiter.scheduler.kubernetes-test/fileserver-container-enabled?))]
+                                                          'waiter.scheduler.kubernetes/fileserver-container-enabled?))]
             (is (instance? KubernetesScheduler scheduler))))
 
         (testing "should work with PodDisruptionBudget api version"
