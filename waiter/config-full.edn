@@ -486,9 +486,6 @@
                                                            :default-container-image "twosigma/waiter-test-apps:latest"
                                                            ;; The default namespace to use for Kubernetes objects created by Waiter
                                                            :default-namespace "waiter"
-                                                           ;; Function that determines if the fileserver container should be enabled for a service.
-                                                           ;; The function takes the service description as input.
-                                                           :fileserver-container-enabled? waiter.some.package/fileserver-enabled?
                                                            ;; Map of image aliases. One of these aliases can be specified in the `image` field and the
                                                            ;; resolved image will be used.
                                                            :image-aliases {"alias/sample-alias" "real/image"}}
@@ -526,6 +523,7 @@
                                  :fileserver {:cmd ["/bin/fileserver-start"]
                                               :image "twosigma/waiter-fileserver:latest"
                                               :port 9090
+                                              :predicate-fn waiter.scheduler.kubernetes/fileserver-container-enabled?
                                               :resources {:cpu 0.1 :mem 128}
                                               :scheme "http"}
 

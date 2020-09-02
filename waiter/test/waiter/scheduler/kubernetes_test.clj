@@ -48,7 +48,7 @@
 
 (def dummy-scheduler-default-namespace "waiter")
 
-(defn fileserver-fileserver-container-enabled? [_] true)
+(defn fileserver-container-enabled? [_ _ _ _] true)
 
 (defn- make-dummy-scheduler
   ([service-ids] (make-dummy-scheduler service-ids {}))
@@ -61,8 +61,8 @@
       :cluster-name "waiter"
       :container-running-grace-secs 120
       :fileserver {:port 9090
+                   :predicate-fn fileserver-container-enabled?
                    :scheme "http"}
-      :fileserver-container-enabled?-fn fileserver-fileserver-container-enabled?
       :log-bucket-sync-secs 60
       :log-bucket-url "http://waiter.example.com:8888/waiter-service-logs"
       :max-patch-retries 5
@@ -135,7 +135,9 @@
             test-service-id "waiter-testservice123456789"
             scheduler (make-dummy-scheduler
                         [test-service-id]
-                        {:fileserver-container-enabled?-fn (constantly fileserver-enabled)
+                        {:fileserver {:port 9090
+                                      :predicate-fn (constantly fileserver-enabled)
+                                      :scheme "http"}
                          :service-id->service-description-fn (constantly service-description)})
             replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler test-service-id service-description)]
         (is (= {:waiter/service-id test-service-id}
@@ -1191,9 +1193,9 @@
             (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:replicaset-spec-builder :factory-fn] "not a symbol"))))
             (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:replicaset-spec-builder :factory-fn] :not-a-symbol))))
             (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:replicaset-spec-builder :factory-fn] 'not.a.namespace/not-a-fn)))))
-          (testing "bad replicaset-spec-builder fileserver-container-enabled?"
-            (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:replicaset-spec-builder :fileserver-container-enabled?] false))))
-            (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:replicaset-spec-builder :fileserver-container-enabled?]
+          (testing "bad replicaset-spec-builder fileserver predicate-fn"
+            (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:fileserver :predicate-fn] false))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:fileserver :predicate-fn]
                                                                    'waiter.scheduler.kubernetes-test/does-not-exist?)))))
           (testing "bad base port number"
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-base-port -1))))
@@ -1213,9 +1215,9 @@
         (testing "should work with valid configuration"
           (is (instance? KubernetesScheduler (kubernetes-scheduler base-config))))
 
-        (testing "should work with valid fileserver-container-enabled?"
-          (let [scheduler (kubernetes-scheduler (assoc-in base-config [:replicaset-spec-builder :fileserver-container-enabled?]
-                                                          'waiter.scheduler.kubernetes-test/fileserver-fileserver-container-enabled?))]
+        (testing "should work with valid fileserver predicate-fn?"
+          (let [scheduler (kubernetes-scheduler (assoc-in base-config [:fileserver :predicate-fn]
+                                                          'waiter.scheduler.kubernetes-test/fileserver-container-enabled?))]
             (is (instance? KubernetesScheduler scheduler))))
 
         (testing "should work with PodDisruptionBudget api version"

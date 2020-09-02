@@ -588,7 +588,6 @@
                                 custom-options
                                 daemon-state
                                 fileserver
-                                fileserver-container-enabled?-fn
                                 http-client
                                 log-bucket-url
                                 max-patch-retries
@@ -701,7 +700,7 @@
          :message "Error while scaling waiter service"})))
 
   (retrieve-directory-content
-    [{{:keys [port scheme]} :fileserver :keys [fileserver-container-enabled?-fn] :as scheduler}
+    [{{:keys [port predicate-fn scheme]} :fileserver :as scheduler}
      service-id instance-id host browse-path]
     (let [{:keys [_ pod-name restart-number]} (unpack-instance-id instance-id)
           instance-base-dir (str "r" restart-number)
@@ -717,7 +716,7 @@
       (ss/try+
         (cond
           ;; fileserver is disabled on pod: return no logs information
-          (not (fileserver-container-enabled?-fn service-description))
+          (not (predicate-fn scheduler service-id service-description nil))
           nil
 
           ;; the pod is live: try accessing logs through sidecar
@@ -840,7 +839,7 @@
 
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
-  [{:keys [cluster-name fileserver fileserver-container-enabled?-fn pod-base-port pod-sigkill-delay-secs
+  [{:keys [cluster-name fileserver pod-base-port pod-sigkill-delay-secs
            replicaset-api-version reverse-proxy service-id->password-fn] :as scheduler}
    service-id
    {:strs [backend-proto cmd cpus grace-period-secs health-check-authentication health-check-interval-secs
@@ -895,8 +894,9 @@
         health-check-url (sd/service-description->health-check-url service-description)
         memory (str mem "Mi")
         service-hash (service-id->service-hash service-id)
-        fileserver-enabled? (and (fileserver-container-enabled?-fn service-description)
-                                 (-> fileserver :port integer?))]
+        fileserver-predicate-fn (-> fileserver :predicate-fn)
+        fileserver-enabled? (and (-> fileserver :port integer?)
+                                 (fileserver-predicate-fn scheduler service-id service-description context))]
     (cond->
       {:kind "ReplicaSet"
        :apiVersion replicaset-api-version
@@ -1225,7 +1225,6 @@
            pod-suffix-length replicaset-api-version replicaset-spec-builder restart-expiry-threshold reverse-proxy scheduler-name
            scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
            service-id->password-fn start-scheduler-syncer-fn url watch-retries]
-    {:keys [fileserver-container-enabled?]} :replicaset-spec-builder
     {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver
     :as context}]
   {:pre [(schema/contains-kind-sub-map? authorizer)
@@ -1236,8 +1235,8 @@
              (and (integer? fileserver-port)
                   (< 0 fileserver-port 65535)))
          (re-matches #"https?" fileserver-scheme)
-         (or (nil? fileserver-container-enabled?)
-             (symbol? fileserver-container-enabled?))
+         (or (-> fileserver :predicate-fn nil?)
+             (-> fileserver :predicate-fn symbol?))
          (pos-int? (:socket-timeout http-options))
          (pos-int? (:conn-timeout http-options))
          (and (number? log-bucket-sync-secs) (<= 0 log-bucket-sync-secs 300))
@@ -1305,9 +1304,10 @@
                                              get-service->instances-fn
                                              scheduler-state-chan
                                              scheduler-syncer-interval-secs)
-        fileserver-container-enabled?-fn (if (some? fileserver-container-enabled?)
-                                           (utils/resolve-symbol! fileserver-container-enabled?)
-                                           (constantly true))]
+        fileserver (update fileserver :predicate-fn (fn [predicate-fn]
+                                                      (if (nil? predicate-fn)
+                                                        (constantly true)
+                                                        (utils/resolve-symbol! predicate-fn))))]
 
     (let [daemon-state (atom nil)
           auth-renewer (when authentication
@@ -1320,7 +1320,6 @@
                                            custom-options
                                            daemon-state
                                            fileserver
-                                           fileserver-container-enabled?-fn
                                            http-client
                                            log-bucket-url
                                            max-patch-retries
