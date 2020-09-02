@@ -137,7 +137,7 @@
                               (integer? expires-at))
             result (and well-formed? (> (-> expires-at t/seconds t/in-millis) (System/currentTimeMillis)))]
         (when-not result
-          (log/info "decoded auth cookie is not valid" decoded-auth-cookie))
+          (log/info "decoded auth cookie is not valid" auth-time auth-metadata))
         result))
     false))
 
@@ -236,7 +236,10 @@
         {:keys [expires-at]} auth-metadata
         cookie-valid? (decoded-auth-valid? decoded-auth-cookie)
         sanitized-expires-at (or (when cookie-valid? expires-at) 0)]
-    (log/info "waiter auth cookie parsed" {:auth-principal auth-principal :cookie-valid? cookie-valid? :expires-at expires-at})
+    (log/info "waiter auth cookie parsed"
+              (cond-> {:cookie-valid? cookie-valid? :expires-at expires-at}
+                cookie-valid?
+                (assoc :auth-principal auth-principal)))
     (utils/attach-waiter-source (utils/clj->json-response {:expires-at sanitized-expires-at
                                                            :principal auth-principal}))))
 
