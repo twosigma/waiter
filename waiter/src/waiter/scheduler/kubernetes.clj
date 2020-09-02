@@ -254,8 +254,9 @@
           restart-count (get-in pod [:status :containerStatuses 0 :restartCount] 0)
           instance-id (pod->instance-id pod restart-count)
           node-name (get-in pod [:spec :nodeName])
+          containers (get-in pod [:spec :containers])
           port0 (or (some-> (get-in pod [:metadata :annotations :waiter/service-port]) (Integer/parseInt))
-                    (get-in pod [:spec :containers 0 :ports 0 :containerPort]))
+                    (get-in containers [0 :ports 0 :containerPort]))
           run-as-user (or (get-in pod [:metadata :labels :waiter/user])
                           ;; falling back to namespace for legacy pods missing the waiter/user label
                           (k8s-object->namespace pod))
@@ -270,7 +271,14 @@
                  :flags (cond-> #{}
                           (check-expired scheduler instance-id restart-count pod-annotations primary-container-status pod-started-at)
                           (conj :expired))
-                 :healthy? (true? (get primary-container-status :ready))
+                 :healthy? (every? true?
+                                   ;; the waiter service is not healthy until all containers
+                                   ;; with a readiness probe are ready, allowing sidecars to
+                                   ;; start up before waiter starts forwarding requests
+                                   (map (fn container-ready?
+                                          [{:keys [readinessProbe]} {:keys [ready]}]
+                                          (or (nil? readinessProbe) ready))
+                                        containers container-statuses))
                  :host (get-in pod [:status :podIP] scheduler/UNKNOWN-IP)
                  :id instance-id
                  :k8s/api-server-url api-server-url

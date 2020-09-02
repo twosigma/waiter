@@ -551,7 +551,8 @@
                                       :waiter/user "myself"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-1234"}}
-                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]
+                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]
+                                       :readinessProbe {:path "/health"}}]
                          :nodeName "node-0.k8s.com"}
                   :status {:phase "Pending"
                            :startTime "2014-09-13T00:24:46Z"
@@ -567,7 +568,8 @@
                                       :waiter/user "myself"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-1234"}}
-                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
+                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]
+                                       :readinessProbe {:path "/health"}}]}
                   :status {:phase "Running"
                            :podIP "10.141.141.11"
                            :startTime "2014-09-13T00:24:46Z"
@@ -583,7 +585,8 @@
                                       :waiter/service-hash "test-app-1234"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-1234"}}
-                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]
+                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]
+                                       :readinessProbe {:path "/health"}}]
                          :nodeName "node-2.k8s.com"}
                   :status {:podIP "10.141.141.12"
                            :startTime "2014-09-13T00:24:47Z"
@@ -598,7 +601,8 @@
                                       :waiter/service-hash "test-app-6789"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-6789"}}
-                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
+                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]
+                                       :readinessProbe {:path "/health"}}]}
                   :status {:podIP "10.141.141.13"
                            :startTime "2014-09-13T00:24:35Z"
                            :containerStatuses [{:name "test-app-6789"
@@ -612,7 +616,8 @@
                                       :waiter/service-hash "test-app-6789"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-6789"}}
-                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
+                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]
+                                       :readinessProbe {:path "/health"}}]}
                   :status {:podIP "10.141.141.14"
                            :startTime "2014-09-13T00:24:37Z"
                            :containerStatuses [{:name "test-app-6789"
@@ -628,7 +633,8 @@
                                       :waiter/service-hash "test-app-6789"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-6789"}}
-                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
+                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]
+                                       :readinessProbe {:path "/health"}}]}
                   :status {:podIP "10.141.141.15"
                            :startTime "2014-09-13T00:24:38Z"
                            :containerStatuses [{:name "test-app-6789"
@@ -1299,7 +1305,8 @@
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-1234"}
                              :uid "test-app-1234-abcd1-uid"}
-                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]
+                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]
+                                       :readinessProbe {:path "/health"}}]
                          :nodeName "node-1.k8s.com"}
                   :status {:podIP "10.141.141.11"
                            :startTime "2014-09-13T00:24:46Z"
@@ -1314,7 +1321,8 @@
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-1234"}
                              :uid "test-app-1234-abcd2-uid"}
-                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
+                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]
+                                       :readinessProbe {:path "/health"}}]}
                   :status {:podIP "10.141.141.12"
                            :startTime "2014-09-13T00:24:47Z"
                            :containerStatuses [{:name "test-app-1234"
@@ -1331,7 +1339,8 @@
                                             :waiter/service-id "test-app-1234"}
                               :resourceVersion "1001"
                               :uid "test-app-1234-abcd2-uid"}
-                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
+                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]
+                                        :readinessProbe {:path "/health"}}]}
                    :status {:podIP "10.141.141.12"
                             :startTime "2014-09-13T00:24:47Z"
                             :containerStatuses [{:name "test-app-1234"
@@ -1347,7 +1356,8 @@
                                             :waiter/service-id "test-app-1234"}
                               :resourceVersion "1002"
                               :uid "test-app-1234-abcd3-uid"}
-                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
+                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]
+                                        :readinessProbe {:path "/health"}}]}
                    :status {:podIP "10.141.141.13"
                             :startTime "2014-09-13T00:24:48Z"
                             :containerStatuses [{:name "test-app-1234"
@@ -1547,7 +1557,8 @@
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-1234"}
                              :uid "test-app-1234-abcd1-uid"}
-                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
+                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]
+                                       :readinessProbe {:path "/health"}}]}
                   :status {:podIP "10.141.141.11"
                            :startTime "2014-09-13T00:24:46Z"
                            :containerStatuses [{:name "test-app-1234"
@@ -1561,7 +1572,8 @@
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-1234"}
                              :uid "test-app-1234-abcd2-uid"}
-                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
+                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]
+                                       :readinessProbe {:path "/health"}}]}
                   :status {:podIP "10.141.141.12"
                            :startTime "2014-09-13T00:24:47Z"
                            :containerStatuses [{:name "test-app-1234"
@@ -1579,7 +1591,8 @@
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-1234"}
                              :uid "test-app-1234-abcd1-uid"}
-                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
+                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]
+                                       :readinessProbe {:path "/health"}}]}
                   :status {:podIP "10.141.141.11"
                            :startTime "2014-09-13T00:24:46Z"
                            :containerStatuses [{:name "test-app-1234"
@@ -1593,7 +1606,8 @@
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-1234"}
                              :uid "test-app-1234-abcd2-uid"}
-                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
+                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]
+                                       :readinessProbe {:path "/health"}}]}
                   :status {:podIP "10.141.141.12"
                            :startTime "2014-09-13T00:24:47Z"
                            :containerStatuses [{:name "test-app-1234"
@@ -1608,7 +1622,8 @@
                                            :waiter/service-id "test-app-1234"}
                              :resourceVersion "1002"
                              :uid "test-app-1234-abcd3-uid"}
-                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
+                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]
+                                       :readinessProbe {:path "/health"}}]}
                   :status {:podIP "10.141.141.13"
                            :startTime "2014-09-13T00:24:48Z"
                            :containerStatuses [{:name "test-app-1234"
@@ -1624,7 +1639,8 @@
                               :annotations {:waiter/port-count "1"
                                             :waiter/service-id "test-app-1234"}
                               :resourceVersion "1001"}
-                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
+                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]
+                                        :readinessProbe {:path "/health"}}]}
                    :status {:podIP "10.141.141.12"
                             :startTime "2014-09-13T00:24:47Z"
                             :containerStatuses [{:name "test-app-1234"
@@ -1639,7 +1655,8 @@
                               :annotations {:waiter/port-count "1"
                                             :waiter/service-id "test-app-1234"}
                               :resourceVersion "1002"}
-                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
+                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]
+                                        :readinessProbe {:path "/health"}}]}
                    :status {:podIP "10.141.141.13"
                             :startTime "2014-09-13T00:24:48Z"
                             :containerStatuses [{:name "test-app-1234"
@@ -1822,7 +1839,8 @@
 (deftest test-pod->ServiceInstance
   (let [api-server-url "https://k8s-api.example/"
         base-scheduler {:api-server-url api-server-url
-                        :container-running-grace-secs 120}
+                        :container-running-grace-secs 120
+                        :restart-expiry-threshold 10}
         pod-start-time (t/minus (t/now) (t/seconds 60))
         pod-start-time-k8s-str (du/date-to-str pod-start-time k8s-timestamp-format)
         pod {:metadata {:name "test-app-1234-abcd1"
@@ -1832,7 +1850,8 @@
                                  :waiter/service-hash "test-app-1234"}
                         :annotations {:waiter/port-count "1"
                                       :waiter/service-id "test-app-1234"}}
-             :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
+             :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]
+                                  :readinessProbe {:path "/health"}}]}
              :status {:podIP "10.141.141.11"
                       :startTime pod-start-time-k8s-str
                       :containerStatuses [{:name "test-app-1234"
@@ -1860,14 +1879,31 @@
         expired-instance-map (assoc instance-map :flags #{:expired})]
 
     (testing "pod to live instance"
-      (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
-            instance (pod->ServiceInstance dummy-scheduler pod)]
+      (let [instance (pod->ServiceInstance base-scheduler pod)]
+        (is (= (scheduler/make-ServiceInstance instance-map) instance))))
+
+    (testing "pod with sidecar health"
+      (let [pod' (-> pod
+                   (update-in [:spec :containers]
+                              conj {:name "sidecar"
+                                    :readinessProbe {:path "/health"}})
+                   (update-in [:status :containerStatuses]
+                              conj {:name "sidecar"
+                                    :ready false}))
+            pod'' (assoc-in pod' [:status :containerStatuses 1 :ready] true)]
+        (is (false? (:healthy? (pod->ServiceInstance base-scheduler pod'))))
+        (is (true? (:healthy? (pod->ServiceInstance base-scheduler pod''))))))
+
+    (testing "pod with envoy sidecar to instance"
+      (let [pod' (-> pod
+                     (assoc-in [:metadata :annotations :waiter/service-port] "8080")
+                     (assoc-in [:spec :containers 0 :ports 0 :containerPort] 8081))
+            instance (pod->ServiceInstance base-scheduler pod')]
         (is (= (scheduler/make-ServiceInstance instance-map) instance))))
 
     (testing "pod with expired annotation"
-      (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
-            pod' (assoc-in pod [:metadata :annotations :waiter/pod-expired] "true")
-            instance (pod->ServiceInstance dummy-scheduler pod')]
+      (let [pod' (assoc-in pod [:metadata :annotations :waiter/pod-expired] "true")
+            instance (pod->ServiceInstance base-scheduler pod')]
         (is (= (scheduler/make-ServiceInstance expired-instance-map) instance))))
 
     (testing "pod to expired instance threshold"
@@ -1886,14 +1922,6 @@
                                    :restart-expiry-threshold 25)
             instance (pod->ServiceInstance dummy-scheduler pod)]
         (is (= (scheduler/make-ServiceInstance expired-instance-map) instance))))
-
-    (testing "pod with envoy sidecar to instance"
-      (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
-            pod' (merge
-                   (assoc-in pod [:metadata :annotations :waiter/service-port] "8080")
-                   (assoc-in pod [:spec :containers 0 :ports 0 :containerPort] 8081))
-            instance (pod->ServiceInstance dummy-scheduler pod)]
-        (is (= (scheduler/make-ServiceInstance instance-map) instance))))
 
     (testing "previously started pod not expired despite instance exceeded running grace period"
       (let [dummy-scheduler (assoc base-scheduler
