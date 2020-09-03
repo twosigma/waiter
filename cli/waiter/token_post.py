@@ -52,9 +52,9 @@ def create_or_update(cluster, token_name, token_fields, action):
     try:
         print_info(f'Attempting to {action} token on {terminal.bold(cluster_name)}...')
         params = {'token': token_name}
-        if token_fields.get('update-mode') is not None:
-            params['update-mode'] = token_fields['update-mode']
-            del token_fields['update-mode']
+        if token_fields.get('admin'):
+            params['update-mode'] = 'admin'
+        del token_fields['admin']
         json_body = existing_token_data if existing_token_data and action.should_patch() else {}
         json_body.update(token_fields)
         headers = {'If-Match': existing_token_etag or ''}
@@ -139,7 +139,7 @@ def add_arguments(parser):
 
 def add_token_flags(parser):
     """Adds the "core" token-field flags to the given parser"""
-    parser.add_argument('-A', '--admin', help='run command in admin mode', action='store_const', dest='update-mode', const='admin')
+    parser.add_argument('-A', '--admin', help='run command in admin mode', action='store_true')
     parser.add_argument('--name', '-n', help='name of service')
     parser.add_argument('--owner', '-o', help='owner of service')
     parser.add_argument('--version', '-v', help='version of service')
