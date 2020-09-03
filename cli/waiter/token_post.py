@@ -43,7 +43,7 @@ def post_failed_message(cluster_name, reason):
     return f'Token post {terminal.failed("failed")} on {cluster_name}:\n{terminal.reason(reason)}'
 
 
-def create_or_update(cluster, token_name, token_fields, action):
+def create_or_update(cluster, token_name, token_fields, action, update_mode_admin=False):
     """Creates (or updates) the given token on the given cluster"""
     cluster_name = cluster['name']
     cluster_url = cluster['url']
@@ -52,9 +52,8 @@ def create_or_update(cluster, token_name, token_fields, action):
     try:
         print_info(f'Attempting to {action} token on {terminal.bold(cluster_name)}...')
         params = {'token': token_name}
-        if token_fields.get('admin'):
+        if update_mode_admin:
             params['update-mode'] = 'admin'
-        del token_fields['admin']
         json_body = existing_token_data if existing_token_data and action.should_patch() else {}
         json_body.update(token_fields)
         headers = {'If-Match': existing_token_etag or ''}
@@ -81,6 +80,7 @@ def create_or_update_token(clusters, args, _, action):
     json_file = args.pop('json', None)
     yaml_file = args.pop('yaml', None)
     input_file = args.pop('input', None)
+    admin_mode = args.pop('admin', None)
 
     if input_file or json_file or yaml_file:
         token_fields_from_json = load_data({'data': input_file,
@@ -124,13 +124,14 @@ def create_or_update_token(clusters, args, _, action):
     else:
         cluster = clusters[0]
 
-    return create_or_update(cluster, token_name, token_fields, action)
+    return create_or_update(cluster, token_name, token_fields, action, update_mode_admin=admin_mode)
 
 
 def add_arguments(parser):
     """Adds arguments to the given parser"""
     add_token_flags(parser)
     parser.add_argument('token', nargs='?')
+    parser.add_argument('--admin', '-a', help='run command in admin mode', action='store_true')
     format_group = parser.add_mutually_exclusive_group()
     format_group.add_argument('--json', help='provide the data in a JSON file', dest='json')
     format_group.add_argument('--yaml', help='provide the data in a YAML file', dest='yaml')
@@ -139,7 +140,6 @@ def add_arguments(parser):
 
 def add_token_flags(parser):
     """Adds the "core" token-field flags to the given parser"""
-    parser.add_argument('-A', '--admin', help='run command in admin mode', action='store_true')
     parser.add_argument('--name', '-n', help='name of service')
     parser.add_argument('--owner', '-o', help='owner of service')
     parser.add_argument('--version', '-v', help='version of service')
