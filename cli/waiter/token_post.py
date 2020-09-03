@@ -51,10 +51,14 @@ def create_or_update(cluster, token_name, token_fields, action):
     existing_token_data, existing_token_etag = get_token(cluster, token_name)
     try:
         print_info(f'Attempting to {action} token on {terminal.bold(cluster_name)}...')
+        params = {'token': token_name}
+        if token_fields.get('update-mode') is not None:
+            params['update-mode'] = token_fields['update-mode']
+            del token_fields['update-mode']
         json_body = existing_token_data if existing_token_data and action.should_patch() else {}
         json_body.update(token_fields)
         headers = {'If-Match': existing_token_etag or ''}
-        resp = http_util.post(cluster, 'token', json_body, params={'token': token_name}, headers=headers)
+        resp = http_util.post(cluster, 'token', json_body, params=params, headers=headers)
         process_post_result(resp)
         return 0
     except requests.exceptions.ReadTimeout as rt:
@@ -135,6 +139,7 @@ def add_arguments(parser):
 
 def add_token_flags(parser):
     """Adds the "core" token-field flags to the given parser"""
+    parser.add_argument('-A', '--admin', help='run command in admin mode', action='store_const', dest='update-mode', const='admin')
     parser.add_argument('--name', '-n', help='name of service')
     parser.add_argument('--owner', '-o', help='owner of service')
     parser.add_argument('--version', '-v', help='version of service')
