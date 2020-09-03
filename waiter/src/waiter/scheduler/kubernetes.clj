@@ -826,15 +826,17 @@
 
 (defn attach-envoy-sidecar
   "Attaches envoy sidecar to replicaset"
-  [replicaset reverse-proxy service-description base-env service-port port0]
+  [replicaset reverse-proxy {:strs [health-check-port-index] :as service-description} base-env service-port port0]
   (update-in replicaset
     [:spec :template :spec :containers]
     conj
     (let [{:keys [cmd resources image]} reverse-proxy
           user-env (:env service-description)
           env-map (-> user-env
-                  (merge base-env)
-                  (assoc "PORT0" (str port0) "SERVICE_PORT" (str service-port)))
+                      (merge base-env)
+                      (assoc "HEALTH_CHECK_PORT_INDEX" (str health-check-port-index)
+                             "PORT0" (str port0)
+                             "SERVICE_PORT" (str service-port)))
           env (into []
                     (concat (for [[k v] env-map]
                               {:name k :value v})))
@@ -847,6 +849,11 @@
                            :resources {:limits {:memory (str (:mem resources) "Mi")}
                                        :requests {:cpu (str (:cpu resources)) :memory (str (:mem resources) "Mi")}}}]
       envoy-container)))
+
+(defn service-id-hash->port0
+  "0th port in a range of up to 10 for a given service-id's hash."
+  [service-id-hash base-port]
+  (-> service-id-hash (mod 100) (* 10) (+ base-port)))
 
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
@@ -877,12 +884,13 @@
                                        deref)
         has-reverse-proxy? (when reverse-proxy
                              (envoy-sidecar-check-fn scheduler service-id service-description context))
-        offset (if has-reverse-proxy? 1 0)
         ;; Make $PORT0 value pseudo-random to ensure clients can't hardcode it.
         ;; Helps maintain compatibility with Marathon, where port assignment is dynamic.
-        service-port (-> service-id hash (mod 100) (* 10) (+ pod-base-port))
-        port0 (+ service-port offset)
-        health-check-port (+ port0 health-check-port-index)
+        service-id-hash (hash service-id)
+        service-port (service-id-hash->port0 service-id-hash pod-base-port)
+        port0 (if has-reverse-proxy?
+                (service-id-hash->port0 (inc service-id-hash) pod-base-port)
+                service-port)
         env (into [;; We set these two "MESOS_*" variables to improve interoperability.
                    ;; New clients should prefer using WAITER_SANDBOX.
                    {:name "MESOS_DIRECTORY" :value home-path}
@@ -926,7 +934,7 @@
        :spec {:replicas min-instances
               :selector {:matchLabels {:app k8s-name
                                        :waiter/user run-as-user}}
-              :template {:metadata {:annotations {:waiter/port-count (str (+ ports offset))
+              :template {:metadata {:annotations {:waiter/port-count (str ports)
                                                   :waiter/service-id service-id
                                                   :waiter/service-port (str service-port)}
                                     :labels {:app k8s-name
@@ -948,8 +956,9 @@
                                               :ports [{:containerPort port0}]
                                               :readinessProbe (-> (prepare-health-check-probe
                                                                     service-id->password-fn service-id
-                                                                    health-check-authentication health-check-scheme
-                                                                    health-check-url health-check-port
+                                                                    health-check-authentication
+                                                                    health-check-scheme health-check-url
+                                                                    (+ service-port health-check-port-index)
                                                                     health-check-interval-secs)
                                                                 (assoc :failureThreshold 1))
                                               :resources {:limits {:memory memory}
@@ -967,8 +976,9 @@
         [:spec :template :spec :containers 0]
         assoc :livenessProbe (-> (prepare-health-check-probe
                                    service-id->password-fn service-id
-                                   health-check-authentication health-check-scheme
-                                   health-check-url health-check-port
+                                   health-check-authentication
+                                   health-check-scheme health-check-url
+                                   (+ port0 health-check-port-index)
                                    health-check-interval-secs)
                                (assoc
                                  ;; We increment the threshold value to match Marathon behavior.

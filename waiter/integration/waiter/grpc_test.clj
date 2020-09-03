@@ -1095,3 +1095,24 @@
                     (assert-grpc-cancel-status status "Cancelled by server" assertion-message)
                     (is (nil? message-summary) assertion-message)
                     (assert-request-state grpc-client request-headers service-id correlation-id ::server-cancel)))))))))))
+
+(deftest ^:parallel ^:integration-fast test-kubernetes-reverse-proxy-sidecar-grpc
+  (testing-using-waiter-url
+    (when (using-k8s? waiter-url)
+      (if-not (contains? (get-kubernetes-scheduler-settings waiter-url) :reverse-proxy)
+        (log/warn "skipping the integration test as :reverse-proxy is not defined")
+        (let [reverse-proxy-flag "REVERSE_PROXY"
+              request-headers (assoc (basic-grpc-service-parameters)
+                                     "content-type" "application/grpc"
+                                     (str "x-waiter-env-" reverse-proxy-flag) "yes")
+              _ (log/info "making canary request")
+              {:keys [cookies service-id] :as response} (make-request-with-debug-info
+                                                          request-headers
+                                                          #(make-shell-request waiter-url % :method :get :path "/"))]
+          (with-service-cleanup
+            service-id
+            (assert-service-on-all-routers waiter-url service-id cookies)
+            (assert-response-status response http-200-ok)
+            (testing "Expected envoy specific headers are present in both request and response"
+              (let [response-headers (:headers response)]
+                (is (= "envoy" (get response-headers "server")))))))))))
