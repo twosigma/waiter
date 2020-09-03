@@ -304,6 +304,16 @@
               (assert-grpc-unauthenticated-status status assertion-message)
               (is (nil? reply) assertion-message))))
 
+        (testing "http/1.1 call to service"
+          (log/info "making http/1.1 call to service")
+          (let [correlation-id (rand-name)
+                request-headers (assoc request-headers "x-cid" correlation-id)
+                response (make-request waiter-url "/health"
+                                       :body "payload-for-health-check!"
+                              :headers request-headers
+                              :method :get)]
+            (assert-response-status response #{http-400-bad-request http-415-unsupported-media-type})))
+
         (testing "small request and reply"
           (log/info "starting small request and reply test")
           (let [correlation-id (rand-name)

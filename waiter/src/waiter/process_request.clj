@@ -29,7 +29,6 @@
             [waiter.async-request :as async-req]
             [waiter.auth.authentication :as auth]
             [waiter.correlation-id :as cid]
-            [waiter.handler :as handler]
             [waiter.headers :as headers]
             [waiter.metrics :as metrics]
             [waiter.request-log :as rlog]
@@ -85,6 +84,14 @@
                                  [error-cause error-message error-status error-class]))
                              (instance? IllegalStateException error)
                              [:generic-error error-message http-400-bad-request error-class]
+                             ;; internal_error due to reset stream for http/1 requests means client send bad data to server
+                             ;; TODO shams verify http/1 request
+                             (and (instance? IOException error)
+                                  (= "internal_error" error-message)
+                                  (when-let [^StackTraceElement stack-element (some-> error (.getStackTrace) (seq) (first))]
+                                    (and (str/ends-with? (.getClassName stack-element) "HttpReceiverOverHTTP2")
+                                         (= (.getMethodName stack-element) "onReset"))))
+                             [:client-error "Client send invalid data to HTTP/2 backend" http-400-bad-request error-class]
                              ;; cancel_stream_error is used to indicate that the stream is no longer needed
                              (and (instance? IOException error) (= "cancel_stream_error" error-message))
                              [:client-error "Client action means stream is no longer needed" http-400-bad-request error-class]

@@ -35,6 +35,7 @@
 (def ^:const http-405-method-not-allowed HttpStatus/METHOD_NOT_ALLOWED_405)
 (def ^:const http-409-conflict HttpStatus/CONFLICT_409)
 (def ^:const http-410-gone HttpStatus/GONE_410)
+(def ^:const http-415-unsupported-media-type HttpStatus/UNSUPPORTED_MEDIA_TYPE_415)
 (def ^:const http-423-locked HttpStatus/LOCKED_423)
 (def ^:const http-429-too-many-requests HttpStatus/TOO_MANY_REQUESTS_429)
 (def ^:const http-500-internal-server-error HttpStatus/INTERNAL_SERVER_ERROR_500)
