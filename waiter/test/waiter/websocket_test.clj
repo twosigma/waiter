@@ -66,7 +66,8 @@
         cookie-value "test-cookie-string"
         auth-user "test-user"
         auth-principal (str auth-user "@test.com")
-        auth-time (System/currentTimeMillis)]
+        auth-time (System/currentTimeMillis)
+        expires-at (+ (long (/ auth-time 1000)) 60000)]
     (testing "successful-auth"
       (let [request (reified-upgrade-request {:cookies {"x-waiter-auth" cookie-value}})
             response (reified-upgrade-response)]
@@ -74,7 +75,7 @@
                       auth/decode-auth-cookie (fn [in-cookie in-password]
                                                 (is (= cookie-value in-cookie))
                                                 (is (= password in-password))
-                                                [auth-principal auth-time])]
+                                                [auth-principal auth-time {:expires-at expires-at}])]
           (is (request-authenticator password request response))
           (is (zero? (.getStatusCode response))))))
 
@@ -85,7 +86,7 @@
                       auth/decode-auth-cookie (fn [in-cookie in-password]
                                                 (is (= cookie-value in-cookie))
                                                 (is (= password in-password))
-                                                [auth-principal auth-time])]
+                                                [auth-principal auth-time {:expires-at expires-at}])]
           (is (request-authenticator password request response))
           (is (zero? (.getStatusCode response))))))
 

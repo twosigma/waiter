@@ -19,6 +19,7 @@
             [clojure.core.async :as async]
             [clojure.string :as str]
             [clojure.test :refer :all]
+            [waiter.auth.authentication :as auth]
             [waiter.auth.jwt :as jwt]
             [waiter.auth.oidc :refer :all]
             [waiter.cookie-support :as cookie-support]
@@ -152,25 +153,31 @@
           access-token (str "access-token-" (rand-int 1000))
           subject-key :subject
           current-time-ms (System/currentTimeMillis)
-          current-time-secs (/ current-time-ms 1000)]
+          current-time-secs (long (/ current-time-ms 1000))
+          expires-at (+ current-time-secs 1000)]
 
-      (with-redefs [cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds]
-                                                        (is (= password in-password))
-                                                        (assoc-in response
-                                                                  [:cookies name]
-                                                                  {:age (int age-in-seconds)
-                                                                   :value value}))
+      (with-redefs [cookie-support/add-cookie (fn [response name value age-in-seconds http-only?]
+                                                (is (if (= name auth/AUTH-COOKIE-EXPIRES-AT)
+                                                      (false? http-only?)
+                                                      (true? http-only?)))
+                                                (assoc-in response
+                                                          [:cookies name]
+                                                          {:age (int age-in-seconds)
+                                                           :value value}))
                     cookie-support/decode-cookie (fn [cookie-value in-password]
                                                    (is (= password in-password))
                                                    {:code-verifier (str "decoded:" cookie-value)
                                                     :expiry-time (+ current-time-ms 10000)})
+                    cookie-support/encode-cookie (fn [cookie-value in-password]
+                                                   (is (= password in-password))
+                                                   cookie-value)
                     jwt/current-time-secs (constantly current-time-secs)
                     jwt/get-key-id->jwk (constantly {})
                     jwt/request-access-token (fn [& _]
                                                (let [result-chan (async/promise-chan)]
                                                  (async/>!! result-chan access-token)
                                                  result-chan))
-                    jwt/extract-claims (constantly {:expiry-time (+ current-time-secs 1000)
+                    jwt/extract-claims (constantly {:expiry-time expires-at
                                                     :subject "john.doe"})
                     t/now (constantly (tc/from-long current-time-ms))]
         (let [request {:headers {"cookie" (str oidc-challenge-cookie-prefix identifier "=" challenge-cookie)}
@@ -179,11 +186,14 @@
               oidc-authenticator {:password password
                                   :subject-key subject-key}
               response-chan (oidc-callback-request-handler oidc-authenticator request)
-              response (async/<!! response-chan)]
-          (is (= {:cookies {"x-waiter-auth" {:age (if (= :strict oidc-mode) 1000 (-> 1 t/days t/in-seconds))
-                                             :value ["john.doe" current-time-ms {:jwt-access-token access-token}]}
-                            (str oidc-challenge-cookie-prefix identifier) {:age 0
-                                                                           :value ""}}
+              response (async/<!! response-chan)
+              expected-age (if (= :strict oidc-mode) 1000 (-> 1 t/days t/in-seconds))
+              expected-expires-at (+ current-time-secs expected-age)]
+          (is (= {:cookies {"x-auth-expires-at" {:age expected-age :value (str expected-expires-at)}
+                            "x-waiter-auth" {:age expected-age
+                                             :value ["john.doe" current-time-ms {:expires-at expected-expires-at
+                                                                                 :jwt-access-token access-token}]}
+                            (str oidc-challenge-cookie-prefix identifier) {:age 0 :value ""}}
                   :headers {"cache-control" "no-store"
                             "content-security-policy" "default-src 'none'; frame-ancestors 'none'"
                             "location" "https://www.test.com/redirect-uri"}

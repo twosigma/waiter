@@ -18,11 +18,17 @@
             [waiter.util.client-tools :refer :all]))
 
 (deftest test-parse-set-cookie-string
-  (is (= (list {:max-age -1 :name "name" :value "value"}) (parse-set-cookie-string "name=value")))
-  (is (= (list {:max-age -1 :name "name" :value "value"}) (parse-set-cookie-string "name=value;Path=/")))
-  (is (= (list {:max-age 12345 :name "name" :value "value"}) (parse-set-cookie-string "name=value;Path=/;Max-Age=12345")))
+  (is (= (list {:http-only? false :max-age -1 :name "name" :path nil :secure? false :value "value"})
+         (parse-set-cookie-string "name=value")))
+  (is (= (list {:http-only? false :max-age -1 :name "name" :path "/" :secure? false :value "value"})
+         (parse-set-cookie-string "name=value;Path=/")))
+  (is (= (list {:http-only? false :max-age 12345 :name "name" :path "/" :secure? false :value "value"})
+         (parse-set-cookie-string "name=value;Path=/;Max-Age=12345")))
   (is (nil? (parse-set-cookie-string nil))))
 
 (deftest test-parse-cookies
-  (is (= [{:max-age -1 :name "name" :value "value"}] (parse-cookies "name=value")))
-  (is (= [{:max-age -1 :name "name" :value "value"} {:max-age -1 :name "name2" :value "value2"}] (parse-cookies ["name=value" "name2=value2"]))))
+  (is (= [{:http-only? false :max-age -1 :name "name" :path nil :secure? false :value "value"}]
+         (parse-cookies "name=value")))
+  (is (= [{:http-only? false :max-age -1 :name "name" :path nil :secure? false :value "value"}
+          {:http-only? false :max-age -1 :name "name2" :path nil :secure? false :value "value2"}]
+         (parse-cookies ["name=value" "name2=value2"]))))

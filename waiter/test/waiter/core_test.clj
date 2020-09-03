@@ -748,6 +748,9 @@
       (is (waiter-request? {:headers {"host" "127.0.0.1"}}))
       (is (waiter-request? {:headers {"host" "127.0.0.1:80"}}))
       (is (waiter-request? {}))
+      (is (waiter-request? {:uri "/.well-known/auth/expires-at"}))
+      (is (waiter-request? {:uri "/.well-known/auth/keep-alive"}))
+      (is (waiter-request? {:uri "/.well-known/oidc/v1/openid-enabled"}))
       (is (waiter-request? {:uri "/app-name"}))
       (is (waiter-request? {:uri "/oidc/v1/callback"}))
       (is (waiter-request? {:uri "/service-id"}))
@@ -920,6 +923,12 @@
   (let [exec-routes-mapper (fn [uri] (routes-mapper {:uri uri}))]
     (is (= {:handler :welcome-handler-fn}
            (exec-routes-mapper "/")))
+    (is (= {:handler :auth-expires-at-handler-fn}
+           (exec-routes-mapper auth/auth-expires-at-uri)))
+    (is (= {:handler :auth-keep-alive-handler-fn}
+           (exec-routes-mapper auth/auth-keep-alive-uri)))
+    (is (= {:handler :oidc-enabled-handler-fn}
+           (exec-routes-mapper oidc/oidc-enabled-uri)))
     (is (= {:handler :app-name-handler-fn}
            (exec-routes-mapper "/app-name")))
     (is (= {:handler :service-list-handler-fn}

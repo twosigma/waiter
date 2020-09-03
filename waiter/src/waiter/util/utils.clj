@@ -554,6 +554,16 @@
   [params flag]
   (Boolean/parseBoolean (str (get params flag "false"))))
 
+(defn parse-int
+  "Returns either the input as an integer or nil if there was an error in parsing."
+  [value]
+  (try
+    (when value
+      (Integer/parseInt (str value)))
+    (catch Exception _
+      (log/info "cannot convert value to an int:" value)
+      nil)))
+
 (defn param-contains?
   "Returns true if and only if request parameter k is present in params and has a value equal to v."
   [params k v]

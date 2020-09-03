@@ -89,6 +89,8 @@
   ;; Please include/update a corresponding unit test anytime the routes data structure is modified
   [{:keys [uri]}]
   (let [routes ["/" {"" :welcome-handler-fn
+                     (subs auth/auth-expires-at-uri 1) :auth-expires-at-handler-fn
+                     (subs auth/auth-keep-alive-uri 1) :auth-keep-alive-handler-fn
                      (subs oidc/oidc-enabled-uri 1) :oidc-enabled-handler-fn
                      "app-name" :app-name-handler-fn
                      "apps" {"" :service-list-handler-fn
@@ -288,19 +290,17 @@
                                                 (cid/cinfo correlation-id "request trailers:" trailers-data)
                                                 trailers-data)))))
             response (handler request)
-            add-headers (fn [{:keys [authorization/method authorization/principal authorization/user descriptor instance] :as response}]
+            add-headers (fn [{:keys [descriptor instance] :as response}]
                           (let [{:strs [backend-proto]} (:service-description descriptor)
                                 backend-directory (:log-directory instance)
                                 backend-log-url (when backend-directory
                                                   (generate-log-url-fn instance))
                                 request-date (when request-time
                                                (du/date-to-str request-time du/formatter-rfc822))]
-                            (update response :headers
+                            (update (auth/attach-authorization-headers response)
+                                    :headers
                                     (fn [headers]
                                       (cond-> headers
-                                        method (assoc "x-waiter-auth-method" (name method))
-                                        principal (assoc "x-waiter-auth-principal" (str principal))
-                                        user (assoc "x-waiter-auth-user" (str user))
                                         client-protocol (assoc "x-waiter-client-protocol" (name client-protocol))
                                         internal-protocol (assoc "x-waiter-internal-protocol" (name internal-protocol))
                                         request-time (assoc "x-waiter-request-date" request-date)
@@ -570,8 +570,9 @@
   the request is intended for Waiter itself or a service of Waiter."
   [valid-waiter-hostnames]
   (let [valid-waiter-hostnames (set/union valid-waiter-hostnames #{"localhost" "127.0.0.1"})
-        waiter-api-full-names #{"/app-name" oidc/oidc-callback-uri oidc/oidc-enabled-uri
-                                "/service-id" "/token" "/waiter-ping"}]
+        waiter-api-full-names #{auth/auth-expires-at-uri auth/auth-keep-alive-uri
+                                oidc/oidc-enabled-uri oidc/oidc-callback-uri
+                                "/app-name" "/service-id" "/token" "/waiter-ping"}]
     (fn waiter-request? [{:keys [uri headers]}]
       (let [{:strs [host]} headers]
         ; special urls that are always for Waiter (FIXME)
@@ -1423,6 +1424,22 @@
                               (wrap-secure-request-fn
                                 (fn async-status-handler-fn [request]
                                   (handler/async-status-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))))
+   :auth-expires-at-handler-fn (pc/fnk [[:state passwords]]
+                                 (let [password (first passwords)]
+                                   (fn auth-expires-at-handler-fn [request]
+                                     (auth/process-auth-expires-at-request password request))))
+   :auth-keep-alive-handler-fn (pc/fnk [[:routines token->token-parameters]
+                                        [:state passwords waiter-hostnames]
+                                        wrap-secure-request-fn wrap-service-discovery-fn]
+                                 (let [waiter-hostnames (cond-> waiter-hostnames
+                                                          (contains? waiter-hostnames "localhost")
+                                                          (conj "127.0.0.1"))
+                                       password (first passwords)
+                                       auth-handler (-> (constantly (utils/attach-waiter-source {:status http-204-no-content}))
+                                                      (wrap-secure-request-fn)
+                                                      (wrap-service-discovery-fn))]
+                                   (fn auth-keep-alive-handler-fn [request]
+                                     (auth/process-auth-keep-alive-request token->token-parameters waiter-hostnames password auth-handler request))))
    :default-websocket-handler-fn (pc/fnk [[:daemons populate-maintainer-chan!]
                                           [:routines determine-priority-fn service-id->password-fn start-new-service-fn]
                                           [:settings instance-request-properties]
@@ -1807,7 +1824,8 @@
                                                    wrap-secure-request-fn]
                                             (let [password (first passwords)]
                                               (letfn [(add-encoded-cookie [response cookie-name value expiry-days]
-                                                        (cookie-support/add-encoded-cookie response password cookie-name value (-> expiry-days t/days t/in-seconds)))
+                                                        (let [age-in-seconds (-> expiry-days t/days t/in-seconds)]
+                                                          (cookie-support/add-encoded-cookie response password cookie-name value age-in-seconds)))
                                                       (consent-cookie-value [mode service-id token token-metadata]
                                                         (sd/consent-cookie-value clock mode service-id token token-metadata))]
                                                 (wrap-secure-request-fn

@@ -761,17 +761,20 @@
   (testing-using-waiter-url
     (log/info "Basic waiter-auth test")
     (let [{:keys [body cookies headers] :as response} (make-request waiter-url "/waiter-auth")
-          set-cookie (get headers "set-cookie")]
+          set-cookie (get headers "set-cookie")
+          current-user (retrieve-username)]
       (assert-response-status response http-200-ok)
       (is (contains? headers "x-waiter-auth-method") (str headers))
       (is (not= "cookie" (get headers "x-waiter-auth-method")) (str headers))
       (is (contains? headers "x-waiter-auth-principal") (str headers))
       (is (contains? headers "x-waiter-auth-user") (str headers))
+      (is (str/includes? set-cookie "auth-expires-at="))
       (is (str/includes? set-cookie "x-waiter-auth="))
       (is (str/includes? set-cookie "Max-Age="))
       (is (str/includes? set-cookie "Path=/"))
       (is (str/includes? set-cookie "HttpOnly=true"))
       (is (= (System/getProperty "user.name") (str body)))
+      (assert-waiter-authentication-cookies cookies)
 
       (let [{:keys [body headers] :as response} (make-request waiter-url "/waiter-auth" :cookies cookies)
             set-cookie (get headers "set-cookie")]
@@ -781,7 +784,76 @@
         (is (contains? headers "x-waiter-auth-principal") (str headers))
         (is (contains? headers "x-waiter-auth-user") (str headers))
         (is (str/blank? set-cookie))
-        (is (= (System/getProperty "user.name") (str body)))))))
+        (is (= (System/getProperty "user.name") (str body)))
+
+        (testing "well-known auth endpoints"
+          (let [{:strs [x-waiter-auth-principal]} headers
+                auth-expires-at-cookie (extract-cookie cookies "x-auth-expires-at")
+                waiter-auth-cookie (extract-cookie cookies "x-waiter-auth")
+                request-cookies (remove #(= (:name %) "x-auth-expires-at") cookies)]
+            (let [response (make-request waiter-url "/.well-known/auth/expires-at"
+                                         :cookies request-cookies
+                                         :method :get)]
+              (assert-response-status response http-200-ok)
+              (assert-waiter-response response)
+              (is (= {"expires-at" (-> auth-expires-at-cookie :value utils/parse-int)
+                      "principal" x-waiter-auth-principal}
+                     (some-> response :body try-parse-json))
+                  (str response)))
+            (let [{:keys [cookies] :as response}
+                  (make-request waiter-url "/.well-known/auth/keep-alive"
+                                :cookies request-cookies
+                                :headers {"x-waiter-debug" true}
+                                :method :get
+                                :query-params {"done" "true"})]
+              (assert-response-status response http-204-no-content)
+              (assert-waiter-response response)
+              (is (nil? (extract-cookie cookies "x-auth-expires-at")))
+              (is (nil? (extract-cookie cookies "x-waiter-auth"))))
+            (let [{:keys [cookies] :as response}
+                  (make-request waiter-url "/.well-known/auth/keep-alive"
+                                :cookies request-cookies
+                                :headers {"x-waiter-debug" true}
+                                :method :get
+                                :query-params {"offset" "10"})]
+              (assert-response-status response http-204-no-content)
+              (assert-waiter-response response)
+              (is (nil? (extract-cookie cookies "x-auth-expires-at")))
+              (is (nil? (extract-cookie cookies "x-waiter-auth"))))
+            (let [{:keys [cookies headers] :as response}
+                  (make-request waiter-url "/.well-known/auth/keep-alive"
+                                :cookies request-cookies
+                                :disable-auth false ;; avoid eagerly sending kerberos authorization headers
+                                :headers {"x-waiter-debug" true}
+                                :method :get
+                                :query-params {"offset" "100000000"})
+                  response-auth-expires-at-cookie (extract-cookie cookies "x-auth-expires-at")
+                  response-waiter-auth-cookie (extract-cookie cookies "x-waiter-auth")]
+              (assert-response-status response http-204-no-content)
+              (assert-waiter-response response)
+              (assert-waiter-authentication-cookies cookies)
+              (is (contains? headers "x-waiter-auth-method") (str headers))
+              (is (contains? headers "x-waiter-auth-principal") (str headers))
+              (is (= (get headers "x-waiter-auth-user") current-user) (str headers))
+              (is response-auth-expires-at-cookie)
+              (is (not= waiter-auth-cookie response-waiter-auth-cookie)))
+            (let [{:keys [cookies] :as response}
+                  (make-request waiter-url "/.well-known/auth/keep-alive"
+                                :cookies request-cookies
+                                :disable-auth false ;; avoid eagerly sending kerberos authorization headers
+                                :headers {"x-waiter-debug" true}
+                                :method :get
+                                :query-params {})
+                  response-auth-expires-at-cookie (extract-cookie cookies "x-auth-expires-at")
+                  response-waiter-auth-cookie (extract-cookie cookies "x-waiter-auth")]
+              (assert-response-status response http-204-no-content)
+              (assert-waiter-response response)
+              (assert-waiter-authentication-cookies cookies)
+              (is (contains? headers "x-waiter-auth-method") (str headers))
+              (is (contains? headers "x-waiter-auth-principal") (str headers))
+              (is (= (get headers "x-waiter-auth-user") current-user) (str headers))
+              (is response-auth-expires-at-cookie)
+              (is (not= waiter-auth-cookie response-waiter-auth-cookie)))))))))
 
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-killed-instances
   (testing-using-waiter-url

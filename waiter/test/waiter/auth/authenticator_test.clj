@@ -18,7 +18,8 @@
             [clojure.string :as str]
             [clojure.test :refer :all]
             [waiter.auth.authentication :refer :all]
-            [waiter.cookie-support :as cs])
+            [waiter.cookie-support :as cs]
+            [waiter.status-codes :refer :all])
   (:import (waiter.auth.authentication SingleUserAuthenticator)))
 
 (deftest test-one-user-authenticator
@@ -52,17 +53,23 @@
 
 (deftest test-decoded-auth-valid?
   (let [now-ms (System/currentTimeMillis)
+        now-sec (long (/ now-ms 1000))
+        expires-at (+ now-sec 4000)
         one-day-in-millis (-> 1 t/days t/in-millis)]
-    (is (true? (decoded-auth-valid? ["test-principal" now-ms])))
-    (is (true? (decoded-auth-valid? ["test-principal" (-> now-ms (- one-day-in-millis) (+ 1000))])))
-    (is (true? (decoded-auth-valid? ["test-principal" now-ms {:jwt-access-token "a.b.c"}])))
-    (is (false? (decoded-auth-valid? ["test-principal" (- now-ms one-day-in-millis 1000)])))
-    (is (false? (decoded-auth-valid? ["test-principal" "invalid-string-time"])))
-    (is (false? (decoded-auth-valid? [(rand-int 10000) "invalid-string-time"])))
+    (is (false? (decoded-auth-valid? ["test-principal" now-ms])))
+    (is (false? (decoded-auth-valid? ["test-principal" (-> now-ms (- one-day-in-millis) (+ 1000))])))
+    (is (false? (decoded-auth-valid? ["test-principal" now-ms {:jwt-access-token "a.b.c"}])))
+    (is (false? (decoded-auth-valid? ["test-principal" (- now-ms one-day-in-millis 1000) {:expires-at (dec now-sec)}])))
+    (is (false? (decoded-auth-valid? ["test-principal" "invalid-string-time" {:expires-at expires-at}])))
+    (is (false? (decoded-auth-valid? [(rand-int 10000) "invalid-string-time" {:expires-at expires-at}])))
     (is (false? (decoded-auth-valid? [])))
     (is (false? (decoded-auth-valid? ["test-principal"])))
     (is (false? (decoded-auth-valid? ["test-principal" now-ms now-ms])))
-    (is (false? (decoded-auth-valid? ["test-principal" now-ms {:jwt-access-token "a.b.c"} now-ms])))))
+    (is (false? (decoded-auth-valid? ["test-principal" now-ms {:expires-at expires-at :jwt-access-token "a.b.c"} now-ms])))
+    ;; expires-at metadata must be present
+    (is (true? (decoded-auth-valid? ["test-principal" now-ms {:expires-at expires-at}])))
+    (is (true? (decoded-auth-valid? ["test-principal" (-> now-ms (- one-day-in-millis) (+ 1000)) {:expires-at expires-at}])))
+    (is (true? (decoded-auth-valid? ["test-principal" now-ms {:expires-at expires-at :jwt-access-token "a.b.c"}])))))
 
 (deftest test-auth-cookie-handler
   (let [request-handler (fn [{:keys [authorization/principal authorization/user]}]
@@ -70,21 +77,27 @@
                                   :user user}})
         password "test-password"
         auth-user "test-user"
-        auth-principal (str auth-user "@test.com")]
+        auth-principal (str auth-user "@test.com")
+        now-ms (System/currentTimeMillis)
+        now-sec (long (/ now-ms 1000))
+        expires-at (+ now-sec 900000)]
 
     (testing "valid auth cookie"
-      (with-redefs [decode-auth-cookie (constantly [auth-principal (+ (System/currentTimeMillis) 60000)])]
+      (with-redefs [decode-auth-cookie (constantly [auth-principal (+ now-ms 60000) {:expires-at expires-at}])]
         (let [auth-cookie-handler (wrap-auth-cookie-handler password request-handler)]
-          (is (= {:authorization/method :cookie
+          (is (= {:authorization/metadata {:expires-at expires-at}
+                  :authorization/method :cookie
                   :authorization/principal auth-principal
                   :authorization/user auth-user
                   :body {:principal auth-principal :user auth-user}}
                  (auth-cookie-handler {:headers {"cookie" "x-waiter-auth=test-auth-cookie"}})))))
 
-      (with-redefs [decode-auth-cookie (constantly [auth-principal (+ (System/currentTimeMillis) 60000)
-                                                    {:jwt-access-token "test.access.token"}])]
+      (with-redefs [decode-auth-cookie (constantly [auth-principal (+ now-ms 60000)
+                                                    {:expires-at expires-at
+                                                     :jwt-access-token "test.access.token"}])]
         (let [auth-cookie-handler (wrap-auth-cookie-handler password request-handler)]
-          (is (= {:authorization/metadata {:jwt-access-token "test.access.token"}
+          (is (= {:authorization/metadata {:expires-at expires-at
+                                           :jwt-access-token "test.access.token"}
                   :authorization/method :cookie
                   :authorization/principal auth-principal
                   :authorization/user auth-user
@@ -95,4 +108,33 @@
       (let [auth-cookie-handler (wrap-auth-cookie-handler password request-handler)]
         (is (= {:body {:principal nil :user nil}} (auth-cookie-handler {:headers {}})))
         (is (= {:body {:principal nil :user nil}} (auth-cookie-handler {:headers {"cookie" "foo=bar"}})))
-        (is (= {:body {:principal nil :user nil}} (auth-cookie-handler {:headers {"cookie" "x-waiter-auth=foo"}})))))))
+        (is (= {:body {:principal nil :user nil}} (auth-cookie-handler {:headers {"cookie" "x-waiter-auth=foo"}}))))
+
+      (with-redefs [decode-auth-cookie (constantly [auth-principal (+ now-ms 60000)])]
+        (let [auth-cookie-handler (wrap-auth-cookie-handler password request-handler)]
+          (is (= {:body {:principal nil :user nil}}
+                 (auth-cookie-handler {:headers {"cookie" "x-waiter-auth=test-auth-cookie"}}))))))))
+
+(deftest test-remove-done-param-from-keep-alive-https-redirect
+  (doseq [test-status [http-200-ok http-301-moved-permanently http-401-unauthorized]]
+    (let [response {:headers {"location" "https://www.test.com/.well-known/auth/keep-alive?done=true&offset=1000&foo=bar"}
+                    :status test-status}]
+      (is (= response
+             (remove-done-param-from-keep-alive-https-redirect response)))))
+  (doseq [test-status [http-302-moved-temporarily http-307-temporary-redirect]]
+    (let [response {:status test-status}]
+      (is (= response
+             (remove-done-param-from-keep-alive-https-redirect response))))
+    (let [response {:headers {"location" "http://www.test.com/.well-known/auth/keep-alive?done=true&offset=1000&foo=bar"}
+                    :status test-status}]
+      (is (= response
+             (remove-done-param-from-keep-alive-https-redirect response))))
+    (let [response {:headers {"location" "https://www.test.com/.well-known/auth/keep-alive?offset=1000&foo=bar"}
+                    :status test-status}]
+      (is (= response
+             (remove-done-param-from-keep-alive-https-redirect response))))
+    (let [response {:headers {"location" "https://www.test.com/.well-known/auth/keep-alive?done=true&offset=1000&foo=bar"}
+                    :status test-status}]
+      (is (= {:headers {"location" "https://www.test.com/.well-known/auth/keep-alive?waiter-redirect=true&offset=1000&foo=bar"}
+              :status test-status}
+             (remove-done-param-from-keep-alive-https-redirect response))))))

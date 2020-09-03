@@ -151,6 +151,7 @@
   [set-cookie assertion-message]
   `(let [set-cookie# ~set-cookie
          assertion-message# ~assertion-message]
+     (is (str/includes? set-cookie# "auth-expires-at=") assertion-message#)
      (is (str/includes? set-cookie# "x-waiter-auth=") assertion-message#)
      (is (str/includes? set-cookie# "Max-Age=") assertion-message#)
      (is (str/includes? set-cookie# "Path=/") assertion-message#)
@@ -473,6 +474,7 @@
               (assert-response-status initial-response http-302-moved-temporarily)
               (let [{:strs [location set-cookie]} (:headers initial-response)
                     assertion-message (str {:headers (:headers initial-response)
+                                            :oidc-auth-env oidc-auth-env
                                             :set-cookie set-cookie
                                             :status (:status initial-response)})]
                 (is (not (str/blank? location)) assertion-message)
@@ -490,20 +492,48 @@
                                       :cookies cookies
                                       :headers callback-request-headers)]
                     (assert-response-status callback-response http-302-moved-temporarily)
-                    (is (= 2 (count cookies)))
-                    (is (zero? (:max-age (first (filter #(str/starts-with? (:name %) "x-waiter-oidc-challenge-") cookies)))))
-                    (let [x-waiter-auth-cookie (first (filter #(= (:name %) "x-waiter-auth") cookies))
-                          x-waiter-auth-max-age (:max-age x-waiter-auth-cookie)
-                          one-day-in-secs (-> 1 t/days t/in-seconds)
-                          assertion-message (str {:auth-cookie x-waiter-auth-cookie
-                                                  :oidc-auth-env oidc-auth-env})]
-                      (if (= "strict" oidc-auth-env)
-                        (is (< x-waiter-auth-max-age one-day-in-secs) assertion-message)
-                        (is (= x-waiter-auth-max-age one-day-in-secs) assertion-message)))
+                    (is (= 3 (count cookies)) (str cookies))
+                    (if-let [oidc-challenge-cookie (first (filter #(str/starts-with? (:name %) "x-waiter-oidc-challenge-") cookies))]
+                      (is (= {:http-only? true :max-age 0 :path "/" :secure? false}
+                             (select-keys oidc-challenge-cookie [:http-only? :max-age :path :secure?])))
+                      (is false "OIDC challenge cookie is missing"))
+                    (assert-waiter-authentication-cookies cookies)
+                    (if-let [waiter-auth-cookie (first (filter #(= (:name %) "x-waiter-auth") cookies))]
+                      (let [x-waiter-auth-max-age (:max-age waiter-auth-cookie)
+                            one-day-in-secs (-> 1 t/days t/in-seconds)]
+                        (if (= "strict" oidc-auth-env)
+                          (is (< x-waiter-auth-max-age one-day-in-secs) assertion-message)
+                          (is (= x-waiter-auth-max-age one-day-in-secs) assertion-message)))
+                      (is false "x-waiter-auth cookie is missing"))
                     (let [{:strs [location]} (:headers callback-response)
                           assertion-message (str {:headers (:headers callback-response)
                                                   :status (:status callback-response)})]
-                      (is (= (str "https://" waiter-token "/request-info") location) assertion-message)))))
+                      (is (= (str "https://" waiter-token "/request-info") location) assertion-message))
+
+                    (testing "keep-alive support"
+                      (let [request-cookies cookies
+                            {:keys [cookies headers] :as response}
+                            (make-request waiter-url "/.well-known/auth/keep-alive"
+                                          :cookies request-cookies
+                                          :disable-auth true
+                                          :headers {"accept-redirect" "yes" ;; allow OIDC auth to trigger redirects when required
+                                                    "host" waiter-token
+                                                    "x-waiter-debug" true
+                                                    "x-waiter-single-user" "unauthorized"}
+                                          :method :get
+                                          :query-params {"offset" "100000000"})
+                            {:strs [location]} headers
+                            response-auth-expires-at-cookie (extract-cookie cookies "x-auth-expires-at")
+                            response-waiter-auth-cookie (extract-cookie cookies "x-waiter-auth")]
+                        (assert-waiter-response response)
+                        (is (not (str/blank? location)) (str response))
+                        (when location
+                          (let [location-uri (URI. location)]
+                            (is (= "https" (.getScheme location-uri)) (str response))
+                            (is (= "/.well-known/auth/keep-alive" (.getPath location-uri)) (str response))
+                            (is (-> location-uri (.getRawQuery) (str) (str/includes? "done") not) (str response))))
+                        (is (nil? response-auth-expires-at-cookie))
+                        (is (nil? response-waiter-auth-cookie)))))))
               (finally
                 (when edit-token?
                   (delete-token-and-assert waiter-url waiter-token)))))))

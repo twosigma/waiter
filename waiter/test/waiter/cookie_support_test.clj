@@ -17,6 +17,7 @@
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.data.codec.base64 :as b64]
+            [clojure.string :as str]
             [clojure.test :refer :all]
             [taoensso.nippy :as nippy]
             [waiter.cookie-support :refer :all])
