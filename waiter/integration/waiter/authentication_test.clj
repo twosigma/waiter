@@ -8,6 +8,7 @@
             [reaver :as reaver]
             [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
+            [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
   (:import (java.net HttpURLConnection URI URL URLEncoder)))
 
@@ -445,20 +446,25 @@
 (deftest ^:parallel ^:integration-fast test-oidc-authentication-redirect
   (testing-using-waiter-url
     (if (oidc-auth-enabled? waiter-url)
-      (doseq [oidc-auth-env ["true" "relaxed"]] ;; TODO handle enabling test for strict
+      (doseq [oidc-auth-env ["strict" "relaxed" "true"]]
         (testing (str "OIDC auth with env " oidc-auth-env)
           (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)
                 oidc-token-from-env (System/getenv "WAITER_TEST_TOKEN_OIDC")
-                edit-oidc-token-from-env? (Boolean/valueOf (System/getenv "WAITER_TEST_TOKEN_OIDC_EDIT"))
                 waiter-token (or oidc-token-from-env (create-token-name waiter-url (rand-name)))
-                edit-token? (or (str/blank? oidc-token-from-env) edit-oidc-token-from-env?)
-                _ (when edit-token?
-                    (let [service-parameters (assoc (kitchen-params)
-                                               :env {"USE_OIDC_AUTH" oidc-auth-env}
-                                               :name (rand-name)
-                                               :run-as-user (retrieve-username))
-                          token-response (post-token waiter-url (assoc service-parameters :token waiter-token))]
-                      (assert-response-status token-response http-200-ok)))
+                delete-token? (str/blank? oidc-token-from-env)
+                _ (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")
+                        base-parameters (or (let [{:keys [body status]}
+                                                  (get-token waiter-url oidc-token-from-env :cookies cookies :query-params {})]
+                                              (when (hu/status-2XX? status)
+                                                (-> body
+                                                  json/read-str
+                                                  walk/keywordize-keys)))
+                                            (assoc (kitchen-params)
+                                              :name (rand-name)
+                                              :run-as-user (retrieve-username)))
+                        service-parameters (assoc-in base-parameters [:env "USE_OIDC_AUTH"] oidc-auth-env)
+                        token-response (post-token waiter-url (assoc service-parameters :token waiter-token))]
+                    (assert-response-status token-response http-200-ok))
                 ;; absence of Negotiate header also triggers an unauthorized response
                 request-headers {"authorization" "SingleUser unauthorized"
                                  "accept-redirect" "yes"
@@ -535,7 +541,7 @@
                         (is (nil? response-auth-expires-at-cookie))
                         (is (nil? response-waiter-auth-cookie)))))))
               (finally
-                (when edit-token?
+                (when delete-token?
                   (delete-token-and-assert waiter-url waiter-token)))))))
       (log/info "OIDC+PKCE authentication is disabled"))))
 
