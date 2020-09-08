@@ -1272,3 +1272,23 @@ class WaiterCliTest(util.WaiterTest):
         finally:
             util.delete_token(self.waiter_url, token_name_1, kill_services=True)
             util.delete_token(self.waiter_url, token_name_2, kill_services=True)
+
+    def __test_create_update_token_admin_mode(self, action):
+        token_name = self.token_name()
+        temp_env = os.environ.copy()
+        temp_env["WAITER_ADMIN"] = 'true'
+        if action == 'create':
+            cp = cli.create(self.waiter_url, token_name, flags="-v", create_flags='--cpus 0.1 --admin', env=temp_env)
+        elif action == 'update':
+            cp = cli.update(self.waiter_url, token_name, flags="-v", update_flags='--cpus 0.1 --admin', env=temp_env)
+        self.assertEqual(0, cp.returncode, cp.stderr)
+        try:
+            self.assertIn('update-mode=admin', cli.stderr(cp))
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_create_token_admin_mode(self):
+        self.__test_create_update_token_admin_mode('create')
+
+    def test_update_token_admin_mode(self):
+        self.__test_create_update_token_admin_mode('update')
