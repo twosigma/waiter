@@ -1,6 +1,7 @@
 import json
 import logging
 import sys
+import os
 from enum import Enum
 
 import requests
@@ -129,9 +130,11 @@ def create_or_update_token(clusters, args, _, action):
 
 def add_arguments(parser):
     """Adds arguments to the given parser"""
+    is_admin_enabled = str2bool(os.getenv('WAITER_ADMIN', default=FALSE_STRINGS[0]))
     add_token_flags(parser)
     parser.add_argument('token', nargs='?')
-    parser.add_argument('--admin', '-a', help='run command in admin mode', action='store_true')
+    if is_admin_enabled:
+        parser.add_argument('--admin', '-a', help='run command in admin mode', action='store_true')
     format_group = parser.add_mutually_exclusive_group()
     format_group.add_argument('--json', help='provide the data in a JSON file', dest='json')
     format_group.add_argument('--yaml', help='provide the data in a YAML file', dest='yaml')
