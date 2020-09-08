@@ -44,7 +44,7 @@ def post_failed_message(cluster_name, reason):
     return f'Token post {terminal.failed("failed")} on {cluster_name}:\n{terminal.reason(reason)}'
 
 
-def create_or_update(cluster, token_name, token_fields, action, update_mode_admin=False):
+def create_or_update(cluster, token_name, token_fields, admin_mode, action):
     """Creates (or updates) the given token on the given cluster"""
     cluster_name = cluster['name']
     cluster_url = cluster['url']
@@ -53,7 +53,7 @@ def create_or_update(cluster, token_name, token_fields, action, update_mode_admi
     try:
         print_info(f'Attempting to {action} token on {terminal.bold(cluster_name)}...')
         params = {'token': token_name}
-        if update_mode_admin:
+        if admin_mode:
             params['update-mode'] = 'admin'
         json_body = existing_token_data if existing_token_data and action.should_patch() else {}
         json_body.update(token_fields)
@@ -125,7 +125,7 @@ def create_or_update_token(clusters, args, _, action):
     else:
         cluster = clusters[0]
 
-    return create_or_update(cluster, token_name, token_fields, action, update_mode_admin=admin_mode)
+    return create_or_update(cluster, token_name, token_fields, admin_mode, action)
 
 
 def add_arguments(parser):
