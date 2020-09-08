@@ -1288,6 +1288,7 @@ class WaiterCliTest(util.WaiterTest):
         try:
             token_data = util.load_token(self.waiter_url, token_name)
             self.assertIn('update-mode=admin', cli.stderr(cp))
+            self.assertIn(f'Attempting to {action} token in ADMIN mode', cli.stdout(cp))
             self.assertEqual(cpus, token_data['cpus'])
             self.assertEqual(run_as_user, token_data['run-as-user'])
         finally:

@@ -51,7 +51,7 @@ def create_or_update(cluster, token_name, token_fields, admin_mode, action):
 
     existing_token_data, existing_token_etag = get_token(cluster, token_name)
     try:
-        print_info(f'Attempting to {action} token on {terminal.bold(cluster_name)}...')
+        print_info(f'Attempting to {action} token{(" in ADMIN mode" if admin_mode else "")} on {terminal.bold(cluster_name)}...')
         params = {'token': token_name}
         if admin_mode:
             params['update-mode'] = 'admin'
