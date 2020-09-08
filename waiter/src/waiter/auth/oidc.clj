@@ -95,7 +95,7 @@
                                (get "cookie")
                                (cookie-support/cookie-value oidc-challenge-cookie))]
         (when (str/blank? challenge-cookie)
-          (throw (ex-info "No challenge cookie set"
+          (throw (ex-info (str "No challenge cookie set: " oidc-challenge-cookie)
                           (assoc bad-request-map :cookie-name oidc-challenge-cookie))))
         (let [decoded-value (cookie-support/decode-cookie challenge-cookie password)]
           (when-not (map? decoded-value)
