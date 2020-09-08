@@ -1277,10 +1277,11 @@ class WaiterCliTest(util.WaiterTest):
         token_name = self.token_name()
         temp_env = os.environ.copy()
         temp_env["WAITER_ADMIN"] = 'true'
+        action_flags = f'--cpus 0.1 --admin --run-as-user FAKE_USERNAME'
         if action == 'create':
-            cp = cli.create(self.waiter_url, token_name, flags="-v", create_flags='--cpus 0.1 --admin', env=temp_env)
+            cp = cli.create(self.waiter_url, token_name, flags="-v", create_flags=action_flags, env=temp_env)
         elif action == 'update':
-            cp = cli.update(self.waiter_url, token_name, flags="-v", update_flags='--cpus 0.1 --admin', env=temp_env)
+            cp = cli.update(self.waiter_url, token_name, flags="-v", update_flags=action_flags, env=temp_env)
         self.assertEqual(0, cp.returncode, cp.stderr)
         try:
             self.assertIn('update-mode=admin', cli.stderr(cp))
