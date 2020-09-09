@@ -1273,29 +1273,44 @@ class WaiterCliTest(util.WaiterTest):
             util.delete_token(self.waiter_url, token_name_1, kill_services=True)
             util.delete_token(self.waiter_url, token_name_2, kill_services=True)
 
-    def __test_create_update_token_admin_mode(self, action):
-        cpus = 0.1
-        run_as_user = 'FAKE_USERNAME'
-        token_name = self.token_name()
+    def __test_create_update_token_admin_mode(self, action, token_name, admin_mode):
+        token_fields = {
+            'cpus': 0.2,
+            'mem': 256,
+            'run-as-user': 'FAKE_USERNAME'
+        }
+        file_format = 'yaml'
+        stdin = cli.dump(file_format, token_fields)
+        flags = f'{"--admin " if admin_mode else ""}--{file_format} -'
         temp_env = os.environ.copy()
         temp_env["WAITER_ADMIN"] = 'true'
-        action_flags = f'--cpus {cpus} --admin --run-as-user {run_as_user}'
-        if action == 'create':
-            cp = cli.create(self.waiter_url, token_name, flags="-v", create_flags=action_flags, env=temp_env)
-        elif action == 'update':
-            cp = cli.update(self.waiter_url, token_name, flags="-v", update_flags=action_flags, env=temp_env)
-        self.assertEqual(0, cp.returncode, cp.stderr)
-        try:
-            token_data = util.load_token(self.waiter_url, token_name)
-            self.assertIn('update-mode=admin', cli.stderr(cp))
-            self.assertIn(f'Attempting to {action} token in ADMIN mode', cli.stdout(cp))
-            self.assertEqual(cpus, token_data['cpus'])
-            self.assertEqual(run_as_user, token_data['run-as-user'])
-        finally:
-            util.delete_token(self.waiter_url, token_name)
+        cp = getattr(cli, action)(self.waiter_url, token_name, flags='-v', stdin=stdin, env=temp_env,
+                                  **{f'{action}_flags': flags})
+        if admin_mode:
+            try:
+                token_data = util.load_token(self.waiter_url, token_name)
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                self.assertIn('update-mode=admin', cli.stderr(cp))
+                self.assertIn(f'Attempting to {action} token in ADMIN mode', cli.stdout(cp))
+                for key, value in token_fields.items():
+                    self.assertEqual(value, token_data[key])
+            finally:
+                util.delete_token(self.waiter_url, token_name)
+        else:
+            self.assertEqual(1, cp.returncode, cp.stderr)
+            self.assertIn('Cannot run as user.', cli.decode(cp.stderr))
 
     def test_create_token_admin_mode(self):
-        self.__test_create_update_token_admin_mode('create')
+        self.__test_create_update_token_admin_mode('create', self.token_name(), True)
+
+    def test_create_token_no_admin_mode(self):
+        self.__test_create_update_token_admin_mode('create', self.token_name(), False)
 
     def test_update_token_admin_mode(self):
-        self.__test_create_update_token_admin_mode('update')
+        token_name = self.token_name()
+        create_fields = {'cpus': 0.1, 'mem': 128, 'cmd': 'foo'}
+        util.post_token(self.waiter_url, token_name, create_fields)
+        self.__test_create_update_token_admin_mode('update', token_name, True)
+
+    def test_update_token_no_admin_mode(self):
+        self.__test_create_update_token_admin_mode('update', self.token_name(), False)
