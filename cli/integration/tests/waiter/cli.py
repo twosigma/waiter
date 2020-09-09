@@ -66,22 +66,22 @@ def cli(args, waiter_url=None, flags=None, stdin=None, env=None, wait_for_exit=T
     return cp
 
 
-def create_or_update(subcommand, waiter_url=None, token_name=None, flags=None, create_flags=None, stdin=None):
+def create_or_update(subcommand, waiter_url=None, token_name=None, flags=None, create_flags=None, stdin=None, env=None):
     """Creates or updates a token via the CLI"""
     args = f"{subcommand} {token_name or ''} {create_flags or ''}"
-    cp = cli(args, waiter_url, flags, stdin)
+    cp = cli(args, waiter_url, flags, stdin, env=env)
     return cp
 
 
-def create(waiter_url=None, token_name=None, flags=None, create_flags=None, stdin=None):
+def create(waiter_url=None, token_name=None, flags=None, create_flags=None, stdin=None, env=None):
     """Creates a token via the CLI"""
-    cp = create_or_update('create', waiter_url, token_name, flags, create_flags, stdin)
+    cp = create_or_update('create', waiter_url, token_name, flags, create_flags, stdin, env=env)
     return cp
 
 
-def update(waiter_url=None, token_name=None, flags=None, update_flags=None, stdin=None):
+def update(waiter_url=None, token_name=None, flags=None, update_flags=None, stdin=None, env=None):
     """Updates a token via the CLI"""
-    cp = create_or_update('update', waiter_url, token_name, flags, update_flags, stdin)
+    cp = create_or_update('update', waiter_url, token_name, flags, update_flags, stdin, env=env)
     return cp
 
 

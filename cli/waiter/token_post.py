@@ -1,6 +1,7 @@
 import json
 import logging
 import sys
+import os
 from enum import Enum
 
 import requests
@@ -43,18 +44,21 @@ def post_failed_message(cluster_name, reason):
     return f'Token post {terminal.failed("failed")} on {cluster_name}:\n{terminal.reason(reason)}'
 
 
-def create_or_update(cluster, token_name, token_fields, action):
+def create_or_update(cluster, token_name, token_fields, admin_mode, action):
     """Creates (or updates) the given token on the given cluster"""
     cluster_name = cluster['name']
     cluster_url = cluster['url']
 
     existing_token_data, existing_token_etag = get_token(cluster, token_name)
     try:
-        print_info(f'Attempting to {action} token on {terminal.bold(cluster_name)}...')
+        print_info(f'Attempting to {action} token{(" in ADMIN mode" if admin_mode else "")} on {terminal.bold(cluster_name)}...')
+        params = {'token': token_name}
+        if admin_mode:
+            params['update-mode'] = 'admin'
         json_body = existing_token_data if existing_token_data and action.should_patch() else {}
         json_body.update(token_fields)
         headers = {'If-Match': existing_token_etag or ''}
-        resp = http_util.post(cluster, 'token', json_body, params={'token': token_name}, headers=headers)
+        resp = http_util.post(cluster, 'token', json_body, params=params, headers=headers)
         process_post_result(resp)
         return 0
     except requests.exceptions.ReadTimeout as rt:
@@ -77,6 +81,7 @@ def create_or_update_token(clusters, args, _, action):
     json_file = args.pop('json', None)
     yaml_file = args.pop('yaml', None)
     input_file = args.pop('input', None)
+    admin_mode = args.pop('admin', None)
 
     if input_file or json_file or yaml_file:
         token_fields_from_json = load_data({'data': input_file,
@@ -120,13 +125,16 @@ def create_or_update_token(clusters, args, _, action):
     else:
         cluster = clusters[0]
 
-    return create_or_update(cluster, token_name, token_fields, action)
+    return create_or_update(cluster, token_name, token_fields, admin_mode, action)
 
 
 def add_arguments(parser):
     """Adds arguments to the given parser"""
+    is_admin_enabled = str2bool(os.getenv('WAITER_ADMIN', default=FALSE_STRINGS[0]))
     add_token_flags(parser)
     parser.add_argument('token', nargs='?')
+    if is_admin_enabled:
+        parser.add_argument('--admin', '-a', help='run command in admin mode', action='store_true')
     format_group = parser.add_mutually_exclusive_group()
     format_group.add_argument('--json', help='provide the data in a JSON file', dest='json')
     format_group.add_argument('--yaml', help='provide the data in a YAML file', dest='yaml')
