@@ -431,13 +431,18 @@
    query-state-fn query-autoscaler-state-fn service-id->metrics-fn token->token-hash request]
   (let [global-state (query-state-fn)
         service-instance-maps (try
-                                (let [assoc-log-url-to-instances
-                                      (fn assoc-log-url-to-instances [instances]
-                                        (map #(assoc-log-url generate-log-url-fn %) instances))]
+                                (let [process-instances-fn
+                                      (fn process-instances-fn [instances instances-to-keep]
+                                        (cond->> instances
+                                          true (scheduler/sort-instances)
+                                          (integer? instances-to-keep) (take instances-to-keep)
+                                          true (map #(assoc-log-url generate-log-url-fn %))))
+                                      active-instances-to-keep nil
+                                      inactive-instances-to-keep 10]
                                   (-> (get-service-instances global-state service-id)
-                                    (update :active-instances assoc-log-url-to-instances)
-                                    (update :failed-instances assoc-log-url-to-instances)
-                                    (update :killed-instances assoc-log-url-to-instances)))
+                                    (update :active-instances process-instances-fn active-instances-to-keep)
+                                    (update :failed-instances process-instances-fn inactive-instances-to-keep)
+                                    (update :killed-instances process-instances-fn inactive-instances-to-keep)))
                                 (catch Exception e
                                   (log/error e "Error in retrieving instances for" service-id)))
         request-params (-> request ru/query-params-request :query-params)

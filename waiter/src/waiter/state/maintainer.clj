@@ -519,6 +519,7 @@
   (cid/with-correlation-id
     "router-state-maintainer"
     (let [killed-instances-to-keep 10
+          failed-instances-to-keep 1000
           state-atom (atom {:all-available-service-ids #{}
                             :iteration 0
                             :routers []
@@ -614,7 +615,8 @@
                                              starting-instances (filter #(not (du/older-than? scheduler-sync-time grace-period-secs %)) unhealthy-instances)
                                              service-id->expired-instances' (assoc service-id->expired-instances service-id expired-instances)
                                              service-id->starting-instances' (assoc service-id->starting-instances service-id starting-instances)
-                                             service-id->failed-instances' (assoc service-id->failed-instances service-id failed-instances)
+                                             top-failed-instances (->> failed-instances (scheduler/sort-instances) (take failed-instances-to-keep))
+                                             service-id->failed-instances' (assoc service-id->failed-instances service-id top-failed-instances)
                                              service-id->instance-counts' (assoc service-id->instance-counts service-id instance-counts)
                                              deployment-error-config (merge default-deployment-error-config
                                                                             (service-id->deployment-error-config-fn service-id))
