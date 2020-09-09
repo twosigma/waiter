@@ -1784,7 +1784,7 @@
                                          (handler/get-work-stealing-state offers-allowed-semaphore router-id request))))
    :status-handler-fn (pc/fnk [] handler/status-handler)
    :token-handler-fn (pc/fnk [[:curator synchronize-fn]
-                              [:routines make-inter-router-requests-sync-fn validate-service-description-fn]
+                              [:routines attach-token-defaults-fn make-inter-router-requests-sync-fn validate-service-description-fn]
                               [:settings [:token-config history-length limit-per-owner]]
                               [:state clock entitlement-manager kv-store token-cluster-calculator token-root waiter-hostnames]
                               wrap-secure-request-fn]
@@ -1793,7 +1793,7 @@
                            (token/handle-token-request
                              clock synchronize-fn kv-store token-cluster-calculator token-root history-length limit-per-owner
                              waiter-hostnames entitlement-manager make-inter-router-requests-sync-fn validate-service-description-fn
-                             request))))
+                             attach-token-defaults-fn request))))
    :token-list-handler-fn (pc/fnk [[:state entitlement-manager kv-store]
                                    wrap-secure-request-fn]
                             (wrap-secure-request-fn

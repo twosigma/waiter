@@ -391,7 +391,8 @@
   "Validates that the user is the creator of the token if it already exists.
    Then, updates the configuration for the token in the database using the newest password."
   [clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner waiter-hostnames
-   entitlement-manager make-peer-requests-fn validate-service-description-fn {:keys [headers] :as request}]
+   entitlement-manager make-peer-requests-fn validate-service-description-fn attach-token-defaults-fn
+   {:keys [headers] :as request}]
   (let [request-params (-> request ru/query-params-request :query-params)
         admin-mode? (= "admin" (get request-params "update-mode"))
         authenticated-user (get request :authorization/user)
@@ -433,22 +434,23 @@
       (when (not-empty unknown-keys)
         (throw (ex-info (str "Unsupported key(s) in token: " (str (vec unknown-keys)))
                         {:status http-400-bad-request :token token :log-level :warn}))))
-    (when (= authentication "disabled")
-      (when (not= permitted-user "*")
-        (throw (ex-info (str "Tokens with authentication disabled must specify"
-                             " permitted-user as *, instead provided " permitted-user)
-                        {:status http-400-bad-request :token token :log-level :warn})))
-      ;; partial tokens not supported when authentication is disabled
-      (when-not (sd/required-keys-present? new-service-parameter-template)
-        (throw (ex-info "Tokens with authentication disabled must specify all required parameters"
-                        {:missing-parameters (->> sd/service-required-keys
-                                                  (remove #(contains? new-service-parameter-template %1)) seq)
-                         :service-description new-service-parameter-template
-                         :status http-400-bad-request
-                         :log-level :warn}))))
-    (when (and interstitial-secs (not (sd/required-keys-present? new-service-parameter-template)))
-      (throw (ex-info (str "Tokens with missing required parameters cannot use interstitial support")
-                      {:status http-400-bad-request :token token :log-level :warn})))
+    (let [service-parameter-with-token-defaults (attach-token-defaults-fn new-service-parameter-template)]
+      (when (= authentication "disabled")
+        (when (not= permitted-user "*")
+          (throw (ex-info (str "Tokens with authentication disabled must specify"
+                               " permitted-user as *, instead provided " permitted-user)
+                          {:status http-400-bad-request :token token :log-level :warn})))
+        ;; partial tokens not supported when authentication is disabled
+        (when-not (sd/required-keys-present? service-parameter-with-token-defaults)
+          (throw (ex-info "Tokens with authentication disabled must specify all required parameters"
+                          {:missing-parameters (->> sd/service-required-keys
+                                                 (remove #(contains? new-service-parameter-template %1)) seq)
+                           :service-description new-service-parameter-template
+                           :status http-400-bad-request
+                           :log-level :warn}))))
+      (when (and interstitial-secs (not (sd/required-keys-present? service-parameter-with-token-defaults)))
+        (throw (ex-info (str "Tokens with missing required parameters cannot use interstitial support")
+                        {:status http-400-bad-request :token token :log-level :warn}))))
     (case (get request-params "update-mode")
       "admin"
       (do
@@ -573,7 +575,7 @@
    If handling POST, validates that the user is the creator of the token if it already exists.
    Then, updates the configuration for the token in the database using the newest password."
   [clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner waiter-hostnames entitlement-manager
-   make-peer-requests-fn validate-service-description-fn {:keys [request-method] :as request}]
+   make-peer-requests-fn validate-service-description-fn attach-token-defaults-fn {:keys [request-method] :as request}]
   (try
     (case request-method
       :delete (handle-delete-token-request clock synchronize-fn kv-store history-length waiter-hostnames entitlement-manager
@@ -581,7 +583,7 @@
       :get (handle-get-token-request kv-store cluster-calculator token-root waiter-hostnames request)
       :post (handle-post-token-request clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner
                                        waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
-                                       request)
+                                       attach-token-defaults-fn request)
       (throw (ex-info "Invalid request method" {:log-level :info :request-method request-method :status http-405-method-not-allowed})))
     (catch Exception ex
       (utils/exception->response ex request))))
