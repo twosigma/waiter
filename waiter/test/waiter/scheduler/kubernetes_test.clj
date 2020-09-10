@@ -618,6 +618,22 @@
                            :containerStatuses [{:name "test-app-1234"
                                                 :ready true
                                                 :restartCount 0}]}}
+                 {:metadata {:name "test-app-1234-abcd3"
+                             :namespace "myself"
+                             :labels {:app "test-app-1234"
+                                      :waiter/cluster "waiter"
+                                      :waiter/service-hash "test-app-1234"
+                                      :waiter/user "myself"}
+                             :annotations {:waiter/port-count "1"
+                                           :waiter/service-id "test-app-1234"}}
+                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
+                  :status {:phase "Failed"
+                           :podIP "10.141.141.13"
+                           :startTime "2014-09-13T00:24:13Z"
+                           :containerStatuses [{:name "test-app-1234"
+                                                :ready true
+                                                :restartCount 0
+                                                :state {:running {}}}]}}
                  {:metadata {:name "test-app-6789-abcd1"
                              :namespace "myself"
                              :labels {:app "test-app-6789"
@@ -699,7 +715,17 @@
                         :port 8080
                         :service-id "test-app-1234"
                         :started-at (du/str-to-date "2014-09-13T00:24:47Z" k8s-timestamp-format)})]
-                    :failed-instances []}
+                    :failed-instances
+                    [(scheduler/make-ServiceInstance
+                       {:healthy? false
+                        :host "10.141.141.13"
+                        :id "test-app-1234.test-app-1234-abcd3-0"
+                        :k8s/container-statuses [{:name "test-app-1234" :ready true :state :running}]
+                        :k8s/pod-phase "Failed"
+                        :log-directory "/home/myself/r0"
+                        :port 8080
+                        :service-id "test-app-1234"
+                        :started-at (du/str-to-date "2014-09-13T00:24:13Z" k8s-timestamp-format)})]}
 
                    (scheduler/make-Service {:id "test-app-6789" :instances 3 :task-count 3
                                             :task-stats {:running 3 :healthy 1 :unhealthy 2 :staged 0}})
