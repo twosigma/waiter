@@ -255,26 +255,7 @@
               principal (assoc "x-waiter-auth-principal" (str principal))
               user (assoc "x-waiter-auth-user" (str user))))))
 
-(let [auth-keep-alive-done-parameter "done=true"
-      auth-keep-alive-done-parameter-replacement "waiter-redirect=true"]
-
-  (defn remove-done-param-from-keep-alive-https-redirect
-    "Removes the done=true query parameter from the response when it is an https redirect to the keep-alive endpoint.
-     Keeping the done=true parameter would prevent authentication from being triggered for soon-to-expire cookies after
-     the requests comes back with https.
-     To simplify processing of the query string, we replace the done=true parameter with another parameter,
-     waiter-redirect=true, reflecting that the request was redirected."
-    [{:keys [headers status] :as response}]
-    (let [{:strs [location]} headers
-          location-uri (when-not (str/blank? location)
-                         (URI. location))]
-      (cond-> response
-        (and location-uri
-             (contains? #{http-302-moved-temporarily http-307-temporary-redirect} status)
-             (= "https" (.getScheme location-uri))
-             (= auth-keep-alive-uri (.getPath location-uri)))
-        (assoc-in [:headers "location"]
-                  (str/replace location auth-keep-alive-done-parameter auth-keep-alive-done-parameter-replacement)))))
+(let [auth-keep-alive-done-parameter "done=true"]
 
   (defn process-auth-keep-alive-request
     "Handler to eagerly trigger authentication workflow even if cookie has not yet expired.
@@ -336,7 +317,7 @@
           (log/info "initiating authentication flow for keep-alive")
           (-> request
             ;; ensure loop back to this endpoint terminates instead of continuously triggering re-authentication
-            (assoc :query-string (str query-string (when query-string "&") auth-keep-alive-done-parameter))
+            (assoc :waiter/custom-query-string auth-keep-alive-done-parameter)
             ;; remove existing auth cookies to force re-authentication even if current cookie is valid
             (update-in [:headers "cookie"] remove-auth-cookie)
             ;; trigger auth as if it is a proxy request for token-based requests,
@@ -345,8 +326,7 @@
             (auth-handler)
             (ru/update-response
               (fn [response]
-                (cond-> (-> response
-                          (remove-done-param-from-keep-alive-https-redirect))
+                (cond-> response
                   waiter-token?
                   (assoc :waiter/token token)
                   (utils/request-flag headers "x-waiter-debug")

@@ -176,18 +176,22 @@
 
 (defn trigger-authorize-redirect
   "Triggers a 302 temporary redirect response to the authorize endpoint."
-  [jwt-auth-server oidc-mode password {:keys [query-string request-method uri] :as request} response]
+  [jwt-auth-server oidc-mode password {:keys [request-method uri] :as request} response]
   (let [request-host (utils/request->host request)
         request-scheme (utils/request->scheme request)
-        make-redirect-uri (fn make-oidc-redirect-uri [transform-host]
+        make-redirect-uri (fn make-oidc-redirect-uri [transform-host in-query-string]
                             (str "https://" (transform-host request-host) uri
-                                 (when query-string (str "?" query-string))))]
+                                 (when (not (str/blank? in-query-string)) (str "?" in-query-string))))]
     (if (= :https request-scheme)
       (let [code-verifier (create-code-verifier)
             cookie-identifier (create-code-identifier code-verifier)
+            {:keys [query-string waiter/custom-query-string]} request
+            in-query-string (str query-string
+                                 (when (and query-string custom-query-string) "&")
+                                 custom-query-string)
             state-data {:identifier cookie-identifier
                         :oidc-mode oidc-mode
-                        :redirect-uri (make-redirect-uri identity)}
+                        :redirect-uri (make-redirect-uri identity in-query-string)}
             state-code (create-state-code state-data password)
             authorize-uri (jwt/retrieve-authorize-url
                             jwt-auth-server request oidc-callback-uri code-verifier state-code)
@@ -204,7 +208,8 @@
           (cookie-support/add-encoded-cookie
             password oidc-challenge-cookie challenge-cookie-value challenge-cookie-duration-secs)))
       ;; trigger SSL redirect to the same page since OIDC auth works only for https requests
-      (let [redirect-uri (make-redirect-uri utils/authority->host)]
+      (let [{:keys [query-string]} request
+            redirect-uri (make-redirect-uri utils/authority->host query-string)]
         (-> response
           (assoc :status (if (= request-method :get) http-302-moved-temporarily http-307-temporary-redirect))
           (update :headers assoc "location" redirect-uri))))))
