@@ -171,7 +171,7 @@
           decoded-auth-value (cs/decode-cookie (URLDecoder/decode auth-cookie-value) password)]
       (is (= 1 (count cookie-list)))
       (is auth-cookie-value)
-      (is (= 2 (count decoded-auth-value)))
+      (is (auth/decoded-auth-valid? decoded-auth-value))
       (is (= (str router-id "@waiter-peer-router") (first decoded-auth-value))))))
 
 (deftest test-request-handler
