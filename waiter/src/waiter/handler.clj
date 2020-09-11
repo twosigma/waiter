@@ -643,22 +643,24 @@
       (utils/exception->response ex request))))
 
 (defn service-refresh-delete-handler
-  "Polls fallback-state-atom until "
+  "Polls fallback-state-atom until timeout is reached or service does not exist"
   [fallback-state-atom {{:keys [service-id]} :route-params
                         {:keys [src-router-id]} :basic-authentication
                         :as request}]
   (clojure.pprint/pprint request)
   (log/info service-id "refresh-delete triggered by router" src-router-id)
   (async/go
-    (loop [timeout 1000]
-      (let [fallback-state @fallback-state-atom
-            sleep-duration 100
-            exists? (descriptor/service-exists? fallback-state service-id)]
-        (if (or (not exists?) (< timeout 0))
-          (utils/clj->json-response {:exists? exists?})
-          (do
-            (async/<! (async/timeout sleep-duration))
-            (recur (- timeout sleep-duration))))))))
+    (let [{:strs [timeout sleep-duration]
+           :or {timeout 5000 sleep-duration 100}}
+          (-> request ru/query-params-request :query-params request)]
+      (loop [time-left timeout]
+        (let [fallback-state @fallback-state-atom
+              exists? (descriptor/service-exists? fallback-state service-id)]
+          (if (or (not exists?) (< time-left 0))
+            (utils/clj->json-response {:exists? exists?})
+            (do
+              (async/<! (async/timeout sleep-duration))
+              (recur (- time-left sleep-duration)))))))))
 
 (defn work-stealing-handler
   "Handles work-stealing offers of instances for load-balancing work on the current router."
