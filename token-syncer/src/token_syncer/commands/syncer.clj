@@ -84,11 +84,7 @@
             (try
               (let [{:keys [description error status] :as token-data} (get cluster-url->token-data cluster-url)
                     {latest-root "root" latest-update-user "last-update-user"} latest-token-description
-                    {cluster-root "root" cluster-update-user "last-update-user"} description
-                    include-regex (-> latest-token-description
-                                    (get-in ["metadata" "waiter-token-sync-cluster"])
-                                    (or ".*")
-                                    (re-pattern))]
+                    {cluster-root "root" cluster-update-user "last-update-user"} description]
                 (cond
                   error
                   {:code :error/token-read
@@ -105,11 +101,6 @@
                   (and latest-root
                        (= latest-token-description description))
                   {:code :success/token-match}
-
-                  ;; target cluster skipped via metadata
-                  (nil? (re-matches include-regex cluster-url))
-                  {:code :success/skip-token-sync
-                   :details {:message "skipping token as cluster excluded from sync by metadata"}}
 
                   ;; deleted on both clusters, irrespective of remaining values
                   (and (get latest-token-description "deleted")
