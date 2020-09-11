@@ -18,6 +18,7 @@
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.cli :as tools-cli]
+            [clojure.tools.logging :as log]
             [clojure.walk :as walk]
             [plumbing.core :as pc]
             [token-syncer.cli :as cli]
@@ -684,7 +685,7 @@
                                               :description token-desc-4
                                               :token-etag (str (get token-desc-4 "last-update-time"))}
                                    "token-5" {:cluster-url cluster-1
-                                              :description (assoc token-desc-4 "cpus" 1 "root" "c2")
+                                              :description (assoc token-desc-4 "cpus" 1 "root" cluster-2)
                                               :token-etag (str (get token-desc-4 "last-update-time"))}
                                    "token-6" {:cluster-url cluster-1
                                               :description (assoc token-desc-1 "cpus" 6 "root" cluster-1)
@@ -810,3 +811,82 @@
         (is (= {:exit-code 1
                 :message "test-command: exiting with code 1"}
                (cli/process-command test-command-config context args)))))))
+
+(deftest test-sync-token-on-clusters
+  (let [cluster-1 "www.cluster-1.com"
+        cluster-2 "www.cluster-2.com"
+        cluster-3 "www.cluster-3.com"
+        cluster-urls [cluster-1 cluster-2 cluster-3]
+        test-token "test-token"
+        current-time-ms (System/currentTimeMillis)
+        previous-time-ms (- current-time-ms 10101010)]
+    (doseq [{:keys [base-description expected-result test-name]}
+            [{:base-description {"cpus" 1
+                                  "last-update-time" current-time-ms
+                                  "name" "foo-bar"}
+              :expected-result {cluster-1 {:code :success/token-match}
+                                cluster-2 {:code :success/sync-update
+                                           :details {:status 200 :etag current-time-ms}}
+                                cluster-3 {:code :success/sync-update
+                                           :details {:status 200 :etag current-time-ms}}}
+              :test-name "sync across tokens"}
+             {:base-description {"cpus" 1
+                                 "last-update-time" current-time-ms
+                                 "metadata" {"waiter-token-sync-cluster" ".*cluster-[123].*"}
+                                 "name" "foo-bar"}
+              :expected-result {cluster-1 {:code :success/token-match}
+                                cluster-2 {:code :success/sync-update
+                                           :details {:status 200 :etag current-time-ms}}
+                                cluster-3 {:code :success/sync-update
+                                           :details {:status 200 :etag current-time-ms}}}
+              :test-name "skip sync configured but no cluster skipped"}
+             {:base-description {"cpus" 1
+                                 "last-update-time" current-time-ms
+                                 "metadata" {"waiter-token-sync-cluster" ".*cluster-[12].*"}
+                                 "name" "foo-bar"}
+              :expected-result {cluster-1 {:code :success/token-match}
+                                cluster-2 {:code :success/sync-update
+                                           :details {:status 200 :etag current-time-ms}}
+                                cluster-3 {:code :success/skip-token-sync
+                                           :details {:message "skipping token as cluster excluded from sync by metadata"}}}
+              :test-name "skip sync on specific cluster"}
+             {:base-description {"cpus" 1
+                                 "last-update-time" current-time-ms
+                                 "metadata" {"waiter-token-sync-cluster" ".*foo.*"}
+                                 "name" "foo-bar"}
+              :expected-result {cluster-1 {:code :success/token-match}
+                                cluster-2 {:code :success/skip-token-sync
+                                           :details {:message "skipping token as cluster excluded from sync by metadata"}}
+                                cluster-3 {:code :success/skip-token-sync
+                                           :details {:message "skipping token as cluster excluded from sync by metadata"}}}
+              :test-name "skip sync on all clusters"}]]
+      (testing test-name
+        (log/info "testing" test-name)
+        (let [latest-token-description (assoc base-description
+                                         "root" cluster-1)
+              cluster-url->token-data {cluster-1 {:description latest-token-description
+                                                  :status 200
+                                                  :token-etag current-time-ms}
+                                       cluster-2 {:description (-> base-description
+                                                                 (assoc "cpus" 2
+                                                                     "last-update-time" previous-time-ms
+                                                                     "root" cluster-2)
+                                                                 (dissoc "metadata"))
+                                                  :status 200
+                                                  :token-etag previous-time-ms}
+                                       cluster-3 {:description (-> base-description
+                                                                 (assoc "cpus" 3
+                                                                        "last-update-time" previous-time-ms
+                                                                        "root" cluster-3)
+                                                                 (dissoc "metadata"))
+                                                  :status 200
+                                                  :token-etag previous-time-ms}}
+              waiter-api {:store-token (fn [cluster-url in-token in-etag in-token-description]
+                                         (is (= test-token in-token))
+                                         (is (= latest-token-description in-token-description))
+                                         (is (= previous-time-ms in-etag))
+                                         {:body cluster-url
+                                          :headers {"etag" (get in-token-description "last-update-time")}
+                                          :status 200})}
+              actual-result (sync-token-on-clusters waiter-api cluster-urls test-token latest-token-description cluster-url->token-data)]
+          (is (= expected-result actual-result)))))))
