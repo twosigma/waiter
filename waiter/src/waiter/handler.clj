@@ -650,17 +650,20 @@
   (clojure.pprint/pprint request)
   (log/info service-id "refresh-delete triggered by router" src-router-id)
   (async/go
-    (let [{:strs [timeout sleep-duration]
-           :or {timeout 5000 sleep-duration 100}}
-          (-> request ru/query-params-request :query-params request)]
-      (loop [time-left timeout]
-        (let [fallback-state @fallback-state-atom
-              exists? (descriptor/service-exists? fallback-state service-id)]
-          (if (or (not exists?) (< time-left 0))
-            (utils/clj->json-response {:exists? exists?})
-            (do
-              (async/<! (async/timeout sleep-duration))
-              (recur (- time-left sleep-duration)))))))))
+    (try
+      (let [{:strs [timeout sleep-duration]
+             :or {timeout 5000 sleep-duration 100}}
+            (-> request ru/query-params-request :query-params request)]
+        (loop [time-left timeout]
+          (let [fallback-state @fallback-state-atom
+                exists? (descriptor/service-exists? fallback-state service-id)]
+            (if (or (not exists?) (< time-left 0))
+              (utils/clj->json-response {:exists? exists?})
+              (do
+                (async/<! (async/timeout sleep-duration))
+                (recur (- time-left sleep-duration)))))))
+      (catch Exception ex
+        (utils/exception->response ex request)))))
 
 (defn work-stealing-handler
   "Handles work-stealing offers of instances for load-balancing work on the current router."
