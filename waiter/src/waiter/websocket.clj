@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.websocket
-  (:require [clj-time.core :as t]
+  (:require [clj-time.coerce :as tc]
+            [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.data.codec.base64 :as b64]
             [clojure.string :as str]
@@ -96,8 +97,11 @@
 (defn inter-router-request-middleware
   "Attaches a dummy x-waiter-auth cookie into the request to enable mimic-ing auth in inter-router websocket requests."
   [router-id password ^UpgradeRequest request]
-  (let [cookie-value [(str router-id "@waiter-peer-router") (System/currentTimeMillis)]
-        auth-cookie-value (URLEncoder/encode (cookie-support/encode-cookie cookie-value password) "UTF-8")]
+  (let [router-principal (str router-id "@waiter-peer-router")
+        creation-time-millis (tc/to-long (t/now))
+        age-in-seconds (-> 1 t/days t/in-seconds)
+        cookie-value (auth/create-auth-cookie-value router-principal creation-time-millis age-in-seconds nil)
+        auth-cookie-value (URLEncoder/encode ^String (cookie-support/encode-cookie cookie-value password) "UTF-8")]
     (log/info "attaching" auth-cookie-value "to websocket request")
     (-> request
         (.getCookies)

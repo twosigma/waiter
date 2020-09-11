@@ -61,16 +61,25 @@
     (throw (ex-info (str this " does not support authentication callbacks.")
                     {:status http-400-bad-request}))))
 
+(defn create-auth-cookie-value
+  "Creates the auth cookie value using the principal, expiry time and metadata.
+   The principal, creation-time-millis and age-in-seconds must be non-nil.
+   Returns a vector representing the cookie value."
+  [principal creation-time-millis age-in-seconds metadata]
+  (let [creation-time-secs (-> creation-time-millis tc/from-long tc/to-epoch)
+        expiry-time-secs (+ creation-time-secs age-in-seconds)
+        cookie-metadata (assoc metadata :expires-at expiry-time-secs)]
+    [principal creation-time-millis cookie-metadata]))
+
 (defn- add-cached-auth
   "Adds the Waiter auth related cookies into the response."
-  [response password principal age-in-seconds auth-metadata]
+  [response password principal age-in-seconds metadata]
   (let [creation-time (t/now)
         creation-time-millis (tc/to-long creation-time)
         creation-time-secs (tc/to-epoch creation-time)
         cookie-age-in-seconds (or age-in-seconds (-> 1 t/days t/in-seconds))
         expiry-time-secs (+ creation-time-secs cookie-age-in-seconds)
-        cookie-metadata (assoc auth-metadata :expires-at expiry-time-secs)
-        cookie-value [principal creation-time-millis cookie-metadata]]
+        cookie-value (create-auth-cookie-value principal creation-time-millis cookie-age-in-seconds metadata)]
     (-> response
       ;; x-auth-expires-at cookie allows javascript code to introspect when the auth cookie will expire and eagerly re-authenticate
       (cookie-support/add-cookie AUTH-COOKIE-EXPIRES-AT (str expiry-time-secs) cookie-age-in-seconds false)
