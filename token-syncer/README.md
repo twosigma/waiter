@@ -54,12 +54,6 @@ Outline of steps performed by the syncer:
     1. Update all clusters with stale tokens to the latest token.
     1. Hard-deletes tokens on all clusters once all clusters agree that a token has been soft-deleted.
 
-## Token sync exclusion
-
-Tokens may be manually excluded from synchronization across clusters.
-The exclusion is achieved via a specific metadata extry in the token: waiter-token-sync-cluster=regex-string
-where the regex-string includes a regex for the cluster urls that the token can be synced to.
-
 # Build Uberjar
 
 ```bash
