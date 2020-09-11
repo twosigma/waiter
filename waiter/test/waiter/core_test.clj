@@ -941,6 +941,8 @@
            (exec-routes-mapper "/apps/test-service/override")))
     (is (= {:handler :service-refresh-handler-fn, :route-params {:service-id "test-service"}}
            (exec-routes-mapper "/apps/test-service/refresh")))
+    (is (= {:handler :service-refresh-delete-handler-fn, :route-params {:service-id "test-service"}}
+           (exec-routes-mapper "/apps/test-service/refresh-delete")))
     (is (= {:handler :service-resume-handler-fn, :route-params {:service-id "test-service"}}
            (exec-routes-mapper "/apps/test-service/resume")))
     (is (= {:handler :service-suspend-handler-fn, :route-params {:service-id "test-service"}}

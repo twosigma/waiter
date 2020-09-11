@@ -98,6 +98,7 @@
                              ["/" :service-id "/logs"] :service-view-logs-handler-fn
                              ["/" :service-id "/override"] :service-override-handler-fn
                              ["/" :service-id "/refresh"] :service-refresh-handler-fn
+                             ["/" :service-id "/refresh-delete"] :service-refresh-delete-handler-fn
                              ["/" :service-id "/resume"] :service-resume-handler-fn
                              ["/" :service-id "/suspend"] :service-suspend-handler-fn}
                      "eject" :eject-instance-handler-fn
@@ -1619,6 +1620,11 @@
                                      (sd/fetch-core kv-store service-id :refresh true)
                                      (sd/service-id->suspended-state kv-store service-id :refresh true)
                                      (sd/service-id->overrides kv-store service-id :refresh true))))
+   :service-refresh-delete-handler-fn (pc/fnk [[:state fallback-state-atom]
+                                               wrap-router-auth-fn]
+                                        (wrap-router-auth-fn
+                                          (fn service-refresh-delete-handler [request]
+                                            (handler/service-refresh-delete-handler fallback-state-atom request))))
    :service-resume-handler-fn (pc/fnk [[:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn]
                                        [:state kv-store]
                                        wrap-secure-request-fn]

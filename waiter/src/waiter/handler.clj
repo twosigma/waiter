@@ -30,6 +30,7 @@
             [waiter.auth.jwt :as jwt]
             [waiter.authorization :as authz]
             [waiter.correlation-id :as cid]
+            [waiter.descriptor :as descriptor]
             [waiter.headers :as headers]
             [waiter.interstitial :as interstitial]
             [waiter.kv :as kv]
@@ -640,6 +641,24 @@
       (utils/clj->json-response (vec directory-content)))
     (catch Exception ex
       (utils/exception->response ex request))))
+
+(defn service-refresh-delete-handler
+  "Polls fallback-state-atom until "
+  [fallback-state-atom {{:keys [service-id]} :route-params
+                        {:keys [src-router-id]} :basic-authentication
+                        :as request}]
+  (clojure.pprint/pprint request)
+  (log/info service-id "refresh-delete triggered by router" src-router-id)
+  (async/go
+    (loop [timeout 1000]
+      (let [fallback-state @fallback-state-atom
+            sleep-duration 100
+            exists? (descriptor/service-exists? fallback-state service-id)]
+        (if (or (not exists?) (< timeout 0))
+          (utils/clj->json-response {:exists? exists?})
+          (do
+            (async/<! (async/timeout sleep-duration))
+            (recur (- timeout sleep-duration))))))))
 
 (defn work-stealing-handler
   "Handles work-stealing offers of instances for load-balancing work on the current router."
