@@ -59,6 +59,10 @@
   "Kubernetes reports dates in ISO8061 format, sans the milliseconds component."
   (DateTimeFormat/forPattern "yyyy-MM-dd'T'HH:mm:ss'Z'"))
 
+(def max-failed-instances-to-keep
+  "The maximum number of failed instances tracked per service."
+  10)
+
 (defn timestamp-str->datetime
   "Parse a Kubernetes API timestamp string."
   [k8s-timestamp-str]
@@ -205,10 +209,9 @@
                                               ;; To match the behavior of the marathon scheduler,
                                               ;; we don't include the exit code in failed instances that were killed by k8s.
                                               (not (killed-by-k8s? newest-failure))
-                                              (assoc :exit-code (:exitCode newest-failure)))
-                    max-instances-to-keep 10]
+                                              (assoc :exit-code (:exitCode newest-failure)))]
                 (scheduler/add-to-store-and-track-failed-instance!
-                  service-id->failed-instances-transient-store max-instances-to-keep service-id newest-failure-instance)))))))
+                  service-id->failed-instances-transient-store max-failed-instances-to-keep service-id newest-failure-instance)))))))
     (catch Throwable e
       (log/error e "error converting failed pod to waiter service instance" pod)
       (comment "Returning nil on failure."))))
@@ -380,13 +383,22 @@
 
 (defn- get-service-instances!
   "Get all active Waiter Service Instances associated with the given Waiter Service.
-   Also updates the service-id->failed-instances-transient-store as a side-effect."
-  [scheduler basic-service-info]
-  (vec (for [pod (get-replicaset-pods scheduler basic-service-info)
-             :when (live-pod? pod)]
-         (let [service-instance (pod->ServiceInstance scheduler pod)]
-           (track-failed-instances! service-instance scheduler pod)
-           service-instance))))
+   Also updates the service-id->failed-instances-transient-store as a side-effect.
+   Pods reporting Failed phase status are treated as failed instances and are exlcuded from the return value."
+  [{:keys [service-id->failed-instances-transient-store] :as scheduler} basic-service-info]
+  (let [all-instances (for [pod (get-replicaset-pods scheduler basic-service-info)
+                            :when (live-pod? pod)]
+                        (let [service-instance (pod->ServiceInstance scheduler pod)]
+                          (track-failed-instances! service-instance scheduler pod)
+                          service-instance))
+        {active-instances false failed-instances true} (group-by #(-> % :k8s/pod-phase (= "Failed")) all-instances)]
+    ;; pods with Failed phase are treated as failed instances
+    (doseq [{:keys [service-id] :as failed-instance} failed-instances]
+      (->> (assoc failed-instance :healthy? false)
+        (scheduler/add-to-store-and-track-failed-instance!
+          service-id->failed-instances-transient-store max-failed-instances-to-keep service-id)))
+    ;; returns only pods with non-Failed phase
+    (vec active-instances)))
 
 (defn instances-breakdown!
   "Get all Waiter Service Instances associated with the given Waiter Service.
