@@ -652,7 +652,7 @@
     (try
       (let [{:strs [timeout sleep-duration]
              :or {timeout 5000 sleep-duration 100}}
-            (-> request ru/query-params-request :query-params request)]
+            (-> request ru/query-params-request :query-params)]
         (loop [time-left timeout]
           (let [fallback-state @fallback-state-atom
                 exists? (descriptor/service-exists? fallback-state service-id)]
