@@ -647,7 +647,6 @@
   [fallback-state-atom {{:keys [service-id]} :route-params
                         {:keys [src-router-id]} :basic-authentication
                         :as request}]
-  (clojure.pprint/pprint request)
   (log/info service-id "refresh-delete triggered by router" src-router-id)
   (async/go
     (try
