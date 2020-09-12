@@ -778,14 +778,22 @@
       (.shutdown scheduler-interactions-thread-pool))))
 
 (deftest test-service-refresh-delete-handler
-  (let [fallback-state-atom (atom {:available-service-ids #{}})
-        request {:route-parms {:service-id 1}
+  (let [fallback-state-atom (atom {:available-service-ids #{0}})
+        request {:route-params {:service-id 1}
                  :basic-authentication {:src-router-id 2}}]
+
     (testing "service-refresh-delete-handler:success-before-timeout"
       (let [{:keys [body headers status]} (async/<!! (service-refresh-delete-handler fallback-state-atom request))]
         (is (= http-200-ok status))
         (is (= "application/json" (get headers "content-type")))
-        (is (not (get body "exists?")))))))
+        (is (not (get (json/read-str body) "exists?")))))
+
+    (testing "service-refresh-delete-handler:force-timeout"
+      (let [request-not-deleted (assoc-in request [:route-params :service-id] 0)
+            {:keys [body headers status]} (async/<!! (service-refresh-delete-handler fallback-state-atom request-not-deleted))]
+        (is (= http-200-ok status))
+        (is (= "application/json" (get headers "content-type")))
+        (is (get (json/read-str body) "exists?"))))))
 
 (deftest test-work-stealing-handler
   (let [test-service-id "test-service-id"
