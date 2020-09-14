@@ -21,12 +21,12 @@ fi
 
 if [ ${HEALTH_CHECK_PORT_INDEX:-0} -gt 0 ]; then
     echo "$(date -Is) HEALTH_CHECK_PORT_INDEX is positive"
-    PROXY_PORT_COUNT=2
+    PROXY_PORT_COUNT=two-ports
 else
-    PROXY_PORT_COUNT=1
+    PROXY_PORT_COUNT=one-port
 fi
 
-CONFIG_YAML=/etc/envoy/envoy${PROXY_PORT_COUNT}.yaml
+CONFIG_YAML=/etc/envoy/envoy-${PROXY_PORT_COUNT}.yaml
 
 echo "$(date -Is) Substituting variables in configuration template"
 
@@ -34,14 +34,19 @@ echo "$(date -Is) Substituting variables in configuration template"
 (
 set -x
 sed -i \
-    -e "s/{{APP_PORT}}/${PORT0}/g" \
-    -e "s/{{HC_PORT}}/$(( PORT0 + HEALTH_CHECK_PORT_INDEX ))/g" \
-    -e "s/{{PROXY_APP_PORT}}/${SERVICE_PORT}/g" \
-    -e "s/{{PROXY_HC_PORT}}/$(( SERVICE_PORT + HEALTH_CHECK_PORT_INDEX ))/g" \
+    -e "s/{{SERVICE_PORT}}/${PORT0}/g" \
+    -e "s/{{HEALTH_CHECK_PORT}}/$(( PORT0 + HEALTH_CHECK_PORT_INDEX ))/g" \
+    -e "s/{{PROXY_SERVICE_PORT}}/${SERVICE_PORT}/g" \
+    -e "s/{{PROXY_HEALTH_CHECK_PORT}}/$(( SERVICE_PORT + HEALTH_CHECK_PORT_INDEX ))/g" \
     ${CONFIG_YAML}
 )
 
-echo "$(date -Is) Starting envoy"
+# disable http2 upstream for non-http2 backends
+( echo "${SERVICE_PROTOCOL}" | grep -iq h2 ) || (
+set -x
+sed -i '/http2_protocol_options/d' ${CONFIG_YAML}
+)
 
 # start envoy with /etc/envoy/envoy.yaml config file
+echo "$(date -Is) Starting envoy"
 exec envoy -c ${CONFIG_YAML} --base-id 1

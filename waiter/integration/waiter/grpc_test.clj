@@ -1106,13 +1106,20 @@
                                      "content-type" "application/grpc"
                                      (str "x-waiter-env-" reverse-proxy-flag) "yes")
               _ (log/info "making canary request")
+              ;; grpc post-data = {id: "x", from: "y", message: "z"}
+              post-data (byte-array [0x00 0x00 0x00 0x00 0x09 0x0a 0x01 0x78 0x12 0x01 0x79 0x1a 0x01 0x7a])
               {:keys [cookies service-id] :as response} (make-request-with-debug-info
                                                           request-headers
-                                                          #(make-shell-request waiter-url % :method :get :path "/"))]
+                                                          #(make-shell-request waiter-url % :body post-data :path "/courier.Courier/SendPackage"))]
           (with-service-cleanup
             service-id
             (assert-service-on-all-routers waiter-url service-id cookies)
             (assert-response-status response http-200-ok)
-            (testing "Expected envoy specific headers are present in both request and response"
-              (let [response-headers (:headers response)]
-                (is (= "envoy" (get response-headers "server")))))))))))
+            (let [response-headers (:headers response)
+                  response-body-bytes (-> response :body .getBytes)
+                  received-msg-bytes (-> "received" .getBytes vec)]
+              (testing "proxied through envoy"
+                (is (some? (get response-headers "x-envoy-upstream-service-time"))))
+              (testing "request payload received by courier"
+                ;; response payload ends with the 8 bytes "received" (ascii/utf8)
+                (is (= received-msg-bytes (take-last 8 response-body-bytes )))))))))))

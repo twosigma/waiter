@@ -143,6 +143,7 @@
         (is (= {:app test-service-id
                 :waiter/cluster dummy-scheduler-default-namespace
                 :waiter/fileserver (if fileserver-enabled "enabled" "disabled")
+                :waiter/proxy-sidecar "disabled"
                 :waiter/service-hash test-service-id
                 :waiter/user run-as-user}
                (get-in replicaset-spec [:metadata :labels])))
@@ -164,18 +165,19 @@
               :waiter/service-port "8330"}
              (get-in replicaset-spec [:spec :template :metadata :annotations]))))))
 
-(deftest test-service-id-hash->port0
+(deftest test-get-port-range
   ;; this condition is critical for our sidecar-proxy logic,
   ;; which reserves a second range of ports by incrementing the hash code,
   ;; and the two ranges must not overlap (or be equal)
   (testing "no two adjacent service-id hashes map to the same port0"
-    (let [ports (for [i (range 1000)] (service-id-hash->port0 i 0))]
+    (let [ports (for [i (range 1000) j (range 100)] (get-port-range i j 0))]
       (is (every? (partial apply not=) (partition 2 1 ports))))))
 
 (deftest replicaset-spec-with-reverse-proxy
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
                 config/retrieve-waiter-principal (constantly "waiter@test.com")]
-    (let [scheduler (make-dummy-scheduler ["test-service-id"] {:reverse-proxy {:cmd ["/opt/waiter/envoy/bin/envoy-start"]
+    (let [service-id "proxy-test-service-id"
+          scheduler (make-dummy-scheduler [service-id] {:reverse-proxy {:cmd ["/opt/waiter/envoy/bin/envoy-start"]
                                                                                :image "twosigma/waiter-envoy"
                                                                                :predicate-fn 'waiter.scheduler.kubernetes/envoy-sidecar-enabled?
                                                                                :resources {:cpu 0.1 :mem 256}
@@ -183,7 +185,7 @@
           service-description (assoc dummy-service-description "env" {"REVERSE_PROXY" "yes"
                                                                       "PORT0" "to-be-overwritten"
                                                                       "SERVICE_PORT" "to-be-overwritten"})
-          replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id"
+          replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id
                            service-description)
           app-container (get-in replicaset-spec [:spec :template :spec :containers 0])
           sidecar-container (some
@@ -207,8 +209,9 @@
 
       (testing "service-port and waiter port0 values and env variables are correct"
         (let [{:keys [pod-base-port]} scheduler
-              service-port (-> "test-service-id" hash (service-id-hash->port0 pod-base-port))
-              port0 (-> "test-service-id" hash inc (service-id-hash->port0 pod-base-port))
+              service-id-hash (hash service-id)
+              service-port (get-port-range service-id-hash service-ports-index pod-base-port)
+              port0 (get-port-range service-id-hash proxied-ports-index pod-base-port)
               env-service-port (get sidecar-env "SERVICE_PORT")
               env-port0 (get sidecar-env "PORT0")]
           (is (= service-port (Integer/parseInt (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/service-port]))))
@@ -241,7 +244,8 @@
 (deftest replicaset-spec-with-reverse-proxy-health-check
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
                 config/retrieve-waiter-principal (constantly "waiter@test.com")]
-    (let [scheduler (make-dummy-scheduler ["test-service-id"] {:reverse-proxy {:cmd ["/opt/waiter/envoy/bin/envoy-start"]
+    (let [service-id "proxy-health-test-service-id"
+          scheduler (make-dummy-scheduler [service-id] {:reverse-proxy {:cmd ["/opt/waiter/envoy/bin/envoy-start"]
                                                                                :image "twosigma/waiter-envoy"
                                                                                :predicate-fn 'waiter.scheduler.kubernetes/envoy-sidecar-enabled?
                                                                                :resources {:cpu 0.1 :mem 256}
@@ -252,13 +256,16 @@
                                             "SERVICE_PORT" "to-be-overwritten"}
                                      "health-check-port-index" 5
                                      "ports" 9)
-          replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id"
+          replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id
                            service-description)
           app-container (get-in replicaset-spec [:spec :template :spec :containers 0])
           sidecar-container (some
                               #(if (= "waiter-envoy-sidecar" (:name %)) %)
                               (get-in replicaset-spec [:spec :template :spec :containers]))
           sidecar-env (into {} (mapv (juxt :name :value) (:env sidecar-container)))]
+
+      (testing "replicaset has waiter/proxy-sidecar=enabled label"
+        (is (= "enabled" (get-in replicaset-spec [:metadata :labels :waiter/proxy-sidecar]))))
 
       (testing "replicaset has waiter/service-port annotation"
         (is (contains? (get-in replicaset-spec [:spec :template :metadata :annotations]) :waiter/service-port)))
@@ -277,9 +284,10 @@
 
       (testing "ports and corresponding and env variables are correct"
         (let [{:keys [pod-base-port]} scheduler
-              service-port (-> "test-service-id" hash (service-id-hash->port0 pod-base-port))
+              service-id-hash (hash service-id)
+              service-port (get-port-range service-id-hash service-ports-index pod-base-port)
               health-check-port (+ 5 service-port)
-              port0 (-> "test-service-id" hash inc (service-id-hash->port0 pod-base-port))
+              port0 (get-port-range service-id-hash proxied-ports-index pod-base-port)
               port5 (+ 5 port0)
               env-service-port (get sidecar-env "SERVICE_PORT")
               env-health-check-port-index (get sidecar-env "HEALTH_CHECK_PORT_INDEX")

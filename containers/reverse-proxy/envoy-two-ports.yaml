@@ -3,7 +3,7 @@ static_resources:
     - address:
         socket_address:
           address: 0.0.0.0
-          port_value: {{PROXY_APP_PORT}}
+          port_value: {{PROXY_SERVICE_PORT}}
       filter_chains:
         - filters:
             - name: envoy.http_connection_manager
@@ -33,7 +33,7 @@ static_resources:
     - address:
         socket_address:
           address: 0.0.0.0
-          port_value: {{PROXY_HC_PORT}}
+          port_value: {{PROXY_HEALTH_CHECK_PORT}}
       filter_chains:
         - filters:
             - name: envoy.http_connection_manager
@@ -65,6 +65,7 @@ static_resources:
       connect_timeout: 1s
       type: static
       dns_lookup_family: V4_ONLY
+      http2_protocol_options: {}
       lb_policy: round_robin
       load_assignment:
         cluster_name: waiter-app
@@ -74,7 +75,7 @@ static_resources:
                   address:
                     socket_address:
                       address: 127.0.0.1
-                      port_value: {{APP_PORT}}
+                      port_value: {{SERVICE_PORT}}
     - name: waiter-health-check
       connect_timeout: 1s
       type: static
@@ -88,7 +89,7 @@ static_resources:
                   address:
                     socket_address:
                       address: 127.0.0.1
-                      port_value: {{HC_PORT}}
+                      port_value: {{HEALTH_CHECK_PORT}}
 admin:
   access_log_path: "/dev/stdout"
   address:
