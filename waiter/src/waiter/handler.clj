@@ -656,7 +656,7 @@
         (loop [time-left timeout]
           (let [fallback-state @fallback-state-atom
                 exists? (descriptor/service-exists? fallback-state service-id)]
-            (if (or (not exists?) (< time-left 0))
+            (if (or (not exists?) (<= time-left 0))
               (utils/clj->json-response {:exists? exists?})
               (do
                 (async/<! (async/timeout sleep-duration))
