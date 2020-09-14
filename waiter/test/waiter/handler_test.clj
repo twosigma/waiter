@@ -793,7 +793,14 @@
             {:keys [body headers status]} (async/<!! (service-refresh-delete-handler fallback-state-atom request-not-deleted))]
         (is (= http-200-ok status))
         (is (= "application/json" (get headers "content-type")))
-        (is (get (json/read-str body) "exists?"))))))
+        (is (get (json/read-str body) "exists?"))))
+
+    (testing "service-refresh-delete-handler:force-timeout-custom"
+      (let [request-query (assoc request :query-string "timeout=3000&sleep-duration=300")
+            {:keys [body headers status]} (async/<!! (service-refresh-delete-handler fallback-state-atom request-query))]
+        (is (= http-200-ok status))
+        (is (= "application/json" (get headers "content-type")))
+        (is (not (get (json/read-str body) "exists?")))))))
 
 (deftest test-work-stealing-handler
   (let [test-service-id "test-service-id"
