@@ -642,7 +642,7 @@
     (catch Exception ex
       (utils/exception->response ex request))))
 
-(defn service-refresh-delete-handler
+(defn service-ensure-delete-handler
   "Polls fallback-state-atom until timeout is reached or service does not exist"
   [fallback-state-atom {{:keys [service-id]} :route-params
                         {:keys [src-router-id]} :basic-authentication
