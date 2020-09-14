@@ -358,9 +358,12 @@
 (defn delete-service-handler
   "Deletes the service from the scheduler (after authorization checks)."
   [service-id core-service-description scheduler allowed-to-manage-service?-fn scheduler-interactions-thread-pool
-   request]
-  (let [auth-user (get request :authorization/user)
+   request make-inter-router-requests-fn]
+  (let [{:strs [timeout] :or {timeout "5000"}} (-> request ru/query-params-request :query-params)
+        timeout (utils/parse-int timeout)
+        auth-user (get request :authorization/user)
         run-as-user (get core-service-description "run-as-user")]
+    (when (nil? timeout) (throw (Exception. "timeout must be an integer")))
     (if-not (allowed-to-manage-service?-fn service-id auth-user)
       (throw
         (ex-info "User not allowed to delete service"
@@ -378,12 +381,21 @@
                                            scheduler-interactions-thread-pool))]
             (if error
               (utils/exception->response error request)
-              (let [delete-result result
-                    response-status (case (:result delete-result)
+              (let [delete-result (:result result)
+                    response-status (case delete-result
                                       :deleted http-200-ok
                                       :no-such-service-exists http-404-not-found
                                       http-400-bad-request)
-                    response-body-map (merge {:success (= http-200-ok response-status), :service-id service-id} delete-result)]
+                    router-id->response (when (and (= (:result delete-result) delete-result)
+                                                   (< 0 timeout))
+                                          (make-inter-router-requests-fn (str "apps/" service-id "/refresh-delete?timeout=" timeout) :method :post))
+                    response-body-map (cond-> {:service-id service-id,
+                                               :success (= http-200-ok response-status)}
+                                              (seq router-id->response) (assoc :routers-agree
+                                                                               (every?
+                                                                                 (fn [[_ router-response]]
+                                                                                   (get router-response "exists?")) router-id->response))
+                                              true (merge delete-result))]
                 (utils/clj->json-response response-body-map :status response-status))))
           (catch Throwable ex
             (log/error ex "error while deleting service" service-id)
@@ -533,7 +545,7 @@
         (throw (ex-info "Service not found" {:log-level :info :service-id service-id :status http-404-not-found}))
         (case (:request-method request)
           :delete (delete-service-handler service-id core-service-description scheduler allowed-to-manage-service?-fn
-                                          scheduler-interactions-thread-pool request)
+                                          scheduler-interactions-thread-pool request make-inter-router-requests-fn)
           :get (get-service-handler router-id service-id core-service-description kv-store generate-log-url-fn
                                     make-inter-router-requests-fn service-id->service-description-fn
                                     service-id->source-tokens-entries-fn service-id->references-fn
