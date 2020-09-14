@@ -807,14 +807,24 @@
             request-query (assoc request :query-string (str "timeout=" timeout "&sleep-duration=300"))
             start-time (System/currentTimeMillis)
             _ (async/go
-                        (async/<! (async/timeout update-delay))
-                        (reset! fallback-state-atom {:available-service-ids #{}}))
+                (async/<! (async/timeout update-delay))
+                (reset! fallback-state-atom {:available-service-ids #{}}))
             {:keys [body headers status]} (async/<!! (service-refresh-delete-handler fallback-state-atom request-query))
             end-time (System/currentTimeMillis)]
         (is (= http-200-ok status))
         (is (= "application/json" (get headers "content-type")))
         (is (not (get (json/read-str body) "exists?")))
-        (is (<= update-delay (- end-time start-time) timeout))))))
+        (is (<= update-delay (- end-time start-time) timeout))))
+
+    (testing "service-refresh-delete-handler:non-integer-query-params"
+      (let [fallback-state-atom (atom {:available-service-ids #{}})
+            timeout "Invalid value"
+            sleep-duration "Invalid value"
+            request-bad-query (assoc request :query-string (str "timeout=" timeout "&sleep-duration=" sleep-duration))
+            {:keys [body headers status]} (async/<!! (service-refresh-delete-handler fallback-state-atom request-bad-query))]
+        (is (= http-500-internal-server-error status))
+        (is (= "text/plain" (get headers "content-type")))
+        (is (re-find #"timeout and sleep-duration must be integers" body))))))
 
 (deftest test-work-stealing-handler
   (let [test-service-id "test-service-id"
