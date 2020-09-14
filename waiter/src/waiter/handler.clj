@@ -646,25 +646,28 @@
   "Polls fallback-state-atom until timeout is reached or service does not exist"
   [fallback-state-atom {{:keys [service-id]} :route-params
                         {:keys [src-router-id]} :basic-authentication
+                        request-method :request-method
                         :as request}]
-  (log/info service-id "refresh-delete triggered by router" src-router-id)
   (async/go
     (try
-      (let [{:strs [timeout sleep-duration]
-             :or {timeout "5000" sleep-duration "100"}}
-            (-> request ru/query-params-request :query-params)
-            timeout (utils/parse-int timeout)
-            sleep-duration (utils/parse-int sleep-duration)]
-        (when (or (nil? sleep-duration) (nil? timeout))
-          (throw (Exception. "timeout and sleep-duration must be integers")))
-        (loop [time-left timeout]
-          (let [fallback-state @fallback-state-atom
-                exists? (descriptor/service-exists? fallback-state service-id)]
-            (if (or (not exists?) (<= time-left 0))
-              (utils/clj->json-response {:exists? exists? :service-id service-id})
-              (do
-                (async/<! (async/timeout sleep-duration))
-                (recur (- time-left sleep-duration)))))))
+      (log/info service-id "refresh-delete triggered by router" src-router-id)
+      (case request-method
+        :get (let [{:strs [timeout sleep-duration] :or {timeout "5000" sleep-duration "100"}} (-> request ru/query-params-request :query-params)
+                   timeout (utils/parse-int timeout)
+                   sleep-duration (utils/parse-int sleep-duration)]
+               (when (or (nil? sleep-duration) (nil? timeout))
+                 (throw (Exception. "timeout and sleep-duration must be integers")))
+               (loop [time-left timeout]
+                 (let [fallback-state @fallback-state-atom
+                       exists? (descriptor/service-exists? fallback-state service-id)]
+                   (if (or (not exists?) (<= time-left 0))
+                     (utils/clj->json-response {:exists? exists? :service-id service-id})
+                     (do
+                       (async/<! (async/timeout sleep-duration))
+                       (recur (- time-left sleep-duration)))))))
+        (throw (ex-info "Only GET supported" {:log-level :info
+                                              :request-method request-method
+                                              :status http-405-method-not-allowed})))
       (catch Exception ex
         (utils/exception->response ex request)))))
 

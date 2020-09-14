@@ -779,7 +779,8 @@
 
 (deftest test-service-refresh-delete-handler
   (let [request {:route-params {:service-id "s1"}
-                 :basic-authentication {:src-router-id "r2"}}]
+                 :basic-authentication {:src-router-id "r2"}
+                 :request-method :get}]
 
     (testing "service-refresh-delete-handler:success-before-timeout"
       (let [fallback-state-atom (atom {:available-service-ids #{"s0"}})
