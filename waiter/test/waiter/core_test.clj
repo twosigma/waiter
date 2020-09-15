@@ -413,11 +413,14 @@
                                      (sd/can-manage-service? kv-store entitlement-manager service-id auth-user))
         scheduler-interactions-thread-pool (Executors/newFixedThreadPool 1)
         delete-service-result-atom (atom nil) ;; with-redefs fails as we are executing inside different threads
+        make-inter-router-requests-sync-fn-atom (atom nil)
         configuration {:daemons {:autoscaler {:query-state-fn (constantly {})}
                                  :router-state-maintainer {:maintainer {:query-state-fn (constantly {})}}}
                        :routines {:allowed-to-manage-service?-fn allowed-to-manage-service?
                                   :generate-log-url-fn nil
-                                  :make-inter-router-requests-sync-fn nil
+                                  :make-inter-router-requests-sync-fn (fn [& args]
+                                                                        (let [target-fn @make-inter-router-requests-sync-fn-atom]
+                                                                          (apply target-fn args)))
                                   :router-metrics-helpers {:service-id->metrics-fn (constantly {})}
                                   :service-id->references-fn (constantly [])
                                   :service-id->service-description-fn (constantly {})
@@ -437,15 +440,17 @@
 
     (testing "service-handler:delete-successful"
       (reset! delete-service-result-atom {:result :deleted, :service-id service-id})
+      (reset! make-inter-router-requests-sync-fn-atom (constantly {}))
       (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
               {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
           (is (= http-200-ok status))
           (is (= expected-json-response-headers headers))
-          (is (= {"success" true, "service-id" service-id, "result" "deleted"} (json/read-str body))))))
+          (is (= {"success" true, "service-id" service-id, "result" "deleted", "routers-agree" true} (json/read-str body))))))
 
     (testing "service-handler:delete-nil-response"
       (reset! delete-service-result-atom nil)
+      (reset! make-inter-router-requests-sync-fn-atom (fn [] (throw (Exception. "Should not call this function"))))
       (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
               {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
@@ -455,6 +460,7 @@
 
     (testing "service-handler:delete-unauthorized-user"
       (reset! delete-service-result-atom (IllegalStateException. "Unexpected call!"))
+      (reset! make-inter-router-requests-sync-fn-atom (constantly {}))
       (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" (str "another-" user), "name" (str service-id "-name")})]
         (let [request {:authorization/user user
                        :headers {"accept" "application/json"}
@@ -467,6 +473,7 @@
 
     (testing "service-handler:delete-404-response"
       (reset! delete-service-result-atom {:result :no-such-service-exists})
+      (reset! make-inter-router-requests-sync-fn-atom (fn [& _] (throw (Exception. "Should not call this function"))))
       (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
               {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
@@ -476,6 +483,7 @@
 
     (testing "service-handler:delete-non-existent-service"
       (reset! delete-service-result-atom (IllegalStateException. "Unexpected call!"))
+      (reset! make-inter-router-requests-sync-fn-atom (fn [& _] (throw (Exception. "Should not call this function"))))
       (with-redefs [sd/fetch-core (fn [_ _ & _] {})]
         (let [request {:authorization/user user
                        :headers {"accept" "application/json"}
@@ -491,6 +499,7 @@
 
     (testing "service-handler:delete-throws-exception"
       (reset! delete-service-result-atom (RuntimeException. "Error in deleting service"))
+      (reset! make-inter-router-requests-sync-fn-atom (fn [& _] (throw (Exception. "Should not call this function"))))
       (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:authorization/user user
                        :headers {"accept" "application/json"}
@@ -499,6 +508,28 @@
               {:keys [headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
           (is (= http-500-internal-server-error status))
           (is (= expected-json-response-headers headers)))))
+
+    (testing "service-handler:delete-multiple-router-response-agree"
+      (reset! delete-service-result-atom {:result :deleted, :service-id service-id})
+      (reset! make-inter-router-requests-sync-fn-atom (constantly {"r1" {:body (json/write-str {"exists?" false})}
+                                                                   "r2" {:body (json/write-str {"exists?" false})}}))
+      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
+        (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
+              {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
+          (is (= http-200-ok status))
+          (is (= expected-json-response-headers headers))
+          (is (= {"success" true, "service-id" service-id, "result" "deleted", "routers-agree" true} (json/read-str body))))))
+
+    (testing "service-handler:delete-multiple-router-response-disagree"
+      (reset! delete-service-result-atom {:result :deleted, :service-id service-id})
+      (reset! make-inter-router-requests-sync-fn-atom (constantly {"r1" {:body (json/write-str {"exists?" true})}
+                                                                   "r2" {:body (json/write-str {"exists?" false})}}))
+      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
+        (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
+              {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
+          (is (= http-200-ok status))
+          (is (= expected-json-response-headers headers))
+          (is (= {"success" true, "service-id" service-id, "result" "deleted", "routers-agree" false} (json/read-str body))))))
 
     (.shutdown scheduler-interactions-thread-pool)))
 

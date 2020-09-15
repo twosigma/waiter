@@ -387,17 +387,22 @@
                                       :no-such-service-exists http-404-not-found
                                       http-400-bad-request)
                     router-id->response (when (and (= http-200-ok response-status)
-                                                   (< 0 timeout))
-                                          (make-inter-router-requests-fn (str "apps/" service-id "/ensure-delete?timeout=" timeout) :method :get))
+                                                   (pos? timeout))
+                                          (make-inter-router-requests-fn (str "apps/" service-id "/ensure-delete")
+                                                                         :method :get
+                                                                         :query-string (str "timeout=" timeout)))
                     response-body-map (cond-> {:service-id service-id,
                                                :success (= http-200-ok response-status)}
-                                              (and
-                                                (= http-200-ok response-status)
-                                                router-id->response
-                                                (seq router-id->response)) (assoc :routers-agree
-                                                                                  (every?
-                                                                                    (fn [[_ router-response]]
-                                                                                      (get router-response "exists?")) router-id->response))
+                                              (and (pos? timeout)
+                                                   (= http-200-ok response-status)) (assoc :routers-agree
+                                                                                           (every?
+                                                                                             (fn [[_ router-response]]
+                                                                                               (some-> router-response
+                                                                                                       :body
+                                                                                                       (json/read-str)
+                                                                                                       (get "exists?")
+                                                                                                       not))
+                                                                                             router-id->response))
                                               true (merge result))]
                 (utils/clj->json-response response-body-map :status response-status))))
           (catch Throwable ex
