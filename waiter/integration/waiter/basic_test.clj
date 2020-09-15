@@ -674,15 +674,17 @@
           (assert-service-on-all-routers waiter-url service-id cookies))
 
         (testing "delete service successfully"
-          (let [response (make-request waiter-url (str "/apps/" service-id) :method :delete)]
-            (assert-response-status response http-200-ok)))
+          (let [{:keys [body] :as response} (make-request waiter-url (str "/apps/" service-id) :method :delete)]
+            (assert-response-status response http-200-ok)
+            (is (get (json/read-str body) "routers-agree"))))
 
         (testing "deleted service is removed from all routers"
           (assert-service-not-on-any-routers waiter-url service-id cookies))
 
         (testing "delete service again (should get 404)"
-          (let [response (make-request waiter-url (str "/apps/" service-id) :method :delete)]
-            (assert-response-status response http-404-not-found)))
+          (let [{:keys [body] :as response} (make-request waiter-url (str "/apps/" service-id) :method :delete)]
+            (assert-response-status response http-404-not-found)
+            (is (not (contains? (json/read-str body) "routers-agree")))))
 
         (testing "service-deleted-from-all-routers"
           (let [router-id->service-id-deleted
