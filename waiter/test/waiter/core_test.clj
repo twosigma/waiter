@@ -531,6 +531,16 @@
           (is (= expected-json-response-headers headers))
           (is (= {"success" true, "service-id" service-id, "result" "deleted", "routers-agree" false} (json/read-str body))))))
 
+    (testing "service-handler:delete-timeout-zero"
+      (reset! delete-service-result-atom {:result :deleted, :service-id service-id})
+      (reset! make-inter-router-requests-sync-fn-atom (fn [& _] (throw (Exception. "Should not call this function"))))
+      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
+        (let [request {:query-string "timeout=0",:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
+              {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
+          (is (= http-200-ok status))
+          (is (= expected-json-response-headers headers))
+          (is (= {"success" true, "service-id" service-id, "result" "deleted"} (json/read-str body))))))
+
     (.shutdown scheduler-interactions-thread-pool)))
 
 (deftest test-service-handler-get
