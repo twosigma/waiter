@@ -386,16 +386,19 @@
                                       :deleted http-200-ok
                                       :no-such-service-exists http-404-not-found
                                       http-400-bad-request)
-                    router-id->response (when (and (= (:result delete-result) delete-result)
+                    router-id->response (when (and (= http-200-ok response-status)
                                                    (< 0 timeout))
-                                          (make-inter-router-requests-fn (str "apps/" service-id "/refresh-delete?timeout=" timeout) :method :post))
+                                          (make-inter-router-requests-fn (str "apps/" service-id "/ensure-delete?timeout=" timeout) :method :get))
                     response-body-map (cond-> {:service-id service-id,
                                                :success (= http-200-ok response-status)}
-                                              (seq router-id->response) (assoc :routers-agree
-                                                                               (every?
-                                                                                 (fn [[_ router-response]]
-                                                                                   (get router-response "exists?")) router-id->response))
-                                              true (merge delete-result))]
+                                              (and
+                                                (= http-200-ok response-status)
+                                                router-id->response
+                                                (seq router-id->response)) (assoc :routers-agree
+                                                                                  (every?
+                                                                                    (fn [[_ router-response]]
+                                                                                      (get router-response "exists?")) router-id->response))
+                                              true (merge result))]
                 (utils/clj->json-response response-body-map :status response-status))))
           (catch Throwable ex
             (log/error ex "error while deleting service" service-id)
