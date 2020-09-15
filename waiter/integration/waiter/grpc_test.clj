@@ -1107,6 +1107,8 @@
                                      (str "x-waiter-env-" reverse-proxy-flag) "yes")
               _ (log/info "making canary request")
               ;; grpc post-data = {id: "x", from: "y", message: "z"}
+              ;; see the Proto3 Language Guide for details on the binary encoding:
+              ;; https://developers.google.com/protocol-buffers/docs/proto3
               post-data (byte-array [0x00 0x00 0x00 0x00 0x09 0x0a 0x01 0x78 0x12 0x01 0x79 0x1a 0x01 0x7a])
               {:keys [cookies service-id] :as response} (make-request-with-debug-info
                                                           request-headers
