@@ -9,7 +9,7 @@ from waiter.querying import get_service, print_no_data, query_service, query_ser
 from waiter.util import guard_no_cluster, str2bool, response_message, print_error, wait_until, check_positive
 
 
-def kill_service_on_cluster(cluster, service_id, timeout_seconds):
+def kill_service_on_cluster(cluster, service_id, timeout_seconds, no_wait):
     """Kills the service with the given service id in the given cluster."""
 
     def service_is_killed():
@@ -18,7 +18,11 @@ def kill_service_on_cluster(cluster, service_id, timeout_seconds):
     cluster_name = cluster['name']
     try:
         print(f'Killing service {terminal.bold(service_id)} in {terminal.bold(cluster_name)}...')
-        resp = http_util.delete(cluster, f'/apps/{service_id}')
+        params=None
+        if no_wait:
+            print('no-wait enabled: command will return before other routers are updated')
+            params={"timeout": 0}
+        resp = http_util.delete(cluster, f'/apps/{service_id}', params=params)
         logging.debug(f'Response status code: {resp.status_code}')
         if resp.status_code == 200:
             killed = wait_until(service_is_killed, timeout=timeout_seconds, interval=1)
@@ -112,7 +116,7 @@ def kill(clusters, args, _):
                 should_kill = False
 
             if should_kill:
-                success = kill_service_on_cluster(cluster, service_id, args['timeout'])
+                success = kill_service_on_cluster(cluster, service_id, args['timeout'], args['no-wait'])
                 overall_success = overall_success and success
     return 0 if overall_success else 1
 
@@ -126,4 +130,6 @@ def register(add_parser):
                         type=check_positive, default=30)
     parser.add_argument('--service-id', '-s', help='kill by service id instead of token',
                         dest='is-service-id', action='store_true')
+    parser.add_argument('--no-wait', help="does not wait for all routers to confirm deletion", dest='no-wait',
+                        action='store_true')
     return kill
