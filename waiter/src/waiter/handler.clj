@@ -393,16 +393,15 @@
                                                                          :query-string (str "timeout=" timeout)))
                     response-body-map (cond-> {:service-id service-id,
                                                :success (= http-200-ok response-status)}
-                                              (and (pos? timeout)
-                                                   (= http-200-ok response-status)) (assoc :routers-agree
-                                                                                           (every?
-                                                                                             (fn [[_ router-response]]
-                                                                                               (some-> router-response
-                                                                                                       :body
-                                                                                                       (json/read-str)
-                                                                                                       (get "exists?")
-                                                                                                       not))
-                                                                                             router-id->response))
+                                              (nil? router-id->response) (assoc :routers-agree
+                                                                                (every?
+                                                                                  (fn [[_ router-response]]
+                                                                                    (some-> router-response
+                                                                                            :body
+                                                                                            (json/read-str)
+                                                                                            (get "exists?")
+                                                                                            not))
+                                                                                  router-id->response))
                                               true (merge result))]
                 (utils/clj->json-response response-body-map :status response-status))))
           (catch Throwable ex
