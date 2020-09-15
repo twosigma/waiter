@@ -91,7 +91,7 @@
      map->KubernetesScheduler)))
 
 (def dummy-service-description
-  {"backend-proto" "http"
+  {"backend-proto" "HTTP"
    "cmd" "foo"
    "cpus" 1.2
    "grace-period-secs" 7
@@ -207,13 +207,18 @@
                             (= "to-be-overwritten" (:value %)))
                       (:env sidecar-container))))
 
-      (testing "service-port and waiter port0 values and env variables are correct"
+      (testing "proxy-sidecar label is set"
+          (is (= "enabled" (get-in replicaset-spec [:metadata :labels :waiter/proxy-sidecar]))))
+
+      (testing "service-proto, service-port and waiter port0 values and env variables are correct"
         (let [{:keys [pod-base-port]} scheduler
               service-id-hash (hash service-id)
               service-port (get-port-range service-id-hash service-ports-index pod-base-port)
               port0 (get-port-range service-id-hash proxied-ports-index pod-base-port)
+              env-service-proto (get sidecar-env "SERVICE_PROTOCOL")
               env-service-port (get sidecar-env "SERVICE_PORT")
               env-port0 (get sidecar-env "PORT0")]
+          (is (= "HTTP" env-service-proto))
           (is (= service-port (Integer/parseInt (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/service-port]))))
           (is (= service-port (get-in sidecar-container [:ports 0 :containerPort])))
           (is (= (str service-port) env-service-port))
