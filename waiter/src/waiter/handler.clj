@@ -393,7 +393,7 @@
                                                                          :query-string (str "timeout=" timeout)))
                     response-body-map (cond-> {:service-id service-id,
                                                :success (= http-200-ok response-status)}
-                                              (nil? router-id->response) (assoc :routers-agree
+                                              router-id->response (assoc :routers-agree
                                                                                 (every?
                                                                                   (fn [[_ router-response]]
                                                                                     (some-> router-response
