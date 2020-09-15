@@ -745,7 +745,8 @@
 (deftest test-delete-service-handler
   (let [test-user "test-user"
         test-service-id "service-1"
-        allowed-to-manage-service?-fn (fn [service-id user] (and (= test-service-id service-id) (= test-user user)))]
+        allowed-to-manage-service?-fn (fn [service-id user] (and (= test-service-id service-id) (= test-user user)))
+        make-inter-router-requests-fn (constantly {})]
     (let [core-service-description {"run-as-user" test-user}
           scheduler-interactions-thread-pool (Executors/newFixedThreadPool 1)]
 
@@ -759,7 +760,7 @@
               {:keys [body headers status]}
               (async/<!!
                 (delete-service-handler test-service-id core-service-description scheduler allowed-to-manage-service?-fn
-                                        scheduler-interactions-thread-pool request))]
+                                        scheduler-interactions-thread-pool request make-inter-router-requests-fn))]
           (is (= http-200-ok status))
           (is (= "application/json" (get headers "content-type")))
           (is (every? #(str/includes? (str body) (str %)) ["Worked!"]))))
@@ -773,7 +774,7 @@
           (is (thrown-with-msg?
                 ExceptionInfo #"User not allowed to delete service"
                 (delete-service-handler test-service-id core-service-description scheduler allowed-to-manage-service?-fn
-                                        scheduler-interactions-thread-pool request)))))
+                                        scheduler-interactions-thread-pool request make-inter-router-requests-fn)))))
 
       (.shutdown scheduler-interactions-thread-pool))))
 
