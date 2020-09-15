@@ -361,8 +361,7 @@
                 (let [response-body (try-parse-json (:body response))
                       response-headers (:headers response)]
                   (is (contains? (get response-body "headers") "x-envoy-expected-rq-timeout-ms"))
-                  (is (contains? response-headers "x-envoy-upstream-service-time"))
-                  (is (= "envoy" (get response-headers "server"))))))
+                  (is (contains? response-headers "x-envoy-upstream-service-time")))))
 
             (let [response (make-request-with-debug-info
                              request-headers
