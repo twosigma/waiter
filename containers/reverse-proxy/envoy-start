@@ -2,29 +2,57 @@
 # This script takes no argument and uses SERVICE_PORT and PORT0 environment variables
 # to setup /etc/envoy/envoy.yaml file.
 # SERVICE_PORT and PORT0 must be set
+# SERVICE_POROTOCOL is optional (http|h2c, default http)
+# HEALTH_CHECK_PORT_INDEX is optional ([0-9], default 0)
+
+now() {
+    date -u +%FT%TZ
+}
 
 # check if SERVICE_PORT is present
 if [ "$SERVICE_PORT" ]; then
-  echo "$(date -Is) SERVICE_PORT is set"
+  echo "$(now) SERVICE_PORT is set"
 else
-  echo "$(date -Is) SERVICE_PORT is not set. Exiting envoy-start"
+  echo "$(now) SERVICE_PORT is not set. Exiting envoy-start"
   exit 1
 fi
 
 # check if PORT0 is present
 if [ "$PORT0" ]; then
-  echo "$(date -Is) PORT0 is set"
+  echo "$(now) PORT0 is set"
 else
-  echo "$(date -Is) PORT0 is not set. Exiting envoy-start"
+  echo "$(now) PORT0 is not set. Exiting envoy-start"
   exit 1
 fi
 
-echo "$(date -Is) Changing the port values in etc/envoy/envoy.yaml to ${SERVICE_PORT} and ${PORT0}"
+if [ ${HEALTH_CHECK_PORT_INDEX:-0} -gt 0 ]; then
+    echo "$(now) HEALTH_CHECK_PORT_INDEX is positive: ${HEALTH_CHECK_PORT_INDEX}"
+    PROXY_PORT_COUNT=two-ports
+else
+    PROXY_PORT_COUNT=one-port
+fi
+
+CONFIG_YAML=/etc/envoy/envoy-${PROXY_PORT_COUNT}.yaml
+
+echo "$(now) Substituting variables in configuration template"
 
 # change the SERVICE_PORT and PORT0 values in /etc/envoy/envoy.yaml to respective env variables
-sed -i -e "s/SERVICE_PORT/${SERVICE_PORT}/g" -e "s/PORT0/${PORT0}/g" /etc/envoy/envoy.yaml
+(
+set -x
+sed -i \
+    -e "s/{{SERVICE_PORT}}/${PORT0}/g" \
+    -e "s/{{HEALTH_CHECK_PORT}}/$(( PORT0 + HEALTH_CHECK_PORT_INDEX ))/g" \
+    -e "s/{{PROXY_SERVICE_PORT}}/${SERVICE_PORT}/g" \
+    -e "s/{{PROXY_HEALTH_CHECK_PORT}}/$(( SERVICE_PORT + HEALTH_CHECK_PORT_INDEX ))/g" \
+    ${CONFIG_YAML}
+)
 
-echo "$(date -Is) Starting envoy"
+# disable http2 upstream for non-http2 backends
+( echo "${SERVICE_PROTOCOL}" | grep -iq h2 ) || (
+set -x
+sed -i '/http2_protocol_options/d' ${CONFIG_YAML}
+)
 
 # start envoy with /etc/envoy/envoy.yaml config file
-exec envoy -c /etc/envoy/envoy.yaml --base-id 1
+echo "$(now) Starting envoy"
+exec envoy -c ${CONFIG_YAML} --base-id 1

@@ -42,6 +42,8 @@
 (def ^:const WAITER-PORT 9091)
 (def ^:const HTTP-SCHEME "http://")
 
+(def reverse-proxy-flag (or (System/getenv "WAITER_TEST_REVERSE_PROXY_FLAG") "REVERSE_PROXY"))
+
 (def use-spnego (-> (System/getenv "USE_SPNEGO") str Boolean/parseBoolean))
 
 (def ^:const ANSI-YELLOW "\033[1m\033[33m")

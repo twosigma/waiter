@@ -342,8 +342,7 @@
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
       (if (contains? (get-kubernetes-scheduler-settings waiter-url) :reverse-proxy)
-        (let [reverse-proxy-flag "REVERSE_PROXY"
-              reverse-proxy-offset 1
+        (let [reverse-proxy-flag reverse-proxy-flag
               x-waiter-name (rand-name)
               request-headers {:x-waiter-name x-waiter-name
                                (keyword (str "x-waiter-env-" reverse-proxy-flag)) "yes"}
@@ -362,8 +361,7 @@
                 (let [response-body (try-parse-json (:body response))
                       response-headers (:headers response)]
                   (is (contains? (get response-body "headers") "x-envoy-expected-rq-timeout-ms"))
-                  (is (contains? response-headers "x-envoy-upstream-service-time"))
-                  (is (= "envoy" (get response-headers "server"))))))
+                  (is (contains? response-headers "x-envoy-upstream-service-time")))))
 
             (let [response (make-request-with-debug-info
                              request-headers
@@ -372,14 +370,9 @@
               (let [response-body (try-parse-json (:body response))
                     response-headers (:headers response)]
                 (testing "Port value is correctly offset compared to instance value"
-                  (let [response-header-backend-port (-> response-headers
-                                                         (get "x-waiter-backend-port")
-                                                         Integer/parseInt)
-                        env-response-port0 (-> response-body
-                                               (get "PORT0")
-                                               Integer/parseInt)]
-                    (is (= (+ reverse-proxy-offset response-header-backend-port)
-                           env-response-port0))))
+                  (let [response-header-backend-port (get response-headers "x-waiter-backend-port")
+                        env-response-port0 (get response-body "PORT0")]
+                    (is (not= response-header-backend-port env-response-port0))))
                 (testing "Reverse proxy flag environment variable is present"
                   (is (contains? response-body reverse-proxy-flag))
                   (is (= "yes" (get response-body reverse-proxy-flag))))))))

@@ -143,6 +143,7 @@
         (is (= {:app test-service-id
                 :waiter/cluster dummy-scheduler-default-namespace
                 :waiter/fileserver (if fileserver-enabled "enabled" "disabled")
+                :waiter/proxy-sidecar "disabled"
                 :waiter/service-hash test-service-id
                 :waiter/user run-as-user}
                (get-in replicaset-spec [:metadata :labels])))
@@ -164,23 +165,33 @@
               :waiter/service-port "8330"}
              (get-in replicaset-spec [:spec :template :metadata :annotations]))))))
 
+(deftest test-get-port-range
+  ;; this condition is critical for our sidecar-proxy logic,
+  ;; which reserves a second range of ports by incrementing the hash code,
+  ;; and the two ranges must not overlap (or be equal)
+  (testing "no two adjacent service-id hashes map to the same port0"
+    (let [ports (for [i (range 1000) j (range 100)] (get-port-range i j 0))]
+      (is (every? (partial apply not=) (partition 2 1 ports))))))
+
 (deftest replicaset-spec-with-reverse-proxy
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
                 config/retrieve-waiter-principal (constantly "waiter@test.com")]
-    (let [scheduler (make-dummy-scheduler ["test-service-id"] {:reverse-proxy {:cmd ["/opt/waiter/envoy/bin/envoy-start"]
+    (let [service-id "proxy-test-service-id"
+          scheduler (make-dummy-scheduler [service-id] {:reverse-proxy {:cmd ["/opt/waiter/envoy/bin/envoy-start"]
                                                                                :image "twosigma/waiter-envoy"
                                                                                :predicate-fn 'waiter.scheduler.kubernetes/envoy-sidecar-enabled?
                                                                                :resources {:cpu 0.1 :mem 256}
                                                                                :scheme "http"}})
-          service-description (assoc dummy-service-description "env" {"REVERSE_PROXY" "yes"
+          service-description (assoc dummy-service-description "env" {ct/reverse-proxy-flag "yes"
                                                                       "PORT0" "to-be-overwritten"
                                                                       "SERVICE_PORT" "to-be-overwritten"})
-          replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id"
+          replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id
                            service-description)
           app-container (get-in replicaset-spec [:spec :template :spec :containers 0])
           sidecar-container (some
                               #(if (= "waiter-envoy-sidecar" (:name %)) %)
-                              (get-in replicaset-spec [:spec :template :spec :containers]))]
+                              (get-in replicaset-spec [:spec :template :spec :containers]))
+          sidecar-env (into {} (mapv (juxt :name :value) (:env sidecar-container)))]
 
       (testing "replicaset has waiter/service-port annotation"
         (is (contains? (get-in replicaset-spec [:spec :template :metadata :annotations]) :waiter/service-port)))
@@ -188,25 +199,117 @@
       (testing "sidecar container is present in replicaset"
         (is (not= nil sidecar-container)))
 
+      (testing "sidecar container has unique entries in environment"
+        (is (= (count sidecar-env) (-> sidecar-container :env count))))
+
+      (testing "user defined environment variables are correctly overwritten"
+        (is (not-any? #(and (contains? #{"PORT0" "SERVICE_PORT"} (:name %))
+                            (= "to-be-overwritten" (:value %)))
+                      (:env sidecar-container))))
+
+      (testing "proxy-sidecar label is set"
+          (is (= "enabled" (get-in replicaset-spec [:metadata :labels :waiter/proxy-sidecar]))))
+
+      (testing "service-proto, service-port and waiter port0 values and env variables are correct"
+        (let [{:keys [pod-base-port]} scheduler
+              service-id-hash (hash service-id)
+              service-port (get-port-range service-id-hash service-ports-index pod-base-port)
+              port0 (get-port-range service-id-hash proxied-ports-index pod-base-port)
+              env-service-proto (get sidecar-env "SERVICE_PROTOCOL")
+              env-service-port (get sidecar-env "SERVICE_PORT")
+              env-port0 (get sidecar-env "PORT0")]
+          (is (= "http" env-service-proto))
+          (is (= service-port (Integer/parseInt (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/service-port]))))
+          (is (= service-port (get-in sidecar-container [:ports 0 :containerPort])))
+          (is (= (str service-port) env-service-port))
+          (is (= port0 (get-in app-container [:ports 0 :containerPort])))
+          (is (= (str port0) env-port0))))
+
+      (testing "waiter/port-count annotation is correct"
+        (let [port-count (get service-description "ports")]
+          (is (= port-count (-> (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/port-count])
+                                (Integer/parseInt))))))
+
+      (testing "resource requests for reverse-proxy are correct"
+        (let [cpu (get-in sidecar-container [:resources :requests :cpu])
+              memory (get-in sidecar-container [:resources :requests :memory])]
+          (is (= "0.1" cpu))
+          (is (= "256Mi" memory))))
+
+      (testing "resource limits for reverse-proxy are correct"
+        (let [memory-limit (get-in sidecar-container [:resources :limits :memory])]
+          (is (= "256Mi" memory-limit))))
+
+      (testing "reverse-proxy pod container name is correct"
+        (is (= "waiter-envoy-sidecar" (:name sidecar-container))))
+
+      (testing "reverse-proxy pod container image is correct"
+        (is (= "twosigma/waiter-envoy" (:image sidecar-container)))))))
+
+(deftest replicaset-spec-with-reverse-proxy-health-check
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
+                config/retrieve-waiter-principal (constantly "waiter@test.com")]
+    (let [service-id "proxy-health-test-service-id"
+          scheduler (make-dummy-scheduler [service-id] {:reverse-proxy {:cmd ["/opt/waiter/envoy/bin/envoy-start"]
+                                                                               :image "twosigma/waiter-envoy"
+                                                                               :predicate-fn 'waiter.scheduler.kubernetes/envoy-sidecar-enabled?
+                                                                               :resources {:cpu 0.1 :mem 256}
+                                                                               :scheme "http"}})
+          service-description (assoc dummy-service-description
+                                     "env" {ct/reverse-proxy-flag "yes"
+                                            "PORT0" "to-be-overwritten"
+                                            "SERVICE_PORT" "to-be-overwritten"}
+                                     "health-check-port-index" 5
+                                     "ports" 9)
+          replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id
+                           service-description)
+          app-container (get-in replicaset-spec [:spec :template :spec :containers 0])
+          sidecar-container (some
+                              #(if (= "waiter-envoy-sidecar" (:name %)) %)
+                              (get-in replicaset-spec [:spec :template :spec :containers]))
+          sidecar-env (into {} (mapv (juxt :name :value) (:env sidecar-container)))]
+
+      (testing "replicaset has waiter/proxy-sidecar=enabled label"
+        (is (= "enabled" (get-in replicaset-spec [:metadata :labels :waiter/proxy-sidecar]))))
+
+      (testing "replicaset has waiter/service-port annotation"
+        (is (contains? (get-in replicaset-spec [:spec :template :metadata :annotations]) :waiter/service-port)))
+
+      (testing "sidecar container is present in replicaset"
+        (is (not= nil sidecar-container)))
+
+      (testing "sidecar container has unique entries in environment"
+        (is (= (count sidecar-env) (-> sidecar-container :env count))))
+
       (testing "user defined environment variables are correctly overwritten"
         (is (nil? (some #(when (or
                                  (= (:name %) "PORT0")
                                  (= (:name %) "SERVICE_PORT"))
                            (= "to-be-overwritten" (:value %))) (:env sidecar-container)))))
 
-      (testing "service-port and waiter port values and env variables are correct"
-        (let [service-port (-> "test-service-id" hash (mod 100) (* 10) (+ (:pod-base-port scheduler)))
-              port0 (+ service-port 1)
-              service-port-env (Integer/parseInt (:value (some #(if (= "SERVICE_PORT" (:name %)) %) (:env sidecar-container))))
-              port0-env (Integer/parseInt (:value (some #(if (= "PORT0" (:name %)) %) (:env sidecar-container))))]
+      (testing "ports and corresponding and env variables are correct"
+        (let [{:keys [pod-base-port]} scheduler
+              service-id-hash (hash service-id)
+              service-port (get-port-range service-id-hash service-ports-index pod-base-port)
+              health-check-port (+ 5 service-port)
+              port0 (get-port-range service-id-hash proxied-ports-index pod-base-port)
+              port5 (+ 5 port0)
+              env-service-port (get sidecar-env "SERVICE_PORT")
+              env-health-check-port-index (get sidecar-env "HEALTH_CHECK_PORT_INDEX")
+              env-port0 (get sidecar-env "PORT0")
+              readiness-probe-port (get-in app-container [:readinessProbe :httpGet :port])
+              liveness-probe-port (get-in app-container [:livenessProbe :httpGet :port])]
           (is (= service-port (Integer/parseInt (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/service-port]))))
           (is (= service-port (get-in sidecar-container [:ports 0 :containerPort])))
-          (is (= service-port service-port-env))
+          (is (= (str service-port) env-service-port))
+          (is (= "5" env-health-check-port-index))
+          (is (= readiness-probe-port health-check-port))
           (is (= port0 (get-in app-container [:ports 0 :containerPort])))
-          (is (= port0 port0-env))))
+          (is (= (str port0) env-port0))
+          (is (= liveness-probe-port port5))))
 
       (testing "waiter/port-count annotation is correct"
-        (let [port-count (inc (get service-description "ports"))]
+        (let [port-count (get service-description "ports")]
           (is (= port-count (-> (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/port-count])
                                 (Integer/parseInt))))))
 
@@ -1927,6 +2030,14 @@
             instance (pod->ServiceInstance dummy-scheduler pod)]
         (is (= (scheduler/make-ServiceInstance instance-map) instance))))
 
+    (testing "pod with envoy sidecar to instance"
+      (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
+            pod' (-> pod
+                     (assoc-in [:metadata :annotations :waiter/service-port] "8080")
+                     (assoc-in [:spec :containers 0 :ports 0 :containerPort] 8081))
+            instance (pod->ServiceInstance dummy-scheduler pod')]
+        (is (= (scheduler/make-ServiceInstance instance-map) instance))))
+
     (testing "pod with expired annotation"
       (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
             pod' (assoc-in pod [:metadata :annotations :waiter/pod-expired] "true")
@@ -1949,14 +2060,6 @@
                                    :restart-expiry-threshold 25)
             instance (pod->ServiceInstance dummy-scheduler pod)]
         (is (= (scheduler/make-ServiceInstance expired-instance-map) instance))))
-
-    (testing "pod with envoy sidecar to instance"
-      (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
-            pod' (merge
-                   (assoc-in pod [:metadata :annotations :waiter/service-port] "8080")
-                   (assoc-in pod [:spec :containers 0 :ports 0 :containerPort] 8081))
-            instance (pod->ServiceInstance dummy-scheduler pod)]
-        (is (= (scheduler/make-ServiceInstance instance-map) instance))))
 
     (testing "previously started pod not expired despite instance exceeded running grace period"
       (let [dummy-scheduler (assoc base-scheduler

@@ -1095,3 +1095,30 @@
                     (assert-grpc-cancel-status status "Cancelled by server" assertion-message)
                     (is (nil? message-summary) assertion-message)
                     (assert-request-state grpc-client request-headers service-id correlation-id ::server-cancel)))))))))))
+
+(deftest ^:parallel ^:integration-fast test-kubernetes-reverse-proxy-sidecar-grpc
+  (testing-using-waiter-url
+    (when (using-k8s? waiter-url)
+      (if-not (contains? (get-kubernetes-scheduler-settings waiter-url) :reverse-proxy)
+        (log/warn "skipping the integration test as :reverse-proxy is not defined")
+        (let [request-headers (assoc (basic-grpc-service-parameters)
+                                     "content-type" "application/grpc"
+                                     (str "x-waiter-env-" reverse-proxy-flag) "yes")
+              {:keys [service-id]} (start-courier-instance waiter-url request-headers)]
+          (with-service-cleanup
+            service-id
+            (let [;; grpc post-data = {id: "x", from: "y", message: "z"}
+                  ;; see the Proto3 Language Guide for details on the binary encoding:
+                  ;; https://developers.google.com/protocol-buffers/docs/proto3
+                  post-data (byte-array [0x00 0x00 0x00 0x00 0x09 0x0a 0x01 0x78 0x12 0x01 0x79 0x1a 0x01 0x7a])
+                  request-fn #(make-shell-request waiter-url % :body post-data :path "/courier.Courier/SendPackage")
+                  {:keys [cookies] :as response} (make-request-with-debug-info request-headers request-fn)
+                  _ (assert-response-status response http-200-ok)
+                  response-headers (:headers response)
+                  response-body-bytes (-> response :body .getBytes)
+                  received-msg-bytes (-> "received" .getBytes vec)]
+              (testing "proxied through envoy"
+                (is (some? (get response-headers "x-envoy-upstream-service-time"))))
+              (testing "request payload received by courier"
+                ;; response payload ends with the 8 bytes "received" (ascii/utf8)
+                (is (= received-msg-bytes (take-last 8 response-body-bytes )))))))))))
