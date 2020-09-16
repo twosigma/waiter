@@ -91,7 +91,7 @@
      map->KubernetesScheduler)))
 
 (def dummy-service-description
-  {"backend-proto" "HTTP"
+  {"backend-proto" "http"
    "cmd" "foo"
    "cpus" 1.2
    "grace-period-secs" 7
@@ -182,7 +182,7 @@
                                                                                :predicate-fn 'waiter.scheduler.kubernetes/envoy-sidecar-enabled?
                                                                                :resources {:cpu 0.1 :mem 256}
                                                                                :scheme "http"}})
-          service-description (assoc dummy-service-description "env" {"REVERSE_PROXY" "yes"
+          service-description (assoc dummy-service-description "env" {ct/reverse-proxy-flag "yes"
                                                                       "PORT0" "to-be-overwritten"
                                                                       "SERVICE_PORT" "to-be-overwritten"})
           replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id
@@ -218,7 +218,7 @@
               env-service-proto (get sidecar-env "SERVICE_PROTOCOL")
               env-service-port (get sidecar-env "SERVICE_PORT")
               env-port0 (get sidecar-env "PORT0")]
-          (is (= "HTTP" env-service-proto))
+          (is (= "http" env-service-proto))
           (is (= service-port (Integer/parseInt (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/service-port]))))
           (is (= service-port (get-in sidecar-container [:ports 0 :containerPort])))
           (is (= (str service-port) env-service-port))
@@ -256,7 +256,7 @@
                                                                                :resources {:cpu 0.1 :mem 256}
                                                                                :scheme "http"}})
           service-description (assoc dummy-service-description
-                                     "env" {"REVERSE_PROXY" "yes"
+                                     "env" {ct/reverse-proxy-flag "yes"
                                             "PORT0" "to-be-overwritten"
                                             "SERVICE_PORT" "to-be-overwritten"}
                                      "health-check-port-index" 5

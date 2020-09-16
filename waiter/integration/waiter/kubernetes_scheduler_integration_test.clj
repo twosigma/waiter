@@ -342,7 +342,7 @@
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
       (if (contains? (get-kubernetes-scheduler-settings waiter-url) :reverse-proxy)
-        (let [reverse-proxy-flag "REVERSE_PROXY"
+        (let [reverse-proxy-flag reverse-proxy-flag
               x-waiter-name (rand-name)
               request-headers {:x-waiter-name x-waiter-name
                                (keyword (str "x-waiter-env-" reverse-proxy-flag)) "yes"}

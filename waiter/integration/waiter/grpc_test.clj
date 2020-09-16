@@ -1101,23 +1101,20 @@
     (when (using-k8s? waiter-url)
       (if-not (contains? (get-kubernetes-scheduler-settings waiter-url) :reverse-proxy)
         (log/warn "skipping the integration test as :reverse-proxy is not defined")
-        (let [reverse-proxy-flag "REVERSE_PROXY"
-              request-headers (assoc (basic-grpc-service-parameters)
+        (let [request-headers (assoc (basic-grpc-service-parameters)
                                      "content-type" "application/grpc"
                                      (str "x-waiter-env-" reverse-proxy-flag) "yes")
-              _ (log/info "making canary request")
-              ;; grpc post-data = {id: "x", from: "y", message: "z"}
-              ;; see the Proto3 Language Guide for details on the binary encoding:
-              ;; https://developers.google.com/protocol-buffers/docs/proto3
-              post-data (byte-array [0x00 0x00 0x00 0x00 0x09 0x0a 0x01 0x78 0x12 0x01 0x79 0x1a 0x01 0x7a])
-              {:keys [cookies service-id] :as response} (make-request-with-debug-info
-                                                          request-headers
-                                                          #(make-shell-request waiter-url % :body post-data :path "/courier.Courier/SendPackage"))]
+              {:keys [service-id]} (start-courier-instance waiter-url request-headers)]
           (with-service-cleanup
             service-id
-            (assert-service-on-all-routers waiter-url service-id cookies)
-            (assert-response-status response http-200-ok)
-            (let [response-headers (:headers response)
+            (let [;; grpc post-data = {id: "x", from: "y", message: "z"}
+                  ;; see the Proto3 Language Guide for details on the binary encoding:
+                  ;; https://developers.google.com/protocol-buffers/docs/proto3
+                  post-data (byte-array [0x00 0x00 0x00 0x00 0x09 0x0a 0x01 0x78 0x12 0x01 0x79 0x1a 0x01 0x7a])
+                  request-fn #(make-shell-request waiter-url % :body post-data :path "/courier.Courier/SendPackage")
+                  {:keys [cookies] :as response} (make-request-with-debug-info request-headers request-fn)
+                  _ (assert-response-status response http-200-ok)
+                  response-headers (:headers response)
                   response-body-bytes (-> response :body .getBytes)
                   received-msg-bytes (-> "received" .getBytes vec)]
               (testing "proxied through envoy"

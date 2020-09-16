@@ -2,25 +2,31 @@
 # This script takes no argument and uses SERVICE_PORT and PORT0 environment variables
 # to setup /etc/envoy/envoy.yaml file.
 # SERVICE_PORT and PORT0 must be set
+# SERVICE_POROTOCOL is optional (http|h2c, default http)
+# HEALTH_CHECK_PORT_INDEX is optional ([0-9], default 0)
+
+now() {
+    date -u +%FT%TZ
+}
 
 # check if SERVICE_PORT is present
 if [ "$SERVICE_PORT" ]; then
-  echo "$(date -Is) SERVICE_PORT is set"
+  echo "$(now) SERVICE_PORT is set"
 else
-  echo "$(date -Is) SERVICE_PORT is not set. Exiting envoy-start"
+  echo "$(now) SERVICE_PORT is not set. Exiting envoy-start"
   exit 1
 fi
 
 # check if PORT0 is present
 if [ "$PORT0" ]; then
-  echo "$(date -Is) PORT0 is set"
+  echo "$(now) PORT0 is set"
 else
-  echo "$(date -Is) PORT0 is not set. Exiting envoy-start"
+  echo "$(now) PORT0 is not set. Exiting envoy-start"
   exit 1
 fi
 
 if [ ${HEALTH_CHECK_PORT_INDEX:-0} -gt 0 ]; then
-    echo "$(date -Is) HEALTH_CHECK_PORT_INDEX is positive"
+    echo "$(now) HEALTH_CHECK_PORT_INDEX is positive: ${HEALTH_CHECK_PORT_INDEX}"
     PROXY_PORT_COUNT=two-ports
 else
     PROXY_PORT_COUNT=one-port
@@ -28,7 +34,7 @@ fi
 
 CONFIG_YAML=/etc/envoy/envoy-${PROXY_PORT_COUNT}.yaml
 
-echo "$(date -Is) Substituting variables in configuration template"
+echo "$(now) Substituting variables in configuration template"
 
 # change the SERVICE_PORT and PORT0 values in /etc/envoy/envoy.yaml to respective env variables
 (
@@ -48,5 +54,5 @@ sed -i '/http2_protocol_options/d' ${CONFIG_YAML}
 )
 
 # start envoy with /etc/envoy/envoy.yaml config file
-echo "$(date -Is) Starting envoy"
+echo "$(now) Starting envoy"
 exec envoy -c ${CONFIG_YAML} --base-id 1

@@ -30,6 +30,7 @@ static_resources:
                 http_filters:
                   - name: envoy.router
                     typed_config: {}
+                server_header_transformation: PASS_THROUGH
     - address:
         socket_address:
           address: 0.0.0.0
@@ -60,6 +61,7 @@ static_resources:
                 http_filters:
                   - name: envoy.router
                     typed_config: {}
+                server_header_transformation: PASS_THROUGH
   clusters:
     - name: waiter-app
       connect_timeout: 1s
