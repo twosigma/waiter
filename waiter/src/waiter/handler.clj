@@ -359,7 +359,7 @@
   "Deletes the service from the scheduler (after authorization checks)."
   [service-id core-service-description scheduler allowed-to-manage-service?-fn scheduler-interactions-thread-pool
    request make-inter-router-requests-fn]
-  (let [{:strs [timeout] :or {timeout "5000"}} (-> request ru/query-params-request :query-params)
+  (let [{:strs [timeout] :or {timeout "0"}} (-> request ru/query-params-request :query-params)
         timeout (utils/parse-int timeout)
         auth-user (get request :authorization/user)
         run-as-user (get core-service-description "run-as-user")]
@@ -386,22 +386,29 @@
                                       :deleted http-200-ok
                                       :no-such-service-exists http-404-not-found
                                       http-400-bad-request)
-                    router-id->response (when (and (= http-200-ok response-status)
-                                                   (pos? timeout))
-                                          (make-inter-router-requests-fn (str "apps/" service-id "/ensure-delete")
-                                                                         :method :get
-                                                                         :query-string (str "timeout=" timeout)))
+                    router-id->response-chan (when (and (= http-200-ok response-status)
+                                                        (pos? timeout))
+                                               (make-inter-router-requests-fn (str "apps/" service-id "/ensure-delete")
+                                                                              :method :get
+                                                                              :query-string (str "timeout=" timeout)))
+                    router-id->response (loop [result {}
+                                               [[router-id response-chan] & remaining] (seq router-id->response-chan)]
+                                          (if (and router-id response-chan)
+                                            (recur
+                                              (assoc result router-id (async/<! response-chan))
+                                              remaining)
+                                            result))
                     response-body-map (cond-> {:service-id service-id,
                                                :success (= http-200-ok response-status)}
-                                              router-id->response (assoc :routers-agree
-                                                                                (every?
-                                                                                  (fn [[_ router-response]]
-                                                                                    (some-> router-response
-                                                                                            :body
-                                                                                            (json/read-str)
-                                                                                            (get "exists?")
-                                                                                            not))
-                                                                                  router-id->response))
+                                              router-id->response-chan (assoc :routers-agree
+                                                                         (every?
+                                                                           (fn [[_ router-response]]
+                                                                             (some-> router-response
+                                                                                     :body
+                                                                                     (json/read-str)
+                                                                                     (get "exists?")
+                                                                                     not))
+                                                                           router-id->response))
                                               true (merge result))]
                 (utils/clj->json-response response-body-map :status response-status))))
           (catch Throwable ex
@@ -469,16 +476,17 @@
         include-metrics? (utils/param-contains? request-params "include" "metrics")
         router->metrics (when include-metrics?
                           (try
-                            (let [router->response (-> (make-inter-router-requests-fn (str "metrics?service-id=" service-id) :method :get)
-                                                     (assoc router-id (-> (metrics/get-service-metrics service-id)
-                                                                        (utils/clj->json-response))))
+                            (let [router-id->response-chan (-> (make-inter-router-requests-fn (str "metrics?service-id=" service-id) :method :get)
+                                                               (assoc router-id (-> (metrics/get-service-metrics service-id)
+                                                                                    (utils/clj->json-response))))
+                                  router-id->response (pc/map-vals #(async/<!! %) router-id->response-chan)
                                   response->service-metrics (fn response->metrics [{:keys [body]}]
                                                               (try
                                                                 (let [metrics (json/read-str (str body))]
                                                                   (get-in metrics ["services" service-id]))
                                                                 (catch Exception e
                                                                   (log/error e "unable to retrieve metrics from response" (str body)))))
-                                  router->service-metrics (pc/map-vals response->service-metrics router->response)]
+                                  router->service-metrics (pc/map-vals response->service-metrics router-id->response)]
                               (utils/filterm val router->service-metrics))
                             (catch Exception e
                               (log/error e "Error in retrieving router metrics for" service-id))))

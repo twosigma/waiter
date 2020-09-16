@@ -1566,7 +1566,7 @@
                                     (metrics-sync/incoming-router-metrics-handler
                                       router-metrics-agent metrics-sync-interval-ms bytes-encryptor bytes-decryptor request))))
    :service-handler-fn (pc/fnk [[:daemons autoscaler router-state-maintainer]
-                                [:routines allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-sync-fn
+                                [:routines allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-async-fn
                                  router-metrics-helpers service-id->references-fn service-id->service-description-fn
                                  service-id->source-tokens-entries-fn token->token-hash]
                                 [:scheduler scheduler]
@@ -1578,7 +1578,7 @@
                            (wrap-secure-request-fn
                              (fn service-handler-fn [{:as request {:keys [service-id]} :route-params}]
                                (handler/service-handler router-id service-id scheduler kv-store allowed-to-manage-service?-fn
-                                                        generate-log-url-fn make-inter-router-requests-sync-fn
+                                                        generate-log-url-fn make-inter-router-requests-async-fn
                                                         service-id->service-description-fn service-id->source-tokens-entries-fn
                                                         service-id->references-fn query-state-fn query-autoscaler-state-fn
                                                         service-id->metrics-fn scheduler-interactions-thread-pool token->token-hash
