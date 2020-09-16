@@ -613,23 +613,38 @@ class WaiterCliTest(util.WaiterTest):
 
     def test_kill_timeout(self):
         token_name = self.token_name()
-
-        def ping_then_kill_with_small_timeout():
-            util.post_token(self.waiter_url, token_name, util.minimal_service_description())
-            util.ping_token(self.waiter_url, token_name)
-            assert 1 == len(util.services_for_token(self.waiter_url, token_name))
-            return cli.kill(self.waiter_url, token_name, kill_flags='--timeout 1')
-
-        def kill_timed_out(cp):
-            self.logger.info(f'Return code: {cp.returncode}')
-            assert 1 == cp.returncode
-            assert 'Timeout waiting for service to die' in cli.stderr(cp)
-            return True
-
+        timeout = 10
+        util.post_token(self.waiter_url, token_name, util.minimal_service_description())
         try:
-            util.wait_until(ping_then_kill_with_small_timeout, kill_timed_out)
+            service_id = util.ping_token(self.waiter_url, token_name)
+            self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
+            cp = cli.kill(self.waiter_url, token_name, flags='-v', kill_flags=f'--timeout {timeout}')
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('Killing service', cli.stdout(cp))
+            self.assertIn(service_id, cli.stdout(cp))
+            self.assertIn(f"'timeout': {timeout * 1000}", cli.stderr(cp))
+            self.assertIn('Successfully killed', cli.stdout(cp))
+            util.wait_until_no_services_for_token(self.waiter_url, token_name)
         finally:
-            util.delete_token(self.waiter_url, token_name)
+            util.delete_token(self.waiter_url, token_name, kill_services=True)
+
+    def test_kill_no_wait(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, util.minimal_service_description())
+        try:
+            service_id = util.ping_token(self.waiter_url, token_name)
+            self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
+            cp = cli.kill(self.waiter_url, token_name, flags='-v', kill_flags='--no-wait')
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('no-wait enabled: command will not wait to confirm other routers are updated', cli.stdout(cp))
+            self.assertIn('Killing service', cli.stdout(cp))
+            self.assertIn(service_id, cli.stdout(cp))
+            self.assertIn("'timeout': 0}", cli.stderr(cp))
+            self.assertIn('Successfully killed', cli.stdout(cp))
+            util.wait_until_no_services_for_token(self.waiter_url, token_name)
+        finally:
+            util.delete_token(self.waiter_url, token_name, kill_services=True)
+
 
     @pytest.mark.xfail
     def test_kill_services_sorted(self):
