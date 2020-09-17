@@ -363,7 +363,13 @@
         timeout (utils/parse-int timeout)
         auth-user (get request :authorization/user)
         run-as-user (get core-service-description "run-as-user")]
-    (when (nil? timeout) (throw (Exception. "timeout must be an integer")))
+    (when (nil? timeout)
+      (throw (ex-info "timeout must be an integer"
+                      {:current-user auth-user
+                       :existing-owner run-as-user
+                       :log-level :info
+                       :service-id service-id
+                       :status http-400-bad-request})))
     (if-not (allowed-to-manage-service?-fn service-id auth-user)
       (throw
         (ex-info "User not allowed to delete service"
@@ -683,7 +689,10 @@
                    timeout (utils/parse-int timeout)
                    sleep-duration (utils/parse-int sleep-duration)]
                (when (or (nil? sleep-duration) (nil? timeout))
-                 (throw (Exception. "timeout and sleep-duration must be integers")))
+                 (throw (ex-info "timeout and sleep-duration must be integers"
+                                 {:log-level :info
+                                  :request-method request-method
+                                  :status http-400-bad-request})))
                (loop [time-left timeout]
                  (let [fallback-state @fallback-state-atom
                        exists? (descriptor/service-exists? fallback-state service-id)]
