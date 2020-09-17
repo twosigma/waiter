@@ -364,12 +364,13 @@
         auth-user (get request :authorization/user)
         run-as-user (get core-service-description "run-as-user")]
     (when (nil? timeout)
-      (throw (ex-info "timeout must be an integer"
-                      {:current-user auth-user
-                       :existing-owner run-as-user
-                       :log-level :info
-                       :service-id service-id
-                       :status http-400-bad-request})))
+      (throw
+        (ex-info "timeout must be an integer"
+                 {:current-user auth-user
+                  :existing-owner run-as-user
+                  :log-level :info
+                  :service-id service-id
+                  :status http-400-bad-request})))
     (if-not (allowed-to-manage-service?-fn service-id auth-user)
       (throw
         (ex-info "User not allowed to delete service"
