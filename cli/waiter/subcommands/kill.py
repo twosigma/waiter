@@ -6,7 +6,7 @@ from tabulate import tabulate
 from waiter import http_util, terminal
 from waiter.format import format_last_request_time, format_status
 from waiter.querying import get_service, print_no_data, query_service, query_services
-from waiter.util import guard_no_cluster, str2bool, response_message, print_error, check_positive
+from waiter.util import guard_no_cluster, str2bool, response_message, print_error, wait_until, check_positive
 
 
 def kill_service_on_cluster(cluster, service_id, timeout_seconds, no_wait):
@@ -19,15 +19,17 @@ def kill_service_on_cluster(cluster, service_id, timeout_seconds, no_wait):
     try:
         print(f'Killing service {terminal.bold(service_id)} in {terminal.bold(cluster_name)}...')
         params=None
-        if timeout_seconds:
-            params={"timeout": timeout_seconds * 1000}
         if no_wait:
-            print('no-wait enabled: command will not wait to confirm other routers are updated')
+            print('no-wait enabled: command will return before other routers are updated')
             params={"timeout": 0}
         resp = http_util.delete(cluster, f'/apps/{service_id}', params=params)
         logging.debug(f'Response status code: {resp.status_code}')
         if resp.status_code == 200:
-            if (no_wait and resp.json()["success"]) or resp.json()["routers-agree"]:
+            if resp.json()["routers-agree"]:
+                print(f'Successfully killed {service_id} in {cluster_name}.')
+                return True
+            killed = wait_until(service_is_killed, timeout=timeout_seconds, interval=1)
+            if killed:
                 print(f'Successfully killed {service_id} in {cluster_name}.')
                 return True
             else:
@@ -127,11 +129,10 @@ def register(add_parser):
     parser = add_parser('kill', help='kill services')
     parser.add_argument('token-or-service-id')
     parser.add_argument('--force', '-f', help='kill all services, never prompt', dest='force', action='store_true')
+    parser.add_argument('--timeout', '-t', help='timeout (in seconds) for kill to complete',
+                        type=check_positive, default=30)
     parser.add_argument('--service-id', '-s', help='kill by service id instead of token',
                         dest='is-service-id', action='store_true')
-    timeout_group = parser.add_mutually_exclusive_group()
-    timeout_group.add_argument('--timeout', '-t', help='timeout (in seconds) for kill to complete',
-                               type=check_positive, default=30)
-    timeout_group.add_argument('--no-wait', help="does not wait for all routers to confirm deletion", dest='no-wait',
-                               action='store_true')
+    parser.add_argument('--no-wait', help="does not wait for all routers to confirm deletion", dest='no-wait',
+                        action='store_true')
     return kill
