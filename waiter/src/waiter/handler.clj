@@ -679,7 +679,7 @@
   "Polls fallback-state-atom until timeout is reached or service does not exist"
   [fallback-state-atom {{:keys [service-id]} :route-params
                         {:keys [src-router-id]} :basic-authentication
-                        request-method :request-method
+                        :keys [request-method]
                         :as request}]
   (async/go
     (try
