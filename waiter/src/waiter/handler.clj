@@ -706,9 +706,10 @@
                      (do
                        (async/<! (async/timeout sleep-duration))
                        (recur (- time-left-ms sleep-duration)))))))
-        (throw (ex-info "Only GET supported" {:log-level :info
+        (utils/exception->response (ex-info "Only GET supported" {:log-level :info
                                               :request-method request-method
-                                              :status http-405-method-not-allowed})))
+                                              :status http-405-method-not-allowed})
+                                   request))
       (catch Exception ex
         (utils/exception->response ex request)))))
 
