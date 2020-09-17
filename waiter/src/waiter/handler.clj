@@ -685,7 +685,12 @@
     (try
       (log/info service-id "refresh-delete triggered by router" src-router-id)
       (case request-method
-        :get (let [{:strs [timeout sleep-duration] :or {timeout "5000" sleep-duration "100"}} (-> request ru/query-params-request :query-params)
+        :get (let [{:strs [timeout sleep-duration] :or {sleep-duration "100"}} (-> request ru/query-params-request :query-params)
+                   _ (when (nil? timeout)
+                       (throw (ex-info "timeout is required query parameter"
+                                       {:log-level :info
+                                        :request-method request-method
+                                        :status http-400-bad-request})))
                    timeout (utils/parse-int timeout)
                    sleep-duration (utils/parse-int sleep-duration)]
                (when (or (nil? sleep-duration) (nil? timeout))

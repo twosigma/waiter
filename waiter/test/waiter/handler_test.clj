@@ -782,7 +782,8 @@
   (let [handler-name "service-ensure-delete-handler"
         request {:route-params {:service-id "s1"}
                  :basic-authentication {:src-router-id "r2"}
-                 :request-method :get}]
+                 :request-method :get
+                 :query-string "timeout=1000"}]
 
     (testing (str handler-name ":success-before-timeout")
       (let [fallback-state-atom (atom {:available-service-ids #{"s0"}})
@@ -803,7 +804,7 @@
         (is (get (json/read-str body) "exists?"))
         (is (>= (- end-time start-time) timeout))))
 
-    (testing (str handler-name ":force-timeout-custom")
+    (testing (str handler-name ":custom-timeout-delete-update")
       (let [fallback-state-atom (atom {:available-service-ids #{"s1"}})
             timeout 10000
             update-delay 2000
@@ -825,9 +826,17 @@
             sleep-duration "Invalid value"
             request-bad-query (assoc request :query-string (str "timeout=" timeout "&sleep-duration=" sleep-duration))
             {:keys [body headers status]} (async/<!! (service-ensure-delete-handler fallback-state-atom request-bad-query))]
-        (is (= http-500-internal-server-error status))
+        (is (= http-400-bad-request status))
         (is (= "text/plain" (get headers "content-type")))
-        (is (re-find #"timeout and sleep-duration must be integers" body))))))
+        (is (re-find #"timeout and sleep-duration must be integers" body))))
+
+    (testing (str handler-name ":nil-timeout")
+      (let [fallback-state-atom (atom {:available-service-ids #{}})
+            request-bad-query (dissoc request :query-string)
+            {:keys [body headers status]} (async/<!! (service-ensure-delete-handler fallback-state-atom request-bad-query))]
+        (is (= http-400-bad-request status))
+        (is (= "text/plain" (get headers "content-type")))
+        (is (re-find #"timeout is required query parameter" body))))))
 
 (deftest test-work-stealing-handler
   (let [test-service-id "test-service-id"
