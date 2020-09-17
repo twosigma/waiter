@@ -412,7 +412,7 @@
         allowed-to-manage-service? (fn [service-id auth-user]
                                      (sd/can-manage-service? kv-store entitlement-manager service-id auth-user))
         scheduler-interactions-thread-pool (Executors/newFixedThreadPool 1)
-        delete-service-result-atom (atom nil)               ;; with-redefs fails as we are executing inside different threads
+        delete-service-result-atom (atom nil) ;; with-redefs fails as we are executing inside different threads
         make-inter-router-requests-async-fn-atom (atom nil)
         configuration {:daemons {:autoscaler {:query-state-fn (constantly {})}
                                  :router-state-maintainer {:maintainer {:query-state-fn (constantly {})}}}
