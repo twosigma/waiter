@@ -302,6 +302,7 @@
         authenticated-user (get request :authorization/user)
         request-params (-> request ru/query-params-request :query-params)
         hard-delete (utils/request-flag request-params "hard-delete")]
+    (log/info "request to delete token" token)
     (if token
       (let [token-description (sd/token->token-description kv-store token :include-deleted hard-delete)
             {:keys [service-parameter-template token-metadata]} token-description
@@ -417,6 +418,7 @@
                   (get existing-token-metadata "owner")
                   authenticated-user)
         version-hash (get headers "if-match")]
+    (log/info "request to edit token" token)
     (when (str/blank? token)
       (throw (ex-info "Must provide the token" {:status http-400-bad-request :log-level :warn})))
     (when (some #(= token %) waiter-hostnames)
