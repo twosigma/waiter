@@ -25,9 +25,6 @@ def kill_service_on_cluster(cluster, service_id, timeout_seconds, no_wait):
         resp = http_util.delete(cluster, f'/apps/{service_id}', params=params)
         logging.debug(f'Response status code: {resp.status_code}')
         if resp.status_code == 200:
-            if resp.json()["routers-agree"]:
-                print(f'Successfully killed {service_id} in {cluster_name}.')
-                return True
             killed = wait_until(service_is_killed, timeout=timeout_seconds, interval=1)
             if killed:
                 print(f'Successfully killed {service_id} in {cluster_name}.')
