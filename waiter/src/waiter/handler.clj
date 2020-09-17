@@ -698,14 +698,14 @@
                                  {:log-level :info
                                   :request-method request-method
                                   :status http-400-bad-request})))
-               (loop [time-left timeout]
+               (loop [time-left-ms timeout]
                  (let [fallback-state @fallback-state-atom
                        exists? (descriptor/service-exists? fallback-state service-id)]
-                   (if (or (not exists?) (<= time-left 0))
+                   (if (or (not exists?) (<= time-left-ms 0))
                      (utils/clj->json-response {:exists? exists? :service-id service-id})
                      (do
                        (async/<! (async/timeout sleep-duration))
-                       (recur (- time-left sleep-duration)))))))
+                       (recur (- time-left-ms sleep-duration)))))))
         (throw (ex-info "Only GET supported" {:log-level :info
                                               :request-method request-method
                                               :status http-405-method-not-allowed})))
