@@ -476,10 +476,10 @@
         include-metrics? (utils/param-contains? request-params "include" "metrics")
         router->metrics (when include-metrics?
                           (try
-                            (let [router-id->response-chan (-> (make-inter-router-requests-fn (str "metrics?service-id=" service-id) :method :get)
-                                                               (assoc router-id (-> (metrics/get-service-metrics service-id)
-                                                                                    (utils/clj->json-response))))
-                                  router-id->response (pc/map-vals #(async/<!! %) router-id->response-chan)
+                            (let [router-id->response-chan (make-inter-router-requests-fn (str "metrics?service-id=" service-id) :method :get)
+                                  router-id->response (-> (pc/map-vals #(async/<!! %) router-id->response-chan)
+                                                          (assoc router-id (-> (metrics/get-service-metrics service-id)
+                                                                               (utils/clj->json-response))))
                                   response->service-metrics (fn response->metrics [{:keys [body]}]
                                                               (try
                                                                 (let [metrics (json/read-str (str body))]
