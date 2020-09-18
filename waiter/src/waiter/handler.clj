@@ -382,7 +382,8 @@
                   :existing-owner run-as-user
                   :log-level :info
                   :service-id service-id
-                  :status http-400-bad-request})))
+                  :status http-400-bad-request
+                  :timeout timeout})))
     (if-not (allowed-to-manage-service?-fn service-id auth-user)
       (throw
         (ex-info "User not allowed to delete service"
@@ -410,7 +411,7 @@
                                                (assoc
                                                  (make-inter-router-requests-fn (str "apps/" service-id "/await-deletion")
                                                                                 :method :get
-                                                                                :query-string (str "timeout=" timeout))
+                                                                                :config {:query-string (str "timeout=" timeout)})
                                                  router-id (async/go
                                                              {:body (async/go
                                                                       (json/write-str
