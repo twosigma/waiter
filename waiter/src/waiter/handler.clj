@@ -355,7 +355,7 @@
                           viewable-service-ids)]
       (utils/clj->streaming-json-response response-data))))
 
-(defn- service-ensure-delete-handler-helper
+(defn- ensure-service-deleted-locally
   [fallback-state-atom service-id timeout sleep-duration]
   (async/go (loop [time-left-ms timeout]
               (let [fallback-state @fallback-state-atom
@@ -413,7 +413,7 @@
                                                  router-id (async/go
                                                              {:body (async/go
                                                                       (json/write-str
-                                                                        {:exists? (async/<! (service-ensure-delete-handler-helper
+                                                                        {:exists? (async/<! (ensure-service-deleted-locally
                                                                                               fallback-state-atom service-id timeout 100))}))})))
                     router-id->exists? (loop [result {}
                                               [[router-id response-chan] & remaining] (seq router-id->response-chan)]
@@ -720,7 +720,7 @@
                                   :timeout timeout
                                   :sleep-duration sleep-duration})))
                (utils/clj->json-response {:exists? (async/<!
-                                                     (service-ensure-delete-handler-helper fallback-state-atom service-id timeout sleep-duration))
+                                                     (ensure-service-deleted-locally fallback-state-atom service-id timeout sleep-duration))
                                           :service-id service-id}))
         (utils/exception->response (ex-info "Only GET supported" {:log-level :info
                                               :request-method request-method
