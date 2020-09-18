@@ -1002,8 +1002,8 @@
            (exec-routes-mapper "/apps")))
     (is (= {:handler :service-handler-fn, :route-params {:service-id "test-service"}}
            (exec-routes-mapper "/apps/test-service")))
-    (is (= {:handler :service-ensure-delete-handler-fn, :route-params {:service-id "test-service"}}
-           (exec-routes-mapper "/apps/test-service/ensure-delete")))
+    (is (= {:handler :service-await-deletion-handler-fn, :route-params {:service-id "test-service"}}
+           (exec-routes-mapper "/apps/test-service/await-deletion")))
     (is (= {:handler :service-view-logs-handler-fn, :route-params {:service-id "test-service"}}
            (exec-routes-mapper "/apps/test-service/logs")))
     (is (= {:handler :service-override-handler-fn, :route-params {:service-id "test-service"}}

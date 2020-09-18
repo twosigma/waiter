@@ -355,7 +355,7 @@
                           viewable-service-ids)]
       (utils/clj->streaming-json-response response-data))))
 
-(defn- ensure-service-deleted-locally
+(defn- await-service-deletion-locally
   [fallback-state-atom service-id timeout sleep-duration]
   (async/go
     (loop [time-left-ms timeout]
@@ -408,13 +408,13 @@
                     router-id->response-chan (when (and (= http-200-ok response-status)
                                                         (pos? timeout))
                                                (assoc
-                                                 (make-inter-router-requests-fn (str "apps/" service-id "/ensure-delete")
+                                                 (make-inter-router-requests-fn (str "apps/" service-id "/await-deletion")
                                                                                 :method :get
                                                                                 :query-string (str "timeout=" timeout))
                                                  router-id (async/go
                                                              {:body (async/go
                                                                       (json/write-str
-                                                                        {:exists? (async/<! (ensure-service-deleted-locally
+                                                                        {:exists? (async/<! (await-service-deletion-locally
                                                                                               fallback-state-atom service-id timeout 100))}))})))
                     router-id->exists? (loop [result {}
                                               [[router-id response-chan] & remaining] (seq router-id->response-chan)]
@@ -695,7 +695,7 @@
     (catch Exception ex
       (utils/exception->response ex request))))
 
-(defn service-ensure-delete-handler
+(defn service-await-deletion-handler
   "Polls fallback-state-atom until timeout is reached or service does not exist"
   [fallback-state-atom {{:keys [service-id]} :route-params
                         {:keys [src-router-id]} :basic-authentication
@@ -721,7 +721,7 @@
                                   :timeout timeout
                                   :sleep-duration sleep-duration})))
                (utils/clj->json-response {:exists? (async/<!
-                                                     (ensure-service-deleted-locally fallback-state-atom service-id timeout sleep-duration))
+                                                     (await-service-deletion-locally fallback-state-atom service-id timeout sleep-duration))
                                           :service-id service-id}))
         (utils/exception->response (ex-info "Only GET supported" {:log-level :info
                                               :request-method request-method

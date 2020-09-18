@@ -95,7 +95,7 @@
                      "app-name" :app-name-handler-fn
                      "apps" {"" :service-list-handler-fn
                              ["/" :service-id] :service-handler-fn
-                             ["/" :service-id "/ensure-delete"] :service-ensure-delete-handler-fn
+                             ["/" :service-id "/await-deletion"] :service-await-deletion-handler-fn
                              ["/" :service-id "/logs"] :service-view-logs-handler-fn
                              ["/" :service-id "/override"] :service-override-handler-fn
                              ["/" :service-id "/refresh"] :service-refresh-handler-fn
@@ -1620,11 +1620,11 @@
                                      (sd/fetch-core kv-store service-id :refresh true)
                                      (sd/service-id->suspended-state kv-store service-id :refresh true)
                                      (sd/service-id->overrides kv-store service-id :refresh true))))
-   :service-ensure-delete-handler-fn (pc/fnk [[:state fallback-state-atom]
+   :service-await-deletion-handler-fn (pc/fnk [[:state fallback-state-atom]
                                                wrap-router-auth-fn]
                                         (wrap-router-auth-fn
-                                          (fn service-ensure-delete-handler [request]
-                                            (handler/service-ensure-delete-handler fallback-state-atom request))))
+                                          (fn service-await-deletion-handler [request]
+                                            (handler/service-await-deletion-handler fallback-state-atom request))))
    :service-resume-handler-fn (pc/fnk [[:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn]
                                        [:state kv-store]
                                        wrap-secure-request-fn]
