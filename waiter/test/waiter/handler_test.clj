@@ -762,7 +762,7 @@
               {:keys [body headers status]}
               (async/<!!
                 (delete-service-handler test-router-id test-service-id core-service-description scheduler allowed-to-manage-service?-fn
-                                        scheduler-interactions-thread-pool request make-inter-router-requests-fn fallback-state-atom))]
+                                        scheduler-interactions-thread-pool make-inter-router-requests-fn fallback-state-atom request))]
           (is (= http-200-ok status))
           (is (= "application/json" (get headers "content-type")))
           (is (every? #(str/includes? (str body) (str %)) ["Worked!"]))))
@@ -776,7 +776,7 @@
           (is (thrown-with-msg?
                 ExceptionInfo #"User not allowed to delete service"
                 (delete-service-handler test-router-id test-service-id core-service-description scheduler allowed-to-manage-service?-fn
-                                        scheduler-interactions-thread-pool request make-inter-router-requests-fn fallback-state-atom)))))
+                                        scheduler-interactions-thread-pool make-inter-router-requests-fn fallback-state-atom request)))))
 
       (.shutdown scheduler-interactions-thread-pool))))
 

@@ -360,7 +360,7 @@
   (async/go (loop [time-left-ms timeout]
               (let [fallback-state @fallback-state-atom
                     exists? (descriptor/service-exists? fallback-state service-id)]
-                (if (or (not exists?) (not (pos? time-left-msg)))
+                (if (or (not exists?) (not (pos? time-left-ms)))
                   exists?
                   (do
                     (async/<! (async/timeout sleep-duration))
@@ -369,7 +369,7 @@
 (defn delete-service-handler
   "Deletes the service from the scheduler (after authorization checks)."
   [router-id service-id core-service-description scheduler allowed-to-manage-service?-fn scheduler-interactions-thread-pool
-   request make-inter-router-requests-fn fallback-state-atom]
+   make-inter-router-requests-fn fallback-state-atom request]
   (let [{:strs [timeout] :or {timeout "0"}} (-> request ru/query-params-request :query-params)
         timeout (utils/parse-int timeout)
         auth-user (get request :authorization/user)
@@ -576,7 +576,7 @@
      :get returns details about the service such as the service description, metrics, instances, etc."
   [router-id service-id scheduler kv-store allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-fn
    service-id->service-description-fn service-id->source-tokens-entries-fn service-id->references-fn query-state-fn
-   query-autoscaler-state-fn service-id->metrics-fn scheduler-interactions-thread-pool token->token-hash request fallback-state-atom]
+   query-autoscaler-state-fn service-id->metrics-fn scheduler-interactions-thread-pool token->token-hash fallback-state-atom request]
   (try
     (when-not service-id
       (throw (ex-info "Missing service-id" {:log-level :info :status http-400-bad-request})))
@@ -585,7 +585,7 @@
         (throw (ex-info "Service not found" {:log-level :info :service-id service-id :status http-404-not-found}))
         (case (:request-method request)
           :delete (delete-service-handler router-id service-id core-service-description scheduler allowed-to-manage-service?-fn
-                                          scheduler-interactions-thread-pool request make-inter-router-requests-fn fallback-state-atom)
+                                          scheduler-interactions-thread-pool make-inter-router-requests-fn fallback-state-atom request)
           :get (get-service-handler router-id service-id core-service-description kv-store generate-log-url-fn
                                     make-inter-router-requests-fn service-id->service-description-fn
                                     service-id->source-tokens-entries-fn service-id->references-fn
