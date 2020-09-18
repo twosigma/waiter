@@ -86,6 +86,9 @@
                   :request-type "test-request"
                   :status http-200-ok
                   :waiter-api-call? false
+                  :waiter/oidc-identifier "oidc-identifier"
+                  :waiter/oidc-mode "oidc-mode"
+                  :waiter/oidc-redirect-uri "oidc-redirect-uri"
                   :waiter/token "test-token3"}]
     (is (= {:authentication-method "cookie"
             :backend-response-latency-ns 1000
@@ -102,6 +105,9 @@
             :k8s-pod-name "test-pod-name"
             :latest-service-id "latest-service-id"
             :metric-group "service-metric-group"
+            :oidc-identifier "oidc-identifier"
+            :oidc-mode "oidc-mode"
+            :oidc-redirect-uri "oidc-redirect-uri"
             :principal "principal@DOMAIN.COM"
             :request-type "test-request"
             :response-content-length "40"

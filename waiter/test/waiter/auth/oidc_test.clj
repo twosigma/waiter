@@ -144,9 +144,10 @@
   (doseq [oidc-mode [:relaxed :strict]]
     (let [password [:cached "password"]
           identifier (utils/unique-identifier)
+          redirect-uri "https://www.test.com/redirect-uri"
           state-map {:identifier identifier
                      :oidc-mode oidc-mode
-                     :redirect-uri "https://www.test.com/redirect-uri"}
+                     :redirect-uri redirect-uri}
           state-code (create-state-code state-map password)
           access-code (str "access-code-" (rand-int 1000))
           challenge-cookie (str "challenge-cookie-" (rand-int 1000))
@@ -196,12 +197,15 @@
                             (str oidc-challenge-cookie-prefix identifier) {:age 0 :value ""}}
                   :headers {"cache-control" "no-store"
                             "content-security-policy" "default-src 'none'; frame-ancestors 'none'"
-                            "location" "https://www.test.com/redirect-uri"}
+                            "location" redirect-uri}
                   :status http-302-moved-temporarily
                   :authorization/method :oidc
                   :authorization/principal "john.doe"
                   :authorization/user "john.doe"
                   :authorization/metadata {:jwt-access-token access-token}
+                  :waiter/oidc-identifier identifier
+                  :waiter/oidc-mode oidc-mode
+                  :waiter/oidc-redirect-uri redirect-uri
                   :waiter/response-source :waiter
                   :waiter/token "www.test.com"}
                  response))))
@@ -227,6 +231,9 @@
               response (async/<!! response-chan)]
           (is (= {:headers {"content-type" "application/json"}
                   :status http-401-unauthorized
+                  :waiter/oidc-identifier identifier
+                  :waiter/oidc-mode oidc-mode
+                  :waiter/oidc-redirect-uri redirect-uri
                   :waiter/response-source :waiter}
                  (dissoc response :body)))
           (is (str/includes? (-> response :body str) "Error in retrieving access token"))))
@@ -250,6 +257,9 @@
               response (async/<!! response-chan)]
           (is (= {:headers {"content-type" "application/json"}
                   :status http-401-unauthorized
+                  :waiter/oidc-identifier identifier
+                  :waiter/oidc-mode oidc-mode
+                  :waiter/oidc-redirect-uri redirect-uri
                   :waiter/response-source :waiter}
                  (dissoc response :body)))
           (is (str/includes? (-> response :body str) "Error in retrieving access token")))))))
