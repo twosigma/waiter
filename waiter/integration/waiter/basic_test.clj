@@ -706,8 +706,7 @@
                 (str service-id " present in at least one router: " router-id->service-id-deleted))))
 
         (let [{:keys [service-id cookies]}
-              (make-request-with-debug-info {:x-waiter-name (rand-name)} #(make-kitchen-request waiter-url %))
-              router-id->router-url (routers waiter-url)]
+              (make-request-with-debug-info {:x-waiter-name (rand-name)} #(make-kitchen-request waiter-url %))]
           (testing "service-known-on-all-routers"
             (assert-service-on-all-routers waiter-url service-id cookies))
 
@@ -715,9 +714,6 @@
             (let [{:keys [body] :as response} (make-request waiter-url (str "/apps/" service-id) :method :delete :query-params "timeout=10000")]
               (assert-response-status response http-200-ok)
               (is (get (json/read-str body) "routers-agree"))))
-
-          (testing "deleted service is removed from all routers"
-            (assert-service-not-on-any-routers waiter-url service-id cookies))
 
           (testing "service-deleted-from-all-routers"
             (let [router-id->service-id-deleted

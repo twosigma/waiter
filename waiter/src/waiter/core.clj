@@ -1570,7 +1570,7 @@
                                  router-metrics-helpers service-id->references-fn service-id->service-description-fn
                                  service-id->source-tokens-entries-fn token->token-hash]
                                 [:scheduler scheduler]
-                                [:state kv-store router-id scheduler-interactions-thread-pool]
+                                [:state kv-store router-id scheduler-interactions-thread-pool fallback-state-atom]
                                 wrap-secure-request-fn]
                          (let [query-autoscaler-state-fn (:query-state-fn autoscaler)
                                {{:keys [query-state-fn]} :maintainer} router-state-maintainer
@@ -1582,7 +1582,7 @@
                                                         service-id->service-description-fn service-id->source-tokens-entries-fn
                                                         service-id->references-fn query-state-fn query-autoscaler-state-fn
                                                         service-id->metrics-fn scheduler-interactions-thread-pool token->token-hash
-                                                        request)))))
+                                                        request fallback-state-atom)))))
    :service-id-handler-fn (pc/fnk [[:routines store-service-description-fn]
                                    [:state kv-store]
                                    wrap-descriptor-fn wrap-secure-request-fn]

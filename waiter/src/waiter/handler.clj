@@ -355,10 +355,21 @@
                           viewable-service-ids)]
       (utils/clj->streaming-json-response response-data))))
 
+(defn- service-ensure-delete-handler-helper
+  [fallback-state-atom service-id timeout sleep-duration]
+  (async/go (loop [time-left-ms timeout]
+              (let [fallback-state @fallback-state-atom
+                    exists? (descriptor/service-exists? fallback-state service-id)]
+                (if (or (not exists?) (<= time-left-ms 0))
+                  exists?
+                  (do
+                    (async/<! (async/timeout sleep-duration))
+                    (recur (- time-left-ms sleep-duration))))))))
+
 (defn delete-service-handler
   "Deletes the service from the scheduler (after authorization checks)."
   [service-id core-service-description scheduler allowed-to-manage-service?-fn scheduler-interactions-thread-pool
-   request make-inter-router-requests-fn]
+   request make-inter-router-requests-fn fallback-state-atom]
   (let [{:strs [timeout] :or {timeout "0"}} (-> request ru/query-params-request :query-params)
         timeout (utils/parse-int timeout)
         auth-user (get request :authorization/user)
@@ -408,14 +419,18 @@
                     response-body-map (cond-> {:service-id service-id,
                                                :success (= http-200-ok response-status)}
                                               router-id->response-chan (assoc :routers-agree
-                                                                         (every?
-                                                                           (fn [[_ router-response]]
-                                                                             (some-> router-response
-                                                                                     :body
-                                                                                     (json/read-str)
-                                                                                     (get "exists?")
-                                                                                     not))
-                                                                           router-id->response))
+                                                                         (and
+                                                                           (every?
+                                                                             (fn [[_ router-response]]
+                                                                               (some-> router-response
+                                                                                       :body
+                                                                                       (json/read-str)
+                                                                                       (get "exists?")
+                                                                                       not))
+                                                                             router-id->response)
+                                                                           (not
+                                                                             (async/<!
+                                                                               (service-ensure-delete-handler-helper fallback-state-atom service-id timeout 100)))))
                                               true (merge result))]
                 (utils/clj->json-response response-body-map :status response-status))))
           (catch Throwable ex
@@ -558,7 +573,7 @@
      :get returns details about the service such as the service description, metrics, instances, etc."
   [router-id service-id scheduler kv-store allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-fn
    service-id->service-description-fn service-id->source-tokens-entries-fn service-id->references-fn query-state-fn
-   query-autoscaler-state-fn service-id->metrics-fn scheduler-interactions-thread-pool token->token-hash request]
+   query-autoscaler-state-fn service-id->metrics-fn scheduler-interactions-thread-pool token->token-hash request fallback-state-atom]
   (try
     (when-not service-id
       (throw (ex-info "Missing service-id" {:log-level :info :status http-400-bad-request})))
@@ -567,7 +582,7 @@
         (throw (ex-info "Service not found" {:log-level :info :service-id service-id :status http-404-not-found}))
         (case (:request-method request)
           :delete (delete-service-handler service-id core-service-description scheduler allowed-to-manage-service?-fn
-                                          scheduler-interactions-thread-pool request make-inter-router-requests-fn)
+                                          scheduler-interactions-thread-pool request make-inter-router-requests-fn fallback-state-atom)
           :get (get-service-handler router-id service-id core-service-description kv-store generate-log-url-fn
                                     make-inter-router-requests-fn service-id->service-description-fn
                                     service-id->source-tokens-entries-fn service-id->references-fn
@@ -699,14 +714,9 @@
                                  {:log-level :info
                                   :request-method request-method
                                   :status http-400-bad-request})))
-               (loop [time-left-ms timeout]
-                 (let [fallback-state @fallback-state-atom
-                       exists? (descriptor/service-exists? fallback-state service-id)]
-                   (if (or (not exists?) (<= time-left-ms 0))
-                     (utils/clj->json-response {:exists? exists? :service-id service-id})
-                     (do
-                       (async/<! (async/timeout sleep-duration))
-                       (recur (- time-left-ms sleep-duration)))))))
+               (utils/clj->json-response {:exists? (async/<!
+                                                     (service-ensure-delete-handler-helper fallback-state-atom service-id timeout sleep-duration))
+                                          :service-id service-id}))
         (utils/exception->response (ex-info "Only GET supported" {:log-level :info
                                               :request-method request-method
                                               :status http-405-method-not-allowed})
