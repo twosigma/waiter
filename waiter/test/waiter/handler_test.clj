@@ -745,6 +745,7 @@
 (deftest test-delete-service-handler
   (let [test-user "test-user"
         test-service-id "service-1"
+        test-router-id "router-1"
         allowed-to-manage-service?-fn (fn [service-id user] (and (= test-service-id service-id) (= test-user user)))
         make-inter-router-requests-fn (constantly {})
         fallback-state-atom (atom nil)]
@@ -760,7 +761,7 @@
               request {:authorization/user test-user}
               {:keys [body headers status]}
               (async/<!!
-                (delete-service-handler test-service-id core-service-description scheduler allowed-to-manage-service?-fn
+                (delete-service-handler test-router-id test-service-id core-service-description scheduler allowed-to-manage-service?-fn
                                         scheduler-interactions-thread-pool request make-inter-router-requests-fn fallback-state-atom))]
           (is (= http-200-ok status))
           (is (= "application/json" (get headers "content-type")))
@@ -774,7 +775,7 @@
               request {:authorization/user "another-user"}]
           (is (thrown-with-msg?
                 ExceptionInfo #"User not allowed to delete service"
-                (delete-service-handler test-service-id core-service-description scheduler allowed-to-manage-service?-fn
+                (delete-service-handler test-router-id test-service-id core-service-description scheduler allowed-to-manage-service?-fn
                                         scheduler-interactions-thread-pool request make-inter-router-requests-fn fallback-state-atom)))))
 
       (.shutdown scheduler-interactions-thread-pool))))

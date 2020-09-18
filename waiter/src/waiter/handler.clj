@@ -368,7 +368,7 @@
 
 (defn delete-service-handler
   "Deletes the service from the scheduler (after authorization checks)."
-  [service-id core-service-description scheduler allowed-to-manage-service?-fn scheduler-interactions-thread-pool
+  [router-id service-id core-service-description scheduler allowed-to-manage-service?-fn scheduler-interactions-thread-pool
    request make-inter-router-requests-fn fallback-state-atom]
   (let [{:strs [timeout] :or {timeout "0"}} (-> request ru/query-params-request :query-params)
         timeout (utils/parse-int timeout)
@@ -406,31 +406,33 @@
                                       http-400-bad-request)
                     router-id->response-chan (when (and (= http-200-ok response-status)
                                                         (pos? timeout))
-                                               (make-inter-router-requests-fn (str "apps/" service-id "/ensure-delete")
-                                                                              :method :get
-                                                                              :query-string (str "timeout=" timeout)))
-                    router-id->response (loop [result {}
-                                               [[router-id response-chan] & remaining] (seq router-id->response-chan)]
-                                          (if (and router-id response-chan)
-                                            (recur
-                                              (assoc result router-id (async/<! response-chan))
-                                              remaining)
-                                            result))
+                                               (assoc
+                                                 (make-inter-router-requests-fn (str "apps/" service-id "/ensure-delete")
+                                                                                :method :get
+                                                                                :query-string (str "timeout=" timeout))
+                                                 router-id (async/go
+                                                             {:body (async/go
+                                                                      (json/write-str
+                                                                        {:exists? (async/<! (service-ensure-delete-handler-helper
+                                                                                              fallback-state-atom service-id timeout 100))}))})))
+                    router-id->exists? (loop [result {}
+                                              [[router-id response-chan] & remaining] (seq router-id->response-chan)]
+                                         (if (and router-id response-chan)
+                                           (recur
+                                             (assoc result router-id (->> response-chan
+                                                                          (async/<!)
+                                                                          :body
+                                                                          (async/<!)
+                                                                          (json/read-str)
+                                                                          (get "exists?")))
+                                             remaining)
+                                           result))
                     response-body-map (cond-> {:service-id service-id,
                                                :success (= http-200-ok response-status)}
                                               router-id->response-chan (assoc :routers-agree
-                                                                         (and
-                                                                           (every?
-                                                                             (fn [[_ router-response]]
-                                                                               (some-> router-response
-                                                                                       :body
-                                                                                       (json/read-str)
-                                                                                       (get "exists?")
-                                                                                       not))
-                                                                             router-id->response)
-                                                                           (not
-                                                                             (async/<!
-                                                                               (service-ensure-delete-handler-helper fallback-state-atom service-id timeout 100)))))
+                                                                              (every?
+                                                                                not
+                                                                                (vals router-id->exists?)))
                                               true (merge result))]
                 (utils/clj->json-response response-body-map :status response-status))))
           (catch Throwable ex
@@ -581,7 +583,7 @@
       (if (empty? core-service-description)
         (throw (ex-info "Service not found" {:log-level :info :service-id service-id :status http-404-not-found}))
         (case (:request-method request)
-          :delete (delete-service-handler service-id core-service-description scheduler allowed-to-manage-service?-fn
+          :delete (delete-service-handler router-id service-id core-service-description scheduler allowed-to-manage-service?-fn
                                           scheduler-interactions-thread-pool request make-inter-router-requests-fn fallback-state-atom)
           :get (get-service-handler router-id service-id core-service-description kv-store generate-log-url-fn
                                     make-inter-router-requests-fn service-id->service-description-fn
