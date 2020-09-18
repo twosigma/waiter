@@ -685,7 +685,7 @@
             (assert-response-status response http-404-not-found)))
 
         (testing "delete service with non integer timeout (should get 400)"
-          (let [timeout "Invalid timeout value"
+          (let [timeout "Invalid-timeout-value"
                 {:keys [body] :as response} (make-request waiter-url (str "/apps/" service-id) :method :delete :query-params (str "timeout=" timeout))]
             (assert-response-status response http-400-bad-request)
             (is (re-find (re-pattern timeout) body))))
