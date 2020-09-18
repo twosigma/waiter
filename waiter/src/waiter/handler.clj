@@ -715,7 +715,9 @@
                  (throw (ex-info "timeout and sleep-duration must be integers"
                                  {:log-level :info
                                   :request-method request-method
-                                  :status http-400-bad-request})))
+                                  :status http-400-bad-request
+                                  :timeout timeout
+                                  :sleep-duration sleep-duration})))
                (utils/clj->json-response {:exists? (async/<!
                                                      (service-ensure-delete-handler-helper fallback-state-atom service-id timeout sleep-duration))
                                           :service-id service-id}))

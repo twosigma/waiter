@@ -824,13 +824,15 @@
 
     (testing (str handler-name ":non-integer-query-params")
       (let [fallback-state-atom (atom {:available-service-ids #{}})
-            timeout "Invalid value"
-            sleep-duration "Invalid value"
+            timeout "Invalid timeout value"
+            sleep-duration "Invalid sleep-duration value"
             request-bad-query (assoc request :query-string (str "timeout=" timeout "&sleep-duration=" sleep-duration))
             {:keys [body headers status]} (async/<!! (service-ensure-delete-handler fallback-state-atom request-bad-query))]
         (is (= http-400-bad-request status))
         (is (= "text/plain" (get headers "content-type")))
-        (is (re-find #"timeout and sleep-duration must be integers" body))))
+        (is (re-find #"timeout and sleep-duration must be integers" body))
+        (is (re-find (re-pattern timeout) body))
+        (is (re-find (re-pattern sleep-duration) body))))
 
     (testing (str handler-name ":nil-timeout")
       (let [fallback-state-atom (atom {:available-service-ids #{}})
@@ -838,7 +840,7 @@
             {:keys [body headers status]} (async/<!! (service-ensure-delete-handler fallback-state-atom request-bad-query))]
         (is (= http-400-bad-request status))
         (is (= "text/plain" (get headers "content-type")))
-        (is (re-find #"timeout is required query parameter" body))))))
+        (is (re-find #"timeout is a required query parameter" body))))))
 
 (deftest test-work-stealing-handler
   (let [test-service-id "test-service-id"
