@@ -360,7 +360,7 @@
   (async/go (loop [time-left-ms timeout]
               (let [fallback-state @fallback-state-atom
                     exists? (descriptor/service-exists? fallback-state service-id)]
-                (if (or (not exists?) (<= time-left-ms 0))
+                (if (or (not exists?) (not (pos? time-left-msg)))
                   exists?
                   (do
                     (async/<! (async/timeout sleep-duration))
