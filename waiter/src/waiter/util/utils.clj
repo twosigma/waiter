@@ -172,6 +172,13 @@
       (str v))
     :else v))
 
+(defn try-parse-json
+  [s]
+  (try
+    (json/read-str s)
+    (catch Exception e
+      (throw (ex-info "Couldn't parse JSON" {:string s} e)))))
+
 (defn clj->json
   "Convert the input Clojure data structure into a json string."
   [data-map]

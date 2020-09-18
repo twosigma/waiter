@@ -62,10 +62,7 @@
 
 (defn try-parse-json
   [s]
-  (try
-    (json/read-str s)
-    (catch Exception e
-      (throw (ex-info "Couldn't parse JSON" {:string s} e)))))
+  (utils/try-parse-json s))
 
 (defn execute-command [& args]
   (let [shell-output (apply shell/sh args)]

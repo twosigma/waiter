@@ -434,7 +434,8 @@
                                                       result))))}
                        :state {:kv-store nil
                                :router-id "router-id"
-                               :scheduler-interactions-thread-pool scheduler-interactions-thread-pool}
+                               :scheduler-interactions-thread-pool scheduler-interactions-thread-pool
+                               :fallback-state-atom (atom {:available-service-ids #{}})}
                        :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-handler-fn ((:service-handler-fn request-handlers) configuration)}]
 
@@ -511,8 +512,8 @@
 
     (testing "service-handler:delete-multiple-router-response-agree"
       (reset! delete-service-result-atom {:result :deleted, :service-id service-id})
-      (reset! make-inter-router-requests-async-fn-atom (constantly {"r1" (async/go {:body (json/write-str {"exists?" false})})
-                                                                   "r2" (async/go {:body (json/write-str {"exists?" false})})}))
+      (reset! make-inter-router-requests-async-fn-atom (constantly {"r1" (async/go {:body (async/go (json/write-str {"exists?" false}))})
+                                                                    "r2" (async/go {:body (async/go (json/write-str {"exists?" false}))})}))
       (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:query-string "timeout=5000"
                        :request-method :delete
@@ -525,8 +526,8 @@
 
     (testing "service-handler:delete-multiple-router-response-disagree"
       (reset! delete-service-result-atom {:result :deleted, :service-id service-id})
-      (reset! make-inter-router-requests-async-fn-atom (constantly {"r1" (async/go {:body (json/write-str {"exists?" false})})
-                                                                   "r2" (async/go {:body (json/write-str {"exists?" true})})}))
+      (reset! make-inter-router-requests-async-fn-atom (constantly {"r1" (async/go {:body (async/go (json/write-str {"exists?" false}))})
+                                                                    "r2" (async/go {:body (async/go (json/write-str {"exists?" true}))})}))
       (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:query-string "timeout=5000"
                        :request-method :delete
@@ -546,10 +547,24 @@
                        :uri (str "/apps/" service-id)
                        :authorization/user user}
               {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
-          (println status headers body)
           (is (= http-200-ok status))
           (is (= expected-json-response-headers headers))
           (is (= {"success" true "service-id" service-id "result" "deleted" "routers-agree" true} (json/read-str body))))))
+
+    (testing "service-handler:delete-internal-json-error"
+      (reset! delete-service-result-atom {:result :deleted, :service-id service-id})
+      (reset! make-inter-router-requests-async-fn-atom (constantly {"r1" (async/go {:body (async/go (json/write-str {"exists?" false}))})
+                                                                    "r2" (async/go {:body (async/go (json/write-str {"exists?" true}))})
+                                                                    "r3" (async/go {:body (async/go nil)})
+                                                                    "r4" (async/go {:body (async/go "non-parsable json")})}))
+      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
+        (let [request {:query-string "timeout=5000"
+                       :request-method :delete
+                       :uri (str "/apps/" service-id)
+                       :authorization/user user}
+              {:keys [body status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
+          (is (= http-500-internal-server-error status))
+          (is (re-find #"Couldn't parse JSON" body)))))
 
     (.shutdown scheduler-interactions-thread-pool)))
 

@@ -419,11 +419,11 @@
                                               [[router-id response-chan] & remaining] (seq router-id->response-chan)]
                                          (if (and router-id response-chan)
                                            (recur
-                                             (assoc result router-id (->> response-chan
-                                                                          (async/<!)
+                                             (assoc result router-id (-> response-chan
+                                                                          async/<!
                                                                           :body
-                                                                          (async/<!)
-                                                                          (json/read-str)
+                                                                          async/<!
+                                                                          utils/try-parse-json
                                                                           (get "exists?")))
                                              remaining)
                                            result))
@@ -501,7 +501,8 @@
         router->metrics (when include-metrics?
                           (try
                             (let [router-id->response-chan (make-inter-router-requests-fn (str "metrics?service-id=" service-id) :method :get)
-                                  router-id->response (-> (pc/map-vals #(async/<!! %) router-id->response-chan)
+                                  router-id->response (-> (pc/map-vals (fn [chan] (update (async/<!! chan) :body async/<!!))
+                                                                       router-id->response-chan)
                                                           (assoc router-id (-> (metrics/get-service-metrics service-id)
                                                                                (utils/clj->json-response))))
                                   response->service-metrics (fn response->metrics [{:keys [body]}]
