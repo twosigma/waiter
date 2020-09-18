@@ -357,14 +357,15 @@
 
 (defn- ensure-service-deleted-locally
   [fallback-state-atom service-id timeout sleep-duration]
-  (async/go (loop [time-left-ms timeout]
-              (let [fallback-state @fallback-state-atom
-                    exists? (descriptor/service-exists? fallback-state service-id)]
-                (if (or (not exists?) (not (pos? time-left-ms)))
-                  exists?
-                  (do
-                    (async/<! (async/timeout sleep-duration))
-                    (recur (- time-left-ms sleep-duration))))))))
+  (async/go
+    (loop [time-left-ms timeout]
+      (let [fallback-state @fallback-state-atom
+            exists? (descriptor/service-exists? fallback-state service-id)]
+        (if (or (not exists?) (not (pos? time-left-ms)))
+          exists?
+          (do
+            (async/<! (async/timeout sleep-duration))
+            (recur (- time-left-ms sleep-duration))))))))
 
 (defn delete-service-handler
   "Deletes the service from the scheduler (after authorization checks)."
