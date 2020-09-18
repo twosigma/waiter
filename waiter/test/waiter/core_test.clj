@@ -594,7 +594,8 @@
                        :scheduler {:scheduler (Object.)}
                        :state {:kv-store nil
                                :router-id "router-id"
-                               :scheduler-interactions-thread-pool scheduler-interactions-thread-pool}
+                               :scheduler-interactions-thread-pool scheduler-interactions-thread-pool
+                               :fallback-state-atom (atom nil)}
                        :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-handler-fn ((:service-handler-fn request-handlers) configuration)}
         ring-handler (wrap-handler-json-response (ring-handler-factory waiter-request?-fn handlers))
