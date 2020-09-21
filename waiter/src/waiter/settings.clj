@@ -62,6 +62,7 @@
    (s/required-key :instance-request-properties) {(s/required-key :async-check-interval-ms) schema/positive-int
                                                   (s/required-key :async-request-max-status-checks) schema/positive-int
                                                   (s/required-key :async-request-timeout-ms) schema/positive-int
+                                                  (s/required-key :client-buffer-size) schema/positive-int
                                                   (s/required-key :client-connection-idle-timeout-ms) schema/positive-int
                                                   (s/required-key :connection-timeout-ms) schema/positive-int
                                                   (s/required-key :initial-socket-timeout-ms) schema/positive-int
@@ -291,11 +292,12 @@
    :instance-request-properties {:async-check-interval-ms 3000
                                  :async-request-max-status-checks 50
                                  :async-request-timeout-ms 60000
+                                 :client-buffer-size 32768 ;; 32 KiB
                                  :client-connection-idle-timeout-ms 10000 ; 10 seconds
                                  :connection-timeout-ms 5000 ; 5 seconds
                                  :initial-socket-timeout-ms 900000 ; 15 minutes
                                  :lingering-request-threshold-ms 60000 ; 1 minute
-                                 :output-buffer-size 4096
+                                 :output-buffer-size 4096 ;; 4 KiB
                                  :queue-timeout-ms 300000
                                  :streaming-timeout-ms 20000}
    :kv-config {:kind :zk

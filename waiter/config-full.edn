@@ -812,6 +812,10 @@
                                ;; service description:
                                :async-request-timeout-ms 60000
 
+                               ;; Size in the size of the buffer used to write/read individual request/response fragments to/from the backend.
+                               ;; The value must be a positive integer, defaults to 32 KiB.
+                               :client-buffer-size 32768
+
                                ;; The max time (milliseconds) a connection can be idle in the client connection pool:
                                :client-connection-idle-timeout-ms 10000
 
@@ -825,9 +829,9 @@
                                ;; expired instances will be eligible for killing:
                                :lingering-request-threshold-ms 60000
 
-                               ;; Size in bytes of the output buffer used to aggregate HTTP responses from a backend.
-                               ;; The value must be a positive integer.
-                               :output-buffer-size 2048
+                               ;; Size in bytes of the output buffer used to aggregate fragments of HTTP responses from a backend.
+                               ;; The value must be a positive integer, defaults to 4 KiB.
+                               :output-buffer-size 4096
 
                                ;; The default amount of time (milliseconds) each request will wait in
                                ;; the Waiter queue before an instance is available to process it. This

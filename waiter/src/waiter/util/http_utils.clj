@@ -124,7 +124,7 @@
     :or {clear-content-decoders true}
     :as config}]
   (let [^HttpClient client
-        (http/client (cond-> (select-keys config [:client-name :follow-redirects? :transport])
+        (http/client (cond-> (select-keys config [:client-name :follow-redirects? :request-buffer-size :response-buffer-size :transport])
                        (some? conn-timeout) (assoc :connect-timeout conn-timeout)
                        (some? socket-timeout) (assoc :idle-timeout socket-timeout)))]
     (when clear-content-decoders
