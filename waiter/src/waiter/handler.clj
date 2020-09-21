@@ -356,6 +356,7 @@
       (utils/clj->streaming-json-response response-data))))
 
 (defn- await-service-deletion-locally
+  "Polls fallback-state-atom locally and waits until timeout is reached or service does not exist in fallback-state-atom"
   [fallback-state-atom service-id timeout sleep-duration]
   (async/go
     (loop [time-left-ms timeout]
