@@ -173,6 +173,7 @@
     :else v))
 
 (defn try-parse-json
+  "parses json and throws exception with the input string"
   [s]
   (try
     (json/read-str s)
