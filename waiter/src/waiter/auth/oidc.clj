@@ -83,31 +83,35 @@
             (parse-state-code state password)
             (catch Throwable throwable
               (throw (ex-info "Unable to parse state"
-                              bad-request-map throwable))))]
+                              bad-request-map throwable))))
+          oidc-bad-request-map (assoc bad-request-map
+                                 :waiter/oidc-identifier identifier
+                                 :waiter/oidc-mode oidc-mode
+                                 :waiter/oidc-redirect-uri redirect-uri)]
       (when-not (and (map? state-map)
                      (string? redirect-uri)
                      (string? identifier)
                      (not (str/blank? identifier))
                      (contains? #{:relaxed :strict} oidc-mode))
-        (throw (ex-info "The state query parameter is invalid" bad-request-map)))
+        (throw (ex-info "The state query parameter is invalid" oidc-bad-request-map)))
       (let [oidc-challenge-cookie (str oidc-challenge-cookie-prefix identifier)
             challenge-cookie (some-> headers
                                (get "cookie")
                                (cookie-support/cookie-value oidc-challenge-cookie))]
         (when (str/blank? challenge-cookie)
           (throw (ex-info (str "No challenge cookie set: " oidc-challenge-cookie)
-                          (assoc bad-request-map :cookie-name oidc-challenge-cookie))))
+                          (assoc oidc-bad-request-map :cookie-name oidc-challenge-cookie))))
         (let [decoded-value (cookie-support/decode-cookie challenge-cookie password)]
           (when-not (map? decoded-value)
-            (throw (ex-info "Decoded challenge cookie is invalid" bad-request-map)))
+            (throw (ex-info "Decoded challenge cookie is invalid" oidc-bad-request-map)))
           (let [{:keys [code-verifier expiry-time]} decoded-value]
             (when-not (integer? expiry-time)
-              (throw (ex-info "The challenge cookie has invalid format" bad-request-map)))
+              (throw (ex-info "The challenge cookie has invalid format" oidc-bad-request-map)))
             (when-not (->> expiry-time (tc/from-long) (t/before? (t/now)))
-              (throw (ex-info "The challenge cookie has expired" bad-request-map)))
+              (throw (ex-info "The challenge cookie has expired" oidc-bad-request-map)))
             (when (or (not (string? code-verifier))
                       (str/blank? code-verifier))
-              (throw (ex-info "No challenge code available from cookie" bad-request-map)))
+              (throw (ex-info "No challenge code available from cookie" oidc-bad-request-map)))
             {:code code
              :code-verifier code-verifier
              :state-map state-map}))))))
@@ -133,7 +137,8 @@
     (utils/exception->response
       (throw (ex-info "OIDC authentication disabled" {:status http-501-not-implemented}))
       request)
-    (let [{:keys [code-verifier code state-map]} (validate-oidc-callback-request password request)]
+    (let [{:keys [code-verifier code state-map]} (validate-oidc-callback-request password request)
+          {:keys [identifier oidc-mode redirect-uri]} state-map]
       (async/go
         (let [access-token-ch (jwt/request-access-token jwt-auth-server request oidc-callback-uri code code-verifier)
               body-or-throwable (async/<! access-token-ch)]
@@ -147,7 +152,6 @@
                     _ (when (instance? Throwable result-map-or-throwable)
                         (throw result-map-or-throwable))
                     {:keys [expiry-time subject]} result-map-or-throwable
-                    {:keys [oidc-mode]} state-map
                     _ (log/info "authenticated subject is" subject "and oidc mode is" oidc-mode)
                     ;; use token expiry time only in strict mode, else allow default value for cookie age to be chosen
                     auth-cookie-age-in-seconds (when (= :strict oidc-mode)
@@ -155,11 +159,13 @@
                     auth-params-map (auth/build-auth-params-map :oidc subject {:jwt-access-token access-token})]
                 (auth/handle-request-auth
                   (constantly
-                    (let [{:keys [identifier redirect-uri]} state-map
-                          waiter-token (utils/uri-string->host redirect-uri)
+                    (let [waiter-token (utils/uri-string->host redirect-uri)
                           oidc-challenge-cookie (str oidc-challenge-cookie-prefix identifier)]
                       (-> {:headers (attach-threat-remediation-headers {"location" redirect-uri})
                            :status http-302-moved-temporarily
+                           :waiter/oidc-identifier identifier
+                           :waiter/oidc-mode oidc-mode
+                           :waiter/oidc-redirect-uri redirect-uri
                            :waiter/token waiter-token}
                         (cookie-support/add-encoded-cookie password oidc-challenge-cookie "" 0)
                         (utils/attach-waiter-source))))
@@ -168,6 +174,9 @@
               (utils/exception->response
                 (ex-info (str "Error in retrieving access token: " (ex-message throwable))
                          (-> (ex-data throwable)
+                           (assoc :waiter/oidc-identifier identifier
+                                  :waiter/oidc-mode oidc-mode
+                                  :waiter/oidc-redirect-uri redirect-uri)
                            (utils/assoc-if-absent :friendly-error-message "Error in retrieving access token")
                            (utils/assoc-if-absent :log-level :warn)
                            (utils/assoc-if-absent :status http-401-unauthorized))

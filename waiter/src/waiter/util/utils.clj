@@ -130,6 +130,18 @@
     (log/debug "generate-secret-word" [src-id dest-id] "->" secret-word)
     secret-word))
 
+(defn attach-waiter-namespace-keys
+  "Attaches the waiter namespace keys from waiter-data into response-map."
+  [response-map waiter-data]
+  (if (map? waiter-data)
+    (reduce
+      (fn [acc-map [k v]]
+        (cond-> acc-map
+          (and (keyword? k) (= (namespace k) "waiter")) (assoc k v)))
+      response-map
+      waiter-data)
+    response-map))
+
 (defn attach-waiter-source
   "Attaches the :waiter/response-source entry into the response map."
   ([response] (attach-waiter-source response :waiter))
@@ -184,33 +196,35 @@
 (defn clj->json-response
   "Convert the input data into a json response."
   [data-map & {:keys [headers status] :or {headers {} status http-200-ok }}]
-  (attach-waiter-source
-    {:body (clj->json data-map)
-     :status status
-     :headers (assoc headers
-                "content-type" "application/json")}))
+  (-> {:body (clj->json data-map)
+       :status status
+       :headers (assoc headers
+                  "content-type" "application/json")}
+    (attach-waiter-namespace-keys data-map)
+    (attach-waiter-source)))
 
 (defn clj->streaming-json-response
   "Converts the data into a json response which can be streamed back to the client."
   [data-map & {:keys [status] :or {status http-200-ok }}]
   (let [data-map (doall data-map)]
-    (attach-waiter-source
-      {:status status
-       :headers {"content-type" "application/json"}
-       :body (fn [^ServletResponse resp]
-               (let [writer (OutputStreamWriter. (.getOutputStream resp))]
-                 (try
-                   (json/write
-                     data-map
-                     writer
-                     :escape-slash false
-                     :key-fn stringify-keys
-                     :value-fn stringify-elements)
-                   (catch Exception e
-                     (log/error e "Exception creating streaming json response")
-                     (throw e))
-                   (finally
-                     (.flush writer)))))})))
+    (-> {:status status
+         :headers {"content-type" "application/json"}
+         :body (fn [^ServletResponse resp]
+                 (let [writer (OutputStreamWriter. (.getOutputStream resp))]
+                   (try
+                     (json/write
+                       data-map
+                       writer
+                       :escape-slash false
+                       :key-fn stringify-keys
+                       :value-fn stringify-elements)
+                     (catch Exception e
+                       (log/error e "Exception creating streaming json response")
+                       (throw e))
+                     (finally
+                       (.flush writer)))))}
+      (attach-waiter-namespace-keys data-map)
+      (attach-waiter-source))))
 
 (defn urls->html-links
   "Converts any URLs in a string to HTML links."
@@ -357,7 +371,8 @@
          :status status}
       (attach-error-class details)
       (attach-grpc-status error-context request)
-      attach-waiter-source)))
+      (attach-waiter-namespace-keys details)
+      (attach-waiter-source))))
 
 (defn- wrap-unhandled-exception
   "Wraps any exception that doesn't already set status in a parent

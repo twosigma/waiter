@@ -54,7 +54,8 @@
   "Convert a response into a context suitable for logging."
   [{:keys [authorization/method authorization/principal backend-response-latency-ns descriptor error-class
            get-instance-latency-ns handle-request-latency-ns headers instance instance-proto latest-service-id
-           protocol request-type status waiter-api-call?] :as response}]
+           protocol request-type status waiter-api-call? waiter/oidc-identifier waiter/oidc-mode waiter/oidc-redirect-uri]
+    :as response}]
   (let [{:keys [service-id service-description source-tokens]} descriptor
         token (or (some->> source-tokens (map #(get % "token")) seq (str/join ","))
                   ;; allow non-proxy requests to provide tokens for use in the request log
@@ -82,6 +83,9 @@
       instance-proto (assoc :instance-proto instance-proto)
       latest-service-id (assoc :fallback-triggered (not= service-id latest-service-id)
                                :latest-service-id latest-service-id)
+      oidc-identifier (assoc :oidc-identifier oidc-identifier)
+      oidc-mode (assoc :oidc-mode oidc-mode)
+      oidc-redirect-uri (assoc :oidc-redirect-uri oidc-redirect-uri)
       node-name (assoc :k8s-node-name node-name)
       pod-name (assoc :k8s-pod-name pod-name)
       principal (assoc :principal principal)
