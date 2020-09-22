@@ -573,11 +573,12 @@ class WaiterCliTest(util.WaiterTest):
         try:
             service_id = util.ping_token(self.waiter_url, token_name)
             self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
-            cp = cli.kill(self.waiter_url, token_name)
+            cp = cli.kill(self.waiter_url, token_name, flags="-v")
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertIn('Killing service', cli.stdout(cp))
             self.assertIn(service_id, cli.stdout(cp))
             self.assertIn('Successfully killed', cli.stdout(cp))
+            self.assertIn('timeout=30000', cli.stderr(cp))
             util.wait_until_no_services_for_token(self.waiter_url, token_name)
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
@@ -591,6 +592,41 @@ class WaiterCliTest(util.WaiterTest):
             self.assertIn('There are no services using token', cli.stdout(cp))
         finally:
             util.delete_token(self.waiter_url, token_name)
+
+    def test_kill_timeout(self):
+        timeout = 10
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, util.minimal_service_description())
+        try:
+            service_id = util.ping_token(self.waiter_url, token_name)
+            self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
+            cp = cli.kill(self.waiter_url, token_name, flags="-v", kill_flags=f"--timeout {timeout}")
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('Killing service', cli.stdout(cp))
+            self.assertIn(service_id, cli.stdout(cp))
+            self.assertIn('Successfully killed', cli.stdout(cp))
+            self.assertIn(f'timeout={timeout * 1000}', cli.stderr(cp))
+            util.wait_until_no_services_for_token(self.waiter_url, token_name)
+        finally:
+            util.delete_token(self.waiter_url, token_name, kill_services=True)
+
+    def test_kill_no_wait(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, util.minimal_service_description())
+        try:
+            service_id = util.ping_token(self.waiter_url, token_name)
+            self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
+            cp = cli.kill(self.waiter_url, token_name, flags="-v", kill_flags=f"--no-wait")
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('Killing service', cli.stdout(cp))
+            self.assertIn(service_id, cli.stdout(cp))
+            self.assertIn('no-wait enabled', cli.stdout(cp))
+            self.assertIn('Successfully killed', cli.stdout(cp))
+            self.assertIn('timeout=0', cli.stderr(cp))
+            util.wait_until_no_services_for_token(self.waiter_url, token_name)
+        finally:
+            util.delete_token(self.waiter_url, token_name, kill_services=True)
+
 
     def test_kill_multiple_services(self):
         token_name = self.token_name()
