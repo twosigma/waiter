@@ -30,6 +30,7 @@
             [waiter.auth.jwt :as jwt]
             [waiter.authorization :as authz]
             [waiter.correlation-id :as cid]
+            [waiter.descriptor :as descriptor]
             [waiter.headers :as headers]
             [waiter.interstitial :as interstitial]
             [waiter.kv :as kv]
@@ -354,12 +355,36 @@
                           viewable-service-ids)]
       (utils/clj->streaming-json-response response-data))))
 
+(defn- await-service-deletion-locally
+  "Polls fallback-state-atom locally and waits until timeout is reached or service does not exist in fallback-state-atom"
+  [fallback-state-atom service-id timeout sleep-duration]
+  (async/go
+    (loop [time-left-ms timeout]
+      (let [fallback-state @fallback-state-atom
+            exists? (descriptor/service-exists? fallback-state service-id)]
+        (if (or (not exists?) (not (pos? time-left-ms)))
+          exists?
+          (do
+            (async/<! (async/timeout sleep-duration))
+            (recur (- time-left-ms sleep-duration))))))))
+
 (defn delete-service-handler
   "Deletes the service from the scheduler (after authorization checks)."
-  [service-id core-service-description scheduler allowed-to-manage-service?-fn scheduler-interactions-thread-pool
-   request]
-  (let [auth-user (get request :authorization/user)
+  [router-id service-id core-service-description scheduler allowed-to-manage-service?-fn scheduler-interactions-thread-pool
+   make-inter-router-requests-fn fallback-state-atom request]
+  (let [{:strs [timeout] :or {timeout "0"}} (-> request ru/query-params-request :query-params)
+        timeout (utils/parse-int timeout)
+        auth-user (get request :authorization/user)
         run-as-user (get core-service-description "run-as-user")]
+    (when (nil? timeout)
+      (throw
+        (ex-info "timeout must be an integer"
+                 {:current-user auth-user
+                  :existing-owner run-as-user
+                  :log-level :info
+                  :service-id service-id
+                  :status http-400-bad-request
+                  :timeout timeout})))
     (if-not (allowed-to-manage-service?-fn service-id auth-user)
       (throw
         (ex-info "User not allowed to delete service"
@@ -377,12 +402,41 @@
                                            scheduler-interactions-thread-pool))]
             (if error
               (utils/exception->response error request)
-              (let [delete-result result
-                    response-status (case (:result delete-result)
+              (let [delete-result (:result result)
+                    response-status (case delete-result
                                       :deleted http-200-ok
                                       :no-such-service-exists http-404-not-found
                                       http-400-bad-request)
-                    response-body-map (merge {:success (= http-200-ok response-status), :service-id service-id} delete-result)]
+                    router-id->response-chan (when (and (= http-200-ok response-status)
+                                                        (pos? timeout))
+                                               (assoc
+                                                 (make-inter-router-requests-fn (str "apps/" service-id "/await-deletion")
+                                                                                :method :get
+                                                                                :config {:query-string (str "timeout=" timeout)})
+                                                 router-id (async/go
+                                                             {:body (async/go
+                                                                      (json/write-str
+                                                                        {:exists? (async/<! (await-service-deletion-locally
+                                                                                              fallback-state-atom service-id timeout 100))}))})))
+                    router-id->exists? (loop [result {}
+                                              [[router-id response-chan] & remaining] (seq router-id->response-chan)]
+                                         (if (and router-id response-chan)
+                                           (recur
+                                             (assoc result router-id (some-> response-chan
+                                                                          async/<!
+                                                                          :body
+                                                                          async/<!
+                                                                          utils/try-parse-json
+                                                                          (get "exists?")))
+                                             remaining)
+                                           result))
+                    response-body-map (cond-> {:service-id service-id,
+                                               :success (= http-200-ok response-status)}
+                                              router-id->response-chan (assoc :routers-agree
+                                                                              (every?
+                                                                                not
+                                                                                (vals router-id->exists?)))
+                                              true (merge result))]
                 (utils/clj->json-response response-body-map :status response-status))))
           (catch Throwable ex
             (log/error ex "error while deleting service" service-id)
@@ -449,16 +503,18 @@
         include-metrics? (utils/param-contains? request-params "include" "metrics")
         router->metrics (when include-metrics?
                           (try
-                            (let [router->response (-> (make-inter-router-requests-fn (str "metrics?service-id=" service-id) :method :get)
-                                                     (assoc router-id (-> (metrics/get-service-metrics service-id)
-                                                                        (utils/clj->json-response))))
+                            (let [router-id->response-chan (make-inter-router-requests-fn (str "metrics?service-id=" service-id) :method :get)
+                                  router-id->response (-> (pc/map-vals (fn [chan] (update (async/<!! chan) :body async/<!!))
+                                                                       router-id->response-chan)
+                                                          (assoc router-id (-> (metrics/get-service-metrics service-id)
+                                                                               (utils/clj->json-response))))
                                   response->service-metrics (fn response->metrics [{:keys [body]}]
                                                               (try
                                                                 (let [metrics (json/read-str (str body))]
                                                                   (get-in metrics ["services" service-id]))
                                                                 (catch Exception e
                                                                   (log/error e "unable to retrieve metrics from response" (str body)))))
-                                  router->service-metrics (pc/map-vals response->service-metrics router->response)]
+                                  router->service-metrics (pc/map-vals response->service-metrics router-id->response)]
                               (utils/filterm val router->service-metrics))
                             (catch Exception e
                               (log/error e "Error in retrieving router metrics for" service-id))))
@@ -523,7 +579,7 @@
      :get returns details about the service such as the service description, metrics, instances, etc."
   [router-id service-id scheduler kv-store allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-fn
    service-id->service-description-fn service-id->source-tokens-entries-fn service-id->references-fn query-state-fn
-   query-autoscaler-state-fn service-id->metrics-fn scheduler-interactions-thread-pool token->token-hash request]
+   query-autoscaler-state-fn service-id->metrics-fn scheduler-interactions-thread-pool token->token-hash fallback-state-atom request]
   (try
     (when-not service-id
       (throw (ex-info "Missing service-id" {:log-level :info :status http-400-bad-request})))
@@ -531,8 +587,8 @@
       (if (empty? core-service-description)
         (throw (ex-info "Service not found" {:log-level :info :service-id service-id :status http-404-not-found}))
         (case (:request-method request)
-          :delete (delete-service-handler service-id core-service-description scheduler allowed-to-manage-service?-fn
-                                          scheduler-interactions-thread-pool request)
+          :delete (delete-service-handler router-id service-id core-service-description scheduler allowed-to-manage-service?-fn
+                                          scheduler-interactions-thread-pool make-inter-router-requests-fn fallback-state-atom request)
           :get (get-service-handler router-id service-id core-service-description kv-store generate-log-url-fn
                                     make-inter-router-requests-fn service-id->service-description-fn
                                     service-id->source-tokens-entries-fn service-id->references-fn
@@ -640,6 +696,41 @@
       (utils/clj->json-response (vec directory-content)))
     (catch Exception ex
       (utils/exception->response ex request))))
+
+(defn service-await-deletion-handler
+  "Polls fallback-state-atom until timeout is reached or service does not exist"
+  [fallback-state-atom {{:keys [service-id]} :route-params
+                        {:keys [src-router-id]} :basic-authentication
+                        :keys [request-method]
+                        :as request}]
+  (async/go
+    (try
+      (log/info service-id "refresh-delete triggered by router" src-router-id)
+      (case request-method
+        :get (let [{:strs [timeout sleep-duration] :or {sleep-duration "100"}} (-> request ru/query-params-request :query-params)
+                   _ (when (nil? timeout)
+                       (throw (ex-info "timeout is a required query parameter"
+                                       {:log-level :info
+                                        :request-method request-method
+                                        :status http-400-bad-request})))
+                   timeout (utils/parse-int timeout)
+                   sleep-duration (utils/parse-int sleep-duration)]
+               (when (or (nil? sleep-duration) (nil? timeout))
+                 (throw (ex-info "timeout and sleep-duration must be integers"
+                                 {:log-level :info
+                                  :request-method request-method
+                                  :status http-400-bad-request
+                                  :timeout timeout
+                                  :sleep-duration sleep-duration})))
+               (utils/clj->json-response {:exists? (async/<!
+                                                     (await-service-deletion-locally fallback-state-atom service-id timeout sleep-duration))
+                                          :service-id service-id}))
+        (utils/exception->response (ex-info "Only GET supported" {:log-level :info
+                                              :request-method request-method
+                                              :status http-405-method-not-allowed})
+                                   request))
+      (catch Exception ex
+        (utils/exception->response ex request)))))
 
 (defn work-stealing-handler
   "Handles work-stealing offers of instances for load-balancing work on the current router."

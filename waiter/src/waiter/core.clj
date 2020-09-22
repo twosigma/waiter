@@ -95,6 +95,7 @@
                      "app-name" :app-name-handler-fn
                      "apps" {"" :service-list-handler-fn
                              ["/" :service-id] :service-handler-fn
+                             ["/" :service-id "/await-deletion"] :service-await-deletion-handler-fn
                              ["/" :service-id "/logs"] :service-view-logs-handler-fn
                              ["/" :service-id "/override"] :service-override-handler-fn
                              ["/" :service-id "/refresh"] :service-refresh-handler-fn
@@ -1567,11 +1568,11 @@
                                     (metrics-sync/incoming-router-metrics-handler
                                       router-metrics-agent metrics-sync-interval-ms bytes-encryptor bytes-decryptor request))))
    :service-handler-fn (pc/fnk [[:daemons autoscaler router-state-maintainer]
-                                [:routines allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-sync-fn
+                                [:routines allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-async-fn
                                  router-metrics-helpers service-id->references-fn service-id->service-description-fn
                                  service-id->source-tokens-entries-fn token->token-hash]
                                 [:scheduler scheduler]
-                                [:state kv-store router-id scheduler-interactions-thread-pool]
+                                [:state kv-store router-id scheduler-interactions-thread-pool fallback-state-atom]
                                 wrap-secure-request-fn]
                          (let [query-autoscaler-state-fn (:query-state-fn autoscaler)
                                {{:keys [query-state-fn]} :maintainer} router-state-maintainer
@@ -1579,11 +1580,11 @@
                            (wrap-secure-request-fn
                              (fn service-handler-fn [{:as request {:keys [service-id]} :route-params}]
                                (handler/service-handler router-id service-id scheduler kv-store allowed-to-manage-service?-fn
-                                                        generate-log-url-fn make-inter-router-requests-sync-fn
+                                                        generate-log-url-fn make-inter-router-requests-async-fn
                                                         service-id->service-description-fn service-id->source-tokens-entries-fn
                                                         service-id->references-fn query-state-fn query-autoscaler-state-fn
                                                         service-id->metrics-fn scheduler-interactions-thread-pool token->token-hash
-                                                        request)))))
+                                                        fallback-state-atom request)))))
    :service-id-handler-fn (pc/fnk [[:routines store-service-description-fn]
                                    [:state kv-store]
                                    wrap-descriptor-fn wrap-secure-request-fn]
@@ -1621,6 +1622,11 @@
                                      (sd/fetch-core kv-store service-id :refresh true)
                                      (sd/service-id->suspended-state kv-store service-id :refresh true)
                                      (sd/service-id->overrides kv-store service-id :refresh true))))
+   :service-await-deletion-handler-fn (pc/fnk [[:state fallback-state-atom]
+                                               wrap-router-auth-fn]
+                                        (wrap-router-auth-fn
+                                          (fn service-await-deletion-handler [request]
+                                            (handler/service-await-deletion-handler fallback-state-atom request))))
    :service-resume-handler-fn (pc/fnk [[:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn]
                                        [:state kv-store]
                                        wrap-secure-request-fn]
