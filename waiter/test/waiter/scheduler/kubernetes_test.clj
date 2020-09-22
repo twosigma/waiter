@@ -126,32 +126,35 @@
      (is (= expected# actual#))))
 
 (deftest replicaset-spec-fileserver-container-and-metadata
-  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
-                config/retrieve-waiter-principal (constantly "waiter@test.com")]
-    (doseq [fileserver-enabled [true false]]
-      (let [{:strs [run-as-user] :as service-description} (assoc dummy-service-description "health-check-port-index" 2 "ports" 3)
-            test-service-id "waiter-testservice123456789"
-            scheduler (make-dummy-scheduler
-                        [test-service-id]
-                        {:fileserver {:port 9090
-                                      :predicate-fn (constantly fileserver-enabled)
-                                      :scheme "http"}
-                         :service-id->service-description-fn (constantly service-description)})
-            replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler test-service-id service-description)]
-        (is (= {:waiter/service-id test-service-id}
-               (get-in replicaset-spec [:metadata :annotations])))
-        (is (= {:app test-service-id
-                :waiter/cluster dummy-scheduler-default-namespace
-                :waiter/fileserver (if fileserver-enabled "enabled" "disabled")
-                :waiter/proxy-sidecar "disabled"
-                :waiter/service-hash test-service-id
-                :waiter/user run-as-user}
-               (get-in replicaset-spec [:metadata :labels])))
-        (let [fileserver-containers (filter #(= "waiter-fileserver" (:name %))
-                                           (get-in replicaset-spec [:spec :template :spec :containers]))]
-          (if fileserver-enabled
-            (is (= 1 (count fileserver-containers)))
-            (is (empty? fileserver-containers))))))))
+  (let [current-time (t/now)]
+    (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
+                  config/retrieve-waiter-principal (constantly "waiter@test.com")
+                  t/now (constantly current-time)]
+      (doseq [fileserver-enabled [true false]]
+        (let [{:strs [run-as-user] :as service-description} (assoc dummy-service-description "health-check-port-index" 2 "ports" 3)
+              test-service-id "waiter-testservice123456789"
+              scheduler (make-dummy-scheduler
+                          [test-service-id]
+                          {:fileserver {:port 9090
+                                        :predicate-fn (constantly fileserver-enabled)
+                                        :scheme "http"}
+                           :service-id->service-description-fn (constantly service-description)})
+              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler test-service-id service-description)]
+          (is (= {:waiter/service-id test-service-id}
+                 (get-in replicaset-spec [:metadata :annotations])))
+          (is (= {:app test-service-id
+                  :waiter/cluster dummy-scheduler-default-namespace
+                  :waiter/fileserver (if fileserver-enabled "enabled" "disabled")
+                  :waiter/proxy-sidecar "disabled"
+                  :waiter/replicaset-version (str "v" (du/date-to-str current-time rs-version-time-format))
+                  :waiter/service-hash test-service-id
+                  :waiter/user run-as-user}
+                 (get-in replicaset-spec [:metadata :labels])))
+          (let [fileserver-containers (filter #(= "waiter-fileserver" (:name %))
+                                              (get-in replicaset-spec [:spec :template :spec :containers]))]
+            (if fileserver-enabled
+              (is (= 1 (count fileserver-containers)))
+              (is (empty? fileserver-containers)))))))))
 
 (deftest replicaset-spec-health-check-port-index
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
@@ -619,6 +622,7 @@
                                :namespace "myself"
                                :labels {:app "test-app-9999"
                                         :waiter/cluster "waiter"
+                                        :waiter/replicaset-version "v20200922T202222Z"
                                         :waiter/service-hash "test-app-9999"}
                                :annotations {:waiter/service-id "test-app-9999"}
                                :uid "test-app-9999-uid"}
@@ -631,6 +635,7 @@
           :expected-result
           [(scheduler/make-Service {:id "test-app-9999"
                                     :instances 0
+                                    :k8s/replicaset-version "v20200922T202222Z"
                                     :task-count 0
                                     :task-stats {:running 0, :healthy 0, :unhealthy 0, :staged 0}})]}]]
     (log/info "Expecting Key error due to bad :mismatched-replicaset in API server response...")
@@ -651,6 +656,7 @@
                              :labels {:app "test-app-1234"
                                       :waiter/cluster "waiter"
                                       :waiter/user "myself"
+                                      :waiter/replicaset-version "v20200922T203333Z"
                                       :waiter/service-hash "test-app-1234"}
                              :annotations {:waiter/service-id "test-app-1234"}
                              :uid "test-app-1234-uid"}
@@ -678,6 +684,7 @@
                              :namespace "myself"
                              :labels {:app "test-app-1234"
                                       :waiter/cluster "waiter"
+                                      :waiter/replicaset-version "v20200922T200000Z"
                                       :waiter/service-hash "test-app-1234"
                                       :waiter/user "myself"}
                              :annotations {:waiter/port-count "1"
@@ -694,6 +701,7 @@
                              :namespace "myself"
                              :labels {:app "test-app-1234"
                                       :waiter/cluster "waiter"
+                                      :waiter/replicaset-version "v20200922T201111Z"
                                       :waiter/service-hash "test-app-1234"
                                       :waiter/user "myself"}
                              :annotations {:waiter/port-count "1"
@@ -711,6 +719,7 @@
                              :labels {:app "test-app-1234"
                                       :waiter/cluster "waiter"
                                       :waiter/user "myself"
+                                      :waiter/replicaset-version "v20200922T202222Z"
                                       :waiter/service-hash "test-app-1234"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/service-id "test-app-1234"}}
@@ -725,6 +734,7 @@
                              :namespace "myself"
                              :labels {:app "test-app-1234"
                                       :waiter/cluster "waiter"
+                                      :waiter/replicaset-version "v20200922T201111Z"
                                       :waiter/service-hash "test-app-1234"
                                       :waiter/user "myself"}
                              :annotations {:waiter/port-count "1"
@@ -784,6 +794,7 @@
         expected (hash-map
                    (scheduler/make-Service {:id "test-app-1234"
                                             :instances 2
+                                            :k8s/replicaset-version "v20200922T203333Z"
                                             :task-count 2
                                             :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
                    {:active-instances
@@ -794,6 +805,7 @@
                         :k8s/container-statuses [{:name "test-app-1234" :ready false :reason "ContainerCreating":state :waiting}]
                         :k8s/node-name "node-0.k8s.com"
                         :k8s/pod-phase "Pending"
+                        :k8s/replicaset-version "v20200922T200000Z"
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-1234"
@@ -804,6 +816,7 @@
                         :id "test-app-1234.test-app-1234-abcd1-0"
                         :k8s/container-statuses [{:name "test-app-1234" :ready true :state :running}]
                         :k8s/pod-phase "Running"
+                        :k8s/replicaset-version "v20200922T201111Z"
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-1234"
@@ -814,6 +827,7 @@
                         :id "test-app-1234.test-app-1234-abcd2-0"
                         :k8s/container-statuses [{:name "test-app-1234" :ready true}]
                         :k8s/node-name "node-2.k8s.com"
+                        :k8s/replicaset-version "v20200922T202222Z"
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-1234"
@@ -825,6 +839,7 @@
                         :id "test-app-1234.test-app-1234-abcd3-0"
                         :k8s/container-statuses [{:name "test-app-1234" :ready true :state :running}]
                         :k8s/pod-phase "Failed"
+                        :k8s/replicaset-version "v20200922T201111Z"
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-1234"
@@ -1995,6 +2010,7 @@
                         :namespace "myself"
                         :labels {:app "test-app-1234"
                                  :waiter/cluster "waiter"
+                                 :waiter/replicaset-version "v20200922T201111Z"
                                  :waiter/service-hash "test-app-1234"}
                         :annotations {:waiter/port-count "1"
                                       :waiter/service-id "test-app-1234"}}
@@ -2021,6 +2037,7 @@
                       :k8s/container-statuses [{:name "test-app-1234" :ready true}]
                       :k8s/namespace "myself"
                       :k8s/pod-name "test-app-1234-abcd1"
+                      :k8s/replicaset-version "v20200922T201111Z"
                       :k8s/restart-count 9
                       :k8s/user "myself"}
         expired-instance-map (assoc instance-map :flags #{:expired})]

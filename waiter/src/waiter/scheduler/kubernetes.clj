@@ -17,6 +17,7 @@
   (:require [cheshire.core :as cheshire]
             [clj-http.client :as clj-http]
             [clj-time.core :as t]
+            [clj-time.format :as f]
             [clojure.data :as data]
             [clojure.data.zip.xml :as zx]
             [clojure.java.io :as io]
@@ -58,6 +59,10 @@
 (def k8s-timestamp-format
   "Kubernetes reports dates in ISO8061 format, sans the milliseconds component."
   (DateTimeFormat/forPattern "yyyy-MM-dd'T'HH:mm:ss'Z'"))
+
+(def rs-version-time-format
+  "The time format used while creating ReplicaSet version labels, only alphanumeric characters."
+  (f/formatters :basic-date-time-no-ms))
 
 (def max-failed-instances-to-keep
   "The maximum number of failed instances tracked per service."
@@ -115,19 +120,21 @@
       [[spec
         [:metadata name namespace uid [:annotations waiter/service-id]]
         [:status {replicas 0} {availableReplicas 0} {readyReplicas 0} {unavailableReplicas 0}]] replicaset-json
+       replicaset-version (get-in replicaset-json [:metadata :labels :waiter/replicaset-version] nil)
        requested (get spec :replicas 0)
        staged (- replicas (+ availableReplicas unavailableReplicas))]
       (scheduler/make-Service
-        {:id service-id
-         :instances requested
-         :k8s/app-name name
-         :k8s/namespace namespace
-         :k8s/replicaset-uid uid
-         :task-count replicas
-         :task-stats {:healthy readyReplicas
-                      :running (- replicas staged)
-                      :staged staged
-                      :unhealthy (- replicas readyReplicas staged)}}))
+        (cond-> {:id service-id
+                 :instances requested
+                 :k8s/app-name name
+                 :k8s/namespace namespace
+                 :k8s/replicaset-uid uid
+                 :task-count replicas
+                 :task-stats {:healthy readyReplicas
+                              :running (- replicas staged)
+                              :staged staged
+                              :unhealthy (- replicas readyReplicas staged)}}
+          replicaset-version (assoc :k8s/replicaset-version replicaset-version))))
     (catch Throwable t
       (log/error t "error converting ReplicaSet to Waiter Service"))))
 
@@ -267,7 +274,8 @@
           container-statuses (get pod-status :containerStatuses)
           primary-container-status (first container-statuses)
           pod-annotations (get-in pod [:metadata :annotations])
-          pod-started-at (-> pod (get-in [:status :startTime]) timestamp-str->datetime)]
+          pod-started-at (-> pod (get-in [:status :startTime]) timestamp-str->datetime)
+          {:keys [waiter/replicaset-version]} (get-in pod [:metadata :labels])]
       (scheduler/make-ServiceInstance
         (cond-> {:extra-ports (->> pod-annotations :waiter/port-count Integer/parseInt range next (mapv #(+ port0 %)))
                  :flags (cond-> #{}
@@ -288,6 +296,7 @@
                  :started-at pod-started-at}
           node-name (assoc :k8s/node-name node-name)
           phase (assoc :k8s/pod-phase phase)
+          replicaset-version (assoc :k8s/replicaset-version replicaset-version)
           (seq container-statuses) (assoc :k8s/container-statuses
                                           (map (fn [{:keys [state] :as status}]
                                                  (when (> (count state) 1)
@@ -917,6 +926,7 @@
                     (for [i (range ports)]
                       {:name (str "PORT" i) :value (str (+ port0 i))})))
         k8s-name (service-id->k8s-app-name scheduler service-id)
+        replicaset-version (str "v" (du/date-to-str (t/now) rs-version-time-format)) ;; we use a monotonically increasing version string
         health-check-scheme (-> (or health-check-proto backend-proto) hu/backend-proto->scheme str/upper-case)
         health-check-url (sd/service-description->health-check-url service-description)
         memory (str mem "Mi")
@@ -936,6 +946,7 @@
                            :waiter/cluster cluster-name
                            :waiter/fileserver (if fileserver-enabled? "enabled" "disabled")
                            :waiter/proxy-sidecar (if has-reverse-proxy? "enabled" "disabled")
+                           :waiter/replicaset-version replicaset-version
                            :waiter/service-hash service-hash
                            :waiter/user run-as-user}
                   :name k8s-name
@@ -948,6 +959,7 @@
                                                   :waiter/service-port (str service-port)}
                                     :labels {:app k8s-name
                                              :waiter/cluster cluster-name
+                                             :waiter/replicaset-version replicaset-version
                                              :waiter/service-hash service-hash
                                              :waiter/user run-as-user}}
                          :spec {;; Service account tokens allow easy access to the k8s api server,
