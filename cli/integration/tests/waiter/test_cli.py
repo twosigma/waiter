@@ -611,26 +611,6 @@ class WaiterCliTest(util.WaiterTest):
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
 
-    def test_kill_timeout(self):
-        token_name = self.token_name()
-
-        def ping_then_kill_with_small_timeout():
-            util.post_token(self.waiter_url, token_name, util.minimal_service_description())
-            util.ping_token(self.waiter_url, token_name)
-            assert 1 == len(util.services_for_token(self.waiter_url, token_name))
-            return cli.kill(self.waiter_url, token_name, kill_flags='--timeout 1')
-
-        def kill_timed_out(cp):
-            self.logger.info(f'Return code: {cp.returncode}')
-            assert 1 == cp.returncode
-            assert 'Timeout waiting for service to die' in cli.stderr(cp)
-            return True
-
-        try:
-            util.wait_until(ping_then_kill_with_small_timeout, kill_timed_out)
-        finally:
-            util.delete_token(self.waiter_url, token_name)
-
     @pytest.mark.xfail
     def test_kill_services_sorted(self):
         token_name = self.token_name()

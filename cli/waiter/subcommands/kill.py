@@ -11,10 +11,6 @@ from waiter.util import guard_no_cluster, str2bool, response_message, print_erro
 
 def kill_service_on_cluster(cluster, service_id, timeout_seconds, no_wait):
     """Kills the service with the given service id in the given cluster."""
-
-    def service_is_killed():
-        return get_service(cluster, service_id)['status'] == 'Inactive'
-
     cluster_name = cluster['name']
     try:
         print(f'Killing service {terminal.bold(service_id)} in {terminal.bold(cluster_name)}...')
@@ -27,15 +23,14 @@ def kill_service_on_cluster(cluster, service_id, timeout_seconds, no_wait):
         resp = http_util.delete(cluster, f'/apps/{service_id}', params=params)
         logging.debug(f'Response status code: {resp.status_code}')
         if resp.status_code == 200:
-            if resp.json()["routers-agree"]:
-                print(f'Successfully killed {service_id} in {cluster_name}.')
+            if no_wait:
+                print(f'Successfully marked {service_id} in {cluster_name} for deletion.')
                 return True
-            killed = wait_until(service_is_killed, timeout=timeout_seconds, interval=1)
-            if killed:
+            elif resp.json()["routers-agree"]:
                 print(f'Successfully killed {service_id} in {cluster_name}.')
                 return True
             else:
-                print_error('Timeout waiting for service to die.')
+                print_error('Timeout waiting for routers to agree that service is killed')
                 return False
         else:
             print_error(response_message(resp.json()))
