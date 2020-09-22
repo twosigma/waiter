@@ -434,21 +434,21 @@
       (when (not-empty unknown-keys)
         (throw (ex-info (str "Unsupported key(s) in token: " (str (vec unknown-keys)))
                         {:status http-400-bad-request :token token :log-level :warn}))))
-    (let [service-parameter-with-token-defaults (attach-service-defaults-fn new-service-parameter-template)
-          missing-parameters (->> sd/service-required-keys (remove #(contains? new-service-parameter-template %1)) seq)]
+    (let [service-parameter-with-service-defaults (attach-service-defaults-fn new-service-parameter-template)
+          missing-parameters (->> sd/service-required-keys (remove #(contains? service-parameter-with-service-defaults %1)) seq)]
       (when (= authentication "disabled")
         (when (not= permitted-user "*")
           (throw (ex-info (str "Tokens with authentication disabled must specify"
                                " permitted-user as *, instead provided " permitted-user)
                           {:status http-400-bad-request :token token :log-level :warn})))
         ;; partial tokens not supported when authentication is disabled
-        (when-not (sd/required-keys-present? service-parameter-with-token-defaults)
+        (when-not (sd/required-keys-present? service-parameter-with-service-defaults)
           (throw (ex-info "Tokens with authentication disabled must specify all required parameters"
                           {:log-level :warn
                            :missing-parameters missing-parameters
                            :service-description new-service-parameter-template
                            :status http-400-bad-request}))))
-      (when (and interstitial-secs (not (sd/required-keys-present? service-parameter-with-token-defaults)))
+      (when (and interstitial-secs (not (sd/required-keys-present? service-parameter-with-service-defaults)))
         (throw (ex-info (str "Tokens with missing required parameters cannot use interstitial support")
                         {:log-level :warn
                          :missing-parameters missing-parameters

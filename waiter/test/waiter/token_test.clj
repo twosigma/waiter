@@ -1611,11 +1611,29 @@
                  :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"accept" "application/json"}
                  :request-method :post})
-              {{:strs [message]} "waiter-error"} (json/read-str body)]
+              {{:strs [details message]} "waiter-error"} (json/read-str body)]
           (is (= http-400-bad-request status))
-          (is (str/includes? message "Tokens with missing required parameters cannot use interstitial support") body)))
+          (is (str/includes? message "Tokens with missing required parameters cannot use interstitial support") body)
+          (is (= #{"run-as-user"} (set (get details "missing-parameters"))) body)))
 
       (testing "post:new-service-description:partial-description-with-interstitial-with-profile"
+        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+              service-description (walk/stringify-keys
+                                    {:interstitial-secs 10 :permitted-user "*" :profile "test-profile"
+                                     :run-as-user "tu1" :version "version"
+                                     :token "abcdefgh"})
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
+                {:authorization/user auth-user
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :headers {"accept" "application/json"}
+                 :request-method :post})
+              {{:strs [details message]} "waiter-error"} (json/read-str body)]
+          (is (= http-400-bad-request status))
+          (is (str/includes? message "Tokens with missing required parameters cannot use interstitial support") body)
+          (is (= #{"cmd"} (set (get details "missing-parameters"))) body))
+
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
                                     {:cmd "tc1" :interstitial-secs 10 :permitted-user "*" :profile "test-profile"
@@ -1628,7 +1646,7 @@
                  :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"accept" "application/json"}
                  :request-method :post})]
-          (is (= http-200-ok status))))
+          (is (= http-200-ok status) (str body))))
 
       (let [run-allowed-params-check
             (fn [allowed-params-value error-messages]
