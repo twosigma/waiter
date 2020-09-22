@@ -719,15 +719,15 @@
 
           (testing "service-deleted-from-all-routers"
             (let [router-id->service-id-deleted
-                  (pc/map-from-keys
-                    (fn [router-id]
-                      (let [router-url (router-id->router-url router-id)
-                            {:keys [body]} (make-request router-url "/apps" :cookies cookies)]
-                        (->> (try-parse-json (str body))
-                             (filter #(= service-id (get % "service-id")))
-                             seq
-                             not)))
-                    (keys router-id->router-url))]
+                  (pc/for-map [[router-id router-url] (seq router-id->router-url)]
+                    router-id
+                    (->> (make-request router-url "/apps" :cookies cookies)
+                         :body
+                         str
+                         try-parse-json
+                         (filter #(= service-id (get % "service-id")))
+                         seq
+                         not))]
               (is (every? #(true? (val %)) router-id->service-id-deleted)
                   (str service-id " present in at least one router: " router-id->service-id-deleted)))))))))
 
