@@ -1662,15 +1662,28 @@
       (doseq [[profile {:keys [defaults]}] (seq profile-config)]
         (let [token (rand-name)
               token-description (-> (utils/remove-keys base-description (keys defaults))
-                                  (assoc :profile (name profile) :token token))
-              register-response (post-token waiter-url token-description)]
+                                  (assoc :profile (name profile) :token token))]
           (try
-            (assert-response-status register-response http-200-ok)
-            (let [{:keys [body]} (get-token waiter-url token)]
-              (is (= (:profile token-description) (-> body str json/read-str (get "profile"))))
-              (let [service-id (retrieve-service-id waiter-url {"x-waiter-token" token})
-                    _ (is service-id "No service created by using token!")
-                    service-description (service-id->service-description waiter-url service-id)]
-                (is (= service-description (dissoc token-description :token)))))
+            (testing (str "token creation with profile " profile)
+              (let [register-response (post-token waiter-url token-description)]
+                (assert-response-status register-response http-200-ok)
+                (let [{:keys [body]} (get-token waiter-url token)]
+                  (is (= (:profile token-description) (-> body str json/read-str (get "profile"))))
+                  (let [service-id (retrieve-service-id waiter-url {"x-waiter-token" token})
+                        _ (is service-id "No service created by using token!")
+                        service-description (service-id->service-description waiter-url service-id)]
+                    (is (= service-description (dissoc token-description :token)))))))
+
+            (testing (str "token creation with interstitial and profile " profile)
+              (let [token-description (assoc token-description :interstitial-secs 10)
+                    register-response (post-token waiter-url token-description)]
+                (assert-response-status register-response http-200-ok)
+                (let [{:keys [body]} (get-token waiter-url token)]
+                  (is (= (:profile token-description) (-> body str json/read-str (get "profile"))))
+                  (let [service-id (retrieve-service-id waiter-url {"x-waiter-token" token})
+                        _ (is service-id "No service created by using token!")
+                        service-description (service-id->service-description waiter-url service-id)]
+                    (is (= service-description (dissoc token-description :token)))))))
+
             (finally
               (delete-token-and-assert waiter-url token))))))))
