@@ -198,9 +198,10 @@
             in-query-string (str query-string
                                  (when (and query-string custom-query-string) "&")
                                  custom-query-string)
+            oidc-redirect-uri (make-redirect-uri identity in-query-string)
             state-data {:identifier cookie-identifier
                         :oidc-mode oidc-mode
-                        :redirect-uri (make-redirect-uri identity in-query-string)}
+                        :redirect-uri oidc-redirect-uri}
             state-code (create-state-code state-data password)
             authorize-uri (jwt/retrieve-authorize-url
                             jwt-auth-server request oidc-callback-uri code-verifier state-code)
@@ -215,7 +216,10 @@
           (update :headers assoc "location" authorize-uri)
           (update :headers attach-threat-remediation-headers)
           (cookie-support/add-encoded-cookie
-            password oidc-challenge-cookie challenge-cookie-value challenge-cookie-duration-secs)))
+            password oidc-challenge-cookie challenge-cookie-value challenge-cookie-duration-secs)
+          (assoc :waiter/oidc-identifier cookie-identifier
+                 :waiter/oidc-mode oidc-mode
+                 :waiter/oidc-redirect-uri oidc-redirect-uri)))
       ;; trigger SSL redirect to the same page since OIDC auth works only for https requests
       (let [{:keys [query-string]} request
             redirect-uri (make-redirect-uri utils/authority->host query-string)]

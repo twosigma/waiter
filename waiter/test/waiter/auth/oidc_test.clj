@@ -274,46 +274,52 @@
         current-time-ms (System/currentTimeMillis)]
     (doseq [oidc-mode ["strict" "relaxed"]]
       (doseq [custom-query-string [nil "a=b"]]
-        (with-redefs [create-code-identifier (fn [code-verifier] (str identifier-prefix code-verifier))
-                      create-code-verifier (constantly code-verifier)
-                      create-state-code (fn [state-data in-password]
-                                          (is (= password in-password))
-                                          (is (= {:identifier (str identifier-prefix code-verifier)
-                                                  :oidc-mode oidc-mode
-                                                  :redirect-uri (str "https://" request-host "/test?some=query-string"
-                                                                     (when custom-query-string "&")
-                                                                     custom-query-string)}
-                                                 state-data))
-                                          state-code)
-                      cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds]
-                                                          (is (= password in-password))
-                                                          (is (= challenge-cookie-duration-secs age-in-seconds))
-                                                          (assoc response :cookie {name value}))
-                      jwt/retrieve-authorize-url (fn [in-server request oidc-callback-uri code-verifier state-code]
-                                                   (is (= jwt-auth-server in-server))
-                                                   (is (map? request))
-                                                   (str oidc-callback-uri ":" code-verifier ":" state-code))
-                      t/now (constantly (tc/from-long current-time-ms))]
-          (let [request {:headers {"host" request-host}
-                         :query-string "some=query-string"
-                         :scheme :https
-                         :uri "/test"
-                         :waiter/custom-query-string custom-query-string}
-                basic-response {:source :waiter/test}
-                response (trigger-authorize-redirect
-                           jwt-auth-server oidc-mode password request basic-response)
-                expiry-time (-> (t/now)
-                              (t/plus (t/seconds challenge-cookie-duration-secs))
-                              (tc/to-long))]
-            (is (= {:source :waiter/test
-                    :status 302
-                    :headers {"location" "/oidc/v1/callback:code-verifier-1234:status-4567"
-                              "cache-control" "no-store"
-                              "content-security-policy"
-                              "default-src 'none'; frame-ancestors 'none'"}
-                    :cookie {"x-waiter-oidc-challenge-code-identifier-code-verifier-1234" {:code-verifier "code-verifier-1234"
-                                                                                           :expiry-time expiry-time}}}
-                   response))))))))
+        (let [oidc-redirect-uri (str "https://" request-host "/test?some=query-string"
+                                     (when custom-query-string "&")
+                                     custom-query-string)]
+          (with-redefs [create-code-identifier (fn [in-code-verifier]
+                                                 (is (= code-verifier in-code-verifier))
+                                                 (str identifier-prefix code-verifier))
+                        create-code-verifier (constantly code-verifier)
+                        create-state-code (fn [state-data in-password]
+                                            (is (= password in-password))
+                                            (is (= {:identifier (str identifier-prefix code-verifier)
+                                                    :oidc-mode oidc-mode
+                                                    :redirect-uri oidc-redirect-uri}
+                                                   state-data))
+                                            state-code)
+                        cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds]
+                                                            (is (= password in-password))
+                                                            (is (= challenge-cookie-duration-secs age-in-seconds))
+                                                            (assoc response :cookie {name value}))
+                        jwt/retrieve-authorize-url (fn [in-server request oidc-callback-uri code-verifier state-code]
+                                                     (is (= jwt-auth-server in-server))
+                                                     (is (map? request))
+                                                     (str oidc-callback-uri ":" code-verifier ":" state-code))
+                        t/now (constantly (tc/from-long current-time-ms))]
+            (let [request {:headers {"host" request-host}
+                           :query-string "some=query-string"
+                           :scheme :https
+                           :uri "/test"
+                           :waiter/custom-query-string custom-query-string}
+                  basic-response {:source :waiter/test}
+                  response (trigger-authorize-redirect
+                             jwt-auth-server oidc-mode password request basic-response)
+                  expiry-time (-> (t/now)
+                                (t/plus (t/seconds challenge-cookie-duration-secs))
+                                (tc/to-long))]
+              (is (= {:source :waiter/test
+                      :status 302
+                      :headers {"location" "/oidc/v1/callback:code-verifier-1234:status-4567"
+                                "cache-control" "no-store"
+                                "content-security-policy"
+                                "default-src 'none'; frame-ancestors 'none'"}
+                      :cookie {"x-waiter-oidc-challenge-code-identifier-code-verifier-1234" {:code-verifier "code-verifier-1234"
+                                                                                             :expiry-time expiry-time}}
+                      :waiter/oidc-identifier (str identifier-prefix code-verifier)
+                      :waiter/oidc-mode oidc-mode
+                      :waiter/oidc-redirect-uri oidc-redirect-uri}
+                     response)))))))))
 
 (deftest test-update-oidc-auth-response
   (let [request-host "www.host.com:8080"
@@ -392,7 +398,10 @@
                      (update :headers assoc
                              "cache-control" "no-store"
                              "content-security-policy" "default-src 'none'; frame-ancestors 'none'"
-                             "location" authorize-uri))
+                             "location" authorize-uri)
+                     (assoc :waiter/oidc-identifier (str identifier-prefix code-verifier)
+                            :waiter/oidc-mode oidc-default-mode
+                            :waiter/oidc-redirect-uri (str "https://" request-host "/test?some=query-string")))
                    (update-response response)))))))))
 
 (deftest test-wrap-auth-handler
