@@ -5,20 +5,21 @@ from tabulate import tabulate
 
 from waiter import http_util, terminal
 from waiter.format import format_last_request_time, format_status
-from waiter.querying import get_service, print_no_data, query_service, query_services
+from waiter.querying import print_no_data, query_service, query_services
 from waiter.util import guard_no_cluster, str2bool, response_message, print_error, wait_until, check_positive
 
 
 def kill_service_on_cluster(cluster, service_id, timeout_seconds, no_wait):
     """Kills the service with the given service id in the given cluster."""
     cluster_name = cluster['name']
+    http_util.set_retries(0)
     try:
         print(f'Killing service {terminal.bold(service_id)} in {terminal.bold(cluster_name)}...')
         params = {'timeout': timeout_seconds * 1000}
         if no_wait:
             print('no-wait enabled: command will not wait to confirm other routers are updated')
             params['timeout'] = 0
-        resp = http_util.delete(cluster, f'/apps/{service_id}', params=params)
+        resp = http_util.delete(cluster, f'/apps/{service_id}', params=params, read_timeout=timeout_seconds)
         logging.debug(f'Response status code: {resp.status_code}')
         if resp.status_code == 200:
             if resp.json().get('routers-agree', False):
