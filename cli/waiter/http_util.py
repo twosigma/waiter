@@ -69,9 +69,9 @@ def __get(url, params=None, read_timeout=None, **kwargs):
 def __delete(url, params=None, headers=None, read_timeout=None):
     """Sends a DELETE with params to the given url"""
     logging.debug(f'DELETE {url} with params {params} and headers {headers}')
-    get_timeouts = timeouts
+    delete_timeouts = timeouts
     if read_timeout is not None:
-        get_timeouts = (timeouts[0], read_timeout)
+        delete_timeouts = (timeouts[0], read_timeout)
     return session.delete(url, params=params, timeout=get_timeouts, headers=headers)
 
 
