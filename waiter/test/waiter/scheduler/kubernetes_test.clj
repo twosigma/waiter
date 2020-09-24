@@ -554,9 +554,13 @@
           :expected-result
           [(scheduler/make-Service {:id "test-app-1234"
                                     :instances 2
+                                    :k8s/revision-timestamp nil
                                     :task-count 2
                                     :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
-           (scheduler/make-Service {:id "test-app-6789" :instances 3 :task-count 3
+           (scheduler/make-Service {:id "test-app-6789"
+                                    :instances 3
+                                    :k8s/revision-timestamp nil
+                                    :task-count 3
                                     :task-stats {:running 3 :healthy 1 :unhealthy 2 :staged 0}})]}
          {:api-server-response
           {:kind "ReplicaSetList"
@@ -592,9 +596,13 @@
           :expected-result
           [(scheduler/make-Service {:id "test-app-abcd"
                                     :instances 2
+                                    :k8s/revision-timestamp nil
                                     :task-count 2
                                     :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
-           (scheduler/make-Service {:id "test-app-wxyz" :instances 3 :task-count 3
+           (scheduler/make-Service {:id "test-app-wxyz"
+                                    :instances 3
+                                    :k8s/revision-timestamp nil
+                                    :task-count 3
                                     :task-stats {:running 3 :healthy 1 :unhealthy 2 :staged 0}})]}
 
          {:api-server-response
@@ -615,7 +623,10 @@
                              :availableReplicas 1
                              :unavailableReplicas 1}}]}
           :expected-result
-          [(scheduler/make-Service {:id "test-app-4321" :instances 3 :task-count 3
+          [(scheduler/make-Service {:id "test-app-4321"
+                                    :instances 3
+                                    :k8s/revision-timestamp nil
+                                    :task-count 3
                                     :task-stats {:running 2 :healthy 1 :unhealthy 1 :staged 1}})]}
 
          {:api-server-response
@@ -626,7 +637,7 @@
                                :labels {:app "test-app-9999"
                                         :waiter/cluster "waiter"
                                         :waiter/service-hash "test-app-9999"}
-                               :annotations {:waiter/revision-timestamp "v20200922T202222Z"
+                               :annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"
                                              :waiter/service-id "test-app-9999"}
                                :uid "test-app-9999-uid"}
                     :spec {:replicas 0
@@ -638,7 +649,7 @@
           :expected-result
           [(scheduler/make-Service {:id "test-app-9999"
                                     :instances 0
-                                    :k8s/revision-timestamp "v20200922T202222Z"
+                                    :k8s/revision-timestamp "2020-09-22T20:22:22.000Z"
                                     :task-count 0
                                     :task-stats {:running 0, :healthy 0, :unhealthy 0, :staged 0}})]}]]
     (log/info "Expecting Key error due to bad :mismatched-replicaset in API server response...")
@@ -660,7 +671,7 @@
                                       :waiter/cluster "waiter"
                                       :waiter/user "myself"
                                       :waiter/service-hash "test-app-1234"}
-                             :annotations {:waiter/revision-timestamp "v20200922T203333Z"
+                             :annotations {:waiter/revision-timestamp "2020-09-22T20:33:33.000Z"
                                            :waiter/service-id "test-app-1234"}
                              :uid "test-app-1234-uid"}
                   :spec {:replicas 2}
@@ -690,7 +701,7 @@
                                       :waiter/service-hash "test-app-1234"
                                       :waiter/user "myself"}
                              :annotations {:waiter/port-count "1"
-                                           :waiter/revision-timestamp "v20200922T200000Z"
+                                           :waiter/revision-timestamp "2020-09-22T20:00:00.000Z"
                                            :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]
                          :nodeName "node-0.k8s.com"}
@@ -707,7 +718,7 @@
                                       :waiter/service-hash "test-app-1234"
                                       :waiter/user "myself"}
                              :annotations {:waiter/port-count "1"
-                                           :waiter/revision-timestamp "v20200922T201111Z"
+                                           :waiter/revision-timestamp "2020-09-22T20:11:11.000Z"
                                            :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:phase "Running"
@@ -724,7 +735,7 @@
                                       :waiter/user "myself"
                                       :waiter/service-hash "test-app-1234"}
                              :annotations {:waiter/port-count "1"
-                                           :waiter/revision-timestamp "v20200922T202222Z"
+                                           :waiter/revision-timestamp "2020-09-22T20:22:22.000Z"
                                            :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]
                          :nodeName "node-2.k8s.com"}
@@ -740,7 +751,7 @@
                                       :waiter/service-hash "test-app-1234"
                                       :waiter/user "myself"}
                              :annotations {:waiter/port-count "1"
-                                           :waiter/revision-timestamp "v20200922T201111Z"
+                                           :waiter/revision-timestamp "2020-09-22T20:11:11.000Z"
                                            :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:phase "Failed"
@@ -797,7 +808,7 @@
         expected (hash-map
                    (scheduler/make-Service {:id "test-app-1234"
                                             :instances 2
-                                            :k8s/revision-timestamp "v20200922T203333Z"
+                                            :k8s/revision-timestamp "2020-09-22T20:33:33.000Z"
                                             :task-count 2
                                             :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
                    {:active-instances
@@ -809,7 +820,7 @@
                         :k8s/container-statuses [{:name "test-app-1234" :ready false :reason "ContainerCreating":state :waiting}]
                         :k8s/node-name "node-0.k8s.com"
                         :k8s/pod-phase "Pending"
-                        :k8s/revision-timestamp "v20200922T200000Z"
+                        :k8s/revision-timestamp "2020-09-22T20:00:00.000Z"
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-1234"
@@ -821,7 +832,7 @@
                         :id "test-app-1234.test-app-1234-abcd1-0"
                         :k8s/container-statuses [{:name "test-app-1234" :ready true :state :running}]
                         :k8s/pod-phase "Running"
-                        :k8s/revision-timestamp "v20200922T201111Z"
+                        :k8s/revision-timestamp "2020-09-22T20:11:11.000Z"
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-1234"
@@ -833,7 +844,7 @@
                         :id "test-app-1234.test-app-1234-abcd2-0"
                         :k8s/container-statuses [{:name "test-app-1234" :ready true}]
                         :k8s/node-name "node-2.k8s.com"
-                        :k8s/revision-timestamp "v20200922T202222Z"
+                        :k8s/revision-timestamp "2020-09-22T20:22:22.000Z"
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-1234"
@@ -846,13 +857,16 @@
                         :id "test-app-1234.test-app-1234-abcd3-0"
                         :k8s/container-statuses [{:name "test-app-1234" :ready true :state :running}]
                         :k8s/pod-phase "Failed"
-                        :k8s/revision-timestamp "v20200922T201111Z"
+                        :k8s/revision-timestamp "2020-09-22T20:11:11.000Z"
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-1234"
                         :started-at (du/str-to-date "2014-09-13T00:24:13Z" k8s-timestamp-format)})]}
 
-                   (scheduler/make-Service {:id "test-app-6789" :instances 3 :task-count 3
+                   (scheduler/make-Service {:id "test-app-6789"
+                                            :instances 3
+                                            :k8s/revision-timestamp nil
+                                            :task-count 3
                                             :task-stats {:running 3 :healthy 1 :unhealthy 2 :staged 0}})
                    {:active-instances
                     [(scheduler/make-ServiceInstance
@@ -893,7 +907,7 @@
                         :port 8080
                         :service-id "test-app-6789"
                         :started-at (du/str-to-date "2014-09-13T00:24:36Z" k8s-timestamp-format)})]})
-        watch-state-atom (atom {:service-id->service {"test-app-1234" "v20200922T203333Z"}})
+        watch-state-atom (atom {:service-id->service {"test-app-1234" "2020-09-22T20:33:33.000Z"}})
         dummy-scheduler (make-dummy-scheduler ["test-app-1234" "test-app-6789"]
                                               {:container-running-grace-secs 0
                                                :watch-state watch-state-atom})
@@ -2013,9 +2027,9 @@
 (deftest test-pod->ServiceInstance
   (let [api-server-url "https://k8s-api.example/"
         service-id "test-app-1234"
-        revision-timestamp-0 "v20200922T200000Z"
-        revision-timestamp-1 "v20200922T201111Z"
-        revision-timestamp-2 "v20200922T202222Z"
+        revision-timestamp-0 "2020-09-22T20:00:00.000Z"
+        revision-timestamp-1 "2020-09-22T20:11:11.000Z"
+        revision-timestamp-2 "2020-09-22T20:22:22.000Z"
         watch-state-atom (atom {:service-id->service {service-id {:k8s/revision-timestamp revision-timestamp-1}}})
         base-scheduler {:api-server-url api-server-url
                         :container-running-grace-secs 120

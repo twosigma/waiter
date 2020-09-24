@@ -115,21 +115,22 @@
       [[spec
         [:metadata name namespace uid [:annotations waiter/service-id]]
         [:status {replicas 0} {availableReplicas 0} {readyReplicas 0} {unavailableReplicas 0}]] replicaset-json
+       ;; for backward compatibility where the revision timestamp is missing we cannot use the destructuring above
        revision-timestamp (get-in replicaset-json [:metadata :annotations :waiter/revision-timestamp] nil)
        requested (get spec :replicas 0)
        staged (- replicas (+ availableReplicas unavailableReplicas))]
       (scheduler/make-Service
-        (cond-> {:id service-id
-                 :instances requested
-                 :k8s/app-name name
-                 :k8s/namespace namespace
-                 :k8s/replicaset-uid uid
-                 :task-count replicas
-                 :task-stats {:healthy readyReplicas
-                              :running (- replicas staged)
-                              :staged staged
-                              :unhealthy (- replicas readyReplicas staged)}}
-          revision-timestamp (assoc :k8s/revision-timestamp revision-timestamp))))
+        {:id service-id
+         :instances requested
+         :k8s/app-name name
+         :k8s/namespace namespace
+         :k8s/replicaset-uid uid
+         :k8s/revision-timestamp revision-timestamp
+         :task-count replicas
+         :task-stats {:healthy readyReplicas
+                      :running (- replicas staged)
+                      :staged staged
+                      :unhealthy (- replicas readyReplicas staged)}}))
     (catch Throwable t
       (log/error t "error converting ReplicaSet to Waiter Service"))))
 
@@ -941,12 +942,12 @@
     (cond->
       {:kind "ReplicaSet"
        :apiVersion replicaset-api-version
-       :metadata {;; Since there are length restrictions on Kubernetes label values,
-                  ;; we store just the 32-char hash portion of the service-id as a searchable label,
-                  ;; but store the full service-id as an annotation.
-                  ;; https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set
-                  ;; https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/#syntax-and-character-set
-                  :annotations {:waiter/revision-timestamp revision-timestamp
+       :metadata {:annotations {:waiter/revision-timestamp revision-timestamp
+                                ;; Since there are length restrictions on Kubernetes label values,
+                                ;; we store just the 32-char hash portion of the service-id as a searchable label,
+                                ;; but store the full service-id as an annotation.
+                                ;; https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/#syntax-and-character-set
+                                ;; https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set
                                 :waiter/service-id service-id}
                   :labels {:app k8s-name
                            :waiter/cluster cluster-name
