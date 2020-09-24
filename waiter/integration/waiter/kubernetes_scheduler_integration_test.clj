@@ -11,6 +11,51 @@
   (or (get-in state-json ["state" "watch-state"])
       (get-in state-json ["state" "components" "kubernetes" "watch-state"])))
 
+(deftest ^:parallel ^:integration-fast test-k8s-service-and-instance-fields
+  (testing-using-waiter-url
+    (when (using-k8s? waiter-url)
+      (let [{:keys [cookies service-id] :as response}
+            (make-request-with-debug-info
+              {:x-waiter-name (rand-name)} #(make-kitchen-request waiter-url % :path "/hello"))]
+        (with-service-cleanup
+          service-id
+          (assert-response-status response http-200-ok)
+          (assert-service-on-all-routers waiter-url service-id cookies)
+          (let [instances (active-instances waiter-url service-id :cookies cookies)]
+            (testing "k8s scheduler service instance fields"
+              (doseq [instance instances]
+                (let [{:keys [k8s/app-name k8s/namespace k8s/node-name k8s/pod-name k8s/revision-timestamp k8s/user]} (walk/keywordize-keys instance)
+                      assertion-message (str instance)]
+                  (is app-name assertion-message)
+                  (is namespace assertion-message)
+                  (is node-name assertion-message)
+                  (is pod-name assertion-message)
+                  (is revision-timestamp assertion-message)
+                  (is user assertion-message)))))
+
+          (testing "k8s scheduler service fields"
+            (doseq [router-url (-> waiter-url routers vals)]
+              (let [{:keys [body] :as response} (make-request router-url "/state/scheduler"
+                                                              :cookies cookies
+                                                              :method :get
+                                                              :query-params {"include" ["components" "watch-state"]})
+                    _ (assert-response-status response http-200-ok)
+                    body-json (-> body str try-parse-json)
+                    watch-state-json (get-watch-state body-json)
+                    service (get-in watch-state-json ["service-id->service" service-id])]
+                (if (map? service)
+                  (let [{:keys [k8s/app-name k8s/namespace k8s/replicaset-uid k8s/revision-timestamp]} (walk/keywordize-keys service)
+                        assertion-message (str {:router-url router-url :service service})]
+                    (is (= service-id (get service "id")) assertion-message)
+                    (is app-name assertion-message)
+                    (is namespace assertion-message)
+                    (is replicaset-uid assertion-message)
+                    (is revision-timestamp assertion-message))
+                  (is false (str {:message "service unavailable in k8s watch state"
+                                  :router-url router-url
+                                  :service-id service-id
+                                  :watch-state-json watch-state-json})))))))))))
+
 (deftest ^:parallel ^:integration-fast test-kubernetes-watch-state-update
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
