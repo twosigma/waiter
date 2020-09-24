@@ -622,11 +622,11 @@ class WaiterCliTest(util.WaiterTest):
             self.assertIn(service_id, cli.stdout(cp))
             self.assertIn('no-wait enabled', cli.stdout(cp))
             self.assertIn('Successfully killed', cli.stdout(cp))
+            self.assertIn('but routers may not be updated yet!', cli.stdout(cp))
             self.assertIn('timeout=0', cli.stderr(cp))
             util.wait_until_no_services_for_token(self.waiter_url, token_name)
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
-
 
     def test_kill_multiple_services(self):
         token_name = self.token_name()
