@@ -16,7 +16,10 @@ def kill_service_on_cluster(cluster, service_id, timeout_seconds):
     try:
         print(f'Killing service {terminal.bold(service_id)} in {terminal.bold(cluster_name)}...')
         params = {'timeout': timeout_seconds * 1000}
-        resp = http_util.delete(cluster, f'/apps/{service_id}', params=params, read_timeout=timeout_seconds)
+        if timeout_seconds == 0:
+            resp = http_util.delete(cluster, f'/apps/{service_id}', params=params)
+        else:
+            resp = http_util.delete(cluster, f'/apps/{service_id}', params=params, read_timeout=timeout_seconds)
         logging.debug(f'Response status code: {resp.status_code}')
         if resp.status_code == 200:
             routers_agree = resp.json().get('routers-agree')

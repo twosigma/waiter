@@ -72,7 +72,7 @@ def __delete(url, params=None, headers=None, read_timeout=None):
     delete_timeouts = timeouts
     if read_timeout is not None:
         delete_timeouts = (timeouts[0], read_timeout)
-    return session.delete(url, params=params, timeout=get_timeouts, headers=headers)
+    return session.delete(url, params=params, timeout=delete_timeouts, headers=headers)
 
 
 def __make_url(cluster, endpoint):
