@@ -620,7 +620,6 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertIn('Killing service', cli.stdout(cp))
             self.assertIn(service_id, cli.stdout(cp))
-            self.assertIn('no-wait enabled', cli.stdout(cp))
             self.assertIn('Successfully killed', cli.stdout(cp))
             self.assertIn('Did not wait for routers to update.', cli.stdout(cp))
             self.assertIn('timeout=0', cli.stderr(cp))
