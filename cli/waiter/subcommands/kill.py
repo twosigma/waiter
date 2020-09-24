@@ -9,24 +9,26 @@ from waiter.querying import print_no_data, query_service, query_services
 from waiter.util import guard_no_cluster, str2bool, response_message, print_error, wait_until, check_positive
 
 
-def kill_service_on_cluster(cluster, service_id, timeout_seconds, no_wait):
+def kill_service_on_cluster(cluster, service_id, timeout_seconds):
     """Kills the service with the given service id in the given cluster."""
     cluster_name = cluster['name']
     http_util.set_retries(0)
     try:
         print(f'Killing service {terminal.bold(service_id)} in {terminal.bold(cluster_name)}...')
         params = {'timeout': timeout_seconds * 1000}
-        if no_wait:
-            print('no-wait enabled: command will not wait to confirm other routers are updated')
-            params['timeout'] = 0
         resp = http_util.delete(cluster, f'/apps/{service_id}', params=params, read_timeout=timeout_seconds)
         logging.debug(f'Response status code: {resp.status_code}')
         if resp.status_code == 200:
-            if resp.json().get('routers-agree', False):
+            routers_agree = resp.json().get('routers-agree')
+            if routers_agree:
                 print(f'Successfully killed {service_id} in {cluster_name}.')
                 return True
+            elif routers_agree is None:
+                print(f'Successfully killed {service_id} in {cluster_name}. Did not wait for routers to update.')
+                return True
             else:
-                print(f'Successfully killed {service_id} in {cluster_name}, but routers may not be updated yet!')
+                print(f'Successfully killed {service_id} in {cluster_name}. '
+                      f'Server-side timeout waiting for routers to update.')
                 return True
         else:
             print_error(response_message(resp.json()))
@@ -112,7 +114,7 @@ def kill(clusters, args, _):
                 should_kill = False
 
             if should_kill:
-                success = kill_service_on_cluster(cluster, service_id, args['timeout'], args['no-wait'])
+                success = kill_service_on_cluster(cluster, service_id, args['timeout'])
                 overall_success = overall_success and success
     return 0 if overall_success else 1
 
@@ -127,6 +129,6 @@ def register(add_parser):
     timeout_group = parser.add_mutually_exclusive_group()
     timeout_group.add_argument('--timeout', '-t', help='timeout (in seconds) for kill to complete',
                         type=check_positive, default=30)
-    timeout_group.add_argument('--no-wait', help="does not wait for all routers to confirm deletion", dest='no-wait',
-                        action='store_true')
+    timeout_group.add_argument('--no-wait', help="does not wait for all routers to confirm deletion", dest='timeout',
+                        action='store_const', const=0)
     return kill

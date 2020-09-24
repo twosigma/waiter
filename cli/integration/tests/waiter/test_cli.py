@@ -622,7 +622,7 @@ class WaiterCliTest(util.WaiterTest):
             self.assertIn(service_id, cli.stdout(cp))
             self.assertIn('no-wait enabled', cli.stdout(cp))
             self.assertIn('Successfully killed', cli.stdout(cp))
-            self.assertIn('but routers may not be updated yet!', cli.stdout(cp))
+            self.assertIn('Did not wait for routers to update.', cli.stdout(cp))
             self.assertIn('timeout=0', cli.stderr(cp))
             util.wait_until_no_services_for_token(self.waiter_url, token_name)
         finally:
