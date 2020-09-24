@@ -224,32 +224,41 @@
    - it has restarted too many times (reached the restart-expiry-threshold threshold)
    - the primary container (waiter-apps) has not transitioned to running state in container-running-grace-secs seconds
    - the pod has the waiter/pod-expired=true annotation."
-  [{:keys [container-running-grace-secs restart-expiry-threshold]}
-   instance-id restart-count {:keys [waiter/pod-expired]} primary-container-status pod-started-at]
-  (cond
-    (>= restart-count restart-expiry-threshold)
-    (do
-      (log/info "instance expired as it reached the restart threshold"
-                {:instance-id instance-id
-                 :restart-count restart-count})
-      true)
-    (and pod-started-at
-         (pos? container-running-grace-secs)
-         (empty? (:lastState primary-container-status))
-         (not (contains? (:state primary-container-status) :running))
-         (<= container-running-grace-secs (t/in-seconds (t/interval pod-started-at (t/now)))))
-    (do
-      (log/info "instance expired as it took too long to transition to running state"
-                {:instance-id instance-id
-                 :primary-container-status primary-container-status
-                 :started-at pod-started-at})
-      true)
-    (= "true" pod-expired)
-    (do
-      (log/info "instance expired based on pod annotation"
-                {:instance-id instance-id
-                 :waiter/pod-expired pod-expired})
-      true)))
+  [{:keys [container-running-grace-secs restart-expiry-threshold watch-state]}
+   service-id instance-id restart-count {:keys [waiter/pod-expired waiter/revision-timestamp]}
+   primary-container-status pod-started-at]
+  (let [rs-revision-timestamp (get-in @watch-state [:service-id->service service-id :k8s/revision-timestamp])]
+    (cond
+      (>= restart-count restart-expiry-threshold)
+      (do
+        (log/info "instance expired as it reached the restart threshold"
+                  {:instance-id instance-id
+                   :restart-count restart-count})
+        true)
+      (and pod-started-at
+           (pos? container-running-grace-secs)
+           (empty? (:lastState primary-container-status))
+           (not (contains? (:state primary-container-status) :running))
+           (<= container-running-grace-secs (t/in-seconds (t/interval pod-started-at (t/now)))))
+      (do
+        (log/info "instance expired as it took too long to transition to running state"
+                  {:instance-id instance-id
+                   :primary-container-status primary-container-status
+                   :started-at pod-started-at})
+        true)
+      (= "true" pod-expired)
+      (do
+        (log/info "instance expired based on pod annotation"
+                  {:instance-id instance-id
+                   :waiter/pod-expired pod-expired})
+        true)
+
+      (pos? (compare rs-revision-timestamp revision-timestamp))
+      (do
+        (log/info "instance expired based on pod and replicaset revision timestamps"
+                  {:instance-id instance-id
+                   :revision-timestamp {:pod revision-timestamp :rs rs-revision-timestamp}})
+        true))))
 
 (defn pod->ServiceInstance
   "Convert a Kubernetes Pod JSON response into a Waiter Service Instance record."
@@ -257,6 +266,7 @@
   (try
     (let [;; waiter-app is the first container we register
           restart-count (get-in pod [:status :containerStatuses 0 :restartCount] 0)
+          service-id (k8s-object->service-id pod)
           instance-id (pod->instance-id pod restart-count)
           node-name (get-in pod [:spec :nodeName])
           port0 (or (some-> (get-in pod [:metadata :annotations :waiter/service-port]) (Integer/parseInt))
@@ -274,7 +284,7 @@
       (scheduler/make-ServiceInstance
         (cond-> {:extra-ports (->> pod-annotations :waiter/port-count Integer/parseInt range next (mapv #(+ port0 %)))
                  :flags (cond-> #{}
-                          (check-expired scheduler instance-id restart-count pod-annotations primary-container-status pod-started-at)
+                          (check-expired scheduler service-id instance-id restart-count pod-annotations primary-container-status pod-started-at)
                           (conj :expired))
                  :healthy? (true? (get primary-container-status :ready))
                  :host (get-in pod [:status :podIP] scheduler/UNKNOWN-IP)
@@ -287,7 +297,7 @@
                  :k8s/user run-as-user
                  :log-directory (log-dir-path run-as-user restart-count)
                  :port port0
-                 :service-id (k8s-object->service-id pod)
+                 :service-id service-id
                  :started-at pod-started-at}
           node-name (assoc :k8s/node-name node-name)
           phase (assoc :k8s/pod-phase phase)
@@ -388,7 +398,7 @@
 (defn- get-service-instances!
   "Get all active Waiter Service Instances associated with the given Waiter Service.
    Also updates the service-id->failed-instances-transient-store as a side-effect.
-   Pods reporting Failed phase status are treated as failed instances and are exlcuded from the return value."
+   Pods reporting Failed phase status are treated as failed instances and are excluded from the return value."
   [{:keys [service-id->failed-instances-transient-store] :as scheduler} basic-service-info]
   (let [all-instances (for [pod (get-replicaset-pods scheduler basic-service-info)
                             :when (live-pod? pod)]

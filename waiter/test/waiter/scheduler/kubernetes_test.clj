@@ -802,7 +802,8 @@
                                             :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
                    {:active-instances
                     [(scheduler/make-ServiceInstance
-                       {:healthy? false
+                       {:flags #{:expired}
+                        :healthy? false
                         :host "0.0.0.0"
                         :id "test-app-1234.test-app-1234-abcd0-0"
                         :k8s/container-statuses [{:name "test-app-1234" :ready false :reason "ContainerCreating":state :waiting}]
@@ -814,7 +815,8 @@
                         :service-id "test-app-1234"
                         :started-at (du/str-to-date "2014-09-13T00:24:46Z" k8s-timestamp-format)})
                      (scheduler/make-ServiceInstance
-                       {:healthy? true
+                       {:flags #{:expired}
+                        :healthy? true
                         :host "10.141.141.11"
                         :id "test-app-1234.test-app-1234-abcd1-0"
                         :k8s/container-statuses [{:name "test-app-1234" :ready true :state :running}]
@@ -825,7 +827,8 @@
                         :service-id "test-app-1234"
                         :started-at (du/str-to-date "2014-09-13T00:24:46Z" k8s-timestamp-format)})
                      (scheduler/make-ServiceInstance
-                       {:healthy? true
+                       {:flags #{:expired}
+                        :healthy? true
                         :host "10.141.141.12"
                         :id "test-app-1234.test-app-1234-abcd2-0"
                         :k8s/container-statuses [{:name "test-app-1234" :ready true}]
@@ -837,7 +840,8 @@
                         :started-at (du/str-to-date "2014-09-13T00:24:47Z" k8s-timestamp-format)})]
                     :failed-instances
                     [(scheduler/make-ServiceInstance
-                       {:healthy? false
+                       {:flags #{:expired}
+                        :healthy? false
                         :host "10.141.141.13"
                         :id "test-app-1234.test-app-1234-abcd3-0"
                         :k8s/container-statuses [{:name "test-app-1234" :ready true :state :running}]
@@ -889,7 +893,10 @@
                         :port 8080
                         :service-id "test-app-6789"
                         :started-at (du/str-to-date "2014-09-13T00:24:36Z" k8s-timestamp-format)})]})
-        dummy-scheduler (make-dummy-scheduler ["test-app-1234" "test-app-6789"] {:container-running-grace-secs 0})
+        watch-state-atom (atom {:service-id->service {"test-app-1234" "v20200922T203333Z"}})
+        dummy-scheduler (make-dummy-scheduler ["test-app-1234" "test-app-6789"]
+                                              {:container-running-grace-secs 0
+                                               :watch-state watch-state-atom})
         _ (reset-scheduler-watch-state! dummy-scheduler rs-response pods-response)
         actual (->> dummy-scheduler
                     get-service->instances
@@ -2005,22 +2012,29 @@
 
 (deftest test-pod->ServiceInstance
   (let [api-server-url "https://k8s-api.example/"
+        service-id "test-app-1234"
+        revision-timestamp-0 "v20200922T200000Z"
+        revision-timestamp-1 "v20200922T201111Z"
+        revision-timestamp-2 "v20200922T202222Z"
+        watch-state-atom (atom {:service-id->service {service-id {:k8s/revision-timestamp revision-timestamp-1}}})
         base-scheduler {:api-server-url api-server-url
-                        :container-running-grace-secs 120}
+                        :container-running-grace-secs 120
+                        :restart-expiry-threshold 1000
+                        :watch-state watch-state-atom}
         pod-start-time (t/minus (t/now) (t/seconds 60))
         pod-start-time-k8s-str (du/date-to-str pod-start-time k8s-timestamp-format)
         pod {:metadata {:name "test-app-1234-abcd1"
                         :namespace "myself"
-                        :labels {:app "test-app-1234"
+                        :labels {:app service-id
                                  :waiter/cluster "waiter"
-                                 :waiter/service-hash "test-app-1234"}
+                                 :waiter/service-hash service-id}
                         :annotations {:waiter/port-count "1"
-                                      :waiter/revision-timestamp "v20200922T201111Z"
-                                      :waiter/service-id "test-app-1234"}}
+                                      :waiter/revision-timestamp revision-timestamp-1
+                                      :waiter/service-id service-id}}
              :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
              :status {:podIP "10.141.141.11"
                       :startTime pod-start-time-k8s-str
-                      :containerStatuses [{:name "test-app-1234"
+                      :containerStatuses [{:name service-id
                                            :ready true
                                            :restartCount 9}]}}
         instance-map {:exit-code nil
@@ -2033,14 +2047,14 @@
                       :log-directory "/home/myself/r9"
                       :message nil
                       :port 8080
-                      :service-id "test-app-1234"
+                      :service-id service-id
                       :started-at (timestamp-str->datetime pod-start-time-k8s-str)
                       :k8s/api-server-url api-server-url
-                      :k8s/app-name "test-app-1234"
-                      :k8s/container-statuses [{:name "test-app-1234" :ready true}]
+                      :k8s/app-name service-id
+                      :k8s/container-statuses [{:name service-id :ready true}]
                       :k8s/namespace "myself"
                       :k8s/pod-name "test-app-1234-abcd1"
-                      :k8s/revision-timestamp "v20200922T201111Z"
+                      :k8s/revision-timestamp revision-timestamp-1
                       :k8s/restart-count 9
                       :k8s/user "myself"}
         expired-instance-map (assoc instance-map :flags #{:expired})]
@@ -2053,8 +2067,8 @@
     (testing "pod with envoy sidecar to instance"
       (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
             pod' (-> pod
-                     (assoc-in [:metadata :annotations :waiter/service-port] "8080")
-                     (assoc-in [:spec :containers 0 :ports 0 :containerPort] 8081))
+                   (assoc-in [:metadata :annotations :waiter/service-port] "8080")
+                   (assoc-in [:spec :containers 0 :ports 0 :containerPort] 8081))
             instance (pod->ServiceInstance dummy-scheduler pod')]
         (is (= (scheduler/make-ServiceInstance instance-map) instance))))
 
@@ -2076,15 +2090,55 @@
 
     (testing "pod to expired instance exceeded running grace period"
       (let [dummy-scheduler (assoc base-scheduler
-                                   :container-running-grace-secs 45
-                                   :restart-expiry-threshold 25)
+                              :container-running-grace-secs 45
+                              :restart-expiry-threshold 25)
             instance (pod->ServiceInstance dummy-scheduler pod)]
         (is (= (scheduler/make-ServiceInstance expired-instance-map) instance))))
 
     (testing "previously started pod not expired despite instance exceeded running grace period"
       (let [dummy-scheduler (assoc base-scheduler
-                                   :container-running-grace-secs 45
-                                   :restart-expiry-threshold 25)
+                              :container-running-grace-secs 45
+                              :restart-expiry-threshold 25)
             pod (assoc-in pod [:status :containerStatuses 0 :lastState] {:terminated {}})
             instance (pod->ServiceInstance dummy-scheduler pod)]
-        (is (= (scheduler/make-ServiceInstance instance-map) instance))))))
+        (is (= (scheduler/make-ServiceInstance instance-map) instance))))
+
+    (testing "revision timestamps"
+      (testing "missing in both replicaset and pod"
+        (let [watch-state (utils/dissoc-in @watch-state-atom [:service-id->service service-id :k8s/revision-timestamp])
+              dummy-scheduler (assoc base-scheduler :watch-state (atom watch-state))
+              pod (utils/dissoc-in pod [:metadata :annotations :waiter/revision-timestamp])
+              instance (pod->ServiceInstance dummy-scheduler pod)]
+          (is (= (-> instance-map (dissoc :k8s/revision-timestamp) scheduler/make-ServiceInstance) instance))))
+
+      (testing "present in pod but missing in replicaset"
+        (let [watch-state (utils/dissoc-in @watch-state-atom [:service-id->service service-id :k8s/revision-timestamp])
+              dummy-scheduler (assoc base-scheduler :watch-state (atom watch-state))
+              instance (pod->ServiceInstance dummy-scheduler pod)]
+          (is (= (scheduler/make-ServiceInstance instance-map) instance))))
+
+      (testing "present in replicaset but missing in pod"
+        (let [watch-state (assoc-in @watch-state-atom [:service-id->service service-id :k8s/revision-timestamp] revision-timestamp-2)
+              dummy-scheduler (assoc base-scheduler :watch-state (atom watch-state))
+              pod (utils/dissoc-in pod [:metadata :annotations :waiter/revision-timestamp])
+              instance (pod->ServiceInstance dummy-scheduler pod)]
+          (is (= (-> expired-instance-map (dissoc :k8s/revision-timestamp)  scheduler/make-ServiceInstance) instance))))
+
+      (testing "present in both replicaset and pod"
+        (testing "with older value in replicaset"
+          (let [watch-state (assoc-in @watch-state-atom [:service-id->service service-id :k8s/revision-timestamp] revision-timestamp-0)
+                dummy-scheduler (assoc base-scheduler :watch-state (atom watch-state))
+                instance (pod->ServiceInstance dummy-scheduler pod)]
+            (is (= (scheduler/make-ServiceInstance instance-map) instance))))
+
+        (testing "with matching value in replicaset"
+          (let [watch-state (assoc-in @watch-state-atom [:service-id->service service-id :k8s/revision-timestamp] revision-timestamp-1)
+                dummy-scheduler (assoc base-scheduler :watch-state (atom watch-state))
+                instance (pod->ServiceInstance dummy-scheduler pod)]
+            (is (= (scheduler/make-ServiceInstance instance-map) instance))))
+
+        (testing "with expired value in pod"
+          (let [watch-state (assoc-in @watch-state-atom [:service-id->service service-id :k8s/revision-timestamp] revision-timestamp-2)
+                dummy-scheduler (assoc base-scheduler :watch-state (atom watch-state))
+                instance (pod->ServiceInstance dummy-scheduler pod)]
+            (is (= (scheduler/make-ServiceInstance expired-instance-map) instance))))))))
