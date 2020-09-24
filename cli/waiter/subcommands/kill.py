@@ -1,4 +1,5 @@
 import logging
+import requests
 from urllib.parse import urljoin
 
 from tabulate import tabulate
@@ -36,6 +37,10 @@ def kill_service_on_cluster(cluster, service_id, timeout_seconds):
         else:
             print_error(response_message(resp.json()))
             return False
+    except requests.exceptions.ReadTimeout:
+        message = f'Encountered request read timeout while killing {service_id} in {cluster_name}.'
+        logging.exception(message)
+        print_error(message)
     except Exception:
         message = f'Encountered error while killing {service_id} in {cluster_name}.'
         logging.exception(message)
