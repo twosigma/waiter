@@ -89,10 +89,14 @@
 
 (defn notify-service-failed-instance
   "Log NotifierTracker-specific messages."
-  [instance event-type log-level]
-  (let [instance-to-log (select-keys instance notifier-tracker-keys)
+  [{:keys [service-id] :as instance} event-type log-level]
+  (let [service-id->references-fn (config/retrieve-service-id->references-fn)
+        references (service-id->references-fn service-id)
+        source-tokens (->> references (map :token) (remove nil?) (map :sources) (flatten) (map :token) (set))
+        instance-to-log (select-keys instance notifier-tracker-keys)
         log-map (assoc instance-to-log
                   :event-type event-type
+                  :tokens source-tokens
                   :timestamp (t/now))]
     (log/log "NotifierTracker" log-level nil (utils/clj->json log-map))))
 

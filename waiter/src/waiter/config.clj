@@ -36,3 +36,11 @@
   []
   {:pre [(realized? config-promise)]}
   (get-in @config-promise [:waiter-principal]))
+
+(def service-id->references-fn-promise (promise))
+
+(defn retrieve-service-id->references-fn
+  "Retrieves the service-id->references-fn function"
+  []
+  (when (realized? service-id->references-fn-promise)
+    @service-id->references-fn-promise))

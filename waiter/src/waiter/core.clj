@@ -36,6 +36,7 @@
             [waiter.auth.jwt :as jwt]
             [waiter.auth.oidc :as oidc]
             [waiter.authorization :as authz]
+            [waiter.config :as config]
             [waiter.cookie-support :as cookie-support]
             [waiter.correlation-id :as cid]
             [waiter.cors :as cors]
@@ -75,8 +76,8 @@
   (:import (java.net InetAddress URI)
            (java.util.concurrent Executors)
            (javax.servlet ServletRequest)
-           (org.apache.curator.framework CuratorFrameworkFactory)
            (org.apache.curator.framework.api CuratorEventType CuratorListener)
+           (org.apache.curator.framework CuratorFrameworkFactory)
            (org.apache.curator.framework.recipes.leader LeaderLatch)
            (org.apache.curator.retry BoundedExponentialBackoffRetry)
            (org.eclipse.jetty.client HttpClient)
@@ -1094,7 +1095,9 @@
    :service-id->password-fn (pc/fnk [[:scheduler service-id->password-fn*]]
                               service-id->password-fn*)
    :service-id->references-fn (pc/fnk [[:state kv-store]]
-                                (partial sd/service-id->references kv-store))
+                                (let [service-id->references-fn (partial sd/service-id->references kv-store)]
+                                  (deliver config/service-id->references-fn-promise service-id->references-fn)
+                                  service-id->references-fn))
    :service-id->service-description-fn (pc/fnk [[:scheduler service-id->service-description-fn*]]
                                          service-id->service-description-fn*)
    :service-id->source-tokens-entries-fn (pc/fnk [[:state kv-store]]
