@@ -27,7 +27,7 @@ def kill_service_on_cluster(cluster, service_id, timeout_seconds):
             else:
                 print(f'Successfully killed {service_id} in {cluster_name}. '
                       f'Server-side timeout waiting for routers to update.')
-                return True
+                return False
         else:
             print_error(response_message(resp.json()))
             return False
