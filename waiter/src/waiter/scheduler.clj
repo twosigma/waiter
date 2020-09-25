@@ -78,6 +78,17 @@
                     :event-type event-type)]
     (log/log "InstanceTracker" log-level nil (utils/clj->json log-map))))
 
+(defn notify-service-instance
+  "Log InstanceTracker-specific messages."
+  [instance event-type log-level]
+  (let [extra-ports (count (:extra-ports instance))
+        instance-to-log (select-keys instance instance-tracker-keys)
+        log-map (assoc instance-to-log
+                  :extra-ports extra-ports
+                  :timestamp (t/now)
+                  :event-type event-type)]
+    (log/log "NotifierTracker" log-level nil (utils/clj->json log-map))))
+
 (defrecord Service
   [^String id
    instances
@@ -775,6 +786,8 @@
 (defn add-to-store-and-track-failed-instance!
   [transient-store max-instances-to-keep service-id instance]
   (log-service-instance instance :fail :info)
+  (when (-> instance :flags (contains? :memory-limit-exceeded))
+    (notify-service-instance instance :fail :info))
   (add-instance-to-buffered-collection! transient-store max-instances-to-keep service-id instance
                                         (fn [] #{}) (fn [instances] (-> (sort-instances instances) (rest) (set)))))
 

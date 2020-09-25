@@ -18,7 +18,7 @@
             [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]))
 
-(deftest ^:parallel ^:integration-fast ^:explicit test-oom-instability
+(deftest ^:parallel ^:integration-fast test-oom-instability
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
                    :x-waiter-mem 100}
