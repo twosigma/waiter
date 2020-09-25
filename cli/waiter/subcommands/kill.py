@@ -17,16 +17,12 @@ def kill_service_on_cluster(cluster, service_id, timeout_seconds):
     try:
         print(f'Killing service {terminal.bold(service_id)} in {terminal.bold(cluster_name)}...')
         params = {'timeout': timeout_seconds * 1000}
-        read_timeout = 5 if timeout_seconds == 0 else timeout_seconds
-        resp = http_util.delete(cluster, f'/apps/{service_id}', params=params, read_timeout=read_timeout)
+        resp = http_util.delete(cluster, f'/apps/{service_id}', params=params, read_timeout=timeout_seconds)
         logging.debug(f'Response status code: {resp.status_code}')
         if resp.status_code == 200:
             routers_agree = resp.json().get('routers-agree')
             if routers_agree:
                 print(f'Successfully killed {service_id} in {cluster_name}.')
-                return True
-            elif routers_agree is None:
-                print(f'Successfully killed {service_id} in {cluster_name}. Did not wait for routers to update.')
                 return True
             else:
                 print(f'Successfully killed {service_id} in {cluster_name}. '
@@ -132,9 +128,6 @@ def register(add_parser):
     parser.add_argument('--force', '-f', help='kill all services, never prompt', dest='force', action='store_true')
     parser.add_argument('--service-id', '-s', help='kill by service id instead of token',
                         dest='is-service-id', action='store_true')
-    timeout_group = parser.add_mutually_exclusive_group()
-    timeout_group.add_argument('--timeout', '-t', help='timeout (in seconds) for kill to complete',
+    parser.add_argument('--timeout', '-t', help='timeout (in seconds) for kill to complete',
                         type=check_positive, default=30)
-    timeout_group.add_argument('--no-wait', help="does not wait for all routers to confirm deletion", dest='timeout',
-                        action='store_const', const=0)
     return kill

@@ -610,23 +610,6 @@ class WaiterCliTest(util.WaiterTest):
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
 
-    def test_kill_no_wait(self):
-        token_name = self.token_name()
-        util.post_token(self.waiter_url, token_name, util.minimal_service_description())
-        try:
-            service_id = util.ping_token(self.waiter_url, token_name)
-            self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
-            cp = cli.kill(self.waiter_url, token_name, flags="-v", kill_flags=f"--no-wait")
-            self.assertEqual(0, cp.returncode, cp.stderr)
-            self.assertIn('Killing service', cli.stdout(cp))
-            self.assertIn(service_id, cli.stdout(cp))
-            self.assertIn('Successfully killed', cli.stdout(cp))
-            self.assertIn('Did not wait for routers to update.', cli.stdout(cp))
-            self.assertIn('timeout=0', cli.stderr(cp))
-            util.wait_until_no_services_for_token(self.waiter_url, token_name)
-        finally:
-            util.delete_token(self.waiter_url, token_name, kill_services=True)
-
     def test_kill_multiple_services(self):
         token_name = self.token_name()
         util.post_token(self.waiter_url, token_name, util.minimal_service_description())
