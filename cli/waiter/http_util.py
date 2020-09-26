@@ -66,10 +66,13 @@ def __get(url, params=None, read_timeout=None, **kwargs):
     return session.get(url, params=params, timeout=get_timeouts, **kwargs)
 
 
-def __delete(url, params=None, headers=None):
+def __delete(url, params=None, headers=None, read_timeout=None):
     """Sends a DELETE with params to the given url"""
     logging.debug(f'DELETE {url} with params {params} and headers {headers}')
-    return session.delete(url, params=params, timeout=timeouts, headers=headers)
+    delete_timeouts = timeouts
+    if read_timeout is not None:
+        delete_timeouts = (timeouts[0], read_timeout)
+    return session.delete(url, params=params, timeout=delete_timeouts, headers=headers)
 
 
 def __make_url(cluster, endpoint):
@@ -109,13 +112,13 @@ def get(cluster, endpoint, params=None, headers=None, read_timeout=None):
     return resp
 
 
-def delete(cluster, endpoint, params=None, headers=None):
+def delete(cluster, endpoint, params=None, headers=None, read_timeout=None):
     """DELETEs data corresponding to the given params on cluster at /endpoint"""
     if headers is None:
         headers = {}
     url = __make_url(cluster, endpoint)
     default_headers = default_http_headers()
-    resp = __delete(url, params, headers={**default_headers, **headers})
+    resp = __delete(url, params, headers={**default_headers, **headers}, read_timeout=read_timeout)
     logging.info(f'DELETE response: {resp.text}')
     return resp
 

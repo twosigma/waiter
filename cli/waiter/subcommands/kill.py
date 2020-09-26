@@ -1,36 +1,40 @@
 import logging
+import requests
 from urllib.parse import urljoin
 
 from tabulate import tabulate
 
 from waiter import http_util, terminal
 from waiter.format import format_last_request_time, format_status
-from waiter.querying import get_service, print_no_data, query_service, query_services
+from waiter.querying import print_no_data, query_service, query_services
 from waiter.util import guard_no_cluster, str2bool, response_message, print_error, wait_until, check_positive
 
 
 def kill_service_on_cluster(cluster, service_id, timeout_seconds):
     """Kills the service with the given service id in the given cluster."""
-
-    def service_is_killed():
-        return get_service(cluster, service_id)['status'] == 'Inactive'
-
     cluster_name = cluster['name']
+    http_util.set_retries(0)
     try:
         print(f'Killing service {terminal.bold(service_id)} in {terminal.bold(cluster_name)}...')
-        resp = http_util.delete(cluster, f'/apps/{service_id}')
+        params = {'timeout': timeout_seconds * 1000}
+        resp = http_util.delete(cluster, f'/apps/{service_id}', params=params, read_timeout=timeout_seconds)
         logging.debug(f'Response status code: {resp.status_code}')
         if resp.status_code == 200:
-            killed = wait_until(service_is_killed, timeout=timeout_seconds, interval=1)
-            if killed:
+            routers_agree = resp.json().get('routers-agree')
+            if routers_agree:
                 print(f'Successfully killed {service_id} in {cluster_name}.')
                 return True
             else:
-                print_error('Timeout waiting for service to die.')
+                print(f'Successfully killed {service_id} in {cluster_name}. '
+                      f'Server-side timeout waiting for routers to update.')
                 return False
         else:
             print_error(response_message(resp.json()))
             return False
+    except requests.exceptions.ReadTimeout:
+        message = f'Request timed out while killing {service_id} in {cluster_name}.'
+        logging.exception(message)
+        print_error(message)
     except Exception:
         message = f'Encountered error while killing {service_id} in {cluster_name}.'
         logging.exception(message)
@@ -122,8 +126,8 @@ def register(add_parser):
     parser = add_parser('kill', help='kill services')
     parser.add_argument('token-or-service-id')
     parser.add_argument('--force', '-f', help='kill all services, never prompt', dest='force', action='store_true')
-    parser.add_argument('--timeout', '-t', help='timeout (in seconds) for kill to complete',
-                        type=check_positive, default=30)
     parser.add_argument('--service-id', '-s', help='kill by service id instead of token',
                         dest='is-service-id', action='store_true')
+    parser.add_argument('--timeout', '-t', help='timeout (in seconds) for kill to complete',
+                        type=check_positive, default=30)
     return kill
