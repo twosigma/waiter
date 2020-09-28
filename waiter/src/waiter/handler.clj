@@ -376,7 +376,7 @@
     (let [router-id->response-chan (assoc
                                      (make-inter-router-requests-fn (str "apps/" service-id "/await-goal-existence")
                                                                     :method :get
-                                                                    :config {:query-string (str "timeout=" timeout "&goal-existence" goal-existence)})
+                                                                    :config {:query-string (str "timeout=" timeout "&goal-existence=" goal-existence)})
                                      router-id (async/go
                                                  {:body (async/go
                                                           (json/write-str
