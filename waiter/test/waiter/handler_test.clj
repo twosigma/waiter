@@ -780,16 +780,16 @@
 
       (.shutdown scheduler-interactions-thread-pool))))
 
-(deftest test-service-await-deletion-handler
-  (let [handler-name "service-await-deletion-handler"
+(deftest test-service-await-goal-existence-handler
+  (let [handler-name "service-await-goal-existence-handler"
         request {:route-params {:service-id "s1"}
                  :basic-authentication {:src-router-id "r2"}
                  :request-method :get
-                 :query-string "timeout=1000"}]
+                 :query-string "timeout=1000&goal-existence=false"}]
 
     (testing (str handler-name ":success-before-timeout")
       (let [fallback-state-atom (atom {:available-service-ids #{"s0"}})
-            {:keys [body headers status]} (async/<!! (service-await-deletion-handler fallback-state-atom request))]
+            {:keys [body headers status]} (async/<!! (service-await-goal-existence-handler fallback-state-atom request))]
         (is (= http-200-ok status))
         (is (= "application/json" (get headers "content-type")))
         (is (not (get (json/read-str body) "exists?")))))
@@ -797,9 +797,9 @@
     (testing (str handler-name ":force-timeout-custom")
       (let [fallback-state-atom (atom {:available-service-ids #{"s1"}})
             timeout 1000
-            request-query (assoc request :query-string (str "timeout=" timeout "&sleep-duration=300"))
+            request-query (assoc request :query-string (str "timeout=" timeout "&sleep-duration=300&goal-existence=false"))
             start-time (System/currentTimeMillis)
-            {:keys [body headers status]} (async/<!! (service-await-deletion-handler fallback-state-atom request-query))
+            {:keys [body headers status]} (async/<!! (service-await-goal-existence-handler fallback-state-atom request-query))
             end-time (System/currentTimeMillis)]
         (is (= http-200-ok status))
         (is (= "application/json" (get headers "content-type")))
@@ -810,12 +810,12 @@
       (let [fallback-state-atom (atom {:available-service-ids #{"s1"}})
             timeout 10000
             update-delay 2000
-            request-query (assoc request :query-string (str "timeout=" timeout "&sleep-duration=300"))
+            request-query (assoc request :query-string (str "timeout=" timeout "&sleep-duration=300&goal-existence=false"))
             start-time (System/currentTimeMillis)
             _ (async/go
                 (async/<! (async/timeout update-delay))
                 (reset! fallback-state-atom {:available-service-ids #{}}))
-            {:keys [body headers status]} (async/<!! (service-await-deletion-handler fallback-state-atom request-query))
+            {:keys [body headers status]} (async/<!! (service-await-goal-existence-handler fallback-state-atom request-query))
             end-time (System/currentTimeMillis)]
         (is (= http-200-ok status))
         (is (= "application/json" (get headers "content-type")))
@@ -826,18 +826,18 @@
       (let [fallback-state-atom (atom {:available-service-ids #{}})
             timeout "Invalid timeout value"
             sleep-duration "Invalid sleep-duration value"
-            request-bad-query (assoc request :query-string (str "timeout=" timeout "&sleep-duration=" sleep-duration))
-            {:keys [body headers status]} (async/<!! (service-await-deletion-handler fallback-state-atom request-bad-query))]
+            request-bad-query (assoc request :query-string (str "timeout=" timeout "&sleep-duration=" sleep-duration "&goal-existence=false"))
+            {:keys [body headers status]} (async/<!! (service-await-goal-existence-handler fallback-state-atom request-bad-query))]
         (is (= http-400-bad-request status))
         (is (= "text/plain" (get headers "content-type")))
         (is (re-find #"timeout and sleep-duration must be integers" body))
-        (is (re-find (re-pattern timeout) body))
-        (is (re-find (re-pattern sleep-duration) body))))
+        (is (re-find (re-pattern (str ":timeout \"" timeout "\"")) body))
+        (is (re-find (re-pattern (str ":sleep-duration \"" sleep-duration "\"")) body))))
 
     (testing (str handler-name ":nil-timeout")
       (let [fallback-state-atom (atom {:available-service-ids #{}})
             request-bad-query (dissoc request :query-string)
-            {:keys [body headers status]} (async/<!! (service-await-deletion-handler fallback-state-atom request-bad-query))]
+            {:keys [body headers status]} (async/<!! (service-await-goal-existence-handler fallback-state-atom request-bad-query))]
         (is (= http-400-bad-request status))
         (is (= "text/plain" (get headers "content-type")))
         (is (re-find #"timeout is a required query parameter" body))))))

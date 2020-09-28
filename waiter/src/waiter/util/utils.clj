@@ -587,6 +587,16 @@
       (log/info "cannot convert value to an int:" value)
       nil)))
 
+(defn parse-bool
+  "Returns either the input as a boolean value or nil if there was an error in parsing."
+  [value]
+  (try
+    (when value
+      (Boolean/parseBoolean (str value)))
+    (catch Exception _
+      (log/info "cannot convert value to a boolean:" value)
+      nil)))
+
 (defn param-contains?
   "Returns true if and only if request parameter k is present in params and has a value equal to v."
   [params k v]
