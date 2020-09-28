@@ -370,7 +370,7 @@
             (recur (- time-left-ms sleep-duration))))))))
 
 (defn await-service-goal-existence
-  "Polls local router and other routers until timeout is reached or the service becomes available/unavailable"
+  "Polls local router and other routers and returns true if goal-existence is reached and false otherwise"
   [fallback-state-atom make-inter-router-requests-fn router-id service-id timeout sleep-duration goal-existence]
   (go-try
     (let [router-id->response-chan (assoc
