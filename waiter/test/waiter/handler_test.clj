@@ -836,7 +836,7 @@
 
     (testing (str handler-name ":nil-timeout")
       (let [fallback-state-atom (atom {:available-service-ids #{}})
-            request-bad-query (dissoc request :query-string)
+            request-bad-query (assoc request :query-string (str "goal-existence=false"))
             {:keys [body headers status]} (async/<!! (service-await-goal-existence-handler fallback-state-atom request-bad-query))]
         (is (= http-400-bad-request status))
         (is (= "text/plain" (get headers "content-type")))
