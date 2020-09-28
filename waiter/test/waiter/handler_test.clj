@@ -846,6 +846,22 @@
         (is (get (json/read-str body) "success?"))
         (is (<= update-delay (- timeout 50) (- end-time start-time) (+ timeout 50)))))
 
+    (testing (str handler-name ":success-with-update")
+      (let [fallback-state-atom (atom {:available-service-ids #{"s1"}})
+            timeout 10000
+            update-delay 2000
+            request-query (assoc request :query-string (str "timeout=" timeout))
+            start-time (System/currentTimeMillis)
+            _ (async/go
+                (async/<! (async/timeout update-delay))
+                (reset! fallback-state-atom {:available-service-ids #{}}))
+            {:keys [body headers status]} (async/<!! (service-await-handler fallback-state-atom request-query))
+            end-time (System/currentTimeMillis)]
+        (is (= http-200-ok status))
+        (is (= "application/json" (get headers "content-type")))
+        (is (get (json/read-str body) "success?"))
+        (is (<= update-delay (- end-time start-time) timeout))))
+
     (testing (str handler-name ":non-integer-timeout-sleep-duration-params")
       (let [fallback-state-atom (atom {:available-service-ids #{}})
             timeout "Invalid timeout value"
@@ -864,15 +880,7 @@
             {:keys [body headers status]} (async/<!! (service-await-handler fallback-state-atom request))]
         (is (= http-400-bad-request status))
         (is (= "text/plain" (get headers "content-type")))
-        (is (re-find #"timeout is a required query parameter" body))))
-
-    (testing (str handler-name ":nil-goal-existence")
-      (let [fallback-state-atom (atom {:available-service-ids #{}})
-            request-bad-query (assoc request :query-string (str "timeout=1000"))
-            {:keys [body headers status]} (async/<!! (service-await-goal-existence-handler fallback-state-atom request-bad-query))]
-        (is (= http-400-bad-request status))
-        (is (= "text/plain" (get headers "content-type")))
-        (is (re-find #"goal-existence is a required query parameter" body))))))
+        (is (re-find #"timeout is a required query parameter" body))))))
 
 (deftest test-work-stealing-handler
   (let [test-service-id "test-service-id"
