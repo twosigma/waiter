@@ -723,11 +723,11 @@
                                         :request-method request-method
                                         :status http-400-bad-request})))
                    _ (when (nil? goal-existence)
-                       (throw (ex-info "goal-existence is required query parameter"
+                       (throw (ex-info "goal-existence is a required query parameter"
                                        {:log-level :info
                                         :request-method request-method
                                         :status http-400-bad-request})))
-                   parsed-goal-existence (utils/parse-bool goal-existence)
+                   parsed-goal-existence (Boolean/parseBoolean goal-existence)
                    parsed-timeout (utils/parse-int timeout)
                    parsed-sleep-duration (utils/parse-int sleep-duration)]
                (when (or (nil? parsed-sleep-duration) (nil? parsed-timeout))
@@ -737,12 +737,6 @@
                                   :status http-400-bad-request
                                   :timeout timeout
                                   :sleep-duration sleep-duration})))
-               (when (nil? parsed-goal-existence)
-                 (throw (ex-info "goal-existence must be boolean value"
-                                 {:log-level :info
-                                  :request-method request-method
-                                  :status http-400-bad-request
-                                  :goal-existence goal-existence})))
                (utils/clj->json-response {:exists? (async/<!
                                                      (await-service-goal-existence-locally
                                                        fallback-state-atom service-id parsed-timeout parsed-sleep-duration parsed-goal-existence))
