@@ -787,14 +787,22 @@
                  :request-method :get
                  :query-string "timeout=1000&goal-existence=false"}]
 
-    (testing (str handler-name ":success-before-timeout")
+    (testing (str handler-name ":immediate-success-with-false-goal-existence")
       (let [fallback-state-atom (atom {:available-service-ids #{"s0"}})
             {:keys [body headers status]} (async/<!! (service-await-goal-existence-handler fallback-state-atom request))]
         (is (= http-200-ok status))
         (is (= "application/json" (get headers "content-type")))
         (is (not (get (json/read-str body) "exists?")))))
 
-    (testing (str handler-name ":force-timeout-custom")
+    (testing (str handler-name ":immediate-success-with-true-goal-existence")
+      (let [fallback-state-atom (atom {:available-service-ids #{"s1"}})
+            request-query (assoc request :query-string "timeout=1000&goal-existence=true")
+            {:keys [body headers status]} (async/<!! (service-await-goal-existence-handler fallback-state-atom request-query))]
+        (is (= http-200-ok status))
+        (is (= "application/json" (get headers "content-type")))
+        (is (get (json/read-str body) "exists?"))))
+
+    (testing (str handler-name ":force-timeout-custom-with-false-goal-existence")
       (let [fallback-state-atom (atom {:available-service-ids #{"s1"}})
             timeout 1000
             request-query (assoc request :query-string (str "timeout=" timeout "&sleep-duration=300&goal-existence=false"))
@@ -806,7 +814,19 @@
         (is (get (json/read-str body) "exists?"))
         (is (>= (- end-time start-time) timeout))))
 
-    (testing (str handler-name ":custom-timeout-delete-update")
+    (testing (str handler-name ":force-timeout-custom-with-true-goal-existence")
+      (let [fallback-state-atom (atom {:available-service-ids #{}})
+            timeout 1000
+            request-query (assoc request :query-string (str "timeout=" timeout "&sleep-duration=300&goal-existence=true"))
+            start-time (System/currentTimeMillis)
+            {:keys [body headers status]} (async/<!! (service-await-goal-existence-handler fallback-state-atom request-query))
+            end-time (System/currentTimeMillis)]
+        (is (= http-200-ok status))
+        (is (= "application/json" (get headers "content-type")))
+        (is (not (get (json/read-str body) "exists?")))
+        (is (>= (- end-time start-time) timeout))))
+
+    (testing (str handler-name ":custom-timeout-delete-update-to-false-goal-existence")
       (let [fallback-state-atom (atom {:available-service-ids #{"s1"}})
             timeout 10000
             update-delay 2000
@@ -820,6 +840,22 @@
         (is (= http-200-ok status))
         (is (= "application/json" (get headers "content-type")))
         (is (not (get (json/read-str body) "exists?")))
+        (is (<= update-delay (- end-time start-time) timeout))))
+
+    (testing (str handler-name ":custom-timeout-delete-update-to-true-goal-existence")
+      (let [fallback-state-atom (atom {:available-service-ids #{}})
+            timeout 10000
+            update-delay 2000
+            request-query (assoc request :query-string (str "timeout=" timeout "&sleep-duration=300&goal-existence=true"))
+            start-time (System/currentTimeMillis)
+            _ (async/go
+                (async/<! (async/timeout update-delay))
+                (reset! fallback-state-atom {:available-service-ids #{"s1"}}))
+            {:keys [body headers status]} (async/<!! (service-await-goal-existence-handler fallback-state-atom request-query))
+            end-time (System/currentTimeMillis)]
+        (is (= http-200-ok status))
+        (is (= "application/json" (get headers "content-type")))
+        (is (get (json/read-str body) "exists?"))
         (is (<= update-delay (- end-time start-time) timeout))))
 
     (testing (str handler-name ":non-integer-query-params")
