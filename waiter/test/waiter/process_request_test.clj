@@ -507,6 +507,8 @@
            (classify-error exception))))
   (is (= [:instance-error nil http-502-bad-gateway "java.io.IOException"]
          (classify-error (IOException. "internal_error"))))
+  (is (= [:generic-error "Bad request, server closed connection" http-400-bad-request "java.io.IOException"]
+         (classify-error (IOException. "no_error"))))
   (is (= [:client-error "Connection unexpectedly closed while streaming request" http-400-bad-request "org.eclipse.jetty.io.EofException"]
          (classify-error (ex-info "Test Exception" {:source :test :status http-400-bad-request} (EofException. "Test")))))
   (is (= [:client-eagerly-closed "Connection eagerly closed by client" http-400-bad-request "org.eclipse.jetty.io.EofException"]
