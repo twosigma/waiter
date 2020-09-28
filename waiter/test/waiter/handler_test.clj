@@ -864,7 +864,15 @@
             {:keys [body headers status]} (async/<!! (service-await-handler fallback-state-atom request))]
         (is (= http-400-bad-request status))
         (is (= "text/plain" (get headers "content-type")))
-        (is (re-find #"timeout is a required query parameter" body))))))
+        (is (re-find #"timeout is a required query parameter" body))))
+
+    (testing (str handler-name ":nil-goal-existence")
+      (let [fallback-state-atom (atom {:available-service-ids #{}})
+            request-bad-query (assoc request :query-string (str "timeout=1000"))
+            {:keys [body headers status]} (async/<!! (service-await-goal-existence-handler fallback-state-atom request-bad-query))]
+        (is (= http-400-bad-request status))
+        (is (= "text/plain" (get headers "content-type")))
+        (is (re-find #"goal-existence is a required query parameter" body))))))
 
 (deftest test-work-stealing-handler
   (let [test-service-id "test-service-id"
