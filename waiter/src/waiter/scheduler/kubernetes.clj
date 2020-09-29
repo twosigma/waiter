@@ -116,7 +116,7 @@
         [:metadata name namespace uid [:annotations waiter/service-id]]
         [:status {replicas 0} {availableReplicas 0} {readyReplicas 0} {unavailableReplicas 0}]] replicaset-json
        ;; for backward compatibility where the revision timestamp is missing we cannot use the destructuring above
-       revision-timestamp (get-in replicaset-json [:metadata :annotations :waiter/revision-timestamp] nil)
+       rs-annotations (get-in replicaset-json [:metadata :annotations] nil)
        requested (get spec :replicas 0)
        staged (- replicas (+ availableReplicas unavailableReplicas))]
       (scheduler/make-Service
@@ -124,8 +124,8 @@
          :instances requested
          :k8s/app-name name
          :k8s/namespace namespace
+         :k8s/replicaset-annotations (dissoc rs-annotations :waiter/service-id)
          :k8s/replicaset-uid uid
-         :k8s/revision-timestamp revision-timestamp
          :task-count replicas
          :task-stats {:healthy readyReplicas
                       :running (- replicas staged)
@@ -228,7 +228,8 @@
   [{:keys [container-running-grace-secs restart-expiry-threshold watch-state]}
    service-id instance-id restart-count {:keys [waiter/pod-expired waiter/revision-timestamp]}
    primary-container-status pod-started-at]
-  (let [rs-revision-timestamp (get-in @watch-state [:service-id->service service-id :k8s/revision-timestamp])]
+  (let [rs-revision-timestamp-path [:service-id->service service-id :k8s/replicaset-annotations :waiter/revision-timestamp]
+        rs-revision-timestamp (get-in @watch-state rs-revision-timestamp-path)]
     (cond
       (>= restart-count restart-expiry-threshold)
       (do
