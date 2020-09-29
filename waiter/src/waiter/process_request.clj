@@ -98,7 +98,7 @@
                              ;; no_error is used to indicate that the stream is no longer needed
                              ;; HTTP2 spec: The associated condition is not a result of an error...indicate graceful shutdown of a connection.
                              (and (instance? IOException error) (= "no_error" error-message))
-                             [:generic-error "Bad request, server closed connection" http-400-bad-request error-class]
+                             [:generic-error "Server closed connection as stream no longer needed" http-400-bad-request error-class]
                              ;; connection has already been closed by the client
                              (and (instance? EofException error) (= "reset" error-message))
                              [:client-eagerly-closed "Connection eagerly closed by client" http-400-bad-request error-class]
