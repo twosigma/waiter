@@ -554,12 +554,12 @@
           :expected-result
           [(scheduler/make-Service {:id "test-app-1234"
                                     :instances 2
-                                    :k8s/revision-timestamp nil
+                                    :k8s/replicaset-annotations {}
                                     :task-count 2
                                     :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
            (scheduler/make-Service {:id "test-app-6789"
                                     :instances 3
-                                    :k8s/revision-timestamp nil
+                                    :k8s/replicaset-annotations {}
                                     :task-count 3
                                     :task-stats {:running 3 :healthy 1 :unhealthy 2 :staged 0}})]}
          {:api-server-response
@@ -596,12 +596,12 @@
           :expected-result
           [(scheduler/make-Service {:id "test-app-abcd"
                                     :instances 2
-                                    :k8s/revision-timestamp nil
+                                    :k8s/replicaset-annotations {}
                                     :task-count 2
                                     :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
            (scheduler/make-Service {:id "test-app-wxyz"
                                     :instances 3
-                                    :k8s/revision-timestamp nil
+                                    :k8s/replicaset-annotations {}
                                     :task-count 3
                                     :task-stats {:running 3 :healthy 1 :unhealthy 2 :staged 0}})]}
 
@@ -625,7 +625,7 @@
           :expected-result
           [(scheduler/make-Service {:id "test-app-4321"
                                     :instances 3
-                                    :k8s/revision-timestamp nil
+                                    :k8s/replicaset-annotations {}
                                     :task-count 3
                                     :task-stats {:running 2 :healthy 1 :unhealthy 1 :staged 1}})]}
 
@@ -649,7 +649,7 @@
           :expected-result
           [(scheduler/make-Service {:id "test-app-9999"
                                     :instances 0
-                                    :k8s/revision-timestamp "2020-09-22T20:22:22.000Z"
+                                    :k8s/replicaset-annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"}
                                     :task-count 0
                                     :task-stats {:running 0, :healthy 0, :unhealthy 0, :staged 0}})]}]]
     (log/info "Expecting Key error due to bad :mismatched-replicaset in API server response...")
@@ -808,7 +808,7 @@
         expected (hash-map
                    (scheduler/make-Service {:id "test-app-1234"
                                             :instances 2
-                                            :k8s/revision-timestamp "2020-09-22T20:33:33.000Z"
+                                            :k8s/replicaset-annotations {:waiter/revision-timestamp "2020-09-22T20:33:33.000Z"}
                                             :task-count 2
                                             :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
                    {:active-instances
@@ -865,7 +865,7 @@
 
                    (scheduler/make-Service {:id "test-app-6789"
                                             :instances 3
-                                            :k8s/revision-timestamp nil
+                                            :k8s/replicaset-annotations {}
                                             :task-count 3
                                             :task-stats {:running 3 :healthy 1 :unhealthy 2 :staged 0}})
                    {:active-instances
@@ -2030,7 +2030,7 @@
         revision-timestamp-0 "2020-09-22T20:00:00.000Z"
         revision-timestamp-1 "2020-09-22T20:11:11.000Z"
         revision-timestamp-2 "2020-09-22T20:22:22.000Z"
-        watch-state-atom (atom {:service-id->service {service-id {:k8s/revision-timestamp revision-timestamp-1}}})
+        watch-state-atom (atom {:service-id->service {service-id {:k8s/replicaset-annotations {:waiter/revision-timestamp revision-timestamp-1}}}})
         base-scheduler {:api-server-url api-server-url
                         :container-running-grace-secs 120
                         :restart-expiry-threshold 1000
@@ -2071,7 +2071,8 @@
                       :k8s/revision-timestamp revision-timestamp-1
                       :k8s/restart-count 9
                       :k8s/user "myself"}
-        expired-instance-map (assoc instance-map :flags #{:expired})]
+        expired-instance-map (assoc instance-map :flags #{:expired})
+        rs-revision-timestamp-path [:service-id->service service-id :k8s/replicaset-annotations :waiter/revision-timestamp]]
 
     (testing "pod to live instance"
       (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
@@ -2119,20 +2120,20 @@
 
     (testing "revision timestamps"
       (testing "missing in both replicaset and pod"
-        (let [watch-state (utils/dissoc-in @watch-state-atom [:service-id->service service-id :k8s/revision-timestamp])
+        (let [watch-state (utils/dissoc-in @watch-state-atom rs-revision-timestamp-path)
               dummy-scheduler (assoc base-scheduler :watch-state (atom watch-state))
               pod (utils/dissoc-in pod [:metadata :annotations :waiter/revision-timestamp])
               instance (pod->ServiceInstance dummy-scheduler pod)]
           (is (= (-> instance-map (dissoc :k8s/revision-timestamp) scheduler/make-ServiceInstance) instance))))
 
       (testing "present in pod but missing in replicaset"
-        (let [watch-state (utils/dissoc-in @watch-state-atom [:service-id->service service-id :k8s/revision-timestamp])
+        (let [watch-state (utils/dissoc-in @watch-state-atom rs-revision-timestamp-path)
               dummy-scheduler (assoc base-scheduler :watch-state (atom watch-state))
               instance (pod->ServiceInstance dummy-scheduler pod)]
           (is (= (scheduler/make-ServiceInstance instance-map) instance))))
 
       (testing "present in replicaset but missing in pod"
-        (let [watch-state (assoc-in @watch-state-atom [:service-id->service service-id :k8s/revision-timestamp] revision-timestamp-2)
+        (let [watch-state (assoc-in @watch-state-atom rs-revision-timestamp-path revision-timestamp-2)
               dummy-scheduler (assoc base-scheduler :watch-state (atom watch-state))
               pod (utils/dissoc-in pod [:metadata :annotations :waiter/revision-timestamp])
               instance (pod->ServiceInstance dummy-scheduler pod)]
@@ -2140,19 +2141,19 @@
 
       (testing "present in both replicaset and pod"
         (testing "with older value in replicaset"
-          (let [watch-state (assoc-in @watch-state-atom [:service-id->service service-id :k8s/revision-timestamp] revision-timestamp-0)
+          (let [watch-state (assoc-in @watch-state-atom rs-revision-timestamp-path revision-timestamp-0)
                 dummy-scheduler (assoc base-scheduler :watch-state (atom watch-state))
                 instance (pod->ServiceInstance dummy-scheduler pod)]
             (is (= (scheduler/make-ServiceInstance instance-map) instance))))
 
         (testing "with matching value in replicaset"
-          (let [watch-state (assoc-in @watch-state-atom [:service-id->service service-id :k8s/revision-timestamp] revision-timestamp-1)
+          (let [watch-state (assoc-in @watch-state-atom rs-revision-timestamp-path revision-timestamp-1)
                 dummy-scheduler (assoc base-scheduler :watch-state (atom watch-state))
                 instance (pod->ServiceInstance dummy-scheduler pod)]
             (is (= (scheduler/make-ServiceInstance instance-map) instance))))
 
         (testing "with expired value in pod"
-          (let [watch-state (assoc-in @watch-state-atom [:service-id->service service-id :k8s/revision-timestamp] revision-timestamp-2)
+          (let [watch-state (assoc-in @watch-state-atom rs-revision-timestamp-path revision-timestamp-2)
                 dummy-scheduler (assoc base-scheduler :watch-state (atom watch-state))
                 instance (pod->ServiceInstance dummy-scheduler pod)]
             (is (= (scheduler/make-ServiceInstance expired-instance-map) instance))))))))

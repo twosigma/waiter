@@ -44,13 +44,13 @@
                     watch-state-json (get-watch-state body-json)
                     service (get-in watch-state-json ["service-id->service" service-id])]
                 (if (map? service)
-                  (let [{:keys [k8s/app-name k8s/namespace k8s/replicaset-uid k8s/revision-timestamp]} (walk/keywordize-keys service)
+                  (let [{:keys [k8s/app-name k8s/namespace k8s/replicaset-annotations k8s/replicaset-uid]} (walk/keywordize-keys service)
                         assertion-message (str {:router-url router-url :service service})]
                     (is (= service-id (get service "id")) assertion-message)
                     (is app-name assertion-message)
                     (is namespace assertion-message)
                     (is replicaset-uid assertion-message)
-                    (is revision-timestamp assertion-message))
+                    (is (contains? replicaset-annotations :waiter/revision-timestamp) assertion-message))
                   (is false (str {:message "service unavailable in k8s watch state"
                                   :router-url router-url
                                   :service-id service-id
