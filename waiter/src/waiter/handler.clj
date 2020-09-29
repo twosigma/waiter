@@ -24,7 +24,7 @@
             [comb.template :as template]
             [metrics.counters :as counters]
             [metrics.meters :as meters]
-            [full.async :refer [<? go-try]]
+            [full.async :refer [<?]]
             [plumbing.core :as pc]
             [ring.middleware.multipart-params :as multipart-params]
             [waiter.async-request :as async-req]
@@ -356,48 +356,6 @@
                           viewable-service-ids)]
       (utils/clj->streaming-json-response response-data))))
 
-(defn- await-service-goal-existence-locally
-  "Polls fallback-state-atom locally and waits until timeout is reached or service existence is equal to the goal existence"
-  [fallback-state-atom service-id timeout sleep-duration goal-existence]
-  (async/go
-    (loop [time-left-ms timeout]
-      (let [fallback-state @fallback-state-atom
-            exists? (descriptor/service-exists? fallback-state service-id)]
-        (if (or (= exists? goal-existence) (not (pos? time-left-ms)))
-          exists?
-          (do
-            (async/<! (async/timeout sleep-duration))
-            (recur (- time-left-ms sleep-duration))))))))
-
-(defn await-service-goal-existence
-  "Polls local router and other routers and returns true if goal-existence is reached and false otherwise"
-  [fallback-state-atom make-inter-router-requests-fn router-id service-id timeout sleep-duration goal-existence]
-  (go-try
-    (let [router-id->response-chan (assoc
-                                     (make-inter-router-requests-fn (str "apps/" service-id "/await-goal-existence")
-                                                                    :method :get
-                                                                    :config {:query-string (str "timeout=" timeout "&goal-existence=" goal-existence)})
-                                     router-id (async/go
-                                                 {:body (async/go
-                                                          (json/write-str
-                                                            {:exists? (async/<! (await-service-goal-existence-locally
-                                                                                  fallback-state-atom service-id timeout sleep-duration goal-existence))}))}))
-          router-id->exists? (loop [result {}
-                                    [[router-id response-chan] & remaining] (seq router-id->response-chan)]
-                               (if (and router-id response-chan)
-                                 (recur
-                                   (assoc result router-id (some-> response-chan
-                                                                   async/<!
-                                                                   :body
-                                                                   async/<!
-                                                                   utils/try-parse-json
-                                                                   (get "exists?")))
-                                   remaining)
-                                 result))]
-      (every?
-        #(= goal-existence %)
-        (vals router-id->exists?)))))
-
 (defn delete-service-handler
   "Deletes the service from the scheduler (after authorization checks)."
   [router-id service-id core-service-description scheduler allowed-to-manage-service?-fn scheduler-interactions-thread-pool
@@ -432,7 +390,9 @@
                                            scheduler-interactions-thread-pool))]
             (if error
               (utils/exception->response error request)
-              (let [delete-result (:result result)
+              (let [goal "deleted"
+                    sleep-duration-ms 100
+                    delete-result (:result result)
                     response-status (case delete-result
                                       :deleted http-200-ok
                                       :no-such-service-exists http-404-not-found
@@ -441,7 +401,7 @@
                                       (pos? timeout))
                     routers-agree (when should-poll?
                                     (<?
-                                      (await-service-goal-existence fallback-state-atom make-inter-router-requests-fn router-id service-id timeout 100 false)))
+                                      (descriptor/await-service-goal-fallback-state fallback-state-atom make-inter-router-requests-fn router-id service-id timeout sleep-duration-ms goal)))
                     response-body-map (cond-> {:service-id service-id,
                                                :success (= http-200-ok response-status)}
                                               should-poll? (assoc :routers-agree routers-agree)
@@ -706,28 +666,22 @@
     (catch Exception ex
       (utils/exception->response ex request))))
 
-(defn service-await-goal-existence-handler
+(defn service-await-handler
   "Polls fallback-state-atom until timeout is reached or service does not exist"
-  [fallback-state-atom {{:keys [service-id]} :route-params
+  [fallback-state-atom {{:keys [service-id goal-state]} :route-params
                         {:keys [src-router-id]} :basic-authentication
                         :keys [request-method]
                         :as request}]
   (async/go
     (try
-      (log/info service-id "service-await-goal-existence-handler triggered by router" src-router-id)
+      (log/info service-id "service-await-handler triggered by router" src-router-id)
       (case request-method
-        :get (let [{:strs [timeout sleep-duration goal-existence] :or {sleep-duration "100"}} (-> request ru/query-params-request :query-params)
+        :get (let [{:strs [timeout sleep-duration] :or {sleep-duration "100"}} (-> request ru/query-params-request :query-params)
                    _ (when (nil? timeout)
                        (throw (ex-info "timeout is a required query parameter"
                                        {:log-level :info
                                         :request-method request-method
                                         :status http-400-bad-request})))
-                   _ (when (nil? goal-existence)
-                       (throw (ex-info "goal-existence is a required query parameter"
-                                       {:log-level :info
-                                        :request-method request-method
-                                        :status http-400-bad-request})))
-                   parsed-goal-existence (Boolean/parseBoolean goal-existence)
                    parsed-timeout (utils/parse-int timeout)
                    parsed-sleep-duration (utils/parse-int sleep-duration)]
                (when (or (nil? parsed-sleep-duration) (nil? parsed-timeout))
@@ -737,9 +691,9 @@
                                   :status http-400-bad-request
                                   :timeout timeout
                                   :sleep-duration sleep-duration})))
-               (utils/clj->json-response {:exists? (async/<!
-                                                     (await-service-goal-existence-locally
-                                                       fallback-state-atom service-id parsed-timeout parsed-sleep-duration parsed-goal-existence))
+               (utils/clj->json-response {:success? (async/<!
+                                                      (descriptor/await-service-goal-fallback-state-locally
+                                                        fallback-state-atom service-id parsed-timeout parsed-sleep-duration goal-state))
                                           :service-id service-id}))
         (utils/exception->response (ex-info "Only GET supported" {:log-level :info
                                               :request-method request-method
