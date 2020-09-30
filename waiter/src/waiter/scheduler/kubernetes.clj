@@ -627,6 +627,7 @@
                                 pod-suffix-length
                                 replicaset-api-version
                                 replicaset-spec-builder-fn
+                                restart-expiry-threshold
                                 retrieve-auth-token-state-fn
                                 retrieve-syncer-state-fn
                                 reverse-proxy
@@ -1384,6 +1385,7 @@
                                            pod-suffix-length
                                            replicaset-api-version
                                            replicaset-spec-builder-fn
+                                           restart-expiry-threshold
                                            retrieve-auth-token-state-fn
                                            retrieve-syncer-state-fn
                                            reverse-proxy
@@ -1396,4 +1398,6 @@
           rs-watch-thread (start-replicasets-watch! scheduler watch-options)]
       (reset! daemon-state {:pod-watch-daemon pod-watch-thread
                             :rs-watch-daemon rs-watch-thread})
+      (assert (every? #(contains? scheduler %) (keys scheduler-config))
+              "ensure all fields in scheduler-config are present in KubernetesScheduler")
       scheduler)))
