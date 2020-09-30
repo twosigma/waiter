@@ -1504,20 +1504,15 @@
                                   (oidc/oidc-enabled-request-handler oidc-authenticator waiter-hostnames request))))
    :not-found-handler-fn (pc/fnk [] handler/not-found-handler)
    :ping-service-handler (pc/fnk [[:daemons router-state-maintainer]
-                                  [:state fallback-state-atom user-agent-version]
+                                  [:state fallback-state-atom router-id user-agent-version]
+                                  [:routines make-inter-router-requests-async-fn]
                                   process-request-handler-fn process-request-wrapper-fn wrap-secure-request-fn]
                            (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                  user-agent (str "waiter-ping/" user-agent-version)
                                  handler (process-request-wrapper-fn
                                            (fn inner-ping-service-handler [request]
-                                             (let [service-state-fn
-                                                   (fn [service-id]
-                                                     (let [fallback-state @fallback-state-atom
-                                                           global-state (query-state-fn)]
-                                                       {:exists? (descriptor/service-exists? fallback-state service-id)
-                                                        :healthy? (descriptor/service-healthy? fallback-state service-id)
-                                                        :service-id service-id
-                                                        :status (service/retrieve-service-status-label service-id global-state)}))]
+                                             (let [retrieve-service-status-label-fn #(service/retrieve-service-status-label % (query-state-fn))
+                                                   service-state-fn (partial descriptor/extract-service-state router-id retrieve-service-status-label-fn fallback-state-atom make-inter-router-requests-async-fn)]
                                                (pr/ping-service user-agent process-request-handler-fn service-state-fn request))))]
                              (wrap-secure-request-fn
                                (fn ping-service-handler [request]
@@ -1623,10 +1618,10 @@
                                      (sd/service-id->suspended-state kv-store service-id :refresh true)
                                      (sd/service-id->overrides kv-store service-id :refresh true))))
    :service-await-handler-fn (pc/fnk [[:state fallback-state-atom]
-                                               wrap-router-auth-fn]
-                                        (wrap-router-auth-fn
-                                          (fn service-await-handler-fn [request]
-                                            (handler/service-await-handler fallback-state-atom request))))
+                                      wrap-router-auth-fn]
+                               (wrap-router-auth-fn
+                                 (fn service-await-handler-fn [request]
+                                   (handler/service-await-handler fallback-state-atom request))))
    :service-resume-handler-fn (pc/fnk [[:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn]
                                        [:state kv-store]
                                        wrap-secure-request-fn]

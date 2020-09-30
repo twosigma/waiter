@@ -21,7 +21,7 @@
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
-            [full.async :refer [go-try]]
+            [full.async :refer [<? go-try]]
             [metrics.counters :as counters]
             [metrics.meters :as meters]
             [metrics.timers :as timers]
@@ -419,3 +419,28 @@
                                             (get "success?")))
             remaining)
           router-id->success?)))))
+
+(defn extract-service-state
+  "Extract the service state which is consistent on all routers"
+  [router-id retrieve-service-status-label-fn fallback-state-atom make-inter-router-requests-async-fn service-id ping-success?]
+  (go-try
+    (let [fallback-state @fallback-state-atom
+          router-comm-timeout-ms 5000
+          sleep-duration-ms 100
+          service-healthy? (and ping-success?
+                                (every?
+                                  true?
+                                  (vals
+                                    (<? (await-service-goal-fallback-state fallback-state-atom make-inter-router-requests-async-fn router-id service-id router-comm-timeout-ms sleep-duration-ms "healthy"))))
+
+                                (service-healthy? fallback-state service-id))
+          service-exists? (or
+                            (and ping-success? service-healthy?)
+                            (every?
+                              true?
+                              (vals
+                                (<? (await-service-goal-fallback-state fallback-state-atom make-inter-router-requests-async-fn router-id service-id router-comm-timeout-ms sleep-duration-ms "exist")))))]
+      {:exists? service-exists?
+       :healthy? service-healthy?
+       :service-id service-id
+       :status (retrieve-service-status-label-fn service-id)})))
