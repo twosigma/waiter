@@ -396,7 +396,7 @@
               (recur (- time-left-ms sleep-duration)))))))))
 
 (defn await-service-goal-fallback-state
-  "Polls local router and other routers and returns true if goal state is reached by all routers"
+  "Polls local router and other routers and returns map router-id->success?"
   [fallback-state-atom make-inter-router-requests-fn router-id service-id timeout sleep-duration goal]
   (go-try
     (let [router-id->response-chan (assoc
@@ -407,17 +407,16 @@
                                                  {:body (async/go
                                                           (json/write-str
                                                             {:success? (async/<! (await-service-goal-fallback-state-locally
-                                                                                  fallback-state-atom service-id timeout sleep-duration goal))}))}))
-          router-id->success? (loop [result {}
-                                    [[router-id response-chan] & remaining] (seq router-id->response-chan)]
-                               (if (and router-id response-chan)
-                                 (recur
-                                   (assoc result router-id (some-> response-chan
-                                                                   async/<!
-                                                                   :body
-                                                                   async/<!
-                                                                   utils/try-parse-json
-                                                                   (get "success?")))
-                                   remaining)
-                                 result))]
-      (every? true? (vals router-id->success?)))))
+                                                                                  fallback-state-atom service-id timeout sleep-duration goal))}))}))]
+      (loop [result {}
+             [[router-id response-chan] & remaining] (seq router-id->response-chan)]
+        (if (and router-id response-chan)
+          (recur
+            (assoc result router-id (some-> response-chan
+                                            async/<!
+                                            :body
+                                            async/<!
+                                            utils/try-parse-json
+                                            (get "success?")))
+            remaining)
+          result)))))
