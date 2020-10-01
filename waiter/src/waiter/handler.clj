@@ -407,7 +407,7 @@
                                           (descriptor/await-service-goal-fallback-state fallback-state-atom make-inter-router-requests-fn router-id service-id timeout sleep-duration-ms goal)))))
                     response-body-map (cond-> {:service-id service-id,
                                                :success (= http-200-ok response-status)}
-                                              should-poll? (assoc :routers-agree routers-agree)
+                                              (some? routers-agree) (assoc :routers-agree routers-agree)
                                               true (merge result))]
                 (utils/clj->json-response response-body-map :status response-status))))
           (catch Throwable ex
