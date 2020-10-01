@@ -421,25 +421,30 @@
           router-id->success?)))))
 
 (defn extract-service-state
-  "Extract the service state which is consistent on all routers"
-  [router-id retrieve-service-status-label-fn fallback-state-atom make-inter-router-requests-async-fn service-id ping-success?]
+  "Extract the service state which is consistent on all routers. The ping-result determines what checks are made."
+  [router-id retrieve-service-status-label-fn fallback-state-atom make-inter-router-requests-async-fn service-id ping-result]
   (go-try
     (let [fallback-state @fallback-state-atom
           router-comm-timeout-ms 5000
           sleep-duration-ms 100
-          service-healthy? (and ping-success?
-                                (every?
-                                  true?
-                                  (vals
-                                    (<? (await-service-goal-fallback-state fallback-state-atom make-inter-router-requests-async-fn router-id service-id router-comm-timeout-ms sleep-duration-ms "healthy"))))
-
-                                (service-healthy? fallback-state service-id))
+          ping-timeout? (= ping-result :timed-out)
+          ping-success? (= ping-result :received-response)
+          _ (when ping-timeout? (log/info (:ping-result ping-result)
+                                          "is :timed-out; therefore skipping inter router checks and defaulting to local service exists? and healthy? checks"))
+          service-healthy? (if ping-timeout?
+                             (service-healthy? fallback-state service-id)
+                             (and ping-success? (every?
+                                                  true?
+                                                  (vals
+                                                    (<? (await-service-goal-fallback-state fallback-state-atom make-inter-router-requests-async-fn router-id service-id router-comm-timeout-ms sleep-duration-ms "healthy"))))))
           service-exists? (or
                             (and ping-success? service-healthy?)
-                            (every?
-                              true?
-                              (vals
-                                (<? (await-service-goal-fallback-state fallback-state-atom make-inter-router-requests-async-fn router-id service-id router-comm-timeout-ms sleep-duration-ms "exist")))))]
+                            (if ping-timeout?
+                              (service-exists? fallback-state service-id)
+                              (every?
+                                true?
+                                (vals
+                                  (<? (await-service-goal-fallback-state fallback-state-atom make-inter-router-requests-async-fn router-id service-id router-comm-timeout-ms sleep-duration-ms "exist"))))))]
       {:exists? service-exists?
        :healthy? service-healthy?
        :service-id service-id

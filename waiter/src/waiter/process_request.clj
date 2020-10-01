@@ -959,8 +959,7 @@
             request (assoc-in request [:headers "user-agent"] user-agent)
             idle-timeout-ms (Integer/parseInt (get headers "x-waiter-timeout" "300000"))
             health-check-protocol (scheduler/service-description->health-check-protocol service-description)
-            ping-response (async/<! (make-health-check-request process-request-handler-fn idle-timeout-ms request health-check-protocol))
-            ping-successful? (= (:result ping-response) :received-response)]
+            ping-response (async/<! (make-health-check-request process-request-handler-fn idle-timeout-ms request health-check-protocol))]
         (let [{:strs [health-check-url]} service-description
               backend-protocol (hu/backend-protocol->http-version health-check-protocol)
               backend-scheme (hu/backend-proto->scheme health-check-protocol)
@@ -982,6 +981,6 @@
           (utils/clj->json-response
             {:ping-response (select-keys ping-response [:body :headers :result :status])
              :service-description core-service-description
-             :service-state (fa/<? (service-state-fn service-id ping-successful?))})))
+             :service-state (fa/<? (service-state-fn service-id (:result ping-response)))})))
       (catch Exception ex
         (utils/exception->response ex request)))))
