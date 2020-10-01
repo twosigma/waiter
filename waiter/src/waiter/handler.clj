@@ -677,7 +677,7 @@
                         :as request}]
   (async/go
     (try
-      (log/info service-id "service-await-handler triggered by router" src-router-id)
+      (log/info service-id "service-await-handler triggered by router" src-router-id "with goal:" goal-state)
       (case request-method
         :get (let [{:strs [timeout sleep-duration] :or {sleep-duration "100"}} (-> request ru/query-params-request :query-params)
                    _ (when (nil? timeout)
