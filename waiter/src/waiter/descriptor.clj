@@ -17,9 +17,11 @@
   (:require [clj-time.coerce :as tc]
             [clj-time.core :as t]
             [clojure.core.async :as async]
+            [clojure.data.json :as json]
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
+            [full.async :refer [go-try]]
             [metrics.counters :as counters]
             [metrics.meters :as meters]
             [metrics.timers :as timers]
@@ -374,3 +376,46 @@
         (perform-authorization-checks can-run-as? auth-user descriptor)
         {:descriptor descriptor
          :latest-descriptor latest-descriptor}))))
+
+(defn await-service-goal-fallback-state-locally
+  "Polls fallback-state-atom locally and returns true if the goal state was reached and false if timeout is reached"
+  [fallback-state-atom service-id timeout sleep-duration goal]
+  (async/go
+    (let [goal-reached-predicate (case goal
+                                   "deleted" #(false? (service-exists? % service-id))
+                                   "healthy" #(true? (service-healthy? % service-id))
+                                   "exist" #(true? (service-exists? % service-id)))]
+      (loop [time-left-ms timeout]
+        (let [fallback-state @fallback-state-atom
+              goal-reached? (goal-reached-predicate fallback-state)]
+          (if (or goal-reached? (not (pos? time-left-ms)))
+            goal-reached?
+            (do
+              (async/<! (async/timeout (min sleep-duration time-left-ms)))
+              (recur (- time-left-ms sleep-duration)))))))))
+
+(defn await-service-goal-fallback-state
+  "Polls local router and other routers and returns map router-id->success?"
+  [fallback-state-atom make-inter-router-requests-fn router-id service-id timeout sleep-duration goal]
+  (go-try
+    (let [router-id->response-chan (assoc
+                                     (make-inter-router-requests-fn (str "apps/" service-id "/await/" goal)
+                                                                    :method :get
+                                                                    :config {:query-string (str "timeout=" timeout)})
+                                     router-id (async/go
+                                                 {:body (async/go
+                                                          (json/write-str
+                                                            {:success? (async/<! (await-service-goal-fallback-state-locally
+                                                                                  fallback-state-atom service-id timeout sleep-duration goal))}))}))]
+      (loop [router-id->success? {}
+             [[router-id response-chan] & remaining] (seq router-id->response-chan)]
+        (if (and router-id response-chan)
+          (recur
+            (assoc router-id->success? router-id (some-> response-chan
+                                            async/<!
+                                            :body
+                                            async/<!
+                                            utils/try-parse-json
+                                            (get "success?")))
+            remaining)
+          router-id->success?)))))
