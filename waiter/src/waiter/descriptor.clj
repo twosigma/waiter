@@ -411,7 +411,7 @@
              [[router-id response-chan] & remaining] (seq router-id->response-chan)]
         (if (and router-id response-chan)
           (recur
-            (assoc result router-id (some-> response-chan
+            (assoc router-id->success? router-id (some-> response-chan
                                             async/<!
                                             :body
                                             async/<!
