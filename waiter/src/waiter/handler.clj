@@ -671,7 +671,7 @@
 
 (defn service-await-handler
   "Polls fallback-state-atom until timeout is reached or service does not exist"
-  [fallback-state-atom {{:keys [service-id goal-state]} :route-params
+  [fallback-state-atom {{:keys [goal-state service-id]} :route-params
                         {:keys [src-router-id]} :basic-authentication
                         :keys [request-method]
                         :as request}]
