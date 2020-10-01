@@ -407,7 +407,7 @@
                                                           (json/write-str
                                                             {:success? (async/<! (await-service-goal-fallback-state-locally
                                                                                   fallback-state-atom service-id timeout sleep-duration goal))}))}))]
-      (loop [result {}
+      (loop [router-id->success? {}
              [[router-id response-chan] & remaining] (seq router-id->response-chan)]
         (if (and router-id response-chan)
           (recur
@@ -418,4 +418,4 @@
                                             utils/try-parse-json
                                             (get "success?")))
             remaining)
-          result)))))
+          router-id->success?)))))
