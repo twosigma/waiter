@@ -381,14 +381,13 @@
   "Polls fallback-state-atom locally and returns true if the goal state was reached and false if timeout is reached"
   [fallback-state-atom service-id timeout sleep-duration goal]
   (async/go
-    (let [[get-current-value-fn goal-value] (case goal
-                                              "deleted" [#(service-exists? % service-id) false]
-                                              "healthy" [#(service-healthy? % service-id) true]
-                                              "exist" [#(service-exists? % service-id) true])]
+    (let [goal-reached-predicate (case goal
+                                   "deleted" #(false? (service-exists? % service-id))
+                                   "healthy" #(true? (service-healthy? % service-id))
+                                   "exist" #(true? (service-exists? % service-id)))]
       (loop [time-left-ms timeout]
         (let [fallback-state @fallback-state-atom
-              current (get-current-value-fn fallback-state)
-              goal-reached? (= current goal-value)]
+              goal-reached? (goal-reached-predicate fallback-state)]
           (if (or goal-reached? (not (pos? time-left-ms)))
             goal-reached?
             (do
