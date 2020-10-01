@@ -1625,7 +1625,7 @@
    :service-await-handler-fn (pc/fnk [[:state fallback-state-atom]
                                                wrap-router-auth-fn]
                                         (wrap-router-auth-fn
-                                          (fn service-await-handler-handler [request]
+                                          (fn service-await-handler-fn [request]
                                             (handler/service-await-handler fallback-state-atom request))))
    :service-resume-handler-fn (pc/fnk [[:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn]
                                        [:state kv-store]
