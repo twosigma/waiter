@@ -45,11 +45,20 @@
     (throw error))
   response)
 
+(defn contains-header?
+  "Returns true if the target value if present in the provided header value(s)."
+  [header-value target-value]
+  (if (string? header-value)
+    (= target-value header-value)
+    (some #(= target-value %) header-value)))
+
 (defn make-http-request
   "Makes an asynchronous request to the request-url."
   [^HttpClient http-client request-url &
    {:keys [body headers method query-params] :or {method :get}}]
-  (let [request-headers (-> {"x-cid" (str "token-syncer." (UUID/randomUUID))}
+  (let [authorization-header (System/getenv "AUTHORIZATION_HEADER")
+        request-headers (-> (cond-> {"x-cid" (str "token-syncer." (UUID/randomUUID))}
+                              authorization-header (assoc "authorization" authorization-header))
                             (merge headers)
                             walk/stringify-keys)
         request-options (cond-> {:headers request-headers
@@ -60,13 +69,16 @@
     (-> (let [method-fn (method->http-fn method)
               {:keys [headers status] :as response} (-> (method-fn http-client request-url request-options)
                                                         async/<!!)]
-          (if (and (= 401 status) (= "Negotiate" (get headers "www-authenticate")))
+          (if (and (= 401 status)
+                   (contains-header? (get headers "www-authenticate") "Negotiate"))
             (do
               (log/info "using spnego auth to make request" request-url)
               (->> (assoc request-options :auth (spnego/spnego-authentication (URI. request-url)))
                    (method-fn http-client request-url)
                    async/<!!))
-            response))
+            (do
+              (log/debug "received response" (select-keys response [:headers :status]))
+              response)))
         report-response-error)))
 
 (defn- parse-json-data
