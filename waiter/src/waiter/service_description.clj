@@ -340,6 +340,18 @@
                      :status http-400-bad-request
                      :log-level :warn}))))
 
+(defn- adjust-default-min-instances
+  "Adjusts the min-instances if the max-instances is provided without min-instances and
+   the max-instances is smaller than the default min-instances."
+  [default-parameters {:strs [max-instances min-instances]}]
+  (let [default-min-instances (get default-parameters "min-instances")]
+    (cond-> default-parameters
+      (and (integer? max-instances)
+           (nil? min-instances)
+           (integer? default-min-instances)
+           (> default-min-instances max-instances))
+      (assoc "min-instances" (max max-instances minimum-min-instances)))))
+
 (defn- compute-profile-defaults
   "Returns the default parameters for the specified allowed-keys in the profile.
    Throws an error if the profile is not supported.
@@ -351,7 +363,9 @@
       (validate-profile-parameter profile->defaults profile)
       (let [profile-defaults (get profile->defaults profile)
             profile-parameters (select-keys profile-defaults allowed-keys)]
-        (merge config-defaults profile-parameters)))))
+        (-> config-defaults
+          (adjust-default-min-instances profile-parameters)
+          (merge profile-parameters))))))
 
 (defn compute-service-defaults
   "Returns the default service parameters for the specified profile.
@@ -371,19 +385,10 @@
 
 (defn merge-defaults
   "Merges the defaults into the existing service description."
-  [{:strs [profile max-instances min-instances] :as service-description-without-defaults}
-   service-description-defaults profile->defaults metric-group-mappings]
-  (->
-    (let [service-defaults (compute-service-defaults service-description-defaults profile->defaults profile)
-          default-min-instances (get service-defaults "min-instances")]
-      (cond-> service-defaults
-        ;; adjust the min-instances if the max-instances is provided without min-instances and
-        ;; the max-instances is smaller than the default min-instances
-        (and (integer? max-instances)
-             (nil? min-instances)
-             (integer? default-min-instances)
-             (> default-min-instances max-instances))
-        (assoc "min-instances" (max max-instances minimum-min-instances))))
+  [{:strs [profile] :as service-description-without-defaults} service-description-defaults profile->defaults metric-group-mappings]
+  (-> service-description-defaults
+    (compute-service-defaults profile->defaults profile)
+    (adjust-default-min-instances service-description-without-defaults)
     (merge service-description-without-defaults)
     (metric-group-filter metric-group-mappings)))
 

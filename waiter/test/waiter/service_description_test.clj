@@ -2208,6 +2208,23 @@
                 "min-instances" 2}
                (merge-defaults {"max-instances" 2} {"min-instances" 3}
                                profile->defaults metric-group-mappings))))
+      (testing "min-instances should be adjusted when only max-instances provided in profile"
+        (is (= {"max-instances" 2
+                "metric-group" "other"
+                "min-instances" 2
+                "profile" "test-profile"}
+               (let [profile->defaults (assoc profile->defaults
+                                         "test-profile" {"max-instances" 2})]
+                 (merge-defaults {"profile" "test-profile"} {"min-instances" 3}
+                                 profile->defaults metric-group-mappings))))
+        (is (= {"max-instances" 2
+                "metric-group" "other"
+                "min-instances" 1
+                "profile" "test-profile"}
+               (let [profile->defaults (assoc profile->defaults
+                                         "test-profile" {"max-instances" 2})]
+                 (merge-defaults {"profile" "test-profile"} {"min-instances" 1}
+                                 profile->defaults metric-group-mappings)))))
       (testing "min-instances should not be updated when provided without max-instances"
         (is (= {"metric-group" "other"
                 "min-instances" 4}
