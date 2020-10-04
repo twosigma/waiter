@@ -524,7 +524,8 @@
          {:api-server-response
           {:kind "ReplicaSetList"
            :apiVersion "apps/v1"
-           :items [{:metadata {:name "test-app-1234"
+           :items [{:metadata {:creationTimestamp "2019-08-01T00:00:00Z"
+                               :name "test-app-1234"
                                :namespace "myself"
                                :labels {:app "test-app-1234"
                                         :waiter/cluster "waiter"
@@ -537,7 +538,8 @@
                     :status {:replicas 2
                              :readyReplicas 2
                              :availableReplicas 2}}
-                   {:metadata {:name "test-app-6789"
+                   {:metadata {:creationTimestamp "2019-08-05T00:00:00Z"
+                               :name "test-app-6789"
                                :namespace "myself"
                                :labels {:app "test-app-6789"
                                         :waiter/cluster "waiter"
@@ -554,18 +556,21 @@
           :expected-result
           [(scheduler/make-Service {:id "test-app-1234"
                                     :instances 2
+                                    :k8s/replicaset-creation-timestamp "2019-08-01T00:00:00.000Z"
                                     :k8s/replicaset-annotations {}
                                     :task-count 2
                                     :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
            (scheduler/make-Service {:id "test-app-6789"
                                     :instances 3
+                                    :k8s/replicaset-creation-timestamp "2019-08-05T00:00:00.000Z"
                                     :k8s/replicaset-annotations {}
                                     :task-count 3
                                     :task-stats {:running 3 :healthy 1 :unhealthy 2 :staged 0}})]}
          {:api-server-response
           {:kind "ReplicaSetList"
            :apiVersion "apps/v1"
-           :items [{:metadata {:name "test-app-abcd"
+           :items [{:metadata {:creationTimestamp "2019-09-07T00:00:00Z"
+                               :name "test-app-abcd"
                                :namespace "myself"
                                :labels {:app "test-app-abcd"
                                         :waiter/cluster "waiter"
@@ -579,7 +584,8 @@
                              :readyReplicas 2
                              :availableReplicas 2}}
                    {:mismatched-replicaset "should be ignored"}
-                   {:metadata {:name "test-app-wxyz"
+                   {:metadata {:creationTimestamp "2019-10-15T00:00:00Z"
+                               :name "test-app-wxyz"
                                :namespace "myself"
                                :labels {:app "test-app-wxyz"
                                         :waiter/cluster "waiter"
@@ -596,11 +602,13 @@
           :expected-result
           [(scheduler/make-Service {:id "test-app-abcd"
                                     :instances 2
+                                    :k8s/replicaset-creation-timestamp "2019-09-07T00:00:00.000Z"
                                     :k8s/replicaset-annotations {}
                                     :task-count 2
                                     :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
            (scheduler/make-Service {:id "test-app-wxyz"
                                     :instances 3
+                                    :k8s/replicaset-creation-timestamp "2019-10-15T00:00:00.000Z"
                                     :k8s/replicaset-annotations {}
                                     :task-count 3
                                     :task-stats {:running 3 :healthy 1 :unhealthy 2 :staged 0}})]}
@@ -608,7 +616,8 @@
          {:api-server-response
           {:kind "ReplicaSetList"
            :apiVersion "apps/v1"
-           :items [{:metadata {:name "test-app-4321"
+           :items [{:metadata {:creationTimestamp "2020-03-04T05:06:07Z"
+                               :name "test-app-4321"
                                :namespace "myself"
                                :labels {:app "test-app-4321"
                                         :waiter/cluster "waiter"
@@ -625,6 +634,7 @@
           :expected-result
           [(scheduler/make-Service {:id "test-app-4321"
                                     :instances 3
+                                    :k8s/replicaset-creation-timestamp "2020-03-04T05:06:07.000Z"
                                     :k8s/replicaset-annotations {}
                                     :task-count 3
                                     :task-stats {:running 2 :healthy 1 :unhealthy 1 :staged 1}})]}
@@ -632,7 +642,8 @@
          {:api-server-response
           {:kind "ReplicaSetList"
            :apiVersion "apps/v1"
-           :items [{:metadata {:name "test-app-9999"
+           :items [{:metadata {:creationTimestamp "2020-01-02T03:04:05Z"
+                               :name "test-app-9999"
                                :namespace "myself"
                                :labels {:app "test-app-9999"
                                         :waiter/cluster "waiter"
@@ -649,6 +660,7 @@
           :expected-result
           [(scheduler/make-Service {:id "test-app-9999"
                                     :instances 0
+                                    :k8s/replicaset-creation-timestamp "2020-01-02T03:04:05.000Z"
                                     :k8s/replicaset-annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"}
                                     :task-count 0
                                     :task-stats {:running 0, :healthy 0, :unhealthy 0, :staged 0}})]}]]
@@ -665,7 +677,8 @@
   (let [rs-response
         {:kind "ReplicaSetList"
          :apiVersion "apps/v1"
-         :items [{:metadata {:name "test-app-1234"
+         :items [{:metadata {:creationTimestamp "2020-01-02T03:04:05Z"
+                             :name "test-app-1234"
                              :namespace "myself"
                              :labels {:app "test-app-1234"
                                       :waiter/cluster "waiter"
@@ -678,7 +691,8 @@
                   :status {:replicas 2
                            :readyReplicas 2
                            :availableReplicas 2}}
-                 {:metadata {:name "test-app-6789"
+                 {:metadata {:creationTimestamp "2020-09-08T07:06:05Z"
+                             :name "test-app-6789"
                              :namespace "myself"
                              :labels {:app "test-app-6789"
                                       :waiter/cluster "waiter"
@@ -808,6 +822,7 @@
         expected (hash-map
                    (scheduler/make-Service {:id "test-app-1234"
                                             :instances 2
+                                            :k8s/replicaset-creation-timestamp "2020-01-02T03:04:05.000Z"
                                             :k8s/replicaset-annotations {:waiter/revision-timestamp "2020-09-22T20:33:33.000Z"}
                                             :task-count 2
                                             :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
@@ -865,6 +880,7 @@
 
                    (scheduler/make-Service {:id "test-app-6789"
                                             :instances 3
+                                            :k8s/replicaset-creation-timestamp "2020-09-08T07:06:05.000Z"
                                             :k8s/replicaset-annotations {}
                                             :task-count 3
                                             :task-stats {:running 3 :healthy 1 :unhealthy 2 :staged 0}})
