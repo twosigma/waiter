@@ -697,6 +697,8 @@
                (utils/clj->json-response {:success? (async/<!
                                                       (descriptor/await-service-goal-fallback-state-locally
                                                         fallback-state-atom service-id parsed-timeout parsed-sleep-duration goal-state))
+                                          :fallback-state {:exists? (descriptor/service-exists? @fallback-state-atom service-id)
+                                                           :healthy? (descriptor/service-healthy? @fallback-state-atom service-id)}
                                           :service-id service-id}))
         (utils/exception->response (ex-info "Only GET supported" {:log-level :info
                                               :request-method request-method
