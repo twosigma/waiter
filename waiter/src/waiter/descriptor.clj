@@ -438,7 +438,7 @@
                                                   (vals
                                                     (<? (await-service-goal-fallback-state fallback-state-atom make-inter-router-requests-async-fn router-id service-id router-comm-timeout-ms sleep-duration-ms "healthy"))))))
           service-exists? (or
-                            (and ping-success? service-healthy?)
+                            service-healthy?
                             (if ping-timeout?
                               (service-exists? fallback-state service-id)
                               (every?
