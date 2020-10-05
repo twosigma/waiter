@@ -400,11 +400,11 @@
                     should-poll? (and (= http-200-ok response-status)
                                       (pos? timeout))
                     routers-agree (when should-poll?
-                                    (every?
-                                      true?
-                                      (vals
-                                        (<?
-                                          (descriptor/await-service-goal-fallback-state fallback-state-atom make-inter-router-requests-fn router-id service-id timeout sleep-duration-ms goal)))))
+                                    (->> (descriptor/await-service-goal-fallback-state fallback-state-atom make-inter-router-requests-fn router-id service-id timeout sleep-duration-ms goal)
+                                         (<?)
+                                         (vals)
+                                         :success?
+                                         (every? true?)))
                     response-body-map (cond-> {:service-id service-id,
                                                :success (= http-200-ok response-status)}
                                               (some? routers-agree) (assoc :routers-agree routers-agree)

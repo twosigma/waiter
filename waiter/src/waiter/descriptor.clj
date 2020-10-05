@@ -395,7 +395,8 @@
               (recur (- time-left-ms sleep-duration)))))))))
 
 (defn await-service-goal-fallback-state
-  "Polls local router and other routers and returns map router-id->success?"
+  "Polls local router and other routers and returns map router-id->result where the result
+  is a map of {:success? :fallback-state {:exists? healthy?}}"
   [fallback-state-atom make-inter-router-requests-fn router-id service-id timeout sleep-duration goal]
   (go-try
     (let [router-id->response-chan (assoc
@@ -406,47 +407,52 @@
                                                  {:body (async/go
                                                           (json/write-str
                                                             {:success? (async/<! (await-service-goal-fallback-state-locally
-                                                                                  fallback-state-atom service-id timeout sleep-duration goal))}))}))]
-      (loop [router-id->success? {}
+                                                                                   fallback-state-atom service-id timeout sleep-duration goal))
+                                                             :fallback-state {:exists? (service-exists? @fallback-state-atom service-id)
+                                                                              :healthy? (service-healthy? @fallback-state-atom service-id)}}))}))
+          extract-result-fn (fn [result]
+                              {:success? (get result "success?")
+                               :fallback-state {:exists? (get-in result ["fallback-state", "exists?"])
+                                                :healthy? (get-in result ["fallback-state", "healthy?"])}})]
+      (loop [router-id->result {}
              [[router-id response-chan] & remaining] (seq router-id->response-chan)]
         (if (and router-id response-chan)
           (recur
-            (assoc router-id->success? router-id (some-> response-chan
-                                            async/<!
-                                            :body
-                                            async/<!
-                                            utils/try-parse-json
-                                            (get "success?")))
+            (assoc router-id->result router-id (some-> response-chan
+                                                       async/<!
+                                                       :body
+                                                       async/<!
+                                                       utils/try-parse-json
+                                                       extract-result-fn))
             remaining)
-          router-id->success?)))))
+          router-id->result)))))
 
 (defn extract-service-state
   "Extract the service state which is consistent on all routers. The ping-result determines what checks are made."
   [router-id retrieve-service-status-label-fn fallback-state-atom make-inter-router-requests-async-fn service-id ping-result]
   (go-try
-    (let [fallback-state @fallback-state-atom
-          router-comm-timeout-ms 5000
+    (let [router-comm-timeout-ms 5000
           sleep-duration-ms 100
-          ping-timeout? (= ping-result :timed-out)
-          ping-success? (= ping-result :received-response)
-          _ (when ping-timeout?
-              (log/info "skipping inter router checks as ping timed out"))
-          service-healthy? (if ping-timeout?
-                             (service-healthy? fallback-state service-id)
-                             (and ping-success?
-                                  (->> (await-service-goal-fallback-state fallback-state-atom make-inter-router-requests-async-fn router-id service-id router-comm-timeout-ms sleep-duration-ms "healthy")
-                                       (<?)
-                                       (vals)
-                                       (every? true?))))
-          service-exists? (or
-                            service-healthy?
-                            (if ping-timeout?
-                              (service-exists? fallback-state service-id)
-                              (every?
-                                true?
-                                (vals
-                                  (<? (await-service-goal-fallback-state fallback-state-atom make-inter-router-requests-async-fn router-id service-id router-comm-timeout-ms sleep-duration-ms "exist"))))))]
-      {:exists? service-exists?
-       :healthy? service-healthy?
-       :service-id service-id
-       :status (retrieve-service-status-label-fn service-id)})))
+          reduce-results (fn [router-service-state-list]
+                           {:healthy? (every?
+                                        #(true? (get-in % [:fallback-state :healthy?]))
+                                        router-service-state-list)
+                            :exists? (every?
+                                       #(true? (get-in % [:fallback-state :exists?]))
+                                       router-service-state-list)})
+          get-final-fallback-state (fn [event]
+                                     (go-try
+                                       (->> (await-service-goal-fallback-state fallback-state-atom make-inter-router-requests-async-fn router-id service-id router-comm-timeout-ms sleep-duration-ms event)
+                                            <?
+                                            vals
+                                            reduce-results)))
+          final-fallback-state (case ping-result
+                                 :timed-out (do
+                                              (log/info "skipping inter router checks because ping timed out")
+                                              {:healthy? (service-healthy? @fallback-state-atom service-id)
+                                               :exists? (service-exists? @fallback-state-atom service-id)})
+                                 :received-response (<? (get-final-fallback-state "healthy"))
+                                 :else (<? (get-final-fallback-state "exist")))]
+      (merge final-fallback-state
+             {:service-id service-id
+              :status (retrieve-service-status-label-fn service-id)}))))

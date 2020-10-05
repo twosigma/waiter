@@ -1126,8 +1126,18 @@
             goal-state "healthy"
             make-inter-router-requests-async-fn (fn [endpoint & _]
                                                   (is (= endpoint (str "apps/" service-id "/await/" goal-state)))
-                                                  {"r1" (async/go {:body (async/go (json/write-str {"success?" true}))})
-                                                   "r2" (async/go {:body (async/go (json/write-str {"success?" true}))})})
+                                                  {"r1" (async/go
+                                                          {:body (async/go
+                                                                   (json/write-str
+                                                                     {:success? true
+                                                                      :fallback-state {:exists? true
+                                                                                       :healthy? true}}))})
+                                                   "r2" (async/go
+                                                          {:body (async/go
+                                                                   (json/write-str
+                                                                     {:success? true
+                                                                      :fallback-state {:exists? true
+                                                                                       :healthy? true}}))})})
             fallback-state-atom (atom {:available-service-ids #{"s1"}
                                        :healthy-service-ids #{"s1"}})
             service-state (<?? (extract-service-state router-id retrieve-service-status-label-fn fallback-state-atom make-inter-router-requests-async-fn service-id ping-result))]
@@ -1149,16 +1159,21 @@
       (let [ping-result :received-response
             goal-state "healthy"
             make-inter-router-requests-async-fn (fn [endpoint & _]
-                                                  (cond
-                                                    (= endpoint (str "apps/" service-id "/await/" goal-state))
-                                                    {"r1" (async/go {:body (async/go (json/write-str {"success?" true}))})
-                                                     "r2" (async/go {:body (async/go (json/write-str {"success?" false}))})}
-                                                    (= endpoint (str "apps/" service-id "/await/" "exist"))
-                                                    {"r1" (async/go {:body (async/go (json/write-str {"success?" true}))})
-                                                     "r2" (async/go {:body (async/go (json/write-str {"success?" true}))})}
-                                                    :else (is false)))
+                                                  (is (= endpoint (str "apps/" service-id "/await/" goal-state)))
+                                                  {"r1" (async/go
+                                                          {:body (async/go
+                                                                   (json/write-str
+                                                                     {:success? true
+                                                                      :fallback-state {:exists? true
+                                                                                       :healthy? true}}))})
+                                                   "r2" (async/go
+                                                          {:body (async/go
+                                                                   (json/write-str
+                                                                     {:success? false
+                                                                      :fallback-state {:exists? true
+                                                                                       :healthy? false}}))})})
             fallback-state-atom (atom {:available-service-ids #{"s1"}
-                                       :healthy-service-ids #{}})
+                                       :healthy-service-ids #{"s1"}})
             service-state (<?? (extract-service-state router-id retrieve-service-status-label-fn fallback-state-atom make-inter-router-requests-async-fn service-id ping-result))]
         (is (= (:service-id service-state) service-id))
         (is (true? (:exists? service-state)))
