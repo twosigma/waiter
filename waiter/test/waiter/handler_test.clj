@@ -839,10 +839,10 @@
             timeout 2000
             update-delay 1000
             request (assoc request :query-string (str "timeout=" timeout "&sleep-duration=" (* 10 timeout)))
-            start-time (System/currentTimeMillis)
             _ (async/go
                 (async/<! (async/timeout update-delay))
                 (reset! fallback-state-atom goal-fallback-state))
+            start-time (System/currentTimeMillis)
             {:keys [body headers status]} (async/<!! (service-await-handler fallback-state-atom request))
             end-time (System/currentTimeMillis)
             parsed-body (json/read-str body)]
@@ -857,10 +857,10 @@
             timeout 10000
             update-delay 2000
             request-query (assoc request :query-string (str "timeout=" timeout))
-            start-time (System/currentTimeMillis)
             _ (async/go
                 (async/<! (async/timeout update-delay))
                 (reset! fallback-state-atom {:available-service-ids #{} :healthy-service-ids #{}}))
+            start-time (System/currentTimeMillis)
             {:keys [body headers status]} (async/<!! (service-await-handler fallback-state-atom request-query))
             end-time (System/currentTimeMillis)
             parsed-body (json/read-str body)]
