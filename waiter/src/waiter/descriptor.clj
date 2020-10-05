@@ -433,10 +433,11 @@
               (log/info "skipping inter router checks as ping timed out"))
           service-healthy? (if ping-timeout?
                              (service-healthy? fallback-state service-id)
-                             (and ping-success? (every?
-                                                  true?
-                                                  (vals
-                                                    (<? (await-service-goal-fallback-state fallback-state-atom make-inter-router-requests-async-fn router-id service-id router-comm-timeout-ms sleep-duration-ms "healthy"))))))
+                             (and ping-success?
+                                  (->> (await-service-goal-fallback-state fallback-state-atom make-inter-router-requests-async-fn router-id service-id router-comm-timeout-ms sleep-duration-ms "healthy")
+                                       (<?)
+                                       (vals)
+                                       (every? true?))))
           service-exists? (or
                             service-healthy?
                             (if ping-timeout?
