@@ -1504,8 +1504,8 @@
                                   (oidc/oidc-enabled-request-handler oidc-authenticator waiter-hostnames request))))
    :not-found-handler-fn (pc/fnk [] handler/not-found-handler)
    :ping-service-handler (pc/fnk [[:daemons router-state-maintainer]
-                                  [:state fallback-state-atom router-id user-agent-version]
                                   [:routines make-inter-router-requests-async-fn]
+                                  [:state fallback-state-atom router-id user-agent-version]
                                   process-request-handler-fn process-request-wrapper-fn wrap-secure-request-fn]
                            (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                  user-agent (str "waiter-ping/" user-agent-version)
