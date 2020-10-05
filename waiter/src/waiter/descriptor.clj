@@ -429,8 +429,8 @@
           sleep-duration-ms 100
           ping-timeout? (= ping-result :timed-out)
           ping-success? (= ping-result :received-response)
-          _ (when ping-timeout? (log/info (:ping-result ping-result)
-                                          "is :timed-out; therefore skipping inter router checks and defaulting to local service exists? and healthy? checks"))
+          _ (when ping-timeout?
+              (log/info "skipping inter router checks as ping timed out"))
           service-healthy? (if ping-timeout?
                              (service-healthy? fallback-state service-id)
                              (and ping-success? (every?
