@@ -403,8 +403,7 @@
                                     (->> (descriptor/await-service-goal-fallback-state fallback-state-atom make-inter-router-requests-fn router-id service-id timeout sleep-duration-ms goal)
                                          (<?)
                                          (vals)
-                                         :success?
-                                         (every? true?)))
+                                         (every? #(true? (:success? %)))))
                     response-body-map (cond-> {:service-id service-id,
                                                :success (= http-200-ok response-status)}
                                               (some? routers-agree) (assoc :routers-agree routers-agree)

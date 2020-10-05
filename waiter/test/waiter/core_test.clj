@@ -435,7 +435,7 @@
                        :state {:kv-store nil
                                :router-id "router-id"
                                :scheduler-interactions-thread-pool scheduler-interactions-thread-pool
-                               :fallback-state-atom (atom {:available-service-ids #{}})}
+                               :fallback-state-atom (atom {:available-service-ids #{} :healthy-service-ids #{}})}
                        :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-handler-fn ((:service-handler-fn request-handlers) configuration)}]
 
