@@ -46,7 +46,7 @@
   response)
 
 (defn contains-header?
-  "Returns true if the target value if present in the provided header value(s)."
+  "Returns true if the target value is present in the provided header value(s)."
   [header-value target-value]
   (if (string? header-value)
     (= target-value header-value)
