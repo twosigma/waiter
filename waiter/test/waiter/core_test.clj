@@ -510,7 +510,6 @@
           (is (= http-500-internal-server-error status))
           (is (= expected-json-response-headers headers)))))
 
-    (println "START")
     (testing "service-handler:delete-multiple-router-response-agree"
       (reset! delete-service-result-atom {:result :deleted, :service-id service-id})
       (reset! make-inter-router-requests-async-fn-atom (constantly {"r1" (async/go {:body (async/go (json/write-str {"success?" true}))})
