@@ -1137,8 +1137,7 @@
 
     (testing (str fn-name ":ping-result-timed-out")
       (let [ping-result :timed-out
-            make-inter-router-requests-async-fn (fn [& _]
-                                                  (throw (Exception. "Should not call this function")))
+            make-inter-router-requests-async-fn (fn [& _] (is false))
             fallback-state-atom (atom {:available-service-ids #{"s1"}
                                        :healthy-service-ids #{"s1"}})
             service-state (<?? (extract-service-state router-id retrieve-service-status-label-fn fallback-state-atom make-inter-router-requests-async-fn service-id ping-result))]
