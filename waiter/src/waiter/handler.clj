@@ -403,7 +403,7 @@
                                     (->> (descriptor/await-service-goal-fallback-state fallback-state-atom make-inter-router-requests-fn router-id service-id timeout sleep-duration-ms goal)
                                          (<?)
                                          (vals)
-                                         (every? #(true? (:success? %)))))
+                                         (every? :goal-success?)))
                     response-body-map (cond-> {:service-id service-id,
                                                :success (= http-200-ok response-status)}
                                               (some? routers-agree) (assoc :routers-agree routers-agree)
@@ -693,12 +693,9 @@
                                   :status http-400-bad-request
                                   :timeout timeout
                                   :sleep-duration sleep-duration})))
-               (utils/clj->json-response {:success? (async/<!
-                                                      (descriptor/await-service-goal-fallback-state-locally
-                                                        fallback-state-atom service-id parsed-timeout parsed-sleep-duration goal-state))
-                                          :fallback-state {:exists? (descriptor/service-exists? @fallback-state-atom service-id)
-                                                           :healthy? (descriptor/service-healthy? @fallback-state-atom service-id)}
-                                          :service-id service-id}))
+               (utils/clj->json-response (async/<!
+                                           (descriptor/await-service-goal-fallback-state-locally
+                                             fallback-state-atom service-id parsed-timeout parsed-sleep-duration goal-state))))
         (utils/exception->response (ex-info "Only GET supported" {:log-level :info
                                               :request-method request-method
                                               :status http-405-method-not-allowed})
