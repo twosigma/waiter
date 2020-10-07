@@ -512,8 +512,8 @@
 
     (testing "service-handler:delete-multiple-router-response-agree"
       (reset! delete-service-result-atom {:result :deleted, :service-id service-id})
-      (reset! make-inter-router-requests-async-fn-atom (constantly {"r1" (async/go {:body (async/go (json/write-str {"success?" true}))})
-                                                                    "r2" (async/go {:body (async/go (json/write-str {"success?" true}))})}))
+      (reset! make-inter-router-requests-async-fn-atom (constantly {"r1" (async/go {:body (async/go (json/write-str {"goal-success?" true}))})
+                                                                    "r2" (async/go {:body (async/go (json/write-str {"goal-success?" true}))})}))
       (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:query-string "timeout=5000"
                        :request-method :delete
@@ -526,8 +526,8 @@
 
     (testing "service-handler:delete-multiple-router-response-disagree"
       (reset! delete-service-result-atom {:result :deleted, :service-id service-id})
-      (reset! make-inter-router-requests-async-fn-atom (constantly {"r1" (async/go {:body (async/go (json/write-str {"success?" false}))})
-                                                                    "r2" (async/go {:body (async/go (json/write-str {"success?" true}))})}))
+      (reset! make-inter-router-requests-async-fn-atom (constantly {"r1" (async/go {:body (async/go (json/write-str {"goal-success?" false}))})
+                                                                    "r2" (async/go {:body (async/go (json/write-str {"goal-success?" true}))})}))
       (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:query-string "timeout=5000"
                        :request-method :delete
@@ -553,8 +553,8 @@
 
     (testing "service-handler:delete-internal-json-error"
       (reset! delete-service-result-atom {:result :deleted, :service-id service-id})
-      (reset! make-inter-router-requests-async-fn-atom (constantly {"r1" (async/go {:body (async/go (json/write-str {"success?" false}))})
-                                                                    "r2" (async/go {:body (async/go (json/write-str {"success?" true}))})
+      (reset! make-inter-router-requests-async-fn-atom (constantly {"r1" (async/go {:body (async/go (json/write-str {"goal-success?" false}))})
+                                                                    "r2" (async/go {:body (async/go (json/write-str {"goal-success?" true}))})
                                                                     "r3" (async/go {:body (async/go nil)})
                                                                     "r4" (async/go {:body (async/go "non-parsable json")})}))
       (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
