@@ -1129,15 +1129,15 @@
                                                   {"r1" (async/go
                                                           {:body (async/go
                                                                    (json/write-str
-                                                                     {:success? true
-                                                                      :fallback-state {:exists? true
-                                                                                       :healthy? true}}))})
+                                                                     {:goal-success? true
+                                                                      :service-exists? true
+                                                                      :service-healthy? true}))})
                                                    "r2" (async/go
                                                           {:body (async/go
                                                                    (json/write-str
-                                                                     {:success? true
-                                                                      :fallback-state {:exists? true
-                                                                                       :healthy? true}}))})})
+                                                                     {:goal-success? true
+                                                                      :service-exists? true
+                                                                      :service-healthy? true}))})})
             fallback-state-atom (atom {:available-service-ids #{"s1"}
                                        :healthy-service-ids #{"s1"}})
             service-state (<?? (extract-service-state router-id retrieve-service-status-label-fn fallback-state-atom make-inter-router-requests-async-fn service-id ping-result))]
@@ -1163,15 +1163,15 @@
                                                   {"r1" (async/go
                                                           {:body (async/go
                                                                    (json/write-str
-                                                                     {:success? true
-                                                                      :fallback-state {:exists? true
-                                                                                       :healthy? true}}))})
+                                                                     {:goal-success? true
+                                                                      :service-exists? true
+                                                                      :service-healthy? true}))})
                                                    "r2" (async/go
                                                           {:body (async/go
                                                                    (json/write-str
-                                                                     {:success? false
-                                                                      :fallback-state {:exists? true
-                                                                                       :healthy? false}}))})})
+                                                                     {:goal-success? false
+                                                                      :service-exists? true
+                                                                      :service-healthy? false}))})})
             fallback-state-atom (atom {:available-service-ids #{"s1"}
                                        :healthy-service-ids #{"s1"}})
             service-state (<?? (extract-service-state router-id retrieve-service-status-label-fn fallback-state-atom make-inter-router-requests-async-fn service-id ping-result))]
