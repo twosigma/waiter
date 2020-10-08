@@ -16,9 +16,11 @@
 (ns waiter.descriptor-test
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
+            [clojure.data.json :as json]
             [clojure.set :as set]
             [clojure.test :refer :all]
             [clojure.walk :as walk]
+            [full.async :refer [<??]]
             [plumbing.core :as pc]
             [waiter.descriptor :refer :all]
             [waiter.kv :as kv]
@@ -1112,3 +1114,67 @@
                                             "run-as-user" auth-user}
                       :service-preauthorized false}]
       (is (true? (service-invocation-authorized? can-run-as? auth-user descriptor))))))
+
+(deftest test-extract-service-state
+  (let [fn-name "test-extract-service-state"
+        router-id "r1"
+        service-id "s1"
+        retrieve-service-status-label-fn (constantly nil)]
+
+    (testing (str fn-name ":ping-result-received-response")
+      (let [ping-result :received-response
+            goal-state "healthy"
+            make-inter-router-requests-async-fn (fn [endpoint & _]
+                                                  (is (= endpoint (str "apps/" service-id "/await/" goal-state)))
+                                                  {"r1" (async/go
+                                                          {:body (async/go
+                                                                   (json/write-str
+                                                                     {:goal-success? true
+                                                                      :service-exists? true
+                                                                      :service-healthy? true}))})
+                                                   "r2" (async/go
+                                                          {:body (async/go
+                                                                   (json/write-str
+                                                                     {:goal-success? true
+                                                                      :service-exists? true
+                                                                      :service-healthy? true}))})})
+            fallback-state-atom (atom {:available-service-ids #{"s1"}
+                                       :healthy-service-ids #{"s1"}})
+            service-state (<?? (extract-service-state router-id retrieve-service-status-label-fn fallback-state-atom make-inter-router-requests-async-fn service-id ping-result))]
+        (is (= (:service-id service-state) service-id))
+        (is (true? (:exists? service-state)))
+        (is (true? (:healthy? service-state)))))
+
+    (testing (str fn-name ":ping-result-timed-out")
+      (let [ping-result :timed-out
+            make-inter-router-requests-async-fn (fn [& _] (is false))
+            fallback-state-atom (atom {:available-service-ids #{"s1"}
+                                       :healthy-service-ids #{"s1"}})
+            service-state (<?? (extract-service-state router-id retrieve-service-status-label-fn fallback-state-atom make-inter-router-requests-async-fn service-id ping-result))]
+        (is (= (:service-id service-state) service-id))
+        (is (true? (:exists? service-state)))
+        (is (true? (:healthy? service-state)))))
+
+    (testing (str fn-name ":ping-result-unhealthy-service")
+      (let [ping-result :received-response
+            goal-state "healthy"
+            make-inter-router-requests-async-fn (fn [endpoint & _]
+                                                  (is (= endpoint (str "apps/" service-id "/await/" goal-state)))
+                                                  {"r1" (async/go
+                                                          {:body (async/go
+                                                                   (json/write-str
+                                                                     {:goal-success? true
+                                                                      :service-exists? true
+                                                                      :service-healthy? true}))})
+                                                   "r2" (async/go
+                                                          {:body (async/go
+                                                                   (json/write-str
+                                                                     {:goal-success? false
+                                                                      :service-exists? true
+                                                                      :service-healthy? false}))})})
+            fallback-state-atom (atom {:available-service-ids #{"s1"}
+                                       :healthy-service-ids #{"s1"}})
+            service-state (<?? (extract-service-state router-id retrieve-service-status-label-fn fallback-state-atom make-inter-router-requests-async-fn service-id ping-result))]
+        (is (= (:service-id service-state) service-id))
+        (is (true? (:exists? service-state)))
+        (is (false? (:healthy? service-state)))))))

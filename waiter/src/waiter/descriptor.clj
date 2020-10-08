@@ -21,7 +21,8 @@
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
-            [full.async :refer [go-try]]
+            [clojure.walk :as walk]
+            [full.async :refer [<? go-try]]
             [metrics.counters :as counters]
             [metrics.meters :as meters]
             [metrics.timers :as timers]
@@ -378,7 +379,8 @@
          :latest-descriptor latest-descriptor}))))
 
 (defn await-service-goal-fallback-state-locally
-  "Polls fallback-state-atom locally and returns true if the goal state was reached and false if timeout is reached"
+  "Polls fallback-state-atom locally and returns a map
+  {:goal-state :goal-success? :service-exists? service-healthy? :service-id}"
   [fallback-state-atom service-id timeout sleep-duration goal]
   (async/go
     (let [goal-reached-predicate (case goal
@@ -389,13 +391,18 @@
         (let [fallback-state @fallback-state-atom
               goal-reached? (goal-reached-predicate fallback-state)]
           (if (or goal-reached? (not (pos? time-left-ms)))
-            goal-reached?
+            {:goal-success? goal-reached?
+             :goal-state goal
+             :service-exists? (service-exists? fallback-state service-id)
+             :service-healthy? (service-healthy? fallback-state service-id)
+             :service-id service-id}
             (do
               (async/<! (async/timeout (min sleep-duration time-left-ms)))
               (recur (- time-left-ms sleep-duration)))))))))
 
 (defn await-service-goal-fallback-state
-  "Polls local router and other routers and returns map router-id->success?"
+  "Polls local router and other routers and returns map router-id->result where the result
+  is a map of {:goal-state :goal-success? :service-exists? service-healthy? :service-id}"
   [fallback-state-atom make-inter-router-requests-fn router-id service-id timeout sleep-duration goal]
   (go-try
     (let [router-id->response-chan (assoc
@@ -405,17 +412,44 @@
                                      router-id (async/go
                                                  {:body (async/go
                                                           (json/write-str
-                                                            {:success? (async/<! (await-service-goal-fallback-state-locally
-                                                                                  fallback-state-atom service-id timeout sleep-duration goal))}))}))]
-      (loop [router-id->success? {}
+                                                            (async/<! (await-service-goal-fallback-state-locally
+                                                                        fallback-state-atom service-id timeout sleep-duration goal))))}))]
+      (loop [router-id->result {}
              [[router-id response-chan] & remaining] (seq router-id->response-chan)]
         (if (and router-id response-chan)
           (recur
-            (assoc router-id->success? router-id (some-> response-chan
-                                            async/<!
-                                            :body
-                                            async/<!
-                                            utils/try-parse-json
-                                            (get "success?")))
+            (assoc router-id->result router-id (some-> response-chan
+                                                       async/<!
+                                                       :body
+                                                       async/<!
+                                                       utils/try-parse-json
+                                                       walk/keywordize-keys))
             remaining)
-          router-id->success?)))))
+          router-id->result)))))
+
+(defn extract-service-state
+  "Extract the service state which is consistent on all routers. The ping-result determines what checks are made.
+  The value returned is a map {:healthy? :exists? :service-id :status}"
+  [router-id retrieve-service-status-label-fn fallback-state-atom make-inter-router-requests-async-fn service-id ping-result]
+  (go-try
+    (let [router-comm-timeout-ms 5000
+          sleep-duration-ms 100
+          reduce-results (fn [router-service-state-list]
+                           {:healthy? (every? :service-healthy? router-service-state-list)
+                            :exists? (every? :service-exists? router-service-state-list)})
+          get-final-fallback-state (fn [event]
+                                     (go-try
+                                       (->> (await-service-goal-fallback-state fallback-state-atom make-inter-router-requests-async-fn router-id service-id router-comm-timeout-ms sleep-duration-ms event)
+                                            <?
+                                            vals
+                                            reduce-results)))
+          final-fallback-state (case ping-result
+                                 :timed-out (let [fallback-state @fallback-state-atom]
+                                              (log/info "skipping inter router checks because ping timed out")
+                                              {:healthy? (service-healthy? fallback-state service-id)
+                                               :exists? (service-exists? fallback-state service-id)})
+                                 :received-response (<? (get-final-fallback-state "healthy"))
+                                 :else (<? (get-final-fallback-state "exist")))]
+      (assoc final-fallback-state
+        :service-id service-id
+        :status (retrieve-service-status-label-fn service-id)))))

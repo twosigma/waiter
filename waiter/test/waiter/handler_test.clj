@@ -788,63 +788,91 @@
                  :request-method :get
                  :query-string (str "timeout=" 1000)}
         assert-immediate-success
-        (fn [goal-state fallback-state-atom request]
+        (fn [goal-state fallback-state-atom request expected-service-exists? expected-service-healthy?]
           (let [request (assoc-in request [:route-params :goal-state] goal-state)
-                {:keys [body headers status]} (async/<!! (service-await-handler fallback-state-atom request))]
+                {:keys [body headers status]} (async/<!! (service-await-handler fallback-state-atom request))
+                parsed-body (json/read-str body)]
             (is (= http-200-ok status))
             (is (= "application/json" (get headers "content-type")))
-            (is (get (json/read-str body) "success?"))))
+            (is (= (get parsed-body "service-exists?") expected-service-exists?))
+            (is (= (get parsed-body "service-healthy?") expected-service-healthy?))
+            (is (get parsed-body "goal-success?"))))
         assert-force-timeout
-        (fn [timeout goal-state fallback-state-atom request]
+        (fn [timeout goal-state fallback-state-atom request expected-service-exists? expected-service-healthy?]
           (let [request (assoc-in request [:route-params :goal-state] goal-state)
                 start-time (System/currentTimeMillis)
                 {:keys [body headers status]} (async/<!! (service-await-handler fallback-state-atom request))
-                end-time (System/currentTimeMillis)]
+                end-time (System/currentTimeMillis)
+                parsed-body (json/read-str body)]
             (is (= http-200-ok status))
             (is (= "application/json" (get headers "content-type")))
-            (is (not (get (json/read-str body) "success?")))
+            (is (= (get parsed-body "service-exists?") expected-service-exists?))
+            (is (= (get parsed-body "service-healthy?") expected-service-healthy?))
+            (is (not (get parsed-body "goal-success?")))
             (is (>= (- end-time start-time) timeout))))]
 
     (testing (str handler-name ":immediate-success-deleted")
-      (let [fallback-state-atom (atom {:available-service-ids #{"s0"}})]
-        (assert-immediate-success "deleted" fallback-state-atom request)))
+      (let [fallback-state-atom (atom {:available-service-ids #{"s0"} :healthy-service-ids #{"s0"}})]
+        (assert-immediate-success "deleted" fallback-state-atom request false false)))
 
     (testing (str handler-name ":immediate-success-healthy")
       (let [fallback-state-atom (atom {:available-service-ids #{"s1"} :healthy-service-ids #{"s1"}})]
-        (assert-immediate-success "healthy" fallback-state-atom request)))
+        (assert-immediate-success "healthy" fallback-state-atom request true true)))
 
     (testing (str handler-name ":immediate-success-exist")
-      (let [fallback-state-atom (atom {:available-service-ids #{"s1"}})]
-        (assert-immediate-success "exist" fallback-state-atom request)))
+      (let [fallback-state-atom (atom {:available-service-ids #{"s1"} :healthy-service-ids #{}})]
+        (assert-immediate-success "exist" fallback-state-atom request true false)))
 
     (testing (str handler-name ":force-timeout-deleted")
-      (let [fallback-state-atom (atom {:available-service-ids #{"s1"}})]
-        (assert-force-timeout timeout "deleted" fallback-state-atom request)))
+      (let [fallback-state-atom (atom {:available-service-ids #{"s1"} :healthy-service-ids #{"s1"}})]
+        (assert-force-timeout timeout "deleted" fallback-state-atom request true true)))
 
     (testing (str handler-name ":force-timeout-healthy")
-      (let [fallback-state-atom (atom {:available-service-ids #{} :healthy-service-ids #{}})]
-        (assert-force-timeout timeout "healthy" fallback-state-atom request)))
+      (let [fallback-state-atom (atom {:available-service-ids #{"s1"} :healthy-service-ids #{}})]
+        (assert-force-timeout timeout "healthy" fallback-state-atom request true false)))
 
     (testing (str handler-name ":force-timeout-exist")
-      (let [fallback-state-atom (atom {:available-service-ids #{}})]
-        (assert-force-timeout timeout "exist" fallback-state-atom request)))
+      (let [fallback-state-atom (atom {:available-service-ids #{}} :healthy-service-ids #{})]
+        (assert-force-timeout timeout "exist" fallback-state-atom request false false)))
 
     (testing (str handler-name ":success-with-large-sleep-duration")
-      (let [fallback-state-atom (atom {:available-service-ids #{"s1"}})
-            goal-fallback-state {:available-service-ids #{}}
+      (let [fallback-state-atom (atom {:available-service-ids #{"s1"} :healthy-service-ids #{}})
+            goal-fallback-state {:available-service-ids #{} :healthy-service-ids #{}}
             timeout 2000
             update-delay 1000
             request (assoc request :query-string (str "timeout=" timeout "&sleep-duration=" (* 10 timeout)))
-            start-time (System/currentTimeMillis)
             _ (async/go
                 (async/<! (async/timeout update-delay))
                 (reset! fallback-state-atom goal-fallback-state))
+            start-time (System/currentTimeMillis)
             {:keys [body headers status]} (async/<!! (service-await-handler fallback-state-atom request))
-            end-time (System/currentTimeMillis)]
+            end-time (System/currentTimeMillis)
+            parsed-body (json/read-str body)]
         (is (= http-200-ok status))
         (is (= "application/json" (get headers "content-type")))
-        (is (get (json/read-str body) "success?"))
+        (is (= (get parsed-body "service-exists?") false))
+        (is (= (get parsed-body "service-healthy?") false))
+        (is (get parsed-body "goal-success?"))
         (is (<= update-delay (- timeout 50) (- end-time start-time) (+ timeout 50)))))
+
+    (testing (str handler-name ":success-with-update")
+      (let [fallback-state-atom (atom {:available-service-ids #{"s1"} :healthy-service-ids #{}})
+            timeout 10000
+            update-delay 2000
+            request-query (assoc request :query-string (str "timeout=" timeout))
+            _ (async/go
+                (async/<! (async/timeout update-delay))
+                (reset! fallback-state-atom {:available-service-ids #{} :healthy-service-ids #{}}))
+            start-time (System/currentTimeMillis)
+            {:keys [body headers status]} (async/<!! (service-await-handler fallback-state-atom request-query))
+            end-time (System/currentTimeMillis)
+            parsed-body (json/read-str body)]
+        (is (= http-200-ok status))
+        (is (= "application/json" (get headers "content-type")))
+        (is (= (get parsed-body "service-exists?") false))
+        (is (= (get parsed-body "service-healthy?") false))
+        (is (get parsed-body "goal-success?"))
+        (is (<= update-delay (- end-time start-time) timeout))))
 
     (testing (str handler-name ":non-integer-timeout-sleep-duration-params")
       (let [fallback-state-atom (atom {:available-service-ids #{}})

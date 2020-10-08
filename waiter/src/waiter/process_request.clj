@@ -981,4 +981,6 @@
           (utils/clj->json-response
             {:ping-response (select-keys ping-response [:body :headers :result :status])
              :service-description core-service-description
-             :service-state (service-state-fn service-id)}))))))
+             :service-state (fa/<? (service-state-fn service-id (:result ping-response)))})))
+      (catch Exception ex
+        (utils/exception->response ex request)))))
