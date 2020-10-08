@@ -443,11 +443,12 @@
                                             <?
                                             vals
                                             reduce-results)))
+          fallback-state @fallback-state-atom
           final-fallback-state (case ping-result
                                  :timed-out (do
                                               (log/info "skipping inter router checks because ping timed out")
-                                              {:healthy? (service-healthy? @fallback-state-atom service-id)
-                                               :exists? (service-exists? @fallback-state-atom service-id)})
+                                              {:healthy? (service-healthy? fallback-state service-id)
+                                               :exists? (service-exists? fallback-state service-id)})
                                  :received-response (<? (get-final-fallback-state "healthy"))
                                  :else (<? (get-final-fallback-state "exist")))]
       (assoc final-fallback-state
