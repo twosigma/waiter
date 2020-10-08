@@ -450,6 +450,6 @@
                                                :exists? (service-exists? @fallback-state-atom service-id)})
                                  :received-response (<? (get-final-fallback-state "healthy"))
                                  :else (<? (get-final-fallback-state "exist")))]
-      (merge final-fallback-state
-             {:service-id service-id
-              :status (retrieve-service-status-label-fn service-id)}))))
+      (assoc final-fallback-state
+        :service-id service-id
+        :status (retrieve-service-status-label-fn service-id)))))
