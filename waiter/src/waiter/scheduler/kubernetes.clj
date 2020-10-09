@@ -257,21 +257,21 @@
                    :waiter/pod-expired pod-expired})
         true)
 
-      (pos? (compare rs-revision-timestamp revision-timestamp))
-      (do
-        (log/info "instance expired based on pod and replicaset revision timestamps"
-                  {:instance-id instance-id
-                   :revision-timestamp {:pod revision-timestamp :rs rs-revision-timestamp}})
-        true))))
+        (pos? (compare rs-revision-timestamp revision-timestamp))
+        (do
+          (log/info "instance expired based on pod and replicaset revision timestamps"
+                    {:instance-id instance-id
+                     :revision-timestamp {:pod revision-timestamp :rs rs-revision-timestamp}})
+          true))))
 
 (defn pod->ServiceInstance
   "Convert a Kubernetes Pod JSON response into a Waiter Service Instance record."
   [{:keys [api-server-url] :as scheduler} pod]
   (try
     (let [;; waiter-app is the first container we register
-          restart-count (get-in pod [:status :containerStatuses 0 :restartCount] 0)
+          primary-container-restart-count (get-in pod [:status :containerStatuses 0 :restartCount] 0)
           service-id (k8s-object->service-id pod)
-          instance-id (pod->instance-id pod restart-count)
+          instance-id (pod->instance-id pod primary-container-restart-count)
           node-name (get-in pod [:spec :nodeName])
           port0 (or (some-> (get-in pod [:metadata :annotations :waiter/service-port]) (Integer/parseInt))
                     (get-in pod [:spec :containers 0 :ports 0 :containerPort]))
@@ -280,15 +280,25 @@
                           (k8s-object->namespace pod))
           ;; pod phase documentation: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-phase
           {:keys [phase] :as pod-status} (:status pod)
-          container-statuses (get pod-status :containerStatuses)
-          primary-container-status (first container-statuses)
+          init-container-statuses (get pod-status :initContainerStatuses)
+          unready-init-containers-statuses (filter (fn init-container-unready? [{:keys [ready restartCount]}]
+                                                     (and (false? ready) (integer? restartCount)))
+                                                   init-container-statuses)
+          app-container-statuses (get pod-status :containerStatuses)
+          ;; preserve the primary container status as the first entry
+          container-statuses (concat app-container-statuses init-container-statuses)
+          ;; uses restart count from init containers when any of them are not ready
+          pod-restart-count (if (seq unready-init-containers-statuses)
+                              (reduce max (map :restartCount unready-init-containers-statuses))
+                              primary-container-restart-count)
+          primary-container-status (first app-container-statuses)
           pod-annotations (get-in pod [:metadata :annotations])
           pod-started-at (-> pod (get-in [:status :startTime]) timestamp-str->datetime)
           {:keys [waiter/revision-timestamp]} (get-in pod [:metadata :annotations])]
       (scheduler/make-ServiceInstance
         (cond-> {:extra-ports (->> pod-annotations :waiter/port-count Integer/parseInt range next (mapv #(+ port0 %)))
                  :flags (cond-> #{}
-                          (check-expired scheduler service-id instance-id restart-count pod-annotations primary-container-status pod-started-at)
+                          (check-expired scheduler service-id instance-id pod-restart-count pod-annotations primary-container-status pod-started-at)
                           (conj :expired))
                  :healthy? (true? (get primary-container-status :ready))
                  :host (get-in pod [:status :podIP] scheduler/UNKNOWN-IP)
@@ -297,9 +307,9 @@
                  :k8s/app-name (get-in pod [:metadata :labels :app])
                  :k8s/namespace (k8s-object->namespace pod)
                  :k8s/pod-name (k8s-object->id pod)
-                 :k8s/restart-count restart-count
+                 :k8s/restart-count primary-container-restart-count
                  :k8s/user run-as-user
-                 :log-directory (log-dir-path run-as-user restart-count)
+                 :log-directory (log-dir-path run-as-user primary-container-restart-count)
                  :port port0
                  :service-id service-id
                  :started-at pod-started-at}
