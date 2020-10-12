@@ -721,7 +721,7 @@
                          :nodeName "node-0.k8s.com"}
                   :status {:phase "Pending"
                            :startTime "2014-09-13T00:24:46Z"
-                           :containerStatuses [{:name "test-app-1234"
+                           :containerStatuses [{:name "waiter-app"
                                                 :ready false
                                                 :restartCount 0
                                                 :state {:waiting {:reason "ContainerCreating"}}}]}}
@@ -738,7 +738,7 @@
                   :status {:phase "Running"
                            :podIP "10.141.141.11"
                            :startTime "2014-09-13T00:24:46Z"
-                           :containerStatuses [{:name "test-app-1234"
+                           :containerStatuses [{:name "waiter-app"
                                                 :ready true
                                                 :restartCount 0
                                                 :state {:running {}}}]}}
@@ -755,7 +755,7 @@
                          :nodeName "node-2.k8s.com"}
                   :status {:podIP "10.141.141.12"
                            :startTime "2014-09-13T00:24:47Z"
-                           :containerStatuses [{:name "test-app-1234"
+                           :containerStatuses [{:name "waiter-app"
                                                 :ready true
                                                 :restartCount 0}]}}
                  {:metadata {:name "test-app-1234-abcd3"
@@ -771,7 +771,7 @@
                   :status {:phase "Failed"
                            :podIP "10.141.141.13"
                            :startTime "2014-09-13T00:24:13Z"
-                           :containerStatuses [{:name "test-app-1234"
+                           :containerStatuses [{:name "waiter-app"
                                                 :ready true
                                                 :restartCount 0
                                                 :state {:running {}}}]}}
@@ -786,7 +786,7 @@
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.13"
                            :startTime "2014-09-13T00:24:35Z"
-                           :containerStatuses [{:name "test-app-6789"
+                           :containerStatuses [{:name "waiter-app"
                                                 :ready true
                                                 :restartCount 0}]}}
                  {:metadata {:name "test-app-6789-abcd2"
@@ -800,7 +800,7 @@
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.14"
                            :startTime "2014-09-13T00:24:37Z"
-                           :containerStatuses [{:name "test-app-6789"
+                           :containerStatuses [{:name "waiter-app"
                                                 :lastState {:terminated {:exitCode 255
                                                                          :reason "Error"
                                                                          :startedAt "2014-09-13T00:24:36Z"}}
@@ -816,8 +816,24 @@
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.15"
                            :startTime "2014-09-13T00:24:38Z"
-                           :containerStatuses [{:name "test-app-6789"
-                                                :restartCount 0}]}}]}
+                           :containerStatuses [{:name "waiter-app"
+                                                :restartCount 0}]}}
+                 {:metadata {:name "test-app-6789-abcd4"
+                             :namespace "myself"
+                             :labels {:app "test-app-6789"
+                                      :waiter/cluster "waiter"
+                                      :waiter/user "myself"
+                                      :waiter/service-hash "test-app-6789"}
+                             :annotations {:waiter/port-count "1"
+                                           :waiter/service-id "test-app-6789"}}
+                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
+                  :status {:podIP "10.141.141.16"
+                           :startTime "2014-09-13T00:24:48Z"
+                           :containerStatuses [{:name "waiter-app"
+                                                :restartCount 0}]
+                           :initContainerStatuses [{:name "waiter-setup"
+                                                    :ready false
+                                                    :restartCount 200}]}}]}
 
         expected (hash-map
                    (scheduler/make-Service {:id "test-app-1234"
@@ -832,7 +848,7 @@
                         :healthy? false
                         :host "0.0.0.0"
                         :id "test-app-1234.test-app-1234-abcd0-0"
-                        :k8s/container-statuses [{:name "test-app-1234" :ready false :reason "ContainerCreating":state :waiting}]
+                        :k8s/container-statuses [{:name "waiter-app" :ready false :reason "ContainerCreating":state :waiting}]
                         :k8s/node-name "node-0.k8s.com"
                         :k8s/pod-phase "Pending"
                         :k8s/revision-timestamp "2020-09-22T20:00:00.000Z"
@@ -845,7 +861,7 @@
                         :healthy? true
                         :host "10.141.141.11"
                         :id "test-app-1234.test-app-1234-abcd1-0"
-                        :k8s/container-statuses [{:name "test-app-1234" :ready true :state :running}]
+                        :k8s/container-statuses [{:name "waiter-app" :ready true :state :running}]
                         :k8s/pod-phase "Running"
                         :k8s/revision-timestamp "2020-09-22T20:11:11.000Z"
                         :log-directory "/home/myself/r0"
@@ -857,7 +873,7 @@
                         :healthy? true
                         :host "10.141.141.12"
                         :id "test-app-1234.test-app-1234-abcd2-0"
-                        :k8s/container-statuses [{:name "test-app-1234" :ready true}]
+                        :k8s/container-statuses [{:name "waiter-app" :ready true}]
                         :k8s/node-name "node-2.k8s.com"
                         :k8s/revision-timestamp "2020-09-22T20:22:22.000Z"
                         :log-directory "/home/myself/r0"
@@ -870,7 +886,7 @@
                         :healthy? false
                         :host "10.141.141.13"
                         :id "test-app-1234.test-app-1234-abcd3-0"
-                        :k8s/container-statuses [{:name "test-app-1234" :ready true :state :running}]
+                        :k8s/container-statuses [{:name "waiter-app" :ready true :state :running}]
                         :k8s/pod-phase "Failed"
                         :k8s/revision-timestamp "2020-09-22T20:11:11.000Z"
                         :log-directory "/home/myself/r0"
@@ -889,7 +905,7 @@
                        {:healthy? true
                         :host "10.141.141.13"
                         :id "test-app-6789.test-app-6789-abcd1-0"
-                        :k8s/container-statuses [{:name "test-app-6789" :ready true}]
+                        :k8s/container-statuses [{:name "waiter-app" :ready true}]
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-6789"
@@ -898,7 +914,7 @@
                        {:healthy? false
                         :host "10.141.141.14"
                         :id "test-app-6789.test-app-6789-abcd2-1"
-                        :k8s/container-statuses [{:name "test-app-6789"}]
+                        :k8s/container-statuses [{:name "waiter-app"}]
                         :log-directory "/home/myself/r1"
                         :port 8080
                         :service-id "test-app-6789"
@@ -907,18 +923,29 @@
                        {:healthy? false
                         :host "10.141.141.15"
                         :id "test-app-6789.test-app-6789-abcd3-0"
-                        :k8s/container-statuses [{:name "test-app-6789"}]
+                        :k8s/container-statuses [{:name "waiter-app"}]
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-6789"
-                        :started-at (du/str-to-date "2014-09-13T00:24:38Z" k8s-timestamp-format)})]
+                        :started-at (du/str-to-date "2014-09-13T00:24:38Z" k8s-timestamp-format)})
+                     (scheduler/make-ServiceInstance
+                       {:flags #{:expired}
+                        :healthy? false
+                        :host "10.141.141.16"
+                        :id "test-app-6789.test-app-6789-abcd4-0"
+                        :k8s/container-statuses [{:name "waiter-app"}
+                                                 {:name "waiter-setup" :ready false}]
+                        :log-directory "/home/myself/r0"
+                        :port 8080
+                        :service-id "test-app-6789"
+                        :started-at (du/str-to-date "2014-09-13T00:24:48Z" k8s-timestamp-format)})]
                     :failed-instances
                     [(scheduler/make-ServiceInstance
                        {:exit-code 255
                         :healthy? false
                         :host "10.141.141.14"
                         :id "test-app-6789.test-app-6789-abcd2-0"
-                        :k8s/container-statuses [{:name "test-app-6789"}]
+                        :k8s/container-statuses [{:name "waiter-app"}]
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-6789"
@@ -1524,7 +1551,7 @@
                          :nodeName "node-1.k8s.com"}
                   :status {:podIP "10.141.141.11"
                            :startTime "2014-09-13T00:24:46Z"
-                           :containerStatuses [{:name "test-app-1234"
+                           :containerStatuses [{:name "waiter-app"
                                                 :ready true
                                                 :restartCount 0}]}}
                  {:metadata {:name "test-app-1234-abcd2"
@@ -1538,7 +1565,7 @@
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.12"
                            :startTime "2014-09-13T00:24:47Z"
-                           :containerStatuses [{:name "test-app-1234"
+                           :containerStatuses [{:name "waiter-app"
                                                 :restartCount 0}]}}]}
 
         pods-watch-updates
@@ -1555,7 +1582,7 @@
                    :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                    :status {:podIP "10.141.141.12"
                             :startTime "2014-09-13T00:24:47Z"
-                            :containerStatuses [{:name "test-app-1234"
+                            :containerStatuses [{:name "waiter-app"
                                                  :ready true
                                                  :restartCount 0}]}}}
          {:type "ADDED"
@@ -1571,7 +1598,7 @@
                    :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                    :status {:podIP "10.141.141.13"
                             :startTime "2014-09-13T00:24:48Z"
-                            :containerStatuses [{:name "test-app-1234"
+                            :containerStatuses [{:name "waiter-app"
                                                  :restartCount 0}]}}}
          {:type "DELETED"
           :object {:metadata {:name "test-app-1234-abcd1"
@@ -1771,7 +1798,7 @@
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.11"
                            :startTime "2014-09-13T00:24:46Z"
-                           :containerStatuses [{:name "test-app-1234"
+                           :containerStatuses [{:name "waiter-app"
                                                 :ready true
                                                 :restartCount 0}]}}
                  {:metadata {:name "test-app-1234-abcd2"
@@ -1785,7 +1812,7 @@
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.12"
                            :startTime "2014-09-13T00:24:47Z"
-                           :containerStatuses [{:name "test-app-1234"
+                           :containerStatuses [{:name "waiter-app"
                                                 :restartCount 0}]}}]}
 
         pods-response'
@@ -1803,7 +1830,7 @@
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.11"
                            :startTime "2014-09-13T00:24:46Z"
-                           :containerStatuses [{:name "test-app-1234"
+                           :containerStatuses [{:name "waiter-app"
                                                 :ready true
                                                 :restartCount 0}]}}
                  {:metadata {:name "test-app-1234-abcd2"
@@ -1817,7 +1844,7 @@
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.12"
                            :startTime "2014-09-13T00:24:47Z"
-                           :containerStatuses [{:name "test-app-1234"
+                           :containerStatuses [{:name "waiter-app"
                                                 :ready true
                                                 :restartCount 0}]}}
                  {:metadata {:name "test-app-1234-abcd3"
@@ -1832,7 +1859,7 @@
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.13"
                            :startTime "2014-09-13T00:24:48Z"
-                           :containerStatuses [{:name "test-app-1234"
+                           :containerStatuses [{:name "waiter-app"
                                                 :restartCount 0}]}}]}
 
         pods-watch-updates
@@ -1848,7 +1875,7 @@
                    :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                    :status {:podIP "10.141.141.12"
                             :startTime "2014-09-13T00:24:47Z"
-                            :containerStatuses [{:name "test-app-1234"
+                            :containerStatuses [{:name "waiter-app"
                                                  :ready true
                                                  :restartCount 0}]}}}
          {:type "ADDED"
@@ -1863,7 +1890,7 @@
                    :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                    :status {:podIP "10.141.141.13"
                             :startTime "2014-09-13T00:24:48Z"
-                            :containerStatuses [{:name "test-app-1234"
+                            :containerStatuses [{:name "waiter-app"
                                                  :restartCount 0}]}}}
          {:type "DELETED"
           :object {:metadata {:name "test-app-1234-abcd1"
