@@ -199,7 +199,7 @@
          parsed-value)
        old-value))))
 
-(def ^:const one-hour-in-millis (-> 1 t/hours t/in-millis))
+(def ^:const async-request-timeout-limit-in-millis (-> 4 t/hours t/in-millis))
 
 (defn prepare-request-properties
   [instance-request-properties waiter-headers]
@@ -207,7 +207,7 @@
     (update :async-check-interval-ms lookup-configured-timeout
             (headers/get-waiter-header waiter-headers "async-check-interval") "async request check interval")
     (update :async-request-timeout-ms lookup-configured-timeout
-            (headers/get-waiter-header waiter-headers "async-request-timeout") "async request timeout" one-hour-in-millis)
+            (headers/get-waiter-header waiter-headers "async-request-timeout") "async request timeout" async-request-timeout-limit-in-millis)
     (update :initial-socket-timeout-ms lookup-configured-timeout
             (headers/get-waiter-header waiter-headers "timeout") "socket timeout")
     (update :queue-timeout-ms lookup-configured-timeout
