@@ -146,6 +146,7 @@
      (s/optional-key :oidc-authorize-uri) non-empty-string
      (s/optional-key :oidc-default-mode) valid-oidc-mode
      (s/optional-key :oidc-num-challenge-cookies-allowed-in-request) positive-int
+     (s/optional-key :oidc-redirect-user-agent-products) #{non-empty-string}
      (s/optional-key :oidc-token-uri) non-empty-string
      (s/required-key :subject-key) s/Keyword
      (s/optional-key :subject-regex) s/Regex

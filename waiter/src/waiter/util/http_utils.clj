@@ -208,13 +208,12 @@
       (and (grpc? (:headers request) (:client-protocol request))
            (= "14" (get-in response [:headers "grpc-status"])))))
 
-(defn browser-request?
+(defn request-has-user-agent-product?
   "Looks at the user-agent header to determine if the request came from a browser.
    This is useful, e.g., determining whether the client should be asked to handle redirects.
    Current implementation checks for the presence of chrome or mozilla is based on our heuristic
    of inspecting common user-agents to determine if it is a browser:
    https://www.networkinghowtos.com/howto/common-user-agent-list/"
-  [request]
+  [user-agent-products request]
   (when-let [user-agent (some-> request (get-in [:headers "user-agent"]) str/lower-case)]
-    (or (str/includes? user-agent "mozilla")
-        (str/includes? user-agent "chrome"))))
+    (some #(str/includes? user-agent %) user-agent-products)))

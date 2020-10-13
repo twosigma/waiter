@@ -267,6 +267,10 @@
                               ;; the OIDC auth flow will not be triggered on 401 responses.
                               ;; The default value is 20
                               :oidc-num-challenge-cookies-allowed-in-request 20
+                              ;; (optional) the user-agent header substrings to determine if the request came from a browser.
+                              ;; Relies on the heuristic of inspecting common user-agents to determine if it is a browser.
+                              ;; The default value is #{"chrome" "mozilla"}
+                              :oidc-redirect-user-agent-products #{"chrome" "mozilla"}
                               ;; (optional) url of the authorization server get token endpoint:
                               :oidc-token-uri "http://127.0.0.1:8040/id-token"
                               ;; The keyword used to retrieve the subject from the access token claims

@@ -424,7 +424,8 @@
                                       :allow-oidc-auth-services? allow-oidc-auth-services?
                                       :jwt-auth-server (Object.)
                                       :oidc-authorize-uri "http://www.test.com/authorize"
-                                      :oidc-num-challenge-cookies-allowed-in-request 20}
+                                      :oidc-num-challenge-cookies-allowed-in-request 20
+                                      :oidc-redirect-user-agent-products #{"chrome" "mozilla"}}
                   oidc-auth-handler (wrap-auth-handler oidc-authenticator request-handler)]
               (doseq [status [http-200-ok http-301-moved-permanently http-400-bad-request http-401-unauthorized http-403-forbidden]]
                 (doseq [waiter-api-call? [true false]]
@@ -451,7 +452,8 @@
                                   :allow-oidc-auth-services? false
                                   :jwt-auth-server (Object.)
                                   :oidc-authorize-uri "http://www.test.com/authorize"
-                                  :oidc-num-challenge-cookies-allowed-in-request 20}
+                                  :oidc-num-challenge-cookies-allowed-in-request 20
+                                  :oidc-redirect-user-agent-products #{"chrome" "mozilla"}}
               oidc-auth-handler (wrap-auth-handler oidc-authenticator request-handler)]
           (doseq [status [http-200-ok http-301-moved-permanently http-400-bad-request http-401-unauthorized http-403-forbidden]]
             (doseq [waiter-api-call? [true false]]
@@ -477,7 +479,8 @@
                                     :allow-oidc-auth-services? true
                                     :jwt-auth-server (Object.)
                                     :oidc-authorize-uri "http://www.test.com/authorize"
-                                    :oidc-num-challenge-cookies-allowed-in-request 20}
+                                    :oidc-num-challenge-cookies-allowed-in-request 20
+                                    :oidc-redirect-user-agent-products #{"chrome" "mozilla"}}
                 oidc-auth-handler (wrap-auth-handler oidc-authenticator request-handler)]
             (doseq [status [http-200-ok http-301-moved-permanently http-400-bad-request http-401-unauthorized http-403-forbidden]]
               (doseq [waiter-api-call? [true false]]
@@ -500,7 +503,8 @@
                                     :allow-oidc-auth-services? true
                                     :jwt-auth-server (Object.)
                                     :oidc-authorize-uri "http://www.test.com/authorize"
-                                    :oidc-num-challenge-cookies-allowed-in-request num-challenge-cookies-allowed-in-request}
+                                    :oidc-num-challenge-cookies-allowed-in-request num-challenge-cookies-allowed-in-request
+                                    :oidc-redirect-user-agent-products #{"chrome" "mozilla"}}
                 oidc-auth-handler (wrap-auth-handler oidc-authenticator request-handler)]
             (let [cookie-header (str/join ";" (take num-challenge-cookies-allowed-in-request challenge-cookies))]
               (is (= {:headers {"cookie" cookie-header
@@ -527,7 +531,8 @@
 
 (deftest test-supports-redirect?
   (let [oidc-authority "www.auth.com:1234"
-        supports-redirect-helper? (partial supports-redirect? oidc-authority)]
+        oidc-redirect-user-agent-products #{"chrome" "mozilla"}
+        supports-redirect-helper? (partial supports-redirect? oidc-authority oidc-redirect-user-agent-products)]
     (is (not (supports-redirect-helper? {:headers {"accept-redirect-auth" "www.test.com"}})))
     (is (not (supports-redirect-helper? {:headers {"accept-redirect" "no"
                                                    "accept-redirect-auth" oidc-authority}})))
@@ -573,14 +578,19 @@
       (is (instance? OidcAuthenticator (make-jwt-authenticator (assoc config :allow-oidc-auth-services? true))))
       (is (instance? OidcAuthenticator (make-jwt-authenticator (assoc config :allow-oidc-auth-services? false))))
       (doseq [oidc-default-mode [:relaxed :strict]]
-        (is (instance? OidcAuthenticator (make-jwt-authenticator (assoc config :oidc-default-mode oidc-default-mode))))))
+        (is (instance? OidcAuthenticator (make-jwt-authenticator (assoc config :oidc-default-mode oidc-default-mode)))))
+      (is (instance? OidcAuthenticator (make-jwt-authenticator (assoc config :oidc-num-challenge-cookies-allowed-in-request 10))))
+      (is (instance? OidcAuthenticator (make-jwt-authenticator (assoc config :oidc-redirect-user-agent-products #{"foo"})))))
 
     (testing "invalid configuration"
       (is (thrown? Throwable (make-jwt-authenticator (assoc config :allow-oidc-auth-api? "true"))))
       (is (thrown? Throwable (make-jwt-authenticator (assoc config :allow-oidc-auth-services? "true"))))
       (is (thrown? Throwable (make-jwt-authenticator (dissoc config :oidc-authorize-uri))))
       (is (thrown? Throwable (make-jwt-authenticator (assoc config :oidc-default-mode :disabled))))
+      (is (thrown? Throwable (make-jwt-authenticator (assoc config :oidc-num-challenge-cookies-allowed-in-request 0))))
       (is (thrown? Throwable (make-jwt-authenticator (assoc config :oidc-num-challenge-cookies-allowed-in-request "20"))))
+      (is (thrown? Throwable (make-jwt-authenticator (assoc config :oidc-redirect-user-agent-products ["foo"]))))
+      (is (thrown? Throwable (make-jwt-authenticator (assoc config :oidc-redirect-user-agent-products "20"))))
       (is (thrown? Throwable (make-jwt-authenticator (dissoc config :password)))))))
 
 (deftest test-oidc-enabled-on-request?
