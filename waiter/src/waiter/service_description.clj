@@ -487,7 +487,7 @@
                                            (attach-error-message-for-parameter
                                              parameter->issues :authentication
                                              (str "authentication must be 'disabled', 'standard', "
-                                                  "or the specific authentication scheme if supported by the configured authenticator, e.g. 'saml'."))
+                                                  "or the specific authentication scheme if supported by the configured authenticator."))
                                            (attach-error-message-for-parameter
                                              parameter->issues :backend-proto "backend-proto must be one of h2, h2c, http, or https.")
                                            (attach-error-message-for-parameter

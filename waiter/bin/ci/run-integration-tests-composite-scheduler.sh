@@ -32,17 +32,6 @@ pushd ${SEDIMENT_DIR}
 mvn clean package
 popd
 
-# set SAML authenticator variables
-export SAML_IDP_PORT=8443
-export SAML_IDP_URI="http://localhost:${SAML_IDP_PORT}/"
-export SAML_IDP_CERT_URI="${WAITER_DIR}/test-files/saml/idp.crt"
-: ${WAITER_PORT:=9091}
-export WAITER_URI=127.0.0.1:${WAITER_PORT}
-if [[ $TEST_SELECTOR =~ fast$ ]]; then
-    # Start SAML IdP test server
-    ${DIR}/saml-idp-server-setup.sh
-fi
-
 # start the JWKS server
 JWKS_PORT=6666
 ${WAITER_DIR}/bin/ci/jwks-server-setup.sh ${JWKS_PORT}

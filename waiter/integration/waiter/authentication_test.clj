@@ -5,11 +5,10 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
-            [reaver :as reaver]
             [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
             [waiter.util.utils :as utils])
-  (:import (java.net HttpURLConnection URI URL URLEncoder)))
+  (:import (java.net URI)))
 
 (deftest ^:parallel ^:integration-fast test-default-composite-authenticator
   (testing-using-waiter-url
@@ -62,73 +61,6 @@
                                                                    :token token))]
           (assert-response-status response http-400-bad-request)
           (is (str/includes? body error-message)))))))
-
-(defn- perform-saml-authentication
-  "Perform authentication with an identity provider service.
-   Return map of waiter acs endpoint, saml-response and relay-state"
-  [saml-redirect-location]
-  (let [make-connection (fn [request-url]
-                          (let [^HttpURLConnection http-connection (.openConnection (URL. request-url))]
-                            (.setDoOutput http-connection false)
-                            (.setDoInput http-connection true)
-                            (.setRequestMethod http-connection "GET")
-                            (.connect http-connection)
-                            http-connection))
-        ^HttpURLConnection http-connection (make-connection saml-redirect-location)]
-    (is (= http-200-ok (.getResponseCode http-connection)))
-    (reaver/extract (reaver/parse (slurp (.getInputStream http-connection))) [:waiter-saml-acs-endpoint :saml-response :relay-state]
-                    "form" (reaver/attr :action)
-                    "form input[name=SAMLResponse]" (reaver/attr :value)
-                    "form input[name=RelayState]" (reaver/attr :value))))
-
-(deftest ^:parallel ^:integration-fast test-saml-authentication
-  (testing-using-waiter-url
-    (when (supports-saml-authentication? waiter-url)
-      (let [token (rand-name)
-            response (post-token waiter-url (-> (kitchen-params)
-                                              (assoc
-                                                :authentication "saml"
-                                                :name token
-                                                :permitted-user "*"
-                                                :run-as-user (retrieve-username)
-                                                :token token)))]
-        (assert-response-status response http-200-ok)
-        (try
-          (let [{:keys [headers] :as response} (make-request waiter-url "/request-info" :headers {:x-waiter-token token})
-                _ (assert-response-status response http-302-moved-temporarily)
-                saml-redirect-location (get headers "location")
-                {:keys [relay-state saml-response waiter-saml-acs-endpoint]} (perform-saml-authentication saml-redirect-location)
-                {:keys [body] :as response} (make-request waiter-saml-acs-endpoint ""
-                                                          :body (str "SAMLResponse=" (URLEncoder/encode saml-response)
-                                                                     "&RelayState=" (URLEncoder/encode relay-state))
-                                                          :headers {"content-type" "application/x-www-form-urlencoded"}
-                                                          :method :post)
-                _ (assert-response-status response http-200-ok)
-                {:keys [waiter-saml-auth-redirect-endpoint saml-auth-data]}
-                (reaver/extract (reaver/parse body) [:waiter-saml-auth-redirect-endpoint :saml-auth-data]
-                                "form" (reaver/attr :action)
-                                "form input[name=saml-auth-data]" (reaver/attr :value))
-                _ (is (= (str "http://" waiter-url "/waiter-auth/saml/auth-redirect") waiter-saml-auth-redirect-endpoint))
-                {:keys [cookies headers] :as response} (make-request waiter-url "/waiter-auth/saml/auth-redirect"
-                                                                     :body (str "saml-auth-data=" (URLEncoder/encode saml-auth-data))
-                                                                     :headers {"content-type" "application/x-www-form-urlencoded"}
-                                                                     :method :post)
-                _ (assert-response-status response http-303-see-other)
-                cookie-fn (fn [cookies name] (some #(when (= name (:name %)) %) cookies))
-                auth-cookie (cookie-fn cookies "x-waiter-auth")
-                _ (is (not (nil? auth-cookie)))
-                _ (is (> (:max-age auth-cookie) (-> 1 t/hours t/in-seconds)))
-                _ (is (= (str "http://" waiter-url "/request-info") (get headers "location")))
-                {:keys [body service-id] :as response} (make-request-with-debug-info
-                                                         {:x-waiter-token token}
-                                                         #(make-request waiter-url "/request-info" :headers % :cookies cookies))
-                _ (assert-response-status response http-200-ok)
-                body-json (json/read-str (str body))]
-            (with-service-cleanup
-              service-id
-              (is (= (retrieve-username) (get-in body-json ["headers" "x-waiter-auth-principal"])))))
-          (finally
-            (delete-token-and-assert waiter-url token)))))))
 
 (defn- retrieve-access-token
   [realm]

@@ -320,17 +320,13 @@
   (testing "Test validating composite scheduler settings"
     (let [graphite-server-port 5555
           port 12345
-          run-as-user "foo"
-          saml-idp-uri "saml-idp-uri"
-          saml-idp-cert-uri "saml-idp-cert-uri"]
+          run-as-user "foo"]
       (with-redefs [env (fn [name _]
                           (case name
                             "GRAPHITE_SERVER_PORT" (str graphite-server-port)
                             "JWKS_SERVER_URL" "http://127.0.0.1:8040/keys"
                             "OIDC_AUTHORIZE_URL" "http://127.0.0.1:8040/authorize"
                             "OIDC_TOKEN_URL" "http://127.0.0.1:8040/id-token"
-                            "SAML_IDP_CERT_URI" saml-idp-cert-uri
-                            "SAML_IDP_URI" saml-idp-uri
                             "WAITER_AUTH_RUN_AS_USER" run-as-user
                             "WAITER_PORT" (str port)
                             (throw (ex-info "Unexpected environment variable" {:name name}))))]
@@ -338,9 +334,7 @@
           (is (nil? (s/check settings-schema settings)))
           (is (= graphite-server-port (get-in settings [:metrics-config :codahale-reporters :graphite :port])))
           (is (= port (:port settings)))
-          (is (= run-as-user (get-in settings [:authenticator-config :composite :authentication-providers "one-user" :run-as-user])))
-          (is (= saml-idp-uri (get-in settings [:authenticator-config :composite :authentication-providers "saml" :idp-uri])))
-          (is (= saml-idp-cert-uri (get-in settings [:authenticator-config :composite :authentication-providers "saml" :idp-cert-uri]))))))))
+          (is (= run-as-user (get-in settings [:authenticator-config :composite :authentication-providers "one-user" :run-as-user]))))))))
 
 (deftest test-sanitize-settings
   (is (= {:example {:foo {:kind :test

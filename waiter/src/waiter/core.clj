@@ -143,8 +143,7 @@
                                      :async-result-handler-fn
                                      ["/status/" :request-id "/" :router-id "/" :service-id "/" :host "/" :port "/" [#".+" :location]]
                                      :async-status-handler-fn}
-                     "waiter-auth" {"" :waiter-auth-handler-fn
-                                    ["/" :authentication-provider "/" :operation] :waiter-auth-callback-handler-fn}
+                     "waiter-auth" :waiter-auth-handler-fn
                      "waiter-consent" {"" :waiter-acknowledge-consent-handler-fn
                                        ["/" [#".*" :path]] :waiter-request-consent-handler-fn}
                      "waiter-interstitial" {["/" [#".*" :path]] :waiter-request-interstitial-handler-fn}
@@ -1837,9 +1836,6 @@
                                                       token->service-description-template token->token-metadata
                                                       service-description->service-id consent-cookie-value add-encoded-cookie
                                                       consent-expiry-days request))))))
-   :waiter-auth-callback-handler-fn (pc/fnk [[:state authenticator]]
-                                      (fn waiter-auth-callback-handler-fn [request]
-                                        (auth/process-callback authenticator request)))
    :waiter-auth-handler-fn (pc/fnk [wrap-secure-request-fn]
                              (wrap-secure-request-fn
                                (fn waiter-auth-handler-fn

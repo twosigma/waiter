@@ -50,17 +50,6 @@
   Object
   (get-authentication-providers [_] []))
 
-(defprotocol CallbackAuthenticator
-  (process-callback [this request]
-    "Process any requests that might come in after initiating authentication. e.g. receive a request
-     with an authentication assertion after redirecting a user to authenticate with an identity provider."))
-
-(extend-protocol CallbackAuthenticator
-  Object
-  (process-callback [this _]
-    (throw (ex-info (str this " does not support authentication callbacks.")
-                    {:status http-400-bad-request}))))
-
 (defn create-auth-cookie-value
   "Creates the auth cookie value using the principal, expiry time and metadata.
    The principal, creation-time-millis and age-in-seconds must be non-nil.

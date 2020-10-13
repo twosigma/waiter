@@ -93,15 +93,11 @@
                  [org.clojure/tools.logging "1.1.0"]
                  [org.clojure/tools.namespace "1.0.0"]
                  [org.clojure/tools.reader "1.3.2"]
-                 [org.opensaml/opensaml "2.6.4"
-                  :exclusions [commons-codec]]
                  [org.slf4j/slf4j-log4j12 "1.7.30"
                   :exclusions [log4j]]
                  [potemkin "0.4.5"]
                  [prismatic/plumbing "0.5.5"]
                  [prismatic/schema "1.1.12"]
-                 [reaver "0.1.3"
-                  :scope "test"]
                  [ring/ring-core "1.8.1"
                   :exclusions [org.clojure/tools.reader]]
                  [ring/ring-ssl "0.3.0"
