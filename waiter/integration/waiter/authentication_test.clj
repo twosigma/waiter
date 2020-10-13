@@ -308,8 +308,12 @@
     (is (= (retrieve-username) (get headers "x-waiter-auth-user")) assertion-message)
     (when-not (= auth-method "cookie")
       (assert-auth-cookie set-cookie assertion-message))
-    (let [body-json (try-parse-json body)]
-      (is (= access-token (get-in body-json ["headers" "x-waiter-jwt"])) assertion-message))))
+    (let [body-json (try-parse-json body)
+          jwt-payload (try-parse-json (get-in body-json ["headers" "x-waiter-jwt-payload"]))]
+      (log/info "jwt payload is" jwt-payload)
+      (is (= access-token (get-in body-json ["headers" "x-waiter-jwt"])) assertion-message)
+      (is (map? jwt-payload) assertion-message)
+      (is (every? #(contains? jwt-payload %) ["aud" "exp" "iss" "sub"]) assertion-message))))
 
 (deftest ^:parallel ^:integration-fast test-jwt-authentication-token-realm
   (testing-using-waiter-url

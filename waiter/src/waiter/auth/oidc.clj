@@ -151,12 +151,14 @@
                     result-map-or-throwable (jwt/extract-claims jwt-validator key-id->jwk request access-token)
                     _ (when (instance? Throwable result-map-or-throwable)
                         (throw result-map-or-throwable))
-                    {:keys [expiry-time subject]} result-map-or-throwable
+                    {:keys [claims expiry-time subject]} result-map-or-throwable
                     _ (log/info "authenticated subject is" subject "and oidc mode is" oidc-mode)
                     ;; use token expiry time only in strict mode, else allow default value for cookie age to be chosen
                     auth-cookie-age-in-seconds (when (= :strict oidc-mode)
                                                  (- expiry-time (jwt/current-time-secs)))
-                    auth-params-map (auth/build-auth-params-map :oidc subject {:jwt-access-token access-token})]
+                    auth-metadata {:jwt-access-token access-token
+                                   :jwt-payload (utils/clj->json claims)}
+                    auth-params-map (auth/build-auth-params-map :oidc subject auth-metadata)]
                 (auth/handle-request-auth
                   (constantly
                     (let [waiter-token (utils/uri-string->host redirect-uri)
