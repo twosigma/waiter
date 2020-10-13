@@ -61,6 +61,7 @@
                                                                                    not-empty))
    (s/required-key :instance-request-properties) {(s/required-key :async-check-interval-ms) schema/positive-int
                                                   (s/required-key :async-request-max-status-checks) schema/positive-int
+                                                  (s/required-key :async-request-max-timeout-ms) schema/positive-int
                                                   (s/required-key :async-request-timeout-ms) schema/positive-int
                                                   (s/required-key :client-buffer-size) schema/positive-int
                                                   (s/required-key :client-connection-idle-timeout-ms) schema/positive-int
@@ -291,6 +292,7 @@
    :hostname "localhost"
    :instance-request-properties {:async-check-interval-ms 3000
                                  :async-request-max-status-checks 50
+                                 :async-request-max-timeout-ms (-> 4 t/hours t/in-millis)
                                  :async-request-timeout-ms 60000
                                  :client-buffer-size 32768 ;; 32 KiB
                                  :client-connection-idle-timeout-ms 10000 ; 10 seconds

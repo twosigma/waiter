@@ -199,15 +199,13 @@
          parsed-value)
        old-value))))
 
-(def ^:const async-request-timeout-limit-in-millis (-> 4 t/hours t/in-millis))
-
 (defn prepare-request-properties
-  [instance-request-properties waiter-headers]
+  [{:keys [async-request-max-timeout-ms] :as instance-request-properties} waiter-headers]
   (-> instance-request-properties
     (update :async-check-interval-ms lookup-configured-timeout
             (headers/get-waiter-header waiter-headers "async-check-interval") "async request check interval")
     (update :async-request-timeout-ms lookup-configured-timeout
-            (headers/get-waiter-header waiter-headers "async-request-timeout") "async request timeout" async-request-timeout-limit-in-millis)
+            (headers/get-waiter-header waiter-headers "async-request-timeout") "async request timeout" async-request-max-timeout-ms)
     (update :initial-socket-timeout-ms lookup-configured-timeout
             (headers/get-waiter-header waiter-headers "timeout") "socket timeout")
     (update :queue-timeout-ms lookup-configured-timeout
