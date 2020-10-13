@@ -116,7 +116,7 @@
                                        websocket-config
                                        {:ring-handler (-> (core/ring-handler-factory waiter-request?-fn handlers)
                                                         (cors/wrap-cors-preflight
-                                                          cors-validator (:max-age cors-config) discover-service-parameters-fn)
+                                                          cors-validator (:max-age cors-config) discover-service-parameters-fn waiter-request?-fn)
                                                         core/wrap-error-handling
                                                         (core/wrap-debug generate-log-url-fn)
                                                         (core/attach-waiter-api-middleware waiter-request?-fn)

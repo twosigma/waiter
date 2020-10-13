@@ -830,6 +830,24 @@
                       "principal" x-waiter-auth-principal}
                      (some-> response :body try-parse-json))
                   (str response)))
+            (let [{{:keys [max-age]} :cors-config} (waiter-settings waiter-url)
+                  access-control-request-headers "content-type, cookie"
+                  origin "https://foo.bar.com"
+                  {:keys [headers] :as response}
+                  (make-request waiter-url "/.well-known/auth/expires-at"
+                                :cookies request-cookies
+                                :headers {"access-control-request-method" "GET"
+                                          "access-control-request-headers" access-control-request-headers
+                                          "origin" origin}
+                                :method :options)]
+              (assert-response-status response http-200-ok)
+              (assert-waiter-response response)
+              (is (= {"access-control-allow-credentials" "true"
+                      "access-control-allow-headers" access-control-request-headers
+                      "access-control-allow-methods" (str/join ", " schema/http-methods)
+                      "access-control-allow-origin" origin
+                      "access-control-max-age" (str max-age)}
+                     (utils/filterm #(str/starts-with? (str (key %)) "access-control-") headers))))
             (let [{:keys [cookies] :as response}
                   (make-request waiter-url "/.well-known/auth/keep-alive"
                                 :cookies request-cookies

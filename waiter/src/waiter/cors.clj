@@ -53,19 +53,23 @@
 
 (defn wrap-cors-preflight
   "Preflight request handling middleware.
-  This middleware needs to precede any authentication middleware since CORS preflight
-  requests do not support authentication."
-  [handler cors-validator max-age discover-service-parameters-fn]
-  (fn wrap-cors-preflight-fn [{:keys [headers] :as request}]
+   This middleware needs to precede any authentication middleware since CORS preflight requests do not support authentication."
+  [handler cors-validator max-age discover-service-parameters-fn waiter-request?]
+  (fn wrap-cors-preflight-fn [request]
     (if (preflight-request? request)
-      (let [discovered-parameters (discover-service-parameters-fn headers)]
+      (do
         (counters/inc! (metrics/waiter-counter "requests" "cors-preflight"))
         (let [{:keys [headers request-method]} request
               {:strs [origin]} headers]
-          (when-not origin
+          (when (str/blank? origin)
             (throw (ex-info "No origin provided" {:status http-403-forbidden})))
-          (let [{:keys [allowed? summary allowed-methods]}
-                (preflight-check cors-validator (assoc request :waiter-discovery discovered-parameters))]
+          (let [{:keys [allowed? allowed-methods summary]}
+                (if (waiter-request? request)
+                  {:allowed? true :summary {:type "waiter-request"}}
+                  (->> headers
+                    (discover-service-parameters-fn)
+                    (assoc request :waiter-discovery)
+                    (preflight-check cors-validator)))]
             (when-not allowed?
               (log/info "cors preflight request not allowed" summary)
               (throw (ex-info "Cross-origin request not allowed" {:cors-checks summary
@@ -76,10 +80,10 @@
             (log/info "cors preflight request allowed" summary)
             (let [{:strs [access-control-request-headers]} headers]
               (utils/attach-waiter-source
-                {:headers {"access-control-allow-origin" origin
+                {:headers {"access-control-allow-credentials" "true"
                            "access-control-allow-headers" access-control-request-headers
                            "access-control-allow-methods" (str/join ", " (or allowed-methods schema/http-methods))
-                           "access-control-allow-credentials" "true"
+                           "access-control-allow-origin" origin
                            "access-control-max-age" (str max-age)}
                  :status http-200-ok})))))
       (handler request))))
