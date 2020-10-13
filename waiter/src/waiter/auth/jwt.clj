@@ -504,8 +504,10 @@
           (make-401-response-updater request))
         ;; non-401 response avoids further downstream handler processing
         (utils/exception->response result-map-or-throwable request))
-      (let [{:keys [expiry-time subject]} result-map-or-throwable
-            auth-params-map (auth/build-auth-params-map :jwt subject {:jwt-access-token access-token})
+      (let [{:keys [claims expiry-time subject]} result-map-or-throwable
+            auth-metadata {:jwt-access-token access-token
+                           :jwt-payload (utils/clj->json claims)}
+            auth-params-map (auth/build-auth-params-map :jwt subject auth-metadata)
             auth-cookie-age-in-seconds (- expiry-time (current-time-secs))]
         (auth/handle-request-auth
           request-handler request auth-params-map password auth-cookie-age-in-seconds)))))

@@ -155,7 +155,10 @@
           subject-key :subject
           current-time-ms (System/currentTimeMillis)
           current-time-secs (long (/ current-time-ms 1000))
-          expires-at (+ current-time-secs 1000)]
+          expires-at (+ current-time-secs 1000)
+          jwt-subject "john.doe"
+          jwt-payload {:id identifier
+                       :sub jwt-subject}]
 
       (with-redefs [cookie-support/add-cookie (fn [response name value age-in-seconds http-only?]
                                                 (is (if (= name auth/AUTH-COOKIE-EXPIRES-AT)
@@ -178,8 +181,9 @@
                                                (let [result-chan (async/promise-chan)]
                                                  (async/>!! result-chan access-token)
                                                  result-chan))
-                    jwt/extract-claims (constantly {:expiry-time expires-at
-                                                    :subject "john.doe"})
+                    jwt/extract-claims (constantly {:claims jwt-payload
+                                                    :expiry-time expires-at
+                                                    :subject jwt-subject})
                     t/now (constantly (tc/from-long current-time-ms))]
         (let [request {:headers {"cookie" (str oidc-challenge-cookie-prefix identifier "=" challenge-cookie)}
                        :query-string (str "code=" access-code "&state=" state-code)
@@ -192,17 +196,19 @@
               expected-expires-at (+ current-time-secs expected-age)]
           (is (= {:cookies {"x-auth-expires-at" {:age expected-age :value (str expected-expires-at)}
                             "x-waiter-auth" {:age expected-age
-                                             :value ["john.doe" current-time-ms {:expires-at expected-expires-at
-                                                                                 :jwt-access-token access-token}]}
+                                             :value [jwt-subject current-time-ms {:expires-at expected-expires-at
+                                                                                  :jwt-access-token access-token
+                                                                                  :jwt-payload (utils/clj->json jwt-payload)}]}
                             (str oidc-challenge-cookie-prefix identifier) {:age 0 :value ""}}
                   :headers {"cache-control" "no-store"
                             "content-security-policy" "default-src 'none'; frame-ancestors 'none'"
                             "location" redirect-uri}
                   :status http-302-moved-temporarily
                   :authorization/method :oidc
-                  :authorization/principal "john.doe"
-                  :authorization/user "john.doe"
-                  :authorization/metadata {:jwt-access-token access-token}
+                  :authorization/principal jwt-subject
+                  :authorization/user jwt-subject
+                  :authorization/metadata {:jwt-access-token access-token
+                                           :jwt-payload (utils/clj->json jwt-payload)}
                   :waiter/oidc-identifier identifier
                   :waiter/oidc-mode oidc-mode
                   :waiter/oidc-redirect-uri redirect-uri
