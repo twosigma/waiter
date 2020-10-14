@@ -232,28 +232,36 @@
                                 :request-method :options}))))
 
 (deftest test-wrap-cors-preflight
-  (let [discover-service-parameters-fn (constantly nil)]
+  (let [max-age 100
+        discover-service-parameters-fn (constantly nil)]
     (testing "cors preflight request denied"
       (let [deny-all (deny-all-validator {})
-            max-age 100
+            waiter-request? (constantly false)
             request (assoc (create-request-with-origin "doesnt.matter" "DELETE" "x-test-header")
                       :request-method :options)
             handler (-> (fn [_] {:status http-200-ok})
-                      (wrap-cors-preflight deny-all max-age discover-service-parameters-fn)
+                      (wrap-cors-preflight deny-all max-age discover-service-parameters-fn waiter-request?)
                       (core/wrap-error-handling))
             {:keys [status]} (handler request)]
         (is (= http-403-forbidden status))))
 
-    (testing "cors preflight request allowed"
-      (let [allow-all (allow-all-validator {})
-            max-age 100
-            request (assoc (create-request-with-origin "doesnt.matter" "DELETE" "x-test-header")
-                      :request-method :options)
-            handler (wrap-cors-preflight (fn [_] {:status http-200-ok}) allow-all max-age discover-service-parameters-fn)
-            {:keys [headers status]} (handler request)]
-        (is (= http-200-ok status))
-        (is (= "doesnt.matter" (get headers "access-control-allow-origin")))
-        (is (= "x-test-header" (get headers "access-control-allow-headers")))
-        (is (= (str/join ", " schema/http-methods) (get headers "access-control-allow-methods")))
-        (is (= (str max-age) (get headers "access-control-max-age")))
-        (is (= "true" (get headers "access-control-allow-credentials")))))))
+    (doseq [{:keys [test-name validator waiter-request?]}
+            [{:test-name "cors preflight waiter api request allowed"
+              :validator (deny-all-validator {})
+              :waiter-request? (constantly true)}
+             {:test-name "cors preflight service discovery request allowed"
+              :validator (allow-all-validator {})
+              :waiter-request? (constantly false)}]]
+      (testing (str test-name)
+        (let [request (assoc (create-request-with-origin "doesnt.matter" "DELETE" "x-test-header")
+                        :request-method :options)
+              handler (-> (fn [_] {:status http-200-ok})
+                        (wrap-cors-preflight validator max-age discover-service-parameters-fn waiter-request?)
+                        (core/wrap-error-handling))
+              {:keys [headers status]} (handler request)]
+          (is (= http-200-ok status))
+          (is (= "doesnt.matter" (get headers "access-control-allow-origin")))
+          (is (= "x-test-header" (get headers "access-control-allow-headers")))
+          (is (= (str/join ", " schema/http-methods) (get headers "access-control-allow-methods")))
+          (is (= (str max-age) (get headers "access-control-max-age")))
+          (is (= "true" (get headers "access-control-allow-credentials"))))))))
