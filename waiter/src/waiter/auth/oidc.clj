@@ -296,8 +296,8 @@
   "Returns true when:
    - either the request is deemed to have come from a browser
    - or the accept-redirect=yes request header is present in the request."
-  [oidc-authority request]
-  (or (hu/browser-request? request)
+  [oidc-authority oidc-redirect-user-agent-products request]
+  (or (hu/request-has-user-agent-product? oidc-redirect-user-agent-products request)
       (and (= "yes" (get-in request [:headers accept-redirect-header-name]))
            (let [accept-redirect-auth (get-in request [:headers accept-redirect-auth-header-name])]
              (or (str/blank? accept-redirect-auth)
@@ -319,7 +319,7 @@
 (defn wrap-auth-handler
   "Wraps the request handler with a handler to trigger OIDC+PKCE authentication."
   [{:keys [allow-oidc-auth-api? allow-oidc-auth-services? jwt-auth-server oidc-authorize-uri
-           oidc-default-mode oidc-num-challenge-cookies-allowed-in-request password]}
+           oidc-default-mode oidc-num-challenge-cookies-allowed-in-request oidc-redirect-user-agent-products password]}
    request-handler]
   (let [oidc-authority (utils/uri-string->host oidc-authorize-uri)]
     (fn oidc-auth-handler [request]
@@ -328,7 +328,7 @@
           (or (auth/request-authenticated? request)
               (= :disabled @oidc-mode-delay)
               ;; OIDC auth is no-op when request cannot be redirected
-              (not (supports-redirect? oidc-authority request))
+              (not (supports-redirect? oidc-authority oidc-redirect-user-agent-products request))
               ;; OIDC auth is avoided if client already has too many challenge cookies
               (too-many-oidc-challenge-cookies? request oidc-num-challenge-cookies-allowed-in-request))
           (request-handler request)
@@ -339,24 +339,29 @@
             (make-oidc-auth-response-updater jwt-auth-server @oidc-mode-delay password request)))))))
 
 (defrecord OidcAuthenticator [allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri oidc-default-mode
-                              jwt-auth-server jwt-validator oidc-num-challenge-cookies-allowed-in-request password])
+                              jwt-auth-server jwt-validator oidc-num-challenge-cookies-allowed-in-request
+                              oidc-redirect-user-agent-products password])
 
 (defn create-oidc-authenticator
   "Factory function for creating OIDC authenticator middleware"
   [jwt-auth-server jwt-validator
    {:keys [allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri oidc-default-mode
-           oidc-num-challenge-cookies-allowed-in-request password]
+           oidc-num-challenge-cookies-allowed-in-request oidc-redirect-user-agent-products password]
     :or {allow-oidc-auth-api? false
          allow-oidc-auth-services? false
          oidc-default-mode :relaxed
-         oidc-num-challenge-cookies-allowed-in-request 20}}]
+         oidc-num-challenge-cookies-allowed-in-request 20
+         oidc-redirect-user-agent-products #{"chrome" "mozilla"}}}]
   {:pre [(satisfies? jwt/AuthServer jwt-auth-server)
          (some? jwt-validator)
          (boolean? allow-oidc-auth-api?)
          (boolean? allow-oidc-auth-services?)
          (integer? oidc-num-challenge-cookies-allowed-in-request)
+         (pos-int? oidc-num-challenge-cookies-allowed-in-request)
+         (set? oidc-redirect-user-agent-products)
          (not (str/blank? oidc-authorize-uri))
          (contains? #{:relaxed :strict} oidc-default-mode)
          (not-empty password)]}
   (->OidcAuthenticator allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri oidc-default-mode
-                       jwt-auth-server jwt-validator oidc-num-challenge-cookies-allowed-in-request password))
+                       jwt-auth-server jwt-validator oidc-num-challenge-cookies-allowed-in-request
+                       oidc-redirect-user-agent-products password))

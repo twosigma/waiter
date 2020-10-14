@@ -138,9 +138,10 @@
              {:client-protocol "HTTP/2.0" :headers {"content-type" "application/grpc"}}
              {:headers {"grpc-status" 14} :status http-200-ok}))))
 
-(deftest test-browser-request?
-  (is (not (browser-request? {:headers {"user-agent" "curl"}})))
-  (is (not (browser-request? {:headers {"user-agent" "jetty"}})))
-  (is (not (browser-request? {:headers {"user-agent" "python-requests"}})))
-  (is (browser-request? {:headers {"user-agent" "chrome"}}))
-  (is (browser-request? {:headers {"user-agent" "mozilla"}})))
+(deftest test-request-has-user-agent-product?
+  (let [user-agent-products #{"chrome" "mozilla"}]
+    (is (not (request-has-user-agent-product? user-agent-products {:headers {"user-agent" "curl"}})))
+    (is (not (request-has-user-agent-product? user-agent-products {:headers {"user-agent" "jetty"}})))
+    (is (not (request-has-user-agent-product? user-agent-products {:headers {"user-agent" "python-requests"}})))
+    (is (request-has-user-agent-product? user-agent-products {:headers {"user-agent" "chrome"}}))
+    (is (request-has-user-agent-product? user-agent-products {:headers {"user-agent" "mozilla"}}))))
