@@ -1784,6 +1784,42 @@
           (is (str/includes? (str details) "maintenance") body)
           (is (str/includes? message "Validation failed for user metadata on token") body)))
 
+      (testing "post:new-user-metadata:maintenance-message-is-not-a-string"
+        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+              service-description (walk/stringify-keys
+                                    {:maintenance {:message -100}
+                                     :token "abcdefgh"})
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
+                {:authorization/user auth-user
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :headers {"accept" "application/json"}
+                 :request-method :post})
+              {{:strs [details message]} "waiter-error"} (json/read-str body)]
+          (is (= http-400-bad-request status))
+          (is (not (str/includes? body "clojure")))
+          (is (str/includes? (str details) "maintenance") body)
+          (is (str/includes? message "Validation failed for user metadata on token") body)))
+
+      (testing "post:new-user-metadata:maintenance-is-not-a-map"
+        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+              service-description (walk/stringify-keys
+                                    {:maintenance "invalid-value"
+                                     :token "abcdefgh"})
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
+                {:authorization/user auth-user
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :headers {"accept" "application/json"}
+                 :request-method :post})
+              {{:strs [details message]} "waiter-error"} (json/read-str body)]
+          (is (= http-400-bad-request status))
+          (is (not (str/includes? body "clojure")))
+          (is (str/includes? (str details) "maintenance") body)
+          (is (str/includes? message "Validation failed for user metadata on token") body)))
+
       (testing "post:new-service-description:token-limit-reached"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               test-user "test-user"
