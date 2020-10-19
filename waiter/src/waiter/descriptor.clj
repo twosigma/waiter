@@ -181,7 +181,8 @@
   "Computes the fallback descriptor with a healthy instance based on the provided descriptor.
    Fallback descriptors can only be computed for token-based descriptors.
    The amount of history lookup for fallback descriptor candidates is limited by search-history-length.
-   Also, the fallback descriptor needs to be inside the fallback period to be returned."
+   Also, the fallback descriptor needs to be inside the fallback period to be returned.
+   Descriptors with maintenance field specified are skipped because the service is considered unhealthy"
   [descriptor->previous-descriptor search-history-length fallback-state request-time
    {:keys [component->previous-descriptor-fns] :as descriptor}]
   (when (seq component->previous-descriptor-fns)
