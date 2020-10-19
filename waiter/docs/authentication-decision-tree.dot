@@ -50,7 +50,7 @@ digraph WaiterAuthenticationFlowchart {
   ];
 
   configured_auth [
-    label = "Configured \n authentication \n (e.g. kerberos, saml) \n successful?";
+    label = "Configured \n authentication \n (e.g. kerberos) \n successful?";
     shape = diamond;
   ];
 

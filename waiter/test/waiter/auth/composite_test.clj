@@ -21,9 +21,7 @@
 
 (defrecord TestAuthenticator [process-callback-response wrap-auth-handler-response]
   auth/Authenticator
-  (wrap-auth-handler [_ _] (constantly wrap-auth-handler-response))
-  auth/CallbackAuthenticator
-  (process-callback [_ _] process-callback-response))
+  (wrap-auth-handler [_ _] (constantly wrap-auth-handler-response)))
 
 (def one-user-process-callback-response "one-user-process-callback-response")
 (def one-user-wrap-auth-handler-response "one-user-wrap-auth-handler-response")
@@ -32,19 +30,9 @@
   [_]
   (->TestAuthenticator one-user-process-callback-response one-user-wrap-auth-handler-response))
 
-(def saml-process-callback-response "saml-process-callback-response")
-(def saml-wrap-auth-handler-response "saml-wrap-auth-handler-response")
-
-(defn saml-authenticator
-  [_]
-  (->TestAuthenticator saml-process-callback-response saml-wrap-auth-handler-response))
-
 (def valid-config
   {:authentication-providers {"one-user" {:factory-fn 'waiter.auth.composite-test/one-user-authenticator
-                                          :run-as-user "WAITER_AUTH_RUN_AS_USER"}
-                              "saml" {:factory-fn 'waiter.auth.composite-test/saml-authenticator
-                                      :idp-cert-uri "SAML_IDP_CERT_URI"
-                                      :idp-uri "SAML_IDP_URI"}}
+                                          :run-as-user "WAITER_AUTH_RUN_AS_USER"}}
    :default-authentication-provider "one-user"})
 
 (defn dummy-composite-authenticator
@@ -82,11 +70,6 @@
   (let [composite-authenticator (dummy-composite-authenticator)
         wrapped-handler (auth/wrap-auth-handler composite-authenticator identity)]
     (is (= one-user-wrap-auth-handler-response (wrapped-handler (make-request "standard"))))))
-
-(deftest auth-saml-auth-type
-  (let [composite-authenticator (dummy-composite-authenticator)
-        wrapped-handler (auth/wrap-auth-handler composite-authenticator identity)]
-    (is (= saml-wrap-auth-handler-response (wrapped-handler (make-request "saml"))))))
 
 (deftest auth-invalid-auth-type
   (let [composite-authenticator (dummy-composite-authenticator)

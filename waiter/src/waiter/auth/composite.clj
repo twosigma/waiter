@@ -37,16 +37,7 @@
 
   auth/CompositeAuthenticator
   (get-authentication-providers [_]
-    (keys provider-name->authenticator))
-
-  auth/CallbackAuthenticator
-  (process-callback [_ {{:keys [authentication-provider]} :route-params :as request}]
-    (if-let [authenticator (get provider-name->authenticator authentication-provider)]
-      (auth/process-callback authenticator request)
-      (throw (ex-info (str "Unknown authentication provider " authentication-provider)
-                      {:available-authenticators (keys provider-name->authenticator)
-                       :authentication-provider authentication-provider
-                       :status http-400-bad-request})))))
+    (keys provider-name->authenticator)))
 
 (defn- make-authenticator
   "Create an authenticator from an authentication-provider"

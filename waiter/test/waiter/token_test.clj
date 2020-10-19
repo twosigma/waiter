@@ -1525,7 +1525,7 @@
       (testing "post:new-service-description:valid-authentication-2"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1" :authentication "saml"
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1" :authentication "jwt"
                                      :token "abcdefgh"})
               {:keys [status]}
               (run-handle-token-request
