@@ -885,7 +885,7 @@
                     (-> {:details response-map,
                          :message (or (get maintenance "message") default-message),
                          :status http-503-service-unavailable}
-                        (utils/data->error-response request))))))
+                        (utils/data->error-response request)))))))
 
 (defn wrap-too-many-requests
   "Check if a service has more pending requests than max-queue-length and immediately return a 503"
