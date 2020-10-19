@@ -365,3 +365,10 @@ def tokens_data(waiter_url=None, flags=None):
     cp, data = __tokens_json(waiter_url, flags)
     token_list = [token for entities in data['clusters'].values() for token in entities['tokens']]
     return cp, token_list
+
+
+def maintenance(subcommand, token_name, waiter_url=None, flags=None, maintenance_flags=None, stdin=None, env=None):
+    """Creates or updates a token via the CLI"""
+    args = f"maintenance {subcommand} {token_name} {maintenance_flags or ''}"
+    cp = cli(args, waiter_url, flags, stdin, env=env)
+    return cp

@@ -20,6 +20,7 @@ def print_as_table(query_result):
     """Given a collection of (cluster, token) pairs, formats a table showing the most relevant token fields"""
     cluster_token_pairs = query_result_to_cluster_token_pairs(query_result)
     rows = [collections.OrderedDict([("Cluster", cluster),
+                                     ("Maintenance", token.get('maintenance', False)),
                                      ("Owner", token['owner']),
                                      ("Token", token['token']),
                                      ("Updated", format_timestamp_string(token['last-update-time']))])
