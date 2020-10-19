@@ -862,7 +862,7 @@
   "Check if a service's token is in maintenance mode and immediately return a 503 response
   with a custom message if specified"
   [handler]
-  (fn [{{:keys [token-metadata token]} :waiter-discovery
+  (fn [{{:keys [token-metadata token waiter-headers service-description-template]} :waiter-discovery
         {:keys [service-id]} :descriptor
         :as request}]
     (let [maintenance (get token-metadata "maintenance")
@@ -870,15 +870,22 @@
           response-map {:token token
                         :service-id service-id
                         :maintenance maintenance}]
-      (if (nil? maintenance)
-        (handler request)
-        (do
-          (log/info "token is in maintenance mode" response-map)
-          (meters/mark! (metrics/service-meter service-id "response-rate" "error" "maintenance"))
-          (-> {:details response-map,
-               :message (or (get maintenance "message") default-message),
-               :status http-503-service-unavailable}
-              (utils/data->error-response request)))))))
+      (cond (contains? waiter-headers "x-waiter-maintenance")
+            (do
+              (log/info "x-waiter-maintenance is not supported as an on-the-fly header"
+                        {:service-description service-description-template :token token})
+              (-> {:waiter-headers waiter-headers
+                   :message "Maintenance parameter is not supported for on-the-fly headers"
+                   :status http-400-bad-request}
+                  (utils/data->error-response request)))
+            (nil? maintenance) (handler request)
+            :else (do
+                    (log/info "token is in maintenance mode" response-map)
+                    (meters/mark! (metrics/service-meter service-id "response-rate" "error" "maintenance"))
+                    (-> {:details response-map,
+                         :message (or (get maintenance "message") default-message),
+                         :status http-503-service-unavailable}
+                        (utils/data->error-response request))))))
 
 (defn wrap-too-many-requests
   "Check if a service has more pending requests than max-queue-length and immediately return a 503"
