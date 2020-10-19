@@ -858,6 +858,28 @@
             (utils/data->error-response request)))
       (handler request))))
 
+(defn wrap-maintenance-mode
+  "Check if a service's token is in maintenance mode and immediately return a 503 response
+  with a custom message if specified"
+  [handler]
+  (fn [{{:keys [token-metadata token]} :waiter-discovery
+        {:keys [service-id]} :descriptor
+        :as request}]
+    (let [maintenance (get token-metadata "maintenance")
+          default-message "Token is under maintenance"
+          response-map {:token token
+                        :service-id service-id
+                        :maintenance maintenance}]
+      (if (nil? maintenance)
+        (handler request)
+        (do
+          (log/info "token is in maintenance mode" response-map)
+          (meters/mark! (metrics/service-meter service-id "response-rate" "error" "maintenance"))
+          (-> {:details response-map,
+               :message (or (get maintenance "message") default-message),
+               :status http-503-service-unavailable}
+              (utils/data->error-response request)))))))
+
 (defn wrap-too-many-requests
   "Check if a service has more pending requests than max-queue-length and immediately return a 503"
   [handler]
