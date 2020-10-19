@@ -116,9 +116,9 @@
                                    (s/optional-key "methods") (s/both (s/pred not-empty) [schema/http-method])}]
    (s/optional-key "fallback-period-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/days 1))) 'at-most-1-day))
    (s/optional-key "https-redirect") s/Bool
+   (s/optional-key "maintenance") {(s/optional-key "message") (s/conditional #(<= 1 (count %) 512) s/Str)}
    (s/optional-key "owner") schema/non-empty-string
    (s/optional-key "stale-timeout-mins") (s/both s/Int (s/pred #(<= 0 % (t/in-minutes (t/hours 4))) 'at-most-4-hours))
-   (s/optional-key "maintenance") {(s/optional-key "message") (s/conditional #(<= 1 (count %) 512) s/Str)}
    s/Str s/Any})
 
 (def ^:const service-required-keys (->> (keys service-description-schema)
