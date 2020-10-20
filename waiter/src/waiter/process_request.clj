@@ -868,19 +868,20 @@
     (let [maintenance (get token-metadata "maintenance")
           expires-at (get maintenance "expires-at")
           default-message "Token is under maintenance"
-          response-map {:token token
-                        :service-id service-id
-                        :maintenance maintenance}]
+          response-map {:maintenance maintenance
+                        :token token
+                        :service-id service-id}]
       (cond (contains? waiter-headers "x-waiter-maintenance")
             (do
               (log/info "x-waiter-maintenance is not supported as an on-the-fly header"
                         {:service-description service-description-template :token token})
-              (-> {:waiter-headers waiter-headers
-                   :message "Maintenance parameter is not supported for on-the-fly headers"
-                   :status http-400-bad-request}
+              (-> {:message "Maintenance parameter is not supported for on-the-fly headers"
+                   :status http-400-bad-request
+                   :waiter-headers waiter-headers}
                   (utils/data->error-response request)))
-            (nil? maintenance) (handler request)
-            (or (= expires-at "*") (t/after? (du/str-to-date-safe expires-at) (t/now)))
+            (and (some? maintenance)
+                 (or (= expires-at "*")
+                     (t/after? (du/str-to-date-safe expires-at) (t/now))))
             (do
               (log/info "token is in maintenance mode" response-map)
               (meters/mark! (metrics/service-meter service-id "response-rate" "error" "maintenance"))
