@@ -182,7 +182,8 @@
    Fallback descriptors can only be computed for token-based descriptors.
    The amount of history lookup for fallback descriptor candidates is limited by search-history-length.
    Also, the fallback descriptor needs to be inside the fallback period to be returned.
-   Descriptors with maintenance field specified are skipped because the service is considered unhealthy"
+   Descriptors with maintenance field specified are included because they map to the same service-id as
+   the service with maintenance mode enabled."
   [descriptor->previous-descriptor search-history-length fallback-state request-time
    {:keys [component->previous-descriptor-fns] :as descriptor}]
   (when (seq component->previous-descriptor-fns)
