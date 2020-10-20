@@ -158,3 +158,13 @@
 (def profile-definition
   "Validator for profile parameters."
   {(s/required-key :defaults) {non-empty-string s/Any}})
+
+(def kv-store-config
+  "Validator for the kv-store config."
+  (s/constrained
+    {:kind s/Keyword
+     (s/optional-key :encrypt) s/Bool
+     (s/optional-key :cache) {(s/required-key :threshold) positive-int
+                              (s/required-key :ttl) positive-int}
+     s/Keyword require-symbol-factory-fn}
+    contains-kind-sub-map?))
