@@ -1543,8 +1543,8 @@
                                    (-> handler
                                      pr/wrap-too-many-requests
                                      pr/wrap-suspended-service
-                                     pr/wrap-maintenance-mode
                                      pr/wrap-response-status-metrics
+                                     pr/wrap-maintenance-mode
                                      (interstitial/wrap-interstitial interstitial-state-atom)
                                      wrap-descriptor-fn
                                      wrap-secure-request-fn
