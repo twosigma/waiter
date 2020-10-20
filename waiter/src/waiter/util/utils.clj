@@ -450,18 +450,18 @@
    The returned function accepts a no-args function to be executed until it returns without throwing an error.
 
    `delay-multiplier` each previous delay is multiplied by delay-multiplier to generate the next delay.
-   `inital-delay-ms` the initial delay for the first retry.
+   `initial-delay-ms` the initial delay for the first retry.
    `max-delay-ms` the delay cap for exponential backoff delay.
    `max-retries`  limit the number of retries.
    "
-  [{:keys [delay-multiplier inital-delay-ms max-delay-ms max-retries]
+  [{:keys [delay-multiplier initial-delay-ms max-delay-ms max-retries]
     :or {delay-multiplier 1.0
-         inital-delay-ms 100
+         initial-delay-ms 100
          max-delay-ms 300000 ; 300k millis = 5 minutes
          max-retries 10}}]
   (fn [body-function]
     (loop [num-tries 1
-           current-delay-ms inital-delay-ms]
+           current-delay-ms initial-delay-ms]
       (let [{:keys [success result]}
             (try
               {:success true, :result (body-function)}
