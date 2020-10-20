@@ -731,7 +731,7 @@
   ([waiter-url service-id limit]
    (when-not (str/blank? service-id)
      (try
-       ((utils/retry-strategy {:delay-multiplier 1.2, :inital-delay-ms 250, :max-retries limit})
+       ((utils/retry-strategy {:delay-multiplier 1.2, :initial-delay-ms 250, :max-retries limit})
          (fn []
            (let [app-delete-path (str "/apps/" service-id "?force=true")
                  delete-response (make-request waiter-url app-delete-path :method :delete)

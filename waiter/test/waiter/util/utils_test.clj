@@ -272,7 +272,7 @@
     (testing "retry-strategy:no-retries"
       (let [[call-counter-atom function] (make-call-atom-and-function 0 return-value)
             retry-config {:delay-multiplier 1.0
-                          :inital-delay-ms 1
+                          :initial-delay-ms 1
                           :max-retries 0}
             actual-result ((retry-strategy retry-config) function)]
         (is (= return-value actual-result))
@@ -280,7 +280,7 @@
     (testing "retry-strategy:multiple-retries-success"
       (let [[call-counter-atom function] (make-call-atom-and-function 4 return-value)
             retry-config {:delay-multiplier 1.0
-                          :inital-delay-ms 1
+                          :initial-delay-ms 1
                           :max-retries 10}
             actual-result ((retry-strategy retry-config) function)]
         (is (= return-value actual-result))
@@ -288,7 +288,7 @@
     (testing "retry-strategy:multiple-retries-failure"
       (let [[call-counter-atom function] (make-call-atom-and-function 20 return-value)
             retry-config {:delay-multiplier 1.0
-                          :inital-delay-ms 1
+                          :initial-delay-ms 1
                           :max-retries 10}]
         (is (thrown-with-msg? IllegalStateException #"function throws error"
                               ((retry-strategy retry-config) function)))
@@ -298,7 +298,7 @@
         (with-redefs [sleep (fn [time] (swap! actual-elapsed-time-atom + time))]
           (let [[call-counter-atom function] (make-call-atom-and-function 20 return-value)
                 retry-config {:delay-multiplier 1.0
-                              :inital-delay-ms 10
+                              :initial-delay-ms 10
                               :max-retries 5}]
             (is (thrown-with-msg? IllegalStateException #"function throws error"
                                   ((retry-strategy retry-config) function)))
@@ -311,7 +311,7 @@
         (with-redefs [sleep (fn [time] (swap! actual-elapsed-time-atom + time))]
           (let [[call-counter-atom function] (make-call-atom-and-function 20 return-value)
                 retry-config {:delay-multiplier 2
-                              :inital-delay-ms 10
+                              :initial-delay-ms 10
                               :max-retries 5}]
             (is (thrown-with-msg? IllegalStateException #"function throws error"
                                   ((retry-strategy retry-config) function)))
@@ -324,7 +324,7 @@
         (with-redefs [sleep (fn [time] (swap! actual-elapsed-time-atom + time))]
           (let [[call-counter-atom function] (make-call-atom-and-function 8 return-value)
                 retry-config {:delay-multiplier 2
-                              :inital-delay-ms 10
+                              :initial-delay-ms 10
                               :max-retries 10}
                 actual-result ((retry-strategy retry-config) function)]
             (is (= return-value actual-result))
@@ -337,7 +337,7 @@
         (with-redefs [sleep (fn [time] (swap! actual-elapsed-time-atom + time))]
           (let [[call-counter-atom function] (make-call-atom-and-function 4 return-value)
                 retry-config {:delay-multiplier 5
-                              :inital-delay-ms 10
+                              :initial-delay-ms 10
                               :max-retries 10}
                 actual-result ((retry-strategy retry-config) function)]
             (is (= return-value actual-result))
@@ -350,7 +350,7 @@
         (with-redefs [sleep (fn [time] (swap! actual-elapsed-time-atom + time))]
           (let [[call-counter-atom function] (make-call-atom-and-function 5 return-value)
                 retry-config {:delay-multiplier 5
-                              :inital-delay-ms 10
+                              :initial-delay-ms 10
                               :max-delay-ms 100
                               :max-retries 10}
                 actual-result ((retry-strategy retry-config) function)]
