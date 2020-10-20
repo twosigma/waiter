@@ -71,13 +71,7 @@
                                                   (s/required-key :output-buffer-size) schema/positive-int
                                                   (s/required-key :queue-timeout-ms) schema/positive-int
                                                   (s/required-key :streaming-timeout-ms) schema/positive-int}
-   (s/required-key :kv-config) (s/constrained
-                                 {:kind s/Keyword
-                                  (s/optional-key :encrypt) s/Bool
-                                  (s/optional-key :cache) {(s/required-key :threshold) schema/positive-int
-                                                           (s/required-key :ttl) schema/positive-int}
-                                  s/Keyword schema/require-symbol-factory-fn}
-                                 schema/contains-kind-sub-map?)
+   (s/required-key :kv-config) schema/kv-store-config
    (s/optional-key :messages) {s/Keyword s/Str}
    (s/required-key :metric-group-mappings) schema/valid-metric-group-mappings
    (s/required-key :metrics-config) {(s/required-key :inter-router-metrics-idle-timeout-ms) schema/positive-int
