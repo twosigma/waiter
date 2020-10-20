@@ -658,8 +658,10 @@
                        router-id]
                 (discovery/register router-id curator name (str base-path "/" discovery-relative-path)
                                     {:host host :port (primary-port port)}))
-   :entitlement-manager (pc/fnk [[:settings entitlement-config]]
-                          (utils/create-component entitlement-config))
+   :entitlement-manager (pc/fnk [[:settings entitlement-config]
+                                 kv-store-factory]
+                          (let [context {:kv-store-factory kv-store-factory}]
+                            (utils/create-component entitlement-config :context context)))
    :fallback-state-atom (pc/fnk [] (atom {:available-service-ids #{}
                                           :healthy-service-ids #{}}))
    :http-client-properties (pc/fnk [[:settings [:instance-request-properties client-buffer-size client-connection-idle-timeout-ms connection-timeout-ms]]]
