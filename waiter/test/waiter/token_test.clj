@@ -713,6 +713,37 @@
                             "root" token-root))
                  (kv/fetch kv-store token)))))
 
+      (testing "post::new-user-metadata:maintenance-mode"
+        (let [token (str token "-maintenance-mode")
+              {:keys [body headers status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
+                {:authorization/user auth-user
+                 :body (-> service-description-1
+                           (assoc "maintenance" {:expires-at "2020-10-20T16:25:06.016Z"
+                                                 :message "custom maintenance message"}
+                                  "token" token)
+                           utils/clj->json StringBufferInputStream.)
+                 :headers {}
+                 :request-method :post})]
+          (is (= http-200-ok status))
+          (is (= (get headers "etag") (sd/token-data->token-hash (kv/fetch kv-store token))))
+          (is (str/includes? body (str "Successfully created " token)))
+          (is (= (select-keys service-description-1 sd/token-data-keys)
+                 (sd/token->service-parameter-template kv-store token)))
+          (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]
+            (is (= (dissoc service-description-1 "token") service-parameter-template))
+            (is (= {"cluster" (str token-root "-cluster")
+                    "last-update-time" (clock-millis)
+                    "last-update-user" "tu1"
+                    "maintenance" {"expires-at" "2020-10-20T16:25:06.016Z"
+                                   "message" "custom maintenance message"}
+                    "owner" "tu1"
+                    "previous" {}
+                    "root" token-root}
+                   token-metadata)))
+          (is (empty? (sd/fetch-core kv-store service-id-1)))))
+
       (let [kv-store (kv/->LocalKeyValueStore (atom {}))
             token (str token (rand-int 100000))
             service-description (walk/stringify-keys
@@ -1768,8 +1799,8 @@
 
       (let [kv-store (kv/->LocalKeyValueStore (atom {}))
             service-description (walk/stringify-keys
-                                  {:maintenance {:message "custom maintenance message"
-                                                 :expires-at "2020-10-20T16:25:06.016Z"}
+                                  {:maintenance {:expires-at "2020-10-20T16:25:06.016Z"
+                                                 :message "custom maintenance message"}
                                    :token "abcdefgh"})
             test-bad-service-description
             (fn [service-description invalid-keys]
