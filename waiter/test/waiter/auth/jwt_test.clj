@@ -203,6 +203,7 @@
         token-type "ty+pe"
         realm "www.test-realm.com"
         request-scheme :https
+        accept-scope? false
         access-token "access-token"
         jwt-validator (->JwtValidator issuer-constraints max-expiry-duration-ms subject-key subject-regex
                                       supported-algorithms token-type)]
@@ -220,7 +221,7 @@
             payload {:aud realm :exp expiry-time :iss issuer :sub "foo@bar.com"}
             access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
         (is (thrown-with-msg? ExceptionInfo #"Unsupported algorithm :es256 in token header"
-                              (validate-access-token jwt-validator jwks realm request-scheme access-token)))))
+                              (validate-access-token jwt-validator jwks realm request-scheme accept-scope? access-token)))))
 
     (doseq [{:keys [alg jwks]}
             [{:alg :eddsa
@@ -234,41 +235,41 @@
 
       (testing (str "algorithm " (name alg))
         (is (thrown-with-msg? ExceptionInfo #"JWT authentication can only be used with host header"
-                              (validate-access-token jwt-validator jwks nil request-scheme access-token)))
+                              (validate-access-token jwt-validator jwks nil request-scheme accept-scope? access-token)))
 
         (is (thrown-with-msg? ExceptionInfo #"JWT authentication can only be used with HTTPS connections"
-                              (validate-access-token jwt-validator jwks realm :http access-token)))
+                              (validate-access-token jwt-validator jwks realm :http accept-scope? access-token)))
 
         (is (thrown-with-msg? ExceptionInfo #"Must provide Bearer token in Authorization header"
-                              (validate-access-token jwt-validator jwks realm request-scheme " ")))
+                              (validate-access-token jwt-validator jwks realm request-scheme accept-scope? " ")))
 
         (is (thrown-with-msg? ExceptionInfo #"JWT access token is malformed"
-                              (validate-access-token jwt-validator jwks realm request-scheme "abcd")))
+                              (validate-access-token jwt-validator jwks realm request-scheme accept-scope? "abcd")))
 
         (let [jwk-entry (rand-nth (vals jwks))
               access-token (generate-jwt-access-token alg jwk-entry {} {})]
           (is (thrown-with-msg? ExceptionInfo #"JWT header is missing key ID"
-                                (validate-access-token jwt-validator jwks realm request-scheme access-token))))
+                                (validate-access-token jwt-validator jwks realm request-scheme accept-scope? access-token))))
 
         (let [jwk-entry (rand-nth (vals jwks))
               access-token (generate-jwt-access-token alg jwk-entry {} {:kid "invalid-key" :typ (str token-type ".err")})]
           (is (thrown-with-msg? ExceptionInfo #"Unsupported type"
-                                (validate-access-token jwt-validator jwks realm request-scheme access-token))))
+                                (validate-access-token jwt-validator jwks realm request-scheme accept-scope? access-token))))
 
         (let [jwk-entry (rand-nth (vals jwks))
               access-token (generate-jwt-access-token alg jwk-entry {} {:kid "invalid-key" :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"No matching JWKS key found for key invalid-key"
-                                (validate-access-token jwt-validator jwks realm request-scheme access-token))))
+                                (validate-access-token jwt-validator jwks realm request-scheme accept-scope? access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               access-token (generate-jwt-access-token alg jwk-entry {} {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"Issuer not provided in claims"
-                                (validate-access-token jwt-validator jwks realm request-scheme access-token))))
+                                (validate-access-token jwt-validator jwks realm request-scheme accept-scope? access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               access-token (generate-jwt-access-token alg jwk-entry {:iss (str issuer "-john")} {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"Issuer does not match provided constraints"
-                                (validate-access-token jwt-validator jwks realm request-scheme access-token))))
+                                (validate-access-token jwt-validator jwks realm request-scheme accept-scope? access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               issuer-constraints [#"test-issuer-jane"]
@@ -277,7 +278,7 @@
               issuer "test-issuer-john"
               access-token (generate-jwt-access-token alg jwk-entry {:iss issuer} {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"Issuer does not match provided constraints"
-                                (validate-access-token jwt-validator jwks realm request-scheme access-token))))
+                                (validate-access-token jwt-validator jwks realm request-scheme accept-scope? access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               issuer-constraints [#"https://jwt.com/jane"]
@@ -286,38 +287,38 @@
               issuer "http://jwt.com/jane"
               access-token (generate-jwt-access-token alg jwk-entry {:iss issuer} {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"Issuer does not match provided constraints"
-                                (validate-access-token jwt-validator jwks realm request-scheme access-token))))
+                                (validate-access-token jwt-validator jwks realm request-scheme accept-scope? access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               access-token (generate-jwt-access-token alg jwk-entry {:iss issuer} {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"Audience does not match www.test-realm.com"
-                                (validate-access-token jwt-validator jwks realm request-scheme access-token))))
+                                (validate-access-token jwt-validator jwks realm request-scheme accept-scope? access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               expiry-time (+ (current-time-secs) 10000)
               access-token (generate-jwt-access-token alg jwk-entry {:aud realm :exp expiry-time :iss issuer} {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"No subject provided in the token payload"
-                                (validate-access-token jwt-validator jwks realm request-scheme access-token))))
+                                (validate-access-token jwt-validator jwks realm request-scheme accept-scope? access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               payload {:aud realm :iss issuer :sub "foo@bar.com"}
               access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"No expiry provided in the token payload"
-                                (validate-access-token jwt-validator jwks realm request-scheme access-token))))
+                                (validate-access-token jwt-validator jwks realm request-scheme accept-scope? access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               expiry-time (- (current-time-secs) 1000)
               payload {:aud realm :exp expiry-time :iss issuer :sub "foo@bar.com"}
               access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"Token is expired"
-                                (validate-access-token jwt-validator jwks realm request-scheme access-token))))
+                                (validate-access-token jwt-validator jwks realm request-scheme accept-scope? access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               expiry-time (+ (current-time-secs) max-expiry-duration-ms 10000)
               payload {:aud realm :exp expiry-time :iss issuer :sub "foo@bar.com"}
               access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"Token expiry is too far into the future"
-                                (validate-access-token jwt-validator jwks realm request-scheme access-token))))
+                                (validate-access-token jwt-validator jwks realm request-scheme accept-scope? access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               expiry-time (+ (current-time-secs) 10000)
@@ -327,19 +328,19 @@
               payload {:aud realm :exp expiry-time :iss issuer :sub "foo@bar.com"}
               access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"No custom-key provided in the token payload"
-                                (validate-access-token jwt-validator jwks realm request-scheme access-token))))
+                                (validate-access-token jwt-validator jwks realm request-scheme accept-scope? access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               expiry-time (+ (current-time-secs) 10000)
               payload {:aud realm :exp expiry-time :iss issuer :sub "foo@bar.com"}
               access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
-          (is (= payload (validate-access-token jwt-validator jwks realm request-scheme access-token))))
+          (is (= payload (validate-access-token jwt-validator jwks realm request-scheme accept-scope? access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               expiry-time (+ (current-time-secs) 10000)
               payload {:aud realm :exp expiry-time :iss issuer :sub "foo@bar.com" :unknown-claim "john.doe"}
               access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
-          (is (= payload (validate-access-token jwt-validator jwks realm request-scheme access-token))))
+          (is (= payload (validate-access-token jwt-validator jwks realm request-scheme accept-scope? access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               expiry-time (+ (current-time-secs) 10000)
@@ -349,7 +350,7 @@
               payload {:aud realm :custom-key "foo@bar.baz" :exp expiry-time :iss issuer}
               access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"No subject provided in the token payload"
-                                (validate-access-token jwt-validator jwks realm request-scheme access-token))))
+                                (validate-access-token jwt-validator jwks realm request-scheme accept-scope? access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               expiry-time (+ (current-time-secs) 10000)
@@ -359,7 +360,7 @@
               payload {:aud realm :custom-key "foo@bar" :exp expiry-time :iss issuer :sub "foo@bar.com"}
               access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
           (is (thrown-with-msg? ExceptionInfo #"Provided subject in the token payload does not satisfy the validation regex"
-                                (validate-access-token jwt-validator jwks realm request-scheme access-token))))
+                                (validate-access-token jwt-validator jwks realm request-scheme accept-scope? access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               expiry-time (+ (current-time-secs) 10000)
@@ -368,7 +369,7 @@
                                             supported-algorithms token-type)
               payload {:aud realm :custom-key "foo@bar.baz" :exp expiry-time :iss issuer :sub "foo@bar.com"}
               access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
-          (is (= payload (validate-access-token jwt-validator jwks realm request-scheme access-token))))
+          (is (= payload (validate-access-token jwt-validator jwks realm request-scheme accept-scope? access-token))))
 
         (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
               expiry-time (+ (current-time-secs) 10000)
@@ -377,7 +378,18 @@
                                             supported-algorithms token-type)
               payload {:aud realm :custom-key "foo@BAR.BAZ" :exp expiry-time :iss issuer :sub "foo@bar.com"}
               access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
-          (is (= payload (validate-access-token jwt-validator jwks realm request-scheme access-token))))
+          (is (= payload (validate-access-token jwt-validator jwks realm request-scheme accept-scope? access-token))))
+
+        (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
+              expiry-time (+ (current-time-secs) 10000)
+              subject-key :custom-key
+              jwt-validator (->JwtValidator issuer-constraints max-expiry-duration-ms subject-key subject-regex
+                                            supported-algorithms token-type)
+              payload {:aud realm :custom-key "foo@BAR.BAZ" :exp expiry-time :iss issuer :scope "READ" :sub "foo@bar.com"}
+              access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
+          (is (thrown-with-msg? ExceptionInfo #"Token payload includes a scope"
+                                (validate-access-token jwt-validator jwks realm request-scheme false access-token)))
+          (is (= payload (validate-access-token jwt-validator jwks realm request-scheme true access-token))))
 
         (doseq [issuer ["custom-issuer" "https://www.jwt.com/ts" "ts-custom-issuer" "ts-issuer" "ts-jwt"]]
           (let [{:keys [kid] :as jwk-entry} (rand-nth (vals jwks))
@@ -388,7 +400,7 @@
                                               supported-algorithms token-type)
                 payload {:aud realm :custom-key "foo@BAR.BAZ" :exp expiry-time :iss issuer :sub "foo@bar.com"}
                 access-token (generate-jwt-access-token alg jwk-entry payload {:kid kid :typ token-type})]
-            (is (= payload (validate-access-token jwt-validator jwks realm request-scheme access-token)))))))))
+            (is (= payload (validate-access-token jwt-validator jwks realm request-scheme accept-scope? access-token)))))))))
 
 (deftest test-authenticate-request
   (let [issuer-constraints "test-issuer"
@@ -462,47 +474,52 @@
       (let [request-handler (fn [request] (assoc request :source ::request-handler))
             realm "www.test-realm.com"
             access-token "foo.bar.baz"
-            request {:headers {"authorization" (str "Bearer " access-token)
-                               "host" realm}
-                     :request-id (rand-int 10000)
-                     :scheme :test-scheme}
             current-time (current-time-secs)
             expiry-interval-secs 10000
             expiry-time (+ current-time expiry-interval-secs)
-            principal "foo@bar.com"
-            payload {:aud realm :exp expiry-time :iss issuer-constraints :sub principal}]
-        (with-redefs [validate-access-token (fn [jwt-validator in-keys in-realm in-request-scheme in-access-token]
-                                              (is (= token-type (:token-type jwt-validator)))
-                                              (is (= issuer-constraints (:issuer-constraints jwt-validator)))
-                                              (is (= subject-key (:subject-key jwt-validator)))
-                                              (is (= subject-regex (:subject-regex jwt-validator)))
-                                              (is (= supported-algorithms (:supported-algorithms jwt-validator)))
-                                              (is (= max-expiry-duration-ms (:max-expiry-duration-ms jwt-validator)))
-                                              (is (= keys in-keys))
-                                              (is (= realm in-realm))
-                                              (is (= :test-scheme in-request-scheme))
-                                              (is (= "foo.bar.baz" in-access-token))
-                                              payload)
-                      auth/handle-request-auth (fn [request-handler request auth-params-map password auth-cookie-age-in-seconds]
-                                                 (-> request
-                                                   (assoc :auth-cookie-age-in-seconds auth-cookie-age-in-seconds
-                                                          :auth-params-map auth-params-map
-                                                          :password password
-                                                          :principal (:authorization/principal auth-params-map))
-                                                   request-handler))
-                      t/now (constantly (tc/from-long (* current-time 1000)))]
-          (is (= (assoc request
-                   :auth-cookie-age-in-seconds expiry-interval-secs
-                   :auth-params-map (auth/build-auth-params-map :jwt principal {:jwt-access-token access-token
-                                                                                :jwt-payload (json/write-str
-                                                                                               {:aud realm
-                                                                                                :exp expiry-time
-                                                                                                :iss issuer-constraints
-                                                                                                :sub principal})})
-                   :password password
-                   :principal principal
-                   :source ::request-handler)
-                 (authenticate-request request-handler jwt-validator keys password request))))))))
+            principal "foo@bar.com"]
+        (doseq [{:keys [access-token-scope payload]}
+                [{:access-token-scope nil
+                  :payload {:aud realm :exp expiry-time :iss issuer-constraints :sub principal}}
+                 {:access-token-scope "false"
+                  :payload {:aud realm :exp expiry-time :iss issuer-constraints :sub principal}}
+                 {:access-token-scope "true"
+                  :payload {:aud realm :exp expiry-time :iss issuer-constraints :scope "READ" :sub principal}}]]
+          (let [request (cond-> {:headers {"authorization" (str "Bearer " access-token)
+                                           "host" realm}
+                                 :request-id (rand-int 10000)
+                                 :scheme :test-scheme}
+                          access-token-scope
+                          (assoc-in [:waiter-discovery :service-description-template "env" "ACCEPT_SCOPED_TOKEN"] access-token-scope))]
+            (with-redefs [validate-access-token (fn [jwt-validator in-keys in-realm in-request-scheme in-accept-scope? in-access-token]
+                                                  (is (= token-type (:token-type jwt-validator)))
+                                                  (is (= issuer-constraints (:issuer-constraints jwt-validator)))
+                                                  (is (= subject-key (:subject-key jwt-validator)))
+                                                  (is (= subject-regex (:subject-regex jwt-validator)))
+                                                  (is (= supported-algorithms (:supported-algorithms jwt-validator)))
+                                                  (is (= max-expiry-duration-ms (:max-expiry-duration-ms jwt-validator)))
+                                                  (is (= keys in-keys))
+                                                  (is (= realm in-realm))
+                                                  (is (= :test-scheme in-request-scheme))
+                                                  (is (= (= access-token-scope "true") in-accept-scope?))
+                                                  (is (= "foo.bar.baz" in-access-token))
+                                                  payload)
+                          auth/handle-request-auth (fn [request-handler request auth-params-map password auth-cookie-age-in-seconds]
+                                                     (-> request
+                                                       (assoc :auth-cookie-age-in-seconds auth-cookie-age-in-seconds
+                                                              :auth-params-map auth-params-map
+                                                              :password password
+                                                              :principal (:authorization/principal auth-params-map))
+                                                       request-handler))
+                          t/now (constantly (tc/from-long (* current-time 1000)))]
+              (is (= (assoc request
+                       :auth-cookie-age-in-seconds expiry-interval-secs
+                       :auth-params-map (auth/build-auth-params-map :jwt principal {:jwt-access-token access-token
+                                                                                    :jwt-payload (json/write-str payload)})
+                       :password password
+                       :principal principal
+                       :source ::request-handler)
+                     (authenticate-request request-handler jwt-validator keys password request))))))))))
 
 (deftest test-wrap-auth-handler
   (with-redefs [authenticate-request (fn [_ _ _ _ request] (assoc request :processed-by :authenticate-request))]

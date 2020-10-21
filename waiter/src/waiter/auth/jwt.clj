@@ -272,8 +272,8 @@
    Checks the `:sub` and subject-key claims are present.
 
    A check that fails raises an exception."
-  [{:keys [exp iss sub] :as claims}
-   {:keys [aud issuer-constraints max-expiry-duration-ms subject-key subject-regex]}]
+  [{:keys [exp iss scope sub] :as claims}
+   {:keys [accept-scope? aud issuer-constraints max-expiry-duration-ms subject-key subject-regex]}]
   ;; Check the `:iss` claim.
   (if (str/blank? iss)
     (throw (ex-info (str "Issuer not provided in claims")
@@ -318,11 +318,16 @@
                        :status http-401-unauthorized}))))
   (let [subject (subject-key claims)]
     (when-not (re-find subject-regex subject)
-      (throw (ex-info (str "Provided subject in the token payload does not satisfy the validation regex")
+      (throw (ex-info "Provided subject in the token payload does not satisfy the validation regex"
                       {:log-level :info
                        :status http-401-unauthorized
                        :subject subject
                        :subject-regex subject-regex}))))
+  (when (and (not accept-scope?) (some? scope))
+    (throw (ex-info "Token payload includes a scope"
+                    {:log-level :info
+                     :scope scope
+                     :status http-403-forbidden})))
   claims)
 
 (defrecord JwtValidator [issuer-constraints max-expiry-duration-ms subject-key subject-regex
@@ -362,7 +367,7 @@
 (defn validate-access-token
   "Validates the JWT access token using the provided keys, realm and issuer."
   [{:keys [issuer-constraints max-expiry-duration-ms subject-key subject-regex supported-algorithms token-type]}
-   key-id->jwk realm request-scheme access-token]
+   key-id->jwk realm request-scheme accept-scope? access-token]
   (when (str/blank? realm)
     (throw (ex-info "JWT authentication can only be used with host header"
                     {:log-level :info
@@ -425,6 +430,7 @@
                                       :status http-401-unauthorized)]
                            (throw (ex-info (.getMessage ex) data ex)))))
               validation-options (assoc options
+                                   :accept-scope? accept-scope?
                                    :aud realm
                                    :issuer-constraints issuer-constraints
                                    :max-expiry-duration-ms max-expiry-duration-ms
@@ -459,7 +465,8 @@
     (try
       (let [realm (request->realm request)
             request-scheme (utils/request->scheme request)
-            claims (validate-access-token jwt-validator key-id->jwk realm request-scheme access-token)
+            accept-scope? (= "true" (get-in request [:waiter-discovery :service-description-template "env" "ACCEPT_SCOPED_TOKEN"]))
+            claims (validate-access-token jwt-validator key-id->jwk realm request-scheme accept-scope? access-token)
             {:keys [exp]} claims
             subject (subject-key claims)]
         (timers/stop timer-context)
