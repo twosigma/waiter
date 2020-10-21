@@ -1366,6 +1366,90 @@
         (finally
           (delete-token-and-assert waiter-url token))))))
 
+(deftest ^:parallel ^:integration-fast test-maintenance-mode
+  (testing-using-waiter-url
+    (let [service-name (rand-name)
+          token (create-token-name waiter-url service-name)
+          current-user (retrieve-username)
+          service-description (-> (kitchen-request-headers :prefix "")
+                                  (assoc :name service-name
+                                         :permitted-user "*"
+                                         :run-as-user current-user))
+          token-root (retrieve-token-root waiter-url)
+          token-cluster (retrieve-token-cluster waiter-url)
+          expires-wait-time 3
+          expires-at (t/plus (t/now) (t/seconds expires-wait-time))
+          default-maintenance-message "Token is under maintenance"
+          custom-maintenance-message "custom maintenance message"
+          token-maintenance-default-message {:expires-at (du/date-to-str expires-at)}
+          request-headers {:x-waiter-token token}]
+      (try
+        (testing "token creation"
+          (let [token-description (assoc service-description
+                                    :maintenance token-maintenance-default-message
+                                    :token token)
+                response (post-token waiter-url token-description)]
+            (assert-response-status response http-200-ok)))
+
+        (testing "token retrieval"
+          (let [token-response (get-token waiter-url token)
+                response-body (-> token-response :body json/read-str pc/keywordize-map)]
+            (is (contains? response-body :last-update-time))
+            (is (= (assoc service-description
+                     :cluster token-cluster
+                     :last-update-user current-user
+                     :maintenance token-maintenance-default-message
+                     :owner current-user
+                     :previous {}
+                     :root token-root)
+                   (dissoc response-body :last-update-time)))))
+
+        (testing "service should error with default maintenance message"
+          (let [{:keys [body] :as response}
+                (make-request waiter-url "/hello-world" :headers request-headers)]
+            (assert-response-status response http-503-service-unavailable)
+            (assert-waiter-response response)
+            (is (str/includes? body default-maintenance-message))))
+
+        (testing "token update:custom-maintenance-message"
+          (let [token-description (assoc service-description
+                                    :maintenance (assoc token-maintenance-default-message :message custom-maintenance-message)
+                                    :token token)
+                response (post-token waiter-url token-description)]
+            (assert-response-status response http-200-ok)))
+
+        (testing "service should error with custom maintenance message"
+          (let [{:keys [body] :as response}
+                (make-request waiter-url "/hello-world" :headers request-headers)]
+            (assert-response-status response http-503-service-unavailable)
+            (assert-waiter-response response)
+            (is (str/includes? body custom-maintenance-message))))
+
+        (testing "service should succeed after expires-at time"
+          (let [d-time-ms (t/in-millis (t/interval (t/now) expires-at))
+                _ (Thread/sleep d-time-ms)
+                {:keys [body] :as response}
+                (make-request waiter-url "/hello-world" :headers request-headers)]
+            (assert-response-status response http-200-ok)
+            (assert-backend-response response)
+            (is (= body "Hello World"))))
+
+        (testing "token update:empty-maintenance"
+          (let [token-description (assoc service-description
+                                    :token token)
+                response (post-token waiter-url token-description)]
+            (assert-response-status response http-200-ok)))
+
+        (testing "service should requested if maintenance mode is not enabled"
+          (let [{:keys [body] :as response}
+                (make-request waiter-url "/hello-world" :headers request-headers)]
+            (assert-response-status response http-200-ok)
+            (assert-backend-response response)
+            (is (= body "Hello World"))))
+
+        (finally
+          (delete-token-and-assert waiter-url token))))))
+
 (deftest ^:parallel ^:integration-fast test-current-for-tokens
   (testing-using-waiter-url
     (let [service-name (rand-name)
