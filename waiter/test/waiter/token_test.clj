@@ -1837,6 +1837,11 @@
                 service-description (assoc-in service-description invalid-keys "invalid iso8601 format")]
             (test-bad-service-description service-description invalid-keys)))
 
+        (testing "post:new-user-metadata:maintenance-expires-is-nil"
+          (let [invalid-keys ["maintenance" "expires-at"]
+                service-description (assoc-in service-description invalid-keys nil)]
+            (test-bad-service-description service-description invalid-keys)))
+
         (testing "post:new-user-metadata:maintenance-is-not-a-map"
           (let [service-description (assoc service-description "maintenance" "not a map")]
             (test-bad-service-description service-description ["maintenance"]))))
