@@ -1171,6 +1171,21 @@
                    token-metadata)))
           (is (empty? (sd/fetch-core kv-store service-id-1))))))))
 
+(defmacro assert-bad-user-metadata-response
+  "Asserts the response is due to invalid user-metadata for a specific key path"
+  [response invalid-keys]
+  `(let [response# ~response
+         invalid-keys# ~invalid-keys
+         status# (:status response#)
+         body# (:body response#)
+         parsed-body# (json/read-str body#)
+         details# (get-in parsed-body# ["waiter-error" "details"])
+         message# (get-in parsed-body# ["waiter-error" "message"])]
+     (is (= http-400-bad-request status#))
+     (is (not (str/includes? body# "clojure")))
+     (is (every? (partial str/includes? details#) invalid-keys#))
+     (is (str/includes? message# "Validation failed for user metadata on token") body#)))
+
 (deftest test-post-failure-in-handle-token-request
   (with-redefs [sd/service-description->service-id (fn [prefix sd] (str prefix (hash (select-keys sd sd/service-parameter-keys))))]
     (let [entitlement-manager (authz/->SimpleEntitlementManager nil)
@@ -1802,49 +1817,52 @@
                                   {:maintenance {:expires-at "2020-10-20T16:25:06.016Z"
                                                  :message "custom maintenance message"}
                                    :token "abcdefgh"})
-            test-bad-service-description
-            (fn [service-description invalid-keys]
-              (let [{:keys [body status]}
+            make-token-request-with-invalid-user-metadata
+            (fn [service-description]
+              (let [response
                     (run-handle-token-request
                       kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
                       {:authorization/user auth-user
                        :body (StringBufferInputStream. (utils/clj->json service-description))
                        :headers {"accept" "application/json"}
-                       :request-method :post})
-                    {{:strs [details message]} "waiter-error"} (json/read-str body)]
-                (is (= http-400-bad-request status))
-                (is (not (str/includes? body "clojure")))
-                (is (every? (partial str/includes? details) invalid-keys))
-                (is (str/includes? message "Validation failed for user metadata on token") body)))]
+                       :request-method :post})]
+                response))]
 
         (testing "post:new-user-metadata:maintenance-message-max-length-exceeded"
           (let [invalid-keys ["maintenance" "message"]
-                service-description (assoc-in service-description invalid-keys (apply str (repeat 513 "a")))]
-            (test-bad-service-description service-description invalid-keys)))
+                service-description (assoc-in service-description invalid-keys (apply str (repeat 513 "a")))
+                response (make-token-request-with-invalid-user-metadata service-description) ]
+            (println response)
+            (assert-bad-user-metadata-response response invalid-keys)))
 
         (testing "post:new-user-metadata:maintenance-message-is-empty-string"
           (let [invalid-keys ["maintenance" "message"]
-                service-description (assoc-in service-description invalid-keys "")]
-            (test-bad-service-description service-description invalid-keys)))
+                service-description (assoc-in service-description invalid-keys "")
+                response (make-token-request-with-invalid-user-metadata service-description)]
+            (assert-bad-user-metadata-response response invalid-keys)))
 
         (testing "post:new-user-metadata:maintenance-message-is-not-a-string"
           (let [invalid-keys ["maintenance" "message"]
-                service-description (assoc-in service-description invalid-keys 100)]
-            (test-bad-service-description service-description invalid-keys)))
+                service-description (assoc-in service-description invalid-keys 100)
+                response (make-token-request-with-invalid-user-metadata service-description)]
+            (assert-bad-user-metadata-response response invalid-keys)))
 
         (testing "post:new-user-metadata:maintenance-expires-at-is-not-proper-iso8601-format"
           (let [invalid-keys ["maintenance" "expires-at"]
-                service-description (assoc-in service-description invalid-keys "invalid iso8601 format")]
-            (test-bad-service-description service-description invalid-keys)))
+                service-description (assoc-in service-description invalid-keys "invalid iso8601 format")
+                response (make-token-request-with-invalid-user-metadata service-description)]
+            (assert-bad-user-metadata-response response invalid-keys)))
 
         (testing "post:new-user-metadata:maintenance-expires-is-nil"
           (let [invalid-keys ["maintenance" "expires-at"]
-                service-description (assoc-in service-description invalid-keys nil)]
-            (test-bad-service-description service-description invalid-keys)))
+                service-description (assoc-in service-description invalid-keys nil)
+                response (make-token-request-with-invalid-user-metadata service-description)]
+            (assert-bad-user-metadata-response response invalid-keys)))
 
         (testing "post:new-user-metadata:maintenance-is-not-a-map"
-          (let [service-description (assoc service-description "maintenance" "not a map")]
-            (test-bad-service-description service-description ["maintenance"]))))
+          (let [service-description (assoc service-description "maintenance" "not a map")
+                response (make-token-request-with-invalid-user-metadata service-description)]
+            (assert-bad-user-metadata-response response ["maintenance"]))))
 
       (testing "post:new-service-description:token-limit-reached"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
