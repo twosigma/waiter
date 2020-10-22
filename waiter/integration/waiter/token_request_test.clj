@@ -1377,16 +1377,13 @@
                                          :run-as-user current-user))
           token-root (retrieve-token-root waiter-url)
           token-cluster (retrieve-token-cluster waiter-url)
-          expires-wait-time 3
-          expires-at (t/plus (t/now) (t/seconds expires-wait-time))
-          default-maintenance-message "Token is under maintenance"
           custom-maintenance-message "custom maintenance message"
-          token-maintenance-default-message {:expires-at (du/date-to-str expires-at)}
+          token-maintenance {:message custom-maintenance-message}
           request-headers {:x-waiter-token token}]
       (try
-        (testing "token creation"
+        (testing "token created in maintenance mode"
           (let [token-description (assoc service-description
-                                    :maintenance token-maintenance-default-message
+                                    :maintenance token-maintenance
                                     :token token)
                 response (post-token waiter-url token-description)]
             (assert-response-status response http-200-ok)))
@@ -1398,25 +1395,11 @@
             (is (= (assoc service-description
                      :cluster token-cluster
                      :last-update-user current-user
-                     :maintenance token-maintenance-default-message
+                     :maintenance token-maintenance
                      :owner current-user
                      :previous {}
                      :root token-root)
                    (dissoc response-body :last-update-time)))))
-
-        (testing "service should error with default maintenance message"
-          (let [{:keys [body] :as response}
-                (make-request waiter-url "/hello-world" :headers request-headers)]
-            (assert-response-status response http-503-service-unavailable)
-            (assert-waiter-response response)
-            (is (str/includes? body default-maintenance-message))))
-
-        (testing "token update:custom-maintenance-message"
-          (let [token-description (assoc service-description
-                                    :maintenance (assoc token-maintenance-default-message :message custom-maintenance-message)
-                                    :token token)
-                response (post-token waiter-url token-description)]
-            (assert-response-status response http-200-ok)))
 
         (testing "request to service should error with custom maintenance message"
           (let [{:keys [body] :as response}
@@ -1425,30 +1408,7 @@
             (assert-waiter-response response)
             (is (str/includes? body custom-maintenance-message))))
 
-        (testing "service should handle success after expires-at time"
-          (let [d-time-ms (t/in-millis (t/interval (t/now) expires-at))
-                _ (Thread/sleep d-time-ms)
-                {:keys [body] :as response}
-                (make-request waiter-url "/hello-world" :headers request-headers)]
-            (assert-response-status response http-200-ok)
-            (assert-backend-response response)
-            (is (= body "Hello World"))))
-
-        (testing "token update:maintenance-never-expire"
-          (let [token-description (assoc service-description
-                                    :maintenance (assoc token-maintenance-default-message :expires-at "*")
-                                    :token token)
-                response (post-token waiter-url token-description)]
-            (assert-response-status response http-200-ok)))
-
-        (testing "request to service should error if maintenance mode does not expire"
-          (let [{:keys [body] :as response}
-                (make-request waiter-url "/hello-world" :headers request-headers)]
-            (assert-response-status response http-503-service-unavailable)
-            (assert-waiter-response response)
-            (is (str/includes? body default-maintenance-message))))
-
-        (testing "token update:empty-maintenance"
+        (testing "token update maintenance field not defined"
           (let [token-description (assoc service-description
                                     :token token)
                 response (post-token waiter-url token-description)]
