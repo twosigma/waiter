@@ -1401,6 +1401,12 @@
                      :root token-root)
                    (dissoc response-body :last-update-time)))))
 
+        (testing "index should be updated"
+          (let [response (make-request waiter-url "/tokens")
+                body (-> response :body json/read-str walk/keywordize-keys)
+                index (first body)]
+            (is (true? (:maintenance index)))))
+
         (testing "request to service should error with custom maintenance message"
           (let [{:keys [body] :as response}
                 (make-request waiter-url "/hello-world" :headers request-headers)]
@@ -1413,6 +1419,12 @@
                                     :token token)
                 response (post-token waiter-url token-description)]
             (assert-response-status response http-200-ok)))
+
+        (testing "index should be updated"
+          (let [response (make-request waiter-url "/tokens")
+                body (-> response :body json/read-str walk/keywordize-keys)
+                index (first body)]
+            (is (false? (:maintenance index)))))
 
         (testing "service should handle request if maintenance mode is not enabled"
           (let [{:keys [body] :as response}
