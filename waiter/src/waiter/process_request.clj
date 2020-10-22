@@ -866,8 +866,6 @@
         {:keys [service-id]} :descriptor
         :as request}]
     (let [maintenance (get token-metadata "maintenance")
-          expires-at (get maintenance "expires-at")
-          default-message "Token is under maintenance"
           response-map {:maintenance maintenance
                         :token token
                         :service-id service-id}]
@@ -879,14 +877,12 @@
                    :status http-400-bad-request
                    :waiter-headers waiter-headers}
                   (utils/data->error-response request)))
-            (and (some? maintenance)
-                 (or (= expires-at "*")
-                     (t/after? (du/str-to-date-safe expires-at) (t/now))))
+            (some? maintenance)
             (do
               (log/info "token is in maintenance mode" response-map)
               (meters/mark! (metrics/service-meter service-id "response-rate" "error" "maintenance"))
               (-> {:details response-map,
-                   :message (or (get maintenance "message") default-message),
+                   :message (get maintenance "message"),
                    :status http-503-service-unavailable}
                   (utils/data->error-response request)))
             :else (handler request)))))
