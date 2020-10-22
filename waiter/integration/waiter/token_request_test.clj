@@ -1401,7 +1401,7 @@
                      :root token-root)
                    (dissoc response-body :last-update-time)))))
 
-        (testing "index should be updated"
+        (testing "index should be updated with maintenance enabled"
           (let [response (make-request waiter-url "/tokens")
                 body (-> response :body json/read-str walk/keywordize-keys)
                 index (first body)]
@@ -1420,7 +1420,7 @@
                 response (post-token waiter-url token-description)]
             (assert-response-status response http-200-ok)))
 
-        (testing "index should be updated"
+        (testing "index should be updated with maintenance disabled"
           (let [response (make-request waiter-url "/tokens")
                 body (-> response :body json/read-str walk/keywordize-keys)
                 index (first body)]
