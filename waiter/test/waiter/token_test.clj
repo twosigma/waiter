@@ -720,8 +720,7 @@
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
                  :body (-> service-description-1
-                           (assoc "maintenance" {:expires-at "2020-10-20T16:25:06.016Z"
-                                                 :message "custom maintenance message"}
+                           (assoc "maintenance" {:message "custom maintenance message"}
                                   "token" token)
                            utils/clj->json StringBufferInputStream.)
                  :headers {}
@@ -736,8 +735,7 @@
             (is (= {"cluster" (str token-root "-cluster")
                     "last-update-time" (clock-millis)
                     "last-update-user" "tu1"
-                    "maintenance" {"expires-at" "2020-10-20T16:25:06.016Z"
-                                   "message" "custom maintenance message"}
+                    "maintenance" {"message" "custom maintenance message"}
                     "owner" "tu1"
                     "previous" {}
                     "root" token-root}
@@ -1814,8 +1812,7 @@
 
       (let [kv-store (kv/->LocalKeyValueStore (atom {}))
             service-description (walk/stringify-keys
-                                  {:maintenance {:expires-at "2020-10-20T16:25:06.016Z"
-                                                 :message "custom maintenance message"}
+                                  {:maintenance {:message "custom maintenance message"}
                                    :token "abcdefgh"})
             make-token-request-with-invalid-user-metadata
             (fn [service-description]
@@ -1832,7 +1829,6 @@
           (let [invalid-keys ["maintenance" "message"]
                 service-description (assoc-in service-description invalid-keys (apply str (repeat 513 "a")))
                 response (make-token-request-with-invalid-user-metadata service-description) ]
-            (println response)
             (assert-bad-user-metadata-response response invalid-keys)))
 
         (testing "post:new-user-metadata:maintenance-message-is-empty-string"
@@ -1847,20 +1843,19 @@
                 response (make-token-request-with-invalid-user-metadata service-description)]
             (assert-bad-user-metadata-response response invalid-keys)))
 
-        (testing "post:new-user-metadata:maintenance-expires-at-is-not-proper-iso8601-format"
-          (let [invalid-keys ["maintenance" "expires-at"]
-                service-description (assoc-in service-description invalid-keys "invalid iso8601 format")
-                response (make-token-request-with-invalid-user-metadata service-description)]
-            (assert-bad-user-metadata-response response invalid-keys)))
-
-        (testing "post:new-user-metadata:maintenance-expires-is-nil"
-          (let [invalid-keys ["maintenance" "expires-at"]
-                service-description (assoc-in service-description invalid-keys nil)
+        (testing "post:new-user-metadata:maintenance-message-is-not-defined"
+          (let [invalid-keys ["maintenance" "message"]
+                service-description (update service-description "maintenance" dissoc "message")
                 response (make-token-request-with-invalid-user-metadata service-description)]
             (assert-bad-user-metadata-response response invalid-keys)))
 
         (testing "post:new-user-metadata:maintenance-is-not-a-map"
           (let [service-description (assoc service-description "maintenance" "not a map")
+                response (make-token-request-with-invalid-user-metadata service-description)]
+            (assert-bad-user-metadata-response response ["maintenance"])))
+
+        (testing "post:new-user-metadata:maintenance-is-nil"
+          (let [service-description (assoc service-description "maintenance" nil)
                 response (make-token-request-with-invalid-user-metadata service-description)]
             (assert-bad-user-metadata-response response ["maintenance"]))))
 
