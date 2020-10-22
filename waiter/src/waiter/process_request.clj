@@ -860,7 +860,8 @@
 
 (defn wrap-maintenance-mode
   "Check if a service's token is in maintenance mode and immediately return a 503 response
-  with a custom message if specified"
+  with a custom message if specified. Check if x-waiter-maintenance header is set and return
+  400 response because the header is not supported."
   [handler]
   (fn [{{:keys [token-metadata token waiter-headers service-description-template]} :waiter-discovery
         {:keys [service-id]} :descriptor
