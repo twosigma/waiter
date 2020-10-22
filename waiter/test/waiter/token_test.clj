@@ -2247,16 +2247,16 @@
                            (f)))
         tokens {"token1" {"last-update-time" 1000 "owner" "owner1"}
                 "token2" {"owner" "owner1"}
-                "token3" {"last-update-time" 3000 "owner" "owner2"}}
+                "token3" {"last-update-time" 3000 "owner" "owner2" "maintenance" {"message" "custom maintenance message"}}}
         kv-store (kv/->LocalKeyValueStore (atom {}))
         token-owners-key "^TOKEN_OWNERS"
         token1-etag (sd/token-data->token-hash (get tokens "token1"))
-        token1-index-entry (make-index-entry token1-etag false 1000)
+        token1-index-entry (make-index-entry token1-etag false 1000 nil)
         token2-etag (sd/token-data->token-hash (get tokens "token2"))
-        token2-index-entry (make-index-entry token2-etag false nil)
+        token2-index-entry (make-index-entry token2-etag false nil nil)
         token3-etag (sd/token-data->token-hash (get tokens "token3"))
-        token3-index-entry (make-index-entry token3-etag false 3000)
-        bad-token-entry (make-index-entry "E-123456" true 2000)]
+        token3-index-entry (make-index-entry token3-etag false 3000 true)
+        bad-token-entry (make-index-entry "E-123456" true 2000 true)]
     (doseq [[token token-data] tokens]
       (kv/store kv-store token token-data))
     (reindex-tokens synchronize-fn kv-store (keys tokens))

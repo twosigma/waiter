@@ -67,10 +67,11 @@
 
 (defn make-index-entry
   "Factory method for the token index entry."
-  [token-hash deleted last-update-time]
+  [token-hash deleted last-update-time maintenance]
   {:deleted (true? deleted)
    :etag token-hash
-   :last-update-time last-update-time})
+   :last-update-time last-update-time
+   :maintenance (some? maintenance)})
 
 (let [token-lock "TOKEN_LOCK"
       token-owners-key "^TOKEN_OWNERS"
@@ -100,7 +101,7 @@
       token-lock
       (fn inner-store-service-description-for-token []
         (log/info "storing service description for token:" token)
-        (let [{:strs [deleted last-update-time owner] :as new-token-data}
+        (let [{:strs [deleted last-update-time owner maintenance] :as new-token-data}
               (-> (merge service-parameter-template token-metadata)
                   (select-keys sd/token-data-keys)
                   (sd/sanitize-service-description sd/token-data-keys))
@@ -142,7 +143,7 @@
                   token-hash' (sd/token-data->token-hash new-token-data)]
               (log/info "inserting" token "into index of" owner)
               (update-kv! kv-store owner-key (fn [index]
-                                               (->> (make-index-entry token-hash' deleted last-update-time)
+                                               (->> (make-index-entry token-hash' deleted last-update-time maintenance)
                                                     (assoc index token))))))
           (log/info "stored service description template for" token)))))
 
@@ -174,10 +175,10 @@
                 owner-key (ensure-owner-key kv-store owner->owner-key owner)]
             (update-kv! kv-store owner-key (fn [index] (dissoc index token)))
             (when-not hard-delete
-              (let [{:keys [last-update-time] :as token-data} (kv/fetch kv-store token)
+              (let [{:keys [last-update-time maintenance] :as token-data} (kv/fetch kv-store token)
                     token-hash (sd/token-data->token-hash token-data)]
                 (update-kv! kv-store owner-key (fn [index]
-                                                 (->> (make-index-entry token-hash true last-update-time)
+                                                 (->> (make-index-entry token-hash true last-update-time maintenance)
                                                       (assoc index token))))))))
         ; Don't bother removing owner from token-owners, even if they have no tokens now
         (log/info "deleted token for" token))))
@@ -240,9 +241,9 @@
                                      (fn [tokens]
                                        (pc/map-from-keys
                                          (fn [token]
-                                           (let [{:strs [deleted last-update-time] :as token-data} (kv/fetch kv-store token)
+                                           (let [{:strs [deleted last-update-time maintenance] :as token-data} (kv/fetch kv-store token)
                                                  token-hash (sd/token-data->token-hash token-data)]
-                                             (make-index-entry token-hash deleted last-update-time)))
+                                             (make-index-entry token-hash deleted last-update-time maintenance)))
                                          tokens))
                                      owner->tokens)
               owner->owner-key (pc/map-from-keys (fn [_] (new-owner-key)) (keys owner->index-entries))]
