@@ -394,13 +394,14 @@
 (deftest test-wrap-maintenance-mode
   (testing "returns 503 for token in maintenance mode with custom message"
     (let [handler (wrap-maintenance-mode (fn [_] {:status http-200-ok}))
-          request {:waiter-discovery {:token-metadata {"maintenance" {"message" "test maintenance message"}}
+          maintenance-message "test maintenance message"
+          request {:waiter-discovery {:token-metadata {"maintenance" {"message" maintenance-message}}
                                       :token "token"
                                       :waiter-headers {}}
                    :descriptor {:service-id "service-id-1"}}
           {:keys [status body]} (handler request)]
       (is (= http-503-service-unavailable status))
-      (is (str/includes? body (get-in request [:waiter-discovery :token-metadata "maintenance" "message"])))))
+      (is (str/includes? body maintenance-message))))
 
   (testing "returns 400 if x-waiter-maintenance is specified in headers"
     (let [handler (wrap-maintenance-mode (fn [_] {:status http-200-ok}))
@@ -410,7 +411,7 @@
                    :descriptor {:service-id "service-id-1"}}
           {:keys [status body]} (handler request)]
       (is (= http-400-bad-request status))
-      (is (str/includes? body "Maintenance parameter is not supported for on-the-fly headers"))))
+      (is (str/includes? body "The maintenance parameter is not supported for on-the-fly requests"))))
 
   (testing "passes apps by default"
     (let [handler (wrap-maintenance-mode (fn [_] {:status http-200-ok}))
