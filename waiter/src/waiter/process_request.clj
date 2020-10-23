@@ -880,7 +880,7 @@
                   (utils/data->error-response request)))
             (some? maintenance)
             (do
-              (log/info "token is in maintenance mode" response-map)
+              (log/info (str "token " token " is in maintenance mode (service-id: " service-id ")"))
               (meters/mark! (metrics/service-meter service-id "response-rate" "error" "maintenance"))
               (-> {:details response-map,
                    :message (get maintenance "message"),
