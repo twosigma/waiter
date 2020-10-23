@@ -1544,8 +1544,8 @@
                                      pr/wrap-too-many-requests
                                      pr/wrap-suspended-service
                                      pr/wrap-response-status-metrics
-                                     pr/wrap-maintenance-mode
                                      (interstitial/wrap-interstitial interstitial-state-atom)
+                                     pr/wrap-maintenance-mode
                                      wrap-descriptor-fn
                                      wrap-secure-request-fn
                                      wrap-auth-bypass-fn
