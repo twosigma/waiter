@@ -2164,7 +2164,7 @@
       synchronize-fn kv-store history-length limit-per-owner token service-parameter-template token-metadata)
 
     (is (= token-data (kv/fetch kv-store token)))
-    (is (= {token {:deleted false :etag (sd/token-data->token-hash token-data) :last-update-time nil}}
+    (is (= {token {:deleted false :etag (sd/token-data->token-hash token-data) :last-update-time nil :maintenance false}}
            (list-index-entries-for-owner kv-store owner-1)))
 
     (delete-service-description-for-token
@@ -2176,7 +2176,7 @@
                                "last-update-user" owner-1
                                "previous" token-data)]
       (is (= deleted-token-data (kv/fetch kv-store token)))
-      (is (= {token {:deleted true :etag (sd/token-data->token-hash deleted-token-data) :last-update-time nil}}
+      (is (= {token {:deleted true :etag (sd/token-data->token-hash deleted-token-data) :last-update-time nil :maintenance false}}
              (list-index-entries-for-owner kv-store owner-1))))
 
     (let [service-parameter-template {"cpus" 2}
@@ -2187,7 +2187,7 @@
         synchronize-fn kv-store history-length limit-per-owner token service-parameter-template token-metadata)
 
       (is (= token-data (kv/fetch kv-store token)))
-      (is (= {token {:deleted false :etag (sd/token-data->token-hash token-data) :last-update-time nil}}
+      (is (= {token {:deleted false :etag (sd/token-data->token-hash token-data) :last-update-time nil :maintenance false}}
              (list-index-entries-for-owner kv-store owner-2)))
       (is (empty? (list-index-entries-for-owner kv-store owner-1))))))
 
