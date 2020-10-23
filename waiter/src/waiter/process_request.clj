@@ -882,8 +882,8 @@
             (do
               (log/info (str "token " token " is in maintenance mode (service-id: " service-id ")"))
               (meters/mark! (metrics/service-meter service-id "response-rate" "error" "maintenance"))
-              (-> {:details response-map,
-                   :message (get maintenance "message"),
+              (-> {:details response-map
+                   :message (get maintenance "message")
                    :status http-503-service-unavailable}
                   (utils/data->error-response request)))
             :else (handler request)))))
