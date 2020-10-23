@@ -721,7 +721,7 @@
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
                  :body (-> service-description-1
-                           (assoc "maintenance" {:message "custom maintenance message"}
+                           (assoc "maintenance" {"message" "custom maintenance message"}
                                   "token" token)
                            utils/clj->json StringBufferInputStream.)
                  :headers {}
