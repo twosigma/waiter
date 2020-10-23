@@ -2374,48 +2374,56 @@
     (store-service-description-for-token
       synchronize-fn kv-store history-length limit-per-owner "token9"
       {"allowed-params" #{"P1" "P2"} "env" {"E1" "v0" "P1" "v1" "P2" "v2"} "cpus" 4 "mem" 1024}
-      {"cluster" "c1" "last-update-time" (- last-update-time-seed 3000) "owner" "owner3"})
+      {"cluster" "c1" "last-update-time" (- last-update-time-seed 3000) "maintenance" {"message" "msg1"} "owner" "owner3"})
     (let [request {:query-string "include=metadata" :request-method :get}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= http-200-ok status))
       (is (= #{{"deleted" false
                 "etag" (token->token-hash "token1")
                 "last-update-time" (-> (- last-update-time-seed 1000) tc/from-long du/date-to-str)
+                "maintenance" false
                 "owner" "owner1"
                 "token" "token1"}
                {"deleted" false
                 "etag" (token->token-hash "token2")
                 "last-update-time" (-> (- last-update-time-seed 2000) tc/from-long du/date-to-str)
+                "maintenance" false
                 "owner" "owner1"
                 "token" "token2"}
                {"deleted" false
                 "etag" (token->token-hash "token3")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
+                "maintenance" false
                 "owner" "owner2"
                 "token" "token3"}
                {"deleted" false
                 "etag" (token->token-hash "token5")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
+                "maintenance" false
                 "owner" "owner3"
                 "token" "token5"}
                {"deleted" false
                 "etag" (token->token-hash "token6")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
+                "maintenance" false
                 "owner" "owner3"
                 "token" "token6"}
                {"deleted" false
                 "etag" (token->token-hash "token7")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
+                "maintenance" false
                 "owner" "owner3"
                 "token" "token7"}
                {"deleted" false
                 "etag" (token->token-hash "token8")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
+                "maintenance" false
                 "owner" "owner3"
                 "token" "token8"}
                {"deleted" false
                 "etag" (token->token-hash "token9")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
+                "maintenance" true
                 "owner" "owner3"
                 "token" "token9"}}
              (set (json/read-str body)))))
@@ -2425,60 +2433,69 @@
       (is (= #{{"deleted" false
                 "etag" (token->token-hash "token1")
                 "last-update-time" (-> (- last-update-time-seed 1000) tc/from-long du/date-to-str)
+                "maintenance" false
                 "owner" "owner1"
                 "token" "token1"}
                {"deleted" false
                 "etag" (token->token-hash "token2")
                 "last-update-time" (-> (- last-update-time-seed 2000) tc/from-long du/date-to-str)
+                "maintenance" false
                 "owner" "owner1"
                 "token" "token2"}
                {"deleted" false
                 "etag" (token->token-hash "token3")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
+                "maintenance" false
                 "owner" "owner2"
                 "token" "token3"}
                {"deleted" true
                 "etag" (token->token-hash "token4")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
+                "maintenance" false
                 "owner" "owner2"
                 "token" "token4"}
                {"deleted" false
                 "etag" (token->token-hash "token5")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
+                "maintenance" false
                 "owner" "owner3"
                 "token" "token5"}
                {"deleted" false
                 "etag" (token->token-hash "token6")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
+                "maintenance" false
                 "owner" "owner3"
                 "token" "token6"}
                {"deleted" false
                 "etag" (token->token-hash "token7")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
+                "maintenance" false
                 "owner" "owner3"
                 "token" "token7"}
                {"deleted" false
                 "etag" (token->token-hash "token8")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
+                "maintenance" false
                 "owner" "owner3"
                 "token" "token8"}
                {"deleted" false
                 "etag" (token->token-hash "token9")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
+                "maintenance" true
                 "owner" "owner3"
                 "token" "token9"}}
              (set (json/read-str body)))))
     (let [request {:request-method :get}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= http-200-ok status))
-      (is (= #{{"owner" "owner1" "token" "token1"}
-               {"owner" "owner1" "token" "token2"}
-               {"owner" "owner2" "token" "token3"}
-               {"owner" "owner3" "token" "token5"}
-               {"owner" "owner3" "token" "token6"}
-               {"owner" "owner3" "token" "token7"}
-               {"owner" "owner3" "token" "token8"}
-               {"owner" "owner3" "token" "token9"}}
+      (is (= #{{"maintenance" false "owner" "owner1" "token" "token1"}
+               {"maintenance" false "owner" "owner1" "token" "token2"}
+               {"maintenance" false "owner" "owner2" "token" "token3"}
+               {"maintenance" false "owner" "owner3" "token" "token5"}
+               {"maintenance" false "owner" "owner3" "token" "token6"}
+               {"maintenance" false "owner" "owner3" "token" "token7"}
+               {"maintenance" false "owner" "owner3" "token" "token8"}
+               {"maintenance" true "owner" "owner3" "token" "token9"}}
              (set (json/read-str body)))))
     (let [entitlement-manager (reify authz/EntitlementManager
                                 (authorized? [_ subject action resource]
@@ -2487,25 +2504,25 @@
       (let [request {:query-string "can-manage-as-user=owner" :request-method :get}
             {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
         (is (= http-200-ok status))
-        (is (= #{{"owner" "owner1" "token" "token1"}
-                 {"owner" "owner1" "token" "token2"}
-                 {"owner" "owner2" "token" "token3"}
-                 {"owner" "owner3" "token" "token5"}
-                 {"owner" "owner3" "token" "token6"}
-                 {"owner" "owner3" "token" "token7"}
-                 {"owner" "owner3" "token" "token8"}
-                 {"owner" "owner3" "token" "token9"}}
+        (is (= #{{"maintenance" false "owner" "owner1" "token" "token1"}
+                 {"maintenance" false "owner" "owner1" "token" "token2"}
+                 {"maintenance" false "owner" "owner2" "token" "token3"}
+                 {"maintenance" false "owner" "owner3" "token" "token5"}
+                 {"maintenance" false "owner" "owner3" "token" "token6"}
+                 {"maintenance" false "owner" "owner3" "token" "token7"}
+                 {"maintenance" false "owner" "owner3" "token" "token8"}
+                 {"maintenance" true "owner" "owner3" "token" "token9"}}
                (set (json/read-str body)))))
       (let [request {:query-string "can-manage-as-user=owner1" :request-method :get}
             {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
         (is (= http-200-ok status))
-        (is (= #{{"owner" "owner1" "token" "token1"}
-                 {"owner" "owner1" "token" "token2"}}
+        (is (= #{{"maintenance" false "owner" "owner1" "token" "token1"}
+                 {"maintenance" false "owner" "owner1" "token" "token2"}}
                (set (json/read-str body)))))
       (let [request {:query-string "can-manage-as-user=owner2" :request-method :get}
             {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
         (is (= http-200-ok status))
-        (is (= #{{"owner" "owner2" "token" "token3"}}
+        (is (= #{{"maintenance" false "owner" "owner2" "token" "token3"}}
                (set (json/read-str body)))))
       (let [request {:query-string "can-manage-as-user=test" :request-method :get}
             {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
@@ -2514,8 +2531,8 @@
     (let [request {:query-string "owner=owner1" :request-method :get}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= http-200-ok status))
-      (is (= #{{"owner" "owner1" "token" "token1"}
-               {"owner" "owner1" "token" "token2"}}
+      (is (= #{{"maintenance" false "owner" "owner1" "token" "token1"}
+               {"maintenance" false "owner" "owner1" "token" "token2"}}
              (set (json/read-str body)))))
     (let [request {:query-string "owner=owner1&include=metadata" :request-method :get}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
@@ -2523,11 +2540,13 @@
       (is (= #{{"deleted" false
                 "etag" (token->token-hash "token1")
                 "last-update-time" (-> (- last-update-time-seed 1000) tc/from-long du/date-to-str)
+                "maintenance" false
                 "owner" "owner1"
                 "token" "token1"}
                {"deleted" false
                 "etag" (token->token-hash "token2")
                 "last-update-time" (-> (- last-update-time-seed 2000) tc/from-long du/date-to-str)
+                "maintenance" false
                 "owner" "owner1"
                 "token" "token2"}}
              (set (json/read-str body)))))
@@ -2549,6 +2568,7 @@
       (is (= #{{"deleted" false
                 "etag" (token->token-hash "token3")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
+                "maintenance" false
                 "owner" "owner2"
                 "token" "token3"}}
              (set (json/read-str body)))))
@@ -2558,98 +2578,100 @@
       (is (= #{{"deleted" false
                 "etag" (token->token-hash "token3")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
+                "maintenance" false
                 "owner" "owner2"
                 "token" "token3"}
                {"deleted" true
                 "etag" (token->token-hash "token4")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
+                "maintenance" false
                 "owner" "owner2"
                 "token" "token4"}}
              (set (json/read-str body)))))
     (let [request {:request-method :get :query-string "cpus=1"}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= http-200-ok status))
-      (is (= #{{"owner" "owner1" "token" "token1"}}
+      (is (= #{{"maintenance" false "owner" "owner1" "token" "token1"}}
              (set (json/read-str body)))))
     (let [request {:request-method :get :query-string "mem=2048"}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= http-200-ok status))
-      (is (= #{{"owner" "owner1" "token" "token2"}
-               {"owner" "owner2" "token" "token3"}
-               {"owner" "owner3" "token" "token5"}
-               {"owner" "owner3" "token" "token6"}}
+      (is (= #{{"maintenance" false "owner" "owner1" "token" "token2"}
+               {"maintenance" false "owner" "owner2" "token" "token3"}
+               {"maintenance" false "owner" "owner3" "token" "token5"}
+               {"maintenance" false "owner" "owner3" "token" "token6"}}
              (set (json/read-str body)))))
     (let [request {:request-method :get :query-string "cluster=c1&mem=2048"}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= http-200-ok status))
-      (is (= #{{"owner" "owner1" "token" "token2"}
-               {"owner" "owner3" "token" "token5"}
-               {"owner" "owner3" "token" "token6"}}
+      (is (= #{{"maintenance" false "owner" "owner1" "token" "token2"}
+               {"maintenance" false "owner" "owner3" "token" "token5"}
+               {"maintenance" false "owner" "owner3" "token" "token6"}}
              (set (json/read-str body)))))
     (let [request {:request-method :get :query-string "cluster=c2&mem=2048"}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= http-200-ok status))
-      (is (= #{{"owner" "owner2" "token" "token3"}}
+      (is (= #{{"maintenance" false "owner" "owner2" "token" "token3"}}
              (set (json/read-str body)))))
     (let [request {:request-method :get :query-string "include=deleted&mem=2048"}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= http-200-ok status))
-      (is (= #{{"owner" "owner1" "token" "token2"}
-               {"owner" "owner2" "token" "token3"}
-               {"owner" "owner2" "token" "token4"}
-               {"owner" "owner3" "token" "token5"}
-               {"owner" "owner3" "token" "token6"}}
+      (is (= #{{"maintenance" false "owner" "owner1" "token" "token2"}
+               {"maintenance" false "owner" "owner2" "token" "token3"}
+               {"maintenance" false "owner" "owner2" "token" "token4"}
+               {"maintenance" false "owner" "owner3" "token" "token5"}
+               {"maintenance" false "owner" "owner3" "token" "token6"}}
              (set (json/read-str body)))))
     (let [request {:request-method :get :query-string "idle-timeout-mins=0"}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= http-200-ok status))
-      (is (= #{{"owner" "owner1" "token" "token1"}
-               {"owner" "owner3" "token" "token6"}}
+      (is (= #{{"maintenance" false "owner" "owner1" "token" "token1"}
+               {"maintenance" false "owner" "owner3" "token" "token6"}}
              (set (json/read-str body)))))
     (let [request {:request-method :get :query-string "idle-timeout-mins=0&include=deleted"}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= http-200-ok status))
-      (is (= #{{"owner" "owner1" "token" "token1"}
-               {"owner" "owner2" "token" "token4"}
-               {"owner" "owner3" "token" "token6"}}
+      (is (= #{{"maintenance" false "owner" "owner1" "token" "token1"}
+               {"maintenance" false "owner" "owner2" "token" "token4"}
+               {"maintenance" false "owner" "owner3" "token" "token6"}}
              (set (json/read-str body)))))
     (let [request {:request-method :get :query-string "cluster=c1&idle-timeout-mins=0"}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= http-200-ok status))
-      (is (= #{{"owner" "owner1" "token" "token1"}
-               {"owner" "owner3" "token" "token6"}}
+      (is (= #{{"maintenance" false "owner" "owner1" "token" "token1"}
+               {"maintenance" false "owner" "owner3" "token" "token6"}}
              (set (json/read-str body)))))
     (let [request {:request-method :get :query-string "run-as-requester=true"}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= http-200-ok status))
-      (is (= #{{"owner" "owner3" "token" "token5"}
-               {"owner" "owner3" "token" "token6"}}
+      (is (= #{{"maintenance" false "owner" "owner3" "token" "token5"}
+               {"maintenance" false "owner" "owner3" "token" "token6"}}
              (set (json/read-str body)))))
     (let [request {:request-method :get :query-string "run-as-requester=false"}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= http-200-ok status))
-      (is (= #{{"owner" "owner1" "token" "token1"}
-               {"owner" "owner1" "token" "token2"}
-               {"owner" "owner2" "token" "token3"}
-               {"owner" "owner3" "token" "token7"}
-               {"owner" "owner3" "token" "token8"}
-               {"owner" "owner3" "token" "token9"}}
+      (is (= #{{"maintenance" false "owner" "owner1" "token" "token1"}
+               {"maintenance" false "owner" "owner1" "token" "token2"}
+               {"maintenance" false "owner" "owner2" "token" "token3"}
+               {"maintenance" false "owner" "owner3" "token" "token7"}
+               {"maintenance" false "owner" "owner3" "token" "token8"}
+               {"maintenance" true "owner" "owner3" "token" "token9"}}
              (set (json/read-str body)))))
     (let [request {:request-method :get :query-string "requires-parameters=true"}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= http-200-ok status))
-      (is (= #{{"owner" "owner3" "token" "token7"}
-               {"owner" "owner3" "token" "token8"}}
+      (is (= #{{"maintenance" false "owner" "owner3" "token" "token7"}
+               {"maintenance" false "owner" "owner3" "token" "token8"}}
              (set (json/read-str body)))))
     (let [request {:request-method :get :query-string "requires-parameters=false"}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= http-200-ok status))
-      (is (= #{{"owner" "owner1" "token" "token1"}
-               {"owner" "owner1" "token" "token2"}
-               {"owner" "owner2" "token" "token3"}
-               {"owner" "owner3" "token" "token5"}
-               {"owner" "owner3" "token" "token6"}
-               {"owner" "owner3" "token" "token9"}}
+      (is (= #{{"maintenance" false "owner" "owner1" "token" "token1"}
+               {"maintenance" false "owner" "owner1" "token" "token2"}
+               {"maintenance" false "owner" "owner2" "token" "token3"}
+               {"maintenance" false "owner" "owner3" "token" "token5"}
+               {"maintenance" false "owner" "owner3" "token" "token6"}
+               {"maintenance" true "owner" "owner3" "token" "token9"}}
              (set (json/read-str body)))))
     (let [request {:request-method :get :query-string "cluster=c2&idle-timeout-mins=0"}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
@@ -2658,11 +2680,16 @@
     (let [request {:request-method :get :query-string "idle-timeout-mins=5"}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= http-200-ok status))
-      (is (= #{{"owner" "owner2" "token" "token3"}}
+      (is (= #{{"maintenance" false "owner" "owner2" "token" "token3"}}
              (set (json/read-str body)))))
     (let [request {:headers {"accept" "application/json"}
                    :request-method :get}
           {:keys [body]} (handle-list-token-owners-request kv-store request)
           owner-map-keys (keys (json/read-str body))]
       (is (some #(= "owner1" %) owner-map-keys) "Should have had a key 'owner1'")
-      (is (some #(= "owner2" %) owner-map-keys) "Should have had a key 'owner2'"))))
+      (is (some #(= "owner2" %) owner-map-keys) "Should have had a key 'owner2'"))
+    (let [request {:request-method :get :query-string "maintenance={\"message\" \"msg1\"}"}
+          {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
+      (is (= http-200-ok status))
+      (is (= #{{"maintenance" true "owner" "owner3" "token" "token9"}}
+             (set (json/read-str body)))))))
