@@ -101,7 +101,7 @@
       token-lock
       (fn inner-store-service-description-for-token []
         (log/info "storing service description for token:" token)
-        (let [{:strs [deleted last-update-time owner maintenance] :as new-token-data}
+        (let [{:strs [deleted last-update-time maintenance owner] :as new-token-data}
               (-> (merge service-parameter-template token-metadata)
                   (select-keys sd/token-data-keys)
                   (sd/sanitize-service-description sd/token-data-keys))
