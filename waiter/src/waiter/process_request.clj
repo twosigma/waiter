@@ -874,7 +874,7 @@
             (do
               (log/info "x-waiter-maintenance is not supported as an on-the-fly header"
                         {:service-description service-description-template :token token})
-              (-> {:message "Maintenance parameter is not supported for on-the-fly headers"
+              (-> {:message "The maintenance parameter is not supported for on-the-fly requests"
                    :status http-400-bad-request
                    :waiter-headers waiter-headers}
                   (utils/data->error-response request)))
