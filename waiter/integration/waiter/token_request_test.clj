@@ -1390,7 +1390,7 @@
 
         (testing "token retrieval"
           (let [token-response (get-token waiter-url token)
-                response-body (-> token-response :body json/read-str pc/keywordize-map)]
+                response-body (-> token-response :body try-parse-json walk/keywordize-keys)]
             (assert-response-status token-response http-200-ok)
             (is (contains? response-body :last-update-time))
             (is (= (assoc service-description
@@ -1404,7 +1404,7 @@
 
         (testing "index should be updated with maintenance enabled"
           (let [response (make-request waiter-url "/tokens")
-                body (-> response :body json/read-str walk/keywordize-keys)
+                body (-> response :body try-parse-json walk/keywordize-keys)
                 index (first body)]
             (is (true? (:maintenance index)))))
 
@@ -1423,7 +1423,7 @@
 
         (testing "index should be updated with maintenance disabled"
           (let [response (make-request waiter-url "/tokens")
-                body (-> response :body json/read-str walk/keywordize-keys)
+                body (-> response :body try-parse-json walk/keywordize-keys)
                 index (first body)]
             (is (false? (:maintenance index)))))
 
