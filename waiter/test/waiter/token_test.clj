@@ -378,6 +378,7 @@
           (is (= [{"deleted" false
                    "etag" (sd/token-data->token-hash token-data)
                    "last-update-time" (-> last-update-time tc/from-long du/date-to-str)
+                   "maintenance" false
                    "owner" "tu1"
                    "token" token}]
                  (json/read-str body)))))
