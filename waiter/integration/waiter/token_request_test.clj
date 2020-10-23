@@ -1391,6 +1391,7 @@
         (testing "token retrieval"
           (let [token-response (get-token waiter-url token)
                 response-body (-> token-response :body json/read-str pc/keywordize-map)]
+            (assert-response-status token-response http-200-ok)
             (is (contains? response-body :last-update-time))
             (is (= (assoc service-description
                      :cluster token-cluster
