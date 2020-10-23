@@ -1405,7 +1405,7 @@
         (testing "index should be updated with maintenance enabled"
           (let [response (make-request waiter-url "/tokens")
                 body (-> response :body try-parse-json walk/keywordize-keys)
-                index (first body)]
+                index (first (filter #(= (:token %) token) body))]
             (is (true? (:maintenance index)))))
 
         (testing "request to service should error with custom maintenance message"
@@ -1424,7 +1424,7 @@
         (testing "index should be updated with maintenance disabled"
           (let [response (make-request waiter-url "/tokens")
                 body (-> response :body try-parse-json walk/keywordize-keys)
-                index (first body)]
+                index (first (filter #(= (:token %) token) body))]
             (is (false? (:maintenance index)))))
 
         (testing "service should handle request if maintenance mode is not enabled"
