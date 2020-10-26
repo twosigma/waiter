@@ -381,6 +381,63 @@
         (finally
           (cleanup-token waiter-api waiter-urls token-name))))))
 
+(deftest test-token-update-maintenance-mode
+  (testing "token sync maintenance-mode"
+    (let [waiter-urls (waiter-urls)
+          {:keys [load-token store-token] :as waiter-api} (waiter-api)
+          limit 10
+          token-name (str "test-token-maintenance-mode-" (UUID/randomUUID))]
+      (try
+        ;; ARRANGE
+        (let [current-time-ms (System/currentTimeMillis)
+              token-metadata (basic-token-metadata current-time-ms)
+              token-description (merge basic-description token-metadata)
+              maintenance-config {"message" "custom maintenance message"}]
+
+          (store-token (first waiter-urls) token-name nil (assoc token-description "maintenance" maintenance-config))
+          (doseq [waiter-url (rest waiter-urls)]
+            (let [last-update-time-ms (- current-time-ms 10000)]
+              (store-token waiter-url token-name nil
+                           (assoc token-description "last-update-time" last-update-time-ms))))
+
+          (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
+
+            ;; ACT
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit)]
+
+              ;; ASSERT
+              (let [waiter-sync-result (constantly
+                                         {:code :success/sync-update
+                                          :details {:etag token-etag
+                                                    :status 200}})
+                    expected-result {:details {token-name {:latest {:cluster-url (first waiter-urls)
+                                                                    :description (assoc
+                                                                                   token-description
+                                                                                   "maintenance" maintenance-config)
+                                                                    :token-etag token-etag}
+                                                           :sync-result (pc/map-from-keys waiter-sync-result (rest waiter-urls))}}
+                                     :summary {:sync {:failed #{}
+                                                      :unmodified #{}
+                                                      :updated #{token-name}}
+                                               :tokens {:pending {:count 1 :value #{token-name}}
+                                                        :previously-synced {:count 0 :value #{}}
+                                                        :processed {:count 1 :value #{token-name}}
+                                                        :selected {:count 1 :value #{token-name}}
+                                                        :total {:count 1 :value #{token-name}}}}}]
+                (clojure.pprint/pprint expected-result)
+                (clojure.pprint/pprint actual-result)
+                (is (= expected-result actual-result))
+                (doseq [waiter-url waiter-urls]
+                  (is (= {:description (assoc token-description "maintenance" maintenance-config)
+                          :headers {"content-type" "application/json"
+                                    "etag" token-etag}
+                          :status 200
+                          :token-etag token-etag}
+                         (load-token waiter-url token-name))))))))
+        (finally
+          (cleanup-token waiter-api waiter-urls token-name))))
+    ))
+
 (deftest ^:integration test-token-different-owners-but-same-root
   (testing "token sync update with different owners but same root"
     (let [waiter-urls (waiter-urls)
