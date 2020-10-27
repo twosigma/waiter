@@ -399,7 +399,7 @@
                  "text/html" (error-context->html-body error-context render-html-fn)
                  "text/plain" (error-context->text-body error-context render-text-fn))
          :headers (-> headers
-                      (assoc-if-absent "content-type" content-type))
+                    (assoc-if-absent "content-type" content-type))
          :status status}
         (attach-error-class details)
         (attach-grpc-status error-context request)
