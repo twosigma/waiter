@@ -281,41 +281,37 @@
     (build-error-context data-map request)
     {:token token :token-owner token-owner}))
 
-(let [html-fn
-      (template/fn
-        [{:keys [cid details host instance-id message principal query-string request-method
-                 service-id status support-info timestamp uri]}]
-        (slurp (io/resource "web/error.html")))]
+(let [html-fn (template/fn
+                [{:keys [cid details host instance-id message principal query-string request-method
+                         service-id status support-info timestamp uri]}]
+                (slurp (io/resource "web/error.html")))]
   (defn- render-error-html
     "Renders error html"
     [context]
     (html-fn context)))
 
-(let [text-fn
-      (template/fn
-        [{:keys [cid details host instance-id message principal query-string request-method
-                 service-id status support-info timestamp uri]}]
-        (slurp (io/resource "web/error.txt")))]
+(let [text-fn (template/fn
+                [{:keys [cid details host instance-id message principal query-string request-method
+                         service-id status support-info timestamp uri]}]
+                (slurp (io/resource "web/error.txt")))]
   (defn- render-error-text
     "Renders error text"
     [context]
     (text-fn context)))
 
-(let [html-fn
-      (template/fn
-        [{:keys [cid host instance-id message principal query-string request-method
-                 service-id support-info timestamp token token-owner uri]}]
-        (slurp (io/resource "web/maintenance.html")))]
+(let [html-fn (template/fn
+                [{:keys [cid host instance-id message principal query-string request-method
+                         service-id support-info timestamp token token-owner uri]}]
+                (slurp (io/resource "web/maintenance.html")))]
   (defn- render-maintenance-mode-html
     "Renders maintenance mode error"
     [context]
     (html-fn context)))
 
-(let [text-fn
-      (template/fn
-        [{:keys [cid host instance-id message principal query-string request-method
-                 service-id support-info timestamp token token-owner uri]}]
-        (slurp (io/resource "web/maintenance.txt")))]
+(let [text-fn (template/fn
+                [{:keys [cid host instance-id message principal query-string request-method
+                         service-id support-info timestamp token token-owner uri]}]
+                (slurp (io/resource "web/maintenance.txt")))]
   (defn- render-maintenance-mode-text
     "Renders maintenance error text"
     [context]
