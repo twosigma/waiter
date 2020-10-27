@@ -276,6 +276,9 @@
      :uri uri}))
 
 (defn- build-maintenance-context
+  "Creates a context from a data map and request.
+   The data map is expected to contain the following keys: details, message, and status.
+   The key details is a map with keys: token and token-owner"
   [{{:keys [token token-owner]} :details :as data-map} request]
   (merge
     (build-error-context data-map request)
@@ -304,7 +307,7 @@
                          service-id support-info timestamp token token-owner uri]}]
                 (slurp (io/resource "web/maintenance.html")))]
   (defn- render-maintenance-mode-html
-    "Renders maintenance mode error"
+    "Renders maintenance mode html"
     [context]
     (html-fn context)))
 
@@ -313,7 +316,7 @@
                          service-id support-info timestamp token token-owner uri]}]
                 (slurp (io/resource "web/maintenance.txt")))]
   (defn- render-maintenance-mode-text
-    "Renders maintenance error text"
+    "Renders maintenance mode text"
     [context]
     (text-fn context)))
 
@@ -414,7 +417,9 @@
 
 (defn data->maintenance-mode-response
   "Converts the provided data map into a ring response and renders as a maintenance mode error.
-   The data map is expected to contain the following keys: details, headers, message, and status."
+   The data map is expected to contain the following keys: details, headers, message, and status.
+   The message field should correspond with the maintenance message and details is a map with keys:
+   token and token-owner"
   [data-map request]
   (data-render-fn->error-response data-map request build-maintenance-context render-maintenance-mode-html render-maintenance-mode-text))
 
