@@ -275,25 +275,53 @@
      :timestamp (du/date-to-str request-time)
      :uri uri}))
 
-(let [html-fn (template/fn
-                [{:keys [cid details host instance-id message principal query-string request-method
-                         service-id status support-info timestamp uri]}]
-                (slurp (io/resource "web/error.html")))]
+(defn- build-maintenance-context
+  [{{:keys [token token-owner]} :details :as data-map} request]
+  (merge
+    (build-error-context data-map request)
+    {:token token :token-owner token-owner}))
+
+(let [html-fn
+      (template/fn
+        [{:keys [cid details host instance-id message principal query-string request-method
+                 service-id status support-info timestamp uri]}]
+        (slurp (io/resource "web/error.html")))]
   (defn- render-error-html
     "Renders error html"
     [context]
     (html-fn context)))
 
-(let [text-fn (template/fn
-                [{:keys [cid details host instance-id message principal query-string request-method
-                         service-id status support-info timestamp uri]}]
-                (slurp (io/resource "web/error.txt")))]
+(let [text-fn
+      (template/fn
+        [{:keys [cid details host instance-id message principal query-string request-method
+                 service-id status support-info timestamp uri]}]
+        (slurp (io/resource "web/error.txt")))]
   (defn- render-error-text
     "Renders error text"
     [context]
     (text-fn context)))
 
-(defn error-context->json-body
+(let [html-fn
+      (template/fn
+        [{:keys [cid host instance-id message principal query-string request-method
+                 service-id support-info timestamp token token-owner uri]}]
+        (slurp (io/resource "web/maintenance.html")))]
+  (defn- render-maintenance-mode-html
+    "Renders maintenance mode error"
+    [context]
+    (html-fn context)))
+
+(let [text-fn
+      (template/fn
+        [{:keys [cid host instance-id message principal query-string request-method
+                 service-id support-info timestamp token token-owner uri]}]
+        (slurp (io/resource "web/maintenance.txt")))]
+  (defn- render-maintenance-mode-text
+    "Renders maintenance error text"
+    [context]
+    (text-fn context)))
+
+(defn- error-context->json-body
   "Converts the error-context to the response body json string."
   [error-context]
   (json/write-str {:waiter-error error-context}
@@ -301,22 +329,22 @@
                   :key-fn stringify-keys
                   :value-fn stringify-elements))
 
-(defn error-context->html-body
+(defn- error-context->html-body
   "Converts the error-context to the response body html string."
-  [error-context]
+  [error-context render-fn]
   (-> error-context
     (update :message urls->html-links)
     (update :details #(with-out-str (pprint/pprint %)))
-    render-error-html))
+    render-fn))
 
-(defn error-context->text-body
+(defn- error-context->text-body
   "Converts the error-context to the response body plaintext string."
-  [error-context]
+  [error-context render-fn]
   (-> error-context
     (update :details (fn [v]
                        (when v
                          (str/replace (with-out-str (pprint/pprint v)) #"\n" "\n  "))))
-    render-error-text
+    render-fn
     (str/replace #"\n" "\n  ")
     (str/replace #"\n  $" "\n")))
 
@@ -362,25 +390,37 @@
   (cond-> response
     error-class (assoc :error-class error-class)))
 
-(defn data->error-response
-  "Converts the provided data map into a ring response.
+(defn- data-render-fn->error-response
+  "Converts the provided data map and render functions into a ring response.
    The data map is expected to contain the following keys: details, headers, message, and status."
-  [{:keys [details headers status] :or {status http-400-bad-request} :as data-map} request]
-  (let [error-context (build-error-context data-map request)
+  [{:keys [details headers status] :or {status http-400-bad-request} :as data-map} request build-context-fn render-html-fn render-text-fn]
+  (let [error-context (build-context-fn data-map request)
         content-type (request->content-type request)]
     (-> {:body (case content-type
                  ;; grpc error responses should not have a body as the client will try to parse it into a proto object
                  "application/grpc" nil
                  "application/json" (error-context->json-body error-context)
-                 "text/html" (error-context->html-body error-context)
-                 "text/plain" (error-context->text-body error-context))
+                 "text/html" (error-context->html-body error-context render-html-fn)
+                 "text/plain" (error-context->text-body error-context render-text-fn))
          :headers (-> headers
-                    (assoc-if-absent "content-type" content-type))
+                      (assoc-if-absent "content-type" content-type))
          :status status}
-      (attach-error-class details)
-      (attach-grpc-status error-context request)
-      (attach-waiter-namespace-keys details)
-      (attach-waiter-source))))
+        (attach-error-class details)
+        (attach-grpc-status error-context request)
+        (attach-waiter-namespace-keys details)
+        (attach-waiter-source))))
+
+(defn data->error-response
+  "Converts the provided data map into a ring response and renders as a generic error.
+   The data map is expected to contain the following keys: details, headers, message, and status."
+  [data-map request]
+  (data-render-fn->error-response data-map request build-error-context render-error-html render-error-text))
+
+(defn data->maintenance-mode-response
+  "Converts the provided data map into a ring response and renders as a maintenance mode error.
+   The data map is expected to contain the following keys: details, headers, message, and status."
+  [data-map request]
+  (data-render-fn->error-response data-map request build-maintenance-context render-maintenance-mode-html render-maintenance-mode-text))
 
 (defn- wrap-unhandled-exception
   "Wraps any exception that doesn't already set status in a parent
