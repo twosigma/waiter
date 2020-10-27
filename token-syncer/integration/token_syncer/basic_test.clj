@@ -381,7 +381,7 @@
         (finally
           (cleanup-token waiter-api waiter-urls token-name))))))
 
-(deftest test-token-update-maintenance-mode
+(deftest ^:integration test-token-update-maintenance-mode
   (testing "token sync token enabled maintenance mode"
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
