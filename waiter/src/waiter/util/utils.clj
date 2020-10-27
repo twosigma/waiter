@@ -401,10 +401,10 @@
          :headers (-> headers
                     (assoc-if-absent "content-type" content-type))
          :status status}
-        (attach-error-class details)
-        (attach-grpc-status error-context request)
-        (attach-waiter-namespace-keys details)
-        (attach-waiter-source))))
+      (attach-error-class details)
+      (attach-grpc-status error-context request)
+      (attach-waiter-namespace-keys details)
+      (attach-waiter-source))))
 
 (defn data->error-response
   "Converts the provided data map into a ring response and renders as a generic error.
