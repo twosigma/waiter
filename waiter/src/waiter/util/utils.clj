@@ -389,7 +389,7 @@
   (cond-> response
     error-class (assoc :error-class error-class)))
 
-(defn- data-render-fn->error-response
+(defn- data-map->response
   "Converts the provided data map and render functions into a ring response.
    The data map is expected to contain the following keys: details, headers, message, and status."
   [{:keys [details headers status] :or {status http-400-bad-request} :as data-map} request build-context-fn render-html-fn render-text-fn]
@@ -413,7 +413,7 @@
   "Converts the provided data map into a ring response and renders as a generic error.
    The data map is expected to contain the following keys: details, headers, message, and status."
   [data-map request]
-  (data-render-fn->error-response data-map request build-error-context render-error-html render-error-text))
+  (data-map->response data-map request build-error-context render-error-html render-error-text))
 
 (defn data->maintenance-mode-response
   "Converts the provided data map into a ring response and renders as a maintenance mode error.
@@ -421,7 +421,7 @@
    The message field should correspond with the maintenance message and details is a map with keys:
    token and token-owner"
   [data-map request]
-  (data-render-fn->error-response data-map request build-maintenance-context render-maintenance-mode-html render-maintenance-mode-text))
+  (data-map->response data-map request build-maintenance-context render-maintenance-mode-html render-maintenance-mode-text))
 
 (defn- wrap-unhandled-exception
   "Wraps any exception that doesn't already set status in a parent
