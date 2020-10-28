@@ -1372,9 +1372,11 @@
           token (create-token-name waiter-url service-name)
           current-user (retrieve-username)
           service-description (-> (kitchen-request-headers :prefix "")
-                                  (assoc :name service-name
+                                  (assoc :https-redirect true
+                                         :interstitial-secs 60
+                                         :name service-name
                                          :permitted-user "*"
-                                         :run-as-user current-user))
+                                         :run-as-user "*"))
           token-root (retrieve-token-root waiter-url)
           token-cluster (retrieve-token-cluster waiter-url)
           custom-maintenance-message "custom maintenance message"
@@ -1416,8 +1418,9 @@
             (is (str/includes? body custom-maintenance-message))))
 
         (testing "token update maintenance field not defined"
-          (let [token-description (assoc service-description
-                                    :token token)
+          (let [token-description (-> service-description
+                                      (dissoc :https-redirect :interstitial-secs)
+                                      (assoc :token token :run-as-user current-user))
                 response (post-token waiter-url token-description)]
             (assert-response-status response http-200-ok)))
 
