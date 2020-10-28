@@ -1,5 +1,5 @@
 
-Token in Maintenance Mode
+"<%= token %>" is Down For Maintenance
 ================
 
   <%= message %>
