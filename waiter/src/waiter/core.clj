@@ -1545,11 +1545,11 @@
                                      pr/wrap-suspended-service
                                      pr/wrap-response-status-metrics
                                      (interstitial/wrap-interstitial interstitial-state-atom)
-                                     pr/wrap-maintenance-mode
                                      wrap-descriptor-fn
                                      wrap-secure-request-fn
                                      wrap-auth-bypass-fn
                                      wrap-https-redirect-fn
+                                     pr/wrap-maintenance-mode
                                      wrap-service-discovery-fn)))
    :profile-list-handler-fn (pc/fnk [[:state profile->defaults]
                                      wrap-secure-request-fn]
