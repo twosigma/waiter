@@ -1179,6 +1179,7 @@
                                                (ws/inter-router-request-middleware router-id (first passwords) request)))
    :websocket-request-acceptor (pc/fnk [[:state passwords server-name]
                                         discover-service-parameters-fn]
+                                 ; TODO: add middleware checks - https-redirect, maintenance-mode, etc.
                                  (fn websocket-request-acceptor [^ServletUpgradeRequest request ^ServletUpgradeResponse response]
                                    (let [request-headers (->> (.getHeaders request)
                                                            (pc/map-vals #(str/join "," %))
