@@ -894,13 +894,11 @@
                                  (digest/md5 (str service-id (first passwords)))))
    ; This function is only included here for initializing the scheduler above.
    ; Prefer accessing the non-starred version of this function through the routines map.
-   :service-id->service-description-fn* (pc/fnk [[:settings metric-group-mappings service-description-defaults]
-                                                 [:state kv-store profile->defaults]]
+   :service-id->service-description-fn* (pc/fnk [[:state kv-store service-description-builder]]
                                           (fn service-id->service-description
                                             [service-id & {:keys [effective?] :or {effective? true}}]
                                             (sd/service-id->service-description
-                                              kv-store service-id service-description-defaults profile->defaults
-                                              metric-group-mappings :effective? effective?)))
+                                              service-description-builder kv-store service-id :effective? effective?)))
    :start-scheduler-syncer-fn (pc/fnk [[:settings [:health-check-config health-check-timeout-ms failed-check-threshold]]
                                        [:state clock user-agent-version]
                                        service-id->password-fn* service-id->service-description-fn*]

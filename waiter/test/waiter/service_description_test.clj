@@ -1812,9 +1812,11 @@
                                                    :or {effective? false
                                                         profile->defaults {"webapp" {"concurrency-level" 120}}
                                                         service-description-defaults {}}}]
-                                    (service-id->service-description
-                                      kv-store service-id service-description-defaults profile->defaults []
-                                      :effective? effective?))]
+                                    (let [context {:profile->defaults profile->defaults
+                                                   :service-description-defaults service-description-defaults}
+                                          service-description-builder (create-default-service-description-builder context)]
+                                      (service-id->service-description
+                                        service-description-builder kv-store service-id :effective? effective?)))]
 
     (testing "no data available"
       (let [kv-store (kv/->LocalKeyValueStore (atom {}))]
