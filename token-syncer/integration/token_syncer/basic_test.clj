@@ -424,8 +424,6 @@
                                                         :processed {:count 1 :value #{token-name}}
                                                         :selected {:count 1 :value #{token-name}}
                                                         :total {:count 1 :value #{token-name}}}}}]
-                (clojure.pprint/pprint expected-result)
-                (clojure.pprint/pprint actual-result)
                 (is (= expected-result actual-result))
                 (doseq [waiter-url waiter-urls]
                   (is (= {:description (assoc token-description "maintenance" maintenance-config)
@@ -479,8 +477,6 @@
                                                           :processed {:count 1 :value #{token-name}}
                                                           :selected {:count 1 :value #{token-name}}
                                                           :total {:count 1 :value #{token-name}}}}}]
-                  (clojure.pprint/pprint expected-result)
-                  (clojure.pprint/pprint actual-result)
                   (is (= expected-result actual-result))
                   (doseq [waiter-url waiter-urls]
                     (is (= {:description token-description
