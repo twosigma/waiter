@@ -880,7 +880,7 @@
             (some? maintenance)
             (do
               (log/info (str "token " token " is in maintenance mode (service-id: " service-id ")"))
-              (meters/mark! (metrics/service-meter service-id "response-rate" "error" "maintenance"))
+              (meters/mark! (metrics/waiter-meter "maintenance" "response-rate"))
               (-> {:details response-map
                    :message (get maintenance "message")
                    :status http-503-service-unavailable}
