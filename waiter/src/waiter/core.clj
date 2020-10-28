@@ -772,7 +772,7 @@
    :service-description-builder (pc/fnk [[:curator synchronize-fn]
                                          [:settings metric-group-mappings service-description-builder-config
                                           service-description-constraints service-description-defaults]
-                                         custom-components kv-store-factory leader?-fn profile->defaults]
+                                         custom-components kv-store kv-store-factory leader?-fn profile->defaults]
                                   (when-let [unknown-keys (-> service-description-constraints
                                                             keys
                                                             set
@@ -783,6 +783,7 @@
                                                      :unsupported-keys (-> unknown-keys vec sort)})))
                                   (let [context {:constraints service-description-constraints
                                                  :custom-components custom-components
+                                                 :kv-store kv-store
                                                  :kv-store-factory kv-store-factory
                                                  :leader?-fn leader?-fn
                                                  :metric-group-mappings metric-group-mappings
