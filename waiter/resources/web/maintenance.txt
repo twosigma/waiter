@@ -1,5 +1,5 @@
 
-"<%= token %>" is Down For Maintenance
+<%= token %> is Down For Maintenance
 ================
 
   <%= message %>
