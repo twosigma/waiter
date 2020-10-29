@@ -863,12 +863,13 @@
   with a custom message if specified. Check if x-waiter-maintenance header is set and return
   400 response because the header is not supported."
   [handler]
-  (fn [{{:keys [service-description-template token-metadata token waiter-headers]} :waiter-discovery
+  (fn [{{:keys [service-description-template token waiter-headers]
+         {:strs [maintenance owner]} :token-metadata} :waiter-discovery
         {:keys [service-id]} :descriptor
         :as request}]
-    (let [maintenance (get token-metadata "maintenance")
-          response-map {:token token
-                        :token-owner (get token-metadata "owner")}]
+    (let [response-map {:name (get service-description-template "name")
+                        :token token
+                        :token-owner owner}]
       (cond (contains? waiter-headers "x-waiter-maintenance")
             (do
               (log/info "x-waiter-maintenance is not supported as an on-the-fly header"

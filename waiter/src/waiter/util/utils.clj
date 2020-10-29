@@ -278,11 +278,11 @@
 (defn- build-maintenance-context
   "Creates a context from a data map and request.
    The data map is expected to contain the following keys: details, message, and status.
-   The key details is a map with keys: token and token-owner"
-  [{{:keys [token token-owner]} :details :as data-map} request]
+   The key details is a map with keys: name, token and token-owner"
+  [{{:keys [name token token-owner]} :details :as data-map} request]
   (merge
     (build-error-context data-map request)
-    {:token token :token-owner token-owner}))
+    {:name name :token token :token-owner token-owner}))
 
 (let [html-fn (template/fn
                 [{:keys [cid details host instance-id message principal query-string request-method
@@ -303,7 +303,7 @@
     (text-fn context)))
 
 (let [html-fn (template/fn
-                [{:keys [cid host instance-id message principal query-string request-method
+                [{:keys [cid host instance-id message name principal query-string request-method
                          service-id support-info timestamp token token-owner uri]}]
                 (slurp (io/resource "web/maintenance.html")))]
   (defn- render-maintenance-mode-html
@@ -312,7 +312,7 @@
     (html-fn context)))
 
 (let [text-fn (template/fn
-                [{:keys [cid host instance-id message principal query-string request-method
+                [{:keys [cid host instance-id message name principal query-string request-method
                          service-id support-info timestamp token token-owner uri]}]
                 (slurp (io/resource "web/maintenance.txt")))]
   (defn- render-maintenance-mode-text
@@ -419,7 +419,7 @@
   "Converts the provided data map into a ring response and renders as a maintenance mode error.
    The data map is expected to contain the following keys: details, headers, message, and status.
    The message field should correspond with the maintenance message and details is a map with keys:
-   token and token-owner"
+   name, token and token-owner"
   [data-map request]
   (data-map->response data-map build-maintenance-context render-maintenance-mode-html render-maintenance-mode-text request))
 

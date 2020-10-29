@@ -1,7 +1,7 @@
 <!doctype html>
 <html>
 <head>
-    <title>"<%= token %>" in Maintenance Mode</title>
+    <title><%= token %> in Maintenance Mode</title>
     <meta http-equiv="x-ua-compatible" content="IE=edge" />
     <style type="text/css">
         html {
@@ -89,7 +89,7 @@
 
 <div class="main-content">
     <h1>
-        "<%= token %>" is Down For Maintenance
+        <%= token %> is Down For Maintenance
     </h1>
     <p>
         <%= message %>
@@ -134,7 +134,7 @@
     </div>
 </div>
 
-<% (when (or token token-owner) %>
+<% (when (or name token token-owner) %>
 <div class="additional-info">
     <div class="divider"></div>
     <div>
@@ -143,6 +143,11 @@
             <% (when token %>
             <tr>
                 <td class="field">Token</td><td class="code"><%= token %></td>
+            </tr>
+            <% ) %>
+            <% (when name %>
+            <tr>
+                <td class="field">Service Name</td><td class="code"><%= name %></td>
             </tr>
             <% ) %>
             <% (when token-owner %>

@@ -16,11 +16,12 @@ Request Info
      Principal: <%= principal %><% ) %><% (when service-id %>
     Service Id: <%= service-id %><% ) %>
 
-<% (when (or token token-owner) %>
+<% (when (or name token token-owner) %>
 Additional Info
 ===============
 <% (when token %>
-         Token: <%= token %><% ) %><% (when token-owner %>
+         Token: <%= token %><% ) %><% (when name %>
+  Service Name: <%= name %><% ) %><% (when token-owner %>
    Token Owner: <%= token-owner %><% ) %>
 <% ) %>
 <% (when (seq support-info) %>Getting Help
