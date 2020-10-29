@@ -519,18 +519,18 @@
       service-description-defaults {}
       token-defaults {"fallback-period-secs" 300}
       metric-group-mappings []
-      profile->defaults {"webapp" {"concurrency-level" 120
-                                   "fallback-period-secs" 100}}
       attach-service-defaults-fn #(sd/merge-defaults % service-description-defaults profile->defaults metric-group-mappings)
       attach-token-defaults-fn #(sd/attach-token-defaults % token-defaults profile->defaults)
       username "test-user"
       metric-group-mappings []
       service-description-defaults {"metric-group" "other" "permitted-user" "*"}
       constraints {"cpus" {:max 100} "mem" {:max 1024}}
-      builder (sd/create-default-service-description-builder {:constraints constraints
-                                                              :metric-group-mappings metric-group-mappings
-                                                              :profile->defaults profile->defaults
-                                                              :service-description-defaults service-description-defaults})
+      builder-context {:constraints constraints
+                       :kv-store kv-store
+                       :metric-group-mappings metric-group-mappings
+                       :profile->defaults profile->defaults
+                       :service-description-defaults service-description-defaults}
+      builder (sd/create-default-service-description-builder builder-context)
       assoc-run-as-user-approved? (constantly false)
       build-service-description-and-id-helper (sd/make-build-service-description-and-id-helper
                                                 kv-store service-id-prefix username builder assoc-run-as-user-approved?)]

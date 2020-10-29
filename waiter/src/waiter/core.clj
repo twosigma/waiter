@@ -772,7 +772,7 @@
    :service-description-builder (pc/fnk [[:curator synchronize-fn]
                                          [:settings metric-group-mappings service-description-builder-config
                                           service-description-constraints service-description-defaults]
-                                         custom-components kv-store-factory leader?-fn profile->defaults]
+                                         custom-components kv-store kv-store-factory leader?-fn profile->defaults]
                                   (when-let [unknown-keys (-> service-description-constraints
                                                             keys
                                                             set
@@ -783,6 +783,7 @@
                                                      :unsupported-keys (-> unknown-keys vec sort)})))
                                   (let [context {:constraints service-description-constraints
                                                  :custom-components custom-components
+                                                 :kv-store kv-store
                                                  :kv-store-factory kv-store-factory
                                                  :leader?-fn leader?-fn
                                                  :metric-group-mappings metric-group-mappings
@@ -894,13 +895,11 @@
                                  (digest/md5 (str service-id (first passwords)))))
    ; This function is only included here for initializing the scheduler above.
    ; Prefer accessing the non-starred version of this function through the routines map.
-   :service-id->service-description-fn* (pc/fnk [[:settings metric-group-mappings service-description-defaults]
-                                                 [:state kv-store profile->defaults]]
+   :service-id->service-description-fn* (pc/fnk [[:state kv-store service-description-builder]]
                                           (fn service-id->service-description
                                             [service-id & {:keys [effective?] :or {effective? true}}]
                                             (sd/service-id->service-description
-                                              kv-store service-id service-description-defaults profile->defaults
-                                              metric-group-mappings :effective? effective?)))
+                                              service-description-builder kv-store service-id :effective? effective?)))
    :start-scheduler-syncer-fn (pc/fnk [[:settings [:health-check-config health-check-timeout-ms failed-check-threshold]]
                                        [:state clock user-agent-version]
                                        service-id->password-fn* service-id->service-description-fn*]

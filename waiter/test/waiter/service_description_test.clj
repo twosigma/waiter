@@ -815,12 +815,13 @@
            passthrough-headers {}
            metric-group-mappings []
            current-user "current-request-user"
-           builder-context {:metric-group-mappings metric-group-mappings
+           builder-context {:kv-store kv-store
+                            :metric-group-mappings metric-group-mappings
                             :profile->defaults profile->defaults
                             :service-description-defaults service-description-defaults}
            service-description-builder (create-default-service-description-builder builder-context)]
        (compute-service-description
-         sources waiter-headers passthrough-headers component->previous-descriptor-fns kv-store service-id-prefix
+         sources waiter-headers passthrough-headers component->previous-descriptor-fns service-id-prefix
          current-user assoc-run-as-user-approved? service-description-builder)))))
 
 (defn- service-description
@@ -1509,12 +1510,13 @@
         assoc-run-as-user-approved? (constantly false)
         run-compute-service-description
         (fn run-compute-service-description [{:keys [profile->defaults service-description-defaults] :as sources}]
-          (let [builder-context {:profile->defaults profile->defaults
+          (let [builder-context {:kv-store kv-store
+                                 :profile->defaults profile->defaults
                                  :service-description-defaults service-description-defaults}
                 service-description-builder (create-default-service-description-builder builder-context)
                 result-descriptor
                 (compute-service-description
-                  sources waiter-headers passthrough-headers component->previous-descriptor-fns kv-store service-id-prefix
+                  sources waiter-headers passthrough-headers component->previous-descriptor-fns service-id-prefix
                   test-user assoc-run-as-user-approved? service-description-builder)
                 result-errors (validate-service-description kv-store service-description-builder result-descriptor)]
             (when result-errors
@@ -1812,9 +1814,12 @@
                                                    :or {effective? false
                                                         profile->defaults {"webapp" {"concurrency-level" 120}}
                                                         service-description-defaults {}}}]
-                                    (service-id->service-description
-                                      kv-store service-id service-description-defaults profile->defaults []
-                                      :effective? effective?))]
+                                    (let [context {:kv-store kv-store
+                                                   :profile->defaults profile->defaults
+                                                   :service-description-defaults service-description-defaults}
+                                          service-description-builder (create-default-service-description-builder context)]
+                                      (service-id->service-description
+                                        service-description-builder kv-store service-id :effective? effective?)))]
 
     (testing "no data available"
       (let [kv-store (kv/->LocalKeyValueStore (atom {}))]

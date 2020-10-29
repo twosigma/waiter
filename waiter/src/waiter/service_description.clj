@@ -625,6 +625,9 @@
   (build [this core-service-description args-map]
     "Returns a map of {:service-id ..., :service-description ..., :core-service-description...}")
 
+  (compute-effective [this service-id core-service-description]
+    "Returns the effective service description after processing the core description.")
+
   (retrieve-reference-type->stale-info-fn [this context]
     "Returns a map of reference type to stale function for references of the specified type.
      The values are functions that have the following signature (fn reference-entry)")
@@ -702,14 +705,14 @@
                              (retrieve-token-update-epoch-time token (token->token-parameters token) version)))
                       (reduce utils/nil-safe-max nil))))))
 
-(defrecord DefaultServiceDescriptionBuilder [max-constraints-schema metric-group-mappings profile->defaults
+(defrecord DefaultServiceDescriptionBuilder [kv-store max-constraints-schema metric-group-mappings profile->defaults
                                              service-description-defaults]
   ServiceDescriptionBuilder
 
-  (build [_ user-service-description
-          {:keys [assoc-run-as-user-approved? component->previous-descriptor-fns kv-store reference-type->entry
+  (build [this user-service-description
+          {:keys [assoc-run-as-user-approved? component->previous-descriptor-fns reference-type->entry
                   service-id-prefix source-tokens username]}]
-    (let [{:strs [profile] :as core-service-description}
+    (let [core-service-description
           (if (get user-service-description "run-as-user")
             user-service-description
             (let [candidate-service-description (assoc-run-as-requester-fields user-service-description username)
@@ -720,9 +723,7 @@
                   candidate-service-description)
                 user-service-description)))
           service-id (service-description->service-id service-id-prefix core-service-description)
-          service-description (default-and-override
-                                core-service-description service-description-defaults profile->defaults
-                                metric-group-mappings kv-store service-id)
+          service-description (compute-effective this service-id core-service-description)
           reference-type->entry (cond-> (or reference-type->entry {})
                                   (seq source-tokens)
                                   (assoc :token {:sources (map walk/keywordize-keys source-tokens)}))]
@@ -731,6 +732,12 @@
        :reference-type->entry reference-type->entry
        :service-description service-description
        :service-id service-id}))
+
+  (compute-effective [_ service-id core-service-description]
+    ;; attaches defaults and overrides to the core service description
+    (default-and-override
+      core-service-description service-description-defaults profile->defaults
+      metric-group-mappings kv-store service-id))
 
   (retrieve-reference-type->stale-info-fn [_ {:keys [token->token-hash token->token-parameters]}]
     {:token (fn [{:keys [sources]}] (retrieve-token-stale-info token->token-hash token->token-parameters sources))})
@@ -763,10 +770,10 @@
 
 (defn create-default-service-description-builder
   "Returns a new DefaultServiceDescriptionBuilder which uses the specified resource limits."
-  [{:keys [constraints metric-group-mappings profile->defaults service-description-defaults]}]
+  [{:keys [constraints kv-store metric-group-mappings profile->defaults service-description-defaults]}]
   (let [max-constraints-schema (extract-max-constraints-schema constraints)]
     (->DefaultServiceDescriptionBuilder
-      max-constraints-schema metric-group-mappings profile->defaults service-description-defaults)))
+      kv-store max-constraints-schema metric-group-mappings profile->defaults service-description-defaults)))
 
 (defn service-description->health-check-url
   "Returns the configured health check Url or a default value (available in `default-health-check-path`)"
@@ -1079,7 +1086,7 @@
      If after the merge a run-as-user is not available, then `username` becomes the run-as-user.
      If after the merge a permitted-user is not available, then `username` becomes the permitted-user."
     [{:keys [headers service-description-template source-tokens token-authentication-disabled token-preauthorized]}
-     waiter-headers passthrough-headers component->previous-descriptor-fns kv-store service-id-prefix username
+     waiter-headers passthrough-headers component->previous-descriptor-fns service-id-prefix username
      assoc-run-as-user-approved? service-description-builder]
     (let [headers-without-params (dissoc headers "param")
           header-params (get headers "param")
@@ -1137,7 +1144,6 @@
         (let [build-map (build service-description-builder user-service-description
                                {:assoc-run-as-user-approved? assoc-run-as-user-approved?
                                 :component->previous-descriptor-fns component->previous-descriptor-fns
-                                :kv-store kv-store
                                 :reference-type->entry {}
                                 :service-id-prefix service-id-prefix
                                 :source-tokens source-tokens
@@ -1181,9 +1187,9 @@
 (defn merge-service-description-and-id
   "Populates the descriptor with the service-description and service-id."
   [{:keys [component->previous-descriptor-fns passthrough-headers sources waiter-headers] :as descriptor}
-   kv-store service-id-prefix username service-description-builder assoc-run-as-user-approved?]
+   service-id-prefix username service-description-builder assoc-run-as-user-approved?]
   (->> (compute-service-description
-         sources waiter-headers passthrough-headers component->previous-descriptor-fns kv-store service-id-prefix
+         sources waiter-headers passthrough-headers component->previous-descriptor-fns service-id-prefix
          username assoc-run-as-user-approved? service-description-builder)
        (merge descriptor)))
 
@@ -1197,7 +1203,7 @@
     [descriptor throw-exception?]
     (try
       (-> descriptor
-        (merge-service-description-and-id kv-store service-id-prefix current-request-user
+        (merge-service-description-and-id service-id-prefix current-request-user
                                           service-description-builder assoc-run-as-user-approved?)
         (merge-suspended kv-store))
       (catch Throwable ex
@@ -1228,12 +1234,11 @@
 
 (defn service-id->service-description
   "Loads the service description for the specified service-id including any overrides."
-  [kv-store service-id service-description-defaults profile->defaults metric-group-mappings
-   & {:keys [effective?] :or {effective? true}}]
+  [service-description-builder kv-store service-id & {:keys [effective?] :or {effective? true}}]
   (let [core-service-description (fetch-core kv-store service-id :refresh false)]
-    (cond-> core-service-description
-      effective? (default-and-override
-                   service-description-defaults profile->defaults metric-group-mappings kv-store service-id))))
+    (if effective?
+      (compute-effective service-description-builder service-id core-service-description)
+      core-service-description)))
 
 (defn can-manage-service?
   "Returns whether the `username` is allowed to modify the specified service description."
