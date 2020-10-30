@@ -24,8 +24,7 @@
             [waiter.service-description :as sd]
             [waiter.status-codes :refer :all]
             [waiter.util.ring-utils :as ru]
-            [waiter.util.utils :as utils])
-  (:import (java.net URI)))
+            [waiter.util.utils :as utils]))
 
 (def ^:const AUTH-COOKIE-EXPIRES-AT "x-auth-expires-at")
 
@@ -34,6 +33,8 @@
 (def ^:const auth-expires-at-uri "/.well-known/auth/expires-at")
 
 (def ^:const auth-keep-alive-uri "/.well-known/auth/keep-alive")
+
+(def ^:const bearer-prefix "Bearer ")
 
 (defprotocol Authenticator
   (wrap-auth-handler [this request-handler]
