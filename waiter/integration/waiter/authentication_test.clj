@@ -272,7 +272,16 @@
           (with-service-cleanup
             service-id
             (validate-response service-id access-token "jwt" response)
-            (is (empty? cookies) (str response)))
+            (is (empty? cookies) (str response))
+            (testing "passing the cookie and bearer token should not use the cookie"
+              (let [{:keys [cookies] :as auth-response} (make-request waiter-url "/waiter-auth")]
+                (is (seq cookies) (str auth-response))
+                (->> (make-request target-url "/request-info"
+                                   :cookies cookies
+                                   :disable-auth true
+                                   :headers (dissoc request-headers "x-cid")
+                                   :method :get)
+                  (validate-response service-id access-token "jwt")))))
           (finally
             (delete-token-and-assert waiter-url host))))
       (log/info "JWT authentication is disabled"))))

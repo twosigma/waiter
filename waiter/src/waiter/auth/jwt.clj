@@ -447,13 +447,6 @@
   [request]
   (some-> request :headers (get "host") utils/authority->host))
 
-(defn- access-token?
-  "Predicate to determine if an authorization header represents an access token."
-  [authorization]
-  (let [authorization (str authorization)]
-    (and (str/starts-with? authorization auth/bearer-prefix)
-         (= 3 (count (str/split authorization #"\."))))))
-
 (defn extract-claims
   "Returns either the access token provided in the request and claims from the extracted access token, or
    an exception that occurred while attempting to extract the claims."
@@ -498,7 +491,7 @@
    - responds with an error response when authentication fails, or
    - invokes the downstream request handler using the authenticated credentials in the request."
   [request-handler jwt-validator key-id->jwk password request]
-  (let [bearer-entry (auth/select-auth-header request access-token?)
+  (let [bearer-entry (auth/select-auth-header request auth/access-token?)
         access-token (str/trim (subs bearer-entry (count auth/bearer-prefix)))
         result-map-or-throwable (extract-claims jwt-validator key-id->jwk request access-token)]
     (if (instance? Throwable result-map-or-throwable)
@@ -535,7 +528,7 @@
             (auth/request-authenticated? request))
         (request-handler request)
 
-        (auth/select-auth-header request access-token?)
+        (auth/select-auth-header request auth/access-token?)
         (authenticate-request request-handler jwt-validator (get-key-id->jwk auth-server) password request)
 
         :else

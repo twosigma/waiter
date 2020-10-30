@@ -82,6 +82,13 @@
         now-sec (long (/ now-ms 1000))
         expires-at (+ now-sec 900000)]
 
+    (testing "auth cookie and bearer token skips cookie auth"
+      (let [auth-cookie-handler (wrap-auth-cookie-handler password request-handler)]
+        (is (= {:body {:principal nil
+                       :user nil}}
+               (auth-cookie-handler {:headers {"authorization" (str bearer-prefix "john.doe")
+                                               "cookie" "x-waiter-auth=test-auth-cookie"}})))))
+
     (testing "valid auth cookie"
       (with-redefs [decode-auth-cookie (constantly [auth-principal (+ now-ms 60000) {:expires-at expires-at}])]
         (let [auth-cookie-handler (wrap-auth-cookie-handler password request-handler)]
