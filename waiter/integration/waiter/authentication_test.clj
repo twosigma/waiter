@@ -238,8 +238,7 @@
     (assert-response-status response http-200-ok)
     (is (= auth-method (get headers "x-waiter-auth-method")) assertion-message)
     (is (= (retrieve-username) (get headers "x-waiter-auth-user")) assertion-message)
-    (when-not (= auth-method "cookie")
-      (assert-auth-cookie set-cookie assertion-message))
+    (is (str/blank? set-cookie) assertion-message)
     (let [body-json (try-parse-json body)
           jwt-payload (try-parse-json (get-in body-json ["headers" "x-waiter-jwt-payload"]))]
       (log/info "jwt payload is" jwt-payload)
@@ -273,12 +272,7 @@
           (with-service-cleanup
             service-id
             (validate-response service-id access-token "jwt" response)
-            (->> (make-request target-url "/request-info"
-                               :cookies cookies
-                               :disable-auth true
-                               :headers (dissoc request-headers "authorization" "x-cid")
-                               :method :get)
-              (validate-response service-id access-token "cookie")))
+            (is (empty? cookies) (str response)))
           (finally
             (delete-token-and-assert waiter-url host))))
       (log/info "JWT authentication is disabled"))))
