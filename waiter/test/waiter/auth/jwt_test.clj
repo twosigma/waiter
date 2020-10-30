@@ -490,7 +490,7 @@
                                  :request-id (rand-int 10000)
                                  :scheme :test-scheme}
                           access-token-scope
-                          (assoc-in [:waiter-discovery :service-description-template "env" "ACCEPT_SCOPED_TOKEN"] access-token-scope))]
+                          (assoc-in [:waiter-discovery :service-description-template "metadata" "accept-scoped-token"] access-token-scope))]
             (with-redefs [validate-access-token (fn [jwt-validator in-keys in-realm in-request-scheme in-accept-scope? in-access-token]
                                                   (is (= token-type (:token-type jwt-validator)))
                                                   (is (= issuer-constraints (:issuer-constraints jwt-validator)))
