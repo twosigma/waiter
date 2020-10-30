@@ -101,11 +101,12 @@
   ([handler request auth-params-map password]
    (handle-request-auth handler request auth-params-map password nil))
   ([handler request auth-params-map password age-in-seconds]
+   (handle-request-auth handler request auth-params-map password age-in-seconds true))
+  ([handler request auth-params-map password age-in-seconds add-auth-cookie?]
    (let [{:keys [authorization/metadata authorization/principal]} auth-params-map
          handler' (middleware/wrap-merge handler auth-params-map)]
-     (-> request
-       handler'
-       (add-cached-auth password principal age-in-seconds metadata)))))
+     (cond-> (handler' request)
+       add-auth-cookie? (add-cached-auth password principal age-in-seconds metadata)))))
 
 (defn decode-auth-cookie
   "Decodes the provided cookie using the provided password.
