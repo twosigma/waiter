@@ -12,8 +12,7 @@ Request Info
   Query String: <%= (or query-string "") %>
         Method: <%= request-method %>
            CID: <%= cid %>
-          Time: <%= timestamp %><% (when principal %>
-     Principal: <%= principal %><% ) %>
+          Time: <%= timestamp %>
 
 <% (when (or name token token-owner) %>
 Additional Info
