@@ -304,7 +304,7 @@
 
 (let [html-fn (template/fn
                 [{:keys [cid host instance-id message name principal query-string request-method
-                         service-id support-info timestamp token token-owner uri]}]
+                         support-info timestamp token token-owner uri]}]
                 (slurp (io/resource "web/maintenance.html")))]
   (defn- render-maintenance-mode-html
     "Renders maintenance mode html"
@@ -313,7 +313,7 @@
 
 (let [text-fn (template/fn
                 [{:keys [cid host instance-id message name principal query-string request-method
-                         service-id support-info timestamp token token-owner uri]}]
+                         support-info timestamp token token-owner uri]}]
                 (slurp (io/resource "web/maintenance.txt")))]
   (defn- render-maintenance-mode-text
     "Renders maintenance mode text"

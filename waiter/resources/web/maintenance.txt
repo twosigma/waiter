@@ -13,8 +13,7 @@ Request Info
         Method: <%= request-method %>
            CID: <%= cid %>
           Time: <%= timestamp %><% (when principal %>
-     Principal: <%= principal %><% ) %><% (when service-id %>
-    Service Id: <%= service-id %><% ) %>
+     Principal: <%= principal %><% ) %>
 
 <% (when (or name token token-owner) %>
 Additional Info
