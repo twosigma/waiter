@@ -858,6 +858,36 @@
             (utils/data->error-response request)))
       (handler request))))
 
+(defn wrap-maintenance-mode
+  "Check if a service's token is in maintenance mode and immediately return a 503 response
+  with a custom message if specified. Check if x-waiter-maintenance header is set and return
+  400 response because the header is not supported."
+  [handler]
+  (fn [{{:keys [service-description-template token waiter-headers]
+         {:strs [maintenance owner]} :token-metadata} :waiter-discovery
+        {:keys [service-id]} :descriptor
+        :as request}]
+    (let [response-map {:name (get service-description-template "name")
+                        :token token
+                        :token-owner owner}]
+      (cond (contains? waiter-headers "x-waiter-maintenance")
+            (do
+              (log/info "x-waiter-maintenance is not supported as an on-the-fly header"
+                        {:service-description service-description-template :token token})
+              (-> {:message "The maintenance parameter is not supported for on-the-fly requests"
+                   :status http-400-bad-request
+                   :waiter-headers waiter-headers}
+                  (utils/data->error-response request)))
+            (some? maintenance)
+            (do
+              (log/info (str "token " token " is in maintenance mode (service-id: " service-id ")"))
+              (meters/mark! (metrics/waiter-meter "maintenance" "response-rate"))
+              (-> {:details response-map
+                   :message (get maintenance "message")
+                   :status http-503-service-unavailable}
+                  (utils/data->maintenance-mode-response request)))
+            :else (handler request)))))
+
 (defn wrap-too-many-requests
   "Check if a service has more pending requests than max-queue-length and immediately return a 503"
   [handler]

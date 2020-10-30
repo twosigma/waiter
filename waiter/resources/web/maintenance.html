@@ -1,0 +1,182 @@
+<!doctype html>
+<html>
+<head>
+    <title><%= token %> in Maintenance Mode</title>
+    <meta http-equiv="x-ua-compatible" content="IE=edge" />
+    <style type="text/css">
+        html {
+            font-family: 'Lato', 'Helvetica Neue', Arial, Helvetica, sans-serif;
+            color: rgba(0,0,0,.87);
+        }
+
+        .main-content {
+            margin: auto;
+            margin-top: 4em;
+            width: 800px;
+        }
+
+        .main-content h1 {
+            font-size: 1.6rem;
+        }
+
+        .main-content p {
+            font-size: 1.2rem;
+            margin-left: 1em;
+        }
+
+        .divider {
+            /* ui divider */
+            border-top: 1px solid rgba(34,36,38,.15);
+            border-bottom: 1px solid rgba(255,255,255,.1);
+            margin: 1rem 0;
+            line-height: 1;
+            height: 0;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            color: rgba(0,0,0,.85);
+        }
+
+        .additional-info {
+            width: 800px;
+            margin: auto;
+            margin-top: 2em;
+        }
+
+        .additional-info h3 {
+            margin-top: 2em;
+        }
+
+        .additional-info li {
+            line-height: 2em;
+        }
+
+        .code {
+            font-family: "Lucida Console", Monaco, monospace;
+            line-height: 2em;
+            font-size: 0.9rem;
+        }
+
+        pre.code {
+            margin-left: 1em;
+            margin-right: 1em;
+            white-space: pre-wrap;
+            font-size: 0.8rem;
+        }
+
+        .additional-info td {
+            padding-right: 1em;
+        }
+
+        .additional-info td.field {
+            font-weight: bold;
+            text-align: right;
+            vertical-align: baseline;
+        }
+
+        .additional-info td.code {
+            vertical-align: baseline;
+        }
+
+        .additional-info table {
+            margin-left: 1em;
+            border-collapse: collapse;
+        }
+
+    </style>
+</head>
+<body>
+
+<div class="main-content">
+    <h1>
+        <%= token %> is Down For Maintenance
+    </h1>
+    <p>
+        <%= message %>
+    </p>
+</div>
+
+<div class="additional-info">
+    <div class="divider"></div>
+    <div>
+        <h3>Request Info</h3>
+        <table>
+            <% (when host %>
+            <tr>
+                <td class="field">Host</td><td class="code"><%= host %></td>
+            </tr>
+            <% ) %>
+            <tr>
+                <td class="field">Path</td><td class="code"><%= uri %></td>
+            </tr>
+            <% (when query-string %>
+            <tr>
+                <td class="field">Query String</td><td class="code"><%= query-string %></td>
+            </tr>
+            <% ) %>
+            <tr>
+                <td class="field">CID</td><td class="code"><%= cid %></td>
+            </tr>
+            <tr>
+                <td class="field">Time</td><td class="code"><%= timestamp %></td>
+            </tr>
+            <% (when principal %>
+            <tr>
+                <td class="field">Principal</td><td class="code"><%= principal %></td>
+            </tr>
+            <% ) %>
+            <% (when service-id %>
+            <tr>
+                <td class="field">Service Id</td><td class="code"><%= service-id %></td>
+            </tr>
+            <% ) %>
+        </table>
+    </div>
+</div>
+
+<% (when (or name token token-owner) %>
+<div class="additional-info">
+    <div class="divider"></div>
+    <div>
+        <h3>Additional Info</h3>
+        <table>
+            <% (when token %>
+            <tr>
+                <td class="field">Token</td><td class="code"><%= token %></td>
+            </tr>
+            <% ) %>
+            <% (when name %>
+            <tr>
+                <td class="field">Service Name</td><td class="code"><%= name %></td>
+            </tr>
+            <% ) %>
+            <% (when token-owner %>
+            <tr>
+                <td class="field">Token Owner</td><td class="code"><%= token-owner %></td>
+            </tr>
+            <% ) %>
+        </table>
+    </div>
+</div>
+<% ) %>
+
+<% (when (seq support-info) %>
+<div class="additional-info">
+    <div class="divider"></div>
+    <div>
+        <h3>Getting Help</h3>
+        <ul>
+            <% (doseq [{label :label {:keys [type value]} :link} support-info] %>
+            <li>
+                <%= label %>:
+                <% (when (= type :url) %> <a href="<%= value %>"><%= value %></a><% ) %>
+                <% (when (= type :email) %> <a href="mailto:<%= value %>"><%= value %></a><% ) %>
+            </li>
+            <% ) %>
+        </ul>
+    </div>
+    <% ) %>
+
+</body>
+
+</html>
