@@ -2072,10 +2072,14 @@
         constraints-schema profile->defaults config "max-instances must be between 1 and 1000")
       (run-validate-schema-test
         (assoc valid-description "min-instances" 0)
-        constraints-schema profile->defaults config "min-instances must be between 1 and 4")
+        constraints-schema profile->defaults config "min-instances must be between 1 and 1000")
       (run-validate-schema-test
         (assoc valid-description "min-instances" 5)
-        constraints-schema profile->defaults config "min-instances must be between 1 and 4")
+        constraints-schema profile->defaults config
+        "min-instances (5) in the default namespace must be less than or equal to 4")
+      (run-validate-schema-test
+        (assoc valid-description "min-instances" 1001 "namespace" "test-user")
+        constraints-schema profile->defaults config "min-instances must be between 1 and 1000")
       (run-validate-schema-test
         (assoc valid-description "max-instances" 2 "min-instances" 3)
         constraints-schema profile->defaults config

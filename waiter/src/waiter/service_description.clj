@@ -43,6 +43,8 @@
 
 (def ^:const minimum-min-instances 1)
 
+(def ^:const maximum-default-namespace-min-instances 4)
+
 (def reserved-environment-vars #{"HOME" "LOGNAME" "USER"})
 
 (defn reserved-environment-variable? [name]
@@ -102,7 +104,7 @@
    (s/optional-key "jitter-threshold") schema/greater-than-or-equal-to-0-less-than-1
    (s/optional-key "load-balancing") schema/valid-load-balancing
    (s/optional-key "max-instances") (s/both s/Int (s/pred #(<= minimum-min-instances % 1000) 'between-one-and-1000))
-   (s/optional-key "min-instances") (s/both s/Int (s/pred #(<= minimum-min-instances % 4) 'between-one-and-four))
+   (s/optional-key "min-instances") (s/both s/Int (s/pred #(<= minimum-min-instances % 1000) 'between-one-and-1000))
    (s/optional-key "scale-factor") schema/positive-fraction-less-than-or-equal-to-2
    (s/optional-key "scale-down-factor") schema/positive-fraction-less-than-1
    (s/optional-key "scale-up-factor") schema/positive-fraction-less-than-1
@@ -539,7 +541,7 @@
                                                   "start with a lowercase letter; and "
                                                   "only use dash and/or underscore as separators between alphanumeric portions."))
                                            (attach-error-message-for-parameter
-                                             parameter->issues :min-instances "min-instances must be between 1 and 4.")
+                                             parameter->issues :min-instances "min-instances must be between 1 and 1000.")
                                            (attach-error-message-for-parameter
                                              parameter->issues :name "name must be a non-empty string.")
                                            (attach-error-message-for-parameter
@@ -611,6 +613,17 @@
       (when (and (some? namespace) (not= namespace run-as-user))
         (sling/throw+ {:type :service-description-error
                        :friendly-error-message "Service namespace must either be omitted or match the run-as-user."
+                       :status http-400-bad-request
+                       :log-level :warn})))
+
+    ;; when using the default namespace, there are stricter restrictions on min-instances
+    (let [{:strs [min-instances namespace]} service-description-to-use]
+      (when (and (nil? namespace)
+                 (integer? min-instances)
+                 (> min-instances maximum-default-namespace-min-instances))
+        (sling/throw+ {:type :service-description-error
+                       :friendly-error-message (str "min-instances (" min-instances ") in the default namespace "
+                                                    "must be less than or equal to " maximum-default-namespace-min-instances)
                        :status http-400-bad-request
                        :log-level :warn})))
 
