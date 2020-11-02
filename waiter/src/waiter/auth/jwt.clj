@@ -517,7 +517,7 @@
             auth-params-map (auth/build-auth-params-map :jwt subject auth-metadata)
             auth-cookie-age-in-seconds (- expiry-time (current-time-secs))]
         (auth/handle-request-auth
-          request-handler request auth-params-map password auth-cookie-age-in-seconds)))))
+          request-handler request auth-params-map password auth-cookie-age-in-seconds false)))))
 
 (defn wrap-auth-handler
   "Wraps the request handler with a handler to trigger JWT access token authentication."

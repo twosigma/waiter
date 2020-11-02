@@ -504,7 +504,8 @@
                                                   (is (= (= access-token-scope "true") in-accept-scope?))
                                                   (is (= "foo.bar.baz" in-access-token))
                                                   payload)
-                          auth/handle-request-auth (fn [request-handler request auth-params-map password auth-cookie-age-in-seconds]
+                          auth/handle-request-auth (fn [request-handler request auth-params-map password auth-cookie-age-in-seconds add-auth-cookie?]
+                                                     (is (false? add-auth-cookie?))
                                                      (-> request
                                                        (assoc :auth-cookie-age-in-seconds auth-cookie-age-in-seconds
                                                               :auth-params-map auth-params-map
