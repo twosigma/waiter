@@ -1761,3 +1761,36 @@
 
             (finally
               (delete-token-and-assert waiter-url token))))))))
+
+(deftest ^:parallel ^:integration-fast test-min-instances-and-namespace-combo-in-tokens
+  (testing-using-waiter-url
+    (let [token (rand-name)
+          current-user (retrieve-username)
+          base-description {:cmd "will-not-work"
+                            :cmd-type "shell"
+                            :cpus 1
+                            :health-check-url "/ping"
+                            :mem 100
+                            :metric-group "waiter_test"
+                            :name "test-profile-inside-token"
+                            :permitted-user "*"
+                            :run-as-user current-user
+                            :token token
+                            :version "1"}]
+      (try
+        (testing (str "token creation with increased min-instances")
+          (testing "with default namespace"
+            (let [token-description (assoc base-description :min-instances 50)
+                  {:keys [body] :as register-response} (post-token waiter-url token-description)]
+              (assert-response-status register-response http-400-bad-request)
+              (is (str/includes? (str body) "min-instances (50) in the default namespace must be less than or equal to 4"))))
+
+          (testing "with provided namespace"
+            (let [token-description (assoc base-description :min-instances 50 :namespace current-user)
+                  register-response (post-token waiter-url token-description)]
+              (assert-response-status register-response http-200-ok)
+              (let [{:keys [body]} (get-token waiter-url token :query-params {})
+                    parsed-description (some-> body str json/read-str walk/keywordize-keys)]
+                (is (= (-> token-description (dissoc :token) (assoc :owner current-user)) parsed-description))))))
+        (finally
+          (delete-token-and-assert waiter-url token))))))
