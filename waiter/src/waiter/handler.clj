@@ -762,8 +762,8 @@
           scheme (some-> request utils/request->scheme name)
           make-url (fn make-url [path]
                      (str (when scheme (str scheme "://")) host "/state/" path))]
-      (utils/clj->streaming-json-response {:details (->> ["autoscaler" "autoscaling-multiplexer" "codahale-reporters" "fallback"
-                                                          "gc-broken-services" "gc-services" "gc-transient-metrics" "interstitial"
+      (utils/clj->streaming-json-response {:details (->> ["autoscaler" "autoscaling-multiplexer" "codahale-reporters" "entitlement-manager"
+                                                          "fallback" "gc-broken-services" "gc-services" "gc-transient-metrics" "interstitial"
                                                           "jwt-auth-server" "kv-store" "launch-metrics" "leader" "local-usage"
                                                           "maintainer" "router-metrics" "scheduler" "service-description-builder"
                                                           "service-maintainer" "statsd" "work-stealing"]
@@ -811,6 +811,11 @@
   "Outputs the state retrieved by invoking the query-state-fn."
   [router-id query-state-fn request]
   (get-function-state query-state-fn router-id request))
+
+(defn get-entitlement-manager-state
+  "Outputs the entitlement-manager state."
+  [router-id entitlement-manager request]
+  (get-function-state #(authz/get-manager-state entitlement-manager) router-id request))
 
 (defn get-jwt-auth-server-state
   "Outputs the JWT auth server state."
