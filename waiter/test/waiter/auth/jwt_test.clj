@@ -463,7 +463,7 @@
             request {:headers {"authorization" "Bearer foo.bar.baz"
                                "host" "www.test.com"}
                      :request-id (rand-int 10000)}
-            auth-header (str bearer-prefix "realm=\"www.test.com\"")]
+            auth-header (str auth/bearer-prefix "realm=\"www.test.com\"")]
         (with-redefs [validate-access-token (fn [& _] (throw ex))]
           (is (= (-> request
                    (assoc :headers {"www-authenticate" auth-header} :source ::request-handler :status http-401-unauthorized)

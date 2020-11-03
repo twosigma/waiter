@@ -242,8 +242,6 @@
     (start-jwt-cache-maintainer http-client http-options jwks-url update-interval-ms supported-algorithms keys-cache)
     (->JwtAuthServer http-client jwks-url keys-cache oidc-authorize-uri oidc-token-uri)))
 
-(def ^:const bearer-prefix "Bearer ")
-
 (defn- regex-pattern?
   "Predicate to check if the input is a regex pattern."
   [candidate]
@@ -449,13 +447,6 @@
   [request]
   (some-> request :headers (get "host") utils/authority->host))
 
-(defn- access-token?
-  "Predicate to determine if an authorization header represents an access token."
-  [authorization]
-  (let [authorization (str authorization)]
-    (and (str/starts-with? authorization bearer-prefix)
-         (= 3 (count (str/split authorization #"\."))))))
-
 (defn extract-claims
   "Returns either the access token provided in the request and claims from the extracted access token, or
    an exception that occurred while attempting to extract the claims."
@@ -488,8 +479,8 @@
       ;; add to challenge initiated by Waiter
       (let [realm (request->realm request)
             www-auth-header (if (str/blank? realm)
-                              (str/trim bearer-prefix)
-                              (str bearer-prefix "realm=\"" realm "\""))]
+                              (str/trim auth/bearer-prefix)
+                              (str auth/bearer-prefix "realm=\"" realm "\""))]
         (log/debug "attaching www-authenticate header to response")
         (ru/attach-header response "www-authenticate" www-auth-header))
       ;; non-401 response, avoid authentication challenge
@@ -500,8 +491,8 @@
    - responds with an error response when authentication fails, or
    - invokes the downstream request handler using the authenticated credentials in the request."
   [request-handler jwt-validator key-id->jwk password request]
-  (let [bearer-entry (auth/select-auth-header request access-token?)
-        access-token (str/trim (subs bearer-entry (count bearer-prefix)))
+  (let [bearer-entry (auth/select-auth-header request auth/access-token?)
+        access-token (str/trim (subs bearer-entry (count auth/bearer-prefix)))
         result-map-or-throwable (extract-claims jwt-validator key-id->jwk request access-token)]
     (if (instance? Throwable result-map-or-throwable)
       (if (-> result-map-or-throwable ex-data :status (= http-401-unauthorized))
@@ -537,7 +528,7 @@
             (auth/request-authenticated? request))
         (request-handler request)
 
-        (auth/select-auth-header request access-token?)
+        (auth/select-auth-header request auth/access-token?)
         (authenticate-request request-handler jwt-validator (get-key-id->jwk auth-server) password request)
 
         :else

@@ -24,8 +24,7 @@
             [waiter.service-description :as sd]
             [waiter.status-codes :refer :all]
             [waiter.util.ring-utils :as ru]
-            [waiter.util.utils :as utils])
-  (:import (java.net URI)))
+            [waiter.util.utils :as utils]))
 
 (def ^:const AUTH-COOKIE-EXPIRES-AT "x-auth-expires-at")
 
@@ -34,6 +33,8 @@
 (def ^:const auth-expires-at-uri "/.well-known/auth/expires-at")
 
 (def ^:const auth-keep-alive-uri "/.well-known/auth/keep-alive")
+
+(def ^:const bearer-prefix "Bearer ")
 
 (defprotocol Authenticator
   (wrap-auth-handler [this request-handler]
@@ -214,18 +215,28 @@
             "requests will use principal" run-as-user)
   (->SingleUserAuthenticator run-as-user password))
 
+(defn access-token?
+  "Predicate to determine if an authorization header represents an access token."
+  [authorization]
+  (let [authorization (str authorization)]
+    (and (str/starts-with? authorization bearer-prefix)
+         (= 3 (count (str/split authorization #"\."))))))
+
 (defn wrap-auth-cookie-handler
   "Returns a handler that can authenticate a request that contains a valid x-waiter-auth cookie."
   [password handler]
   (fn auth-cookie-handler
     [{:keys [headers] :as request}]
-    (let [decoded-auth-cookie (get-and-decode-auth-cookie-value headers password)
-          [auth-principal _ auth-metadata] decoded-auth-cookie]
-      (if (decoded-auth-valid? decoded-auth-cookie)
-        (let [auth-params-map (build-auth-params-map :cookie auth-principal auth-metadata)
-              handler' (middleware/wrap-merge handler auth-params-map)]
-          (handler' request))
-        (handler request)))))
+    ;; ignore auth cookie if a bearer token has been provided
+    (if (select-auth-header request access-token?)
+      (handler request)
+      (let [decoded-auth-cookie (get-and-decode-auth-cookie-value headers password)
+            [auth-principal _ auth-metadata] decoded-auth-cookie]
+        (if (decoded-auth-valid? decoded-auth-cookie)
+          (let [auth-params-map (build-auth-params-map :cookie auth-principal auth-metadata)
+                handler' (middleware/wrap-merge handler auth-params-map)]
+            (handler' request))
+          (handler request))))))
 
 (defn process-auth-expires-at-request
   "Handler to allow a client to update its knowledge of when a user's cookie-based credentials expire.
