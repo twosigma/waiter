@@ -865,7 +865,6 @@
   [handler]
   (fn [{{:keys [service-description-template token waiter-headers]
          {:strs [maintenance owner]} :token-metadata} :waiter-discovery
-        {:keys [service-id]} :descriptor
         :as request}]
     (let [response-map {:name (get service-description-template "name")
                         :token token
@@ -880,7 +879,7 @@
                   (utils/data->error-response request)))
             (some? maintenance)
             (do
-              (log/info (str "token " token " is in maintenance mode (service-id: " service-id ")"))
+              (log/info (str "token " token " is in maintenance mode"))
               (meters/mark! (metrics/waiter-meter "maintenance" "response-rate"))
               (-> {:details response-map
                    :message (get maintenance "message")
