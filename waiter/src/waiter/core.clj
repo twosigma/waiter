@@ -1539,7 +1539,7 @@
                                                  instance-request-properties determine-priority-fn process-response-fn
                                                  pr/abort-http-request-callback-factory local-usage-agent request))))
    :process-request-wrapper-fn (pc/fnk [[:state interstitial-state-atom]
-                                        wrap-auth-bypass-fn wrap-descriptor-fn wrap-https-redirect-fn
+                                        wrap-auth-bypass-fn wrap-descriptor-fn
                                         wrap-secure-request-fn wrap-service-discovery-fn]
                                  (fn process-handler-wrapper-fn [handler]
                                    (-> handler
@@ -1548,9 +1548,9 @@
                                      pr/wrap-response-status-metrics
                                      (interstitial/wrap-interstitial interstitial-state-atom)
                                      wrap-descriptor-fn
-                                     wrap-secure-request-fn
-                                     wrap-auth-bypass-fn
-                                     wrap-https-redirect-fn
+                                     wrap-secure-request-fn ; auth/authentication.clj
+                                     wrap-auth-bypass-fn    ; auth/authentication.clj
+                                     handler/wrap-https-redirect
                                      pr/wrap-maintenance-mode
                                      wrap-service-discovery-fn)))
    :profile-list-handler-fn (pc/fnk [[:state profile->defaults]
@@ -1891,19 +1891,6 @@
                          (fn wrap-descriptor-fn [handler]
                            (descriptor/wrap-descriptor handler request->descriptor-fn service-invocation-authorized?-fn
                                                        start-new-service-fn fallback-state-atom)))
-   :wrap-https-redirect-fn (pc/fnk []
-                             (fn wrap-https-redirect-fn
-                               [handler]
-                               (fn [request]
-                                 (let [;; ignore websocket requests
-                                       http-request? (= :http (utils/request->scheme request))
-                                       https-redirect? (get-in request [:waiter-discovery :token-metadata "https-redirect"])]
-                                   (if (and http-request? https-redirect?)
-                                     (do
-                                       (log/info "triggering ssl redirect")
-                                       (-> (ssl/ssl-redirect-response request {})
-                                         (utils/attach-waiter-source)))
-                                     (handler request))))))
    :wrap-router-auth-fn (pc/fnk [[:state passwords router-id]]
                           (fn wrap-router-auth-fn [handler]
                             (fn [request]
