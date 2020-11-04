@@ -21,7 +21,10 @@
 (defrecord TestEntitlementManager [entitlements]
   authz/EntitlementManager
   (authorized? [_ subject action resource]
-    (entitlements [subject action resource])))
+    (entitlements [subject action resource]))
+  (get-manager-state [_]
+    {:entitlements entitlements
+     :name "TestEntitlementManager"}))
 
 (defn test-em
   "Creates a new TestEntitlementManager"

@@ -114,6 +114,7 @@
                               ["/autoscaler" :state-autoscaler-handler-fn]
                               ["/autoscaling-multiplexer" :state-autoscaling-multiplexer-handler-fn]
                               ["/codahale-reporters" :state-codahale-reporters-handler-fn]
+                              ["/entitlement-manager" :state-entitlement-manager-handler-fn]
                               ["/fallback" :state-fallback-handler-fn]
                               ["/gc-broken-services" :state-gc-for-broken-services]
                               ["/gc-services" :state-gc-for-services]
@@ -1673,6 +1674,11 @@
                                               router-id
                                               #(pc/map-vals reporter/state codahale-reporters)
                                               request)))
+   :state-entitlement-manager-handler-fn (pc/fnk [[:state entitlement-manager router-id]
+                                                  wrap-secure-request-fn]
+                                           (wrap-secure-request-fn
+                                             (fn entitlement-manager-state-handler-fn [request]
+                                               (handler/get-entitlement-manager-state router-id entitlement-manager request))))
    :state-fallback-handler-fn (pc/fnk [[:daemons fallback-maintainer]
                                        [:state router-id]
                                        wrap-secure-request-fn]

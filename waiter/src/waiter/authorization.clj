@@ -19,14 +19,18 @@
 (defprotocol EntitlementManager
   "Security related methods"
   (authorized? [this subject action resource]
-    "Determines if a given subject can perform action on a given resource."))
+    "Determines if a given subject can perform action on a given resource.")
+  (get-manager-state [this]
+    "Returns the state the entitlement manager is maintaining."))
 
 (defrecord SimpleEntitlementManager [_]
   EntitlementManager
   (authorized? [_ subject action resource]
     (or (= subject (:user resource))
         (and (= :admin action)
-             (= subject (System/getProperty "user.name"))))))
+             (= subject (System/getProperty "user.name")))))
+  (get-manager-state [_]
+    {:name "SimpleEntitlementManager"}))
 
 (defn- make-service-resource
   "Creates a resource from a service description for use with an entitlement manager"
