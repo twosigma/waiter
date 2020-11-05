@@ -347,3 +347,46 @@
         (cond-> (utils/attach-waiter-source {:status http-204-no-content})
           waiter-token?
           (assoc :waiter/token token))))))
+
+(defn process-authentication-parameter
+  "Processes the authentication parameter and invokes the provided callbacks:
+   - (on-error status message) when any error is detected
+   - (on-disabled) when the authentication is disabled
+   - (on-auth-required) when authentication is enabled."
+  [waiter-discovery on-error on-disabled on-auth-required]
+  (let [{:keys [service-description-template token waiter-headers]} waiter-discovery
+        {:strs [authentication]} service-description-template
+        authentication-disabled? (= authentication "disabled")]
+    (cond
+      (contains? waiter-headers "x-waiter-authentication")
+      (do
+        (log/info "x-waiter-authentication is not supported as an on-the-fly header"
+                  {:service-description service-description-template, :token token})
+        (on-error http-400-bad-request "An authentication parameter is not supported for on-the-fly headers"))
+
+      ;; ensure service description formed comes entirely from the token by ensuring absence of on-the-fly headers
+      (and authentication-disabled? (some sd/service-parameter-keys (-> waiter-headers headers/drop-waiter-header-prefix keys)))
+      (do
+        (log/info "request cannot proceed as it is mixing an authentication disabled token with on-the-fly headers"
+                  {:service-description service-description-template, :token token})
+        (on-error http-400-bad-request "An authentication disabled token may not be combined with on-the-fly headers"))
+
+      authentication-disabled?
+      (do
+        (log/info "request configured to skip authentication")
+        (on-disabled))
+
+      :else
+      (on-auth-required))))
+
+(defn wrap-auth-bypass
+  [handler]
+  (fn [{:keys [waiter-discovery] :as request}]
+    (process-authentication-parameter
+      waiter-discovery
+      (fn [status message]
+        (utils/clj->json-response {:error message} :status status))
+      (fn []
+        (handler (assoc request :skip-authentication true)))
+      (fn []
+        (handler request)))))
