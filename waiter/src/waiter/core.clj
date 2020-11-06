@@ -1524,7 +1524,7 @@
                                      pr/wrap-response-status-metrics
                                      (interstitial/wrap-interstitial interstitial-state-atom)
                                      wrap-descriptor-fn
-                                     wrap-secure-request-fn ; auth/authentication.clj
+                                     wrap-secure-request-fn
                                      auth/wrap-auth-bypass
                                      handler/wrap-https-redirect
                                      pr/wrap-maintenance-mode
