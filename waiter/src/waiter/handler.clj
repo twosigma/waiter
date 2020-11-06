@@ -54,7 +54,7 @@
   "Middleware that takes a handler and returns a new handler that enforces https-redirect if a token
    has it configured before passing the request map to the next handler."
   [handler]
-  (fn [request]
+  (fn https-redirect-handler [request]
     (let [;; ignore websocket requests
           http-request? (= :http (utils/request->scheme request))
           https-redirect? (get-in request [:waiter-discovery :token-metadata "https-redirect"])]
