@@ -27,6 +27,7 @@
             [full.async :refer [<?]]
             [plumbing.core :as pc]
             [ring.middleware.multipart-params :as multipart-params]
+            [ring.middleware.ssl :as ssl]
             [waiter.async-request :as async-req]
             [waiter.auth.jwt :as jwt]
             [waiter.authorization :as authz]
@@ -48,6 +49,21 @@
             [waiter.util.semaphore :as semaphore]
             [waiter.util.utils :as utils])
   (:import (java.io InputStream)))
+
+(defn wrap-https-redirect
+  "Middleware that takes a handler and returns a new handler that enforces https-redirect if a token
+   has it configured before passing the request map to the next handler."
+  [handler]
+  (fn https-redirect-handler [request]
+    (let [;; ignore websocket requests
+          http-request? (= :http (utils/request->scheme request))
+          https-redirect? (get-in request [:waiter-discovery :token-metadata "https-redirect"])]
+      (if (and http-request? https-redirect?)
+        (do
+          (log/info "triggering ssl redirect")
+          (-> (ssl/ssl-redirect-response request {})
+              (utils/attach-waiter-source)))
+        (handler request)))))
 
 (defn async-make-request-helper
   "Helper function that returns a function that can invoke make-request-fn."

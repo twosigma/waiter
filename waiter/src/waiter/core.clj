@@ -599,37 +599,6 @@
             (log/info router-id "relinquishing leadership as there are too few routers in cluster:" num-routers))
           (>= num-routers min-cluster-routers))))
 
-(defn process-authentication-parameter
-  "Processes the authentication parameter and invokes the provided callbacks:
-   - (on-error status message) when any error is detected
-   - (on-disabled) when the authentication is disabled
-   - (on-auth-required) when authentication is enabled."
-  [waiter-discovery on-error on-disabled on-auth-required]
-  (let [{:keys [service-description-template token waiter-headers]} waiter-discovery
-        {:strs [authentication]} service-description-template
-        authentication-disabled? (= authentication "disabled")]
-    (cond
-      (contains? waiter-headers "x-waiter-authentication")
-      (do
-        (log/info "x-waiter-authentication is not supported as an on-the-fly header"
-                  {:service-description service-description-template, :token token})
-        (on-error http-400-bad-request "An authentication parameter is not supported for on-the-fly headers"))
-
-      ;; ensure service description formed comes entirely from the token by ensuring absence of on-the-fly headers
-      (and authentication-disabled? (some sd/service-parameter-keys (-> waiter-headers headers/drop-waiter-header-prefix keys)))
-      (do
-        (log/info "request cannot proceed as it is mixing an authentication disabled token with on-the-fly headers"
-                  {:service-description service-description-template, :token token})
-        (on-error http-400-bad-request "An authentication disabled token may not be combined with on-the-fly headers"))
-
-      authentication-disabled?
-      (do
-        (log/info "request configured to skip authentication")
-        (on-disabled))
-
-      :else
-      (on-auth-required))))
-
 ;; PRIVATE API
 (def state
   {:async-request-store-atom (pc/fnk [] (atom {}))
@@ -1200,7 +1169,7 @@
                                        (.setHeader response "server" server-name)
                                        (.setHeader response "x-cid" correlation-id)
                                        (let [waiter-discovery (discover-service-parameters-fn request-headers)]
-                                         (process-authentication-parameter
+                                         (auth/process-authentication-parameter
                                            waiter-discovery
                                            (fn [status message]
                                              (.sendError response status message)
@@ -1209,7 +1178,14 @@
                                              (ws/request-subprotocol-acceptor request response))
                                            (fn []
                                              (and (ws/request-authenticator password request response)
-                                                  (ws/request-subprotocol-acceptor request response)))))))))})
+                                                  (ws/request-subprotocol-acceptor request response)))))))))
+   :wrap-service-discovery-fn (pc/fnk [discover-service-parameters-fn]
+                                (fn wrap-service-discovery-fn
+                                  [handler]
+                                  (fn [{:keys [headers] :as request}]
+                                    ;; TODO optimization opportunity to avoid this re-computation later in the chain
+                                    (let [discovered-parameters (discover-service-parameters-fn headers)]
+                                      (handler (assoc request :waiter-discovery discovered-parameters))))))})
 
 (def daemons
   {:autoscaler (pc/fnk [[:routines router-metrics-helpers service-id->service-description-fn]
@@ -1433,9 +1409,9 @@
                                  (let [password (first passwords)]
                                    (fn auth-expires-at-handler-fn [request]
                                      (auth/process-auth-expires-at-request password request))))
-   :auth-keep-alive-handler-fn (pc/fnk [[:routines token->token-parameters]
+   :auth-keep-alive-handler-fn (pc/fnk [[:routines token->token-parameters wrap-service-discovery-fn]
                                         [:state passwords waiter-hostnames]
-                                        wrap-secure-request-fn wrap-service-discovery-fn]
+                                        wrap-secure-request-fn]
                                  (let [waiter-hostnames (cond-> waiter-hostnames
                                                           (contains? waiter-hostnames "localhost")
                                                           (conj "127.0.0.1"))
@@ -1499,8 +1475,8 @@
    :oidc-callback-handler-fn (pc/fnk [[:state oidc-authenticator]]
                                (fn oidc-callback-handler-fn [request]
                                  (oidc/oidc-callback-request-handler oidc-authenticator request)))
-   :oidc-enabled-handler-fn (pc/fnk [[:state oidc-authenticator waiter-hostnames]
-                                     wrap-service-discovery-fn]
+   :oidc-enabled-handler-fn (pc/fnk [[:routines wrap-service-discovery-fn]
+                                     [:state oidc-authenticator waiter-hostnames]]
                               (wrap-service-discovery-fn
                                 (fn oidc-enabled-handler-fn [request]
                                   (oidc/oidc-enabled-request-handler oidc-authenticator waiter-hostnames request))))
@@ -1538,9 +1514,9 @@
                                      (pr/process make-request-fn populate-maintainer-chan! start-new-service-fn
                                                  instance-request-properties determine-priority-fn process-response-fn
                                                  pr/abort-http-request-callback-factory local-usage-agent request))))
-   :process-request-wrapper-fn (pc/fnk [[:state interstitial-state-atom]
-                                        wrap-auth-bypass-fn wrap-descriptor-fn wrap-https-redirect-fn
-                                        wrap-secure-request-fn wrap-service-discovery-fn]
+   :process-request-wrapper-fn (pc/fnk [[:routines wrap-service-discovery-fn]
+                                        [:state interstitial-state-atom]
+                                        wrap-descriptor-fn wrap-secure-request-fn]
                                  (fn process-handler-wrapper-fn [handler]
                                    (-> handler
                                      pr/wrap-too-many-requests
@@ -1549,8 +1525,8 @@
                                      (interstitial/wrap-interstitial interstitial-state-atom)
                                      wrap-descriptor-fn
                                      wrap-secure-request-fn
-                                     wrap-auth-bypass-fn
-                                     wrap-https-redirect-fn
+                                     auth/wrap-auth-bypass
+                                     handler/wrap-https-redirect
                                      pr/wrap-maintenance-mode
                                      wrap-service-discovery-fn)))
    :profile-list-handler-fn (pc/fnk [[:state profile->defaults]
@@ -1874,36 +1850,11 @@
                                (wrap-router-auth-fn
                                  (fn [request]
                                    (handler/work-stealing-handler populate-maintainer-chan! request))))
-   :wrap-auth-bypass-fn (pc/fnk []
-                          (fn wrap-auth-bypass-fn
-                            [handler]
-                            (fn [{:keys [waiter-discovery] :as request}]
-                              (process-authentication-parameter
-                                waiter-discovery
-                                (fn [status message]
-                                  (utils/clj->json-response {:error message} :status status))
-                                (fn []
-                                  (handler (assoc request :skip-authentication true)))
-                                (fn []
-                                  (handler request))))))
    :wrap-descriptor-fn (pc/fnk [[:routines request->descriptor-fn service-invocation-authorized?-fn start-new-service-fn]
                                 [:state fallback-state-atom]]
                          (fn wrap-descriptor-fn [handler]
                            (descriptor/wrap-descriptor handler request->descriptor-fn service-invocation-authorized?-fn
                                                        start-new-service-fn fallback-state-atom)))
-   :wrap-https-redirect-fn (pc/fnk []
-                             (fn wrap-https-redirect-fn
-                               [handler]
-                               (fn [request]
-                                 (let [;; ignore websocket requests
-                                       http-request? (= :http (utils/request->scheme request))
-                                       https-redirect? (get-in request [:waiter-discovery :token-metadata "https-redirect"])]
-                                   (if (and http-request? https-redirect?)
-                                     (do
-                                       (log/info "triggering ssl redirect")
-                                       (-> (ssl/ssl-redirect-response request {})
-                                         (utils/attach-waiter-source)))
-                                     (handler request))))))
    :wrap-router-auth-fn (pc/fnk [[:state passwords router-id]]
                           (fn wrap-router-auth-fn [handler]
                             (fn [request]
@@ -1930,11 +1881,4 @@
                                                  authentication-method-wrapper-fn)]
                                    (fn inner-wrap-secure-request-fn [{:keys [uri] :as request}]
                                      (log/debug "secure request received at" uri)
-                                     (handler request))))))
-   :wrap-service-discovery-fn (pc/fnk [[:routines discover-service-parameters-fn]]
-                                (fn wrap-service-discovery-fn
-                                  [handler]
-                                  (fn [{:keys [headers] :as request}]
-                                    ;; TODO optimization opportunity to avoid this re-computation later in the chain
-                                    (let [discovered-parameters (discover-service-parameters-fn headers)]
-                                      (handler (assoc request :waiter-discovery discovered-parameters))))))})
+                                     (handler request))))))})
