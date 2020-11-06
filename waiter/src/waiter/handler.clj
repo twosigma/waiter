@@ -48,22 +48,43 @@
             [waiter.util.ring-utils :as ru]
             [waiter.util.semaphore :as semaphore]
             [waiter.util.utils :as utils])
-  (:import (java.io InputStream)))
+  (:import (java.io InputStream)
+           (org.eclipse.jetty.websocket.servlet ServletUpgradeRequest ServletUpgradeResponse)))
 
-(defn wrap-https-redirect
-  "Middleware that takes a handler and returns a new handler that enforces https-redirect if a token
-   has it configured before passing the request map to the next handler."
-  [handler]
+(defn- make-https-redirect
+  "Middleware that takes a handler and on-redirect function. It returns a new handler that
+  enforces https-redirect and calls on-redirect if there is a violation before passing the
+  request map to the next handler."
+  [handler on-redirect]
   (fn https-redirect-handler [request]
-    (let [;; ignore websocket requests
-          http-request? (= :http (utils/request->scheme request))
+    (let [scheme (utils/request->scheme request)
+          http-request? (or (= :ws scheme) (= :http scheme))
           https-redirect? (get-in request [:waiter-discovery :token-metadata "https-redirect"])]
       (if (and http-request? https-redirect?)
         (do
           (log/info "triggering ssl redirect")
-          (-> (ssl/ssl-redirect-response request {})
-              (utils/attach-waiter-source)))
+          (on-redirect request))
         (handler request)))))
+
+(defn wrap-https-redirect
+  "Middleware that enforces https-redirect if a token has it configured before passing the request map to the next handler."
+  [handler]
+  (make-https-redirect
+    handler
+    #(-> (ssl/ssl-redirect-response % {})
+         (utils/attach-waiter-source))))
+
+(defn wrap-wss-redirect
+  "Middleware that enforces https-redirect for websocket-request-acceptor if a token has it configured before passing
+  the request map to the next handler."
+  [handler]
+  (make-https-redirect
+    handler
+    (fn [{:keys [^ServletUpgradeResponse upgrade-response] :as request}]
+      (let [https-url (str "https://" (get-in request [:headers "host"]) (:uri request))]
+        (.setHeader upgrade-response "Location" https-url)
+        (.sendError upgrade-response http-301-moved-permanently "https-redirect is enabled")
+        false))))
 
 (defn async-make-request-helper
   "Helper function that returns a function that can invoke make-request-fn."
@@ -1132,3 +1153,35 @@
            (seq profile->defaults)))
     (catch Throwable th
       (utils/exception->response th request))))
+
+(defn make-websocket-request-acceptor
+  "Takes a handler and returns a websocket-request-acceptor handler function that takes a special request and response
+  object provided on websocket upgrade. It creates a generic request map from the two objects and passes it to the handler"
+  [server-name handler]
+  (fn websocket-request-acceptor [^ServletUpgradeRequest request ^ServletUpgradeResponse response]
+    (let [request-headers (->> (.getHeaders request)
+                               (pc/map-vals #(str/join "," %))
+                               (pc/map-keys str/lower-case))
+          correlation-id (or (get request-headers "x-cid")
+                             (str "ws-" (utils/unique-identifier)))
+          method (some-> request .getMethod str/lower-case keyword)
+          scheme (some-> request .getRequestURI .getScheme keyword)
+          uri (some-> request .getRequestURI .getPath)]
+      (cid/with-correlation-id
+        correlation-id
+        (log/info "request received (websocket upgrade)"
+                  {:headers (headers/truncate-header-values request-headers)
+                   :http-version (.getHttpVersion request)
+                   :method (some-> request .getMethod str/lower-case)
+                   :protocol-version (.getProtocolVersion request)
+                   :sub-protocols (some-> request .getSubProtocols seq)
+                   :uri uri})
+        (.setHeader response "server" server-name)
+        (.setHeader response "x-cid" correlation-id)
+        (let [handler-request {:headers request-headers
+                               :request-method method
+                               :scheme scheme
+                               :upgrade-request request
+                               :upgrade-response response
+                               :uri uri}]
+          (handler handler-request))))))

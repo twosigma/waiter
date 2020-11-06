@@ -26,8 +26,7 @@
   (:import (java.net HttpCookie SocketTimeoutException URLDecoder)
            (java.util ArrayList Collection)
            (org.eclipse.jetty.websocket.api MessageTooLargeException UpgradeRequest)
-           (org.eclipse.jetty.websocket.client ClientUpgradeRequest)
-           (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse)))
+           (org.eclipse.jetty.websocket.client ClientUpgradeRequest)))
 
 (defn- reified-upgrade-request
   [config-map]
@@ -43,23 +42,6 @@
             (doseq [value header-value]
               (.add result-list value)))
           result-list)))))
-
-(defn- reified-upgrade-response
-  []
-  (let [response-reason-atom (atom nil)
-        response-status-atom (atom 0)
-        response-subprotocol-atom (atom nil)]
-    (proxy [ServletUpgradeResponse] [nil]
-      (getAcceptedSubProtocol [] @response-subprotocol-atom)
-      (getStatusCode [] @response-status-atom)
-      (getStatusReason [] @response-reason-atom)
-      (sendError [status reason]
-        (reset! response-status-atom status)
-        (reset! response-reason-atom reason))
-      (sendForbidden [reason]
-        (reset! response-status-atom http-403-forbidden)
-        (reset! response-reason-atom reason))
-      (setAcceptedSubProtocol [subprotocol] (reset! response-subprotocol-atom subprotocol)))))
 
 (deftest test-request-authenticator
   (let [password (Object.)

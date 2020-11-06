@@ -52,18 +52,6 @@
                              :response test-response}))]
 
     (testing "no redirect"
-      (testing "ws request with token https-redirect set to false"
-        (let [test-request {:headers {"host" "token.localtest.me"}
-                            :scheme :ws
-                            :waiter-discovery {:passthrough-headers {}
-                                               :service-description-template {}
-                                               :token "token.localtest.me"
-                                               :token-metadata {"https-redirect" true}
-                                               :waiter-headers {}}}
-              {:keys [handled-request response]} (execute-request test-request)]
-          (is (= test-request handled-request))
-          (is (= handler-response response))))
-
       (testing "http request with token https-redirect set to false"
         (let [test-request {:headers {"host" "token.localtest.me"}
                             :scheme :http
@@ -174,6 +162,84 @@
                   :status http-301-moved-permanently
                   :waiter/response-source :waiter}
                  response)))))))
+
+(deftest test-wrap-https-redirect-acceptor
+  (testing "returns 301 with proper url if ws and https-redirect is true and uri is nil"
+    (let [handler (wrap-wss-redirect (fn [_] (is false "Not supposed to call this handler") true))
+          upgrade-response (reified-upgrade-response)
+          request {:headers {"host" "token.localtest.me"}
+                   :scheme :ws
+                   :upgrade-response upgrade-response
+                   :waiter-discovery {:passthrough-headers {}
+                                      :service-description-template {}
+                                      :token "token.localtest.me"
+                                      :token-metadata {"https-redirect" true}
+                                      :waiter-headers {}}}
+          success? (handler request)]
+      (is (false? success?))
+      (is (= http-301-moved-permanently (.getStatusCode upgrade-response)))
+      (is (= "https://token.localtest.me" (.getHeader upgrade-response "Location")))
+      (is (= "https-redirect is enabled" (.getStatusReason upgrade-response)))))
+
+  (testing "returns 301 with proper url if ws and https-redirect is true and uri is set"
+    (let [handler (wrap-wss-redirect (fn [_] (is false "Not supposed to call this handler") true))
+          upgrade-response (reified-upgrade-response)
+          request {:headers {"host" "token.localtest.me"}
+                   :scheme :ws
+                   :upgrade-response upgrade-response
+                   :uri "/random/uri/path"
+                   :waiter-discovery {:passthrough-headers {}
+                                      :service-description-template {}
+                                      :token "token.localtest.me"
+                                      :token-metadata {"https-redirect" true}
+                                      :waiter-headers {}}}
+          success? (handler request)]
+      (is (false? success?))
+      (is (= http-301-moved-permanently (.getStatusCode upgrade-response)))
+      (is (= "https://token.localtest.me/random/uri/path" (.getHeader upgrade-response "Location")))
+      (is (= "https-redirect is enabled" (.getStatusReason upgrade-response)))))
+
+  (testing "passes on to next handler if wss and https-redirect is true"
+    (let [handler (wrap-wss-redirect (fn [_] true))
+          request {:headers {"host" "token.localtest.me"}
+                   :scheme :wss
+                   :waiter-discovery {:passthrough-headers {}
+                                      :service-description-template {}
+                                      :token "token.localtest.me"
+                                      :token-metadata {"https-redirect" true}
+                                      :waiter-headers {}}}
+          success? (handler request)]
+      (is (true? success?))))
+
+  (testing "passes on to next handler if https-redirect is false for wss request"
+    (let [handler (wrap-wss-redirect (fn [_] true))
+          upgrade-response (reified-upgrade-response)
+          request {:headers {"host" "token.localtest.me"}
+                   :scheme :wss
+                   :upgrade-response upgrade-response
+                   :uri "/random/uri/path"
+                   :waiter-discovery {:passthrough-headers {}
+                                      :service-description-template {}
+                                      :token "token.localtest.me"
+                                      :token-metadata {"https-redirect" false}
+                                      :waiter-headers {}}}
+          success? (handler request)]
+      (is (true? success?))))
+
+  (testing "passes on to next handler if https-redirect is false for ws request"
+    (let [handler (wrap-wss-redirect (fn [_] true))
+          upgrade-response (reified-upgrade-response)
+          request {:headers {"host" "token.localtest.me"}
+                   :scheme :ws
+                   :upgrade-response upgrade-response
+                   :uri "/random/uri/path"
+                   :waiter-discovery {:passthrough-headers {}
+                                      :service-description-template {}
+                                      :token "token.localtest.me"
+                                      :token-metadata {"https-redirect" false}
+                                      :waiter-headers {}}}
+          success? (handler request)]
+      (is (true? success?)))))
 
 (deftest test-complete-async-handler
   (testing "missing-request-id"

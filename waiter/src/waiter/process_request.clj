@@ -48,7 +48,8 @@
            (javax.servlet ReadListener ServletInputStream ServletOutputStream)
            (org.eclipse.jetty.client HttpClient)
            (org.eclipse.jetty.io EofException)
-           (org.eclipse.jetty.server HttpChannel HttpOutput Response)))
+           (org.eclipse.jetty.server HttpChannel HttpOutput Response)
+           (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse)))
 
 (defn make-auth-user-map
   "Creates a map containing the username and principal from a request"
@@ -858,12 +859,13 @@
             (utils/data->error-response request)))
       (handler request))))
 
-(defn wrap-maintenance-mode
-  "Check if a service's token is in maintenance mode and immediately return a 503 response
-  with a custom message if specified. Check if x-waiter-maintenance header is set and return
-  400 response because the header is not supported."
-  [handler]
-  (fn [{{:keys [service-description-template token waiter-headers]
+(defn- make-maintenance-mode
+  "Check if a service's token is in maintenance mode and pass a 503 response
+  with a custom message if specified to the on-maintenance-mode-error parameter.
+  Check if x-waiter-maintenance header is set and pass 400 response to the
+  on-header-error parameter."
+  [handler on-header-error on-maintenance-mode-error]
+  (fn maintenance-mode-handler [{{:keys [service-description-template token waiter-headers]
          {:strs [maintenance owner]} :token-metadata} :waiter-discovery
         :as request}]
     (let [response-map {:name (get service-description-template "name")
@@ -873,19 +875,38 @@
             (do
               (log/info "x-waiter-maintenance is not supported as an on-the-fly header"
                         {:service-description service-description-template :token token})
-              (-> {:message "The maintenance parameter is not supported for on-the-fly requests"
-                   :status http-400-bad-request
-                   :waiter-headers waiter-headers}
-                  (utils/data->error-response request)))
+              (on-header-error {:message "The maintenance parameter is not supported for on-the-fly requests"
+                                :status http-400-bad-request
+                                :waiter-headers waiter-headers}
+                               request))
             (some? maintenance)
             (do
               (log/info (str "token " token " is in maintenance mode"))
               (meters/mark! (metrics/waiter-meter "maintenance" "response-rate"))
-              (-> {:details response-map
-                   :message (get maintenance "message")
-                   :status http-503-service-unavailable}
-                  (utils/data->maintenance-mode-response request)))
+              (on-maintenance-mode-error {:details response-map
+                                          :message (get maintenance "message")
+                                          :status http-503-service-unavailable}
+                                         request))
             :else (handler request)))))
+
+(defn wrap-maintenance-mode
+  "Middleware to check for maintenance mode of a token and if improper maintenance mode header is provided"
+  [handler]
+  (make-maintenance-mode
+    handler
+    (fn [data-map request]
+      (utils/data->error-response data-map request))
+    (fn [data-map request]
+      (utils/data->maintenance-mode-response data-map request))))
+
+(defn wrap-maintenance-mode-acceptor
+  "websocket-request-acceptor middleware to check for maintenance mode of a token and if improper maintenance
+  mode header is provided"
+  [handler]
+  (let [on-error (fn [{:keys [message status]} {^ServletUpgradeResponse upgrade-response :upgrade-response}]
+                   (.sendError upgrade-response status message)
+                   false)]
+    (make-maintenance-mode handler on-error on-error)))
 
 (defn wrap-too-many-requests
   "Check if a service has more pending requests than max-queue-length and immediately return a 503"
