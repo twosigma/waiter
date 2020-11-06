@@ -380,6 +380,8 @@
       (on-auth-required))))
 
 (defn wrap-auth-bypass
+  "Middleware that checks if authentication is disabled for a token and sets the
+  :skip-authentication key of the request to true before passing to next handler."
   [handler]
   (fn [{:keys [waiter-discovery] :as request}]
     (process-authentication-parameter
