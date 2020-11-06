@@ -383,7 +383,7 @@
   "Middleware that checks if authentication is disabled for a token and sets the
   :skip-authentication key of the request to true before passing to next handler."
   [handler]
-  (fn [{:keys [waiter-discovery] :as request}]
+  (fn wrap-auth-bypass [{:keys [waiter-discovery] :as request}]
     (process-authentication-parameter
       waiter-discovery
       (fn [status message]
