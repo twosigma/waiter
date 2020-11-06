@@ -17,13 +17,13 @@ SUBCMD="${DIR}/run-integration-tests-${SCHEDULER}.sh ${2:-eftest} ${3:-integrati
 
 # Start netcat to listen to a port. The Codahale Graphite reporter will be able to report without failing and spamming logs.
 export GRAPHITE_SERVER_PORT=5555
-nc -kl localhost $GRAPHITE_SERVER_PORT > /dev/null &
+nc -kl 127.0.0.1 $GRAPHITE_SERVER_PORT > /dev/null &
 ncat_pid=$!
 
-if [ "${TRAVIS}" == true ]; then
+if [ "${CI}" == true ]; then
     # Capture integration test command output into a log file
     mkdir -p ${WAITER_DIR}/log
-    bash -x -c "${SUBCMD}" &> >(tee ${WAITER_DIR}/log/travis.log)
+    bash -x -c "${SUBCMD}" &> >(tee ${WAITER_DIR}/log/github-actions.log)
 
     # If there were failures, dump the logs
     if [ $? -ne 0 ]; then
