@@ -1,12 +1,15 @@
 name: 'Kitchen tests'
 
 on:
-  push:
-    branches:
-      - master
   pull_request:
     branches:
       - master
+  push:
+    branches:
+      - master
+  schedule:
+    - cron: '* * * * *'
+
 
 jobs:
   test:
