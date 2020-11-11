@@ -49,7 +49,7 @@
             [waiter.util.semaphore :as semaphore]
             [waiter.util.utils :as utils])
   (:import (java.io InputStream)
-           (org.eclipse.jetty.websocket.servlet ServletUpgradeRequest ServletUpgradeResponse)))
+           (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse)))
 
 (defn- make-https-redirect
   "Middleware that takes a handler and on-redirect function. It returns a new handler that
@@ -1153,35 +1153,3 @@
            (seq profile->defaults)))
     (catch Throwable th
       (utils/exception->response th request))))
-
-(defn make-websocket-request-acceptor
-  "Takes a handler and returns a websocket-request-acceptor handler function that takes a special request and response
-  object provided on websocket upgrade. It creates a generic request map from the two objects and passes it to the handler"
-  [server-name handler]
-  (fn websocket-request-acceptor [^ServletUpgradeRequest request ^ServletUpgradeResponse response]
-    (let [request-headers (->> (.getHeaders request)
-                               (pc/map-vals #(str/join "," %))
-                               (pc/map-keys str/lower-case))
-          correlation-id (or (get request-headers "x-cid")
-                             (str "ws-" (utils/unique-identifier)))
-          method (some-> request .getMethod str/lower-case keyword)
-          scheme (some-> request .getRequestURI .getScheme keyword)
-          uri (some-> request .getRequestURI .getPath)]
-      (cid/with-correlation-id
-        correlation-id
-        (log/info "request received (websocket upgrade)"
-                  {:headers (headers/truncate-header-values request-headers)
-                   :http-version (.getHttpVersion request)
-                   :method (some-> request .getMethod str/lower-case)
-                   :protocol-version (.getProtocolVersion request)
-                   :sub-protocols (some-> request .getSubProtocols seq)
-                   :uri uri})
-        (.setHeader response "server" server-name)
-        (.setHeader response "x-cid" correlation-id)
-        (let [handler-request {:headers request-headers
-                               :request-method method
-                               :scheme scheme
-                               :upgrade-request request
-                               :upgrade-response response
-                               :uri uri}]
-          (handler handler-request))))))
