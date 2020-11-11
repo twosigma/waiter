@@ -71,8 +71,10 @@
   [handler]
   (make-https-redirect
     handler
-    #(-> (ssl/ssl-redirect-response % {})
-         (utils/attach-waiter-source))))
+    (fn prepare-https-redirect-http-response [request]
+      (-> request
+          (ssl/ssl-redirect-response {})
+          (utils/attach-waiter-source)))))
 
 (defn wrap-wss-redirect
   "Middleware that enforces https-redirect for websocket-request-acceptor if a token has it configured before passing
@@ -80,7 +82,7 @@
   [handler]
   (make-https-redirect
     handler
-    (fn [{:keys [^ServletUpgradeResponse upgrade-response] :as request}]
+    (fn prepare-https-redirect-ws-response [{:keys [^ServletUpgradeResponse upgrade-response] :as request}]
       (let [https-url (str "https://" (get-in request [:headers "host"]) (:uri request))]
         (.setHeader upgrade-response "Location" https-url)
         (.sendError upgrade-response http-301-moved-permanently "https-redirect is enabled")
