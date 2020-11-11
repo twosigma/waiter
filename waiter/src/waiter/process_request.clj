@@ -894,16 +894,16 @@
   [handler]
   (make-maintenance-mode
     handler
-    (fn [data-map request]
+    (fn send-header-error [data-map request]
       (utils/data->error-response data-map request))
-    (fn [data-map request]
+    (fn send-maintenance-mode-error [data-map request]
       (utils/data->maintenance-mode-response data-map request))))
 
 (defn wrap-maintenance-mode-acceptor
   "websocket-request-acceptor middleware to check for maintenance mode of a token and if improper maintenance
   mode header is provided"
   [handler]
-  (let [on-error (fn [{:keys [message status]} {^ServletUpgradeResponse upgrade-response :upgrade-response}]
+  (let [on-error (fn send-ws-error [{:keys [message status]} {^ServletUpgradeResponse upgrade-response :upgrade-response}]
                    (.sendError upgrade-response status message)
                    false)]
     (make-maintenance-mode handler on-error on-error)))
