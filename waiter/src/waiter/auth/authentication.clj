@@ -402,7 +402,7 @@
   [handler]
   (make-wrap-auth-bypass
     handler
-    (fn on-process-auth-error-http [_ status message]
+    (fn send-http-error [_ status message]
       (utils/clj->json-response {:error message} :status status))))
 
 (defn wrap-auth-bypass-acceptor
@@ -411,6 +411,6 @@
   [handler]
   (make-wrap-auth-bypass
     handler
-    (fn on-process-auth-error-ws [{:keys [^ServletUpgradeResponse upgrade-response]} status message]
+    (fn send-ws-error [{:keys [^ServletUpgradeResponse upgrade-response]} status message]
       (.sendError upgrade-response status message)
       false)))
