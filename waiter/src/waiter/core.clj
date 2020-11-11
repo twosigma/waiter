@@ -1146,7 +1146,15 @@
                            (waiter-request?-factory hostnames)))
    :websocket-request-auth-cookie-attacher (pc/fnk [[:state passwords router-id]]
                                              (fn websocket-request-auth-cookie-attacher [request]
-                                               (ws/inter-router-request-middleware router-id (first passwords) request)))})
+                                               (ws/inter-router-request-middleware router-id (first passwords) request)))
+
+   :wrap-service-discovery-fn (pc/fnk [discover-service-parameters-fn]
+                                (fn wrap-service-discovery-fn
+                                  [handler]
+                                  (fn [{:keys [headers] :as request}]
+                                    ;; TODO optimization opportunity to avoid this re-computation later in the chain
+                                    (let [discovered-parameters (discover-service-parameters-fn headers)]
+                                      (handler (assoc request :waiter-discovery discovered-parameters))))))})
 
 (def daemons
   {:autoscaler (pc/fnk [[:routines router-metrics-helpers service-id->service-description-fn]
@@ -1370,9 +1378,9 @@
                                  (let [password (first passwords)]
                                    (fn auth-expires-at-handler-fn [request]
                                      (auth/process-auth-expires-at-request password request))))
-   :auth-keep-alive-handler-fn (pc/fnk [[:routines token->token-parameters]
+   :auth-keep-alive-handler-fn (pc/fnk [[:routines token->token-parameters wrap-service-discovery-fn]
                                         [:state passwords waiter-hostnames]
-                                        wrap-secure-request-fn wrap-service-discovery-fn]
+                                        wrap-secure-request-fn]
                                  (let [waiter-hostnames (cond-> waiter-hostnames
                                                           (contains? waiter-hostnames "localhost")
                                                           (conj "127.0.0.1"))
@@ -1436,8 +1444,8 @@
    :oidc-callback-handler-fn (pc/fnk [[:state oidc-authenticator]]
                                (fn oidc-callback-handler-fn [request]
                                  (oidc/oidc-callback-request-handler oidc-authenticator request)))
-   :oidc-enabled-handler-fn (pc/fnk [[:state oidc-authenticator waiter-hostnames]
-                                     wrap-service-discovery-fn]
+   :oidc-enabled-handler-fn (pc/fnk [[:routines wrap-service-discovery-fn]
+                                     [:state oidc-authenticator waiter-hostnames]]
                               (wrap-service-discovery-fn
                                 (fn oidc-enabled-handler-fn [request]
                                   (oidc/oidc-enabled-request-handler oidc-authenticator waiter-hostnames request))))
@@ -1475,8 +1483,9 @@
                                      (pr/process make-request-fn populate-maintainer-chan! start-new-service-fn
                                                  instance-request-properties determine-priority-fn process-response-fn
                                                  pr/abort-http-request-callback-factory local-usage-agent request))))
-   :process-request-wrapper-fn (pc/fnk [[:state interstitial-state-atom]
-                                        wrap-descriptor-fn wrap-secure-request-fn wrap-service-discovery-fn]
+   :process-request-wrapper-fn (pc/fnk [[:routines wrap-service-discovery-fn]
+                                        [:state interstitial-state-atom]
+                                        wrap-descriptor-fn wrap-secure-request-fn]
                                  ; If adding new middleware for process-request-wrapper-fn, consider adding the same middleware to
                                  ; websocket-request-acceptor for websocket upgrade requests
                                  (fn process-handler-wrapper-fn [handler]
@@ -1805,8 +1814,9 @@
                                              (wrap-secure-request-fn
                                                (fn waiter-request-interstitial-handler-fn [request]
                                                  (interstitial/display-interstitial-handler request))))
-   :websocket-request-acceptor (pc/fnk [[:state server-name]
-                                        websocket-secure-request-acceptor-fn wrap-service-discovery-fn]
+   :websocket-request-acceptor (pc/fnk [[:routines wrap-service-discovery-fn]
+                                        [:state server-name]
+                                        websocket-secure-request-acceptor-fn]
                                  ; If adding new middleware for websocket upgrade requests, consider adding the same middleware to
                                  ; process-request-wrapper-fn
                                  (let [handler (-> #(ws/request-subprotocol-acceptor (:upgrade-request %) (:upgrade-response %))
@@ -1863,11 +1873,4 @@
                                                  authentication-method-wrapper-fn)]
                                    (fn inner-wrap-secure-request-fn [{:keys [uri] :as request}]
                                      (log/debug "secure request received at" uri)
-                                     (handler request))))))
-   :wrap-service-discovery-fn (pc/fnk [[:routines discover-service-parameters-fn]]
-                                (fn wrap-service-discovery-fn
-                                  [handler]
-                                  (fn [{:keys [headers] :as request}]
-                                    ;; TODO optimization opportunity to avoid this re-computation later in the chain
-                                    (let [discovered-parameters (discover-service-parameters-fn headers)]
-                                      (handler (assoc request :waiter-discovery discovered-parameters))))))})
+                                     (handler request))))))})
