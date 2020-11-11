@@ -389,11 +389,11 @@
   (fn auth-bypass-handler [{:keys [waiter-discovery] :as request}]
     (process-authentication-parameter
       waiter-discovery
-      (fn [status message]
+      (fn on-process-authentication-error [status message]
         (on-error request status message))
-      (fn []
+      (fn on-auth-disabled []
         (handler (assoc request :skip-authentication true)))
-      (fn []
+      (fn on-auth-enabled []
         (handler request)))))
 
 (defn wrap-auth-bypass
@@ -402,7 +402,7 @@
   [handler]
   (make-wrap-auth-bypass
     handler
-    (fn [_ status message]
+    (fn on-error [_ status message]
       (utils/clj->json-response {:error message} :status status))))
 
 (defn wrap-auth-bypass-acceptor
@@ -411,6 +411,6 @@
   [handler]
   (make-wrap-auth-bypass
     handler
-    (fn [{:keys [^ServletUpgradeResponse upgrade-response]} status message]
+    (fn on-error [{:keys [^ServletUpgradeResponse upgrade-response]} status message]
       (.sendError upgrade-response status message)
       false)))
