@@ -248,7 +248,8 @@
                                  {:middleware (fn [_ ^UpgradeRequest request]
                                                 (websocket/add-headers-to-upgrade-request! request waiter-headers))})
                     [close-code error] (connection->ctrl-data connection)]
-                (assert-websocket-upgrade-error-response close-code error  "Unexpected HTTP Response Status Code: 503 Service Unavailable"))))
+                (assert-websocket-upgrade-error-response close-code error  "Unexpected HTTP Response Status Code: 503 Service Unavailable")
+                (is (= :done (deref response-promise default-timeout-period :timed-out))))))
           (finally
             (delete-token-and-assert waiter-url token))))
 
