@@ -111,7 +111,7 @@
                          [:settings cors-config host port server-options support-info websocket-config]
                          [:state cors-validator router-id server-name]
                          handlers] ; Insist that all systems are running before we start server
-                  (let [websocket-request-acceptor (:websocket-request-acceptor handlers)
+                  (let [{:keys [websocket-request-acceptor]} handlers
                         options (merge (cond-> server-options
                                          (:ssl-port server-options) (assoc :ssl? true))
                                        websocket-config
