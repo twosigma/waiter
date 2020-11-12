@@ -6,4 +6,4 @@ set -ex
 # Run waiter-init script tests
 #
 
-./bin/test-waiter-init
+./bin/test-waiter-k8s-init

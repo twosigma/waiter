@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 pushd kitchen
 echo "\n"
 pwd
