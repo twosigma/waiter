@@ -1,13 +1,14 @@
 #!/bin/bash
 
 pushd kitchen
+echo "\n"
 pwd
-tree
+ls bin
 ./bin/ci/run.sh
 popd
 
 pushd waiter-init
 pwd
-tree
+ls bin
 ./bin/ci/run.sh
 popd
