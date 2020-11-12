@@ -10,7 +10,6 @@ on:
   schedule:
     - cron: '0 0 * * *'
 
-
 jobs:
   test:
     runs-on: ubuntu-16.04
@@ -33,5 +32,5 @@ jobs:
       - name: Run kitchen tests
         run: cd containers/test-apps/kitchen && ./bin/ci/run.sh
         env:
-          GDRIVE_LOG_POST_URL: ${{ secrets.GDRIVE_LOG_POST_URL }}
+          GDRIVE_LOG_POST_URL: https://script.google.com/macros/s/AKfycbzYm-MeTnXcIqjOFkJ2godiOsHgwjeTJcn8JbAC/exec
           PYTEST_ADDOPTS: --color=yes

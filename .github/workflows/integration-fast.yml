@@ -31,4 +31,4 @@ jobs:
       - name: Run integration-fast tests
         run: cd waiter && ./bin/ci/run-integration-tests.sh composite eftest integration-fast
         env:
-          GDRIVE_LOG_POST_URL: ${{ secrets.GDRIVE_LOG_POST_URL }}
+          GDRIVE_LOG_POST_URL: https://script.google.com/macros/s/AKfycbzYm-MeTnXcIqjOFkJ2godiOsHgwjeTJcn8JbAC/exec

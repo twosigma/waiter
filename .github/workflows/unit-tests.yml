@@ -29,4 +29,4 @@ jobs:
       - name: Run unit tests
         run: cd waiter && ./bin/ci/run-unit-tests.sh
         env:
-          GDRIVE_LOG_POST_URL: ${{ secrets.GDRIVE_LOG_POST_URL }}
+          GDRIVE_LOG_POST_URL: https://script.google.com/macros/s/AKfycbzYm-MeTnXcIqjOFkJ2godiOsHgwjeTJcn8JbAC/exec
