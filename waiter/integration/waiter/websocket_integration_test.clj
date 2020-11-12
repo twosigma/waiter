@@ -59,7 +59,7 @@
   (str "ws://" waiter-url endpoint))
 
 (defn- wss-url [waiter-url endpoint ssl-port]
-  (str "wss://" (retrieve-ssl-url waiter-url (retrieve-ssl-port ssl-port)) waiter-url endpoint))
+  (str "wss://" (retrieve-ssl-url waiter-url (retrieve-ssl-port ssl-port)) endpoint))
 
 (defn- add-auth-cookie [request auth-cookie-value]
   (-> request (.getCookies) (.add (HttpCookie. "x-waiter-auth" auth-cookie-value))))
