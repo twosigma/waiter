@@ -24,7 +24,8 @@
             [waiter.service-description :as sd]
             [waiter.status-codes :refer :all]
             [waiter.util.ring-utils :as ru]
-            [waiter.util.utils :as utils]))
+            [waiter.util.utils :as utils])
+  (:import (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse)))
 
 (def ^:const AUTH-COOKIE-EXPIRES-AT "x-auth-expires-at")
 
@@ -379,16 +380,37 @@
       :else
       (on-auth-required))))
 
+(defn- make-wrap-auth-bypass
+  "Takes a handler and a function to call when there is an error with processing the
+  authentication parameter. If successful and authentication is disabled for the token,
+  then the :skip-authentication is set to true for the request object before getting passed
+  to the handler"
+  [handler on-error]
+  (fn auth-bypass-handler [{:keys [waiter-discovery] :as request}]
+    (process-authentication-parameter
+      waiter-discovery
+      (fn on-process-authentication-error [status message]
+        (on-error request status message))
+      (fn on-auth-disabled []
+        (handler (assoc request :skip-authentication true)))
+      (fn on-auth-enabled []
+        (handler request)))))
+
 (defn wrap-auth-bypass
   "Middleware that checks if authentication is disabled for a token and sets the
   :skip-authentication key of the request to true before passing to next handler."
   [handler]
-  (fn auth-bypass-handler [{:keys [waiter-discovery] :as request}]
-    (process-authentication-parameter
-      waiter-discovery
-      (fn [status message]
-        (utils/clj->json-response {:error message} :status status))
-      (fn []
-        (handler (assoc request :skip-authentication true)))
-      (fn []
-        (handler request)))))
+  (make-wrap-auth-bypass
+    handler
+    (fn send-http-error [_ status message]
+      (utils/clj->json-response {:error message} :status status))))
+
+(defn wrap-auth-bypass-acceptor
+  "Middleware that checks if authentication is disabled for a token and sets the
+  :skip-authentication key of the request to true before passing to next handler."
+  [handler]
+  (make-wrap-auth-bypass
+    handler
+    (fn send-ws-error [{:keys [^ServletUpgradeResponse upgrade-response]} status message]
+      (.sendError upgrade-response status message)
+      false)))

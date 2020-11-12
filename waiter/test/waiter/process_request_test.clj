@@ -419,6 +419,40 @@
           {:keys [status]} (handler request)]
       (is (= http-200-ok status)))))
 
+(deftest test-wrap-maintenance-mode-acceptor
+  (testing "returns 503 for token in maintenance mode with custom message"
+    (let [handler (wrap-maintenance-mode-acceptor (fn [_] (is false "Not supposed to call this handler") true))
+          maintenance-message "test maintenance message"
+          upgrade-response (reified-upgrade-response)
+          request {:upgrade-response upgrade-response
+                   :waiter-discovery {:token-metadata {"maintenance" {"message" maintenance-message}}
+                                      :token "token"
+                                      :waiter-headers {}}}
+          success? (handler request)]
+      (is (false? success?))
+      (is (= http-503-service-unavailable (.getStatusCode upgrade-response)))
+      (is (str/includes? (.getStatusReason upgrade-response) maintenance-message))))
+
+  (testing "returns 400 if x-waiter-maintenance is specified in headers"
+    (let [handler (wrap-maintenance-mode-acceptor (fn [_] (is false "Not supposed to call this handler") true))
+          upgrade-response (reified-upgrade-response)
+          request {:upgrade-response upgrade-response
+                   :waiter-discovery {:token-metadata {}
+                                      :token "token"
+                                      :waiter-headers {"x-waiter-maintenance" "some value"}}}
+          success? (handler request)]
+      (is (false? success?))
+      (is (= http-400-bad-request (.getStatusCode upgrade-response)))
+      (is (str/includes? (.getStatusReason upgrade-response) "The maintenance parameter is not supported for on-the-fly requests"))))
+
+  (testing "passes apps by default"
+    (let [handler (wrap-maintenance-mode-acceptor (fn [_] true))
+          request {:waiter-discovery {:token-metadata {}
+                                      :token "token"
+                                      :waiter-headers {}}}
+          success? (handler request)]
+      (is (true? success?)))))
+
 (deftest test-wrap-too-many-requests
   (testing "returns error for too many requests"
     (let [service-id "my-service"

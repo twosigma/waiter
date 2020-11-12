@@ -1147,38 +1147,7 @@
    :websocket-request-auth-cookie-attacher (pc/fnk [[:state passwords router-id]]
                                              (fn websocket-request-auth-cookie-attacher [request]
                                                (ws/inter-router-request-middleware router-id (first passwords) request)))
-   :websocket-request-acceptor (pc/fnk [[:state passwords server-name]
-                                        discover-service-parameters-fn]
-                                 ; TODO: add middleware checks - https-redirect, maintenance-mode, etc.
-                                 (fn websocket-request-acceptor [^ServletUpgradeRequest request ^ServletUpgradeResponse response]
-                                   (let [request-headers (->> (.getHeaders request)
-                                                           (pc/map-vals #(str/join "," %))
-                                                           (pc/map-keys str/lower-case))
-                                         correlation-id (or (get request-headers "x-cid")
-                                                            (str "ws-" (utils/unique-identifier)))
-                                         password (first passwords)]
-                                     (cid/with-correlation-id
-                                       correlation-id
-                                       (log/info "request received (websocket upgrade)"
-                                                 {:headers (headers/truncate-header-values request-headers)
-                                                  :http-version (.getHttpVersion request)
-                                                  :method (some-> request .getMethod str/lower-case)
-                                                  :protocol-version (.getProtocolVersion request)
-                                                  :sub-protocols (some-> request .getSubProtocols seq)
-                                                  :uri (some-> request .getRequestURI .getPath)})
-                                       (.setHeader response "server" server-name)
-                                       (.setHeader response "x-cid" correlation-id)
-                                       (let [waiter-discovery (discover-service-parameters-fn request-headers)]
-                                         (auth/process-authentication-parameter
-                                           waiter-discovery
-                                           (fn [status message]
-                                             (.sendError response status message)
-                                             false)
-                                           (fn []
-                                             (ws/request-subprotocol-acceptor request response))
-                                           (fn []
-                                             (and (ws/request-authenticator password request response)
-                                                  (ws/request-subprotocol-acceptor request response)))))))))
+
    :wrap-service-discovery-fn (pc/fnk [discover-service-parameters-fn]
                                 (fn wrap-service-discovery-fn
                                   [handler]
@@ -1517,6 +1486,8 @@
    :process-request-wrapper-fn (pc/fnk [[:routines wrap-service-discovery-fn]
                                         [:state interstitial-state-atom]
                                         wrap-descriptor-fn wrap-secure-request-fn]
+                                 ; If adding new middleware for process-request-wrapper-fn, consider adding the same middleware to
+                                 ; websocket-request-acceptor for websocket upgrade requests
                                  (fn process-handler-wrapper-fn [handler]
                                    (-> handler
                                      pr/wrap-too-many-requests
@@ -1843,6 +1814,27 @@
                                              (wrap-secure-request-fn
                                                (fn waiter-request-interstitial-handler-fn [request]
                                                  (interstitial/display-interstitial-handler request))))
+   :websocket-request-acceptor (pc/fnk [[:routines wrap-service-discovery-fn]
+                                        [:state server-name]
+                                        websocket-secure-request-acceptor-fn]
+                                 ; If adding new middleware for websocket upgrade requests, consider adding the same middleware to
+                                 ; process-request-wrapper-fn
+                                 (let [handler (-> #(ws/request-subprotocol-acceptor (:upgrade-request %) (:upgrade-response %))
+                                                   websocket-secure-request-acceptor-fn
+                                                   auth/wrap-auth-bypass-acceptor
+                                                   pr/wrap-maintenance-mode-acceptor
+                                                   handler/wrap-wss-redirect
+                                                   wrap-service-discovery-fn)]
+                                   (ws/make-websocket-request-acceptor server-name handler)))
+   :websocket-secure-request-acceptor-fn (pc/fnk [[:state passwords]]
+                                           (fn websocket-secure-request-acceptor-fn
+                                             [handler]
+                                             (fn [{:keys [skip-authentication upgrade-request upgrade-response] :as request}]
+                                               (if skip-authentication
+                                                 (handler request)
+                                                 (do
+                                                   (and (ws/request-authenticator (first passwords) upgrade-request upgrade-response)
+                                                        (handler request)))))))
    :welcome-handler-fn (pc/fnk [settings]
                          (partial handler/welcome-handler settings))
    :work-stealing-handler-fn (pc/fnk [[:daemons populate-maintainer-chan!]

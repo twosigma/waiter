@@ -22,6 +22,7 @@
             [waiter.kv :as kv]
             [waiter.service-description :as sd]
             [waiter.status-codes :refer :all]
+            [waiter.test-helpers :refer :all]
             [waiter.util.utils :as utils])
   (:import (waiter.auth.authentication SingleUserAuthenticator)))
 
@@ -453,3 +454,30 @@
                                                                        "x-waiter-token" "a-named-token-C"}})
                handled-request))
         (is (= handler-response response))))))
+
+(deftest test-wrap-auth-bypass-acceptor
+  (testing "should 400 if authentication header is sent because it is not supported"
+    (let [handler (wrap-auth-bypass-acceptor (fn [_] (is false "Not supposed to call this handler") true))
+          upgrade-response (reified-upgrade-response)
+          request {:upgrade-response upgrade-response
+                   :waiter-discovery {:token-metadata {}
+                                      :token "token"
+                                      :waiter-headers {"x-waiter-authentication" "value"}}}
+          success? (handler request)]
+      (is (false? success?))
+      (is (= http-400-bad-request (.getStatusCode upgrade-response)))
+      (is (str/includes? (.getStatusReason upgrade-response) "An authentication parameter is not supported for on-the-fly headers"))))
+
+  (testing "should 400 if authentication is disabled and combined with on-the-fly headers"
+    (let [handler (wrap-auth-bypass-acceptor (fn [_] (is false "Not supposed to call this handler") true))
+          upgrade-response (reified-upgrade-response)
+          request {:headers {"x-waiter-run-as-user" "test-user"}
+                   :upgrade-response upgrade-response
+                   :waiter-discovery {:service-description-template {"authentication" "disabled"}
+                                      :token-metadata {}
+                                      :token "token"
+                                      :waiter-headers {"x-waiter-run-as-user" "test-user"}}}
+          success? (handler request)]
+      (is (false? success?))
+      (is (= http-400-bad-request (.getStatusCode upgrade-response)))
+      (is (str/includes? (.getStatusReason upgrade-response) "An authentication disabled token may not be combined with on-the-fly headers")))))

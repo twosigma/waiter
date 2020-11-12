@@ -107,11 +107,12 @@
    :scheduler core/scheduler
    :settings (pc/fnk dummy-symbol-for-fnk-schema-logic :- settings/settings-schema [] settings)
    :state core/state
-   :http-server (pc/fnk [[:routines discover-service-parameters-fn generate-log-url-fn waiter-request?-fn websocket-request-acceptor]
+   :http-server (pc/fnk [[:routines discover-service-parameters-fn generate-log-url-fn waiter-request?-fn]
                          [:settings cors-config host port server-options support-info websocket-config]
                          [:state cors-validator router-id server-name]
                          handlers] ; Insist that all systems are running before we start server
-                  (let [options (merge (cond-> server-options
+                  (let [{:keys [websocket-request-acceptor]} handlers
+                        options (merge (cond-> server-options
                                          (:ssl-port server-options) (assoc :ssl? true))
                                        websocket-config
                                        {:ring-handler (-> (core/ring-handler-factory waiter-request?-fn handlers)

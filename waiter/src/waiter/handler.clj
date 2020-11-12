@@ -48,22 +48,45 @@
             [waiter.util.ring-utils :as ru]
             [waiter.util.semaphore :as semaphore]
             [waiter.util.utils :as utils])
-  (:import (java.io InputStream)))
+  (:import (java.io InputStream)
+           (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse)))
 
-(defn wrap-https-redirect
-  "Middleware that takes a handler and returns a new handler that enforces https-redirect if a token
-   has it configured before passing the request map to the next handler."
-  [handler]
+(defn- make-https-redirect
+  "Middleware that takes a handler and on-redirect function. It returns a new handler that
+  enforces https-redirect and calls on-redirect if there is a violation before passing the
+  request map to the next handler."
+  [handler on-redirect]
   (fn https-redirect-handler [request]
-    (let [;; ignore websocket requests
-          http-request? (= :http (utils/request->scheme request))
+    (let [scheme (utils/request->scheme request)
+          http-request? (or (= :ws scheme) (= :http scheme))
           https-redirect? (get-in request [:waiter-discovery :token-metadata "https-redirect"])]
       (if (and http-request? https-redirect?)
         (do
           (log/info "triggering ssl redirect")
-          (-> (ssl/ssl-redirect-response request {})
-              (utils/attach-waiter-source)))
+          (on-redirect request))
         (handler request)))))
+
+(defn wrap-https-redirect
+  "Middleware that enforces https-redirect if a token has it configured before passing the request map to the next handler."
+  [handler]
+  (make-https-redirect
+    handler
+    (fn prepare-https-redirect-http-response [request]
+      (-> request
+          (ssl/ssl-redirect-response {})
+          (utils/attach-waiter-source)))))
+
+(defn wrap-wss-redirect
+  "Middleware that enforces https-redirect for websocket-request-acceptor if a token has it configured before passing
+  the request map to the next handler."
+  [handler]
+  (make-https-redirect
+    handler
+    (fn prepare-https-redirect-ws-response [{:keys [^ServletUpgradeResponse upgrade-response] :as request}]
+      (let [https-url (str "https://" (get-in request [:headers "host"]) (:uri request))]
+        (.setHeader upgrade-response "Location" https-url)
+        (.sendError upgrade-response http-301-moved-permanently "https-redirect is enabled")
+        false))))
 
 (defn async-make-request-helper
   "Helper function that returns a function that can invoke make-request-fn."

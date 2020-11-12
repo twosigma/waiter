@@ -24,6 +24,7 @@
             [metrics.histograms :as histograms]
             [metrics.meters :as meters]
             [metrics.timers :as timers]
+            [plumbing.core :as pc]
             [qbits.jet.client.websocket :as ws-client]
             [waiter.auth.authentication :as auth]
             [waiter.cookie-support :as cookie-support]
@@ -36,15 +37,48 @@
             [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
             [waiter.util.http-utils :as hu]
-            [waiter.util.ring-utils :as ru])
+            [waiter.util.ring-utils :as ru]
+            [waiter.util.utils :as utils])
   (:import (java.net HttpCookie SocketTimeoutException URLDecoder URLEncoder)
            (java.nio ByteBuffer)
            (org.eclipse.jetty.websocket.api MessageTooLargeException StatusCode UpgradeRequest)
            (org.eclipse.jetty.websocket.common WebSocketSession)
-           (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse)))
+           (org.eclipse.jetty.websocket.servlet ServletUpgradeRequest ServletUpgradeResponse)))
 
 ;; https://tools.ietf.org/html/rfc6455#section-7.4
 (def ^:const server-termination-on-unexpected-condition websocket-1011-server-error)
+
+(defn make-websocket-request-acceptor
+  "Takes a handler and returns a websocket-request-acceptor handler function that takes a special request and response
+  object provided on websocket upgrade. It creates a generic request map from the two objects and passes it to the handler"
+  [server-name handler]
+  (fn websocket-request-acceptor [^ServletUpgradeRequest request ^ServletUpgradeResponse response]
+    (let [request-headers (->> (.getHeaders request)
+                               (pc/map-vals #(str/join "," %))
+                               (pc/map-keys str/lower-case))
+          correlation-id (or (get request-headers "x-cid")
+                             (str "ws-" (utils/unique-identifier)))
+          method (some-> request .getMethod str/lower-case keyword)
+          scheme (some-> request .getRequestURI .getScheme keyword)
+          uri (some-> request .getRequestURI .getPath)]
+      (cid/with-correlation-id
+        correlation-id
+        (log/info "request received (websocket upgrade)"
+                  {:headers (headers/truncate-header-values request-headers)
+                   :http-version (.getHttpVersion request)
+                   :method (some-> request .getMethod str/lower-case)
+                   :protocol-version (.getProtocolVersion request)
+                   :sub-protocols (some-> request .getSubProtocols seq)
+                   :uri uri})
+        (.setHeader response "server" server-name)
+        (.setHeader response "x-cid" correlation-id)
+        (let [handler-request {:headers request-headers
+                               :request-method method
+                               :scheme scheme
+                               :upgrade-request request
+                               :upgrade-response response
+                               :uri uri}]
+          (handler handler-request))))))
 
 (defn request-authenticator
   "Authenticates the request using the x-waiter-auth cookie.

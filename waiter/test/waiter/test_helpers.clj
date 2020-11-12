@@ -26,12 +26,14 @@
             [metrics.core :as mc]
             [qbits.jet.client.http :as http]
             [waiter.correlation-id :as cid]
+            [waiter.status-codes :refer :all]
             [waiter.util.client-tools :as ct]
             [waiter.util.date-utils :as du])
   (:import (com.codahale.metrics MetricFilter MetricRegistry)
            (java.io ByteArrayOutputStream File)
            (java.net HttpURLConnection InetAddress URL)
-           (javax.servlet ServletOutputStream ServletResponse)))
+           (javax.servlet ServletOutputStream ServletResponse)
+           (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse)))
 
 (def expected-html-response-headers {"content-type" "text/html"})
 
@@ -402,3 +404,23 @@
   [instance-rpc-chan]
   (fn populate-maintainer-chan!-put! [request-map]
     (async/put! instance-rpc-chan request-map)))
+
+(defn reified-upgrade-response
+  []
+  (let [headers (atom {})
+        response-reason-atom (atom nil)
+        response-status-atom (atom 0)
+        response-subprotocol-atom (atom nil)]
+    (proxy [ServletUpgradeResponse] [nil]
+      (getAcceptedSubProtocol [] @response-subprotocol-atom)
+      (getStatusCode [] @response-status-atom)
+      (getStatusReason [] @response-reason-atom)
+      (sendError [status reason]
+        (reset! response-status-atom status)
+        (reset! response-reason-atom reason))
+      (sendForbidden [reason]
+        (reset! response-status-atom http-403-forbidden)
+        (reset! response-reason-atom reason))
+      (setAcceptedSubProtocol [subprotocol] (reset! response-subprotocol-atom subprotocol))
+      (setHeader [field value] (reset! headers (assoc @headers field value)))
+      (getHeader [field] (get @headers field)))))
