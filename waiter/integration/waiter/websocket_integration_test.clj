@@ -293,9 +293,13 @@
                       connection (ws-client/connect!
                                    (websocket-client-factory)
                                    (wss-url waiter-url "/websocket-auth" ssl-port)
-                                   (fn [{:keys [out]}]
-                                     (deliver response-promise :success)
-                                     (async/close! out))
+                                   (fn [{:keys [in out]}]
+                                     (async/go
+                                       (async/>! out "request-info")
+                                       (swap! ws-response-atom conj (async/<! in))
+                                       (swap! ws-response-atom conj (async/<! in))
+                                       (deliver response-promise :done)
+                                       (async/close! out)))
                                    {:middleware (fn [_ ^UpgradeRequest request]
                                                   (websocket/add-headers-to-upgrade-request! request waiter-headers))})
                       [close-code error] (connection->ctrl-data connection)]
