@@ -92,6 +92,7 @@
                          (deliver connect-success-promise :success)
                          (async/close! out)))
           [close-code error] (connection->ctrl-data connection)]
+      (is false "Forcing this test case to fail")
       (is (= :qbits.jet.websocket/error close-code))
       (is (instance? UpgradeException error))
       (is (str/includes? (.getMessage error) "Unexpected HTTP Response Status Code: 403 Forbidden"))
