@@ -29,9 +29,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
       - name: Setup
-        run: cd containers/test-apps/kitchen && ./bin/ci/setup.sh
+        run: cd containers/test-apps && ./bin/ci/setup.sh
       - name: Run kitchen tests
-        run: cd containers/test-apps/kitchen && ./bin/ci/run.sh
+        run: cd containers/test-apps && ./bin/ci/run.sh
         env:
           GDRIVE_LOG_POST_URL: https://script.google.com/macros/s/AKfycbzYm-MeTnXcIqjOFkJ2godiOsHgwjeTJcn8JbAC/exec
           PYTEST_ADDOPTS: --color=yes

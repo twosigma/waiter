@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 pushd kitchen
 ./bin/ci/run.sh
 popd
