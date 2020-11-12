@@ -1,4 +1,4 @@
-name: 'Kitchen tests'
+name: 'Test-apps tests'
 
 on:
   pull_request:
