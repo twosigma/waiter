@@ -68,10 +68,9 @@ def register_stop(add_parser):
 
 def register_start(add_parser):
     start_parser = register_action(add_parser, 'start')
-    start_parser.add_argument('--message', '-m',
-                              help='Message is a required argument and cannot be more than 512 characters. '
-                                   'Your message will be provided in a 503 response for requests to the token.',
-                              required=True)
+    start_parser.add_argument('message',
+                              help='Your message will be provided in a 503 response for requests to the token. '
+                                   'The message cannot be more than 512 characters.')
 
 
 def register(add_parser):

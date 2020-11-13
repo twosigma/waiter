@@ -1347,7 +1347,7 @@ class WaiterCliTest(util.WaiterTest):
         util.post_token(self.waiter_url, token_name, token_fields)
         try:
             cp = cli.maintenance('start', token_name, self.waiter_url,
-                                 maintenance_flags=f'--message "{custom_maintenance_message}"')
+                                 maintenance_flags=f'"{custom_maintenance_message}"')
             self.assertEqual(0, cp.returncode, cp.stderr)
             token_data = util.load_token(self.waiter_url, token_name)
             self.assertEqual({'message': custom_maintenance_message}, token_data['maintenance'])
@@ -1360,14 +1360,14 @@ class WaiterCliTest(util.WaiterTest):
         token_name = self.token_name()
         custom_maintenance_message = "custom maintenance message"
         cp = cli.maintenance('start', token_name, self.waiter_url,
-                             maintenance_flags=f'--message "{custom_maintenance_message}"')
+                             maintenance_flags=f'"{custom_maintenance_message}"')
         self.assertEqual(1, cp.returncode, cp.stderr)
         self.assertIn('The token does not exist. You must create it first.', cli.stderr(cp))
 
     def test_maintenance_start_no_cluster(self):
         custom_maintenance_message = "custom maintenance message"
         self.__test_no_cluster(partial(cli.maintenance, 'start',
-                                       maintenance_flags=f'--message "{custom_maintenance_message}"'))
+                                       maintenance_flags=f'"{custom_maintenance_message}"'))
 
     def test_maintenance_stop(self):
         token_name = self.token_name()
