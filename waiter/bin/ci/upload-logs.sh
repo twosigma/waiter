@@ -9,7 +9,6 @@ log_dirs=./waiter/log
 repo=${GITHUB_REPOSITORY}
 pr_number=$(jq -r ".pull_request.number" "$GITHUB_EVENT_PATH")
 dump_name="${repo//\//-}-PR${pr_number}-${GITHUB_WORKFLOW// /-}-$GITHUB_RUN_ID"
-echo $dump_name
 
 # Grab Mesos logs
 if [ -d ./waiter/.minimesos ]; then
