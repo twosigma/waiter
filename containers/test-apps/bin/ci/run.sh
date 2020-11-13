@@ -9,3 +9,4 @@ popd
 pushd waiter-init
 ./bin/ci/run.sh
 popd
+
