@@ -1,3 +1,5 @@
+from functools import partial
+
 import requests
 
 from waiter import terminal, http_util
@@ -6,11 +8,14 @@ from waiter.querying import get_cluster_with_token, get_token
 from waiter.util import guard_no_cluster, logging, print_info
 
 
-def maintenance(clusters, args, _):
+def maintenance(parser, clusters, args, _):
     guard_no_cluster(clusters)
     logging.debug('args: %s' % args)
+    sub_action = args.get('sub_action', None)
+    if sub_action is None:
+        parser.print_help()
+        return 0
     token_name = args['token']
-    sub_action = args['sub_action']
     cluster = get_cluster_with_token(clusters, token_name)
     cluster_name = cluster['name']
     cluster_url = cluster['url']
@@ -74,8 +79,8 @@ def register(add_parser):
     parser = add_parser('maintenance',
                         help='manage maintenance mode for a token',
                         description='Manage maintenance mode for a Waiter token.')
-    subparsers = parser.add_subparsers(dest="cmd", required=True)
+    subparsers = parser.add_subparsers()
     register_check(subparsers.add_parser)
     register_start(subparsers.add_parser)
     register_stop(subparsers.add_parser)
-    return maintenance
+    return partial(maintenance, parser)
