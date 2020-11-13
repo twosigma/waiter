@@ -74,7 +74,7 @@ def register(add_parser):
     parser = add_parser('maintenance',
                         help='manage maintenance mode for a token',
                         description='Manage maintenance mode for a Waiter token.')
-    subparsers = parser.add_subparsers()
+    subparsers = parser.add_subparsers(dest="cmd", required=True)
     register_check(subparsers.add_parser)
     register_start(subparsers.add_parser)
     register_stop(subparsers.add_parser)

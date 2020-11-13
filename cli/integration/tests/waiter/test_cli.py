@@ -1419,3 +1419,8 @@ class WaiterCliTest(util.WaiterTest):
 
     def test_maintenance_check_in_maintenance_mode(self):
         self.__test_maintenance_check(True)
+
+    def test_maintenance_no_sub_command(self):
+        cp = cli.maintenance('', '')
+        self.assertEqual(2, cp.returncode, cp.stderr)
+        self.assertIn("waiter maintenance: error: the following arguments are required: cmd", cli.stderr(cp))
