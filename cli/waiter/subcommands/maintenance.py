@@ -41,6 +41,8 @@ def _update_token(cluster, token_name, existing_token_etag, body):
 
 
 def check_maintenance(clusters, args):
+    """Checks if a token is in maintenance mode and displays the result. Returns 0 if the token is in maintenance mode
+    and returns 1 if the token is NOT in maintenance mode."""
     token_name = args['token']
     _, existing_token_data, existing_token_etag = _get_existing_token_data(clusters, token_name)
     maintenance_mode_active = _is_token_in_maintenance_mode(existing_token_data)
@@ -49,6 +51,7 @@ def check_maintenance(clusters, args):
 
 
 def start_maintenance(clusters, args):
+    """Sets the token in maintenance mode by updating the token user metadata fields"""
     token_name = args['token']
     cluster, existing_token_data, existing_token_etag = _get_existing_token_data(clusters, token_name)
     json_body = existing_token_data
@@ -58,6 +61,7 @@ def start_maintenance(clusters, args):
 
 
 def stop_maintenance(clusters, args):
+    """Stops maintenance mode for a token by deleting the 'maintenance' user metadata field in the token data"""
     token_name = args['token']
     cluster, existing_token_data, existing_token_etag = _get_existing_token_data(clusters, token_name)
     maintenance_mode_active = _is_token_in_maintenance_mode(existing_token_data)
@@ -69,6 +73,7 @@ def stop_maintenance(clusters, args):
 
 
 def maintenance(parser, clusters, args, _):
+    """Calls the sub action for maintenance command. If no sub action is provided then displays the help message."""
     logging.debug('args: %s' % args)
     sub_func = args.get('sub_func', None)
     if sub_func is None:
@@ -79,6 +84,7 @@ def maintenance(parser, clusters, args, _):
 
 
 def register_check(add_parser):
+    """Registers the maintenance check parser"""
     parser = add_parser('check',
                         help='Checks if a token is in maintenance mode. Returns cli code 0 if the token is in '
                              'maintenance mode and 1 if the token not in maintenance mode')
@@ -87,12 +93,14 @@ def register_check(add_parser):
 
 
 def register_stop(add_parser):
+    """Registers the maintenance stop parser"""
     parser = add_parser('stop', help='Stop maintenance mode for a token. Requests will be handled normally.')
     parser.add_argument('token')
     parser.set_defaults(sub_func=stop_maintenance)
 
 
 def register_start(add_parser):
+    """Registers the maintenance start parser"""
     parser = add_parser('start',
                         help='Start maintenance mode for a token. All requests to this token will begin to receive a '
                              '503 response.')
