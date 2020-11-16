@@ -15,7 +15,8 @@ def _is_token_in_maintenance_mode(token_data):
 def _get_existing_token_data(clusters, token_name):
     guard_no_cluster(clusters)
     cluster = get_cluster_with_token(clusters, token_name)
-    return cluster, get_token(cluster, token_name)
+    existing_token_data, existing_token_etag = get_token(cluster, token_name)
+    return cluster, existing_token_data, existing_token_etag
 
 
 def _update_token(cluster, token_name, existing_token_etag, body):
@@ -41,7 +42,7 @@ def _update_token(cluster, token_name, existing_token_etag, body):
 
 def check_maintenance(clusters, args):
     token_name = args['token']
-    existing_token_data, existing_token_etag = _get_existing_token_data(clusters, token_name)
+    _, existing_token_data, existing_token_etag = _get_existing_token_data(clusters, token_name)
     maintenance_mode_active = _is_token_in_maintenance_mode(existing_token_data)
     print_info(f'{token_name} is {"" if maintenance_mode_active else "not "}in maintenance mode')
     return 0 if maintenance_mode_active else 1
@@ -86,14 +87,15 @@ def register_check(add_parser):
 
 
 def register_stop(add_parser):
-    parser = add_parser('stop', 'Stop maintenance mode for a token. Requests will be handled normally.')
+    parser = add_parser('stop', help='Stop maintenance mode for a token. Requests will be handled normally.')
     parser.add_argument('token')
     parser.set_defaults(sub_func=stop_maintenance)
 
 
 def register_start(add_parser):
-    parser = add_parser('start', 'Start maintenance mode for a token. All requests to this token will begin to receive '
-                                 'a 503 response.')
+    parser = add_parser('start',
+                        help='Start maintenance mode for a token. All requests to this token will begin to receive a '
+                             '503 response.')
     parser.add_argument('token')
     parser.add_argument('message',
                         help='Your message will be provided in a 503 response for requests to the token. '
