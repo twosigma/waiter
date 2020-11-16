@@ -2,12 +2,13 @@
 
 set -e
 
-cd ${TRAVIS_BUILD_DIR}
+cd ${GITHUB_WORKSPACE}
 
 tarball=./dump.txz
 log_dirs=./waiter/log
-repo=${TRAVIS_PULL_REQUEST_SLUG:-${TRAVIS_REPO_SLUG}}
-dump_name="${repo//\//-}-${TRAVIS_JOB_NUMBER:-dump}"
+repo=${GITHUB_REPOSITORY}
+pr_number=$(jq -r ".pull_request.number" "$GITHUB_EVENT_PATH")
+dump_name="${repo//\//-}-PR${pr_number}-${GITHUB_WORKFLOW// /-}-$GITHUB_RUN_ID"
 
 # Grab Mesos logs
 if [ -d ./waiter/.minimesos ]; then
@@ -65,4 +66,4 @@ if [ "$exitcode" == 2 ]; then
   echo "The tar command exited with a fatal error (exit code $exitcode), exiting..."
   exit $exitcode
 fi
-./waiter/bin/ci/gdrive-upload "travis-${dump_name}" $tarball
+./waiter/bin/ci/gdrive-upload "github-actions-${dump_name}" $tarball

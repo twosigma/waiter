@@ -2,7 +2,6 @@
 
 # Waiter
 
-[![Build Status](https://travis-ci.org/twosigma/waiter.svg)](https://travis-ci.org/twosigma/waiter)
 [![Slack Status](http://waiter-dev.herokuapp.com/badge.svg)](http://waiter-dev.herokuapp.com/)
 
 Welcome to Two Sigma's Waiter project!

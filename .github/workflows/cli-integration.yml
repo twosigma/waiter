@@ -1,0 +1,52 @@
+name: 'Waiter cli-integration tests'
+
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+      - 'build**'
+  schedule:
+    - cron: '0 0 * * *'
+
+jobs:
+  test:
+    runs-on: ubuntu-16.04
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up JDK 11
+        uses: actions/setup-java@v1
+        with:
+          java-version: '11'
+      - name: Cache Maven packages
+        uses: actions/cache@v2
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/project.clj') }}
+          restore-keys: ${{ runner.os }}-m2
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.6.x'
+      - name: Cache pip
+        uses: actions/cache@v2
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      - name: Install Python Dependencies
+        run: |
+          cd cli
+          pip install -e .
+          pip install -r integration/requirements.txt
+      - name: Run cli-integration tests
+        run: |
+          cd cli
+          ./bin/ci/run-integration-tests.sh
+        env:
+          GDRIVE_LOG_POST_URL: https://script.google.com/macros/s/AKfycbzYm-MeTnXcIqjOFkJ2godiOsHgwjeTJcn8JbAC/exec
+          PYTEST_ADDOPTS: --color=yes

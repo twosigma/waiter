@@ -1,0 +1,37 @@
+name: 'Test-apps tests'
+
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+      - 'build**'
+  schedule:
+    - cron: '0 0 * * *'
+
+jobs:
+  test:
+    runs-on: ubuntu-16.04
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.6.x'
+      - name: Cache pip
+        uses: actions/cache@v2
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      - name: Setup
+        run: cd containers/test-apps && ./bin/ci/setup.sh
+      - name: Run kitchen tests
+        run: cd containers/test-apps && ./bin/ci/run.sh
+        env:
+          GDRIVE_LOG_POST_URL: https://script.google.com/macros/s/AKfycbzYm-MeTnXcIqjOFkJ2godiOsHgwjeTJcn8JbAC/exec
+          PYTEST_ADDOPTS: --color=yes
