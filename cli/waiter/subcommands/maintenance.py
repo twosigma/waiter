@@ -9,12 +9,12 @@ from waiter.util import guard_no_cluster, logging, print_info
 
 
 def maintenance(parser, clusters, args, _):
-    guard_no_cluster(clusters)
     logging.debug('args: %s' % args)
     sub_action = args.get('sub_action', None)
     if sub_action is None:
         parser.print_help()
         return 0
+    guard_no_cluster(clusters)
     token_name = args['token']
     cluster = get_cluster_with_token(clusters, token_name)
     cluster_name = cluster['name']
