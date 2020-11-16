@@ -86,15 +86,16 @@ def maintenance(parser, clusters, args, _):
 def register_check(add_parser):
     """Registers the maintenance check parser"""
     parser = add_parser('check',
-                        help='Checks if a token is in maintenance mode. Returns cli code 0 if the token is in '
-                             'maintenance mode and 1 if the token not in maintenance mode')
+                        help='Checks if a token is in maintenance mode. Exits with code 0 if the token is in '
+                             'maintenance mode and 1 if the token is not in maintenance mode')
     parser.add_argument('token')
     parser.set_defaults(sub_func=check_maintenance)
 
 
 def register_stop(add_parser):
     """Registers the maintenance stop parser"""
-    parser = add_parser('stop', help='Stop maintenance mode for a token. Requests will be handled normally.')
+    parser = add_parser('stop', help='Stop maintenance mode for a token. Requests to the token will be handled '
+                                     'normally.')
     parser.add_argument('token')
     parser.set_defaults(sub_func=stop_maintenance)
 
