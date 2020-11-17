@@ -8,7 +8,7 @@ import tempfile
 import threading
 import unittest
 import uuid
-
+from functools import partial
 import pytest
 
 from tests.waiter import util, cli
@@ -78,13 +78,16 @@ class WaiterCliTest(util.WaiterTest):
         self.assertIn('improper', cli.decode(cp.stderr))
         self.assertIn('cpus must be a positive number', cli.decode(cp.stderr))
 
-    def test_create_no_cluster(self):
+    def __test_no_cluster(self, cli_fn):
         config = {'clusters': []}
         with cli.temp_config_file(config) as path:
             flags = '--config %s' % path
-            cp = cli.create_minimal(token_name=self.token_name(), flags=flags)
+            cp = cli_fn(token_name=self.token_name(), flags=flags)
             self.assertEqual(1, cp.returncode, cp.stderr)
             self.assertIn('must specify at least one cluster', cli.decode(cp.stderr))
+
+    def test_create_no_cluster(self):
+        self.__test_no_cluster(cli.create_minimal)
 
     def test_unspecified_create_cluster(self):
         config = {
@@ -1107,6 +1110,7 @@ class WaiterCliTest(util.WaiterTest):
             token_data = next(t for t in tokens if t['token'] == token_name)
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertFalse(token_data['deleted'])
+            self.assertFalse(token_data['maintenance'])
 
             # Delete the token
             util.delete_token(self.waiter_url, token_name)
@@ -1119,6 +1123,29 @@ class WaiterCliTest(util.WaiterTest):
             self.assertFalse(any(t['token'] == token_name for t in tokens))
         finally:
             util.delete_token(self.waiter_url, token_name, assert_response=False)
+
+    def __test_tokens_maintenance(self, expected_maintenance_value, service_config={}):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, util.minimal_service_description(**service_config))
+        try:
+            cp = cli.tokens(self.waiter_url)
+            stdout = cli.stdout(cp)
+            lines = stdout.split('\n')
+            title_line = lines[0]
+            maintenance_index = title_line.index('Maintenance')
+            line_with_token = next(line for line in lines if token_name in line)
+            token_maintenance = line_with_token[maintenance_index:maintenance_index + len(expected_maintenance_value)]
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertEqual(token_maintenance, expected_maintenance_value)
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_tokens_token_in_maintenance(self):
+        service_config = {"maintenance": {"message": "custom message"}}
+        self.__test_tokens_maintenance("True", service_config=service_config)
+
+    def test_tokens_token_not_in_maintenance(self):
+        self.__test_tokens_maintenance("False")
 
     def test_tokens_sorted(self):
         token_name_prefix = self.token_name()
@@ -1312,3 +1339,89 @@ class WaiterCliTest(util.WaiterTest):
 
     def test_update_token_no_admin_mode(self):
         self.__test_create_update_token_admin_mode('update', self.token_name(), False)
+
+    def test_maintenance_start(self):
+        token_name = self.token_name()
+        token_fields = {'cpus': 0.1, 'mem': 128, 'cmd': 'foo'}
+        custom_maintenance_message = "custom maintenance message"
+        util.post_token(self.waiter_url, token_name, token_fields)
+        try:
+            cp = cli.maintenance('start', token_name, self.waiter_url,
+                                 maintenance_flags=f'"{custom_maintenance_message}"')
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            token_data = util.load_token(self.waiter_url, token_name)
+            self.assertEqual({'message': custom_maintenance_message}, token_data['maintenance'])
+            for key, value in token_fields.items():
+                self.assertEqual(value, token_data[key])
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_maintenance_start_nonexistent_token(self):
+        token_name = self.token_name()
+        custom_maintenance_message = "custom maintenance message"
+        cp = cli.maintenance('start', token_name, self.waiter_url,
+                             maintenance_flags=f'"{custom_maintenance_message}"')
+        self.assertEqual(1, cp.returncode, cp.stderr)
+        self.assertIn('The token does not exist. You must create it first.', cli.stderr(cp))
+
+    def test_maintenance_start_no_cluster(self):
+        custom_maintenance_message = "custom maintenance message"
+        self.__test_no_cluster(partial(cli.maintenance, 'start',
+                                       maintenance_flags=f'"{custom_maintenance_message}"'))
+
+    def test_maintenance_stop(self):
+        token_name = self.token_name()
+        token_fields = {'cpus': 0.1, 'mem': 128, 'cmd': 'foo'}
+        custom_maintenance_message = "custom maintenance message"
+        util.post_token(self.waiter_url, token_name,
+                        {**token_fields, 'maintenance': {'message': custom_maintenance_message}})
+        try:
+            cp = cli.maintenance('stop', token_name, self.waiter_url)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            token_data = util.load_token(self.waiter_url, token_name)
+            self.assertEqual(None, token_data.get('maintenance', None))
+            for key, value in token_fields.items():
+                self.assertEqual(value, token_data[key])
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_maintenance_stop_no_cluster(self):
+        self.__test_no_cluster(partial(cli.maintenance, 'stop'))
+
+    def test_maintenance_stop_not_in_maintenance(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, {'cpus': 0.1, 'mem': 128, 'cmd': 'foo'})
+        try:
+            cp = cli.maintenance('stop', token_name, self.waiter_url)
+            self.assertEqual(1, cp.returncode, cp.stderr)
+            self.assertIn('Token is not in maintenance mode', cli.stderr(cp))
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def __test_maintenance_check(self, maintenance_active):
+        token_name = self.token_name()
+        output = f'{token_name} is {"" if maintenance_active else "not "}in maintenance mode'
+        cli_return_code = 0 if maintenance_active else 1
+        if maintenance_active:
+            util.post_token(self.waiter_url, token_name,
+                            {'cpus': 0.1, 'mem': 128, 'cmd': 'foo', 'maintenance': {'message': 'custom message'}})
+        else:
+            util.post_token(self.waiter_url, token_name, {'cpus': 0.1, 'mem': 128, 'cmd': 'foo'})
+        try:
+            cp = cli.maintenance('check', token_name, self.waiter_url)
+            self.assertEqual(cli_return_code, cp.returncode, cp.stderr)
+            self.assertIn(output, cli.stdout(cp))
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_maintenance_check_not_in_maintenance_mode(self):
+        self.__test_maintenance_check(False)
+
+    def test_maintenance_check_in_maintenance_mode(self):
+        self.__test_maintenance_check(True)
+
+    def test_maintenance_no_sub_command(self):
+        cp = cli.maintenance('', '')
+        cp_help = cli.maintenance('', '', maintenance_flags='-h')
+        self.assertEqual(0, cp.returncode, cp.stderr)
+        self.assertEqual(cli.stdout(cp_help), cli.stdout(cp))

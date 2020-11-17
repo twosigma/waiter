@@ -22,6 +22,7 @@ def print_as_table(query_result):
     rows = [collections.OrderedDict([("Cluster", cluster),
                                      ("Owner", token['owner']),
                                      ("Token", token['token']),
+                                     ("Maintenance", token.get('maintenance', False)),
                                      ("Updated", format_timestamp_string(token['last-update-time']))])
             for (cluster, token) in cluster_token_pairs]
     token_table = tabulate(rows, headers='keys', tablefmt='plain')

@@ -152,3 +152,12 @@ def query_tokens(clusters, user):
     return query_across_clusters(
         clusters,
         lambda cluster, executor: executor.submit(get_tokens_on_cluster, cluster, user))
+
+
+def get_cluster_with_token(clusters, token_name):
+    query_result = query_token(clusters, token_name)
+    if query_result["count"] == 0:
+        raise Exception('The token does not exist. You must create it first.')
+    else:
+        cluster_names_with_token = list(query_result['clusters'].keys())
+        return next(c for c in clusters if c['name'] == cluster_names_with_token[0])
