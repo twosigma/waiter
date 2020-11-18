@@ -456,7 +456,7 @@
     (try
       (let [realm (request->realm request)
             request-scheme (utils/request->scheme request)
-            accept-scope? (= "true" (get-in request [:waiter-discovery :service-description-template "env" "ACCEPT_SCOPED_TOKEN"]))
+            accept-scope? (= "true" (get-in request [:waiter-discovery :service-description-template "metadata" "accept-scoped-token"]))
             claims (validate-access-token jwt-validator key-id->jwk realm request-scheme accept-scope? access-token)
             {:keys [exp]} claims
             subject (subject-key claims)]
