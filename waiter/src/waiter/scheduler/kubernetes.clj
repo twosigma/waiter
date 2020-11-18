@@ -915,10 +915,7 @@
         ;; delay iff the log-bucket-url setting was given the scheduler config.
         log-bucket-sync-secs (if log-bucket-url (:log-bucket-sync-secs context) 0)
         total-sigkill-delay-secs (+ pod-sigkill-delay-secs log-bucket-sync-secs)
-        envoy-sidecar-check-fn (some-> reverse-proxy
-                                       :predicate-fn
-                                       utils/resolve-symbol
-                                       deref)
+        envoy-sidecar-check-fn (:predicate-fn reverse-proxy)
         has-reverse-proxy? (when reverse-proxy
                              (envoy-sidecar-check-fn scheduler service-id service-description context))
         ;; Make $PORT0 value pseudo-random to ensure clients can't hardcode it.
@@ -1373,7 +1370,9 @@
         fileserver (update fileserver :predicate-fn (fn [predicate-fn]
                                                       (if (nil? predicate-fn)
                                                         fileserver-container-enabled?
-                                                        (utils/resolve-symbol! predicate-fn))))]
+                                                        (utils/resolve-symbol! predicate-fn))))
+        reverse-proxy (when reverse-proxy
+                        (update reverse-proxy :predicate-fn utils/resolve-symbol!))]
 
     (let [daemon-state (atom nil)
           auth-renewer (when authentication
