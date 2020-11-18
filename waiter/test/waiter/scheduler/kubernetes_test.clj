@@ -185,7 +185,7 @@
     (let [service-id "proxy-test-service-id"
           scheduler (make-dummy-scheduler [service-id] {:reverse-proxy {:cmd ["/opt/waiter/envoy/bin/envoy-start"]
                                                                                :image "twosigma/waiter-envoy"
-                                                                               :predicate-fn 'waiter.scheduler.kubernetes/envoy-sidecar-enabled?
+                                                                               :predicate-fn envoy-sidecar-enabled?
                                                                                :resources {:cpu 0.1 :mem 256}
                                                                                :scheme "http"}})
           service-description (assoc dummy-service-description "env" {ct/reverse-proxy-flag "yes"
@@ -258,7 +258,7 @@
     (let [service-id "proxy-health-test-service-id"
           scheduler (make-dummy-scheduler [service-id] {:reverse-proxy {:cmd ["/opt/waiter/envoy/bin/envoy-start"]
                                                                                :image "twosigma/waiter-envoy"
-                                                                               :predicate-fn 'waiter.scheduler.kubernetes/envoy-sidecar-enabled?
+                                                                               :predicate-fn envoy-sidecar-enabled?
                                                                                :resources {:cpu 0.1 :mem 256}
                                                                                :scheme "http"}})
           service-description (assoc dummy-service-description
