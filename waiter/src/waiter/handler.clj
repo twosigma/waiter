@@ -854,7 +854,9 @@
 (defn get-entitlement-manager-state
   "Outputs the entitlement-manager state."
   [router-id entitlement-manager request]
-  (get-function-state #(authz/get-manager-state entitlement-manager) router-id request))
+  (let [{:strs [include]} (-> request ru/query-params-request :query-params)
+        include-flags (if (string? include) #{include} (set include))]
+    (get-function-state #(authz/get-manager-state entitlement-manager include-flags) router-id request)))
 
 (defn get-jwt-auth-server-state
   "Outputs the JWT auth server state."

@@ -22,7 +22,7 @@
   authz/EntitlementManager
   (authorized? [_ subject action resource]
     (entitlements [subject action resource]))
-  (get-manager-state [_]
+  (get-manager-state [_ _]
     {:entitlements entitlements
      :name "TestEntitlementManager"}))
 
