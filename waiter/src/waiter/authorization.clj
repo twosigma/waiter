@@ -20,7 +20,7 @@
   "Security related methods"
   (authorized? [this subject action resource]
     "Determines if a given subject can perform action on a given resource.")
-  (get-manager-state [this]
+  (get-manager-state [this include-flags]
     "Returns the state the entitlement manager is maintaining."))
 
 (defrecord SimpleEntitlementManager [_]
@@ -29,7 +29,7 @@
     (or (= subject (:user resource))
         (and (= :admin action)
              (= subject (System/getProperty "user.name")))))
-  (get-manager-state [_]
+  (get-manager-state [_ _]
     {:name "SimpleEntitlementManager"}))
 
 (defn- make-service-resource
