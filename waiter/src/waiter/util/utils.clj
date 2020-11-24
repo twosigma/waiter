@@ -237,11 +237,12 @@
 (defn escape-html
   "Change special characters into HTML character entities to prevent XSS."
   [text]
-  (-> text
-      (str/replace #"&" "&amp;")
-      (str/replace #"<" "&lt;")
-      (str/replace #">" "&gt;")
-      (str/replace #"\"" "&quot;")))
+  (when text
+    (-> text
+        (str/replace #"&" "&amp;")
+        (str/replace #"<" "&lt;")
+        (str/replace #">" "&gt;")
+        (str/replace #"\"" "&quot;"))))
 
 (defn urls->html-links
   "Converts any URLs in a string to HTML links."

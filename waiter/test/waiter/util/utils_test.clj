@@ -565,6 +565,13 @@
       (.close ss))
     (is (port-available? port))))
 
+(deftest test-escape-html
+  (testing "nil"
+    (is (nil? (escape-html nil))))
+  (testing "script tag"
+    (is (= "&lt;script&gt;&lt;/script&gt;"
+           (escape-html "<script></script>")))))
+
 (deftest test-urls->html-links
   (testing "nil"
     (is (nil? (urls->html-links nil))))
