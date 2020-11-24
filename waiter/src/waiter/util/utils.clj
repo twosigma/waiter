@@ -234,6 +234,15 @@
       (attach-waiter-namespace-keys data-map)
       (attach-waiter-source))))
 
+(defn escape-html
+  "Change special characters into HTML character entities to prevent XSS."
+  [text]
+  (-> text
+      (str/replace #"&" "&amp;")
+      (str/replace #"<" "&lt;")
+      (str/replace #">" "&gt;")
+      (str/replace #"\"" "&quot;")))
+
 (defn urls->html-links
   "Converts any URLs in a string to HTML links."
   [message]
@@ -332,6 +341,7 @@
   "Converts the error-context to the response body html string."
   [error-context render-fn]
   (-> error-context
+    (update :message escape-html)
     (update :message urls->html-links)
     (update :details #(with-out-str (pprint/pprint %)))
     render-fn))
