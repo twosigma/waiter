@@ -570,7 +570,16 @@
     (is (nil? (escape-html nil))))
   (testing "script tag"
     (is (= "&lt;script&gt;&lt;/script&gt;"
-           (escape-html "<script></script>")))))
+           (escape-html "<script></script>"))))
+  (testing "quotes"
+    (is (= "&quot;&quot;&quot;hello world&quot;"
+           (escape-html "\"\"\"hello world\""))))
+  (testing "ampersand"
+    (is (= "&amp;&amp;&amp;hello world"
+           (escape-html "&&&hello world"))))
+  (testing "combination of quotes, ampersands, script tags, and letters"
+    (is (= "&amp;&amp;&gt;&lt;&lt;&amp;&gt;a&amp;&amp;&lt;b&quot;&lt;&lt;baa&amp;&lt;"
+          (escape-html "&&><<&>a&&<b\"<<baa&<")))))
 
 (deftest test-urls->html-links
   (testing "nil"
