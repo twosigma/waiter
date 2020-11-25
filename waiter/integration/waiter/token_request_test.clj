@@ -137,10 +137,10 @@
       (is (= (cond-> {:health-check-url "/probe"
                       :name ~service-id-prefix
                       :owner (retrieve-username)}
-                     ~include-metadata (assoc :cluster ~token-cluster
-                                              :last-update-user (retrieve-username)
-                                              :root ~token-root)
-                     (and ~deleted ~include-metadata) (assoc :deleted ~deleted))
+               ~include-metadata (assoc :cluster ~token-cluster
+                                        :last-update-user (retrieve-username)
+                                        :root ~token-root)
+               (and ~deleted ~include-metadata) (assoc :deleted ~deleted))
              (dissoc token-description# :last-update-time :previous))))))
 
 (deftest ^:parallel ^:integration-fast test-token-create-delete
@@ -165,7 +165,7 @@
               {:keys [body] :as response} (post-token waiter-url {:fallback-period-secs 60 :token token})]
           (assert-response-status response http-200-ok)
           (is (str/includes? (str body) (str "Successfully created " token)) (str body))
-          (let [{:keys [body] :as response} (get-token waiter-url token :cookies cookies :query-params {"token" token})]
+          (let [{:keys [body] :as response}  (get-token waiter-url token :cookies cookies :query-params {"token" token})]
             (assert-response-status response http-200-ok)
             (is (= {"fallback-period-secs" 60 "owner" (retrieve-username)} (json/read-str body)) (str body)))
           (delete-token-and-assert waiter-url token))
@@ -174,7 +174,7 @@
               {:keys [body] :as response} (post-token waiter-url {:https-redirect true :token token})]
           (assert-response-status response http-200-ok)
           (is (str/includes? (str body) (str "Successfully created " token)) (str body))
-          (let [{:keys [body] :as response} (get-token waiter-url token :cookies cookies :query-params {"token" token})]
+          (let [{:keys [body] :as response}  (get-token waiter-url token :cookies cookies :query-params {"token" token})]
             (assert-response-status response http-200-ok)
             (is (= {"https-redirect" true "owner" (retrieve-username)} (json/read-str body)) (str body)))
           (delete-token-and-assert waiter-url token)))
@@ -246,9 +246,9 @@
               (when actual-etag
                 (let [convert-last-update-time (fn [{:strs [last-update-time] :as service-description}]
                                                  (cond-> service-description
-                                                         last-update-time
-                                                         (assoc "last-update-time"
-                                                                (-> last-update-time du/str-to-date .getMillis))))
+                                                   last-update-time
+                                                   (assoc "last-update-time"
+                                                          (-> last-update-time du/str-to-date .getMillis))))
                       expected-etag (str "E-"
                                          (-> body
                                              json/read-str
@@ -391,10 +391,10 @@
                   services (json/read-str body)
                   service-tokens (mapcat (fn [entry]
                                            (some->> entry
-                                                    walk/keywordize-keys
-                                                    :source-tokens
-                                                    flatten
-                                                    (map :token)))
+                                             walk/keywordize-keys
+                                             :source-tokens
+                                             flatten
+                                             (map :token)))
                                          services)]
               (assert-response-status response http-200-ok)
               (is (= (count @service-ids-atom) (count service-tokens))
@@ -411,10 +411,10 @@
                   services (json/read-str body)
                   service-tokens (mapcat (fn [entry]
                                            (some->> entry
-                                                    walk/keywordize-keys
-                                                    :source-tokens
-                                                    flatten
-                                                    (map :token)))
+                                             walk/keywordize-keys
+                                             :source-tokens
+                                             flatten
+                                             (map :token)))
                                          services)]
               (assert-response-status response http-200-ok)
               (is (= 3 (count service-tokens))
@@ -432,10 +432,10 @@
                     services (json/read-str body)
                     service-token-versions (mapcat (fn [entry]
                                                      (some->> entry
-                                                              walk/keywordize-keys
-                                                              :source-tokens
-                                                              flatten
-                                                              (map :version)))
+                                                       walk/keywordize-keys
+                                                       :source-tokens
+                                                       flatten
+                                                       (map :version)))
                                                    services)]
                 (assert-response-status response http-200-ok)
                 (is (= 1 (count service-token-versions))
@@ -1481,8 +1481,8 @@
   "Retrieves the etag header from a response."
   [response]
   (-> response
-      :headers
-      (get "etag")))
+    :headers
+    (get "etag")))
 
 (defn update-token
   "Updates the token and returns the etag."
@@ -1711,7 +1711,7 @@
                 (is (wait-for
                       (fn []
                         (let [active-instances (-> (service-settings router-url service-id-1 :cookies cookies)
-                                                   (get-in [:instances :active-instances]))]
+                                                 (get-in [:instances :active-instances]))]
                           (and (seq active-instances)
                                (some :healthy? active-instances))))))))
             (assert-response-status (post-token waiter-url token-description-2) http-200-ok)
@@ -1743,7 +1743,7 @@
       (doseq [[profile {:keys [defaults]}] (seq profile-config)]
         (let [token (rand-name)
               token-description (-> (utils/remove-keys base-description (keys defaults))
-                                    (assoc :profile (name profile) :token token))]
+                                  (assoc :profile (name profile) :token token))]
           (try
             (testing (str "token creation with profile " profile)
               (let [register-response (post-token waiter-url token-description)]
