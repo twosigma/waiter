@@ -597,6 +597,18 @@
     (is (= "hello <a href=\"https://localhost/path\">https://localhost/path</a> world"
            (urls->html-links "hello https://localhost/path world")))))
 
+(deftest test-error-context->html-body
+  (let [render-fn (fn render [transformed-context] transformed-context)]
+    (testing "nil message"
+      (let [transformed-context (error-context->html-body {:message nil} render-fn)]
+        (is (nil? (:message transformed-context)))))
+    (testing "html tags with urls should still wrap urls in <a> tags but url encode the href value"
+      (let [transformed-context (error-context->html-body
+                                  {:message "<h1>http://e.com/a=b&b=c </h1>"}
+                                  render-fn)]
+        (is (= (:message transformed-context)
+               "&lt;h1&gt;<a href=\"http://e.com/a=b&amp;b=c\">http://e.com/a=b&amp;b=c</a> &lt;/h1&gt;"))))))
+
 (deftest test-request->content-type
   (testing "application/json if specified"
     (is (= "application/json" (request->content-type {:headers {"accept" "application/json"}}))))

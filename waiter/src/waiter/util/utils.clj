@@ -338,7 +338,7 @@
                   :key-fn stringify-keys
                   :value-fn stringify-elements))
 
-(defn- error-context->html-body
+(defn error-context->html-body
   "Converts the error-context to the response body html string."
   [error-context render-fn]
   (-> error-context
