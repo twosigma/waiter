@@ -600,7 +600,7 @@
 (deftest test-error-context->html-body
   (let [render-fn (fn render [transformed-context] transformed-context)]
     (testing "nil message"
-      (let [transformed-context (error-context->html-body {:message nil} render-fn)]
+      (let [transformed-context (error-context->html-body {} render-fn)]
         (is (nil? (:message transformed-context)))))
     (testing "html tags with urls should still wrap urls in <a> tags but url encode the href value"
       (let [transformed-context (error-context->html-body
