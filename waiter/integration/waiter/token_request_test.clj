@@ -1379,7 +1379,7 @@
                                          :run-as-user "*"))
           token-root (retrieve-token-root waiter-url)
           token-cluster (retrieve-token-cluster waiter-url)
-          custom-maintenance-message "custom maintenance message"
+          custom-maintenance-message "&&><<&>a&&<b\"<<baa&<"
           token-maintenance {:message custom-maintenance-message}
           request-headers {:x-waiter-token token}]
       (try
@@ -1416,6 +1416,13 @@
             (assert-response-status response http-503-service-unavailable)
             (assert-waiter-response response)
             (is (str/includes? body custom-maintenance-message))))
+
+        (testing "request (text/html) to service should error with maintenance message where the special characters are html encoded"
+          (let [{:keys [body] :as response}
+                (make-request waiter-url "/hello-world" :headers (assoc request-headers :Accept "text/html"))]
+            (assert-response-status response http-503-service-unavailable)
+            (assert-waiter-response response)
+            (is (str/includes? body "&amp;&amp;&gt;&lt;&lt;&amp;&gt;a&amp;&amp;&lt;b&quot;&lt;&lt;baa&amp;&lt;"))))
 
         (testing "token update maintenance field not defined"
           (let [token-description (-> service-description

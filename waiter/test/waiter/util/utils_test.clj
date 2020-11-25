@@ -565,6 +565,22 @@
       (.close ss))
     (is (port-available? port))))
 
+(deftest test-escape-html
+  (testing "nil"
+    (is (nil? (escape-html nil))))
+  (testing "script tag"
+    (is (= "&lt;script&gt;&lt;/script&gt;"
+           (escape-html "<script></script>"))))
+  (testing "quotes"
+    (is (= "&quot;&quot;&quot;hello world&quot;"
+           (escape-html "\"\"\"hello world\""))))
+  (testing "ampersand"
+    (is (= "&amp;&amp;&amp;hello world"
+           (escape-html "&&&hello world"))))
+  (testing "combination of quotes, ampersands, script tags, and letters"
+    (is (= "&amp;&amp;&gt;&lt;&lt;&amp;&gt;a&amp;&amp;&lt;b&quot;&lt;&lt;baa&amp;&lt;"
+          (escape-html "&&><<&>a&&<b\"<<baa&<")))))
+
 (deftest test-urls->html-links
   (testing "nil"
     (is (nil? (urls->html-links nil))))
@@ -580,6 +596,18 @@
   (testing "mixed content"
     (is (= "hello <a href=\"https://localhost/path\">https://localhost/path</a> world"
            (urls->html-links "hello https://localhost/path world")))))
+
+(deftest test-error-context->html-body
+  (let [render-fn (fn render [transformed-context] transformed-context)]
+    (testing "nil message"
+      (let [transformed-context (error-context->html-body {} render-fn)]
+        (is (nil? (:message transformed-context)))))
+    (testing "html tags with urls should still wrap urls in <a> tags but url encode the href value"
+      (let [transformed-context (error-context->html-body
+                                  {:message "<h1>http://e.com/a=b&b=c </h1>"}
+                                  render-fn)]
+        (is (= (:message transformed-context)
+               "&lt;h1&gt;<a href=\"http://e.com/a=b&amp;b=c\">http://e.com/a=b&amp;b=c</a> &lt;/h1&gt;"))))))
 
 (deftest test-request->content-type
   (testing "application/json if specified"
