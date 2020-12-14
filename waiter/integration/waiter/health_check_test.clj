@@ -252,3 +252,25 @@
                 (is (= (str "Hello " (retrieve-username)) (-> backend-response :body str))))))
           (finally
             (delete-token-and-assert waiter-url token)))))))
+
+(deftest ^:parallel ^:integration-fast test-ping-deployment-error
+  (testing-using-waiter-url
+    (let [headers {:accept "application/json"
+           :x-waiter-cmd "INVALIDCOMMANDadfasdfadfasfdasfdasf"
+           :x-waiter-debug true
+           :x-waiter-name (rand-name)}
+          {:keys [headers] :as response} (make-kitchen-request waiter-url headers :method :post :path "/waiter-ping")
+          service-id (get headers "x-waiter-service-id")]
+      (with-service-cleanup
+        service-id
+        (let [{:keys [ping-response service-description service-state]}
+              (some-> response :body try-parse-json walk/keywordize-keys)
+              ping-response-body (some-> ping-response :body try-parse-json walk/keywordize-keys)
+              error-message (get-in ping-response-body [:waiter-error :message])]
+          (assert-waiter-response response)
+          (assert-response-status response http-200-ok)
+          (assert-response-status ping-response http-503-service-unavailable)
+          (is (= (service-id->service-description waiter-url service-id) service-description))
+          (is (= "received-response" (get ping-response :result)) (str ping-response))
+          (is (= {:exists? true :healthy? false :service-id service-id :status "Failing"} service-state))
+          (is (= error-message "Deployment error: Invalid startup command")))))))
