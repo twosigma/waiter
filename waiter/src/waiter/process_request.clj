@@ -951,7 +951,7 @@
                                      (assoc :body nil)
                                      (assoc :content-length 0)
                                      (update :headers assoc
-                                             "accept" "*/*"
+                                             "accept" "application/json;q=1.0, */*;q=0.9"
                                              "content-length" 0)))
             output-stream (ByteArrayOutputStream.)
             servlet-output-stream (proxy [ServletOutputStream] []
