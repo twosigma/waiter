@@ -15,8 +15,8 @@
 ;;
 (ns waiter.deployment-errors-test
   (:require [clojure.pprint :as pprint]
-            [clojure.string :as str]
             [clojure.test :refer :all]
+            [clojure.walk :as walk]
             [plumbing.core :as pc]
             [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]))
@@ -49,18 +49,19 @@
   associated with the deployment error."
   [response deployment-error]
   `(let [response# ~response
-         body# (:body response#)
-         service-id# (response->service-id response#)]
-     (assert-response-status response# http-503-service-unavailable)
-     (is (str/includes? body# (deployment-error->str ~'waiter-url ~deployment-error))
-         (formatted-service-state ~'waiter-url service-id#))
-     (testing "status is reported as failing"
-       (is
-         (wait-for
-           (fn []
-             (let [service-settings# (service-settings ~'waiter-url service-id#)]
-               (= "Failing" (get service-settings# :status))))
-           :interval 2 :timeout 30)))))
+         response-body# (some-> response# :body try-parse-json walk/keywordize-keys)
+         ping-response# (:ping-response response-body#)
+         service-state# (:service-state response-body#)
+         ping-response-body# (some-> ping-response# :body try-parse-json walk/keywordize-keys)
+         service-id# (response->service-id response#)
+         error-message# (get-in ping-response-body# [:waiter-error :message])]
+     (assert-waiter-response response#)
+     (assert-response-status response# http-200-ok)
+     (assert-response-status ping-response# http-503-service-unavailable)
+     (is (= "received-response" (get ping-response# :result)) (str ping-response))
+     (is (= {:exists? true :healthy? false :service-id service-id# :status "Failing"} service-state#))
+     (is (= error-message# (deployment-error->str ~'waiter-url ~deployment-error))
+         (formatted-service-state ~'waiter-url service-id#))))
 
 (deftest ^:parallel ^:integration-slow test-invalid-health-check-response
   (testing-using-waiter-url
@@ -71,7 +72,7 @@
                    :x-waiter-health-check-interval-secs 5
                    :x-waiter-health-check-max-consecutive-failures 1
                    :x-waiter-queue-timeout 600000}
-          response (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
+          response (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :method :post :path "/waiter-ping"))]
       (with-service-cleanup
         (response->service-id response)
         (assert-deployment-error response :invalid-health-check-response)))))
@@ -85,7 +86,7 @@
                    :x-waiter-health-check-interval-secs 5
                    :x-waiter-health-check-max-consecutive-failures 1
                    :x-waiter-queue-timeout 600000}
-          response (make-request-with-debug-info headers #(make-shell-request waiter-url %))]
+          response (make-request-with-debug-info headers #(make-shell-request waiter-url % :method :post :path "/waiter-ping"))]
       (with-service-cleanup
         (response->service-id response)
         (assert-deployment-error response :cannot-connect)))))
@@ -99,7 +100,7 @@
                    :x-waiter-health-check-interval-secs 5
                    :x-waiter-health-check-max-consecutive-failures 1
                    :x-waiter-queue-timeout 600000}
-          response (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
+          response (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :method :post :path "/waiter-ping"))]
       (with-service-cleanup
         (response->service-id response)
         (assert-deployment-error response :health-check-timed-out)))))
@@ -108,7 +109,7 @@
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
                    :x-waiter-health-check-url "/bad-status?status=401"}
-          response (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
+          response (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :method :post :path "/waiter-ping"))]
       (with-service-cleanup
         (response->service-id response)
         (assert-deployment-error response :health-check-requires-authentication)))))
@@ -118,7 +119,7 @@
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
                    :x-waiter-mem 1}
-          response (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
+          response (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :method :post :path "/waiter-ping"))]
       (with-service-cleanup
         (response->service-id response)
         (assert-deployment-error response :not-enough-memory)))))
@@ -128,7 +129,7 @@
     (let [headers {:x-waiter-name (rand-name)
                    ; misspelled command (invalid prefix asdf)
                    :x-waiter-cmd (str "asdf" (kitchen-cmd "-p $PORT0"))}
-          response (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
+          response (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :method :post :path "/waiter-ping"))]
       (with-service-cleanup
         (response->service-id response)
         (assert-deployment-error response :bad-startup-command)))))
