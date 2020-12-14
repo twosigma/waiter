@@ -1,4 +1,5 @@
 import logging
+import json
 
 from waiter import http_util, terminal
 from waiter.format import format_status
@@ -33,6 +34,11 @@ def ping_on_cluster(cluster, timeout, wait_for_request, token_name, service_exis
                         result = True
                     else:
                         print_error(f'Ping responded with non-200 status {ping_response_status}.')
+                        try:
+                            ping_response_waiter_error = json.loads(ping_response['body'])['waiter-error']['message']
+                            print_error(ping_response_waiter_error)
+                        except KeyError:
+                            pass
                         result = False
                 elif ping_response_result == 'timed-out':
                     if wait_for_request:
