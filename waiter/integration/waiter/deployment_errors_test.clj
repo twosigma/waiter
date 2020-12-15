@@ -58,7 +58,7 @@
      (assert-waiter-response response#)
      (assert-response-status response# http-200-ok)
      (assert-response-status ping-response# http-503-service-unavailable)
-     (is (= "received-response" (get ping-response# :result)) (str ping-response))
+     (is (= "received-response" (get ping-response# :result)) (str ping-response#))
      (is (= {:exists? true :healthy? false :service-id service-id# :status "Failing"} service-state#))
      (is (= error-message# (deployment-error->str ~'waiter-url ~deployment-error))
          (formatted-service-state ~'waiter-url service-id#))))
