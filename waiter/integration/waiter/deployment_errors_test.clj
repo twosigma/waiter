@@ -61,7 +61,14 @@
      (is (= "received-response" (get ping-response# :result)) (str ping-response#))
      (is (= {:exists? true :healthy? false :service-id service-id# :status "Failing"} service-state#))
      (is (= error-message# (deployment-error->str ~'waiter-url ~deployment-error))
-         (formatted-service-state ~'waiter-url service-id#))))
+         (formatted-service-state ~'waiter-url service-id#))
+     (testing "status is reported as failing"
+       (is
+         (wait-for
+           (fn []
+             (let [service-settings# (service-settings ~'waiter-url service-id#)]
+               (= "Failing" (get service-settings# :status))))
+           :interval 2 :timeout 30)))))
 
 (deftest ^:parallel ^:integration-slow test-invalid-health-check-response
   (testing-using-waiter-url
