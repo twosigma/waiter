@@ -989,6 +989,9 @@
                            :min-hosts 2}
 
  :health-check-config {
+                       ;; HTTP accept header that is sent to a service when making health check request through /waiter-ping
+                       :health-check-accept-header "application/json;q=1.0, */*;q=0.9"
+
                        ;; The HTTP connect timeout and idle timeout (milliseconds) for instance health checks:
                        :health-check-timeout-ms 200
 

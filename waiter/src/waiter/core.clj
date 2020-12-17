@@ -1452,6 +1452,7 @@
    :not-found-handler-fn (pc/fnk [] handler/not-found-handler)
    :ping-service-handler (pc/fnk [[:daemons router-state-maintainer]
                                   [:routines make-inter-router-requests-async-fn]
+                                  [:settings health-check-config]
                                   [:state fallback-state-atom router-id user-agent-version]
                                   process-request-handler-fn process-request-wrapper-fn wrap-secure-request-fn]
                            (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
@@ -1460,7 +1461,7 @@
                                            (fn inner-ping-service-handler [request]
                                              (let [retrieve-service-status-label-fn #(service/retrieve-service-status-label % (query-state-fn))
                                                    service-state-fn (partial descriptor/extract-service-state router-id retrieve-service-status-label-fn fallback-state-atom make-inter-router-requests-async-fn)]
-                                               (pr/ping-service user-agent process-request-handler-fn service-state-fn request))))]
+                                               (pr/ping-service user-agent process-request-handler-fn service-state-fn health-check-config request))))]
                              (wrap-secure-request-fn
                                (fn ping-service-handler [request]
                                  (-> request

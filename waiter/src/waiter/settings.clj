@@ -52,7 +52,8 @@
                                            s/Keyword schema/require-symbol-factory-fn}
                                           schema/contains-kind-sub-map?)
    (s/required-key :git-version) s/Any
-   (s/required-key :health-check-config) {(s/required-key :health-check-timeout-ms) schema/positive-int
+   (s/required-key :health-check-config) {(s/required-key :health-check-accept-header) schema/non-empty-string
+                                          (s/required-key :health-check-timeout-ms) schema/positive-int
                                           (s/required-key :failed-check-threshold) schema/positive-int}
    ;; TODO host belongs in server-options?
    (s/required-key :host) schema/non-empty-string
@@ -280,7 +281,8 @@
                              :min-hosts 2}
    :entitlement-config {:kind :simple
                         :simple {:factory-fn 'waiter.authorization/->SimpleEntitlementManager}}
-   :health-check-config {:health-check-timeout-ms 200
+   :health-check-config {:health-check-accept-header "application/json;q=1.0, */*;q=0.9"
+                         :health-check-timeout-ms 200
                          :failed-check-threshold 5}
    :host "0.0.0.0"
    :hostname "localhost"
