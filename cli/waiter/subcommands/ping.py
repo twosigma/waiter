@@ -38,7 +38,7 @@ def ping_on_cluster(cluster, timeout, wait_for_request, token_name, service_exis
                             ping_response_waiter_error = json.loads(ping_response['body'])['waiter-error']['message']
                             print_error(ping_response_waiter_error)
                         except KeyError:
-                            pass
+                            logging.debug('Ping response body does not contain waiter-error message.')
                         result = False
                 elif ping_response_result == 'timed-out':
                     if wait_for_request:
