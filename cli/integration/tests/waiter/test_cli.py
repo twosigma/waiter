@@ -762,6 +762,20 @@ class WaiterCliTest(util.WaiterTest):
             util.kill_services_using_token(self.waiter_url, token_name)
             util.delete_token(self.waiter_url, token_name)
 
+    def test_ping_deployment_errors(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, util.minimal_service_description(**{'cmd': 'asdfasdfafsdhINVALIDCOMMAND'}))
+        try:
+            self.assertEqual(0, len(util.services_for_token(self.waiter_url, token_name)))
+            cp = cli.ping(self.waiter_url, token_name)
+            self.assertEqual(1, cp.returncode, cp.stderr)
+            self.assertIn('Pinging token', cli.stdout(cp))
+            self.assertIn('Ping responded with non-200 status 503.', cli.stderr(cp))
+            self.assertIn('Deployment error: Invalid startup command', cli.stderr(cp))
+            self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
+        finally:
+            util.delete_token(self.waiter_url, token_name, kill_services=True)
+
     def test_create_does_not_patch(self):
         token_name = self.token_name()
         util.post_token(self.waiter_url, token_name, {'cpus': 0.1})
