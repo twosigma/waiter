@@ -601,6 +601,8 @@
       :get (let [{:strs [can-manage-as-user] :as request-params} (-> req ru/query-params-request :query-params)
                  include-deleted (utils/param-contains? request-params "include" "deleted")
                  show-metadata (utils/param-contains? request-params "include" "metadata")
+                 filter-maintenance (when (contains? request-params "maintenance")
+                                       (utils/request-flag request-params "maintenance"))
                  include-run-as-requester (when (contains? request-params "run-as-requester")
                                             (utils/request-flag request-params "run-as-requester"))
                  include-requires-parameters (when (contains? request-params "requires-parameters")
@@ -610,21 +612,16 @@
                           (string? owner-param) #{owner-param}
                           (coll? owner-param) (set owner-param)
                           :else (list-token-owners kv-store))
-                 filterable-parameter? (disj sd/token-data-keys "owner")
+                 filterable-parameter? (disj sd/token-data-keys "owner" "maintenance")
                  parameter-filter-predicates (for [[parameter-name raw-param] request-params
                                                    :when (filterable-parameter? parameter-name)]
                                                (let [search-parameter-values (cond
                                                                                (string? raw-param) #{raw-param}
                                                                                :else (set raw-param))]
-                                                 (case parameter-name
-                                                   "maintenance"
-                                                   (fn [token-parameters]
-                                                     (= (contains? token-parameters parameter-name)
-                                                        (Boolean/parseBoolean raw-param)))
-                                                   (fn [token-parameters]
-                                                     (and (contains? token-parameters parameter-name)
-                                                          (contains? search-parameter-values
-                                                                     (str (get token-parameters parameter-name))))))))]
+                                                 (fn [token-parameters]
+                                                   (and (contains? token-parameters parameter-name)
+                                                        (contains? search-parameter-values
+                                                                   (str (get token-parameters parameter-name)))))))]
              (->> owners
                   (map
                     (fn [owner]
@@ -632,6 +629,10 @@
                            (filter
                              (fn list-tokens-delete-predicate [[_ entry]]
                                (or include-deleted (not (:deleted entry)))))
+                           (filter
+                             (fn list-tokens-maintenance-predicate [[_ entry]]
+                               (or (nil? filter-maintenance)
+                                   (= (-> entry :maintenance true?) filter-maintenance))))
                            (filter
                              (fn list-tokens-auth-predicate [[token _]]
                                (or (nil? can-manage-as-user)
