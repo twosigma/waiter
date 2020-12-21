@@ -22,17 +22,31 @@
   (let [num-iterations 8
         interval-ms 100
         tolerance-ms 20
-        interval-period (t/millis interval-ms)
-        call-times-atom (atom [])
-        callback-fn #(swap! call-times-atom conj (System/currentTimeMillis))
-        cancel-handle (start-timer-task interval-period callback-fn)]
-    (Thread/sleep (+ tolerance-ms (* interval-ms num-iterations)))
-    (cancel-handle)
-    (let [invocation-times @call-times-atom
-          invocation-diffs (map -
-                                (drop 1 invocation-times)
-                                (drop-last 1 invocation-times))]
-      (is (>= (count invocation-times) num-iterations))
-      (is (every? #(>= % (- interval-ms tolerance-ms)) invocation-diffs)
-          (str {:invocation-diffs invocation-diffs
-                :invocation-times invocation-times})))))
+        interval-period (t/millis interval-ms)]
+    (doseq [{:keys [fixed-delay? iteration-interval sleep-ms test-name]}
+            [{:fixed-delay? nil :iteration-interval (+ interval-ms 50) :sleep-ms 50 :test-name "fixed-delay-implicit"}
+             {:fixed-delay? true :iteration-interval (+ interval-ms 50) :sleep-ms 50 :test-name "fixed-delay-explicit"}
+             {:fixed-delay? false :iteration-interval interval-ms :sleep-ms 50 :test-name "fixed-rate-explicit"}
+             {:fixed-delay? false :iteration-interval 150 :sleep-ms 150 :test-name "fixed-rate-explicit-slow"}]]
+      (testing test-name
+        (let [call-times-atom (atom [])
+              callback-fn (fn []
+                            (Thread/sleep sleep-ms)
+                            (swap! call-times-atom conj (System/currentTimeMillis)))
+              cancel-handle (cond
+                              (true? fixed-delay?)
+                              (start-timer-task interval-period callback-fn :fixed-delay? true)
+                              (false? fixed-delay?)
+                              (start-timer-task interval-period callback-fn :fixed-delay? false)
+                              :else
+                              (start-timer-task interval-period callback-fn))]
+          (Thread/sleep (* (+ iteration-interval tolerance-ms) num-iterations))
+          (cancel-handle)
+          (let [invocation-times @call-times-atom
+                invocation-diffs (map -
+                                      (drop 1 invocation-times)
+                                      (drop-last 1 invocation-times))]
+            (is (>= (+ num-iterations 2) (count invocation-times) num-iterations))
+            (is (every? #(>= % (- interval-ms tolerance-ms)) invocation-diffs)
+                (str {:invocation-diffs invocation-diffs
+                      :invocation-times invocation-times}))))))))

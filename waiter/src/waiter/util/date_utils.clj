@@ -60,8 +60,18 @@
 
 (defn start-timer-task
   "Executes the callback function sequentially at specified intervals on an core.async thread.
+   Fixed rate scheduling, enabled by passing :fixed-delay? false, will use total execution time
+   instead of the last iteration completion time to determine when the next iteration is scheduled.
    Returns a function that will cancel the timer when called."
-  [interval-period callback-fn & {:keys [delay-ms] :or {delay-ms 0}}]
+  [interval-period callback-fn &
+   {:keys [delay-ms fixed-delay? min-delay-ms]
+    :or {delay-ms 0
+         fixed-delay? true
+         min-delay-ms 0}}]
+  {:pre [(integer? delay-ms)
+         (boolean? fixed-delay?)
+         (integer? min-delay-ms)
+         (not (neg? min-delay-ms))]}
   (let [error-handler (fn start-timer-task-error-handler [ex]
                         (log/error ex (str "Exception in timer task.")))
         interval-ms (t/in-millis interval-period)
@@ -71,11 +81,17 @@
         (async/<! (async/timeout delay-ms)))
       (loop []
         (when-not (realized? cancel-promise)
-          (try
-            (callback-fn)
-            (catch Throwable th
-              (error-handler th)))
-          (async/<! (async/timeout interval-ms))
+          (let [start-time-ms (System/currentTimeMillis)
+                _ (try
+                    (callback-fn)
+                    (catch Throwable th
+                      (error-handler th)))
+                end-time-ms (System/currentTimeMillis)
+                iteration-duration-ms (- end-time-ms start-time-ms)
+                sleep-duration-ms (if fixed-delay?
+                                    interval-ms
+                                    (max min-delay-ms (- interval-ms iteration-duration-ms)))]
+            (async/<! (async/timeout sleep-duration-ms)))
           (recur))))
     (fn cancel-timer-task []
       (deliver cancel-promise ::cancel))))
