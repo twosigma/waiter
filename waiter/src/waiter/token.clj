@@ -553,8 +553,7 @@
                               (log/info "will not enforce count limit on owner tokens in admin mode" {:owner owner})
                               nil)
                             limit-per-owner)]
-          (if
-            (contains? overriding-token-data "maintenance")
+          (if (contains? overriding-token-data "maintenance")
             (if (contains? overridden-token-data "maintenance")
               (log/info "updating maintenance mode for token" {:token token})
               (log/info "starting maintenance mode for token" {:token token}))
