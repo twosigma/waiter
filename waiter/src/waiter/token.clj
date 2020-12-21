@@ -15,6 +15,7 @@
 ;;
 (ns waiter.token
   (:require [clj-time.coerce :as tc]
+            [clojure.data :as data]
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
@@ -538,7 +539,8 @@
           new-user-editable-token-data (-> (merge new-service-parameter-template new-token-metadata)
                                            (select-keys sd/token-user-editable-keys))
           existing-token-description (sd/token->token-description kv-store token :include-deleted false)
-          existing-editable-token-data (token-description->editable-token-parameters existing-token-description)]
+          existing-editable-token-data (token-description->editable-token-parameters existing-token-description)
+          [overridden-token-data overriding-token-data _] (data/diff existing-editable-token-data new-user-editable-token-data)]
       (if (and (not admin-mode?)
                (= existing-editable-token-data new-user-editable-token-data))
         (-> (utils/clj->json-response
@@ -551,6 +553,12 @@
                               (log/info "will not enforce count limit on owner tokens in admin mode" {:owner owner})
                               nil)
                             limit-per-owner)]
+          (if (contains? overriding-token-data "maintenance")
+            (if (contains? overridden-token-data "maintenance")
+              (log/info "updating maintenance mode for token" {:token token})
+              (log/info "starting maintenance mode for token" {:token token}))
+            (when (contains? overridden-token-data "maintenance")
+              (log/info "stopping maintenance mode for token" {:token token})))
           (store-service-description-for-token
             synchronize-fn kv-store history-length token-limit token new-service-parameter-template new-token-metadata
             :version-hash version-hash)
