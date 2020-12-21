@@ -554,12 +554,12 @@
                               nil)
                             limit-per-owner)]
           (if
-            (contains? overriding-token-data :maintenance)
-            (if (contains? overridden-token-data :maintenance)
-              (log/info "updating maintenance mode for token" {})
-              (log/info "starting maintenance mode for token" {}))
-            (when (contains? overriden-token-data :maintenance)
-              (log/info "stopping maintenance mode for token" {})))
+            (contains? overriding-token-data "maintenance")
+            (if (contains? overridden-token-data "maintenance")
+              (log/info "updating maintenance mode for token" {:token token})
+              (log/info "starting maintenance mode for token" {:token token}))
+            (when (contains? overridden-token-data "maintenance")
+              (log/info "stopping maintenance mode for token" {:token token})))
           (store-service-description-for-token
             synchronize-fn kv-store history-length token-limit token new-service-parameter-template new-token-metadata
             :version-hash version-hash)
