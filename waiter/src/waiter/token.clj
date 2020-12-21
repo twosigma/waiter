@@ -601,8 +601,8 @@
       :get (let [{:strs [can-manage-as-user] :as request-params} (-> req ru/query-params-request :query-params)
                  include-deleted (utils/param-contains? request-params "include" "deleted")
                  show-metadata (utils/param-contains? request-params "include" "metadata")
-                 filter-maintenance (when (contains? request-params "maintenance")
-                                       (utils/request-flag request-params "maintenance"))
+                 should-filter-maintenance? (contains? request-params "maintenance")
+                 maintenance-active? (utils/request-flag request-params "maintenance")
                  include-run-as-requester (when (contains? request-params "run-as-requester")
                                             (utils/request-flag request-params "run-as-requester"))
                  include-requires-parameters (when (contains? request-params "requires-parameters")
@@ -631,8 +631,8 @@
                                (or include-deleted (not (:deleted entry)))))
                            (filter
                              (fn list-tokens-maintenance-predicate [[_ entry]]
-                               (or (nil? filter-maintenance)
-                                   (= (-> entry :maintenance true?) filter-maintenance))))
+                               (or (not should-filter-maintenance?)
+                                   (= (-> entry :maintenance true?) maintenance-active?))))
                            (filter
                              (fn list-tokens-auth-predicate [[token _]]
                                (or (nil? can-manage-as-user)
