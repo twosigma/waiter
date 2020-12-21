@@ -616,10 +616,15 @@
                                                (let [search-parameter-values (cond
                                                                                (string? raw-param) #{raw-param}
                                                                                :else (set raw-param))]
-                                                 (fn [token-parameters]
-                                                   (and (contains? token-parameters parameter-name)
-                                                        (contains? search-parameter-values
-                                                                   (str (get token-parameters parameter-name)))))))]
+                                                 (case parameter-name
+                                                   "maintenance"
+                                                   (fn [token-parameters]
+                                                     (= (contains? token-parameters parameter-name)
+                                                        (Boolean/parseBoolean raw-param)))
+                                                   (fn [token-parameters]
+                                                     (and (contains? token-parameters parameter-name)
+                                                          (contains? search-parameter-values
+                                                                     (str (get token-parameters parameter-name))))))))]
              (->> owners
                   (map
                     (fn [owner]
