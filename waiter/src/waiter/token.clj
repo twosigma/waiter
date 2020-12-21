@@ -601,6 +601,8 @@
       :get (let [{:strs [can-manage-as-user] :as request-params} (-> req ru/query-params-request :query-params)
                  include-deleted (utils/param-contains? request-params "include" "deleted")
                  show-metadata (utils/param-contains? request-params "include" "metadata")
+                 should-filter-maintenance? (contains? request-params "maintenance")
+                 maintenance-active? (utils/request-flag request-params "maintenance")
                  include-run-as-requester (when (contains? request-params "run-as-requester")
                                             (utils/request-flag request-params "run-as-requester"))
                  include-requires-parameters (when (contains? request-params "requires-parameters")
@@ -610,7 +612,7 @@
                           (string? owner-param) #{owner-param}
                           (coll? owner-param) (set owner-param)
                           :else (list-token-owners kv-store))
-                 filterable-parameter? (disj sd/token-data-keys "owner")
+                 filterable-parameter? (disj sd/token-data-keys "owner" "maintenance")
                  parameter-filter-predicates (for [[parameter-name raw-param] request-params
                                                    :when (filterable-parameter? parameter-name)]
                                                (let [search-parameter-values (cond
@@ -627,6 +629,10 @@
                            (filter
                              (fn list-tokens-delete-predicate [[_ entry]]
                                (or include-deleted (not (:deleted entry)))))
+                           (filter
+                             (fn list-tokens-maintenance-predicate [[_ entry]]
+                               (or (not should-filter-maintenance?)
+                                   (= (-> entry :maintenance true?) maintenance-active?))))
                            (filter
                              (fn list-tokens-auth-predicate [[token _]]
                                (or (nil? can-manage-as-user)

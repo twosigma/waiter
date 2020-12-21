@@ -2689,8 +2689,19 @@
           owner-map-keys (keys (json/read-str body))]
       (is (some #(= "owner1" %) owner-map-keys) "Should have had a key 'owner1'")
       (is (some #(= "owner2" %) owner-map-keys) "Should have had a key 'owner2'"))
-    (let [request {:request-method :get :query-string "maintenance={\"message\" \"msg1\"}"}
+    (let [request {:request-method :get :query-string "maintenance=true"}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= http-200-ok status))
       (is (= #{{"maintenance" true "owner" "owner3" "token" "token9"}}
+             (set (json/read-str body)))))
+    (let [request {:request-method :get :query-string "maintenance=false"}
+          {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
+      (is (= http-200-ok status))
+      (is (= #{{"maintenance" false "owner" "owner1" "token" "token1"}
+               {"maintenance" false "owner" "owner1" "token" "token2"}
+               {"maintenance" false "owner" "owner2" "token" "token3"}
+               {"maintenance" false "owner" "owner3" "token" "token5"}
+               {"maintenance" false "owner" "owner3" "token" "token6"}
+               {"maintenance" false "owner" "owner3" "token" "token7"}
+               {"maintenance" false "owner" "owner3" "token" "token8"}}
              (set (json/read-str body)))))))
