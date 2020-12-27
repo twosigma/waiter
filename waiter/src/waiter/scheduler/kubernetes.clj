@@ -340,10 +340,10 @@
   "Make a long-lived HTTP request to the Kubernetes API server using the configured authentication.
    If data is provided via :body, the application/json content type is added automatically.
    The response payload (if any) is returned as a lazy seq of parsed JSON objects."
-  [url]
+  [url request-options]
   (let [keyword-keys? true
         auth-str @k8s-api-auth-str
-        request-options (cond-> {:as :stream}
+        request-options (cond-> (assoc request-options :as :stream)
                           auth-str (assoc :headers {"Authorization" auth-str}))
         {:keys [body error status] :as response} (clj-http/get url request-options)]
     (when error
@@ -357,8 +357,8 @@
 (defn streaming-watch-api-request
   "Make a long-lived watch connection to the Kubernetes API server via the streaming-api-request function.
    If a Failure error is found in the response object stream, an exception is thrown."
-  [resource-name url]
-  (for [update-json (streaming-api-request url)]
+  [resource-name url request-options]
+  (for [update-json (streaming-api-request url request-options)]
     (if (and (= "ERROR" (:type update-json))
              (= "Failure" (-> update-json :object :status)))
       (throw (ex-info "k8s watch connection failed"
@@ -1133,7 +1133,9 @@
 (def default-watch-options
   "Default options for start-k8s-watch! daemon threads."
   {:api-request-fn api-request
+   :connect-timeout-ms (-> 10 t/seconds t/in-millis)
    :exit-on-error? true
+   :socket-timeout-ms (-> 15 t/minutes t/in-millis)
    :streaming-api-request-fn streaming-watch-api-request
    :watch-retries 0})
 
@@ -1147,7 +1149,7 @@
 (defn- start-k8s-watch!
   "Start a thread to continuously update the watch-state atom based on watched K8s events."
   [{:keys [api-server-url scheduler-name watch-state] :as scheduler}
-   {:keys [exit-on-error? resource-key resource-name resource-url
+   {:keys [connect-timeout-ms exit-on-error? resource-key resource-name resource-url socket-timeout-ms
            streaming-api-request-fn update-fn watch-retries] :as options}]
   (doto
     (Thread.
@@ -1164,9 +1166,12 @@
                     (log/info "starting" resource-name "watch connection, iteration" iter)
                     (timers/start-stop-time!
                       (metrics/waiter-timer "scheduler" scheduler-name "state-watch")
-                      (let [watch-url (str resource-url "&watch=true&resourceVersion=" version)]
+                      (let [request-options (cond-> {}
+                                              connect-timeout-ms (assoc :conn-timeout connect-timeout-ms)
+                                              socket-timeout-ms (assoc :socket-timeout socket-timeout-ms))
+                            watch-url (str resource-url "&watch=true&resourceVersion=" version)]
                         ;; process updates forever (unless there's an exception)
-                        (doseq [json-object (streaming-api-request-fn resource-name watch-url)]
+                        (doseq [json-object (streaming-api-request-fn resource-name watch-url request-options)]
                           (when json-object
                             (if (= "ERROR" (:type json-object))
                               (log/info "received error update in watch" resource-name json-object)
@@ -1287,7 +1292,7 @@
            log-bucket-url max-patch-retries max-name-length pdb-api-version pdb-spec-builder pod-base-port pod-sigkill-delay-secs
            pod-suffix-length replicaset-api-version replicaset-spec-builder restart-expiry-threshold reverse-proxy scheduler-name
            scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
-           service-id->password-fn start-scheduler-syncer-fn url watch-retries]
+           service-id->password-fn start-scheduler-syncer-fn url watch-connect-timeout-ms watch-retries watch-socket-timeout-ms]
     {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver
     :as context}]
   {:pre [(schema/contains-kind-sub-map? authorizer)
@@ -1324,7 +1329,9 @@
          (fn? service-id->password-fn)
          (fn? service-id->service-description-fn)
          (fn? start-scheduler-syncer-fn)
-         (or (nil? watch-retries) (integer? watch-retries))]}
+         (or (nil? watch-connect-timeout-ms) (integer? watch-connect-timeout-ms))
+         (or (nil? watch-retries) (integer? watch-retries))
+         (or (nil? watch-socket-timeout-ms) (integer? watch-socket-timeout-ms))]}
   (let [authorizer (utils/create-component authorizer)
         http-client (-> http-options
                       (utils/assoc-if-absent :client-name "waiter-k8s")
@@ -1350,8 +1357,9 @@
                                      (fn [scheduler service-id service-description]
                                        (f scheduler service-id service-description replicaset-spec-builder-ctx)))
         watch-options (cond-> default-watch-options
-                        (some? watch-retries)
-                        (assoc :watch-retries watch-retries))
+                        (some? watch-retries) (assoc :watch-retries watch-retries)
+                        watch-connect-timeout-ms (assoc :connect-timeout-ms watch-connect-timeout-ms)
+                        watch-socket-timeout-ms (assoc :socket-timeout-ms watch-socket-timeout-ms))
         watch-state (atom nil)
         scheduler-config {:api-server-url url
                           :http-client http-client

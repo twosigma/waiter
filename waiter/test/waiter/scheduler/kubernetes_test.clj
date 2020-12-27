@@ -1931,7 +1931,9 @@
         ;; which lets us test the watch-retries behavior here
         pods-watch-query-count (atom 0)
         pods-watch-stream (make-watch-stream pods-watch-updates watch-update-signals)
-        pods-watch-query-fn (fn pods-watch-query-fn [_ watch-url]
+        pods-watch-query-fn (fn pods-watch-query-fn [resource-name watch-url request-options]
+                              (is (= "Pods" resource-name))
+                              (is (empty? request-options))
                               (swap! pods-watch-query-count inc)
                               (let [last-resource-version (->> watch-url
                                                                (re-find #"(?<=[&?]resourceVersion=)\d+")
