@@ -559,10 +559,18 @@
                                  ;; The URL used below is the default proxy URL bound to by the `kubectl proxy` command:
                                  :url "http://localhost:8001"
 
+                                 ;; Determines, in milliseconds, the timeout until a connection is established.
+                                 ;; Defaults to 10 seconds.
+                                 :watch-connect-timeout-ms 10000
+
                                  ;; Number of times to retry a watch before falling back to a global state query.
                                  ;; These retries only apply to a closed watch connection, not to connections returning an HTTP error code.
                                  ;; Defaults to 0 (one attempt, no retries) if not provided.
-                                 :watch-retries 10}
+                                 :watch-retries 10
+
+                                 ;; Defines, in milliseconds, the maximum period of inactivity between two consecutive data packets on watch connections.
+                                 ;; Defaults to 15 minutes.
+                                 :watch-socket-timeout-ms 900000}
 
                     ;; :kind :marathon uses Marathon (https://mesosphere.github.io/marathon/) for scheduling instances:
                     ;:kind :marathon
