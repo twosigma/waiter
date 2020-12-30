@@ -305,6 +305,14 @@
             (is (= "chunked" (get-in body-json ["request-info" "headers" "transfer-encoding"])))
             (is (= test-trailers (get-in body-json ["request-info" "trailers"]))))))
 
+      (testing "401-response-without-www-authenticate"
+        (log/info "Basic test for 401 response without www-authenticate header")
+        (let [request-headers (assoc request-headers :accept "text/plain")
+              {:keys [body] :as response} (make-kitchen-request waiter-url request-headers :path "/bad-status?status=401")]
+          (assert-response-status response http-401-unauthorized)
+          (assert-backend-response response)
+          (is (str/includes? (str body) "Hello World"))))
+
       (delete-service waiter-url service-id))))
 
 (deftest ^:parallel ^:integration-fast test-basic-service-validation-from-on-the-fly-headers

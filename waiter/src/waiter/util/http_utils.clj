@@ -26,7 +26,7 @@
   (:import (java.net URI)
            (java.util ArrayList)
            (org.apache.commons.codec.binary Base64)
-           (org.eclipse.jetty.client HttpClient)
+           (org.eclipse.jetty.client HttpClient WWWAuthenticationProtocolHandler)
            (org.eclipse.jetty.client.api Authentication$Result Request)
            (org.eclipse.jetty.http HttpField HttpHeader)
            (org.eclipse.jetty.http2.client HTTP2Client)
@@ -127,6 +127,8 @@
         (http/client (cond-> (select-keys config [:client-name :follow-redirects? :request-buffer-size :response-buffer-size :transport])
                        (some? conn-timeout) (assoc :connect-timeout conn-timeout)
                        (some? socket-timeout) (assoc :idle-timeout socket-timeout)))]
+    ;; disable checks on www-authenticate header on 401 responses
+    (some-> client .getProtocolHandlers (.remove WWWAuthenticationProtocolHandler/NAME))
     (when clear-content-decoders
       (.clear (.getContentDecoderFactories client)))
     (.setCookieStore client (HttpCookieStore$Empty.))
