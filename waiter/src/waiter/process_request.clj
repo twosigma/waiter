@@ -910,7 +910,7 @@
   [handler]
   (let [on-error (fn send-ws-error [{:keys [message status]} {^ServletUpgradeResponse upgrade-response :upgrade-response}]
                    (.sendError upgrade-response status message)
-                   false)]
+                   status)]
     (make-maintenance-mode handler on-error on-error)))
 
 (defn wrap-too-many-requests

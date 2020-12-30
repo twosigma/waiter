@@ -17,6 +17,7 @@
   (:import (org.eclipse.jetty.http HttpStatus)
            (org.eclipse.jetty.websocket.api StatusCode)))
 
+(def ^:const http-101-switching-protocols HttpStatus/SWITCHING_PROTOCOLS_101)
 (def ^:const http-200-ok HttpStatus/OK_200)
 (def ^:const http-201-created HttpStatus/CREATED_201)
 (def ^:const http-202-accepted HttpStatus/ACCEPTED_202)

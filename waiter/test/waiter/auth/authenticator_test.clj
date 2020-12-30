@@ -463,8 +463,8 @@
                    :waiter-discovery {:token-metadata {}
                                       :token "token"
                                       :waiter-headers {"x-waiter-authentication" "value"}}}
-          success? (handler request)]
-      (is (false? success?))
+          response-status (handler request)]
+      (is (= http-400-bad-request response-status))
       (is (= http-400-bad-request (.getStatusCode upgrade-response)))
       (is (str/includes? (.getStatusReason upgrade-response) "An authentication parameter is not supported for on-the-fly headers"))))
 
@@ -477,7 +477,7 @@
                                       :token-metadata {}
                                       :token "token"
                                       :waiter-headers {"x-waiter-run-as-user" "test-user"}}}
-          success? (handler request)]
-      (is (false? success?))
+          response-status (handler request)]
+      (is (= http-400-bad-request response-status))
       (is (= http-400-bad-request (.getStatusCode upgrade-response)))
       (is (str/includes? (.getStatusReason upgrade-response) "An authentication disabled token may not be combined with on-the-fly headers")))))

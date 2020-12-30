@@ -80,7 +80,7 @@
                                                 (is (= cookie-value in-cookie))
                                                 (is (= password in-password))
                                                 nil)]
-          (is (not (request-authenticator password request response)))
+          (is (= http-403-forbidden (request-authenticator password request response)))
           (is (= http-403-forbidden (.getStatusCode response)))
           (is (= "Unauthorized" (.getStatusReason response))))))
 
@@ -92,7 +92,7 @@
                                                 (is (= cookie-value in-cookie))
                                                 (is (= password in-password))
                                                 nil)]
-          (is (not (request-authenticator password request response)))
+          (is (= http-403-forbidden (request-authenticator password request response)))
           (is (= http-403-forbidden (.getStatusCode response)))
           (is (= "Unauthorized" (.getStatusReason response))))))
 
@@ -104,7 +104,7 @@
                                                 (is (= cookie-value in-cookie))
                                                 (is (= password in-password))
                                                 (throw (Exception. "Test-Exception")))]
-          (is (not (request-authenticator password request response)))
+          (is (= http-500-internal-server-error (request-authenticator password request response)))
           (is (= http-500-internal-server-error (.getStatusCode response)))
           (is (= "Test-Exception" (.getStatusReason response))))))))
 
@@ -125,7 +125,7 @@
     (testing "sec-websocket-protocol:multiple"
       (let [request (reified-upgrade-request {:headers {"sec-websocket-protocol" ["foo" "bar"]}})
             response (reified-upgrade-response)]
-        (is (not (request-subprotocol-acceptor request response)))
+        (is (= http-500-internal-server-error (request-subprotocol-acceptor request response)))
         (is (= http-500-internal-server-error (.getStatusCode response)))
         (is (= "waiter does not yet support multiple subprotocols in websocket requests: [\"foo\" \"bar\"]"
                (.getStatusReason response)))))
@@ -133,7 +133,7 @@
     (testing "sec-websocket-protocol:exception"
       (let [request (reified-upgrade-request {:headers {"sec-websocket-protocol" (Object.)}})
             response (reified-upgrade-response)]
-        (is (not (request-subprotocol-acceptor request response)))
+        (is (= http-500-internal-server-error (request-subprotocol-acceptor request response)))
         (is (= http-500-internal-server-error (.getStatusCode response)))
         (is (= "Don't know how to create ISeq from: java.lang.Object"
                (.getStatusReason response)))))))

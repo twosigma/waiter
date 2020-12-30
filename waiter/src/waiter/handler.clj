@@ -84,9 +84,9 @@
     handler
     (fn prepare-https-redirect-ws-response [{:keys [^ServletUpgradeResponse upgrade-response] :as request}]
       (let [https-url (str "https://" (get-in request [:headers "host"]) (:uri request))]
-        (.setHeader upgrade-response "Location" https-url)
+        (.setHeader upgrade-response "location" https-url)
         (.sendError upgrade-response http-301-moved-permanently "https-redirect is enabled")
-        false))))
+        http-301-moved-permanently))))
 
 (defn async-make-request-helper
   "Helper function that returns a function that can invoke make-request-fn."
