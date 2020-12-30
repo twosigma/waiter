@@ -49,6 +49,7 @@
            (org.eclipse.jetty.client HttpClient)
            (org.eclipse.jetty.io EofException)
            (org.eclipse.jetty.server HttpChannel HttpOutput Response)
+           (org.eclipse.jetty.websocket.api UpgradeException)
            (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse)))
 
 (defn make-auth-user-map
@@ -107,6 +108,10 @@
                              [:client-error "Connection unexpectedly closed while streaming request" http-400-bad-request error-class]
                              (instance? TimeoutException error)
                              [:instance-error (utils/message :backend-request-timed-out) http-504-gateway-timeout error-class]
+                             (instance? UpgradeException error)
+                             (let [response-status-code (.getResponseStatusCode error)
+                                   status-code (if (pos? response-status-code) response-status-code http-400-bad-request)]
+                               [:client-error "Failed to upgrade to websocket connection" status-code error-class])
                              :else
                              [:instance-error (utils/message :backend-request-failed) http-502-bad-gateway error-class])
         error-cause (first classification)]
