@@ -32,7 +32,8 @@
   (:import (java.io ByteArrayOutputStream IOException)
            (java.util.concurrent TimeoutException)
            (org.eclipse.jetty.client HttpClient)
-           (org.eclipse.jetty.io EofException)))
+           (org.eclipse.jetty.io EofException)
+           (org.eclipse.jetty.websocket.api UpgradeException)))
 
 (deftest test-prepare-request-properties
   (let [test-cases (list
@@ -579,5 +580,7 @@
          (classify-error (EofException. "reset"))))
   (is (= [:instance-error nil http-504-gateway-timeout "java.util.concurrent.TimeoutException"]
          (classify-error (TimeoutException. "timeout"))))
+  (is (= [:client-error "Failed to upgrade to websocket connection" http-400-bad-request "org.eclipse.jetty.websocket.api.UpgradeException"]
+         (classify-error (UpgradeException. nil http-400-bad-request "websocket upgrade failed"))))
   (is (= [:instance-error nil http-502-bad-gateway "java.lang.Exception"]
          (classify-error (Exception. "Test Exception")))))
