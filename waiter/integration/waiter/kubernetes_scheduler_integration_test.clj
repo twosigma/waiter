@@ -38,7 +38,7 @@
               (let [{:keys [body] :as response} (make-request router-url "/state/scheduler"
                                                               :cookies cookies
                                                               :method :get
-                                                              :query-params {"include" ["components" "watch-state"]})
+                                                              :query-params {"include" ["components" "watch-state-details"]})
                     _ (assert-response-status response http-200-ok)
                     body-json (-> body str try-parse-json)
                     watch-state-json (get-watch-state body-json)
@@ -64,7 +64,7 @@
             {:keys [body] :as response} (make-request router-url "/state/scheduler"
                                                       :cookies cookies
                                                       :method :get
-                                                      :query-params {"include" ["components" "watch-state"]})
+                                                      :query-params {"include" ["components" "watch-state-details"]})
             _ (assert-response-status response http-200-ok)
             body-json (-> body str try-parse-json)
             watch-state-json (get-watch-state body-json)
@@ -80,7 +80,7 @@
           (let [{:keys [body] :as response} (make-request router-url "/state/scheduler"
                                                           :cookies cookies
                                                           :method :get
-                                                          :query-params {"include" ["components" "watch-state"]})
+                                                          :query-params {"include" ["components" "watch-state-details"]})
                 _ (assert-response-status response http-200-ok)
                 body-json (-> body str try-parse-json)
                 watch-state-json (get-watch-state body-json)
@@ -233,7 +233,7 @@
       (let [{:keys [body] :as response} (make-request router-url "/state/scheduler"
                                                       :cookies cookies
                                                       :method :get
-                                                      :query-params {"include" ["components" "watch-state"]})
+                                                      :query-params {"include" ["components" "watch-state-details"]})
             _ (assert-response-status response http-200-ok)
             body-json (-> body str try-parse-json)
             watch-state-json (get-watch-state body-json)
