@@ -33,6 +33,7 @@
             [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
   (:import (java.io ByteArrayInputStream)
+           (java.lang ProcessHandle)
            (java.net HttpCookie URI)
            (java.nio ByteBuffer)
            (java.util.concurrent Callable Executors Future)
@@ -57,6 +58,8 @@
 (def ^:const TIME (yellow "TIME: "))
 
 (def ^:const required-response-headers ["x-cid"])
+
+(def ^:const java-pid (.pid (ProcessHandle/current)))
 
 (defn colored-time [time-string] (yellow time-string))
 
@@ -294,12 +297,12 @@
   (or (get headers "Location") (get headers "location")))
 
 (defn extract-acronym
-  "Shortens the name taking only the leading characters across the delimiters.
-   E.g. `(extract-acronym \"aaa.bbb-ccc/ddd#eee-fff.ggg\") -> \"abcdfg\"`"
+  "Shortens the name taking only the leading three characters across the delimiters.
+   E.g. `(extract-acronym \"a.bb-ccc/dddd#eeeee-ffffff.gggg.hhh.ii.j\") -> \"abbcccdddfffggghhhiij\"`"
   [name-with-dashes]
   (->> (str/split (str name-with-dashes) #"-|\.|/")
     (remove str/blank?)
-    (map first)
+    (map #(apply str (take 3 %)))
     (str/join "")
     str/lower-case))
 
@@ -310,7 +313,7 @@
     (if cid
       request-headers
       (let [correlation-id (cid/get-correlation-id)
-            new-cid (str "test-" (extract-acronym (current-test-name)) "-" (utils/unique-identifier))]
+            new-cid (str "test-" (extract-acronym (current-test-name)) "-" java-pid "-" (System/currentTimeMillis))]
         (when verbose
           (log/info "Using cid" new-cid))
         (when (str/includes? correlation-id "UNKNOWN")
