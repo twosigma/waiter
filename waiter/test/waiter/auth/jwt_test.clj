@@ -31,7 +31,7 @@
             [waiter.util.utils :as utils])
   (:import (clojure.lang ExceptionInfo)
            (java.security.interfaces RSAPublicKey)
-           (net.i2p.crypto.eddsa EdDSAPublicKey)
+           (org.bouncycastle.jcajce.interfaces EdDSAPublicKey)
            (waiter.auth.jwt JwtAuthenticator JwtAuthServer JwtValidator)))
 
 (defn make-jwt-auth-server

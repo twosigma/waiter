@@ -32,7 +32,7 @@
 
   :dependencies [[bidi "2.1.6"
                   :exclusions [prismatic/schema ring/ring-core]]
-                 [buddy/buddy-sign "3.1.0"
+                 [buddy/buddy-sign "3.3.0"
                   :exclusions [[commons-codec]]]
                  ;; resolve the cheshire dependency used by buddy and jet
                  [cheshire "5.10.0"]
@@ -56,13 +56,13 @@
                   :exclusions [org.clojure/clojure org.clojure/tools.reader]]
                  [comb "0.1.1"
                   :exclusions [org.clojure/clojure]]
-                 [digest "1.4.9"
+                 [digest "1.4.10"
                   :exclusions [org.clojure/clojure]]
                  [fullcontact/full.async "1.1.0"
                   :exclusions [org.clojure/clojure org.clojure/clojurescript org.clojure/core.async]]
                  [io.dropwizard.metrics/metrics-graphite "3.1.1"
                   :exclusions [org.slf4j/slf4j-api]]
-                 [joda-time "2.10.6"]
+                 [joda-time "2.10.9"]
                  [twosigma/metrics-clojure "2.6.0-20180124_201441-g72cee16"
                   :exclusions [org.clojure/clojure io.netty/netty org.slf4j/slf4j-api]]
                  [metrics-clojure-jvm "2.10.0"
@@ -81,7 +81,7 @@
                  [org.apache.curator/curator-x-discovery "2.11.0"
                   :exclusions [io.netty/netty org.slf4j/slf4j-api]]
                  [org.clojure/clojure "1.10.1"]
-                 [org.clojure/core.async "1.2.603"
+                 [org.clojure/core.async "1.3.610"
                   :exclusions [org.clojure/clojure org.clojure/tools.reader]]
                  [org.clojure/core.memoize "1.0.236"
                   :exclusions [org.clojure/clojure]]
@@ -91,18 +91,18 @@
                  [org.clojure/data.zip "1.0.0"]
                  [org.clojure/tools.cli "1.0.194"]
                  [org.clojure/tools.logging "1.1.0"]
-                 [org.clojure/tools.namespace "1.0.0"]
-                 [org.clojure/tools.reader "1.3.2"]
+                 [org.clojure/tools.namespace "1.1.0"]
+                 [org.clojure/tools.reader "1.3.4"]
                  [org.slf4j/slf4j-log4j12 "1.7.30"
                   :exclusions [log4j]]
                  [potemkin "0.4.5"]
                  [prismatic/plumbing "0.5.5"]
                  [prismatic/schema "1.1.12"]
-                 [ring/ring-core "1.8.1"
+                 [ring/ring-core "1.8.2"
                   :exclusions [org.clojure/tools.reader]]
                  [ring/ring-ssl "0.3.0"
                   :exclusions [ring/ring-core]]
-                 [ring-basic-authentication "1.0.5"]
+                 [ring-basic-authentication "1.1.0"]
                  [slingshot "0.12.2"]
                  [try-let "1.3.1"
                   :exclusions [org.clojure/clojure]]]
