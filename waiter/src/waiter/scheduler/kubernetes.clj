@@ -39,6 +39,7 @@
             [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
   (:import (java.io InputStreamReader)
+           (java.util.concurrent Executors)
            (org.joda.time.format DateTimeFormat)))
 
 (defn authorization-from-environment
@@ -264,12 +265,35 @@
                      :revision-timestamp {:pod revision-timestamp :rs rs-revision-timestamp}})
           true))))
 
+;; forward declaration of the hard-delete-service-instance function
+(declare hard-delete-service-instance)
+
+(let [kill-frequently-restarting-pods-thread-pool (Executors/newFixedThreadPool 4)]
+  (defn kill-frequently-restarting-pods
+    "Processes killing of a frequently restarting pod (service instance).
+     On non-leader routers it returns immediately without doing anything.
+     On the leader it triggers killing of the instance asynchronously without adjusting ReplicaSet replica count."
+    [{:keys [leader?-fn] :as scheduler} {:keys [k8s/pod-name k8s/restart-count service-id] :as instance}]
+    (if (leader?-fn)
+      (au/execute
+        (fn kill-frequently-restarting-pods-task []
+          (try
+            (log/info "deleting frequently restarting pod"
+                      {:pod-name pod-name :restart-count restart-count :service-id service-id})
+            (hard-delete-service-instance scheduler instance)
+            (catch Exception ex
+              (log/error ex "error in deleting frequently restarting pod" pod-name))))
+        kill-frequently-restarting-pods-thread-pool)
+      (log/info "skipping deleting frequently restarting pod on non-leader"
+                {:pod-name pod-name :restart-count restart-count :service-id service-id}))))
+
 (defn pod->ServiceInstance
   "Convert a Kubernetes Pod JSON response into a Waiter Service Instance record."
-  [{:keys [api-server-url] :as scheduler} pod]
+  [{:keys [api-server-url restart-kill-threshold] :as scheduler} pod]
   (try
     (let [;; waiter-app is the first container we register
-          primary-container-restart-count (get-in pod [:status :containerStatuses 0 :restartCount] 0)
+          primary-container-restart-count (or (get-in pod [:status :containerStatuses 0 :restartCount]) 0)
+          frequently-restarting? (>= primary-container-restart-count restart-kill-threshold)
           service-id (k8s-object->service-id pod)
           instance-id (pod->instance-id pod primary-container-restart-count)
           node-name (get-in pod [:spec :nodeName])
@@ -294,37 +318,41 @@
           primary-container-status (first app-container-statuses)
           pod-annotations (get-in pod [:metadata :annotations])
           pod-started-at (-> pod (get-in [:status :startTime]) timestamp-str->datetime)
-          {:keys [waiter/revision-timestamp]} (get-in pod [:metadata :annotations])]
-      (scheduler/make-ServiceInstance
-        (cond-> {:extra-ports (->> pod-annotations :waiter/port-count Integer/parseInt range next (mapv #(+ port0 %)))
-                 :flags (cond-> #{}
-                          (check-expired scheduler service-id instance-id pod-restart-count pod-annotations primary-container-status pod-started-at)
-                          (conj :expired))
-                 :healthy? (true? (get primary-container-status :ready))
-                 :host (get-in pod [:status :podIP] scheduler/UNKNOWN-IP)
-                 :id instance-id
-                 :k8s/api-server-url api-server-url
-                 :k8s/app-name (get-in pod [:metadata :labels :app])
-                 :k8s/namespace (k8s-object->namespace pod)
-                 :k8s/pod-name (k8s-object->id pod)
-                 :k8s/restart-count primary-container-restart-count
-                 :k8s/user run-as-user
-                 :log-directory (log-dir-path run-as-user primary-container-restart-count)
-                 :port port0
-                 :service-id service-id
-                 :started-at pod-started-at}
-          node-name (assoc :k8s/node-name node-name)
-          phase (assoc :k8s/pod-phase phase)
-          revision-timestamp (assoc :k8s/revision-timestamp revision-timestamp)
-          (seq container-statuses) (assoc :k8s/container-statuses
-                                          (map (fn [{:keys [state] :as status}]
-                                                 (when (> (count state) 1)
-                                                   (log/warn "received multiple states for container:" status))
-                                                 (let [[state {:keys [reason]}] (first state)]
-                                                   (cond-> (select-keys status [:image :name :ready])
-                                                     (some? reason) (assoc :reason reason)
-                                                     (some? state) (assoc :state state))))
-                                               container-statuses)))))
+          {:keys [waiter/revision-timestamp]} (get-in pod [:metadata :annotations])
+          instance (scheduler/make-ServiceInstance
+                     (cond-> {:extra-ports (->> pod-annotations :waiter/port-count Integer/parseInt range next (mapv #(+ port0 %)))
+                              :flags (cond-> #{}
+                                       (check-expired scheduler service-id instance-id pod-restart-count pod-annotations primary-container-status pod-started-at)
+                                       (conj :expired))
+                              :healthy? (and (true? (get primary-container-status :ready))
+                                             (not frequently-restarting?))
+                              :host (get-in pod [:status :podIP] scheduler/UNKNOWN-IP)
+                              :id instance-id
+                              :k8s/api-server-url api-server-url
+                              :k8s/app-name (get-in pod [:metadata :labels :app])
+                              :k8s/namespace (k8s-object->namespace pod)
+                              :k8s/pod-name (k8s-object->id pod)
+                              :k8s/restart-count primary-container-restart-count
+                              :k8s/user run-as-user
+                              :log-directory (log-dir-path run-as-user primary-container-restart-count)
+                              :port port0
+                              :service-id service-id
+                              :started-at pod-started-at}
+                       node-name (assoc :k8s/node-name node-name)
+                       phase (assoc :k8s/pod-phase phase)
+                       revision-timestamp (assoc :k8s/revision-timestamp revision-timestamp)
+                       (seq container-statuses) (assoc :k8s/container-statuses
+                                                       (map (fn [{:keys [state] :as status}]
+                                                              (when (> (count state) 1)
+                                                                (log/warn "received multiple states for container:" status))
+                                                              (let [[state {:keys [reason]}] (first state)]
+                                                                (cond-> (select-keys status [:image :name :ready])
+                                                                  (some? reason) (assoc :reason reason)
+                                                                  (some? state) (assoc :state state))))
+                                                            container-statuses))))]
+      (when frequently-restarting?
+        (kill-frequently-restarting-pods scheduler instance))
+      instance)
     (catch Throwable e
       (log/error e "error converting pod to waiter service instance" pod)
       (comment "Returning nil on failure."))))
@@ -390,7 +418,7 @@
       (ss/throw+ response))))
 
 (defn- retrieve-service-description
-  "Get the correspoinding service-description for a service-id."
+  "Get the corresponding service-description for a service-id."
   [{:keys [service-id->service-description-fn]} service-id]
   (service-id->service-description-fn service-id))
 
@@ -507,10 +535,40 @@
           (<= attempt max-patch-retries)
           (recur (inc attempt) (get-replica-count scheduler service-id)))))))
 
-(defn- kill-service-instance
-  "Safely kill the Kubernetes pod corresponding to the given Waiter Service Instance.
+(let [num-deletion-locks 100
+      deletion-locks (repeatedly num-deletion-locks (fn [] (Object.)))]
+  (defn- service-id->deletion-lock
+    "Returns the deletion lock striped by a hash of the service ID."
+    [service-id]
+    (nth deletion-locks (mod (hash service-id) num-deletion-locks))))
+
+(defn- instance->pod-url
+  "Returns the pod api server url."
+  [api-server-url {:keys [k8s/namespace k8s/pod-name]}]
+  (str api-server-url "/api/v1/namespaces/" namespace "/pods/" pod-name))
+
+(defn hard-delete-service-instance
+  "Force kill the Kubernetes pod corresponding to the given Waiter Service Instance.
+   Does not adjust ReplicaSet replica count; preventing scheduling of a replacement pod must be ensured by the callee.
+   Uses locking to prevent concurrent calls for killing instances from the same service.
    Returns nil on success, but throws on failure."
-  [{:keys [api-server-url] :as scheduler} {:keys [id k8s/namespace k8s/pod-name service-id] :as instance} service]
+  [{:keys [api-server-url] :as scheduler} {:keys [service-id] :as instance}]
+  (locking
+    (service-id->deletion-lock service-id)
+    (let [pod-url (instance->pod-url api-server-url instance)]
+      (try
+        ; "hard" delete the pod (i.e., actually kill, allowing the pod's default grace period expires)
+        ; (note that the pod's default grace period is different from the 300s period set above)
+        (api-request pod-url scheduler :request-method :delete)
+        (catch Throwable t
+          (log/error t "Error force-killing pod"))))))
+
+(defn kill-service-instance
+  "Safely kill the Kubernetes pod corresponding to the given Waiter Service Instance.
+   Also adjusts the ReplicaSet replica count to prevent a replacement pod from being started.
+   Uses locking to prevent concurrent calls for killing instances from the same service.
+   Returns nil on success, but throws on failure."
+  [{:keys [api-server-url] :as scheduler} {:keys [service-id] :as instance} service]
   ;; SAFE DELETION STRATEGY:
   ;; 1) Delete the target pod with a grace period of 5 minutes
   ;;    Since the target pod is currently in the "Terminating" state,
@@ -529,31 +587,22 @@
   ;; doesn't hurt us significantly. If it takes more than 5 minutes to get from step 1
   ;; to step 3, then the pod was already deleted, and the force-delete is no longer needed.
   ;; The force-delete can fail with a 404 (object not found), but this operation still succeeds.
-  (let [pod-url (str api-server-url
-                     "/api/v1/namespaces/"
-                     namespace
-                     "/pods/"
-                     pod-name)
-        make-kill-response (fn [killed? message status]
-                             {:instance-id id :killed? killed?
-                              :message message :service-id service-id :status status})]
-    ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
-    (api-request pod-url scheduler :request-method :delete
-                 :body (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds 300}))
-    ; scale down the replicaset to reflect removal of this instance
-    (try
-      (scale-service-by-delta scheduler service -1)
-      (catch Throwable t
-        (log/error t "Error while scaling down ReplicaSet after pod termination")))
-    ; force-kill the instance (should still be terminating)
-    (try
-      ; "hard" delete the pod (i.e., actually kill, allowing the pod's default grace period expires)
-      ; (note that the pod's default grace period is different from the 300s period set above)
-      (api-request pod-url scheduler :request-method :delete)
-      (catch Throwable t
-        (log/error t "Error force-killing pod")))
-    (comment "Success! Even if the scale-down or force-kill operation failed,
-              the pod will be force-killed after the grace period is up.")))
+  (locking
+    ;; stripe lock by service ID
+    (service-id->deletion-lock service-id)
+    (let [pod-url (instance->pod-url api-server-url instance)]
+      ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
+      (api-request pod-url scheduler :request-method :delete
+                   :body (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds 300}))
+      ; scale down the replicaset to reflect removal of this instance
+      (try
+        (scale-service-by-delta scheduler service -1)
+        (catch Throwable t
+          (log/error t "Error while scaling down ReplicaSet after pod termination")))
+      ; force-kill the instance (should still be terminating)
+      (hard-delete-service-instance scheduler instance)
+      (comment "Success! Even if the scale-down or force-kill operation failed,
+              the pod will be force-killed after the grace period is up."))))
 
 (defn create-service
   "Reify a Waiter Service as a Kubernetes ReplicaSet."
@@ -629,6 +678,7 @@
                                 daemon-state
                                 fileserver
                                 http-client
+                                leader?-fn
                                 log-bucket-url
                                 max-patch-retries
                                 max-name-length
@@ -640,6 +690,7 @@
                                 replicaset-api-version
                                 replicaset-spec-builder-fn
                                 restart-expiry-threshold
+                                restart-kill-threshold
                                 retrieve-auth-token-state-fn
                                 retrieve-syncer-state-fn
                                 reverse-proxy
@@ -1292,12 +1343,13 @@
 (defn kubernetes-scheduler
   "Returns a new KubernetesScheduler with the provided configuration. Validates the
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
-  [{:keys [authentication authorizer cluster-name container-running-grace-secs custom-options http-options log-bucket-sync-secs
+  [{:keys [authentication authorizer cluster-name container-running-grace-secs custom-options http-options leader?-fn log-bucket-sync-secs
            log-bucket-url max-patch-retries max-name-length pdb-api-version pdb-spec-builder pod-base-port pod-sigkill-delay-secs
-           pod-suffix-length replicaset-api-version replicaset-spec-builder restart-expiry-threshold reverse-proxy scheduler-name
-           scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
+           pod-suffix-length replicaset-api-version replicaset-spec-builder restart-expiry-threshold restart-kill-threshold
+           reverse-proxy scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
            service-id->password-fn start-scheduler-syncer-fn url watch-connect-timeout-ms watch-retries watch-socket-timeout-ms]
     {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver
+    :or {restart-kill-threshold 8}
     :as context}]
   {:pre [(schema/contains-kind-sub-map? authorizer)
          (or (zero? container-running-grace-secs) (pos-int? container-running-grace-secs))
@@ -1311,6 +1363,7 @@
              (-> fileserver :predicate-fn symbol?))
          (pos-int? (:socket-timeout http-options))
          (pos-int? (:conn-timeout http-options))
+         (fn? leader?-fn)
          (and (number? log-bucket-sync-secs) (<= 0 log-bucket-sync-secs 300))
          (or (nil? log-bucket-url) (some? (io/as-url log-bucket-url)))
          (utils/non-neg-int? max-patch-retries)
@@ -1326,6 +1379,8 @@
          (not (str/blank? replicaset-api-version))
          (symbol? (:factory-fn replicaset-spec-builder))
          (pos-int? restart-expiry-threshold)
+         (pos-int? restart-kill-threshold)
+         (<= restart-expiry-threshold restart-kill-threshold)
          (some? (io/as-url url))
          (not (str/blank? scheduler-name))
          (au/chan? scheduler-state-chan)
@@ -1371,6 +1426,7 @@
                           :container-running-grace-secs container-running-grace-secs
                           :replicaset-api-version replicaset-api-version
                           :restart-expiry-threshold restart-expiry-threshold
+                          :restart-kill-threshold restart-kill-threshold
                           :service-id->failed-instances-transient-store service-id->failed-instances-transient-store
                           :watch-state watch-state}
         get-service->instances-fn #(get-service->instances scheduler-config)
@@ -1398,6 +1454,7 @@
                                            daemon-state
                                            fileserver
                                            http-client
+                                           leader?-fn
                                            log-bucket-url
                                            max-patch-retries
                                            max-name-length
@@ -1409,6 +1466,7 @@
                                            replicaset-api-version
                                            replicaset-spec-builder-fn
                                            restart-expiry-threshold
+                                           restart-kill-threshold
                                            retrieve-auth-token-state-fn
                                            retrieve-syncer-state-fn
                                            reverse-proxy
