@@ -375,10 +375,12 @@
                                   instance-counts-map (retrieve-instance-counts service-id)
                                   instance-count (reduce + (vals instance-counts-map))
                                   effective-service-description (service-id->service-description-fn service-id :effective? true)
-                                  resource-usage (compute-resource-usage effective-service-description instance-count)]
+                                  resource-usage (compute-resource-usage effective-service-description instance-count)
+                                  service-metrics (get service-id->metrics service-id)]
                               (cond->
                                 {:instance-counts instance-counts-map
-                                 :last-request-time (get-in service-id->metrics [service-id "last-request-time"])
+                                 :last-request-time (get service-metrics "last-request-time")
+                                 :request-metrics (select-keys service-metrics ["outstanding" "total"])
                                  :resource-usage resource-usage
                                  :service-id service-id
                                  :service-description core-service-description
@@ -546,12 +548,14 @@
         include-effective-parameters? (or (utils/request-flag request-params "effective-parameters")
                                           (utils/param-contains? request-params "include" "effective-parameters"))
         include-references? (utils/param-contains? request-params "include" "references")
-        last-request-time (get-in (service-id->metrics-fn) [service-id "last-request-time"])
+        service-metrics (get (service-id->metrics-fn) service-id)
+        last-request-time (get service-metrics "last-request-time")
         scaling-state (retrieve-scaling-state query-autoscaler-state-fn service-id)
         effective-service-description (service-id->service-description-fn service-id :effective? true)
         num-active-instances (count (:active-instances service-instance-maps))
         resource-usage (compute-resource-usage effective-service-description num-active-instances)
         result-map (cond-> {:num-routers (count router->metrics)
+                            :request-metrics (select-keys service-metrics ["outstanding" "total"])
                             :resource-usage resource-usage
                             :router-id router-id
                             :status (service/retrieve-service-status-label service-id global-state)}
