@@ -54,7 +54,7 @@
 
 (deftest ^:parallel ^:integration-fast test-update-token-cache-consistency
   (testing-using-waiter-url
-    (let [service-id-prefix (rand-name "testhostname")
+    (let [service-id-prefix (rand-name)
           token (rand-name)
           update-token-fn (fn [cmd]
                             (let [response (post-token waiter-url {:cmd cmd
@@ -102,10 +102,6 @@
 (defn- make-source-tokens-entries [waiter-url & tokens]
   (mapv (fn [token] {"token" token "version" (token->etag waiter-url token)}) tokens))
 
-(defn- create-token-name
-  [waiter-url service-id-prefix]
-  (str service-id-prefix "." (subs waiter-url 0 (str/index-of waiter-url "."))))
-
 (defn- list-tokens
   [waiter-url owner cookies query-params]
   (let [tokens-response (make-request waiter-url "/tokens" :cookies cookies :query-params query-params)]
@@ -146,7 +142,7 @@
 (deftest ^:parallel ^:integration-fast test-token-create-delete
   (testing-using-waiter-url
     (let [service-id-prefix (rand-name)
-          token-prefix (create-token-name waiter-url service-id-prefix)
+          token-prefix (create-token-name waiter-url ".")
           {:keys [cookies]} (make-request waiter-url "/waiter-auth")
           num-tokens-to-create 10
           tokens-to-create (map #(str "token" %1 "." token-prefix) (range num-tokens-to-create))
@@ -340,8 +336,8 @@
 (deftest ^:parallel ^:integration-fast ^:resource-heavy test-service-list-filtering
   (testing-using-waiter-url
     (let [service-name (rand-name)
-          token-1 (create-token-name waiter-url (str service-name ".t1"))
-          token-2 (create-token-name waiter-url (str service-name ".t2"))
+          token-1 (create-token-name waiter-url "." (str service-name ".t1"))
+          token-2 (create-token-name waiter-url "." (str service-name ".t2"))
           service-ids-atom (atom #{})
           token->version->etag-atom (atom {})
           all-tokens [token-1 token-2]
@@ -457,7 +453,7 @@
   (testing-using-waiter-url
     (let [service-id-prefix (rand-name)
           token-prefix (str "token-" (rand-int 3000000))
-          token (create-token-name waiter-url token-prefix)
+          token (create-token-name waiter-url ".")
           token-root (retrieve-token-root waiter-url)
           token-cluster (retrieve-token-cluster waiter-url)]
       (testing "hostname-token-test"
@@ -585,7 +581,7 @@
       (testing "token-administering"
         (testing "active-token"
           (let [last-update-time (System/currentTimeMillis)
-                token (create-token-name waiter-url service-id-prefix)]
+                token (create-token-name waiter-url ".")]
 
             (let [token-description {:health-check-url "/probe"
                                      :name service-id-prefix
@@ -674,7 +670,7 @@
 
         (testing "deleted-token"
           (let [last-update-time (System/currentTimeMillis)
-                token (create-token-name waiter-url service-id-prefix)]
+                token (create-token-name waiter-url ".")]
             (try
               (log/info "creating configuration using token" token)
               (let [token-description {:health-check-url "/probe-3"
@@ -721,7 +717,7 @@
   (testing-using-waiter-url
     (log/info "basic named token test")
     (let [service-id-prefix (rand-name)
-          token (create-token-name waiter-url service-id-prefix)]
+          token (create-token-name waiter-url ".")]
       (try
         (log/info "creating configuration using token" token)
         (let [token-definition (assoc
@@ -772,7 +768,7 @@
 (deftest ^:parallel ^:integration-fast test-star-run-as-user-token
   (testing-using-waiter-url
     (let [service-id-prefix (rand-name)
-          token (create-token-name waiter-url service-id-prefix)]
+          token (create-token-name waiter-url ".")]
       (try
         (log/info "creating configuration using token" token)
         (let [token-definition (assoc
@@ -868,7 +864,7 @@
     (log/info "basic token with namespace field test")
     (let [service-id-prefix (rand-name)
           target-user (retrieve-username)
-          token (create-token-name waiter-url service-id-prefix)]
+          token (create-token-name waiter-url ".")]
       (for [token-user [target-user "*"]]
         (try
           (log/info "creating configuration using token" token)
@@ -1180,7 +1176,7 @@
 (deftest ^:parallel ^:integration-fast test-auto-run-as-requester-support
   (testing-using-waiter-url
     (let [service-name (rand-name)
-          token (create-token-name waiter-url service-name)
+          token (create-token-name waiter-url ".")
           service-description (-> (kitchen-request-headers :prefix "")
                                   (assoc :name service-name :permitted-user "*")
                                   (dissoc :run-as-user))
@@ -1317,7 +1313,7 @@
 (deftest ^:parallel ^:integration-fast test-authentication-disabled-support
   (testing-using-waiter-url
     (let [service-name (rand-name)
-          token (create-token-name waiter-url service-name)
+          token (create-token-name waiter-url ".")
           current-user (retrieve-username)
           service-description (-> (kitchen-request-headers :prefix "")
                                   (assoc :authentication "disabled"
@@ -1369,7 +1365,7 @@
 (deftest ^:parallel ^:integration-fast test-maintenance-mode
   (testing-using-waiter-url
     (let [service-name (rand-name)
-          token (create-token-name waiter-url service-name)
+          token (create-token-name waiter-url ".")
           current-user (retrieve-username)
           service-description (-> (kitchen-request-headers :prefix "")
                                   (assoc :https-redirect true
@@ -1450,7 +1446,7 @@
 (deftest ^:parallel ^:integration-fast test-current-for-tokens
   (testing-using-waiter-url
     (let [service-name (rand-name)
-          token (create-token-name waiter-url service-name)
+          token (create-token-name waiter-url ".")
           service-description (assoc (kitchen-request-headers :prefix "")
                                 :name service-name)]
       (try
@@ -1496,8 +1492,8 @@
 (deftest ^:parallel ^:integration-fast test-current-for-tokens-multiple-source-tokens
   (testing-using-waiter-url
     (let [service-name (rand-name)
-          token-name-a (create-token-name waiter-url (str service-name "-A"))
-          token-name-b (create-token-name waiter-url (str service-name "-B"))
+          token-name-a (create-token-name waiter-url "." (str service-name "-A"))
+          token-name-b (create-token-name waiter-url "." (str service-name "-B"))
           base-service-description (assoc (kitchen-request-headers :prefix "") :name service-name)
           service-description-a1 (dissoc base-service-description :cpus)
           service-description-b1 (dissoc base-service-description :mem)
@@ -1562,7 +1558,7 @@
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-service-fallback-support
   (testing-using-waiter-url
     (let [service-name (rand-name)
-          token (create-token-name waiter-url service-name)
+          token (create-token-name waiter-url ".")
           scheduler-syncer-interval-secs (setting waiter-url [:scheduler-syncer-interval-secs])
           fallback-period-secs 30
           service-description-1 (-> (kitchen-request-headers :prefix "")
@@ -1676,7 +1672,7 @@
 (deftest ^:parallel ^:integration-fast test-valid-fallback-service-resolution
   (testing-using-waiter-url
     (let [service-name (rand-name)
-          token (create-token-name waiter-url service-name)
+          token (create-token-name waiter-url ".")
           request-headers {:x-waiter-token token}
           fallback-period-secs 300
           token-description-1 (-> (kitchen-request-headers :prefix "")
