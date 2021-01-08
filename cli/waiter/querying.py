@@ -155,9 +155,17 @@ def query_tokens(clusters, user):
 
 
 def get_cluster_with_token(clusters, token_name):
+    """Finds the cluster the token is usin"""
     query_result = query_token(clusters, token_name)
     if query_result["count"] == 0:
         raise Exception('The token does not exist. You must create it first.')
     else:
-        cluster_names_with_token = list(query_result['clusters'].keys())
-        return next(c for c in clusters if c['name'] == cluster_names_with_token[0])
+        token_descriptions = list(query_result['clusters'].values())
+        token_result = max(token_descriptions, key=lambda token: token['token']['last-update-time'])
+        cluster_name_goal = token_result['token']['cluster']
+        for c in clusters:
+            cluster_settings, _ = http_util.make_data_request(c, lambda: http_util.get(c, '/settings'))
+            cluster_config_name = cluster_settings['cluster-config']['name'].upper()
+            if cluster_name_goal.upper() == cluster_config_name.upper():
+                return c
+        raise Exception(f'The token is configured in cluster {cluster_name_goal} which is not provided')
