@@ -223,10 +223,6 @@
         (assert-auth-cookie set-cookie assertion-message))
       (log/info "JWT authentication is disabled"))))
 
-(defn- create-token-name
-  [waiter-url service-id-prefix]
-  (str service-id-prefix "." (subs waiter-url 0 (str/index-of waiter-url ":"))))
-
 (defn- validate-response
   [service-id access-token auth-method {:keys [body headers] :as response}]
   (let [assertion-message (str {:auth-method auth-method
@@ -250,7 +246,7 @@
   (testing-using-waiter-url
     (if (jwt-auth-enabled? waiter-url)
       (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)
-            host (create-token-name waiter-url (rand-name))
+            host (create-token-name waiter-url ":")
             service-parameters (assoc (kitchen-params)
                                  :env {"USE_BEARER_AUTH" "true"}
                                  :name (rand-name))
@@ -290,7 +286,7 @@
   (testing-using-waiter-url
     (if (jwt-auth-enabled? waiter-url)
       (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)
-            host (create-token-name waiter-url (rand-name))
+            host (create-token-name waiter-url ":")
             service-parameters (assoc (kitchen-params)
                                  :env {"USE_BEARER_AUTH" "true"}
                                  :name (rand-name))
@@ -389,7 +385,7 @@
           (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)
                 oidc-token-from-env (System/getenv "WAITER_TEST_TOKEN_OIDC")
                 edit-oidc-token-from-env? (Boolean/valueOf (System/getenv "WAITER_TEST_TOKEN_OIDC_EDIT"))
-                waiter-token (or oidc-token-from-env (create-token-name waiter-url (rand-name)))
+                waiter-token (or oidc-token-from-env (create-token-name waiter-url ":"))
                 edit-token? (or (str/blank? oidc-token-from-env) edit-oidc-token-from-env?)
                 _ (when edit-token?
                     (let [service-parameters (assoc (kitchen-params)
@@ -484,7 +480,7 @@
       (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)
             oidc-token-from-env (System/getenv "WAITER_TEST_TOKEN_OIDC")
             edit-oidc-token-from-env? (Boolean/valueOf (System/getenv "WAITER_TEST_TOKEN_OIDC_EDIT"))
-            waiter-token (or oidc-token-from-env (create-token-name waiter-url (rand-name)))
+            waiter-token (or oidc-token-from-env (create-token-name waiter-url ":"))
             edit-token? (or (str/blank? oidc-token-from-env) edit-oidc-token-from-env?)
             _ (when edit-token?
                 (let [service-parameters (assoc (kitchen-params)
@@ -535,7 +531,7 @@
       (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)
             oidc-token-from-env (System/getenv "WAITER_TEST_TOKEN_OIDC")
             edit-oidc-token-from-env? (Boolean/valueOf (System/getenv "WAITER_TEST_TOKEN_OIDC_EDIT"))
-            waiter-token (or oidc-token-from-env (create-token-name waiter-url (rand-name)))
+            waiter-token (or oidc-token-from-env (create-token-name waiter-url ":"))
             edit-token? (or (str/blank? oidc-token-from-env) edit-oidc-token-from-env?)
             _ (when edit-token?
                 (let [service-parameters (assoc (kitchen-params)
@@ -594,7 +590,7 @@
   (if use-spnego
     (testing-using-waiter-url
       (let [{:keys [cookies] :as auth-response} (make-request waiter-url "/waiter-auth")
-            token-name (create-token-name waiter-url (rand-name))]
+            token-name (create-token-name waiter-url ":")]
         (is (seq cookies) (str auth-response))
         (try
           (let [service-parameters (assoc (kitchen-params)
