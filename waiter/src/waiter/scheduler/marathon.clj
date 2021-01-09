@@ -251,34 +251,36 @@
   "Returns the descriptor to be used by Marathon to create new apps."
   [home-path-prefix service-id->password-fn {:keys [service-id service-description]} {:keys [container-init-commands]}]
   (let [health-check-url (sd/service-description->health-check-url service-description)
-        {:strs [backend-proto cmd cmd-type cpus disk grace-period-secs health-check-authentication
+        {:strs [backend-proto cmd cpus disk grace-period-secs
                 health-check-interval-secs health-check-max-consecutive-failures health-check-port-index
-                health-check-proto instance-expiry-mins mem namespace ports restart-backoff-factor run-as-user]} service-description
+                health-check-proto instance-expiry-mins mem namespace ports restart-backoff-factor run-as-user
+                termination-grace-period-secs]} service-description
         home-path (str home-path-prefix run-as-user)]
-    {:id service-id
-     :env (scheduler/environment service-id service-description service-id->password-fn home-path)
-     :user run-as-user
-     :args (conj (vec container-init-commands) cmd)
-     :disk disk
-     :mem mem
-     :ports (-> ports (repeat 0) vec)
-     :cpus cpus
-     :healthChecks [{:protocol (-> (or health-check-proto backend-proto) hu/backend-proto->scheme str/upper-case)
-                     :path health-check-url
-                     :gracePeriodSeconds (if (pos? grace-period-secs)
-                                           grace-period-secs
-                                           ;; Marathon's gracePeriodSeconds has a default value of 300. 
-                                           ;; 2x the instance expiry is effectively an infinite grace period.
-                                           (-> instance-expiry-mins t/minutes t/in-seconds (* 2)))
-                     :intervalSeconds health-check-interval-secs
-                     :portIndex health-check-port-index
-                     :timeoutSeconds 20
-                     :maxConsecutiveFailures health-check-max-consecutive-failures}]
-     :backoffFactor restart-backoff-factor
-     :labels (cond-> {:source "waiter"
-                      :user run-as-user}
-               (some? namespace)
-               (assoc :namespace namespace))}))
+    (cond-> {:id service-id
+             :env (scheduler/environment service-id service-description service-id->password-fn home-path)
+             :user run-as-user
+             :args (conj (vec container-init-commands) cmd)
+             :disk disk
+             :mem mem
+             :ports (-> ports (repeat 0) vec)
+             :cpus cpus
+             :healthChecks [{:protocol (-> (or health-check-proto backend-proto) hu/backend-proto->scheme str/upper-case)
+                             :path health-check-url
+                             :gracePeriodSeconds (if (pos? grace-period-secs)
+                                                   grace-period-secs
+                                                   ;; Marathon's gracePeriodSeconds has a default value of 300.
+                                                   ;; 2x the instance expiry is effectively an infinite grace period.
+                                                   (-> instance-expiry-mins t/minutes t/in-seconds (* 2)))
+                             :intervalSeconds health-check-interval-secs
+                             :portIndex health-check-port-index
+                             :timeoutSeconds 20
+                             :maxConsecutiveFailures health-check-max-consecutive-failures}]
+             :backoffFactor restart-backoff-factor
+             :labels (cond-> {:source "waiter"
+                              :user run-as-user}
+                       (some? namespace)
+                       (assoc :namespace namespace))}
+      (pos? termination-grace-period-secs) (assoc :taskKillGracePeriodSeconds termination-grace-period-secs))))
 
 (defn- start-new-service
   "Helper function to start a service with the specified descriptor."

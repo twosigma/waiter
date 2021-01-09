@@ -631,19 +631,19 @@
                                    "cmd" "test-command"
                                    "concurrency-level" 1
                                    "cpus" 1
-                                   "instance-expiry-mins" 10
-                                   "mem" 1536
-                                   "namespace" "test-user"
-                                   "run-as-user" "test-user"
-                                   "ports" 2
-                                   "restart-backoff-factor" 2
+                                   "env" {"FOO" "bar" "BAZ" "quux"}
                                    "grace-period-secs" 111
                                    "health-check-authentication" "disabled"
                                    "health-check-interval-secs" 10
                                    "health-check-max-consecutive-failures" 5
                                    "health-check-port-index" 0
-                                   "env" {"FOO" "bar"
-                                          "BAZ" "quux"}}
+                                   "instance-expiry-mins" 10
+                                   "mem" 1536
+                                   "namespace" "test-user"
+                                   "ports" 2
+                                   "restart-backoff-factor" 2
+                                   "run-as-user" "test-user"
+                                   "termination-grace-period-secs" 0}
               actual (default-marathon-descriptor-builder
                        home-path-prefix service-id->password-fn
                        {:service-id service-id, :service-description service-description}
@@ -666,6 +666,15 @@
                    (default-marathon-descriptor-builder
                      home-path-prefix service-id->password-fn
                      (->> (assoc service-description "grace-period-secs" 0)
+                       (assoc {:service-id service-id} :service-description))
+                     descriptor-builder-ctx))))
+
+          (testing "termination-grace-period-secs of 10"
+            (is (= (-> expected
+                     (assoc :taskKillGracePeriodSeconds 10))
+                   (default-marathon-descriptor-builder
+                     home-path-prefix service-id->password-fn
+                     (->> (assoc service-description "termination-grace-period-secs" 10)
                        (assoc {:service-id service-id} :service-description))
                      descriptor-builder-ctx)))))))))
 

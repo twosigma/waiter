@@ -902,7 +902,7 @@
    service-id
    {:strs [backend-proto cmd cpus grace-period-secs health-check-authentication health-check-interval-secs
            health-check-max-consecutive-failures health-check-port-index health-check-proto image
-           mem min-instances namespace ports run-as-user]
+           mem min-instances namespace ports run-as-user termination-grace-period-secs]
     :as service-description}
    {:keys [container-init-commands default-container-image default-namespace log-bucket-url image-aliases]
     :as context}]
@@ -917,7 +917,8 @@
         ;; We include the default log-bucket-sync-secs value in the total-sigkill-delay-secs
         ;; delay iff the log-bucket-url setting was given the scheduler config.
         log-bucket-sync-secs (if log-bucket-url (:log-bucket-sync-secs context) 0)
-        total-sigkill-delay-secs (+ pod-sigkill-delay-secs log-bucket-sync-secs)
+        configured-pod-sigkill-delay-secs (max termination-grace-period-secs pod-sigkill-delay-secs)
+        total-sigkill-delay-secs (+ configured-pod-sigkill-delay-secs log-bucket-sync-secs)
         envoy-sidecar-check-fn (:predicate-fn reverse-proxy)
         has-reverse-proxy? (when reverse-proxy
                              (envoy-sidecar-check-fn scheduler service-id service-description context))
@@ -938,7 +939,7 @@
                    ;; This is handled by the waiter-k8s-init script,
                    ;; separately from the pod's grace period,
                    ;; in order to provide extra time for logs to sync to an s3 bucket.
-                   {:name "WAITER_GRACE_SECS" :value (str pod-sigkill-delay-secs)}]
+                   {:name "WAITER_GRACE_SECS" :value (str configured-pod-sigkill-delay-secs)}]
                   (concat
                     (for [[k v] base-env]
                       {:name k :value v})
@@ -1037,7 +1038,7 @@
               memory (str mem "Mi")]
           {:command cmd
            :env (into [{:name "WAITER_FILESERVER_PORT" :value (str port)}
-                       {:name "WAITER_GRACE_SECS" :value (str pod-sigkill-delay-secs)}]
+                       {:name "WAITER_GRACE_SECS" :value (str configured-pod-sigkill-delay-secs)}]
                       (when log-bucket-url
                         [{:name "WAITER_LOG_BUCKET_URL"
                           :value (str log-bucket-url "/" run-as-user "/" service-id)}]))
