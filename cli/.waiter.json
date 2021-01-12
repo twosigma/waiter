@@ -4,12 +4,20 @@
       "name": "WAITER1",
       "url": "http://127.0.0.1:9091/",
       "disabled": false,
-      "default-for-create": true
+      "default-for-create": true,
+      "sync-group": "group1"
     },
     {
       "name": "WAITER2",
       "url": "http://127.0.0.1:9191/",
-      "disabled": true
+      "disabled": true,
+      "sync-group": "group1"
+    },
+    {
+      "name": "WAITER3",
+      "url": "http://127.0.0.1:9291/",
+      "disabled": true,
+      "sync-group": "group2"
     }
   ],
   "metrics": {
