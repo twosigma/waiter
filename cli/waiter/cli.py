@@ -114,9 +114,10 @@ def run(args, plugins):
             metrics.initialize(config_map)
             metrics.inc(f'command.{action}.runs')
             clusters = load_target_clusters(config_map, url, cluster)
+            enforce_clusters = (url or cluster) and True
             http_util.configure(config_map, plugins)
             args = {k: v for k, v in args.items() if v is not None}
-            result = actions[action]['run-function'](clusters, args, config_path)
+            result = actions[action]['run-function'](clusters, args, config_path, enforce_clusters)
             logging.debug(f'result: {result}')
             if result == 0:
                 metrics.inc(f'command.{action}.result.success')

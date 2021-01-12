@@ -154,12 +154,22 @@ def query_tokens(clusters, user):
         lambda cluster, executor: executor.submit(get_tokens_on_cluster, cluster, user))
 
 
-def get_cluster_with_token(clusters, token_name):
-    """Finds the cluster the token is usin"""
+def get_cluster_with_token(clusters, token_name, enforce_clusters):
     query_result = query_token(clusters, token_name)
     if query_result["count"] == 0:
         raise Exception('The token does not exist. You must create it first.')
+    elif enforce_clusters:
+        return clusters[0]
     else:
+        sync_groups_set = set()
+        cluster_names = set()
+        for cluster in list(query_result['clusters'].keys()):
+            cluster_config = next(c for c in clusters if c['name'] == cluster)
+            sync_groups_set.add(cluster_config['sync-group'])
+            cluster_names.add(cluster)
+        if len(sync_groups_set) > 1:
+            raise Exception(f'There are multiple cluster groups that contain a description for this token: ' +
+                            f'groups-{sync_groups_set} clusters-{cluster_names}')
         token_descriptions = list(query_result['clusters'].values())
         token_result = max(token_descriptions, key=lambda token: token['token']['last-update-time'])
         cluster_name_goal = token_result['token']['cluster']
@@ -168,4 +178,7 @@ def get_cluster_with_token(clusters, token_name):
             cluster_config_name = cluster_settings['cluster-config']['name'].upper()
             if cluster_name_goal.upper() == cluster_config_name.upper():
                 return c
-        raise Exception(f'The token is configured in cluster {cluster_name_goal} which is not provided')
+
+        provided_cluster_names = ', '.join([c.get('name') for c in clusters])
+        raise Exception(f'The token is configured in cluster {cluster_name_goal} which is not provided.' +
+                        f' The following clusters were provided: {provided_cluster_names}.')
