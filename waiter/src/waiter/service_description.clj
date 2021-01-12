@@ -97,6 +97,7 @@
    (s/optional-key "interstitial-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/minutes 60))) 'at-most-60-minutes))
    (s/optional-key "restart-backoff-factor") schema/positive-number-greater-than-or-equal-to-1
    (s/optional-key "scheduler") schema/non-empty-string
+   (s/optional-key "termination-grace-period-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/minutes 5))) 'at-most-5-minutes))
    ; auto-scaling related
    (s/optional-key "concurrency-level") (s/both s/Int (s/pred #(<= 1 % 10000) 'between-one-and-10000))
    (s/optional-key "expired-instance-restart-rate") schema/positive-fraction-less-than-or-equal-to-1
@@ -133,7 +134,7 @@
     "grace-period-secs" "health-check-interval-secs" "health-check-max-consecutive-failures"
     "idle-timeout-mins" "instance-expiry-mins" "interstitial-secs" "jitter-threshold"
     "load-balancing" "max-queue-length" "min-instances" "max-instances" "restart-backoff-factor"
-    "scale-down-factor" "scale-factor" "scale-up-factor"})
+    "scale-down-factor" "scale-factor" "scale-up-factor" "termination-grace-period-secs"})
 
 (def ^:const service-non-override-keys
   #{"allowed-params" "backend-proto" "cmd" "cmd-type" "cpus" "env"
@@ -550,6 +551,9 @@
                                              parameter->issues :profile
                                              (str "profile must be a non-empty string"
                                                   (compute-valid-profiles-str profile->defaults)))
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :termination-grace-period-secs
+                                             "termination-grace-period-secs must be an integer in the range [0, 300].")
                                            (attach-error-message-for-parameter
                                              parameter->issues :version "version must be a non-empty string."))
               unresolved-parameters (set/difference (-> parameter->issues keys set)

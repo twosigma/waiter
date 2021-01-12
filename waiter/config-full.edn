@@ -775,7 +775,8 @@
                                 "restart-backoff-factor" 2
                                 "scale-down-factor" 0.001
                                 "scale-factor" 1
-                                "scale-up-factor" 0.1}
+                                "scale-up-factor" 0.1
+                                "termination-grace-period-secs" 0}
 
  ; ---------- Timeouts ----------
 

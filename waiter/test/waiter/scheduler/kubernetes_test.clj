@@ -101,7 +101,8 @@
    "mem" 1024
    "min-instances" 1
    "ports" 2
-   "run-as-user" "myself"})
+   "run-as-user" "myself"
+   "termination-grace-period-secs" 0})
 
 (defn- sanitize-k8s-service-records
   "Walks data structure to remove extra fields added by Kubernetes from Service and ServiceInstance records."
@@ -125,7 +126,7 @@
          (clojure.data/diff expected# actual#)))
      (is (= expected# actual#))))
 
-(deftest replicaset-spec-fileserver-container-and-metadata
+(deftest test-replicaset-spec-fileserver-container-and-metadata
   (let [current-time (t/now)]
     (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
                   config/retrieve-waiter-principal (constantly "waiter@test.com")
@@ -156,7 +157,7 @@
               (is (= 1 (count fileserver-containers)))
               (is (empty? fileserver-containers)))))))))
 
-(deftest replicaset-spec-health-check-port-index
+(deftest test-replicaset-spec-health-check-port-index
   (let [current-time (t/now)]
     (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
                   config/retrieve-waiter-principal (constantly "waiter@test.com")
@@ -171,6 +172,23 @@
                 :waiter/service-port "8330"}
                (get-in replicaset-spec [:spec :template :metadata :annotations])))))))
 
+(deftest test-replicaset-spec-termination-grace-period-secs
+  (let [current-time (t/now)]
+    (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
+                  config/retrieve-waiter-principal (constantly "waiter@test.com")
+                  t/now (constantly current-time)]
+      (doseq [{:keys [configured-termination-grace-period-secs spec-termination-grace-period-secs]}
+              [{:configured-termination-grace-period-secs 0 :spec-termination-grace-period-secs 3}
+               {:configured-termination-grace-period-secs 1 :spec-termination-grace-period-secs 3}
+               {:configured-termination-grace-period-secs 5 :spec-termination-grace-period-secs 5}
+               {:configured-termination-grace-period-secs 15 :spec-termination-grace-period-secs 15}]]
+        (let [service-description (assoc dummy-service-description "termination-grace-period-secs" configured-termination-grace-period-secs)
+              scheduler (make-dummy-scheduler ["test-service-id"]
+                                              {:service-id->service-description-fn (constantly service-description)})
+              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description)]
+          (is (= spec-termination-grace-period-secs
+                 (get-in replicaset-spec [:spec :template :spec :terminationGracePeriodSeconds]))))))))
+
 (deftest test-get-port-range
   ;; this condition is critical for our sidecar-proxy logic,
   ;; which reserves a second range of ports by incrementing the hash code,
@@ -179,7 +197,7 @@
     (let [ports (for [i (range 1000) j (range 100)] (get-port-range i j 0))]
       (is (every? (partial apply not=) (partition 2 1 ports))))))
 
-(deftest replicaset-spec-with-reverse-proxy
+(deftest test-replicaset-spec-with-reverse-proxy
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
                 config/retrieve-waiter-principal (constantly "waiter@test.com")]
     (let [service-id "proxy-test-service-id"
@@ -252,7 +270,7 @@
       (testing "reverse-proxy pod container image is correct"
         (is (= "twosigma/waiter-envoy" (:image sidecar-container)))))))
 
-(deftest replicaset-spec-with-reverse-proxy-health-check
+(deftest test-replicaset-spec-with-reverse-proxy-health-check
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
                 config/retrieve-waiter-principal (constantly "waiter@test.com")]
     (let [service-id "proxy-health-test-service-id"
@@ -335,7 +353,7 @@
       (testing "reverse-proxy pod container image is correct"
         (is (= "twosigma/waiter-envoy" (:image sidecar-container)))))))
 
-(deftest replicaset-spec-liveness-nd-readiness
+(deftest test-replicaset-spec-liveness-and-readiness
   (let [basic-probe {:failureThreshold 1
                :httpGet {:path "/status" :port 8330 :scheme "HTTP"}
                :periodSeconds 10
@@ -362,7 +380,7 @@
           (is (not (contains? waiter-app-container :livenessProbe)))
           (is (= basic-probe (:readinessProbe waiter-app-container))))))))
 
-(deftest replicaset-spec-namespace
+(deftest test-replicaset-spec-namespace
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
                 config/retrieve-waiter-principal (constantly "waiter@test.com")]
     (let [service-id "test-service-id"]
@@ -381,14 +399,14 @@
           (is (nil? (scheduler/validate-service scheduler service-id)))
           (is (= target-namespace (get-in replicaset-spec [:metadata :namespace]))))))))
 
-(deftest replicaset-spec-no-image
+(deftest test-replicaset-spec-no-image
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
                 config/retrieve-waiter-principal (constantly "waiter@test.com")]
     (let [scheduler (make-dummy-scheduler ["test-service-id"])
           replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" dummy-service-description)]
       (is (= "twosigma/waiter-test-apps:latest" (get-in replicaset-spec [:spec :template :spec :containers 0 :image]))))))
 
-(deftest replicaset-spec-custom-image
+(deftest test-replicaset-spec-custom-image
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
                 config/retrieve-waiter-principal (constantly "waiter@test.com")]
     (let [scheduler (make-dummy-scheduler ["test-service-id"])

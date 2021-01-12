@@ -118,7 +118,13 @@
     (is (s/check service-description-schema (assoc basic-description "ports" 11)))
 
     (is (s/check service-description-schema (dissoc basic-description "run-as-user")))
-    (is (s/check service-description-schema (assoc basic-description "run-as-user" "")))))
+    (is (s/check service-description-schema (assoc basic-description "run-as-user" "")))
+
+    (is (nil? (s/check service-description-schema (assoc basic-description "termination-grace-period-secs" 0))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "termination-grace-period-secs" 5))))
+    (is (nil? (s/check service-description-schema (assoc basic-description "termination-grace-period-secs" 11))))
+    (is (s/check service-description-schema (assoc basic-description "termination-grace-period-secs" -1)))
+    (is (s/check service-description-schema (assoc basic-description "termination-grace-period-secs" (t/in-seconds (t/minutes 6)))))))
 
 (deftest test-retrieve-token-from-service-description-or-hostname
   (let [test-cases (list
@@ -2041,17 +2047,23 @@
         config {:allow-missing-required-fields? false}]
     (is (nil? (validate-schema valid-description constraints-schema profile->defaults config)))
 
-    (testing (str "testing empty cmd")
+    (testing "testing empty cmd"
       (run-validate-schema-test
         (assoc valid-description "cmd" "")
         constraints-schema profile->defaults config "cmd must be a non-empty string"))
 
-    (testing (str "testing long cmd")
+    (testing "testing long cmd"
       (run-validate-schema-test
         (assoc valid-description "cmd" (str/join "" (repeat 150 "c")))
         constraints-schema profile->defaults config "cmd must be at most 100 characters"))
 
-    (testing (str "idle-timeout-mins")
+    (testing "testing grace-period-secs"
+      (doseq [grace-period-secs [9000 "5" -1]]
+        (run-validate-schema-test
+          (assoc valid-description "grace-period-secs" grace-period-secs)
+          constraints-schema profile->defaults config "grace-period-secs must be an integer in the range [0, 3600].")))
+
+    (testing "idle-timeout-mins"
       (is (nil? (validate-schema (assoc valid-description "idle-timeout-mins" 0)
                                  constraints-schema profile->defaults config)))
       (is (nil? (validate-schema (assoc valid-description "idle-timeout-mins" 100)
@@ -2063,7 +2075,7 @@
         (assoc valid-description "idle-timeout-mins" -1)
         constraints-schema profile->defaults config "idle-timeout-mins must be an integer in the range [0, 43200]."))
 
-    (testing (str "testing instance counts")
+    (testing "testing instance counts"
       (run-validate-schema-test
         (assoc valid-description "max-instances" 0)
         constraints-schema profile->defaults config "max-instances must be between 1 and 1000")
@@ -2085,7 +2097,7 @@
         constraints-schema profile->defaults config
         "min-instances (3) must be less than or equal to max-instances (2)"))
 
-    (testing (str "testing invalid health check port index")
+    (testing "testing invalid health check port index"
       (run-validate-schema-test
         (assoc valid-description "health-check-port-index" 1 "ports" 1)
         constraints-schema profile->defaults config
@@ -2095,12 +2107,12 @@
         constraints-schema profile->defaults config
         "The health check port index (5) must be smaller than ports (3)"))
 
-    (testing (str "testing invalid metric-group")
+    (testing "testing invalid metric-group"
       (run-validate-schema-test
         (assoc valid-description "metric-group" (str/join "" (repeat 100 "m")))
         constraints-schema profile->defaults config "The metric-group must be be between 2 and 32 characters"))
 
-    (testing (str "testing invalid profile")
+    (testing "testing invalid profile"
       (run-validate-schema-test
         (assoc valid-description "profile" 1234)
         constraints-schema profile->defaults config
@@ -2137,7 +2149,13 @@
         (is (nil? (validate-schema profile-description constraints-schema profile->defaults
                                    {:allow-missing-required-fields? true})))
         (is (nil? (validate-schema profile-description constraints-schema profile->defaults
-                                   {:allow-missing-required-fields? false})))))))
+                                   {:allow-missing-required-fields? false})))))
+
+    (testing "testing termination-grace-period-secs"
+      (doseq [termination-grace-period-secs [900 "5" -1]]
+        (run-validate-schema-test
+          (assoc valid-description "termination-grace-period-secs" termination-grace-period-secs)
+          constraints-schema profile->defaults config "termination-grace-period-secs must be an integer in the range [0, 300].")))))
 
 (deftest test-service-description-schema
   (testing "Service description schema"
