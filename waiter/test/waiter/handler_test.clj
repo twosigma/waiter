@@ -175,10 +175,10 @@
                                       :token "token.localtest.me"
                                       :token-metadata {"https-redirect" true}
                                       :waiter-headers {}}}
-          success? (handler request)]
-      (is (false? success?))
+          response-status (handler request)]
+      (is (= http-301-moved-permanently response-status))
       (is (= http-301-moved-permanently (.getStatusCode upgrade-response)))
-      (is (= "https://token.localtest.me" (.getHeader upgrade-response "Location")))
+      (is (= "https://token.localtest.me" (.getHeader upgrade-response "location")))
       (is (= "https-redirect is enabled" (.getStatusReason upgrade-response)))))
 
   (testing "returns 301 with proper url if ws and https-redirect is true and uri is set"
@@ -193,10 +193,10 @@
                                       :token "token.localtest.me"
                                       :token-metadata {"https-redirect" true}
                                       :waiter-headers {}}}
-          success? (handler request)]
-      (is (false? success?))
+          response-status (handler request)]
+      (is (= http-301-moved-permanently response-status))
       (is (= http-301-moved-permanently (.getStatusCode upgrade-response)))
-      (is (= "https://token.localtest.me/random/uri/path" (.getHeader upgrade-response "Location")))
+      (is (= "https://token.localtest.me/random/uri/path" (.getHeader upgrade-response "location")))
       (is (= "https-redirect is enabled" (.getStatusReason upgrade-response)))))
 
   (testing "passes on to next handler if wss and https-redirect is true"

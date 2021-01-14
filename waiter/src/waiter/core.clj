@@ -1825,6 +1825,7 @@
                                                    auth/wrap-auth-bypass-acceptor
                                                    pr/wrap-maintenance-mode-acceptor
                                                    handler/wrap-wss-redirect
+                                                   ws/wrap-service-discovery-data
                                                    wrap-service-discovery-fn)]
                                    (ws/make-websocket-request-acceptor server-name handler)))
    :websocket-secure-request-acceptor-fn (pc/fnk [[:state passwords]]
@@ -1833,9 +1834,10 @@
                                              (fn [{:keys [skip-authentication upgrade-request upgrade-response] :as request}]
                                                (if skip-authentication
                                                  (handler request)
-                                                 (do
-                                                   (and (ws/request-authenticator (first passwords) upgrade-request upgrade-response)
-                                                        (handler request)))))))
+                                                 (let [auth-status (ws/request-authenticator (first passwords) upgrade-request upgrade-response)]
+                                                   (if (ws/successful-upgrade? auth-status)
+                                                     (handler request)
+                                                     auth-status))))))
    :welcome-handler-fn (pc/fnk [settings]
                          (partial handler/welcome-handler settings))
    :work-stealing-handler-fn (pc/fnk [[:daemons populate-maintainer-chan!]

@@ -32,6 +32,7 @@
             [waiter.headers :as headers]
             [waiter.metrics :as metrics]
             [waiter.middleware :as middleware]
+            [waiter.request-log :as rlog]
             [waiter.scheduler :as scheduler]
             [waiter.statsd :as statsd]
             [waiter.status-codes :refer :all]
@@ -48,6 +49,48 @@
 ;; https://tools.ietf.org/html/rfc6455#section-7.4
 (def ^:const server-termination-on-unexpected-condition websocket-1011-server-error)
 
+(def ^:const attr-auth-method "ws/auth-method")
+(def ^:const attr-auth-principal "ws/auth-principal")
+(def ^:const attr-waiter-token "ws/waiter-token")
+
+(defn successful-upgrade?
+  "Returns true if the status is 101 indicating the upgrade request was successful."
+  [status]
+  (and (integer? status)
+       (= http-101-switching-protocols status)))
+
+(defn get-upgrade-request-attribute
+  "Returns an Object containing the value of the attribute, or nil if the attribute does not exist."
+  [^UpgradeRequest upgrade-request attribute-name]
+  (when (instance? ServletUpgradeRequest upgrade-request)
+    (.getServletAttribute ^ServletUpgradeRequest upgrade-request attribute-name)))
+
+(defn set-upgrade-request-attribute!
+  "Stores an attribute in this request."
+  [^UpgradeRequest upgrade-request attribute-name attribute-value]
+  (when (instance? ServletUpgradeRequest upgrade-request)
+    (.setServletAttribute ^ServletUpgradeRequest upgrade-request attribute-name attribute-value)))
+
+(defn log-websocket-upgrade!
+  "Publishes the result of an upgrade request to the request log."
+  [{:keys [upgrade-request upgrade-response] :as request} response-status]
+  (let [response-headers (->> (.getHeaders upgrade-response)
+                          (pc/map-vals #(str/join "," %))
+                          (pc/map-keys str/lower-case))
+        auth-method (get-upgrade-request-attribute upgrade-request attr-auth-method)
+        auth-principal (get-upgrade-request-attribute upgrade-request attr-auth-principal)
+        waiter-token (get-upgrade-request-attribute upgrade-request attr-waiter-token)
+        response (cond->
+                   {:headers response-headers
+                    :request-type "websocket-upgrade"
+                    :waiter-api-call? false}
+                   ;; do not output status for 101 as further processing in Jetty may still fail the request
+                   (not (successful-upgrade? response-status)) (assoc :status response-status)
+                   auth-method (assoc :authorization/method auth-method)
+                   auth-principal (assoc :authorization/principal auth-principal)
+                   waiter-token (assoc :waiter/token waiter-token))]
+    (rlog/log-request! request response)))
+
 (defn make-websocket-request-acceptor
   "Takes a handler and returns a websocket-request-acceptor handler function that takes a special request and response
   object provided on websocket upgrade. It creates a generic request map from the two objects and passes it to the handler"
@@ -56,8 +99,8 @@
     (let [request-headers (->> (.getHeaders request)
                                (pc/map-vals #(str/join "," %))
                                (pc/map-keys str/lower-case))
-          correlation-id (or (get request-headers "x-cid")
-                             (str "ws-" (utils/unique-identifier)))
+          request-id (str "ws-" (utils/unique-identifier))
+          correlation-id (or (get request-headers "x-cid") request-id)
           method (some-> request .getMethod str/lower-case keyword)
           scheme (some-> request .getRequestURI .getScheme keyword)
           uri (some-> request .getRequestURI .getPath)]
@@ -72,13 +115,31 @@
                    :uri uri})
         (.setHeader response "server" server-name)
         (.setHeader response "x-cid" correlation-id)
-        (let [handler-request {:headers request-headers
+        (let [handler-request {:client-protocol (some->> request .getProtocolVersion (str "WS/"))
+                               :headers (assoc request-headers "x-cid" correlation-id)
+                               :internal-protocol (some-> request .getHttpVersion)
+                               :query-string (some-> request .getQueryString)
+                               :remote-addr (some-> request .getRemoteAddress)
+                               :request-id request-id
                                :request-method method
+                               :request-time (t/now)
                                :scheme scheme
+                               :server-port (some-> request .getLocalPort)
                                :upgrade-request request
                                :upgrade-response response
-                               :uri uri}]
-          (handler handler-request))))))
+                               :uri uri}
+              response-status (handler handler-request)]
+          (log-websocket-upgrade! handler-request response-status)
+          (successful-upgrade? response-status))))))
+
+(defn wrap-service-discovery-data
+  "Middleware that stores service discovery data inside the ServletUpgradeRequest before passing the request map to the next handler."
+  [handler]
+  (fn wrap-service-discovery-data-handler
+    [{:keys [upgrade-request] :as request}]
+    (when-let [token (get-in request [:waiter-discovery :token])]
+      (set-upgrade-request-attribute! upgrade-request attr-waiter-token token))
+    (handler request)))
 
 (defn request-authenticator
   "Authenticates the request using the x-waiter-auth cookie.
@@ -90,19 +151,24 @@
                               (when (= auth/AUTH-COOKIE-NAME (.getName cookie))
                                 (.getValue cookie)))
                             (seq (.getCookies request)))
-          auth-cookie-valid? (and auth-cookie
-                                  (-> auth-cookie
-                                      (URLDecoder/decode "UTF-8")
-                                      (auth/decode-auth-cookie password)
-                                      auth/decoded-auth-valid?))]
-      (when-not auth-cookie-valid?
-        (log/info "failed to authenticate" {:auth-cookie auth-cookie})
-        (.sendForbidden response "Unauthorized"))
-      auth-cookie-valid?)
+          decoded-auth-cookie (and auth-cookie
+                                   (-> auth-cookie
+                                     (URLDecoder/decode "UTF-8")
+                                     (auth/decode-auth-cookie password)))
+          auth-cookie-valid? (auth/decoded-auth-valid? decoded-auth-cookie)]
+      (if auth-cookie-valid?
+        (let [[auth-principal _ _] decoded-auth-cookie]
+          (set-upgrade-request-attribute! request attr-auth-method "cookie")
+          (set-upgrade-request-attribute! request attr-auth-principal auth-principal)
+          http-101-switching-protocols)
+        (do
+          (log/info "failed to authenticate" {:auth-cookie auth-cookie})
+          (.sendForbidden response "Unauthorized")
+          http-403-forbidden)))
     (catch Throwable e
       (log/error e "error while authenticating websocket request")
       (.sendError response http-500-internal-server-error (.getMessage e))
-      false)))
+      http-500-internal-server-error)))
 
 (defn request-subprotocol-acceptor
   "Associates a subprotocol (when present) in the request with the response.
@@ -114,19 +180,19 @@
       (condp = (count sec-websocket-protocols)
         0 (do
             (log/info "no subprotocols provided, accepting upgrade request")
-            true)
+            http-101-switching-protocols)
         1 (let [accepted-subprotocol (first sec-websocket-protocols)]
             (log/info "accepting websocket subprotocol" accepted-subprotocol)
             (.setAcceptedSubProtocol response accepted-subprotocol)
-            true)
+            http-101-switching-protocols)
         (do
           (log/info "rejecting websocket due to presence of multiple subprotocols" sec-websocket-protocols)
           (.sendError response http-500-internal-server-error (str "waiter does not yet support multiple subprotocols in websocket requests: " sec-websocket-protocols))
-          false)))
+          http-500-internal-server-error)))
     (catch Throwable th
       (log/error th "error while selecting subprotocol for websocket request")
       (.sendError response http-500-internal-server-error (.getMessage th))
-      false)))
+      http-500-internal-server-error)))
 
 (defn inter-router-request-middleware
   "Attaches a dummy x-waiter-auth cookie into the request to enable mimic-ing auth in inter-router websocket requests."

@@ -413,4 +413,4 @@
     handler
     (fn send-ws-error [{:keys [^ServletUpgradeResponse upgrade-response]} status message]
       (.sendError upgrade-response status message)
-      false)))
+      status)))

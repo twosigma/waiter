@@ -429,8 +429,8 @@
                    :waiter-discovery {:token-metadata {"maintenance" {"message" maintenance-message}}
                                       :token "token"
                                       :waiter-headers {}}}
-          success? (handler request)]
-      (is (false? success?))
+          response-status (handler request)]
+      (is (= http-503-service-unavailable response-status))
       (is (= http-503-service-unavailable (.getStatusCode upgrade-response)))
       (is (str/includes? (.getStatusReason upgrade-response) maintenance-message))))
 
@@ -441,8 +441,8 @@
                    :waiter-discovery {:token-metadata {}
                                       :token "token"
                                       :waiter-headers {"x-waiter-maintenance" "some value"}}}
-          success? (handler request)]
-      (is (false? success?))
+          response-status (handler request)]
+      (is (= http-400-bad-request response-status))
       (is (= http-400-bad-request (.getStatusCode upgrade-response)))
       (is (str/includes? (.getStatusReason upgrade-response) "The maintenance parameter is not supported for on-the-fly requests"))))
 
