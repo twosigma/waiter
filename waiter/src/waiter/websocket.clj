@@ -97,8 +97,8 @@
   [server-name handler]
   (fn websocket-request-acceptor [^ServletUpgradeRequest request ^ServletUpgradeResponse response]
     (let [request-headers (->> (.getHeaders request)
-                            (pc/map-vals #(str/join "," %))
-                            (pc/map-keys str/lower-case))
+                               (pc/map-vals #(str/join "," %))
+                               (pc/map-keys str/lower-case))
           request-id (str "ws-" (utils/unique-identifier))
           correlation-id (or (get request-headers "x-cid") request-id)
           method (some-> request .getMethod str/lower-case keyword)
