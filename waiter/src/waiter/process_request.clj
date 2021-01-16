@@ -107,7 +107,9 @@
                              (instance? EofException error)
                              [:client-error "Connection unexpectedly closed while streaming request" http-400-bad-request error-class]
                              (instance? TimeoutException error)
-                             [:instance-error (utils/message :backend-request-timed-out) http-504-gateway-timeout error-class]
+                             (if (some->> error (.getSuppressed) (map #(.getMessage %)) (some #(str/includes? % "HttpInput idle timeout")))
+                               [:client-error "Timeout receiving bytes from client" http-408-request-timeout error-class]
+                               [:instance-error (utils/message :backend-request-timed-out) http-504-gateway-timeout error-class])
                              (instance? UpgradeException error)
                              (let [response-status-code (.getResponseStatusCode error)
                                    status-code (if (pos? response-status-code) response-status-code http-400-bad-request)]

@@ -34,6 +34,7 @@
 (def ^:const http-403-forbidden HttpStatus/FORBIDDEN_403)
 (def ^:const http-404-not-found HttpStatus/NOT_FOUND_404)
 (def ^:const http-405-method-not-allowed HttpStatus/METHOD_NOT_ALLOWED_405)
+(def ^:const http-408-request-timeout HttpStatus/REQUEST_TIMEOUT_408)
 (def ^:const http-409-conflict HttpStatus/CONFLICT_409)
 (def ^:const http-410-gone HttpStatus/GONE_410)
 (def ^:const http-415-unsupported-media-type HttpStatus/UNSUPPORTED_MEDIA_TYPE_415)
