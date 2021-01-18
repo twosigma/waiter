@@ -580,6 +580,10 @@
          (classify-error (EofException. "reset"))))
   (is (= [:instance-error nil http-504-gateway-timeout "java.util.concurrent.TimeoutException"]
          (classify-error (TimeoutException. "timeout"))))
+  (is (=[:client-error "Timeout receiving bytes from client" http-408-request-timeout "java.util.concurrent.TimeoutException"]
+         (let [timeout-exception (TimeoutException. "timeout")]
+           (.addSuppressed timeout-exception (Throwable. "HttpInput idle timeout"))
+           (classify-error timeout-exception))))
   (is (= [:client-error "Failed to upgrade to websocket connection" http-400-bad-request "org.eclipse.jetty.websocket.api.UpgradeException"]
          (classify-error (UpgradeException. nil http-400-bad-request "websocket upgrade failed"))))
   (is (= [:instance-error nil http-502-bad-gateway "java.lang.Exception"]
