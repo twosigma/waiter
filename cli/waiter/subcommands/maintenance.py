@@ -4,7 +4,7 @@ import requests
 
 from waiter import terminal, http_util
 from waiter.token_post import process_post_result, post_failed_message
-from waiter.querying import get_cluster_with_token, get_token
+from waiter.querying import get_target_cluster_from_token, get_token
 from waiter.util import guard_no_cluster, logging, print_info
 
 
@@ -14,7 +14,7 @@ def _is_token_in_maintenance_mode(token_data):
 
 def _get_existing_token_data(clusters, token_name, enforce_cluster):
     guard_no_cluster(clusters)
-    cluster = get_cluster_with_token(clusters, token_name, enforce_cluster)
+    cluster = get_target_cluster_from_token(clusters, token_name, enforce_cluster)
     existing_token_data, existing_token_etag = get_token(cluster, token_name)
     return cluster, existing_token_data, existing_token_etag
 

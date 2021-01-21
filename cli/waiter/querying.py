@@ -169,18 +169,24 @@ def get_latest_cluster(clusters, query_result):
                     f' The following clusters were provided: {", ".join(provided_cluster_names)}.')
 
 
-def get_cluster_with_token(clusters, token_name, enforce_cluster):
+def get_target_cluster_from_token(clusters, token_name, enforce_cluster):
     query_result = query_token(clusters, token_name)
     if query_result["count"] == 0:
         raise Exception('The token does not exist. You must create it first.')
     elif enforce_cluster:
+        logging.debug(f'Forcing cluster {clusters[0]} as the target_cluster')
         return clusters[0]
     else:
+        sync_group_count = 0
         sync_groups_set = set()
         cluster_names = set()
         for cluster in list(query_result['clusters'].keys()):
             cluster_config = next(c for c in clusters if c['name'] == cluster)
-            sync_groups_set.add(cluster_config['sync-group'])
+            sync_group = cluster_config.get('sync-group', False)
+            if not sync_group:
+                sync_group = sync_group_count
+                sync_group_count += 1
+            sync_groups_set.add(sync_group)
             cluster_names.add(cluster)
         if len(sync_groups_set) > 1:
             raise Exception(f'There are multiple cluster groups that contain a description for this token: ' +
