@@ -204,6 +204,8 @@ def get_target_cluster_from_token(clusters, token_name, enforce_cluster):
             sync_groups_set.add(sync_group)
             cluster_names.add(cluster)
         if len(sync_groups_set) > 1:
-            raise Exception(f'There are multiple cluster groups that contain a description for this token: ' +
-                            f'groups-{sync_groups_set} clusters-{cluster_names}')
+            raise Exception('Could not infer the target cluster for this operation because there are multiple cluster '
+                            f'groups that contain a description for this token: groups-{sync_groups_set} '
+                            f'clusters-{cluster_names}.'
+                            '\nConsider specifying with the --cluster flag which cluster you are targeting.')
         return _get_latest_cluster(clusters, query_result)
