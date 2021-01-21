@@ -154,7 +154,14 @@ def query_tokens(clusters, user):
         lambda cluster, executor: executor.submit(get_tokens_on_cluster, cluster, user))
 
 
-def get_latest_cluster(clusters, query_result):
+def _get_latest_cluster(clusters, query_result):
+    """
+    :param clusters: list of local cluster configs from the configuration file
+    :param query_result: value from query_token function
+    :return: Finds latest token configuration from the query_result. Gets the cluster that is configured in the
+     token description and returns a local cluster who's serverside name matches the one specified in the token.
+     If the token's cluster does not exist in one of the local cluster configurations then an Exception is raised.
+    """
     token_descriptions = list(query_result['clusters'].values())
     token_result = max(token_descriptions, key=lambda token: token['token']['last-update-time'])
     cluster_name_goal = token_result['token']['cluster']
@@ -170,6 +177,12 @@ def get_latest_cluster(clusters, query_result):
 
 
 def get_target_cluster_from_token(clusters, token_name, enforce_cluster):
+    """
+    :param clusters: list of local cluster configs from the configuration file
+    :param token_name: string name of token
+    :param enforce_cluster: boolean describing if cluster was explicitly specified as an cli argument
+    :return: Return the target cluster config for various token operations
+    """
     query_result = query_token(clusters, token_name)
     if query_result["count"] == 0:
         raise Exception('The token does not exist. You must create it first.')
@@ -183,6 +196,8 @@ def get_target_cluster_from_token(clusters, token_name, enforce_cluster):
         for cluster in list(query_result['clusters'].keys()):
             cluster_config = next(c for c in clusters if c['name'] == cluster)
             sync_group = cluster_config.get('sync-group', False)
+
+            # consider clusters that don't have a configured sync-group as in their own unique group
             if not sync_group:
                 sync_group = sync_group_count
                 sync_group_count += 1
@@ -191,4 +206,4 @@ def get_target_cluster_from_token(clusters, token_name, enforce_cluster):
         if len(sync_groups_set) > 1:
             raise Exception(f'There are multiple cluster groups that contain a description for this token: ' +
                             f'groups-{sync_groups_set} clusters-{cluster_names}')
-        return get_latest_cluster(clusters, query_result)
+        return _get_latest_cluster(clusters, query_result)
