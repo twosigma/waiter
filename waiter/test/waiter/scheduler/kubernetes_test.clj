@@ -33,7 +33,8 @@
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
-  (:import (waiter.scheduler Service ServiceInstance)
+  (:import (java.util.concurrent CountDownLatch)
+           (waiter.scheduler Service ServiceInstance)
            (waiter.scheduler.kubernetes KubernetesScheduler)))
 
 (defmacro throw-exception
@@ -61,6 +62,7 @@
       :fileserver {:port 9090
                    :predicate-fn fileserver-container-enabled?
                    :scheme "http"}
+      :leader?-fn (constantly true)
       :log-bucket-sync-secs 60
       :log-bucket-url "http://waiter.example.com:8888/waiter-service-logs"
       :max-patch-retries 5
@@ -79,6 +81,7 @@
       :retrieve-auth-token-state-fn (constantly nil)
       :retrieve-syncer-state-fn (constantly nil)
       :restart-expiry-threshold 100
+      :restart-kill-threshold 200
       :service-id->failed-instances-transient-store (atom {})
       :service-id->password-fn #(str "password-" %)
       :service-id->service-description-fn (pc/map-from-keys (constantly {"health-check-port-index" 0
@@ -1359,7 +1362,7 @@
 
 (deftest test-kubernetes-scheduler
   (let [context {:is-waiter-service?-fn (constantly nil)
-                 :leader?-fn (constantly nil)
+                 :leader?-fn (constantly true)
                  :scheduler-name "kubernetes"
                  :scheduler-state-chan (async/chan 4)
                  :scheduler-syncer-interval-secs 5
@@ -1390,6 +1393,7 @@
                                               :container-init-commands ["waiter-k8s-init"]
                                               :default-container-image "twosigma/waiter-test-apps:latest"}
                     :restart-expiry-threshold 2
+                    :restart-kill-threshold 8
                     :url "http://127.0.0.1:8001"}
         base-config (merge context k8s-config)]
     (with-redefs [start-pods-watch! (constantly nil)
@@ -1437,7 +1441,21 @@
 
           (testing "bad container running grace seconds"
             (is (thrown? Throwable (kubernetes-scheduler (dissoc base-config :container-running-grace-secs))))
-            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :container-running-grace-secs -1))))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :container-running-grace-secs -1)))))
+
+          (testing "bad restart-expiry-threshold"
+            (is (thrown? Throwable (kubernetes-scheduler (dissoc base-config :restart-expiry-threshold))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :restart-expiry-threshold 100))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :restart-expiry-threshold -1)))))
+
+          (testing "bad restart-kill-threshold"
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :restart-kill-threshold "string"))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :restart-kill-threshold 1))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :restart-kill-threshold -1)))))
+
+          (testing "good restart-kill-threshold"
+            (is (instance? KubernetesScheduler (kubernetes-scheduler (dissoc base-config :restart-kill-threshold))))
+            (is (instance? KubernetesScheduler (kubernetes-scheduler (assoc base-config :restart-kill-threshold 2))))))
 
         (testing "should work with valid configuration"
           (is (instance? KubernetesScheduler (kubernetes-scheduler base-config))))
@@ -2087,6 +2105,31 @@
       (is (= "an/image" (compute-image "an/image" nil image-aliases)))
       (is (= "an/image" (compute-image nil "an/image" image-aliases))))))
 
+(deftest test-kill-restart-threshold-exceeded-pod
+  (let [num-iterations 16
+        expected-call-count num-iterations
+        expected-pod-names (set (map #(str "pod-" %) (range num-iterations)))
+        call-counter (atom 0)
+        killed-pods (atom [])
+        scheduler {}
+        call-latch (CountDownLatch. expected-call-count)]
+    (with-redefs [hard-delete-service-instance (fn [_ {:keys [k8s/pod-name]}]
+                                                 (swap! call-counter inc)
+                                                 (swap! killed-pods conj pod-name)
+                                                 (.countDown call-latch))]
+      (doseq [i (range num-iterations)]
+        (let [pod-name (str "pod-" i)
+              service-id (str "service-" i)
+              instance {:k8s/pod-name pod-name
+                        :k8s/restart-count 100
+                        :service-id service-id}]
+          (kill-restart-threshold-exceeded-pod scheduler instance)))
+      (if (pos? expected-call-count)
+        (.await call-latch)
+        (Thread/sleep 10))
+      (is (= expected-call-count @call-counter))
+      (is (= expected-pod-names (set @killed-pods))))))
+
 (deftest test-pod->ServiceInstance
   (let [api-server-url "https://k8s-api.example/"
         service-id "test-app-1234"
@@ -2097,6 +2140,7 @@
         base-scheduler {:api-server-url api-server-url
                         :container-running-grace-secs 120
                         :restart-expiry-threshold 1000
+                        :restart-kill-threshold 2000
                         :watch-state watch-state-atom}
         pod-start-time (t/minus (t/now) (t/seconds 60))
         pod-start-time-k8s-str (du/date-to-str pod-start-time k8s-timestamp-format)
@@ -2135,6 +2179,7 @@
                       :k8s/restart-count 9
                       :k8s/user "myself"}
         expired-instance-map (assoc instance-map :flags #{:expired})
+        expired-unhealthy-instance-map (assoc expired-instance-map :healthy? false)
         rs-revision-timestamp-path [:service-id->service service-id :k8s/replicaset-annotations :waiter/revision-timestamp]]
 
     (testing "pod to live instance"
@@ -2165,6 +2210,31 @@
       (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 5)
             instance (pod->ServiceInstance dummy-scheduler pod)]
         (is (= (scheduler/make-ServiceInstance expired-instance-map) instance))))
+
+    (testing "pod to expired unhealthy instance exceeded kill threshold"
+      (let [dummy-scheduler (assoc base-scheduler
+                              :leader?-fn (constantly true)
+                              :restart-expiry-threshold 5
+                              :restart-kill-threshold 8)
+            pod (assoc-in pod [:status :containerStatuses 0 :restartCount] 9)
+            killed-pod-name-atom (atom nil)
+            instance (with-redefs [kill-restart-threshold-exceeded-pod (fn [_ {:keys [k8s/pod-name]}]
+                                                                         (reset! killed-pod-name-atom pod-name))]
+                       (pod->ServiceInstance dummy-scheduler pod))]
+        (is (= (scheduler/make-ServiceInstance expired-unhealthy-instance-map) instance))
+        (is (= (k8s-object->id pod) @killed-pod-name-atom)))
+
+      (let [dummy-scheduler (assoc base-scheduler
+                              :leader?-fn (constantly false)
+                              :restart-expiry-threshold 5
+                              :restart-kill-threshold 8)
+            pod (assoc-in pod [:status :containerStatuses 0 :restartCount] 9)
+            killed-pod-name-atom (atom nil)
+            instance (with-redefs [kill-restart-threshold-exceeded-pod (fn [_ {:keys [k8s/pod-name]}]
+                                                                         (reset! killed-pod-name-atom pod-name))]
+                       (pod->ServiceInstance dummy-scheduler pod))]
+        (is (= (scheduler/make-ServiceInstance expired-unhealthy-instance-map) instance))
+        (is (nil? @killed-pod-name-atom))))
 
     (testing "pod to expired instance exceeded running grace period"
       (let [dummy-scheduler (assoc base-scheduler

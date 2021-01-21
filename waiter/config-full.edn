@@ -555,6 +555,9 @@
                                  ;; The number of pod restart at which the instance will start being treated as expired:
                                  :restart-expiry-threshold 2
 
+                                 ;; The number of pod restart at which the pod will be killed:
+                                 :restart-kill-threshold 8
+
                                  ;; Base URL for accessing the Kubernetes API server.
                                  ;; The URL used below is the default proxy URL bound to by the `kubectl proxy` command:
                                  :url "http://localhost:8001"

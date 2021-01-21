@@ -58,6 +58,7 @@
                                                            :default-namespace "waiter"
                                                            :image-aliases {"alias/integration" "twosigma/integration"}}
                                  :restart-expiry-threshold 2
+                                 :restart-kill-threshold 8
                                  :reverse-proxy {:cmd ["/opt/waiter/envoy/bin/envoy-start"]
                                                  :image "twosigma/waiter-envoy"
                                                  :predicate-fn waiter.scheduler.kubernetes/envoy-sidecar-enabled?
