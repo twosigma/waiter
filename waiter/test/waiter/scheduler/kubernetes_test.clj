@@ -1449,7 +1449,7 @@
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :restart-expiry-threshold -1)))))
 
           (testing "bad restart-kill-threshold"
-            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :restart-kill-threshold nil))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :restart-kill-threshold "string"))))
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :restart-kill-threshold 1))))
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :restart-kill-threshold -1)))))
 
@@ -2105,38 +2105,30 @@
       (is (= "an/image" (compute-image "an/image" nil image-aliases)))
       (is (= "an/image" (compute-image nil "an/image" image-aliases))))))
 
-(deftest test-kill-frequently-restarting-pods
-  (let [num-iterations 16]
-    (doseq [{:keys [expected-call-count expected-pod-names leader? test-name]}
-            [{:expected-call-count num-iterations
-              :expected-pod-names (set (map #(str "pod-" %) (range num-iterations)))
-              :leader? true
-              :test-name "kill on leader"}
-             {:expected-call-count 0
-              :expected-pod-names #{}
-              :leader? false
-              :test-name "kill on non-leader"}]]
-      (testing test-name
-        (let [call-counter (atom 0)
-              killed-pods (atom [])
-              scheduler {:leader?-fn (constantly leader?)}
-              call-latch (CountDownLatch. expected-call-count)]
-          (with-redefs [hard-delete-service-instance (fn [_ {:keys [k8s/pod-name]}]
-                                                       (swap! call-counter inc)
-                                                       (swap! killed-pods conj pod-name)
-                                                       (.countDown call-latch))]
-            (doseq [i (range num-iterations)]
-              (let [pod-name (str "pod-" i)
-                    service-id (str "service-" i)
-                    instance {:k8s/pod-name pod-name
-                              :k8s/restart-count 100
-                              :service-id service-id}]
-                (kill-frequently-restarting-pods scheduler instance)))
-            (if (pos? expected-call-count)
-              (.await call-latch)
-              (Thread/sleep 10))
-            (is (= expected-call-count @call-counter))
-            (is (= expected-pod-names (set @killed-pods)))))))))
+(deftest test-kill-restart-threshold-exceeded-pod
+  (let [num-iterations 16
+        expected-call-count num-iterations
+        expected-pod-names (set (map #(str "pod-" %) (range num-iterations)))
+        call-counter (atom 0)
+        killed-pods (atom [])
+        scheduler {}
+        call-latch (CountDownLatch. expected-call-count)]
+    (with-redefs [hard-delete-service-instance (fn [_ {:keys [k8s/pod-name]}]
+                                                 (swap! call-counter inc)
+                                                 (swap! killed-pods conj pod-name)
+                                                 (.countDown call-latch))]
+      (doseq [i (range num-iterations)]
+        (let [pod-name (str "pod-" i)
+              service-id (str "service-" i)
+              instance {:k8s/pod-name pod-name
+                        :k8s/restart-count 100
+                        :service-id service-id}]
+          (kill-restart-threshold-exceeded-pod scheduler instance)))
+      (if (pos? expected-call-count)
+        (.await call-latch)
+        (Thread/sleep 10))
+      (is (= expected-call-count @call-counter))
+      (is (= expected-pod-names (set @killed-pods))))))
 
 (deftest test-pod->ServiceInstance
   (let [api-server-url "https://k8s-api.example/"
@@ -2221,15 +2213,28 @@
 
     (testing "pod to expired unhealthy instance exceeded kill threshold"
       (let [dummy-scheduler (assoc base-scheduler
+                              :leader?-fn (constantly true)
                               :restart-expiry-threshold 5
                               :restart-kill-threshold 8)
             pod (assoc-in pod [:status :containerStatuses 0 :restartCount] 9)
             killed-pod-name-atom (atom nil)
-            instance (with-redefs [kill-frequently-restarting-pods (fn [_ {:keys [k8s/pod-name]}]
-                                                                     (reset! killed-pod-name-atom pod-name))]
+            instance (with-redefs [kill-restart-threshold-exceeded-pod (fn [_ {:keys [k8s/pod-name]}]
+                                                                         (reset! killed-pod-name-atom pod-name))]
                        (pod->ServiceInstance dummy-scheduler pod))]
         (is (= (scheduler/make-ServiceInstance expired-unhealthy-instance-map) instance))
-        (is (= (k8s-object->id pod) @killed-pod-name-atom))))
+        (is (= (k8s-object->id pod) @killed-pod-name-atom)))
+
+      (let [dummy-scheduler (assoc base-scheduler
+                              :leader?-fn (constantly false)
+                              :restart-expiry-threshold 5
+                              :restart-kill-threshold 8)
+            pod (assoc-in pod [:status :containerStatuses 0 :restartCount] 9)
+            killed-pod-name-atom (atom nil)
+            instance (with-redefs [kill-restart-threshold-exceeded-pod (fn [_ {:keys [k8s/pod-name]}]
+                                                                         (reset! killed-pod-name-atom pod-name))]
+                       (pod->ServiceInstance dummy-scheduler pod))]
+        (is (= (scheduler/make-ServiceInstance expired-unhealthy-instance-map) instance))
+        (is (nil? @killed-pod-name-atom))))
 
     (testing "pod to expired instance exceeded running grace period"
       (let [dummy-scheduler (assoc base-scheduler
