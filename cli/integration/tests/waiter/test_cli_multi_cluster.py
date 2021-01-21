@@ -263,7 +263,6 @@ class MultiWaiterCliTest(util.WaiterTest):
             util.delete_token(self.waiter_url_1, token_name)
             util.delete_token(self.waiter_url_2, token_name)
 
-
     def test_update_token_multiple_sync_groups(self):
         sync_group_1 = "sync-group-1"
         sync_group_2 = "sync-group-2"
@@ -294,6 +293,66 @@ class MultiWaiterCliTest(util.WaiterTest):
             util.delete_token(self.waiter_url_1, token_name)
             util.delete_token(self.waiter_url_2, token_name)
 
+    def test_update_token_latest_configured_to_different_cluster(self):
+        sync_group_1 = "sync-group-1"
+        config = {'clusters': [{'name': 'waiter1',
+                                'url': self.waiter_url_1,
+                                'default-for-create': True,
+                                'sync-group': sync_group_1},
+                               {'name': 'waiter2', 'url': self.waiter_url_2,
+                                'sync-group': sync_group_1}]}
+
+        cluster_1_name = util.retrieve_waiter_settings(self.waiter_url_1)['cluster-config']['name']
+
+        # Create in cluster #1, then cluster #2
+        # note that the token in cluster #2 is the latest and has the cluster configured to cluster #1
+        token_name = self.token_name()
+        util.post_token(self.waiter_url_1, token_name, util.minimal_service_description(cluster=cluster_1_name))
+        util.post_token(self.waiter_url_2, token_name, util.minimal_service_description(cluster=cluster_1_name))
+        try:
+            # Update using the CLI, which should update in cluster #1 because the cluster configured is cluster #1
+            with cli.temp_config_file(config) as path:
+                version = str(uuid.uuid4())
+                cp = cli.update(token_name=token_name, flags=f'--config {path}', update_flags=f'--version {version}')
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                self.assertNotIn('waiter2', cli.stdout(cp))
+                self.assertIn('waiter1', cli.stdout(cp))
+                token_1 = util.load_token(self.waiter_url_1, token_name, expected_status_code=200)
+                token_2 = util.load_token(self.waiter_url_2, token_name, expected_status_code=200)
+                self.assertNotEqual(version, token_2['version'])
+                self.assertEqual(version, token_1['version'])
+        finally:
+            util.delete_token(self.waiter_url_1, token_name)
+            util.delete_token(self.waiter_url_2, token_name)
+
+    def test_update_token_multiple_sync_groups_no_conflict(self):
+        sync_group_1 = "sync-group-1"
+        sync_group_2 = "sync-group-2"
+        config = {'clusters': [{'name': 'waiter1',
+                                'url': self.waiter_url_1,
+                                'default-for-create': True,
+                                'sync-group': sync_group_1},
+                               {'name': 'waiter2', 'url': self.waiter_url_2,
+                                'sync-group': sync_group_2}]}
+
+        cluster_1_name = util.retrieve_waiter_settings(self.waiter_url_1)['cluster-config']['name']
+        cluster_2_name = util.retrieve_waiter_settings(self.waiter_url_2)['cluster-config']['name']
+
+        # Create in just cluster #2
+        token_name = self.token_name()
+        util.post_token(self.waiter_url_2, token_name, util.minimal_service_description(cluster=cluster_2_name))
+        try:
+            # Update using the CLI, which should update in cluster #2
+            with cli.temp_config_file(config) as path:
+                version = str(uuid.uuid4())
+                cp = cli.update(token_name=token_name, flags=f'--config {path}', update_flags=f'--version {version}')
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                self.assertNotIn('waiter1', cli.stdout(cp))
+                self.assertIn('waiter2', cli.stdout(cp))
+                token_2 = util.load_token(self.waiter_url_2, token_name, expected_status_code=200)
+                self.assertEqual(version, token_2['version'])
+        finally:
+            util.delete_token(self.waiter_url_2, token_name)
 
     def test_ping_via_token_cluster(self):
         # Create in cluster #1
