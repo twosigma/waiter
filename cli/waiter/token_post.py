@@ -73,7 +73,7 @@ def create_or_update(cluster, token_name, token_fields, admin_mode, action):
         print_info(f'{message}\n')
 
 
-def create_or_update_token(clusters, args, _, action):
+def create_or_update_token(clusters, args, _, enforce_clusters, action):
     """Creates (or updates) a Waiter token"""
     guard_no_cluster(clusters)
     logging.debug('args: %s' % args)

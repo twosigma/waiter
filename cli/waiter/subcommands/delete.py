@@ -49,7 +49,7 @@ def delete_token_on_cluster(cluster, token_name, token_etag):
         print_error(message)
 
 
-def delete(clusters, args, _):
+def delete(clusters, args, _, __):
     """Deletes the token with the given token name."""
     guard_no_cluster(clusters)
     token_name = args.get('token')[0]

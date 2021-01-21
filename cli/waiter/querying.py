@@ -154,11 +154,26 @@ def query_tokens(clusters, user):
         lambda cluster, executor: executor.submit(get_tokens_on_cluster, cluster, user))
 
 
-def get_cluster_with_token(clusters, token_name, enforce_clusters):
+def get_latest_cluster(clusters, query_result):
+    token_descriptions = list(query_result['clusters'].values())
+    token_result = max(token_descriptions, key=lambda token: token['token']['last-update-time'])
+    cluster_name_goal = token_result['token']['cluster']
+    provided_cluster_names = []
+    for c in clusters:
+        cluster_settings, _ = http_util.make_data_request(c, lambda: http_util.get(c, '/settings'))
+        cluster_config_name = cluster_settings['cluster-config']['name']
+        provided_cluster_names.append(cluster_config_name)
+        if cluster_name_goal.upper() == cluster_config_name.upper():
+            return c
+    raise Exception(f'The token is configured in cluster {cluster_name_goal} which is not provided.' +
+                    f' The following clusters were provided: {", ".join(provided_cluster_names)}.')
+
+
+def get_cluster_with_token(clusters, token_name, enforce_cluster):
     query_result = query_token(clusters, token_name)
     if query_result["count"] == 0:
         raise Exception('The token does not exist. You must create it first.')
-    elif enforce_clusters:
+    elif enforce_cluster:
         return clusters[0]
     else:
         sync_groups_set = set()
@@ -170,15 +185,4 @@ def get_cluster_with_token(clusters, token_name, enforce_clusters):
         if len(sync_groups_set) > 1:
             raise Exception(f'There are multiple cluster groups that contain a description for this token: ' +
                             f'groups-{sync_groups_set} clusters-{cluster_names}')
-        token_descriptions = list(query_result['clusters'].values())
-        token_result = max(token_descriptions, key=lambda token: token['token']['last-update-time'])
-        cluster_name_goal = token_result['token']['cluster']
-        for c in clusters:
-            cluster_settings, _ = http_util.make_data_request(c, lambda: http_util.get(c, '/settings'))
-            cluster_config_name = cluster_settings['cluster-config']['name'].upper()
-            if cluster_name_goal.upper() == cluster_config_name.upper():
-                return c
-
-        provided_cluster_names = ', '.join([c.get('name') for c in clusters])
-        raise Exception(f'The token is configured in cluster {cluster_name_goal} which is not provided.' +
-                        f' The following clusters were provided: {provided_cluster_names}.')
+        return get_latest_cluster(clusters, query_result)
