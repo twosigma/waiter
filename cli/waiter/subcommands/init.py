@@ -23,7 +23,7 @@ DEFAULTS = {
 }
 
 
-def init_token_json(_, args, __):
+def init_token_json(_, args, __, ___):
     """Creates (or updates) a Waiter token"""
     logging.debug('args: %s' % args)
     file = os.path.abspath(args.pop('file'))

@@ -119,7 +119,7 @@ def ping_service_on_cluster(cluster, service_id, timeout, wait_for_request):
                            f'^SERVICE-ID#{service_id}', lambda: service_is_active(cluster, service_id))
 
 
-def ping(clusters, args, _):
+def ping(clusters, args, _, __):
     """Pings the token with the given token name."""
     guard_no_cluster(clusters)
     token_name_or_service_id = args.get('token-or-service-id')

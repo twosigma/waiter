@@ -41,7 +41,7 @@ def kill_service_on_cluster(cluster, service_id, timeout_seconds):
         print_error(message)
 
 
-def kill(clusters, args, _):
+def kill(clusters, args, _, __):
     """Kills the service(s) using the given token name."""
     guard_no_cluster(clusters)
     token_name_or_service_id = args.get('token-or-service-id')

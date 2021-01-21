@@ -29,7 +29,7 @@ def print_as_table(query_result):
     print(token_table)
 
 
-def tokens(clusters, args, _):
+def tokens(clusters, args, _, __):
     """Prints info for the tokens owned by the given user."""
     guard_no_cluster(clusters)
     as_json = args.get('json')
