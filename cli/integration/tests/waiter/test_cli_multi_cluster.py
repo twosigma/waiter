@@ -255,7 +255,6 @@ class MultiWaiterCliTest(util.WaiterTest):
                     waiter_url = cluster_test_config['url']
                     if waiter_url != expected_cluster_with_latest_token['url']:
                         not_modified_token = util.load_token(waiter_url, token_name, expected_status_code=200)
-                        print(not_modified_token)
                         self.assertNotEqual(version, not_modified_token)
                         self.assertNotIn(cluster_test_config['name'], cli.stdout(cp))
         finally:
@@ -366,6 +365,86 @@ class MultiWaiterCliTest(util.WaiterTest):
                 self.assertIn('Could not infer the target cluster', cli.stderr(cp))
                 self.assertIn(sync_group_1, cli.stderr(cp))
                 self.assertIn(sync_group_2, cli.stderr(cp))
+        finally:
+            util.delete_token(self.waiter_url_1, token_name)
+            util.delete_token(self.waiter_url_2, token_name)
+
+    def test_maintenance_start_latest_configured_cluster(self):
+        custom_maintenance_message = "custom maintenance message"
+        config = {'clusters': [{'name': 'waiter1',
+                                'url': self.waiter_url_1,
+                                'default-for-create': True,
+                                'sync-group': 'group_name'},
+                               {'name': 'waiter2',
+                                'url': self.waiter_url_2,
+                                'sync-group': 'group_name'}]}
+        token_name = self.token_name()
+        util.post_token(self.waiter_url_1, token_name, util.minimal_service_description(cluster=self.waiter_1_cluster))
+        util.post_token(self.waiter_url_2, token_name, util.minimal_service_description(cluster=self.waiter_2_cluster))
+        try:
+            with cli.temp_config_file(config) as path:
+                cp = cli.maintenance('start', token_name, flags=f'--config {path}',
+                                     maintenance_flags=f'"{custom_maintenance_message}"')
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                token_1 = util.load_token(self.waiter_url_1, token_name, expected_status_code=200)
+                token_2 = util.load_token(self.waiter_url_2, token_name, expected_status_code=200)
+                self.assertEqual(custom_maintenance_message, token_2['maintenance']['message'])
+                self.assertTrue('maintenance' not in token_1)
+        finally:
+            util.delete_token(self.waiter_url_1, token_name)
+            util.delete_token(self.waiter_url_2, token_name)
+
+    def test_maintenance_stop_latest_configured_cluster(self):
+        custom_maintenance_message = "custom maintenance message"
+        config = {'clusters': [{'name': 'waiter1',
+                                'url': self.waiter_url_1,
+                                'default-for-create': True,
+                                'sync-group': 'group_name'},
+                               {'name': 'waiter2',
+                                'url': self.waiter_url_2,
+                                'sync-group': 'group_name'}]}
+        token_name = self.token_name()
+        util.post_token(self.waiter_url_1,
+                        token_name,
+                        util.minimal_service_description(cluster=self.waiter_1_cluster,
+                                                         maintenance={'message': custom_maintenance_message}))
+        util.post_token(self.waiter_url_2,
+                        token_name,
+                        util.minimal_service_description(cluster=self.waiter_2_cluster,
+                                                         maintenance={'message': custom_maintenance_message}))
+        try:
+            with cli.temp_config_file(config) as path:
+                cp = cli.maintenance('stop', token_name, flags=f'--config {path}')
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                token_1 = util.load_token(self.waiter_url_1, token_name, expected_status_code=200)
+                token_2 = util.load_token(self.waiter_url_2, token_name, expected_status_code=200)
+                self.assertTrue('maintenance' not in token_2)
+                self.assertTrue(custom_maintenance_message, token_1['maintenance']['message'])
+        finally:
+            util.delete_token(self.waiter_url_1, token_name)
+            util.delete_token(self.waiter_url_2, token_name)
+
+    def test_maintenance_check_latest_configured_cluster(self):
+        config = {'clusters': [{'name': 'waiter1',
+                                'url': self.waiter_url_1,
+                                'default-for-create': True,
+                                'sync-group': 'group_name'},
+                               {'name': 'waiter2',
+                                'url': self.waiter_url_2,
+                                'sync-group': 'group_name'}]}
+        token_name = self.token_name()
+        util.post_token(self.waiter_url_1,
+                        token_name,
+                        util.minimal_service_description(cluster=self.waiter_1_cluster,
+                                                         maintenance={'message': "custom maintenance message"}))
+        util.post_token(self.waiter_url_2,
+                        token_name,
+                        util.minimal_service_description(cluster=self.waiter_2_cluster))
+        try:
+            with cli.temp_config_file(config) as path:
+                cp = cli.maintenance('check', token_name, flags=f'--config {path}')
+                self.assertEqual(1, cp.returncode, cp.stderr)
+                self.assertIn(f'{token_name} is not in maintenance mode', cli.stdout(cp))
         finally:
             util.delete_token(self.waiter_url_1, token_name)
             util.delete_token(self.waiter_url_2, token_name)
