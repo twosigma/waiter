@@ -59,6 +59,10 @@ def retrieve_waiter_settings(waiter_url):
     return session.get(f'{waiter_url}/settings').json()
 
 
+def retrieve_waiter_cluster_name(waiter_url):
+    return retrieve_waiter_settings(waiter_url)['cluster-config']['name']
+
+
 def is_connection_error(exception):
     return isinstance(exception, requests.exceptions.ConnectionError)
 
