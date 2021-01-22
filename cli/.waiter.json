@@ -8,7 +8,7 @@
     },
     {
       "name": "WAITER2",
-      "url": "http://127.0.0.1:9092/",
+      "url": "http://127.0.0.1:9191/",
       "disabled": true
     }
   ],
