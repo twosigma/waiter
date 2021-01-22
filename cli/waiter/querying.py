@@ -196,7 +196,6 @@ def get_target_cluster_from_token(clusters, token_name, enforce_cluster):
         for cluster in list(query_result['clusters'].keys()):
             cluster_config = next(c for c in clusters if c['name'] == cluster)
             sync_group = cluster_config.get('sync-group', False)
-
             # consider clusters that don't have a configured sync-group as in their own unique group
             if not sync_group:
                 sync_group = sync_group_count
