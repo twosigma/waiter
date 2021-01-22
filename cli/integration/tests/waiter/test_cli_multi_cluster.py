@@ -288,8 +288,31 @@ class MultiWaiterCliTest(util.WaiterTest):
                                  'sync-group': sync_group_name}]
         self._test_choose_latest_configured_cluster(cluster_test_configs, 0)
 
-    # def test_update_token_latest_configured_to_missing_cluster(self):
-        # test latest token has a cluster configured that is not listed locally
+    def test_update_token_latest_configured_to_missing_cluster(self):
+        sync_group_1 = "sync-group-1"
+        unlisted_cluster_name = "unlisted_cluster"
+        config = {'clusters': [{'name': 'waiter1',
+                                'url': self.waiter_url_1,
+                                'default-for-create': True,
+                                'sync-group': sync_group_1},
+                               {'name': 'waiter2',
+                                'url': self.waiter_url_2,
+                                'sync-group': sync_group_1}]}
+        token_name = self.token_name()
+        util.post_token(self.waiter_url_1, token_name, util.minimal_service_description(cluster=self.waiter_1_cluster))
+        util.post_token(self.waiter_url_2, token_name, util.minimal_service_description(cluster=unlisted_cluster_name))
+        try:
+            with cli.temp_config_file(config) as path:
+                version = str(uuid.uuid4())
+                cp = cli.update(token_name=token_name, flags=f'--config {path}', update_flags=f'--version {version}')
+                self.assertEqual(1, cp.returncode, cp.stderr)
+                self.assertIn('The token is configured in cluster', cli.stderr(cp))
+                self.assertIn(unlisted_cluster_name, cli.stderr(cp))
+                self.assertIn(self.waiter_1_cluster, cli.stderr(cp))
+                self.assertIn(self.waiter_2_cluster, cli.stderr(cp))
+        finally:
+            util.delete_token(self.waiter_url_1, token_name)
+            util.delete_token(self.waiter_url_2, token_name)
 
     def _test_update_token_multiple_sync_groups(self, config):
         token_name = self.token_name()

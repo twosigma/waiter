@@ -172,7 +172,7 @@ def _get_latest_cluster(clusters, query_result):
         provided_cluster_names.append(cluster_config_name)
         if cluster_name_goal.upper() == cluster_config_name.upper():
             return c
-    raise Exception(f'The token is configured in cluster {cluster_name_goal} which is not provided.' +
+    raise Exception(f'The token is configured in cluster {cluster_name_goal}, which is not provided.' +
                     f' The following clusters were provided: {", ".join(provided_cluster_names)}.')
 
 
