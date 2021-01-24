@@ -110,7 +110,7 @@ def tabulate_token(cluster_name, token, token_name, services, token_etag):
         f'{service_table}'
 
 
-def show(clusters, args, _):
+def show(clusters, args, _, __):
     """Prints info for the token with the given token name."""
     guard_no_cluster(clusters)
     as_json = args.get('json')

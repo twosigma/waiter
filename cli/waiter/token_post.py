@@ -7,7 +7,7 @@ from enum import Enum
 import requests
 
 from waiter import terminal, http_util
-from waiter.querying import get_token, query_token
+from waiter.querying import get_token, query_token, get_target_cluster_from_token
 from waiter.data_format import load_data
 from waiter.util import FALSE_STRINGS, print_info, response_message, TRUE_STRINGS, guard_no_cluster, str2bool
 
@@ -73,7 +73,7 @@ def create_or_update(cluster, token_name, token_fields, admin_mode, action):
         print_info(f'{message}\n')
 
 
-def create_or_update_token(clusters, args, _, action):
+def create_or_update_token(clusters, args, _, enforce_cluster, action):
     """Creates (or updates) a Waiter token"""
     guard_no_cluster(clusters)
     logging.debug('args: %s' % args)
@@ -115,13 +115,12 @@ def create_or_update_token(clusters, args, _, action):
         elif num_default_create_clusters > 1:
             raise Exception('You have "default-for-create" set to true for more than one cluster.')
         else:
-            cluster = default_for_create[0]
             query_result = query_token(clusters, token_name)
             if query_result['count'] > 0:
-                cluster_names_with_token = list(query_result['clusters'].keys())
-                if cluster['name'] not in cluster_names_with_token:
-                    cluster = next(c for c in clusters if c['name'] == cluster_names_with_token[0])
-                    logging.debug(f'token already exists in: {cluster}')
+                cluster = get_target_cluster_from_token(clusters, token_name, enforce_cluster)
+                logging.debug(f'token already exists in: {cluster}')
+            else:
+                cluster = default_for_create[0]
     else:
         cluster = clusters[0]
 

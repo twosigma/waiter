@@ -154,10 +154,57 @@ def query_tokens(clusters, user):
         lambda cluster, executor: executor.submit(get_tokens_on_cluster, cluster, user))
 
 
-def get_cluster_with_token(clusters, token_name):
+def _get_latest_cluster(clusters, query_result):
+    """
+    :param clusters: list of local cluster configs from the configuration file
+    :param query_result: value from query_token function
+    :return: Finds latest token configuration from the query_result. Gets the cluster that is configured in the
+     token description and returns a local cluster who's serverside name matches the one specified in the token.
+     If the token's cluster does not exist in one of the local cluster configurations then an Exception is raised.
+    """
+    token_descriptions = list(query_result['clusters'].values())
+    token_result = max(token_descriptions, key=lambda token: token['token']['last-update-time'])
+    cluster_name_goal = token_result['token']['cluster']
+    provided_cluster_names = []
+    for c in clusters:
+        cluster_settings, _ = http_util.make_data_request(c, lambda: http_util.get(c, '/settings'))
+        cluster_config_name = cluster_settings['cluster-config']['name']
+        provided_cluster_names.append(cluster_config_name)
+        if cluster_name_goal.upper() == cluster_config_name.upper():
+            return c
+    raise Exception(f'The token is configured in cluster {cluster_name_goal}, which is not provided.' +
+                    f' The following clusters were provided: {", ".join(provided_cluster_names)}.')
+
+
+def get_target_cluster_from_token(clusters, token_name, enforce_cluster):
+    """
+    :param clusters: list of local cluster configs from the configuration file
+    :param token_name: string name of token
+    :param enforce_cluster: boolean describing if cluster was explicitly specified as an cli argument
+    :return: Return the target cluster config for various token operations
+    """
     query_result = query_token(clusters, token_name)
     if query_result["count"] == 0:
         raise Exception('The token does not exist. You must create it first.')
+    elif enforce_cluster:
+        logging.debug(f'Forcing cluster {clusters[0]} as the target_cluster')
+        return clusters[0]
     else:
-        cluster_names_with_token = list(query_result['clusters'].keys())
-        return next(c for c in clusters if c['name'] == cluster_names_with_token[0])
+        sync_group_count = 0
+        sync_groups_set = set()
+        cluster_names = set()
+        for cluster in list(query_result['clusters'].keys()):
+            cluster_config = next(c for c in clusters if c['name'] == cluster)
+            sync_group = cluster_config.get('sync-group', False)
+            # consider clusters that don't have a configured sync-group as in their own unique group
+            if not sync_group:
+                sync_group = sync_group_count
+                sync_group_count += 1
+            sync_groups_set.add(sync_group)
+            cluster_names.add(cluster)
+        if len(sync_groups_set) > 1:
+            raise Exception('Could not infer the target cluster for this operation because there are multiple cluster '
+                            f'groups that contain a description for this token: groups-{sync_groups_set} '
+                            f'clusters-{cluster_names}.'
+                            '\nConsider specifying with the --cluster flag which cluster you are targeting.')
+        return _get_latest_cluster(clusters, query_result)
