@@ -1139,6 +1139,12 @@
     (log/debug "retrieved token" token ":" (:body token-response))
     token-response))
 
+(defn get-tokens-watch-maintainer-state
+  [waiter-url & {:keys [query-params]}]
+  (make-request waiter-url "/state/tokens-watch-maintainer"
+                :query-params query-params
+                :method :get))
+
 (defmacro with-service-cleanup
   "Ensures a service is cleaned up."
   [service-id & body]

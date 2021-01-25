@@ -891,6 +891,21 @@
        :leader-id (leader-id-fn)})
     router-id request))
 
+(defn get-tokens-watch-maintainer-state
+  "Using the query-state-fn, pass include-flags to get the tokens-watch-maintainer-state and return
+  streaming response"
+  [router-id query-state-fn request]
+  (try
+    (let [{:strs [include]} (-> request ru/query-params-request :query-params)
+          include-flags (if (string? include) #{include} (set include))
+          state (if (nil? include)
+                  (query-state-fn)
+                  (query-state-fn include-flags))]
+      (utils/clj->streaming-json-response {:router-id router-id
+                                           :state state}))
+    (catch Exception ex
+      (utils/exception->response ex request))))
+
 (defn get-router-metrics-state
   "Outputs the router metrics state."
   [router-id router-metrics-state-fn request]

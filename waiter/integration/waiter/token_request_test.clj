@@ -1826,3 +1826,24 @@
                 (is (= (-> token-description (dissoc :token) (assoc :owner current-user)) parsed-description))))))
         (finally
           (delete-token-and-assert waiter-url token))))))
+
+(deftest ^:parallel ^:integration-fast test-tokens-watch-maintainer
+  (testing-using-waiter-url
+    (let [{:keys [body] :as response} (get-tokens-watch-maintainer-state waiter-url)
+          {:strs [router-id state]} (try-parse-json body)
+          router-url (router-endpoint waiter-url router-id)]
+      (testing "no query parameters provide entire state"
+        (assert-response-status response 200)
+        (is (= (set (keys state))
+               #{"token->token-index" "watches-count"})))
+      (testing "include only watches-count"
+        (let [{:keys [body]} (get-tokens-watch-maintainer-state router-url :query-params "include=watches-count")
+              {:strs [state]} (try-parse-json body)]
+          (is (= (set (keys state))
+                 #{"watches-count"}))))
+      (testing "include multiple fields"
+        (let [{:keys [body]} (get-tokens-watch-maintainer-state
+                               router-url :query-params "include=watches-count&include=token->token-index")
+              {:strs [state]} (try-parse-json body)]
+          (is (= (set (keys state))
+                 #{"token->token-index" "watches-count"})))))))

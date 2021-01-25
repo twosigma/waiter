@@ -131,6 +131,7 @@
                               ["/service-description-builder" :state-service-description-builder-handler-fn]
                               ["/service-maintainer" :state-service-maintainer-handler-fn]
                               ["/statsd" :state-statsd-handler-fn]
+                              ["/tokens-watch-maintainer" :state-tokens-watch-maintainer]
                               ["/work-stealing" :state-work-stealing-handler-fn]
                               [["/" :service-id] :state-service-handler-fn]]
                      "status" :status-handler-fn
@@ -768,6 +769,10 @@
    :token-cluster-calculator (pc/fnk [[:settings [:cluster-config name] [:token-config cluster-calculator]]]
                                (utils/create-component
                                  cluster-calculator :context {:default-cluster name}))
+   :tokens-update-chan (pc/fnk [] (au/latest-chan))
+   :tokens-watch-channels-update-chan (pc/fnk [[:settings
+                                                [:token-config [:tokens-watch-maintainer channels-update-chan-buffer-size]]]]
+                                        (async/chan channels-update-chan-buffer-size))
    :token-root (pc/fnk [[:settings [:cluster-config name]]] name)
    :user-agent-version (pc/fnk [[:settings git-version]] (str/join (take 7 git-version)))
    :waiter-hostnames (pc/fnk [[:settings hostname]]
@@ -1354,7 +1359,16 @@
                (let [{:keys [sync-instances-interval-ms]} statsd
                      {{:keys [query-state-fn]} :maintainer} router-state-maintainer]
                  (statsd/start-service-instance-metrics-publisher
-                   service-id->service-description-fn query-state-fn sync-instances-interval-ms))))})
+                   service-id->service-description-fn query-state-fn sync-instances-interval-ms))))
+   :tokens-watch-maintainer (pc/fnk [[:settings [:token-config [:tokens-watch-maintainer watch-refresh-timeout-ms]]]
+                                     [:state kv-store tokens-update-chan tokens-watch-channels-update-chan]]
+                              (let [exit-chan (async/chan)
+                                    tokens-watch-maintainer
+                                    (token/start-tokens-watch-maintainer
+                                      kv-store tokens-update-chan tokens-watch-channels-update-chan
+                                      watch-refresh-timeout-ms exit-chan)]
+                                {:exit-chan exit-chan
+                                 :maintainer tokens-watch-maintainer}))})
 
 (def request-handlers
   {:app-name-handler-fn (pc/fnk [service-id-handler-fn]
@@ -1738,6 +1752,13 @@
                               (wrap-secure-request-fn
                                 (fn state-statsd-handler-fn [request]
                                   (handler/get-statsd-state router-id request))))
+   :state-tokens-watch-maintainer (pc/fnk [[:daemons tokens-watch-maintainer]
+                                           [:state router-id]
+                                           wrap-secure-request-fn]
+                                    (let [{{:keys [query-state-fn]} :maintainer} tokens-watch-maintainer]
+                                      (wrap-secure-request-fn
+                                        (fn maintainer-state-handler-fn [request]
+                                          (handler/get-tokens-watch-maintainer-state router-id query-state-fn request)))))
    :state-work-stealing-handler-fn (pc/fnk [[:state offers-allowed-semaphore router-id]
                                             wrap-secure-request-fn]
                                      (wrap-secure-request-fn

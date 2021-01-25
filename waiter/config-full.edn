@@ -1040,7 +1040,20 @@
                                  ;; Stale services are detected by looking at the version of the
                                  ;; token used to create them, such services will have their idle timeout
                                  ;; reduced to stale-timeout-mins + fallback-period-secs.
-                                 "stale-timeout-mins" 15}}
+                                 "stale-timeout-mins" 15}
+
+                ;; Configures tokens-watch-maintainer which handles and updates watches
+                ;; for token events
+                :tokens-watch-maintainer {
+                                          ;; Buffer size of the tokens-watch-channels-update-chan
+                                          ;; The channel receives updates whenever a watch is added
+                                          ;; or removed
+                                          :channels-update-chan-buffer-size 1024
+
+                                          ;; Time the tokens-watch-maintainer waits before fetching
+                                          ;; the kv-store for up to date indexes and sending possible
+                                          ;; missed events to listening watches
+                                          :watch-refresh-timeout-ms 10000}}
 
  ;; Waiter supports making websocket connections to backends.
  ;; The maximum binary and text message sizes in the websocket request or response can be configured
