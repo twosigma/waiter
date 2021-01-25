@@ -143,14 +143,22 @@
           (with-service-cleanup
             service-id-1
             (assert-ping-response waiter-url backend-proto nil service-id-1 ping-response-1)
-            (let [token-description-2 (assoc token-description-1 :name (str token "-v2") :version "version-2")
+            (let [token-description-2 (-> token-description-1
+                                        (assoc :name (str token "-v2") :version "version-2")
+                                        (update :cmd (fn [c] (str "sleep 10 && " c))))
                   _ (assert-response-status (post-token waiter-url token-description-2) http-200-ok)
+                  ping-response-1b (make-request waiter-url "/waiter-ping" :headers request-headers :query-params {"include" "fallback"})
+                  service-id-1b (get-in ping-response-1b [:headers "x-waiter-service-id"])
+                  _ (is (= service-id-1 service-id-1b))
                   ping-response-2 (make-request waiter-url "/waiter-ping" :headers request-headers)
                   service-id-2 (get-in ping-response-2 [:headers "x-waiter-service-id"])]
               (is (not= service-id-1 service-id-2))
               (with-service-cleanup
                 service-id-2
-                (assert-ping-response waiter-url backend-proto nil service-id-2 ping-response-2)))))
+                (assert-ping-response waiter-url backend-proto nil service-id-2 ping-response-2)
+                (let [ping-response-2b (make-request waiter-url "/waiter-ping" :headers request-headers :query-params {"include" "fallback"})
+                      service-id-2b (get-in ping-response-2b [:headers "x-waiter-service-id"])]
+                  (is (= service-id-2 service-id-2b)))))))
         (finally
           (delete-token-and-assert waiter-url token))))))
 

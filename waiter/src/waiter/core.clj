@@ -1464,9 +1464,11 @@
                                                (pr/ping-service user-agent process-request-handler-fn service-state-fn health-check-config request))))]
                              (wrap-secure-request-fn
                                (fn ping-service-handler [request]
-                                 (-> request
-                                   (update :headers assoc "x-waiter-fallback-period-secs" "0")
-                                   (handler))))))
+                                 (let [request-params (-> request ru/query-params-request :query-params)
+                                       request (cond-> request
+                                                 (not (utils/param-contains? request-params "include" "fallback"))
+                                                 (update :headers assoc "x-waiter-fallback-period-secs" "0"))]
+                                   (handler request))))))
    :process-request-fn (pc/fnk [process-request-handler-fn process-request-wrapper-fn]
                          (process-request-wrapper-fn process-request-handler-fn))
    :process-request-handler-fn (pc/fnk [[:daemons populate-maintainer-chan! post-process-async-request-response-fn]
