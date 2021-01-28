@@ -176,7 +176,7 @@
                 owner-key (ensure-owner-key kv-store owner->owner-key owner)]
             (update-kv! kv-store owner-key (fn [index] (dissoc index token)))
             (when-not hard-delete
-              (let [{:keys [last-update-time maintenance] :as token-data} (kv/fetch kv-store token)
+              (let [{:strs [last-update-time maintenance] :as token-data} (kv/fetch kv-store token)
                     token-hash (sd/token-data->token-hash token-data)]
                 (update-kv! kv-store owner-key (fn [index]
                                                  (->> (make-index-entry token-hash true last-update-time maintenance)
