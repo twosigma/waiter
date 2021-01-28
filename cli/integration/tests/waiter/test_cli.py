@@ -1466,21 +1466,43 @@ class WaiterCliTest(util.WaiterTest):
         self.__test_no_cluster(partial(cli.maintenance, 'start',
                                        maintenance_flags=f'"{custom_maintenance_message}"'))
 
-    def test_maintenance_stop(self):
+    def test_maintenance_stop_no_ping(self):
         token_name = self.token_name()
         token_fields = {'cpus': 0.1, 'mem': 128, 'cmd': 'foo'}
         custom_maintenance_message = "custom maintenance message"
         util.post_token(self.waiter_url, token_name,
                         {**token_fields, 'maintenance': {'message': custom_maintenance_message}})
         try:
-            cp = cli.maintenance('stop', token_name, self.waiter_url)
+            cp = cli.maintenance('stop', token_name, self.waiter_url, maintenance_flags='--no-ping')
             self.assertEqual(0, cp.returncode, cp.stderr)
+            stdout = cli.stdout(cp)
+            self.assertNotIn(f'Pinging token {token_name}', stdout)
+            self.assertNotIn(f'Ping successful', stdout)
             token_data = util.load_token(self.waiter_url, token_name)
             self.assertEqual(None, token_data.get('maintenance', None))
             for key, value in token_fields.items():
                 self.assertEqual(value, token_data[key])
         finally:
             util.delete_token(self.waiter_url, token_name)
+
+    def test_maintenance_stop_with_ping(self):
+        token_name = self.token_name()
+        token_fields = util.minimal_service_description()
+        custom_maintenance_message = "custom maintenance message"
+        util.post_token(self.waiter_url, token_name,
+                        {**token_fields, 'maintenance': {'message': custom_maintenance_message}})
+        try:
+            cp = cli.maintenance('stop', token_name, self.waiter_url)
+            stdout = cli.stdout(cp)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn(f'Pinging token {token_name}', stdout)
+            self.assertIn('Ping successful', stdout)
+            token_data = util.load_token(self.waiter_url, token_name)
+            self.assertEqual(None, token_data.get('maintenance', None))
+            for key, value in token_fields.items():
+                self.assertEqual(value, token_data[key])
+        finally:
+            util.delete_token(self.waiter_url, token_name, kill_services=True)
 
     def test_maintenance_stop_no_cluster(self):
         self.__test_no_cluster(partial(cli.maintenance, 'stop'))
