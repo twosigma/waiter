@@ -1,11 +1,13 @@
+import argparse
 from functools import partial
 
 import requests
 
 from waiter import terminal, http_util
-from waiter.token_post import process_post_result, post_failed_message
+from waiter.action import ping_token_on_cluster
 from waiter.querying import get_target_cluster_from_token, get_token
-from waiter.util import guard_no_cluster, logging, print_info
+from waiter.token_post import post_failed_message, process_post_result
+from waiter.util import check_positive, guard_no_cluster, logging, print_info
 
 
 def _is_token_in_maintenance_mode(token_data):
@@ -27,17 +29,19 @@ def _update_token(cluster, token_name, existing_token_etag, body):
     try:
         resp = http_util.post(cluster, 'token', body, params=params, headers=headers)
         process_post_result(resp)
-        return 0
+        token_etag = resp.headers.get('ETag', None)
+        return 0, token_etag
     except requests.exceptions.ReadTimeout as rt:
         logging.exception(rt)
         print_info(terminal.failed(
             f'Encountered read timeout with {cluster_name} ({cluster_url}). The operation may have completed.'))
-        return 1
+        return 1, None
     except IOError as ioe:
         logging.exception(ioe)
         reason = f'Cannot connect to {cluster_name} ({cluster_url})'
         message = post_failed_message(cluster_name, reason)
         print_info(f'{message}\n')
+        return 1, None
 
 
 def check_maintenance(clusters, args, enforce_cluster):
@@ -57,19 +61,35 @@ def start_maintenance(clusters, args, enforce_cluster):
     json_body = existing_token_data
     update_doc = {"maintenance": {"message": args['message']}}
     json_body.update(update_doc)
-    return _update_token(cluster, token_name, existing_token_etag, json_body)
+    return_code, _ = _update_token(cluster, token_name, existing_token_etag, json_body)
+    return return_code
 
 
 def stop_maintenance(clusters, args, enforce_cluster):
     """Stops maintenance mode for a token by deleting the 'maintenance' user metadata field in the token data"""
     token_name = args['token']
+    ping_token = args.pop('ping_token', True)
+    timeout = args.pop('timeout', 300)
+    wait_for_ping = True
     cluster, existing_token_data, existing_token_etag = _get_existing_token_data(clusters, token_name, enforce_cluster)
     maintenance_mode_active = _is_token_in_maintenance_mode(existing_token_data)
     if not maintenance_mode_active:
         raise Exception("Token is not in maintenance mode")
     json_body = existing_token_data
     json_body.pop("maintenance")
-    return _update_token(cluster, token_name, existing_token_etag, json_body)
+    return_code, token_etag = _update_token(cluster, token_name, existing_token_etag, json_body)
+    if return_code == 0:
+        if ping_token:
+            if token_etag:
+                success = ping_token_on_cluster(cluster, token_name, timeout, wait_for_ping, token_etag)
+                return 0 if success else 1
+            else:
+                logging.debug(f'Not pinging token {token_name} in {cluster} as token ETag is missing.')
+        else:
+            logging.debug(f'Skipped pinging token {token_name} in {cluster}.')
+            return 0
+    else:
+        return return_code
 
 
 def maintenance(parser, clusters, args, _, enforce_cluster):
@@ -94,8 +114,16 @@ def register_check(add_parser):
 
 def register_stop(add_parser):
     """Registers the maintenance stop parser"""
-    parser = add_parser('stop', help='Stop maintenance mode for a token. Requests to the token will be handled '
-                                     'normally.')
+    parser = add_parser('stop', help='Stop maintenance mode for a token. '
+                                     'Requests to the token will be handled normally.'
+                                     'By default, also ping the token to ensure a running service.')
+    ping_group = parser.add_mutually_exclusive_group(required=False)
+    ping_group.add_argument('--no-ping', action='store_false', dest='ping_token',
+                            help='Skip pinging the token. Pinging the token is enabled by default.')
+    ping_group.add_argument('--ping', action='store_true', dest='ping_token',
+                            help='Ping the token after stopping maintenance.')
+    parser.add_argument('--timeout', '-t', default=300, help='read timeout (in seconds) for ping request',
+                        type=check_positive)
     parser.add_argument('token')
     parser.set_defaults(sub_func=stop_maintenance)
 
