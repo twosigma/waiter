@@ -31,7 +31,7 @@
   "Convert a request into a context suitable for logging."
   [{:keys [client-protocol headers internal-protocol query-string remote-addr request-id
            request-method request-time server-port uri] :as request}]
-  (let [{:strs [content-length content-type host origin user-agent x-cid x-forwarded-for]} headers
+  (let [{:strs [content-length content-type host origin referer user-agent x-cid x-forwarded-for]} headers
         remote-address (or x-forwarded-for remote-addr)]
     (cond-> {:cid x-cid
              :host host
@@ -46,6 +46,7 @@
       remote-address (assoc :remote-addr remote-address)
       content-length (assoc :request-content-length content-length)
       content-type (assoc :request-content-type content-type)
+      referer (assoc :referer referer)
       request-time (assoc :request-time (du/date-to-str request-time))
       server-port (assoc :server-port server-port)
       user-agent (assoc :user-agent user-agent))))
