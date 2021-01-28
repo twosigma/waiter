@@ -1218,6 +1218,50 @@ class WaiterCliTest(util.WaiterTest):
     def test_update_token_yaml_containing_token_name(self):
         self.__test_update_token_containing_token_name('yaml')
 
+    def __test_update_token_override_fail(self, file_format):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, {'cpus': 0.1, 'mem': 128, 'cmd': 'foo'})
+        try:
+            with cli.temp_token_file({'token': token_name, 'cpus': 0.2, 'mem': 256}, file_format) as path:
+                cp = cli.update(self.waiter_url, update_flags=f'--cpus 0.3 --{file_format} {path}')
+                self.assertEqual(1, cp.returncode, cp.stderr)
+                stderr = cli.stderr(cp)
+                err_msg = 'You cannot specify the same parameter in both an input file ' \
+                          'and token field flags at the same time'
+                self.assertIn(err_msg, stderr)
+                token_data = util.load_token(self.waiter_url, token_name)
+                self.assertEqual(0.1, token_data['cpus'])
+                self.assertEqual(128, token_data['mem'])
+                self.assertEqual('foo', token_data['cmd'])
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_update_token_json_override_fail(self):
+        self.__test_update_token_override_fail('json')
+
+    def test_update_token_yaml_override_fail(self):
+        self.__test_update_token_override_fail('yaml')
+
+    def __test_update_token_override_success(self, file_format):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, {'cpus': 0.1, 'mem': 128, 'cmd': 'foo'})
+        try:
+            with cli.temp_token_file({'token': token_name, 'cpus': 0.2, 'mem': 256}, file_format) as path:
+                cp = cli.update(self.waiter_url, update_flags=f'--override --cpus 0.3 --{file_format} {path}')
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                token_data = util.load_token(self.waiter_url, token_name)
+                self.assertEqual(0.3, token_data['cpus'])
+                self.assertEqual(256, token_data['mem'])
+                self.assertEqual('foo', token_data['cmd'])
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_update_token_json_override_success(self):
+        self.__test_update_token_override_success('json')
+
+    def test_update_token_yaml_override_success(self):
+        self.__test_update_token_override_success('yaml')
+
     def test_post_token_over_specified_token_name(self):
         token_name = self.token_name()
         with cli.temp_token_file({'token': token_name}) as path:
