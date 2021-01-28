@@ -1,15 +1,12 @@
-import argparse
-import json
 import logging
-import sys
 import os
 from enum import Enum
 
 import requests
 
 from waiter import terminal, http_util
-from waiter.querying import get_token, query_token, get_target_cluster_from_token
 from waiter.data_format import load_data
+from waiter.querying import get_token, query_token, get_target_cluster_from_token
 from waiter.util import FALSE_STRINGS, print_info, response_message, TRUE_STRINGS, guard_no_cluster, str2bool
 
 BOOL_STRINGS = TRUE_STRINGS + FALSE_STRINGS
@@ -166,11 +163,9 @@ def add_token_flags(parser):
 
 def add_override_flags(parser):
     """Adds the arguments override file values flags to the given parser"""
-    override_group = parser.add_mutually_exclusive_group(required=False)
-    override_group.add_argument('--override', action='store_true', dest='override',
-                                help='Allow overriding values in input file with values from CLI arguments. '
-                                     'Overriding values is disallowed by default.')
-    override_group.add_argument('--no-override', action='store_false', dest='override', help=argparse.SUPPRESS)
+    parser.add_argument('--override', action='store_true', default=False, dest='override',
+                        help='Allow overriding values in input file with values from CLI arguments. '
+                             'Overriding values is disallowed by default.')
 
 
 def register_argument_parser(add_parser, action):
