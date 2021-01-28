@@ -25,6 +25,7 @@
                            "content-type" "application/json"
                            "host" "host"
                            "origin" "www.origin.org"
+                           "referer" "https://test.com/headers"
                            "user-agent" "test-user-agent"
                            "x-cid" "123"}
                  :internal-protocol "HTTP/1.1"
@@ -44,6 +45,7 @@
             :origin "www.origin.org"
             :path "/"
             :query-string "a=1"
+            :referer "https://test.com/headers"
             :remote-addr "127.0.0.1"
             :request-content-length "20"
             :request-content-type "application/json"
