@@ -2106,7 +2106,13 @@
                "last-update-time" current-time
                "last-update-user" auth-user
                "previous" token-description)
-             (kv/fetch kv-store token))))
+             (kv/fetch kv-store token)))
+      (is (= {:deleted true
+              :last-update-time current-time
+              :maintenance false
+              :etag nil}
+             (-> (list-index-entries-for-owner kv-store owner)
+                 (get token)))))
 
     (testing "valid soft delete with up-to-date etag"
       (kv/store kv-store token token-description)
@@ -2119,7 +2125,13 @@
                "last-update-time" current-time
                "last-update-user" auth-user
                "previous" token-description)
-             (kv/fetch kv-store token))))
+             (kv/fetch kv-store token)))
+      (is (= {:deleted true
+              :last-update-time current-time
+              :maintenance false
+              :etag nil}
+             (-> (list-index-entries-for-owner kv-store owner)
+                 (get token)))))
 
     (testing "invalid soft delete"
       (kv/store kv-store token token-description)
@@ -2135,7 +2147,9 @@
       (is (= token-description (kv/fetch kv-store token)))
       (delete-service-description-for-token clock synchronize-fn kv-store history-length token owner auth-user
                                             :hard-delete true)
-      (is (nil? (kv/fetch kv-store token))))
+      (is (nil? (kv/fetch kv-store token)))
+      (is (nil? (-> (list-index-entries-for-owner kv-store owner)
+                    (get token)))))
 
     (testing "valid hard delete with up-to-date etag"
       (kv/store kv-store token token-description)
@@ -2143,7 +2157,9 @@
       (let [token-hash (sd/token-data->token-hash token-description)]
         (delete-service-description-for-token clock synchronize-fn kv-store history-length token owner auth-user
                                               :hard-delete true :version-hash token-hash))
-      (is (nil? (kv/fetch kv-store token))))
+      (is (nil? (kv/fetch kv-store token)))
+      (is (nil? (-> (list-index-entries-for-owner kv-store owner)
+                    (get token)))))
 
     (testing "invalid hard delete"
       (kv/store kv-store token token-description)
@@ -2177,7 +2193,7 @@
                                "last-update-user" owner-1
                                "previous" token-data)]
       (is (= deleted-token-data (kv/fetch kv-store token)))
-      (is (= {token {:deleted true :etag (sd/token-data->token-hash deleted-token-data) :last-update-time nil :maintenance false}}
+      (is (= {token {:deleted true :etag (sd/token-data->token-hash deleted-token-data) :last-update-time (clock-millis) :maintenance false}}
              (list-index-entries-for-owner kv-store owner-1))))
 
     (let [service-parameter-template {"cpus" 2}
