@@ -2193,7 +2193,7 @@
                                "last-update-user" owner-1
                                "previous" token-data)]
       (is (= deleted-token-data (kv/fetch kv-store token)))
-      (is (= {token {:deleted true :etag (sd/token-data->token-hash deleted-token-data) :last-update-time nil :maintenance false}}
+      (is (= {token {:deleted true :etag (sd/token-data->token-hash deleted-token-data) :last-update-time (clock-millis) :maintenance false}}
              (list-index-entries-for-owner kv-store owner-1))))
 
     (let [service-parameter-template {"cpus" 2}
