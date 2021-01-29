@@ -577,7 +577,8 @@
   (testing-using-waiter-url
     (let [service-id-prefix (rand-name)
           token-root (retrieve-token-root waiter-url)
-          token-cluster (retrieve-token-cluster waiter-url)]
+          token-cluster (retrieve-token-cluster waiter-url)
+          {:keys [cookies]} (make-request waiter-url "/waiter-auth")]
       (testing "token-administering"
         (testing "active-token"
           (let [last-update-time (System/currentTimeMillis)
@@ -1375,6 +1376,7 @@
                                          :run-as-user "*"))
           token-root (retrieve-token-root waiter-url)
           token-cluster (retrieve-token-cluster waiter-url)
+          {:keys [cookies]} (make-request waiter-url "/waiter-auth")
           custom-maintenance-message "&&><<&>a&&<b\"<<baa&<"
           token-maintenance {:message custom-maintenance-message}
           request-headers {:x-waiter-token token}]
@@ -1439,6 +1441,30 @@
             (assert-response-status response http-200-ok)
             (assert-backend-response response)
             (is (= body "Hello World"))))
+
+        (testing "soft-deleted token in maintenance mode provides correct index"
+          (let [token-description (assoc service-description
+                                    :maintenance token-maintenance
+                                    :token token)
+                response (post-token waiter-url token-description)
+                {:keys [body] :as del-response} (make-request waiter-url "/token"
+                                                          :headers {"host" token}
+                                                          :method :delete
+                                                          :query-params {})
+                {index-body :body :as index-response} (list-tokens
+                                                        waiter-url (retrieve-username) cookies {"include" ["deleted" "metadata"]})
+                token-index (first (try-parse-json index-body))]
+            (assert-response-status response 200)
+            (assert-response-status del-response 200)
+            (is (= {"delete" token "hard-delete" false "success" true}
+                   (try-parse-json body)))
+            (assert-response-status index-response 200)
+            (is (= {"deleted" true
+                    "etag" nil
+                    "maintenance" true
+                    "owner" (retrieve-username)
+                    "token" token}
+                   (dissoc token-index "last-update-time")))))
 
         (finally
           (delete-token-and-assert waiter-url token))))))
