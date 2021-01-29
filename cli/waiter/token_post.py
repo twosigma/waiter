@@ -1,14 +1,12 @@
-import json
 import logging
-import sys
 import os
 from enum import Enum
 
 import requests
 
 from waiter import terminal, http_util
-from waiter.querying import get_token, query_token, get_target_cluster_from_token
 from waiter.data_format import load_data
+from waiter.querying import get_token, query_token, get_target_cluster_from_token
 from waiter.util import FALSE_STRINGS, print_info, response_message, TRUE_STRINGS, guard_no_cluster, str2bool
 
 BOOL_STRINGS = TRUE_STRINGS + FALSE_STRINGS
@@ -82,6 +80,7 @@ def create_or_update_token(clusters, args, _, enforce_cluster, action):
     yaml_file = args.pop('yaml', None)
     input_file = args.pop('input', None)
     admin_mode = args.pop('admin', None)
+    allow_override = args.pop('override', False)
 
     if input_file or json_file or yaml_file:
         token_fields_from_json = load_data({'data': input_file,
@@ -93,13 +92,22 @@ def create_or_update_token(clusters, args, _, enforce_cluster, action):
     token_fields_from_args = args
     shared_keys = set(token_fields_from_json).intersection(token_fields_from_args)
     if shared_keys:
-        raise Exception(f'You cannot specify the same parameter in both an input file '
-                        f'and token field flags at the same time ({", ".join(shared_keys)}).')
+        if not allow_override:
+            raise Exception(f'You cannot specify the same parameter in both an input file '
+                            f'and token field flags at the same time ({", ".join(shared_keys)}) '
+                            f'without specifying the --override flag.')
+        else:
+            logging.debug(f'Following parameters have specified values in both file and flags: {shared_keys}')
 
     token_fields = {**token_fields_from_json, **token_fields_from_args}
     token_name_from_json = token_fields.pop('token', None)
     if token_name_from_args and token_name_from_json:
-        raise Exception('You cannot specify the token name both as an argument and in the input file.')
+        if not allow_override:
+            raise Exception('You cannot specify the token name both as an argument and in the input file '
+                            'without specifying the --override flag.')
+        else:
+            logging.debug(f'Will use token ({token_name_from_args}) from args and '
+                          f'skip token specified in file({token_name_from_json})')
 
     token_name = token_name_from_args or token_name_from_json
     if not token_name:
@@ -138,6 +146,7 @@ def add_arguments(parser):
     format_group.add_argument('--json', help='provide the data in a JSON file', dest='json')
     format_group.add_argument('--yaml', help='provide the data in a YAML file', dest='yaml')
     format_group.add_argument('--input', help='provide the data in a JSON/YAML file', dest='input')
+    add_override_flags(parser)
 
 
 def add_token_flags(parser):
@@ -150,6 +159,13 @@ def add_token_flags(parser):
     parser.add_argument('--cpus', '-c', help='cpus to reserve for service', type=float)
     parser.add_argument('--mem', '-m', help='memory (in MiB) to reserve for service', type=int)
     parser.add_argument('--ports', help='number of ports to reserve for service', type=int)
+
+
+def add_override_flags(parser):
+    """Adds the arguments override file values flags to the given parser"""
+    parser.add_argument('--override', action='store_true', default=False, dest='override',
+                        help='Allow overriding values in input file with values from CLI arguments. '
+                             'Overriding values is disallowed by default.')
 
 
 def register_argument_parser(add_parser, action):
