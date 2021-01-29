@@ -1451,8 +1451,8 @@
                                                           :headers {"host" token}
                                                           :method :delete
                                                           :query-params {})
-                {index-body :body :as index-response} (list-tokens
-                                                        waiter-url (retrieve-username) cookies {"include" ["deleted" "metadata"]})
+                {index-body :body :as index-response}
+                (list-tokens waiter-url (retrieve-username) cookies {"include" ["deleted" "metadata"]})
                 token-index (->> index-body
                                  try-parse-json
                                  (filter (fn [cur-index] (= token (get cur-index "token"))))
