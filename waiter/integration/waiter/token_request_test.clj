@@ -1453,7 +1453,10 @@
                                                           :query-params {})
                 {index-body :body :as index-response} (list-tokens
                                                         waiter-url (retrieve-username) cookies {"include" ["deleted" "metadata"]})
-                token-index (first (try-parse-json index-body))]
+                token-index (->> index-body
+                                 try-parse-json
+                                 (filter (fn [cur-index] (= token (get cur-index "token"))))
+                                 first)]
             (assert-response-status response 200)
             (assert-response-status del-response 200)
             (is (= {"delete" token "hard-delete" false "success" true}
