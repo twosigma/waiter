@@ -221,9 +221,9 @@
                                           "access-control-request-method" "DELETE"
                                           "origin" "doesnt.matter"}
                                 :request-method :get})))
-  (is (not (preflight-request? {:headers {"access-control-request-method" "DELETE"
-                                          "origin" "doesnt.matter"}
-                                :request-method :options})))
+  (is (preflight-request? {:headers {"access-control-request-method" "DELETE"
+                                     "origin" "doesnt.matter"}
+                           :request-method :options}))
   (is (not (preflight-request? {:headers {"access-control-request-headers" "x-test-header"
                                           "origin" "doesnt.matter"}
                                 :request-method :options})))
