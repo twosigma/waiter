@@ -4,7 +4,7 @@ from functools import partial
 import requests
 
 from waiter import terminal, http_util
-from waiter.action import ping_token_on_cluster
+from waiter.action import ping_token_on_cluster, process_kill_request
 from waiter.querying import get_target_cluster_from_token, get_token
 from waiter.token_post import post_failed_message, process_post_result
 from waiter.util import check_positive, guard_no_cluster, logging, print_info
@@ -57,12 +57,35 @@ def check_maintenance(clusters, args, enforce_cluster):
 def start_maintenance(clusters, args, enforce_cluster):
     """Sets the token in maintenance mode by updating the token user metadata fields"""
     token_name = args['token']
+    kill_services_option = args.pop('kill_services', 'force_kill')
     cluster, existing_token_data, existing_token_etag = _get_existing_token_data(clusters, token_name, enforce_cluster)
     json_body = existing_token_data
     update_doc = {"maintenance": {"message": args['message']}}
     json_body.update(update_doc)
-    return_code, _ = _update_token(cluster, token_name, existing_token_etag, json_body)
-    return return_code
+    return_code, token_etag = _update_token(cluster, token_name, existing_token_etag, json_body)
+    if return_code == 0:
+        kill_services = False
+        force_flag = False
+        if kill_services_option == 'force_kill':
+            kill_services = True
+            force_flag = True
+        elif kill_services_option == 'ask_kill':
+            kill_services = True
+            force_flag = False
+        logging.debug(f"maintenance start will {'' if kill_services else 'not '} "
+                      f"{'force ' if force_flag else ''} kill services")
+        if kill_services:
+            if token_etag:
+                timeout_secs = 5
+                success = process_kill_request(clusters, token_name, False, force_flag, timeout_secs, True)
+                return 0 if success else 1
+            else:
+                logging.debug(f'Not killing services for token {token_name} in {cluster} as token ETag is missing.')
+        else:
+            logging.debug(f'Skipped killing services for token {token_name} in {cluster}.')
+            return 0
+    else:
+        return return_code
 
 
 def stop_maintenance(clusters, args, enforce_cluster):
@@ -131,8 +154,17 @@ def register_stop(add_parser):
 def register_start(add_parser):
     """Registers the maintenance start parser"""
     parser = add_parser('start',
-                        help='Start maintenance mode for a token. All requests to this token will begin to receive a '
-                             '503 response.')
+                        help='Start maintenance mode for a token. '
+                             'All requests to this token will begin to receive a 503 response. '
+                             "By default, also kill the token's currently running services.")
+    kill_group = parser.add_mutually_exclusive_group(required=False)
+    kill_group.add_argument('--ask-kill', action='store_const', const='ask_kill', dest='kill_services',
+                            help="Ask before killing the token's currently running services.")
+    kill_group.add_argument('--force-kill', action='store_const', const='force_kill', dest='kill_services',
+                            help="Force kill the token's currently running services. "
+                                 "Killing the token's services is enabled by default.")
+    kill_group.add_argument('--no-kill', action='store_const', const='no_kill', dest='kill_services',
+                            help="Skip killing the token's currently running services.")
     parser.add_argument('token')
     parser.add_argument('message',
                         help='Your message will be provided in a 503 response for requests to the token. '
