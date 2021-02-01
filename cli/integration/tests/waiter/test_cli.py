@@ -1272,6 +1272,35 @@ class WaiterCliTest(util.WaiterTest):
     def test_update_token_yaml_token_override_success(self):
         self.__test_update_token_override_success('yaml', True)
 
+    def __test_update_token_override_failure(self, file_format, diff_token_in_file):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, {'cpus': 0.1, 'mem': 128, 'cmd': 'foo'})
+        try:
+            token_in_file = f'abc_{token_name}' if diff_token_in_file else token_name
+            with cli.temp_token_file({'token': token_in_file, 'cpus': 0.2, 'mem': 256}, file_format) as path:
+                update_flags = f'--no-override --cpus 0.3 --{file_format} {path}'
+                if diff_token_in_file:
+                    update_flags = f'{update_flags} {token_name}'
+                cp = cli.update(self.waiter_url, flags='--verbose', update_flags=update_flags)
+                self.assertEqual(1, cp.returncode, cp.stderr)
+                stderr = cli.stderr(cp)
+                err_msg = 'You cannot specify the same parameter'
+                self.assertIn(err_msg, stderr)
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_update_token_json_parameter_override_failure(self):
+        self.__test_update_token_override_failure('json', False)
+
+    def test_update_token_yaml_parameter_override_failure(self):
+        self.__test_update_token_override_failure('yaml', False)
+
+    def test_update_token_json_token_override_failure(self):
+        self.__test_update_token_override_failure('json', True)
+
+    def test_update_token_yaml_token_override_failure(self):
+        self.__test_update_token_override_failure('yaml', True)
+
     def test_post_token_over_specified_token_name(self):
         token_name = self.token_name()
         with cli.temp_token_file({'token': token_name}) as path:

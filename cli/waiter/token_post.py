@@ -1,3 +1,4 @@
+import argparse
 import logging
 import os
 from enum import Enum
@@ -163,9 +164,12 @@ def add_token_flags(parser):
 
 def add_override_flags(parser):
     """Adds the arguments override file values flags to the given parser"""
-    parser.add_argument('--override', action='store_true', default=False, dest='override',
-                        help='Allow overriding values in input file with values from CLI arguments. '
-                             'Overriding values is disallowed by default.')
+    override_group = parser.add_mutually_exclusive_group(required=False)
+    override_group.add_argument('--override', action='store_true', dest='override',
+                                help='Allow overriding values in input file with values from CLI arguments. '
+                                     'Overriding values is disallowed by default. '
+                                     'Adding the --no-override flag explicitly disallows overriding values.')
+    override_group.add_argument('--no-override', action='store_false', dest='override', help=argparse.SUPPRESS)
 
 
 def register_argument_parser(add_parser, action):
