@@ -1140,8 +1140,9 @@
     token-response))
 
 (defn get-tokens-watch-maintainer-state
-  [waiter-url & {:keys [query-params]}]
+  [waiter-url & {:keys [cookies query-params]}]
   (make-request waiter-url "/state/tokens-watch-maintainer"
+                :cookies cookies
                 :query-params query-params
                 :method :get))
 
