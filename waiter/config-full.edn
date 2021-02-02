@@ -1050,6 +1050,10 @@
                                           ;; or removed
                                           :channels-update-chan-buffer-size 1024
 
+                                          ;; Buffer size of the tokens-update-chan. The channel receives updates when
+                                          ;; tokens are created, updated, deleted (including index refresh endpoint)
+                                          :tokens-update-chan-buffer-size 1024
+
                                           ;; Time the tokens-watch-maintainer waits before fetching
                                           ;; the kv-store for up to date indexes and sending possible
                                           ;; missed events to listening watches

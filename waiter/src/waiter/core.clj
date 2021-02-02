@@ -769,7 +769,9 @@
    :token-cluster-calculator (pc/fnk [[:settings [:cluster-config name] [:token-config cluster-calculator]]]
                                (utils/create-component
                                  cluster-calculator :context {:default-cluster name}))
-   :tokens-update-chan (pc/fnk [] (au/latest-chan))
+   :tokens-update-chan (pc/fnk [[:settings
+                                 [:token-config [:tokens-watch-maintainer tokens-update-chan-buffer-size]]]]
+                         (async/chan tokens-update-chan-buffer-size))
    :tokens-watch-channels-update-chan (pc/fnk [[:settings
                                                 [:token-config [:tokens-watch-maintainer channels-update-chan-buffer-size]]]]
                                         (async/chan channels-update-chan-buffer-size))
