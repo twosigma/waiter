@@ -1139,9 +1139,9 @@
     (log/debug "retrieved token" token ":" (:body token-response))
     token-response))
 
-(defn get-tokens-watch-maintainer-state
+(defn get-token-watch-maintainer-state
   [waiter-url & {:keys [cookies query-params]}]
-  (make-request waiter-url "/state/tokens-watch-maintainer"
+  (make-request waiter-url "/state/token-watch-maintainer"
                 :cookies cookies
                 :query-params query-params
                 :method :get))

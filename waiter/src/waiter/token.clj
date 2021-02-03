@@ -15,24 +15,20 @@
 ;;
 (ns waiter.token
   (:require [clj-time.coerce :as tc]
-            [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.data :as data]
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
-            [metrics.timers :as timers]
             [plumbing.core :as pc]
             [schema.core :as s]
             [waiter.authorization :as authz]
             [waiter.kv :as kv]
-            [waiter.metrics :as metrics]
             [waiter.service-description :as sd]
             [waiter.status-codes :refer :all]
             [waiter.util.date-utils :as du]
             [waiter.util.ring-utils :as ru]
-            [waiter.util.utils :as utils]
-            [waiter.util.async-utils :as au])
+            [waiter.util.utils :as utils])
   (:import (org.joda.time DateTime)))
 
 (def ^:const ANY-USER "*")
@@ -78,6 +74,17 @@
    :etag token-hash
    :last-update-time last-update-time
    :maintenance (some? maintenance)})
+
+(defn make-index-event
+  "Create an event for watch endpoints"
+  [type object]
+  {:object object :type type})
+
+(defn send-internal-index-event
+  "Send an internal event to be processed by the tokens-watch-maintainer daemon process"
+  [tokens-update-chan token owner]
+  (log/info "sending internal index event" {:token token :owner owner})
+  (async/put! tokens-update-chan {:owner owner :token token}))
 
 (let [token-lock "TOKEN_LOCK"
       token-owners-key "^TOKEN_OWNERS"
@@ -266,7 +273,31 @@
               (doseq [[_ owner-key] existing-owner->owner-key]
                 ;; defensive check to avoid deleting duplicated keys after reindex
                 (when-not (contains? new-owner-keys owner-key)
-                  (kv/delete kv-store owner-key))))))))))
+                  (kv/delete kv-store owner-key)))))))))
+
+  (defn get-token-index-map
+    "Return a map of ALL token to token index entry. The token index entries also include the owner and token.
+     Specifying :refresh true will refresh all owner/token indexes and get the most up to date map."
+    [kv-store & {:keys [refresh] :or {refresh false}}]
+    (->> kv-store
+         list-token-owners
+         (reduce
+           (fn [outer-token-index-map owner]
+             (reduce
+               (fn [inner-token-index-map [token entry]]
+                 (->> (assoc entry :owner owner :token token)
+                      (assoc inner-token-index-map token)))
+               outer-token-index-map
+               (list-index-entries-for-owner kv-store owner :refresh refresh)))
+           {})))
+
+  (defn get-token-index
+    "Given a token and owner, return the token index entry with the token and owner as added fields.
+     Specifying :refresh true will refresh the owner's index cache and get the most up to date index entry."
+    [kv-store token owner & {:keys [refresh] :or {refresh false}}]
+    (some-> (list-index-entries-for-owner kv-store owner :refresh refresh)
+            (get token)
+            (assoc :owner owner :token token))))
 
 (defprotocol ClusterCalculator
   (get-default-cluster [this]
@@ -304,7 +335,7 @@
 
 (defn- handle-delete-token-request
   "Deletes the token configuration if found."
-  [clock synchronize-fn kv-store history-length waiter-hostnames entitlement-manager make-peer-requests-fn
+  [clock synchronize-fn kv-store history-length waiter-hostnames entitlement-manager make-peer-requests-fn tokens-update-chan
    {:keys [headers] :as request}]
   (let [{:keys [token]} (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostnames)
         authenticated-user (get request :authorization/user)
@@ -343,6 +374,7 @@
             (make-peer-requests-fn "tokens/refresh"
                                    :body (utils/clj->json {:owner token-owner, :token token})
                                    :method :post)
+            (send-internal-index-event tokens-update-chan token token-owner)
             (-> {:delete token, :hard-delete hard-delete, :success true}
               (utils/clj->json-response :headers {"etag" version-hash})
               (assoc :waiter/token token)))
@@ -401,7 +433,7 @@
    Then, updates the configuration for the token in the database using the newest password."
   [clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner waiter-hostnames
    entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
-   {:keys [headers] :as request}]
+   tokens-update-chan {:keys [headers] :as request}]
   (let [request-params (-> request ru/query-params-request :query-params)
         admin-mode? (= "admin" (get request-params "update-mode"))
         authenticated-user (get request :authorization/user)
@@ -572,6 +604,7 @@
           (make-peer-requests-fn "tokens/refresh"
                                  :method :post
                                  :body (utils/clj->json {:token token, :owner owner}))
+          (send-internal-index-event tokens-update-chan token owner)
           (let [creation-mode (if (and (seq existing-token-metadata)
                                        (not (get existing-token-metadata "deleted")))
                                 "updated "
@@ -595,15 +628,15 @@
    If handling POST, validates that the user is the creator of the token if it already exists.
    Then, updates the configuration for the token in the database using the newest password."
   [clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner waiter-hostnames entitlement-manager
-   make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn {:keys [request-method] :as request}]
+   make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn tokens-update-chan {:keys [request-method] :as request}]
   (try
     (case request-method
       :delete (handle-delete-token-request clock synchronize-fn kv-store history-length waiter-hostnames entitlement-manager
-                                           make-peer-requests-fn request)
+                                           make-peer-requests-fn tokens-update-chan request)
       :get (handle-get-token-request kv-store cluster-calculator token-root waiter-hostnames request)
       :post (handle-post-token-request clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner
                                        waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
-                                       attach-service-defaults-fn request)
+                                       attach-service-defaults-fn tokens-update-chan request)
       (throw (ex-info "Invalid request method" {:log-level :info :request-method request-method :status http-405-method-not-allowed})))
     (catch Exception ex
       (utils/exception->response ex request))))
@@ -695,7 +728,7 @@
 
 (defn handle-refresh-token-request
   "Handle a request to refresh token data directly from the KV store, skipping the cache."
-  [kv-store {{:keys [src-router-id]} :basic-authentication :as req}]
+  [kv-store tokens-update-chan {{:keys [src-router-id]} :basic-authentication :as req}]
   (try
     (let [{:strs [token owner index] :as json-data} (-> req ru/json-request :body)]
       (log/info "received token refresh request" json-data)
@@ -704,7 +737,8 @@
         (refresh-token-index kv-store))
       (when token
         (log/info src-router-id "is force refreshing token" token)
-        (refresh-token kv-store token owner))
+        (refresh-token kv-store token owner)
+        (send-internal-index-event tokens-update-chan token owner))
       (utils/clj->json-response {:success true}))
     (catch Exception ex
       (utils/exception->response ex req))))
@@ -725,119 +759,3 @@
                                              :status http-405-method-not-allowed})))
     (catch Exception ex
       (utils/exception->response ex req))))
-
-(defn make-index-event
-  [type object]
-  {:object object :type type})
-
-(defn start-tokens-watch-maintainer
-  [kv-store tokens-update-chan tokens-watch-channels-update-chan watch-refresh-timeout-ms exit-chan]
-  (let [tokens-event-chan (au/latest-chan)
-        tokens-event-mult (async/mult tokens-event-chan)
-        query-chan (async/chan)
-        get-token->token-index-fn (fn []
-                                    (->> kv-store
-                                         list-token-owners
-                                         (reduce
-                                           (fn [current-token-index-map owner]
-                                             (reduce
-                                               (fn [inner-token-index-map [token entry]]
-                                                 (->> (assoc entry :owner owner :token token)
-                                                      (assoc inner-token-index-map token)))
-                                               current-token-index-map
-                                               (list-index-entries-for-owner kv-store owner :refresh true)))
-                                           {})))
-        state-atom (atom {:token->token-index (get-token->token-index-fn)
-                          :watches-count 0})
-        go-chan
-        (async/go
-          (try
-            (loop [{:keys [token->token-index watches-count] :as current-state} @state-atom
-                   watch-refresh-timeout-chan (async/timeout watch-refresh-timeout-ms)]
-              (reset! state-atom current-state)
-              (let [[msg current-chan]
-                    (async/alts! [exit-chan tokens-update-chan tokens-watch-channels-update-chan
-                                  watch-refresh-timeout-chan query-chan]
-                                 :priority true)
-                    [next-state next-watch-refresh-timeout-chan]
-                    (condp = current-chan
-                      exit-chan
-                      (do
-                        (log/warn "Stopping tokens-watch-maintainer")
-                        (when (not= :exit msg)
-                          (throw (ex-info "Stopping router-state maintainer" {:time (t/now) :reason msg}))))
-
-                      tokens-update-chan
-                      (timers/start-stop-time!
-                        (metrics/waiter-timer "core" "tokens-watch-maintainer" "process-tokens-update")
-                        (let [{:keys [token owner]} msg
-                              token-index-entry (some-> (list-index-entries-for-owner kv-store owner :refresh true)
-                                                        (get token)
-                                                        (assoc :owner owner :token token))
-                              [event next-state]
-                              (when (not= token-index-entry (get token->token-index token))
-                                (if token-index-entry
-                                  [(make-index-event "UPDATE" token-index-entry)
-                                   (assoc-in current-state [:token->token-index token] token-index-entry)]
-                                  [(make-index-event "DELETE" {:owner owner :token token})
-                                   (assoc current-state :token->token-index (dissoc token->token-index token))]))]
-                          (if event
-                            (do
-                              (async/>! tokens-event-chan event)
-                              [next-state watch-refresh-timeout-chan])
-                            [current-state watch-refresh-timeout-chan])))
-
-                      tokens-watch-channels-update-chan
-                      (timers/start-stop-time!
-                        (metrics/waiter-timer "core" "tokens-watch-maintainer" "process-tokens-channels-update")
-                        (let [{:keys [channel-event watch-chan]} msg
-                              next-state (case channel-event
-                                           :add (do
-                                                  (async/put! watch-chan (or (vals token->token-index) '()))
-                                                  (async/tap tokens-event-mult watch-chan)
-                                                  (update current-state :watches-count inc))
-                                           :remove (update current-state :watches-count dec)
-                                           (throw (ex-info "Invalid tokens-watch-channels-update-chan event" {:event msg})))]
-                          (log/info "Tokens-watch-maintainer watch count changed!" {:previous-count watches-count
-                                                                                    :new-count (get next-state :watches-count)})
-                          [next-state watch-refresh-timeout-chan]))
-
-                      watch-refresh-timeout-chan
-                      (timers/start-stop-time!
-                        (metrics/waiter-timer "core" "tokens-watch-maintainer" "refresh")
-                        (let [next-token->index (get-token->token-index-fn)
-                              [only-old-indexes only-next-indexes _] (data/diff token->token-index next-token->index)]
-                          ; if token in old-indexes and not in only-next-indexes, then those token indexes were deleted
-                          (doseq [[token {:keys [owner]}] only-old-indexes]
-                            (when-not (contains? only-next-indexes token)
-                              (async/>! tokens-event-chan (make-index-event "DELETE" {:owner owner :token token}))))
-                          ; if token in only-next-indexes, it has been updated (soft-delete included)
-                          (doseq [[token _] only-next-indexes]
-                            (async/>! tokens-event-chan (make-index-event "UPDATE" (get next-token->index token))))
-                          (if (and (nil? only-old-indexes) (nil? only-next-indexes))
-                            (log/info "Tokens-watch-maintainer found no differences in kv-store and current-state")
-                            (log/info "Tokens-watch-maintainer found some differences in kv-store and current-state"
-                                      {:only-in-current only-old-indexes :only-in-next only-next-indexes}))
-                          [(assoc current-state :token->token-index next-token->index)
-                           (async/timeout watch-refresh-timeout-ms)]))
-
-                      query-chan
-                      (let [response-chan msg]
-                        (async/put! response-chan current-state)
-                        [current-state watch-refresh-timeout-chan]))]
-                (if (and next-state next-watch-refresh-timeout-chan)
-                  (recur next-state next-watch-refresh-timeout-chan)
-                  (log/info "Stopping tokens-watch-maintainer as next loop values are nil"))))
-            (catch Exception e
-              (log/error e "Fatal error in tokens-watch-maintainer"))))]
-    {:go-chan go-chan
-     :query-chan query-chan
-     :query-state-fn (fn tokens-watch-query-state-fn
-                       ([] @state-atom)
-                       ([include-flags]
-                        (let [state @state-atom]
-                          (cond-> {}
-                                  (contains? include-flags "token->token-index")
-                                  (assoc :token->token-index (get state :token->token-index))
-                                  (contains? include-flags "watches-count")
-                                  (assoc :watches-count (get state :watches-count))))))}))

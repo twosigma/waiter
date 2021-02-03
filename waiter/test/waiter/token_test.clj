@@ -16,7 +16,6 @@
 (ns waiter.token-test
   (:require [clj-time.coerce :as tc]
             [clj-time.core :as t]
-            [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.test :refer :all]
@@ -28,9 +27,9 @@
             [waiter.status-codes :refer :all]
             [waiter.test-helpers :refer :all]
             [waiter.token :refer :all]
+            [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
-            [waiter.util.utils :as utils]
-            [waiter.util.async-utils :as au])
+            [waiter.util.utils :as utils])
   (:import (clojure.lang ExceptionInfo)
            (java.io StringBufferInputStream)
            (org.joda.time DateTime)))
@@ -84,7 +83,7 @@
                                                                :host->cluster {}})]
     (handle-token-request clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner
                           waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
-                          attach-service-defaults-fn request)))
+                          attach-service-defaults-fn (au/latest-chan) request)))
 
 (def optional-metadata-keys (disj sd/user-metadata-keys "owner"))
 
@@ -2723,241 +2722,3 @@
                {"maintenance" false "owner" "owner3" "token" "token7"}
                {"maintenance" false "owner" "owner3" "token" "token8"}}
              (set (json/read-str body)))))))
-
-(defmacro assert-channels-no-new-message
-  [chans timeout-ms]
-  `(let [chans# ~chans
-         timeout-ms# ~timeout-ms
-         timeout-chan# (async/timeout timeout-ms#)
-         [_# res-chan#] (-> chans#
-                            (conj timeout-chan#)
-                            (async/alts!! :priority true))]
-     (is (= res-chan# timeout-chan#))))
-
-(defmacro assert-channels-next-message-with-fn
-  [chans msg-fn]
-  `(let [chans# ~chans
-         msg-fn# ~msg-fn
-         res# (for [chan# chans#] (async/<!! chan#))]
-     (is (every? msg-fn# res#))))
-
-(defmacro assert-channels-next-message
-  "Assert that list of channels next message"
-  [chans msg]
-  `(let [chans# ~chans
-         msg# ~msg]
-     (assert-channels-next-message-with-fn chans# #(= % msg#))))
-
-(let [get-token-hash (fn [kv-store token] (sd/token-data->token-hash (kv/fetch kv-store token)))
-      get-latest-state (fn [query-chan]
-                         (let [temp-chan (async/chan)]
-                           (async/>!! query-chan temp-chan)
-                           (async/<!! temp-chan)))
-      create-watch-chans (fn []
-                           (for [_ (range 10)]
-                             (async/chan)))
-      add-watch-chans (fn [tokens-watch-channels-update-chan watch-chans]
-                        (doseq [chan watch-chans]
-                          (async/put! tokens-watch-channels-update-chan {:channel-event :add :watch-chan chan})))
-      remove-watch-chans (fn [tokens-watch-channels-update-chan watch-chans]
-                           (doseq [chan watch-chans]
-                             (async/put! tokens-watch-channels-update-chan {:channel-event :remove :watch-chan chan})))
-      stop-tokens-watch-maintainer (fn [go-chan exit-chan]
-                                     (async/>!! exit-chan :exit)
-                                     (async/<!! go-chan))
-      auth-user "auth-user"
-      token1-metadata {"cluster" "c1" "last-update-time" 1000 "owner" "owner1"}
-      token1-service-desc {"cpus" 1}
-      token1-index {:deleted false
-                    :last-update-time (get token1-metadata "last-update-time")
-                    :maintenance false
-                    :owner (get token1-metadata "owner")
-                    :token "token1"}]
-  (deftest test-start-tokens-watch-maintainer-empty-starting-state
-    (let [kv-store (kv/->LocalKeyValueStore (atom {}))
-          watch-chans (create-watch-chans)
-          exit-chan (async/chan 1)
-          tokens-update-chan (au/latest-chan)
-          tokens-watch-channels-update-chan (async/chan)
-          watch-refresh-timeout-ms 10000
-          {:keys [go-chan query-chan]}
-          (start-tokens-watch-maintainer kv-store tokens-update-chan tokens-watch-channels-update-chan watch-refresh-timeout-ms exit-chan)]
-      (is (= {:token->token-index {} :watches-count 0} (get-latest-state query-chan)))
-      (testing "watch-channels should receive empty list of tokens"
-        (add-watch-chans tokens-watch-channels-update-chan watch-chans)
-        (is (= {:token->token-index {} :watches-count 10} (get-latest-state query-chan)))
-        (assert-channels-next-message watch-chans '()))
-      (stop-tokens-watch-maintainer go-chan exit-chan)))
-  (deftest test-start-tokens-watch-maintainer-non-empty-starting-state
-    (let [kv-store (kv/->LocalKeyValueStore (atom {}))
-          watch-chans (create-watch-chans)
-          exit-chan (async/chan 1)
-          tokens-update-chan (au/latest-chan)
-          tokens-watch-channels-update-chan (async/chan)
-          watch-refresh-timeout-ms 10000
-          _ (store-service-description-for-token
-              synchronize-fn kv-store history-length limit-per-owner "token1" token1-service-desc token1-metadata)
-          {:keys [go-chan query-chan]}
-          (start-tokens-watch-maintainer kv-store tokens-update-chan tokens-watch-channels-update-chan watch-refresh-timeout-ms exit-chan)
-          token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1"))
-          expected-token->token-index {"token1" token-cur-index}]
-      (is (= {:token->token-index expected-token->token-index :watches-count 0}
-             (get-latest-state query-chan)))
-      (testing "watch-channels should receive starting list of tokens"
-        (add-watch-chans tokens-watch-channels-update-chan watch-chans)
-        (is (= {:token->token-index expected-token->token-index :watches-count 10} (get-latest-state query-chan)))
-        (assert-channels-next-message-with-fn watch-chans
-                                              #(= #{token-cur-index}
-                                                  (set %))))
-      (stop-tokens-watch-maintainer go-chan exit-chan)))
-  (deftest test-start-tokens-watch-maintainer-watch-channels-updates
-    (let [kv-store (kv/->LocalKeyValueStore (atom {}))
-          watch-chans (create-watch-chans)
-          exit-chan (async/chan 1)
-          tokens-update-chan (au/latest-chan)
-          tokens-watch-channels-update-chan (async/chan)
-          watch-refresh-timeout-ms 10000
-          {:keys [go-chan query-chan]}
-          (start-tokens-watch-maintainer kv-store tokens-update-chan tokens-watch-channels-update-chan watch-refresh-timeout-ms exit-chan)]
-      (testing "watch-channels get UPDATE event for added tokens"
-        (add-watch-chans tokens-watch-channels-update-chan watch-chans)
-        (is (= {:token->token-index {} :watches-count 10}
-               (get-latest-state query-chan)))
-        (store-service-description-for-token
-          synchronize-fn kv-store history-length limit-per-owner "token1" token1-service-desc token1-metadata)
-        (let [token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1"))
-              expected-token->token-index {"token1" token-cur-index}]
-          (async/>!! tokens-update-chan {:owner (get token1-index :owner) :token "token1"})
-          (assert-channels-next-message watch-chans '())
-          (assert-channels-next-message watch-chans (make-index-event "UPDATE" token-cur-index))
-          (is (= {:token->token-index expected-token->token-index :watches-count 10} (get-latest-state query-chan)))))
-      (testing "watch-channels get UPDATE event for modified tokens"
-        (store-service-description-for-token
-          synchronize-fn kv-store history-length limit-per-owner "token1" (assoc token1-service-desc "cpus" 2) token1-metadata)
-        (let [token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1"))
-              expected-token->token-index {"token1" token-cur-index}]
-          (async/>!! tokens-update-chan {:owner (get token1-index :owner) :token "token1"})
-          (assert-channels-next-message watch-chans (make-index-event "UPDATE" token-cur-index))
-          (is (= {:token->token-index expected-token->token-index :watches-count 10} (get-latest-state query-chan)))
-          (testing "watch-channels doesn't send event if no changes in token-index-entry and current-state"
-            (async/>!! tokens-update-chan {:owner (get token1-index :owner) :token "token1"})
-            (assert-channels-no-new-message watch-chans 1000)
-            (is (= {:token->token-index expected-token->token-index :watches-count 10} (get-latest-state query-chan))))))
-      (testing "watch-channels get UPDATE event for soft deleted tokens"
-        (delete-service-description-for-token clock synchronize-fn kv-store history-length "token1"
-                                              (get token1-index :owner) auth-user)
-        (let [token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1")
-                                                  :last-update-time (clock-millis)
-                                                  :deleted true)
-              expected-token->token-index {"token1" token-cur-index}]
-          (async/>!! tokens-update-chan {:owner (get token1-index :owner) :token "token1"})
-          (assert-channels-next-message watch-chans (make-index-event "UPDATE" token-cur-index))
-          (is (= {:token->token-index expected-token->token-index :watches-count 10} (get-latest-state query-chan)))))
-      (testing "watch-channels get DELETE event for hard deleted tokens"
-        (delete-service-description-for-token clock synchronize-fn kv-store history-length "token1"
-                                              (get token1-index :owner) auth-user :hard-delete true)
-        (async/>!! tokens-update-chan {:owner (get token1-index :owner) :token "token1"})
-        (assert-channels-next-message watch-chans (make-index-event "DELETE" {:owner (get token1-index :owner)
-                                                                              :token "token1"}))
-        (is (= {:token->token-index {} :watches-count 10} (get-latest-state query-chan))))
-      (testing "watch-channels doesn't send event if no changes in token-index-entry and current-state"
-        (async/>!! tokens-update-chan {:owner (get token1-index :owner) :token "token1"})
-        (assert-channels-no-new-message watch-chans 1000)
-        (is (= {:token->token-index {} :watches-count 10} (get-latest-state query-chan))))
-      (stop-tokens-watch-maintainer go-chan exit-chan)))
-  (deftest test-start-tokens-watch-maintainer-watch-count
-    (let [kv-store (kv/->LocalKeyValueStore (atom {}))
-          watch-chans (create-watch-chans)
-          exit-chan (async/chan 1)
-          tokens-update-chan (au/latest-chan)
-          tokens-watch-channels-update-chan (async/chan)
-          watch-refresh-timeout-ms 10000
-          {:keys [go-chan query-chan]}
-          (start-tokens-watch-maintainer kv-store tokens-update-chan tokens-watch-channels-update-chan watch-refresh-timeout-ms exit-chan)]
-      (is (= {:token->token-index {} :watches-count 0}
-             (get-latest-state query-chan)))
-      (testing "watch-count should increment when channels are added"
-        (add-watch-chans tokens-watch-channels-update-chan watch-chans)
-        (is (= {:token->token-index {} :watches-count 10} (get-latest-state query-chan)))
-        (assert-channels-next-message watch-chans '())
-        (add-watch-chans tokens-watch-channels-update-chan watch-chans)
-        (is (= {:token->token-index {} :watches-count 20} (get-latest-state query-chan)))
-        (assert-channels-next-message watch-chans '()))
-      (testing "watch-count should decrement when notified"
-        (remove-watch-chans tokens-watch-channels-update-chan watch-chans)
-        (is (= {:token->token-index {} :watches-count 10} (get-latest-state query-chan)))
-        (remove-watch-chans tokens-watch-channels-update-chan watch-chans)
-        (is (= {:token->token-index {} :watches-count 0} (get-latest-state query-chan))))
-      (stop-tokens-watch-maintainer go-chan exit-chan)))
-  (deftest test-start-tokens-watch-maintainer-refresh-timeout
-    (let [kv-store (kv/->LocalKeyValueStore (atom {}))
-          watch-chans (create-watch-chans)
-          exit-chan (async/chan 1)
-          tokens-update-chan (au/latest-chan)
-          tokens-watch-channels-update-chan (async/chan)
-          watch-refresh-timeout-ms 2000
-          test-refresh-timeout-ms-buffer (+ watch-refresh-timeout-ms 500)
-          {:keys [go-chan query-chan]}
-          (start-tokens-watch-maintainer kv-store tokens-update-chan tokens-watch-channels-update-chan
-                                         watch-refresh-timeout-ms exit-chan)]
-      (is (= {:token->token-index {} :watches-count 0}
-             (get-latest-state query-chan)))
-      (testing "refresh-timeout should not update if there are no changes in kv-store"
-        (Thread/sleep test-refresh-timeout-ms-buffer)
-        (is (= {:token->token-index {} :watches-count 0}
-               (get-latest-state query-chan))))
-      (add-watch-chans tokens-watch-channels-update-chan watch-chans)
-      (assert-channels-next-message watch-chans '())
-      (testing "refresh-timeout should update current-state and watchers if token is added to kv-store"
-        (store-service-description-for-token
-          synchronize-fn kv-store history-length limit-per-owner "token1" token1-service-desc token1-metadata)
-        (Thread/sleep test-refresh-timeout-ms-buffer)
-        (let [token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1"))
-              expected-token->token-index {"token1" token-cur-index}]
-          (is (= {:token->token-index expected-token->token-index :watches-count 10}
-                 (get-latest-state query-chan)))
-          (assert-channels-next-message watch-chans (make-index-event "UPDATE" token-cur-index))))
-      (testing "refresh-timeout should update current-state and watchers if token is out of date"
-        (store-service-description-for-token
-          synchronize-fn kv-store history-length limit-per-owner "token1" (assoc token1-service-desc "cpus" 2)
-          token1-metadata)
-        (Thread/sleep test-refresh-timeout-ms-buffer)
-        (let [token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1"))
-              expected-token->token-index {"token1" token-cur-index}]
-          (is (= {:token->token-index expected-token->token-index :watches-count 10}
-                 (get-latest-state query-chan)))
-          (assert-channels-next-message watch-chans (make-index-event "UPDATE" token-cur-index))))
-      (testing "refresh-timeout should update current-state and watchers if token is soft deleted"
-        (delete-service-description-for-token clock synchronize-fn kv-store history-length "token1"
-                                              (get token1-index :owner) auth-user)
-        (Thread/sleep test-refresh-timeout-ms-buffer)
-        (let [token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1")
-                                                  :last-update-time (clock-millis)
-                                                  :deleted true)
-              expected-token->token-index {"token1" token-cur-index}]
-          (is (= {:token->token-index expected-token->token-index :watches-count 10}
-                 (get-latest-state query-chan)))
-          (assert-channels-next-message watch-chans (make-index-event "UPDATE" token-cur-index))))
-      (testing "refresh-timeout should update current-state and watchers if token is hard deleted"
-        (delete-service-description-for-token clock synchronize-fn kv-store history-length "token1"
-                                              (get token1-index :owner) auth-user :hard-delete true)
-        (Thread/sleep test-refresh-timeout-ms-buffer)
-        (is (= {:token->token-index {} :watches-count 10} (get-latest-state query-chan)))
-        (assert-channels-next-message watch-chans (make-index-event "DELETE" {:owner (get token1-index :owner)
-                                                                              :token "token1"})))
-      (stop-tokens-watch-maintainer go-chan exit-chan)))
-  (deftest test-start-tokens-watch-maintainer-query-state
-    (let [kv-store (kv/->LocalKeyValueStore (atom {}))
-          exit-chan (async/chan 1)
-          tokens-update-chan (au/latest-chan)
-          tokens-watch-channels-update-chan (async/chan)
-          watch-refresh-timeout-ms 10000
-          {:keys [go-chan query-state-fn]}
-          (start-tokens-watch-maintainer kv-store tokens-update-chan tokens-watch-channels-update-chan watch-refresh-timeout-ms exit-chan)]
-      (testing "query-state-fn provides current state"
-        (is (= {:token->token-index {} :watches-count 0}
-               (query-state-fn))))
-      (testing "query-state-fn respects include-flags"
-        (is (= {:token->token-index {}}
-               (query-state-fn #{"token->token-index"}))))
-      (stop-tokens-watch-maintainer go-chan exit-chan))))

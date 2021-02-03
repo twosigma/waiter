@@ -809,7 +809,7 @@
                                                           "fallback" "gc-broken-services" "gc-services" "gc-transient-metrics" "interstitial"
                                                           "jwt-auth-server" "kv-store" "launch-metrics" "leader" "local-usage"
                                                           "maintainer" "router-metrics" "scheduler" "service-description-builder"
-                                                          "service-maintainer" "statsd" "work-stealing"]
+                                                          "service-maintainer" "statsd" "token-watch-maintainer" "work-stealing"]
                                                          (pc/map-from-keys make-url))
                                            :router-id router-id
                                            :routers routers}))
@@ -891,18 +891,15 @@
        :leader-id (leader-id-fn)})
     router-id request))
 
-(defn get-tokens-watch-maintainer-state
-  "Using the query-state-fn, pass include-flags to get the tokens-watch-maintainer-state and return
+(defn get-token-watch-maintainer-state
+  "Using the query-state-fn, pass include-flags to get the token-watch-maintainer-state and return
   streaming response"
   [router-id query-state-fn request]
   (try
     (let [{:strs [include]} (-> request ru/query-params-request :query-params)
-          include-flags (if (string? include) #{include} (set include))
-          state (if (nil? include)
-                  (query-state-fn)
-                  (query-state-fn include-flags))]
+          include-flags (if (string? include) #{include} (set include))]
       (utils/clj->streaming-json-response {:router-id router-id
-                                           :state state}))
+                                           :state (query-state-fn include-flags)}))
     (catch Exception ex
       (utils/exception->response ex request))))
 
