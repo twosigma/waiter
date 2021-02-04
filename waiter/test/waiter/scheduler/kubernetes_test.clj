@@ -2290,3 +2290,37 @@
                 dummy-scheduler (assoc base-scheduler :watch-state (atom watch-state))
                 instance (pod->ServiceInstance dummy-scheduler pod)]
             (is (= (scheduler/make-ServiceInstance expired-instance-map) instance))))))))
+
+(deftest test-service-id->state
+  (let [service-id "service-id"
+        syncer-state-atom (atom {:last-update-time :time
+                                 :service-id->health-check-context {}})
+        retrieve-syncer-state-fn (partial scheduler/retrieve-syncer-state @syncer-state-atom)
+        kubernetes-scheduler (make-dummy-scheduler
+                               [service-id]
+                               {:retrieve-syncer-state-fn retrieve-syncer-state-fn
+                                :service-id->failed-instances-transient-store (atom {service-id [:failed-instances]})})
+        supported-include-params ["auth-token-renewer" "authorizer" "service-id->failed-instances"
+                                  "syncer" "syncer-details" "watch-state" "watch-state-details"]]
+    (is (= {:failed-instances [:failed-instances]
+            :syncer {:last-update-time :time}}
+           (scheduler/service-id->state kubernetes-scheduler service-id)))
+    (is (= {:supported-include-params supported-include-params
+            :type "KubernetesScheduler"}
+           (scheduler/state kubernetes-scheduler #{})))
+    (is (= {:supported-include-params supported-include-params
+            :syncer {:last-update-time :time}
+            :type "KubernetesScheduler"}
+           (scheduler/state kubernetes-scheduler #{"syncer"})))
+    (is (= {:supported-include-params supported-include-params
+            :syncer {:last-update-time :time
+                     :service-id->health-check-context {}}
+            :type "KubernetesScheduler"}
+           (scheduler/state kubernetes-scheduler #{"syncer-details"})))
+    (is (= {:authorizer {:type :no-op}
+            :service-id->failed-instances {"service-id" [:failed-instances]}
+            :supported-include-params supported-include-params
+            :syncer {:last-update-time :time
+                     :service-id->health-check-context {}}
+            :type "KubernetesScheduler"}
+           (scheduler/state kubernetes-scheduler #{"authorizer" "service-id->failed-instances" "syncer" "syncer-details"})))))

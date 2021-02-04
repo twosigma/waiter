@@ -492,14 +492,16 @@
      :syncer (retrieve-syncer-state-fn service-id)})
 
   (state [_ include-flags]
-    (cond-> {:supported-include-params ["authorizer" "service-id->failed-instances" "syncer"]
+    (cond-> {:supported-include-params ["authorizer" "service-id->failed-instances" "syncer" "syncer-details"]
              :type "CookScheduler"}
       (and authorizer (contains? include-flags "authorizer"))
       (assoc :authorizer (authz/state authorizer))
       (contains? include-flags "service-id->failed-instances")
       (assoc :service-id->failed-instances @service-id->failed-instances-transient-store)
-      (contains? include-flags "syncer")
-      (assoc :syncer (retrieve-syncer-state-fn))))
+      (or (contains? include-flags "syncer") (contains? include-flags "syncer-details"))
+      (assoc :syncer (cond-> (retrieve-syncer-state-fn)
+                       (not (contains? include-flags "syncer-details"))
+                       (dissoc :service-id->health-check-context)))))
 
   (validate-service [_ service-id]
     (let [{:strs [run-as-user image]} (service-id->service-description-fn service-id)]

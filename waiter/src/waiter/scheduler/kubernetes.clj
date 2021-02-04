@@ -852,7 +852,7 @@
 
   (state [_ include-flags]
     (cond-> {:supported-include-params ["auth-token-renewer" "authorizer" "service-id->failed-instances"
-                                        "syncer" "watch-state" "watch-state-details"]
+                                        "syncer" "syncer-details" "watch-state" "watch-state-details"]
              :type "KubernetesScheduler"}
       (contains? include-flags "auth-token-renewer")
       (assoc :auth-token-renewer (retrieve-auth-token-state-fn))
@@ -860,8 +860,11 @@
       (assoc :authorizer (authz/state authorizer))
       (contains? include-flags "service-id->failed-instances")
       (assoc :service-id->failed-instances @service-id->failed-instances-transient-store)
-      (contains? include-flags "syncer")
-      (assoc :syncer (retrieve-syncer-state-fn))
+      (or (contains? include-flags "syncer")
+          (contains? include-flags "syncer-details"))
+      (assoc :syncer (cond-> (retrieve-syncer-state-fn)
+                       (not (contains? include-flags "syncer-details"))
+                       (dissoc :service-id->health-check-context)))
       (or (contains? include-flags "watch-state")
           (contains? include-flags "watch-state-details"))
       (assoc :watch-state (cond-> @watch-state
