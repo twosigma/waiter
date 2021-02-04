@@ -120,6 +120,12 @@
         (is (= expected-json-response-headers headers))
         (is (not (nil? body)))))
 
+    (testing "should convert map with nil keys"
+      (let [{:keys [body headers status]} (clj->json-response {nil 1 "two" 2 "" 3})]
+        (is (= http-200-ok status))
+        (is (= expected-json-response-headers headers))
+        (is (not (nil? body)))))
+
     (testing "should convert regex patterns to strings"
       (is (= (json/write-str {"bar" "foo"}) (:body (clj->json-response {:bar #"foo"}))))
       (is (= (json/write-str {"bar" ["foo" "baz"] "foo/bar" "baz"} :escape-slash false)
@@ -395,7 +401,7 @@
       (is (= '(("foo" "bar")) (stringify-elements :k [[#"foo" "bar"]])))
       (is (= '(("foo" "bar") ("baz" "qux")) (stringify-elements :k [[#"foo" "bar"] [#"baz" "qux"]]))))
 
-    (testing "should convert symbols to strings, inlcuding their namespace"
+    (testing "should convert symbols to strings, including their namespace"
       (is (= "waiter.cors/pattern-based-validator" (stringify-elements :k 'waiter.cors/pattern-based-validator))))
 
     (testing "NaN and Infinity"
