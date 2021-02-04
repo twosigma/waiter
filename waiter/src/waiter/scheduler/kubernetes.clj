@@ -195,7 +195,7 @@
    when a new pod failure is listed in the given pod's lastState container status.
    Note that unique instance-ids are deterministically generated each time the pod is restarted
    by passing the pod's restartCount value to the pod->instance-id function."
-  [{:keys [service-id] :as live-instance} {:keys [service-id->failed-instances-transient-store] :as scheduler} pod]
+  [{:keys [service-id] :as live-instance} {:keys [service-id->failed-instances-transient-store] :as scheduler-config} pod]
   (try
     (let [primary-container-status (get-in pod [:status :containerStatuses 0])]
       (when-let [newest-failure (get-in primary-container-status [:lastState :terminated])]
@@ -228,7 +228,7 @@
    - it has restarted too many times (reached the restart-expiry-threshold threshold)
    - the primary container (waiter-apps) has not transitioned to running state in container-running-grace-secs seconds
    - the pod has the waiter/pod-expired=true annotation."
-  [{:keys [container-running-grace-secs restart-expiry-threshold watch-state]}
+  [{:keys [container-running-grace-secs restart-expiry-threshold watch-state] :as scheduler-config}
    service-id instance-id restart-count {:keys [waiter/pod-expired waiter/revision-timestamp]}
    primary-container-status pod-started-at]
   (let [rs-revision-timestamp-path [:service-id->service service-id :k8s/replicaset-annotations :waiter/revision-timestamp]
@@ -271,20 +271,20 @@
 (let [kill-restart-threshold-exceeded-pod-thread-pool (Executors/newFixedThreadPool 1)]
   (defn kill-restart-threshold-exceeded-pod
     "Processes killing of a frequently restarting pod (service instance)."
-    [scheduler {:keys [k8s/pod-name k8s/restart-count service-id] :as instance}]
+    [scheduler-config {:keys [k8s/pod-name k8s/restart-count service-id] :as instance}]
     (au/execute
       (fn kill-restart-threshold-exceeded-pod-task []
         (try
           (log/info "deleting frequently restarting pod"
                     {:pod-name pod-name :restart-count restart-count :service-id service-id})
-          (hard-delete-service-instance scheduler instance)
+          (hard-delete-service-instance scheduler-config instance)
           (catch Exception ex
             (log/error ex "error in deleting frequently restarting pod" pod-name))))
       kill-restart-threshold-exceeded-pod-thread-pool)))
 
 (defn pod->ServiceInstance
   "Convert a Kubernetes Pod JSON response into a Waiter Service Instance record."
-  [{:keys [api-server-url leader?-fn restart-kill-threshold] :as scheduler} pod]
+  [{:keys [api-server-url leader?-fn restart-kill-threshold] :as scheduler-config} pod]
   (try
     (let [;; waiter-app is the first container we register
           primary-container-restart-count (or (get-in pod [:status :containerStatuses 0 :restartCount]) 0)
@@ -318,7 +318,7 @@
           instance (scheduler/make-ServiceInstance
                      (cond-> {:extra-ports (->> pod-annotations :waiter/port-count Integer/parseInt range next (mapv #(+ port0 %)))
                               :flags (cond-> #{}
-                                       (check-expired scheduler service-id instance-id pod-restart-count pod-annotations primary-container-status pod-started-at)
+                                       (check-expired scheduler-config service-id instance-id pod-restart-count pod-annotations primary-container-status pod-started-at)
                                        (conj :expired))
                               :healthy? (and (true? (get primary-container-status :ready))
                                              ;; Note that when exceeded-restart-kill-threshold? becomes true, the container *just* restarted and is non-ready,
@@ -350,10 +350,13 @@
                                                                   (some? state) (assoc :state state))))
                                                             container-statuses))))]
       (when exceeded-restart-kill-threshold?
-        (if (leader?-fn)
-          (kill-restart-threshold-exceeded-pod scheduler instance)
-          (log/info "skipping deleting frequently restarting pod on non-leader"
-                    {:pod-name pod-name :restart-count primary-container-restart-count :service-id service-id})))
+        (try
+          (if (leader?-fn)
+            (kill-restart-threshold-exceeded-pod scheduler-config instance)
+            (log/info "skipping deleting frequently restarting pod on non-leader"
+                      {:pod-name pod-name :restart-count primary-container-restart-count :service-id service-id}))
+          (catch Throwable e
+            (log/error e "error killing frequently restarting pod" pod-name))))
       instance)
     (catch Throwable e
       (log/error e "error converting pod to waiter service instance" pod)
@@ -426,12 +429,12 @@
 
 (defn- get-services
   "Get all Waiter Services (reified as ReplicaSets) running in this Kubernetes cluster."
-  [{:keys [watch-state] :as scheduler}]
+  [{:keys [watch-state] :as scheduler-config}]
   (-> watch-state deref :service-id->service vals))
 
 (defn- get-replicaset-pods
   "Get all Kubernetes pods associated with the given Waiter Service's corresponding ReplicaSet."
-  [{:keys [watch-state] :as scheduler} {service-id :id}]
+  [{:keys [watch-state] :as scheduler-config} {service-id :id}]
   (-> watch-state deref :service-id->pod-id->pod (get service-id) vals))
 
 (defn- live-pod?
@@ -443,13 +446,14 @@
   "Get all active Waiter Service Instances associated with the given Waiter Service.
    Also updates the service-id->failed-instances-transient-store as a side-effect.
    Pods reporting Failed phase status are treated as failed instances and are excluded from the return value."
-  [{:keys [service-id->failed-instances-transient-store] :as scheduler} basic-service-info]
-  (let [all-instances (for [pod (get-replicaset-pods scheduler basic-service-info)
+  [{:keys [service-id->failed-instances-transient-store] :as scheduler-config} basic-service-info]
+  (let [all-instances (for [pod (get-replicaset-pods scheduler-config basic-service-info)
                             :when (live-pod? pod)]
-                        (let [service-instance (pod->ServiceInstance scheduler pod)]
-                          (track-failed-instances! service-instance scheduler pod)
+                        (when-let [service-instance (pod->ServiceInstance scheduler-config pod)]
+                          (track-failed-instances! service-instance scheduler-config pod)
                           service-instance))
-        {active-instances false failed-instances true} (group-by #(-> % :k8s/pod-phase (= "Failed")) all-instances)]
+        {active-instances false failed-instances true}
+        (->> all-instances (remove nil?) (group-by #(-> % :k8s/pod-phase (= "Failed")) ))]
     ;; pods with Failed phase are treated as failed instances
     (doseq [{:keys [service-id] :as failed-instance} failed-instances]
       (->> (assoc failed-instance :healthy? false)
@@ -461,8 +465,8 @@
 (defn instances-breakdown!
   "Get all Waiter Service Instances associated with the given Waiter Service.
    Grouped by liveness status, i.e.: {:active-instances [...] :failed-instances [...] :killed-instances [...]}"
-  [{:keys [service-id->failed-instances-transient-store] :as scheduler} {service-id :id :as basic-service-info}]
-  {:active-instances (get-service-instances! scheduler basic-service-info)
+  [{:keys [service-id->failed-instances-transient-store] :as scheduler-config} {service-id :id :as basic-service-info}]
+  {:active-instances (get-service-instances! scheduler-config basic-service-info)
    :failed-instances (-> @service-id->failed-instances-transient-store (get service-id) vec)})
 
 (defn- patch-object-json
@@ -546,10 +550,10 @@
   "Force kill the Kubernetes pod corresponding to the given Waiter Service Instance.
    Does not adjust ReplicaSet replica count; preventing scheduling of a replacement pod must be ensured by the callee.
    Returns nil on success, but throws on failure."
-  [{:keys [api-server-url] :as scheduler} {:keys [service-id] :as instance}]
+  [{:keys [api-server-url] :as scheduler-config} {:keys [service-id] :as instance}]
   (let [pod-url (instance->pod-url api-server-url instance)]
     (try
-      (api-request pod-url scheduler :request-method :delete)
+      (api-request pod-url scheduler-config :request-method :delete)
       (catch Throwable t
         (log/error t "Error force-killing pod")))))
 
@@ -1408,9 +1412,10 @@
                         watch-socket-timeout-ms (assoc :socket-timeout-ms watch-socket-timeout-ms))
         watch-state (atom nil)
         scheduler-config {:api-server-url url
-                          :http-client http-client
                           :cluster-name cluster-name
                           :container-running-grace-secs container-running-grace-secs
+                          :http-client http-client
+                          :leader?-fn leader?-fn
                           :replicaset-api-version replicaset-api-version
                           :restart-expiry-threshold restart-expiry-threshold
                           :restart-kill-threshold restart-kill-threshold
@@ -1433,35 +1438,27 @@
           auth-renewer (when authentication
                          (start-auth-renewer authentication))
           retrieve-auth-token-state-fn (or (:query-state-fn auth-renewer) (constantly nil))
-          scheduler (->KubernetesScheduler url
-                                           authorizer
-                                           cluster-name
-                                           container-running-grace-secs
-                                           custom-options
-                                           daemon-state
-                                           fileserver
-                                           http-client
-                                           leader?-fn
-                                           log-bucket-url
-                                           max-patch-retries
-                                           max-name-length
-                                           pdb-api-version
-                                           pdb-spec-builder-fn
-                                           pod-base-port
-                                           pod-sigkill-delay-secs
-                                           pod-suffix-length
-                                           replicaset-api-version
-                                           replicaset-spec-builder-fn
-                                           restart-expiry-threshold
-                                           restart-kill-threshold
-                                           retrieve-auth-token-state-fn
-                                           retrieve-syncer-state-fn
-                                           reverse-proxy
-                                           service-id->failed-instances-transient-store
-                                           service-id->password-fn
-                                           service-id->service-description-fn
-                                           scheduler-name
-                                           watch-state)
+          extended-scheduler-config (assoc scheduler-config
+                                      :authorizer authorizer
+                                      :custom-options custom-options
+                                      :daemon-state daemon-state
+                                      :fileserver fileserver
+                                      :log-bucket-url log-bucket-url
+                                      :max-patch-retries max-patch-retries
+                                      :max-name-length max-name-length
+                                      :pdb-api-version pdb-api-version
+                                      :pdb-spec-builder-fn pdb-spec-builder-fn
+                                      :pod-base-port pod-base-port
+                                      :pod-sigkill-delay-secs pod-sigkill-delay-secs
+                                      :pod-suffix-length pod-suffix-length
+                                      :replicaset-spec-builder-fn replicaset-spec-builder-fn
+                                      :retrieve-auth-token-state-fn retrieve-auth-token-state-fn
+                                      :retrieve-syncer-state-fn retrieve-syncer-state-fn
+                                      :reverse-proxy reverse-proxy
+                                      :service-id->password-fn service-id->password-fn
+                                      :service-id->service-description-fn service-id->service-description-fn
+                                      :scheduler-name scheduler-name)
+          scheduler (map->KubernetesScheduler extended-scheduler-config)
           pod-watch-thread (start-pods-watch! scheduler watch-options)
           rs-watch-thread (start-replicasets-watch! scheduler watch-options)]
       (reset! daemon-state {:pod-watch-daemon pod-watch-thread
