@@ -456,7 +456,7 @@
 
   (state [_ include-flags]
     (cond-> {:supported-include-params ["authorizer" "service-id->failed-instances" "service-id->kill-info"
-                                        "service-id->out-of-sync-state" "syncer"]
+                                        "service-id->out-of-sync-state" "syncer" "syncer-details"]
              :type "MarathonScheduler"}
       (and authorizer (contains? include-flags "authorizer"))
       (assoc :authorizer (authz/state authorizer))
@@ -466,8 +466,10 @@
       (assoc :service-id->kill-info @service-id->kill-info-store)
       (contains? include-flags "service-id->out-of-sync-state")
       (assoc :service-id->out-of-sync-state @service-id->out-of-sync-state-store)
-      (contains? include-flags "syncer")
-      (assoc :syncer (retrieve-syncer-state-fn))))
+      (or (contains? include-flags "syncer") (contains? include-flags "syncer-details"))
+      (assoc :syncer (cond-> (retrieve-syncer-state-fn)
+                       (not (contains? include-flags "syncer-details"))
+                       (dissoc :service-id->health-check-context)))))
 
   (validate-service [_ service-id]
     (let [{:strs [cmd-type health-check-authentication run-as-user] :as service-description}

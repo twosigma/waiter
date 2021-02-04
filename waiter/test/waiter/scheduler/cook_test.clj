@@ -859,24 +859,29 @@
         retrieve-syncer-state-fn (partial scheduler/retrieve-syncer-state @syncer-state-atom)
         cook-scheduler (create-cook-scheduler-helper
                          :retrieve-syncer-state-fn retrieve-syncer-state-fn
-                         :service-id->failed-instances-transient-store (atom {service-id [:failed-instances]}))]
+                         :service-id->failed-instances-transient-store (atom {service-id [:failed-instances]}))
+        supported-include-params ["authorizer" "service-id->failed-instances" "syncer" "syncer-details"]]
     (is (= {:failed-instances [:failed-instances]
             :syncer {:last-update-time :time}}
            (scheduler/service-id->state cook-scheduler service-id)))
-    (is (= {:supported-include-params ["authorizer" "service-id->failed-instances" "syncer"]
+    (is (= {:supported-include-params supported-include-params
             :type "CookScheduler"}
            (scheduler/state cook-scheduler #{})))
-    (is (= {:supported-include-params ["authorizer" "service-id->failed-instances" "syncer"]
-            :syncer {:last-update-time :time
-                     :service-id->health-check-context {}}
+    (is (= {:supported-include-params supported-include-params
+            :syncer {:last-update-time :time}
             :type "CookScheduler"}
            (scheduler/state cook-scheduler #{"syncer"})))
-    (is (= {:service-id->failed-instances {"service-id" [:failed-instances]}
-            :supported-include-params ["authorizer" "service-id->failed-instances" "syncer"]
+    (is (= {:supported-include-params supported-include-params
             :syncer {:last-update-time :time
                      :service-id->health-check-context {}}
             :type "CookScheduler"}
-           (scheduler/state cook-scheduler #{"authorizer" "service-id->failed-instances" "syncer"})))))
+           (scheduler/state cook-scheduler #{"syncer-details"})))
+    (is (= {:service-id->failed-instances {"service-id" [:failed-instances]}
+            :supported-include-params supported-include-params
+            :syncer {:last-update-time :time
+                     :service-id->health-check-context {}}
+            :type "CookScheduler"}
+           (scheduler/state cook-scheduler #{"authorizer" "service-id->failed-instances" "syncer" "syncer-details"})))))
 
 (deftest test-cook-scheduler
   (testing "Creating a CookScheduler"
