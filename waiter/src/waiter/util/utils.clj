@@ -161,7 +161,7 @@
   [k]
   (cond
     (keyword? k) (keyword->str k)
-    (nil? k) (throw (Exception. "JSON object properties may not be nil"))
+    (nil? k) "_nil_"
     :else (str k)))
 
 (defn stringify-elements
