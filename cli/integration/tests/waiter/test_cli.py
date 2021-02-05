@@ -1437,21 +1437,53 @@ class WaiterCliTest(util.WaiterTest):
     def test_update_token_no_admin_mode(self):
         self.__test_create_update_token_admin_mode('update', self.token_name(), False)
 
-    def test_maintenance_start(self):
+    def run_maintenance_start_test(self, start_args='', ping_token=False):
         token_name = self.token_name()
-        token_fields = {'cpus': 0.1, 'mem': 128, 'cmd': 'foo'}
+        token_fields = util.minimal_service_description()
         custom_maintenance_message = "custom maintenance message"
         util.post_token(self.waiter_url, token_name, token_fields)
         try:
+            if ping_token:
+                cp = cli.ping(self.waiter_url, token_name)
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                self.assertIn('Pinging token', cli.stdout(cp))
+                self.assertIn('successful', cli.stdout(cp))
+                util.wait_until_services_for_token(self.waiter_url, token_name, 1)
+                self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
             cp = cli.maintenance('start', token_name, self.waiter_url,
-                                 maintenance_flags=f'"{custom_maintenance_message}"')
+                                 maintenance_flags=f'{start_args} "{custom_maintenance_message}"')
             self.assertEqual(0, cp.returncode, cp.stderr)
             token_data = util.load_token(self.waiter_url, token_name)
             self.assertEqual({'message': custom_maintenance_message}, token_data['maintenance'])
             for key, value in token_fields.items():
                 self.assertEqual(value, token_data[key])
+            if ping_token:
+                num_services = 1 if '--no-kill' in start_args else 0
+                self.assertEqual(num_services,
+                                 len(util.wait_until_services_for_token(self.waiter_url, token_name, num_services)))
         finally:
-            util.delete_token(self.waiter_url, token_name)
+            util.delete_token(self.waiter_url, token_name, kill_services=True)
+
+    def test_maintenance_start_basic(self):
+        self.run_maintenance_start_test()
+
+    def test_maintenance_start_no_service_ask_kill(self):
+        self.run_maintenance_start_test(start_args='--ask-kill')
+
+    def test_maintenance_start_no_service_force_kill(self):
+        self.run_maintenance_start_test(start_args='--force-kill')
+
+    def test_maintenance_start_no_service_no_kill(self):
+        self.run_maintenance_start_test(start_args='--no-kill')
+
+    def test_maintenance_start_ping_service_ask_kill(self):
+        self.run_maintenance_start_test(start_args='--ask-kill', ping_token=True)
+
+    def test_maintenance_start_ping_service_force_kill(self):
+        self.run_maintenance_start_test(start_args='--force-kill', ping_token=True)
+
+    def test_maintenance_start_ping_service_no_kill(self):
+        self.run_maintenance_start_test(start_args='--no-kill', ping_token=True)
 
     def test_maintenance_start_nonexistent_token(self):
         token_name = self.token_name()
@@ -1466,21 +1498,44 @@ class WaiterCliTest(util.WaiterTest):
         self.__test_no_cluster(partial(cli.maintenance, 'start',
                                        maintenance_flags=f'"{custom_maintenance_message}"'))
 
-    def test_maintenance_stop(self):
+    def test_maintenance_stop_no_ping(self):
         token_name = self.token_name()
         token_fields = {'cpus': 0.1, 'mem': 128, 'cmd': 'foo'}
         custom_maintenance_message = "custom maintenance message"
         util.post_token(self.waiter_url, token_name,
                         {**token_fields, 'maintenance': {'message': custom_maintenance_message}})
         try:
-            cp = cli.maintenance('stop', token_name, self.waiter_url)
+            cp = cli.maintenance('stop', token_name, self.waiter_url, maintenance_flags='--no-ping')
             self.assertEqual(0, cp.returncode, cp.stderr)
+            stdout = cli.stdout(cp)
+            self.assertNotIn(f'Pinging token {token_name}', stdout)
+            self.assertNotIn(f'Ping successful', stdout)
             token_data = util.load_token(self.waiter_url, token_name)
             self.assertEqual(None, token_data.get('maintenance', None))
             for key, value in token_fields.items():
                 self.assertEqual(value, token_data[key])
         finally:
             util.delete_token(self.waiter_url, token_name)
+
+    def test_maintenance_stop_with_ping(self):
+        token_name = self.token_name()
+        token_fields = util.minimal_service_description()
+        custom_maintenance_message = "custom maintenance message"
+        util.post_token(self.waiter_url, token_name,
+                        {**token_fields, 'maintenance': {'message': custom_maintenance_message}})
+        try:
+            cp = cli.maintenance('stop', token_name, self.waiter_url)
+            stdout = cli.stdout(cp)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn(f'Pinging token {token_name}', stdout)
+            self.assertIn('Ping successful', stdout)
+            token_data = util.load_token(self.waiter_url, token_name)
+            self.assertEqual(None, token_data.get('maintenance', None))
+            for key, value in token_fields.items():
+                self.assertEqual(value, token_data[key])
+            self.assertEqual(1, len(util.wait_until_services_for_token(self.waiter_url, token_name, 1)))
+        finally:
+            util.delete_token(self.waiter_url, token_name, kill_services=True)
 
     def test_maintenance_stop_no_cluster(self):
         self.__test_no_cluster(partial(cli.maintenance, 'stop'))

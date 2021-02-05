@@ -156,7 +156,8 @@ def kill_service_on_cluster(cluster, service_id, timeout_seconds):
         print_error(message)
 
 
-def process_kill_request(clusters, token_name_or_service_id, is_service_id, force_flag, timeout_secs):
+def process_kill_request(clusters, token_name_or_service_id, is_service_id, force_flag, timeout_secs,
+                         no_service_result=False):
     """Kills the service(s) using the given token name or service-id.
     Returns False if no services can be found or if there was a failure in deleting any service.
     Returns True if all services using the token were deleted successfully."""
@@ -165,14 +166,14 @@ def process_kill_request(clusters, token_name_or_service_id, is_service_id, forc
         num_services = query_result['count']
         if num_services == 0:
             print_no_data(clusters)
-            return False
+            return no_service_result
     else:
         query_result = query_services(clusters, token_name_or_service_id)
         num_services = query_result['count']
         if num_services == 0:
             clusters_text = ' / '.join([terminal.bold(c['name']) for c in clusters])
             print(f'There are no services using token {terminal.bold(token_name_or_service_id)} in {clusters_text}.')
-            return False
+            return no_service_result
         elif num_services > 1:
             print(f'There are {num_services} services using token {terminal.bold(token_name_or_service_id)}:')
 
