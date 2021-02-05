@@ -81,6 +81,7 @@ def start_maintenance(clusters, args, enforce_cluster):
                 return 0 if success else 1
             else:
                 logging.debug(f'Not killing services for token {token_name} in {cluster} as token ETag is missing.')
+                return 1
         else:
             logging.debug(f'Skipped killing services for token {token_name} in {cluster}.')
             return 0
@@ -108,6 +109,7 @@ def stop_maintenance(clusters, args, enforce_cluster):
                 return 0 if success else 1
             else:
                 logging.debug(f'Not pinging token {token_name} in {cluster} as token ETag is missing.')
+                return 1
         else:
             logging.debug(f'Skipped pinging token {token_name} in {cluster}.')
             return 0
@@ -159,7 +161,7 @@ def register_start(add_parser):
                              "By default, also kill the token's currently running services.")
     kill_group = parser.add_mutually_exclusive_group(required=False)
     kill_group.add_argument('--ask-kill', action='store_const', const='ask_kill', dest='kill_services',
-                            help="Ask before killing the token's currently running services.")
+                            help="Ask before killing if there are multiple running services accessed by the token.")
     kill_group.add_argument('--force-kill', action='store_const', const='force_kill', dest='kill_services',
                             help="Force kill the token's currently running services. "
                                  "Killing the token's services is enabled by default.")
