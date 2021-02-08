@@ -1775,11 +1775,14 @@
                                clock synchronize-fn kv-store token-cluster-calculator token-root history-length limit-per-owner
                                waiter-hostnames entitlement-manager make-inter-router-requests-sync-fn validate-service-description-fn
                                attach-service-defaults-fn tokens-update-chan request)))))
-   :token-list-handler-fn (pc/fnk [[:state entitlement-manager kv-store]
+   :token-list-handler-fn (pc/fnk [[:daemons token-watch-maintainer]
+                                   [:state entitlement-manager kv-store]
                                    wrap-secure-request-fn]
-                            (wrap-secure-request-fn
-                              (fn token-handler-fn [request]
-                                (token/handle-list-tokens-request kv-store entitlement-manager request))))
+                            (let [{:keys [tokens-watch-channels-update-chan]} token-watch-maintainer]
+                              (wrap-secure-request-fn
+                                (fn token-handler-fn [request]
+                                  (token/handle-list-tokens-request kv-store entitlement-manager
+                                                                    tokens-watch-channels-update-chan request)))))
    :token-owners-handler-fn (pc/fnk [[:state kv-store]
                                      wrap-secure-request-fn]
                               (wrap-secure-request-fn

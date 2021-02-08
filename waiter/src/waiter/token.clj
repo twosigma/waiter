@@ -636,13 +636,61 @@
     (catch Exception ex
       (utils/exception->response ex request))))
 
+(defn- handle-list-tokens-watch
+  [index-filter-fn metadata-transducer-fn tokens-watch-channels-update-chan {:keys [ctrl]}]
+  (let [watch-chan-xform
+        (comp
+          (map
+            (fn event-filter [{:keys [object type] :as event}]
+              (log/info "received event from token-watch-maintainer daemon" {:event event})
+              (case type
+                :INITIAL
+                (assoc event :object (->> object
+                                          (filter index-filter-fn)
+                                          (map metadata-transducer-fn)))
+                :EVENTS
+                (assoc event :object (->> object
+                                          (filter (fn [{:keys [object]}]
+                                                    (index-filter-fn object)))
+                                          (map (fn [{:keys [type] :as entry}]
+                                                 (if (= type :UPDATE)
+                                                   (update entry :object metadata-transducer-fn)
+                                                   entry)))))
+                (throw (ex-info "Invalid event type provided" {:event event})))))
+          (filter
+            (fn empty-aggregate-events [{:keys [object type] :as event}]
+              (case type
+                :INITIAL true
+                :EVENTS (not-empty object)
+                (throw (ex-info "Invalid event type provided" {:event event})))))
+          (map
+            (fn [event]
+              (log/info "forwarding tokens event to client" {:event event})
+              (utils/clj->json event))))
+        watch-chan-ex-handler-fn
+        (fn watch-chan-ex-handler [e]
+          (log/error e "Error during transformation of a token watch event")
+          (async/go (async/>! ctrl e)))
+        watch-chan-buffer (async/buffer 1000)
+        watch-chan (async/chan watch-chan-buffer watch-chan-xform watch-chan-ex-handler-fn)]
+    (async/go
+      (async/<! ctrl)
+      (log/info "closing watch-chan, as ctrl channel in request has been triggered")
+      (async/close! watch-chan))
+    (async/put! tokens-watch-channels-update-chan watch-chan)
+    (utils/attach-waiter-source
+      {:body watch-chan
+       :headers {"content-type" "application/json"}
+       :status http-200-ok})))
+
 (defn handle-list-tokens-request
-  [kv-store entitlement-manager {:keys [request-method] :as req}]
+  [kv-store entitlement-manager tokens-watch-channels-update-chan {:keys [request-method] :as req}]
   (try
     (case request-method
       :get (let [{:strs [can-manage-as-user] :as request-params} (-> req ru/query-params-request :query-params)
                  include-deleted (utils/param-contains? request-params "include" "deleted")
                  show-metadata (utils/param-contains? request-params "include" "metadata")
+                 should-watch? (utils/request-flag request-params "watch")
                  should-filter-maintenance? (contains? request-params "maintenance")
                  maintenance-active? (utils/request-flag request-params "maintenance")
                  include-run-as-requester (when (contains? request-params "run-as-requester")
@@ -663,41 +711,45 @@
                                                  (fn [token-parameters]
                                                    (and (contains? token-parameters parameter-name)
                                                         (contains? search-parameter-values
-                                                                   (str (get token-parameters parameter-name)))))))]
-             (->> owners
-                  (map
-                    (fn [owner]
-                      (->> (list-index-entries-for-owner kv-store owner)
-                           (filter
-                             (fn list-tokens-delete-predicate [[_ entry]]
-                               (or include-deleted (not (:deleted entry)))))
-                           (filter
-                             (fn list-tokens-maintenance-predicate [[_ entry]]
-                               (or (not should-filter-maintenance?)
-                                   (= (-> entry :maintenance true?) maintenance-active?))))
-                           (filter
-                             (fn list-tokens-auth-predicate [[token _]]
-                               (or (nil? can-manage-as-user)
-                                   (authz/manage-token? entitlement-manager can-manage-as-user token {"owner" owner}))))
-                           (filter
-                             (fn list-tokens-parameters-predicate [[token _]]
-                               (let [token-parameters (sd/token->token-parameters
-                                                        kv-store token
-                                                        :error-on-missing false
-                                                        :include-deleted include-deleted)]
-                                 (and (every? #(% token-parameters) parameter-filter-predicates)
-                                      (or (nil? include-run-as-requester)
-                                          (= include-run-as-requester (sd/run-as-requester? token-parameters)))
-                                      (or (nil? include-requires-parameters)
-                                          (= include-requires-parameters (sd/requires-parameters? token-parameters)))))))
-                           (map
-                             (fn [[token entry]]
-                               (-> (if show-metadata
-                                     (update entry :last-update-time tc/from-long)
-                                     (dissoc entry :deleted :etag :last-update-time))
-                                 (assoc :owner owner :token token)))))))
-                  flatten
-                  utils/clj->streaming-json-response))
+                                                                   (str (get token-parameters parameter-name)))))))
+                 index-filter-fn
+                 (every-pred
+                   (fn list-tokens-delete-predicate [entry]
+                     (or include-deleted (not (:deleted entry))))
+                   (fn list-tokens-maintenance-predicate [entry]
+                     (or (not should-filter-maintenance?)
+                         (= (-> entry :maintenance true?) maintenance-active?)))
+                   (fn list-tokens-auth-predicate [{:keys [owner token]}]
+                     (or (nil? can-manage-as-user)
+                         (authz/manage-token? entitlement-manager can-manage-as-user token {"owner" owner})))
+                   (fn list-tokens-parameters-predicate [{:keys [token]}]
+                     (let [token-parameters (sd/token->token-parameters
+                                              kv-store token
+                                              :error-on-missing false
+                                              :include-deleted include-deleted)]
+                       (and (every? #(% token-parameters) parameter-filter-predicates)
+                            (or (nil? include-run-as-requester)
+                                (= include-run-as-requester (sd/run-as-requester? token-parameters)))
+                            (or (nil? include-requires-parameters)
+                                (= include-requires-parameters (sd/requires-parameters? token-parameters)))))))
+                 metadata-transducer-fn
+                 (fn metadata-predicate [entry]
+                   (if show-metadata
+                     (update entry :last-update-time tc/from-long)
+                     (dissoc entry :deleted :etag :last-update-time)))]
+             (if should-watch?
+               (handle-list-tokens-watch index-filter-fn metadata-transducer-fn tokens-watch-channels-update-chan req)
+               (->> owners
+                    (map
+                      (fn [owner]
+                        (->> (list-index-entries-for-owner kv-store owner)
+                             (map
+                               (fn [[token entry]]
+                                 (assoc entry :owner owner :token token)))
+                             (filter index-filter-fn)
+                             (map metadata-transducer-fn))))
+                    flatten
+                    utils/clj->streaming-json-response)))
       (throw (ex-info "Only GET supported" {:log-level :info
                                             :request-method request-method
                                             :status http-405-method-not-allowed})))

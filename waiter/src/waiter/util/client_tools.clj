@@ -373,11 +373,12 @@
 
 (defn make-request
   ([waiter-url path &
-    {:keys [body client cookies content-type disable-auth form-params headers
+    {:keys [body client cookies content-type disable-auth fold-chunked-response? form-params headers
             method multipart protocol query-params scheme trailers-fn verbose]
      :or {body nil
           cookies []
           disable-auth nil
+          fold-chunked-response? true
           headers {}
           method :get
           query-params {}
@@ -408,6 +409,7 @@
              (async/<!! (http/request
                           client
                           (cond-> {:body body
+                                   :fold-chunked-response? fold-chunked-response?
                                    :follow-redirects? false
                                    :headers request-headers
                                    :method method
@@ -419,10 +421,15 @@
                             (not (str/blank? content-type)) (assoc :content-type content-type)
                             cookies (assoc :cookies (map (fn [c] [(:name c) (:value c)]) cookies))
                             trailers-fn (assoc :trailers-fn trailers-fn))))
-             response-body (when body (async/<!! body))
-             error (or error
-                       (when error-chan (async/<!! error-chan)))]
-         (when verbose
+             response-body (when body
+                             (if fold-chunked-response?
+                               (async/<!! body)
+                               body))
+             error (if fold-chunked-response?
+                     (or error
+                         (when error-chan (async/<!! error-chan)))
+                     error-chan)]
+         (when (and verbose fold-chunked-response?)
            (log/info (get request-headers "x-cid") "response size:" (count (str response-body))))
          {:body response-body
           :cookies (parse-cookies (get headers "set-cookie"))
@@ -430,7 +437,10 @@
           :headers headers
           :request-headers request-headers
           :status status
-          :trailers (when trailers (async/<!! trailers))})
+          :trailers (when trailers
+                      (if fold-chunked-response?
+                        (async/<!! trailers)
+                        trailers))})
        (catch Exception e
          (when verbose
            (log/info (get request-headers "x-cid") "error in obtaining response" (.getMessage e)))
@@ -870,7 +880,7 @@
                                :headers (assoc headers "host" token)
                                :method :delete
                                :query-params (if hard-delete {"hard-delete" true} {}))]
-    (assert-response-status response http-200-ok )))
+    (assert-response-status response http-200-ok)))
 
 (defn wait-for
   "Invoke predicate every interval (default 10) seconds until it returns true,
