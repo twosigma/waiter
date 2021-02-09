@@ -75,11 +75,6 @@
    :last-update-time last-update-time
    :maintenance (some? maintenance)})
 
-(defn make-index-event
-  "Create an event for watch endpoints"
-  [type object]
-  {:object object :type type})
-
 (defn send-internal-index-event
   "Send an internal event to be processed by the tokens-watch-maintainer daemon process"
   [tokens-update-chan token owner]
@@ -217,7 +212,7 @@
         (kv/fetch kv-store owner-key :refresh true))))
 
   (defn list-index-entries-for-owner
-    "List all tokens for a given user."
+    "List all tokens for a given user by fetching the owner index in the kv-store"
     [kv-store owner & {:keys [refresh] :or {refresh false}}]
     (let [owner->owner-key (kv/fetch kv-store token-owners-key :refresh refresh)]
       (if-let [owner-key (get owner->owner-key owner)]
@@ -275,19 +270,19 @@
                 (when-not (contains? new-owner-keys owner-key)
                   (kv/delete kv-store owner-key)))))))))
 
-  (defn get-token-index-map
+  (defn get-token->index
     "Return a map of ALL token to token index entry. The token index entries also include the owner and token.
      Specifying :refresh true will refresh all owner/token indexes and get the most up to date map."
     [kv-store & {:keys [refresh] :or {refresh false}}]
     (->> kv-store
          list-token-owners
          (reduce
-           (fn [outer-token-index-map owner]
+           (fn [outer-token->index owner]
              (reduce
-               (fn [inner-token-index-map [token entry]]
+               (fn [inner-token->index [token entry]]
                  (->> (assoc entry :owner owner :token token)
-                      (assoc inner-token-index-map token)))
-               outer-token-index-map
+                      (assoc inner-token->index token)))
+               outer-token->index
                (list-index-entries-for-owner kv-store owner :refresh refresh)))
            {})))
 

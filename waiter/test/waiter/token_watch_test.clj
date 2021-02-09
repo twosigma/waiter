@@ -73,8 +73,8 @@
 
     (testing "sending basic event to channels"
       (let [chans (create-watch-chans 10)
-            closed-chans (send-event-to-channels chans event)]
-        (is (= [] closed-chans))
+            closed-chans (send-event-to-channels! chans event)]
+        (is (= #{} closed-chans))
         (assert-channels-next-message chans event)))
 
     (testing "sending basic event to mix of open and closed channels"
@@ -82,8 +82,8 @@
             open-chans (create-watch-chans 10)
             chans (conj open-chans closed-chan)
             _ (async/close! closed-chan)
-            result-closed-chans (send-event-to-channels chans event)]
-        (is (= [closed-chan] result-closed-chans))
+            result-closed-chans (send-event-to-channels! chans event)]
+        (is (= #{closed-chan} result-closed-chans))
         (assert-channels-next-message open-chans event)))
 
     (testing "sending event to a channel with maxed out put! buffer (1024 messages) will close the buffer"
@@ -91,14 +91,14 @@
             _ (dotimes [i 1024] (async/put! filled-chan i))
             open-chans (create-watch-chans 10)
             chans (conj open-chans filled-chan)
-            result-closed-chans (send-event-to-channels chans event)]
-        (is (= [filled-chan] result-closed-chans))
+            result-closed-chans (send-event-to-channels! chans event)]
+        (is (= #{filled-chan} result-closed-chans))
         (assert-channels-next-message open-chans event)))))
 
 (let [get-token-hash (fn [kv-store token] (sd/token-data->token-hash (kv/fetch kv-store token)))
       get-latest-state (fn [query-chan]
                          (let [temp-chan (async/promise-chan)]
-                           (async/>!! query-chan {:include-flags #{"token-index-map"}
+                           (async/>!! query-chan {:include-flags #{"token->index"}
                                                   :response-chan temp-chan})
                            (async/<!! temp-chan)))
       add-watch-chans (fn [tokens-watch-channels-update-chan watch-chans]
@@ -127,14 +127,14 @@
           {:keys [exit-chan go-chan query-chan tokens-watch-channels-update-chan]}
           (start-token-watch-maintainer kv-store clock 1 1 (async/chan))]
       (is (= {:last-update-time (clock)
-              :token-index-map {}
+              :token->index {}
               :watch-count 0}
              (get-latest-state query-chan)))
 
       (testing "watch-channels should receive empty list of tokens"
         (add-watch-chans tokens-watch-channels-update-chan watch-chans)
         (is (= {:last-update-time (clock)
-                :token-index-map {}
+                :token->index {}
                 :watch-count 10}
                (get-latest-state query-chan)))
         (assert-channels-next-message watch-chans (make-index-event :INITIAL [])))
@@ -149,15 +149,15 @@
           {:keys [exit-chan go-chan query-chan tokens-watch-channels-update-chan]}
           (start-token-watch-maintainer kv-store clock 1 1 (async/chan))
           token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1"))
-          expected-token-index-map {"token1" token-cur-index}]
+          expected-token->index {"token1" token-cur-index}]
       (is (= {:last-update-time (clock)
-              :token-index-map expected-token-index-map
+              :token->index expected-token->index
               :watch-count 0}
              (get-latest-state query-chan)))
 
       (testing "watch-channels should receive starting list of tokens"
         (add-watch-chans tokens-watch-channels-update-chan watch-chans)
-        (is (= {:last-update-time (clock) :token-index-map expected-token-index-map :watch-count 10}
+        (is (= {:last-update-time (clock) :token->index expected-token->index :watch-count 10}
                (get-latest-state query-chan)))
         (assert-channels-next-message-with-fn watch-chans
                                               #(and (= #{token-cur-index}
@@ -175,17 +175,17 @@
 
       (testing "watch-channels get UPDATE event for added tokens"
         (add-watch-chans tokens-watch-channels-update-chan watch-chans)
-        (is (= {:last-update-time (clock) :token-index-map {} :watch-count 10}
+        (is (= {:last-update-time (clock) :token->index {} :watch-count 10}
                (get-latest-state query-chan)))
         (store-service-description-for-token
           synchronize-fn kv-store history-length limit-per-owner "token1" token1-service-desc token1-metadata)
         (let [token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1"))
-              expected-token-index-map {"token1" token-cur-index}]
+              expected-token->index {"token1" token-cur-index}]
           (assert-channels-next-message watch-chans (make-index-event :INITIAL []))
           (send-internal-index-event tokens-update-chan "token1" (get token1-index :owner))
           (assert-channels-next-message watch-chans (make-index-event :UPDATE token-cur-index))
           (is (= {:last-update-time (clock)
-                  :token-index-map expected-token-index-map
+                  :token->index expected-token->index
                   :watch-count 10}
                  (get-latest-state query-chan)))))
 
@@ -193,11 +193,11 @@
         (store-service-description-for-token
           synchronize-fn kv-store history-length limit-per-owner "token1" (assoc token1-service-desc "cpus" 2) token1-metadata)
         (let [token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1"))
-              expected-token-index-map {"token1" token-cur-index}]
+              expected-token->index {"token1" token-cur-index}]
           (send-internal-index-event tokens-update-chan "token1" (get token1-index :owner))
           (assert-channels-next-message watch-chans (make-index-event :UPDATE token-cur-index))
           (is (= {:last-update-time (clock)
-                  :token-index-map expected-token-index-map
+                  :token->index expected-token->index
                   :watch-count 10}
                  (get-latest-state query-chan)))
 
@@ -205,7 +205,7 @@
             (send-internal-index-event tokens-update-chan "token1" (get token1-index :owner))
             (assert-channels-no-new-message watch-chans 1000)
             (is (= {:last-update-time (clock)
-                    :token-index-map expected-token-index-map
+                    :token->index expected-token->index
                     :watch-count 10}
                    (get-latest-state query-chan))))))
 
@@ -215,11 +215,11 @@
         (let [token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1")
                                                   :last-update-time (clock-millis)
                                                   :deleted true)
-              expected-token-index-map {"token1" token-cur-index}]
+              expected-token->index {"token1" token-cur-index}]
           (send-internal-index-event tokens-update-chan "token1" (get token1-index :owner))
           (assert-channels-next-message watch-chans (make-index-event :UPDATE token-cur-index))
           (is (= {:last-update-time (clock)
-                  :token-index-map expected-token-index-map
+                  :token->index expected-token->index
                   :watch-count 10}
                  (get-latest-state query-chan)))))
 
@@ -231,7 +231,7 @@
                                       (make-index-event :DELETE {:owner (get token1-index :owner)
                                                                  :token "token1"}))
         (is (= {:last-update-time (clock)
-                :token-index-map {}
+                :token->index {}
                 :watch-count 10}
                (get-latest-state query-chan))))
 
@@ -239,7 +239,7 @@
         (send-internal-index-event tokens-update-chan "token1" (get token1-index :owner))
         (assert-channels-no-new-message watch-chans 1000)
         (is (= {:last-update-time (clock)
-                :token-index-map {}
+                :token->index {}
                 :watch-count 10}
                (get-latest-state query-chan))))
       (stop-token-watch-maintainer go-chan exit-chan)))
@@ -252,20 +252,20 @@
           {:keys [exit-chan go-chan tokens-watch-channels-update-chan query-chan]}
           (start-token-watch-maintainer kv-store clock 1 1 watch-refresh-timer-chan)]
       (is (= {:last-update-time (clock)
-              :token-index-map {}
+              :token->index {}
               :watch-count 0}
              (get-latest-state query-chan)))
 
       (testing "watch-count should increment when channels are added"
         (add-watch-chans tokens-watch-channels-update-chan watch-chans-1)
         (is (= {:last-update-time (clock)
-                :token-index-map {}
+                :token->index {}
                 :watch-count 10}
                (get-latest-state query-chan)))
         (assert-channels-next-message watch-chans-1 (make-index-event :INITIAL []))
         (add-watch-chans tokens-watch-channels-update-chan watch-chans-2)
         (is (= {:last-update-time (clock)
-                :token-index-map {}
+                :token->index {}
                 :watch-count 20}
                (get-latest-state query-chan)))
         (assert-channels-next-message watch-chans-2 (make-index-event :INITIAL [])))
@@ -275,13 +275,13 @@
         (trigger-token-watch-refresh watch-refresh-timer-chan)
         (get-latest-state query-chan)
         (is (= {:last-update-time (clock)
-                :token-index-map {}
+                :token->index {}
                 :watch-count 10}
                (get-latest-state query-chan)))
         (remove-watch-chans watch-chans-2)
         (trigger-token-watch-refresh watch-refresh-timer-chan)
         (is (= {:last-update-time (clock)
-                :token-index-map {}
+                :token->index {}
                 :watch-count 0}
                (get-latest-state query-chan))))
 
@@ -294,14 +294,14 @@
           {:keys [exit-chan go-chan tokens-watch-channels-update-chan query-chan]}
           (start-token-watch-maintainer kv-store clock 1 1 watch-refresh-timer-chan)]
       (is (= {:last-update-time (clock)
-              :token-index-map {}
+              :token->index {}
               :watch-count 0}
              (get-latest-state query-chan)))
 
       (testing "refresh-timeout should not update if there are no changes in kv-store"
         (trigger-token-watch-refresh watch-refresh-timer-chan)
         (is (= {:last-update-time (clock)
-                :token-index-map {}
+                :token->index {}
                 :watch-count 0}
                (get-latest-state query-chan))))
 
@@ -313,9 +313,9 @@
           synchronize-fn kv-store history-length limit-per-owner "token1" token1-service-desc token1-metadata)
         (trigger-token-watch-refresh watch-refresh-timer-chan)
         (let [token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1"))
-              expected-token-index-map {"token1" token-cur-index}]
+              expected-token->index {"token1" token-cur-index}]
           (is (= {:last-update-time (clock)
-                  :token-index-map expected-token-index-map
+                  :token->index expected-token->index
                   :watch-count 10}
                  (get-latest-state query-chan)))
           (assert-channels-next-message watch-chans
@@ -329,9 +329,9 @@
           token1-metadata)
         (trigger-token-watch-refresh watch-refresh-timer-chan)
         (let [token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1"))
-              expected-token-index-map {"token1" token-cur-index}]
+              expected-token->index {"token1" token-cur-index}]
           (is (= {:last-update-time (clock)
-                  :token-index-map expected-token-index-map
+                  :token->index expected-token->index
                   :watch-count 10}
                  (get-latest-state query-chan)))
           (assert-channels-next-message watch-chans (->> (make-index-event :UPDATE token-cur-index)
@@ -345,9 +345,9 @@
         (let [token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1")
                                                   :last-update-time (clock-millis)
                                                   :deleted true)
-              expected-token-index-map {"token1" token-cur-index}]
+              expected-token->index {"token1" token-cur-index}]
           (is (= {:last-update-time (clock)
-                  :token-index-map expected-token-index-map
+                  :token->index expected-token->index
                   :watch-count 10}
                  (get-latest-state query-chan)))
           (assert-channels-next-message watch-chans (->> (make-index-event :UPDATE token-cur-index)
@@ -359,7 +359,7 @@
                                               (get token1-index :owner) auth-user :hard-delete true)
         (trigger-token-watch-refresh watch-refresh-timer-chan)
         (is (= {:last-update-time (clock)
-                :token-index-map {}
+                :token->index {}
                 :watch-count 10}
                (get-latest-state query-chan)))
         (assert-channels-next-message watch-chans (->> (make-index-event :DELETE {:owner (get token1-index :owner)
@@ -383,9 +383,9 @@
         (is (= {:buffer-state {:update-chan-count 0
                                :watch-channels-update-chan-count 0}
                 :last-update-time (clock)
-                :token-index-map {}
+                :token->index {}
                 :watch-count 0}
-               (query-state-fn #{"token-index-map" "buffer-state"}))))
+               (query-state-fn #{"token->index" "buffer-state"}))))
 
       (stop-token-watch-maintainer go-chan exit-chan)))
 
@@ -400,7 +400,7 @@
               msg-count 5000]
           (async/put! tokens-watch-channels-update-chan slow-chan)
           (is (= {:last-update-time (clock)
-                  :token-index-map {}
+                  :token->index {}
                   :watch-count 1}
                  (get-latest-state query-chan)))
           (is (every?
@@ -413,9 +413,9 @@
                     (send-internal-index-event tokens-update-chan "token1" (get token1-index :owner))
                     (let [token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1")
                                                               :last-update-time i)
-                          expected-token-index-map {"token1" token-cur-index}]
+                          expected-token->index {"token1" token-cur-index}]
                       (= {:last-update-time (clock)
-                          :token-index-map expected-token-index-map}
+                          :token->index expected-token->index}
                          (dissoc (get-latest-state query-chan)
                                  :watch-count)))))))
 

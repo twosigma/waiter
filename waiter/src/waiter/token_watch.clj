@@ -1,28 +1,36 @@
 (ns waiter.token-watch
   (:require [clojure.core.async :as async]
             [clojure.data :as data]
+            [clojure.set :as set]
             [clojure.tools.logging :as log]
             [metrics.counters :as counters]
             [metrics.meters :as meters]
             [metrics.timers :as timers]
             [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics]
-            [waiter.token :as tkn]
-            [waiter.util.async-utils :as au]))
+            [waiter.token :as token]))
 
-(defn send-event-to-channels
+(defn make-index-event
+  "Create an event for watch endpoints"
+  [type object]
+  {:object object :type type})
+
+(defn send-event-to-channels!
   "Given a list of watch channels and the event to send to each channel, send the event in a non blocking fashion and
-  close channels that error the async/put! operation. Returns a list of closed channels."
+  close channels that error the async/put! operation. Returns a set of channels that are closed."
   [watch-chans event]
-  (for [watch-chan watch-chans
-        :when
-        (try
-          (not (async/put! watch-chan event))
-          (catch AssertionError e
-            (log/error e "closing watch-chan due to error")
-            (async/close! watch-chan)
-            true))]
-    watch-chan))
+  (reduce
+    (fn [closed-chans watch-chan]
+      (try
+        (if (async/put! watch-chan event)
+          closed-chans
+          (conj closed-chans watch-chan))
+        (catch AssertionError e
+          (log/error e "closing watch-chan due to error")
+          (async/close! watch-chan)
+          (conj closed-chans watch-chan))))
+    #{}
+    watch-chans))
 
 (defn start-token-watch-maintainer
   "Starts daemon thread that maintains token watches and process/filters internal token events to be streamed to
@@ -37,16 +45,16 @@
           tokens-watch-channels-update-chan (async/chan tokens-watch-channels-update-chan-buffer)
           query-chan (async/chan)
           state-atom (atom {:last-update-time (clock)
-                            :token-index-map (tkn/get-token-index-map kv-store :refresh true)
+                            :token->index (token/get-token->index kv-store :refresh true)
                             :watch-chans #{}})
           query-state-fn
           (fn tokens-watch-query-state-fn
             [include-flags]
-            (let [{:keys [last-update-time token-index-map watch-chans]} @state-atom]
+            (let [{:keys [last-update-time token->index watch-chans]} @state-atom]
               (cond-> {:last-update-time last-update-time
                        :watch-count (count watch-chans)}
-                      (contains? include-flags "token-index-map")
-                      (assoc :token-index-map token-index-map)
+                      (contains? include-flags "token->index")
+                      (assoc :token->index token->index)
                       (contains? include-flags "buffer-state")
                       (assoc :buffer-state {:update-chan-count (count tokens-update-chan-buffer)
                                             :watch-channels-update-chan-count
@@ -54,7 +62,7 @@
           go-chan
           (async/go
             (try
-              (loop [{:keys [token-index-map watch-chans] :as current-state} @state-atom]
+              (loop [{:keys [token->index watch-chans] :as current-state} @state-atom]
                 (reset! state-atom current-state)
                 (let [[msg current-chan]
                       (async/alts! [exit-chan tokens-update-chan tokens-watch-channels-update-chan
@@ -70,52 +78,50 @@
 
                         tokens-update-chan
                         (timers/start-stop-time!
-                          (metrics/waiter-timer "core" "token-watch-maintainer" "process-tokens-update")
+                          (metrics/waiter-timer "core" "token-watch-maintainer" "token-update")
                           (let [{:keys [token owner]} msg
-                                token-index-entry (tkn/get-token-index kv-store token owner :refresh true)
-                                local-token-index-entry (get token-index-map token)]
-                            (cond
+                                token-index-entry (token/get-token-index kv-store token owner :refresh true)
+                                local-token-index-entry (get token->index token)]
+                            (if (= token-index-entry local-token-index-entry)
                               ; There is no change detected, so no event to be reported
-                              (= token-index-entry local-token-index-entry)
                               current-state
-                              ; If index-entry retrieved from kv-store exists then treat as UPDATE (includes token creation)
-                              (some? token-index-entry)
-                              (let [closed-chans (send-event-to-channels watch-chans (tkn/make-index-event :UPDATE token-index-entry))]
-                                (-> current-state
-                                    (assoc-in [:token-index-map token] token-index-entry)
-                                    (assoc :watch-chans (apply disj watch-chans closed-chans))))
-                              :else
-                              (let [event-obj {:owner owner :token token}
-                                    closed-chans (send-event-to-channels watch-chans (tkn/make-index-event :DELETE event-obj))]
-                                (-> current-state
-                                    (assoc :token-index-map (dissoc token-index-map token))
-                                    (assoc :watch-chans (apply disj watch-chans closed-chans)))))))
+                              (let [[index-event next-state]
+                                    (if (some? token-index-entry)
+                                      ; If index-entry retrieved from kv-store exists then treat as UPDATE
+                                      ; (includes token creation and soft deletion)
+                                      [(make-index-event :UPDATE token-index-entry)
+                                       (assoc-in current-state [:token->index token] token-index-entry)]
+                                      ; index-entry doesn't exist then treat as DELETE
+                                      [(make-index-event :DELETE {:owner owner :token token})
+                                       (assoc current-state :token->index (dissoc token->index token))])
+                                    closed-chans (send-event-to-channels! watch-chans index-event)]
+                                (update next-state :watch-chans #(set/difference % closed-chans))))))
 
                         tokens-watch-channels-update-chan
                         (timers/start-stop-time!
-                          (metrics/waiter-timer "core" "token-watch-maintainer" "process-tokens-channels-update")
+                          (metrics/waiter-timer "core" "token-watch-maintainer" "channel-update")
                           (let [watch-chan msg]
-                            (async/put! watch-chan (tkn/make-index-event :INITIAL (or (vals token-index-map) [])))
+                            (async/put! watch-chan (make-index-event :INITIAL (or (vals token->index) [])))
                             (assoc current-state :watch-chans (conj watch-chans watch-chan))))
 
                         watch-refresh-timer-chan
                         (timers/start-stop-time!
                           (metrics/waiter-timer "core" "token-watch-maintainer" "refresh")
-                          (let [next-token-index-map (tkn/get-token-index-map kv-store :refresh true)
-                                [only-old-indexes only-next-indexes _] (data/diff token-index-map next-token-index-map)
+                          (let [next-token->index (token/get-token->index kv-store :refresh true)
+                                [only-old-indexes only-next-indexes _] (data/diff token->index next-token->index)
                                 ; if token in old-indexes and not in only-next-indexes, then those token indexes were deleted
                                 delete-events
                                 (for [[token {:keys [owner]}] only-old-indexes
                                       :when (not (contains? only-next-indexes token))]
-                                  (tkn/make-index-event :DELETE {:owner owner :token token}))
+                                  (make-index-event :DELETE {:owner owner :token token}))
                                 ; if token in only-next-indexes, it has been updated (soft-delete, and creation included)
                                 update-events
                                 (for [[token _] only-next-indexes]
-                                  (tkn/make-index-event :UPDATE (get next-token-index-map token)))
+                                  (make-index-event :UPDATE (get next-token->index token)))
                                 events (concat delete-events update-events)
                                 ; send events event if empty, which will serve as a heartbeat
                                 closed-chans
-                                (send-event-to-channels watch-chans (tkn/make-index-event :EVENTS events))]
+                                (send-event-to-channels! watch-chans (make-index-event :EVENTS events))]
                             (when (not-empty events)
                               (counters/inc! (metrics/waiter-counter "core" "token-watch-maintainer" "refresh-sync"))
                               (meters/mark! (metrics/waiter-meter "core" "token-watch-maintainer" "refresh-sync-rate"))
@@ -124,9 +130,10 @@
                               (log/info "token-watch-maintainer found some differences in kv-store and current-state"
                                         {:only-in-current only-old-indexes
                                          :only-in-next only-next-indexes
-                                         :token-count (count token-index-map)}))
-                            (assoc current-state :token-index-map next-token-index-map
-                                                 :watch-chans (apply disj watch-chans closed-chans))))
+                                         :token-count (count token->index)}))
+                            (-> current-state
+                                (assoc :token->index next-token->index)
+                                (update :watch-chans #(set/difference % closed-chans)))))
 
                         query-chan
                         (let [{:keys [response-chan include-flags]} msg]
