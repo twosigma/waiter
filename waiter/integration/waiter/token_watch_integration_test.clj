@@ -67,10 +67,10 @@
           (is (await-goal-response-for-all-routers goal-fn watch-state-request-fn router_urls))))
 
       (testing "updating a token reflects change in token-watch-state"
-        (let [token (create-token-name waiter-url ".")
-              last-update-time (System/currentTimeMillis)
+        (let [last-update-time (System/currentTimeMillis)
               response (post-token waiter-url
                                    {:token token :cpus 2 :last-update-time last-update-time}
+                                   :headers {"if-match" (token->etag waiter-url token)}
                                    :query-params {"update-mode" "admin"})
               goal-fn (fn [{:keys [body] :as response}]
                         (let [{:strs [state]} (try-parse-json body)]
