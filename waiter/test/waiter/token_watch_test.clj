@@ -73,8 +73,8 @@
 
     (testing "sending basic event to channels"
       (let [chans (create-watch-chans 10)
-            closed-chans (send-event-to-channels! chans event)]
-        (is (= #{} closed-chans))
+            open-chans (send-event-to-channels! chans event)]
+        (is (= (set chans) open-chans))
         (assert-channels-next-message chans event)))
 
     (testing "sending basic event to mix of open and closed channels"
@@ -82,8 +82,8 @@
             open-chans (create-watch-chans 10)
             chans (conj open-chans closed-chan)
             _ (async/close! closed-chan)
-            result-closed-chans (send-event-to-channels! chans event)]
-        (is (= #{closed-chan} result-closed-chans))
+            result-open-chans (send-event-to-channels! chans event)]
+        (is (= (set open-chans) result-open-chans))
         (assert-channels-next-message open-chans event)))
 
     (testing "sending event to a channel with maxed out put! buffer (1024 messages) will close the buffer"
@@ -91,8 +91,8 @@
             _ (dotimes [i 1024] (async/put! filled-chan i))
             open-chans (create-watch-chans 10)
             chans (conj open-chans filled-chan)
-            result-closed-chans (send-event-to-channels! chans event)]
-        (is (= #{filled-chan} result-closed-chans))
+            result-open-chans (send-event-to-channels! chans event)]
+        (is (= (set open-chans) result-open-chans))
         (assert-channels-next-message open-chans event)))))
 
 (let [get-token-hash (fn [kv-store token] (sd/token-data->token-hash (kv/fetch kv-store token)))

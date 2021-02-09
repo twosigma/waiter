@@ -1,7 +1,6 @@
 (ns waiter.token-watch
   (:require [clojure.core.async :as async]
             [clojure.data :as data]
-            [clojure.set :as set]
             [clojure.tools.logging :as log]
             [metrics.counters :as counters]
             [metrics.meters :as meters]
@@ -17,18 +16,18 @@
 
 (defn send-event-to-channels!
   "Given a list of watch channels and the event to send to each channel, send the event in a non blocking fashion and
-  close channels that error the async/put! operation. Returns a set of channels that are closed."
+  close channels that error the async/put! operation. Returns the set of open channels."
   [watch-chans event]
   (reduce
-    (fn [closed-chans watch-chan]
+    (fn send-event! [open-chans watch-chan]
       (try
         (if (async/put! watch-chan event)
-          closed-chans
-          (conj closed-chans watch-chan))
+          (conj open-chans watch-chan)
+          open-chans)
         (catch AssertionError e
           (log/error e "closing watch-chan due to error")
           (async/close! watch-chan)
-          (conj closed-chans watch-chan))))
+          open-chans)))
     #{}
     watch-chans))
 
@@ -94,8 +93,8 @@
                                       ; index-entry doesn't exist then treat as DELETE
                                       [(make-index-event :DELETE {:owner owner :token token})
                                        (assoc current-state :token->index (dissoc token->index token))])
-                                    closed-chans (send-event-to-channels! watch-chans index-event)]
-                                (update next-state :watch-chans #(set/difference % closed-chans))))))
+                                    open-chans (send-event-to-channels! watch-chans index-event)]
+                                (assoc next-state :watch-chans open-chans)))))
 
                         tokens-watch-channels-update-chan
                         (timers/start-stop-time!
@@ -120,7 +119,7 @@
                                   (make-index-event :UPDATE (get next-token->index token)))
                                 events (concat delete-events update-events)
                                 ; send events event if empty, which will serve as a heartbeat
-                                closed-chans
+                                open-chans
                                 (send-event-to-channels! watch-chans (make-index-event :EVENTS events))]
                             (when (not-empty events)
                               (counters/inc! (metrics/waiter-counter "core" "token-watch-maintainer" "refresh-sync"))
@@ -131,9 +130,8 @@
                                         {:only-in-current only-old-indexes
                                          :only-in-next only-next-indexes
                                          :token-count (count token->index)}))
-                            (-> current-state
-                                (assoc :token->index next-token->index)
-                                (update :watch-chans #(set/difference % closed-chans)))))
+                            (assoc current-state :token->index next-token->index
+                                                 :watch-chans open-chans)))
 
                         query-chan
                         (let [{:keys [response-chan include-flags]} msg]
