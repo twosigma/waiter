@@ -304,4 +304,59 @@
               (stop-watch watch))
             (finally
               (delete-token-and-assert waiter-url token-1)
+              (delete-token-and-assert waiter-url token-2)))))
+
+      (testing "stream filters out tokens in maintenance mode when query param maintenance=false"
+        (let [token-1 (create-token-name waiter-url ".")
+              token-2 (create-token-name waiter-url ".")
+              res-1 (post-token waiter-url (assoc (kitchen-params) :token token-1) :cookies cookies)
+              res-2 (post-token waiter-url (assoc (kitchen-params) :token token-2
+                                                                   :maintenance {:message "maintenance message"})
+                                :cookies cookies)]
+          (assert-response-status res-1 200)
+          (assert-response-status res-2 200)
+          (try
+            (let [watch (start-watch waiter-url cookies :query-params {"maintenance" "false" "watch" "true"})]
+              (assert-watch-token-index-entry watch token-1 {"token" token-1
+                                                             "owner" (retrieve-username)
+                                                             "maintenance" false})
+              (assert-watch-token-index-entry watch token-2 nil)
+              (post-token waiter-url (assoc (kitchen-params) :token token-1 :maintenance {:message "maintenance message"}))
+              (async/<!! (async/timeout 4000))
+              (assert-watch-token-index-entry watch token-1 {"token" token-1
+                                                             "owner" (retrieve-username)
+                                                             "maintenance" false})
+              (assert-watch-token-index-entry watch token-2 nil)
+              (stop-watch watch))
+            (finally
+              (delete-token-and-assert waiter-url token-1)
+              (delete-token-and-assert waiter-url token-2)))))
+
+      (testing "stream filters out tokens not in maintenance mode when query param maintenance=true"
+        (let [token-1 (create-token-name waiter-url ".")
+              token-2 (create-token-name waiter-url ".")
+              res-1 (post-token waiter-url (assoc (kitchen-params) :token token-1) :cookies cookies)
+              res-2 (post-token waiter-url (assoc (kitchen-params) :token token-2
+                                                                   :maintenance {:message "maintenance message"})
+                                :cookies cookies)]
+          (assert-response-status res-1 200)
+          (assert-response-status res-2 200)
+          (try
+            (let [watch (start-watch waiter-url cookies :query-params {"maintenance" "true" "watch" "true"})]
+              (assert-watch-token-index-entry watch token-1 nil)
+              (assert-watch-token-index-entry watch token-2 {"token" token-2
+                                                             "owner" (retrieve-username)
+                                                             "maintenance" true})
+              (post-token waiter-url (assoc (kitchen-params) :token token-1 :maintenance {:message "maintenance message"}))
+              (post-token waiter-url (assoc (kitchen-params) :token token-2))
+              (async/<!! (async/timeout 4000))
+              (assert-watch-token-index-entry watch token-1 {"token" token-1
+                                                             "owner" (retrieve-username)
+                                                             "maintenance" true})
+              (assert-watch-token-index-entry watch token-2 {"token" token-2
+                                                             "owner" (retrieve-username)
+                                                             "maintenance" true})
+              (stop-watch watch))
+            (finally
+              (delete-token-and-assert waiter-url token-1)
               (delete-token-and-assert waiter-url token-2))))))))
