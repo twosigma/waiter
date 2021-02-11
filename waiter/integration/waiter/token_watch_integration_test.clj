@@ -3,7 +3,8 @@
             [clojure.set :as set]
             [clojure.test :refer :all]
             [waiter.status-codes :refer :all]
-            [waiter.util.client-tools :refer :all]))
+            [waiter.util.client-tools :refer :all])
+  (:import (clojure.lang ExceptionInfo)))
 
 (defn- await-goal-response-for-all-routers
   "Returns true if the goal-response-fn was satisfied with the response from request-fn for all routers before
@@ -118,41 +119,47 @@
         query-state-fn (fn [] @token->index-atom)
         exit-chan (async/promise-chan)
         go-chan
-        (async/go-loop [token->index @token->index-atom]
+        (async/go-loop [token->index @token->index-atom
+                        prefix ""]
           (reset! token->index-atom token->index)
           (let [[msg chan] (async/alts! [body exit-chan] :priority true)
-                next-token->index
+                [next-token->index next-prefix]
                 (condp = chan
                   body
                   (when (some? msg)
-                    (let [{:strs [object type]} (try-parse-json msg)]
-                      (case type
-                        "INITIAL"
-                        (reduce
-                          (fn [token->index index]
-                            (assoc token->index (get index "token") index))
-                          {}
-                          object)
+                    (try
+                      (let [{:strs [object type]} (try-parse-json (str prefix msg))]
+                        (case type
+                          "INITIAL"
+                          [(reduce
+                             (fn [token->index index]
+                               (assoc token->index (get index "token") index))
+                             {}
+                             object)
+                           ""]
 
-                        "EVENTS"
-                        (reduce
-                          (fn [token->index {:strs [object type]}]
-                            (case type
-                              "UPDATE"
-                              (assoc token->index (get object "token") object)
-                              "DELETE"
-                              (dissoc token->index (get object "token") object)
-                              (throw (ex-info "Unknown event type received in EVENTS object" {:event object}))))
-                          token->index
-                          object)
-                        (throw (ex-info "Unknown event type received from watch" {:event msg})))))
+                          "EVENTS"
+                          [(reduce
+                             (fn [token->index {:strs [object type]}]
+                               (case type
+                                 "UPDATE"
+                                 (assoc token->index (get object "token") object)
+                                 "DELETE"
+                                 (dissoc token->index (get object "token") object)
+                                 (throw (ex-info "Unknown event type received in EVENTS object" {:event object}))))
+                             token->index
+                             object)
+                           ""]
+                          (throw (ex-info "Unknown event type received from watch" {:event msg}))))
+                      (catch ExceptionInfo _
+                        [token->index (str prefix msg)])))
 
                   exit-chan
                   (do
                     (async/close! body)
-                    false))]
+                    [false ""]))]
             (when next-token->index
-              (recur next-token->index))))]
+              (recur next-token->index next-prefix))))]
     {:exit-chan exit-chan
      :error-chan error
      :go-chan go-chan
