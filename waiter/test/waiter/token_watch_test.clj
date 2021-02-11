@@ -112,6 +112,8 @@
       stop-token-watch-maintainer (fn [go-chan exit-chan]
                                     (async/>!! exit-chan :exit)
                                     (async/<!! go-chan))
+      make-aggregate-index-events (fn [object]
+                                    (make-index-event :EVENTS [object]))
       auth-user "auth-user"
       token1-metadata {"cluster" "c1" "last-update-time" 1000 "owner" "owner1"}
       token1-service-desc {"cpus" 1}
@@ -183,7 +185,7 @@
               expected-token->index {"token1" token-cur-index}]
           (assert-channels-next-message watch-chans (make-index-event :INITIAL []))
           (send-internal-index-event tokens-update-chan "token1" (get token1-index :owner))
-          (assert-channels-next-message watch-chans (make-index-event :UPDATE token-cur-index))
+          (assert-channels-next-message watch-chans (make-aggregate-index-events (make-index-event :UPDATE token-cur-index)))
           (is (= {:last-update-time (clock)
                   :token->index expected-token->index
                   :watch-count 10}
@@ -195,7 +197,7 @@
         (let [token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1"))
               expected-token->index {"token1" token-cur-index}]
           (send-internal-index-event tokens-update-chan "token1" (get token1-index :owner))
-          (assert-channels-next-message watch-chans (make-index-event :UPDATE token-cur-index))
+          (assert-channels-next-message watch-chans (make-aggregate-index-events (make-index-event :UPDATE token-cur-index)))
           (is (= {:last-update-time (clock)
                   :token->index expected-token->index
                   :watch-count 10}
@@ -217,7 +219,7 @@
                                                   :deleted true)
               expected-token->index {"token1" token-cur-index}]
           (send-internal-index-event tokens-update-chan "token1" (get token1-index :owner))
-          (assert-channels-next-message watch-chans (make-index-event :UPDATE token-cur-index))
+          (assert-channels-next-message watch-chans (make-aggregate-index-events (make-index-event :UPDATE token-cur-index)))
           (is (= {:last-update-time (clock)
                   :token->index expected-token->index
                   :watch-count 10}
@@ -228,8 +230,9 @@
                                               (get token1-index :owner) auth-user :hard-delete true)
         (send-internal-index-event tokens-update-chan "token1" (get token1-index :owner))
         (assert-channels-next-message watch-chans
-                                      (make-index-event :DELETE {:owner (get token1-index :owner)
-                                                                 :token "token1"}))
+                                      (make-aggregate-index-events
+                                        (make-index-event :DELETE {:owner (get token1-index :owner)
+                                                                   :token "token1"})))
         (is (= {:last-update-time (clock)
                 :token->index {}
                 :watch-count 10}
@@ -318,10 +321,8 @@
                   :token->index expected-token->index
                   :watch-count 10}
                  (get-latest-state query-chan)))
-          (assert-channels-next-message watch-chans
-                                        (->> (make-index-event :UPDATE token-cur-index)
-                                             list
-                                             (make-index-event :EVENTS)))))
+          (assert-channels-next-message watch-chans (make-aggregate-index-events
+                                                      (make-index-event :UPDATE token-cur-index)))))
 
       (testing "refresh-timeout should update current-state and watchers if token is out of date"
         (store-service-description-for-token
@@ -334,9 +335,8 @@
                   :token->index expected-token->index
                   :watch-count 10}
                  (get-latest-state query-chan)))
-          (assert-channels-next-message watch-chans (->> (make-index-event :UPDATE token-cur-index)
-                                                         list
-                                                         (make-index-event :EVENTS)))))
+          (assert-channels-next-message watch-chans (make-aggregate-index-events
+                                                      (make-index-event :UPDATE token-cur-index)))))
 
       (testing "refresh-timeout should update current-state and watchers if token is soft deleted"
         (delete-service-description-for-token clock synchronize-fn kv-store history-length "token1"
@@ -350,9 +350,8 @@
                   :token->index expected-token->index
                   :watch-count 10}
                  (get-latest-state query-chan)))
-          (assert-channels-next-message watch-chans (->> (make-index-event :UPDATE token-cur-index)
-                                                         list
-                                                         (make-index-event :EVENTS)))))
+          (assert-channels-next-message watch-chans (make-aggregate-index-events
+                                                      (make-index-event :UPDATE token-cur-index)))))
 
       (testing "refresh-timeout should update current-state and watchers if token is hard deleted"
         (delete-service-description-for-token clock synchronize-fn kv-store history-length "token1"
@@ -362,10 +361,10 @@
                 :token->index {}
                 :watch-count 10}
                (get-latest-state query-chan)))
-        (assert-channels-next-message watch-chans (->> (make-index-event :DELETE {:owner (get token1-index :owner)
-                                                                                  :token "token1"})
-                                                       list
-                                                       (make-index-event :EVENTS))))
+        (assert-channels-next-message watch-chans (make-aggregate-index-events
+                                                    (make-index-event :DELETE
+                                                                      {:owner (get token1-index :owner)
+                                                                       :token "token1"}))))
 
       (stop-token-watch-maintainer go-chan exit-chan)))
 

@@ -93,7 +93,9 @@
                                       ; index-entry doesn't exist then treat as DELETE
                                       [(make-index-event :DELETE {:owner owner :token token})
                                        (assoc current-state :token->index (dissoc token->index token))])
-                                    open-chans (send-event-to-channels! watch-chans index-event)]
+                                    open-chans (->> [index-event]
+                                                    (make-index-event :EVENTS)
+                                                    (send-event-to-channels! watch-chans))]
                                 (assoc next-state :watch-chans open-chans)))))
 
                         tokens-watch-channels-update-chan
