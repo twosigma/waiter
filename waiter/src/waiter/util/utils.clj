@@ -780,3 +780,10 @@
   [principal]
   (when principal
     (first (str/split principal #"@" 2))))
+
+(defn chan-to-seq!!
+  "Takes a channel and returns a lazy sequence of channel messages"
+  [c]
+  (lazy-seq
+    (when-some [v (async/<!! c)]
+      (cons v (chan-to-seq!! c)))))
