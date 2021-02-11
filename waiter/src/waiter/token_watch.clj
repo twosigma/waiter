@@ -143,7 +143,6 @@
                     (recur (assoc next-state :last-update-time (clock)))
                     (log/info "Stopping token-watch-maintainer as next loop values are nil"))))
               (catch Exception e
-                (clojure.stacktrace/print-stack-trace e)
                 (log/error e "Fatal error in token-watch-maintainer")
                 (System/exit 1))))]
       (metrics/waiter-gauge #(count tokens-update-chan-buffer)

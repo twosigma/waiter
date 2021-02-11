@@ -1,10 +1,14 @@
 (ns waiter.token-watch-integration-test
-  (:require [clojure.core.async :as async]
+  (:require [cheshire.core :as cheshire]
+            [clojure.core.async :as async]
             [clojure.set :as set]
             [clojure.test :refer :all]
             [waiter.status-codes :refer :all]
-            [waiter.util.client-tools :refer :all])
-  (:import (clojure.lang ExceptionInfo)))
+            [waiter.util.client-tools :refer :all]
+            [waiter.util.utils :as utils]
+            [clojure.tools.logging :as log])
+  (:import (java.io SequenceInputStream InputStreamReader ByteArrayInputStream)
+           (java.util Collections)))
 
 (defn- await-goal-response-for-all-routers
   "Returns true if the goal-response-fn was satisfied with the response from request-fn for all routers before
@@ -111,59 +115,59 @@
 (defn- start-watch
   [router-url cookies & {:keys [query-params] :or {query-params {"include" ["metadata", "deleted"]
                                                                  "watch" "true"}}}]
-  (let [{:keys [body error]} (make-request router-url "/tokens"
-                                           :cookies cookies
-                                           :fold-chunked-response? false
-                                           :query-params query-params)
+  (let [{:keys [body error] :as request} (make-request router-url "/tokens"
+                                                       :async? true
+                                                       :cookies cookies
+                                                       :query-params query-params)
+        _ (assert-response-status request 200)
+        json-objects (->> body
+                          utils/chan-to-seq!!
+                          (map (fn [chunk] (-> chunk .getBytes ByteArrayInputStream.)))
+                          Collections/enumeration
+                          SequenceInputStream.
+                          InputStreamReader.
+                          cheshire/parsed-seq)
         token->index-atom (atom {})
         query-state-fn (fn [] @token->index-atom)
-        exit-chan (async/promise-chan)
+        exit-fn (fn []
+                  (async/close! body))
         go-chan
-        (async/go-loop [token->index @token->index-atom
-                        prefix ""]
-          (reset! token->index-atom token->index)
-          (let [[msg chan] (async/alts! [body exit-chan] :priority true)
-                [next-token->index next-prefix]
-                (condp = chan
-                  body
-                  (when (some? msg)
-                    (try
-                      (let [{:strs [object type]} (try-parse-json (str prefix msg))]
+        (async/go
+          (try
+            (doseq [msg json-objects
+                    :when (some? msg)]
+              (reset!
+                token->index-atom
+                (let [{:strs [object type]} msg
+                      token->index @token->index-atom]
+                  (case type
+                    "INITIAL"
+                    (reduce
+                      (fn [token->index index]
+                        (assoc token->index (get index "token") index))
+                      {}
+                      object)
+
+                    "EVENTS"
+                    (reduce
+                      (fn [token->index {:strs [object type]}]
                         (case type
-                          "INITIAL"
-                          [(reduce
-                             (fn [token->index index]
-                               (assoc token->index (get index "token") index))
-                             {}
-                             object)
-                           ""]
-
-                          "EVENTS"
-                          [(reduce
-                             (fn [token->index {:strs [object type]}]
-                               (case type
-                                 "UPDATE"
-                                 (assoc token->index (get object "token") object)
-                                 "DELETE"
-                                 (dissoc token->index (get object "token") object)
-                                 (throw (ex-info "Unknown event type received in EVENTS object" {:event object}))))
-                             token->index
-                             object)
-                           ""]
-                          (throw (ex-info "Unknown event type received from watch" {:event msg}))))
-                      (catch ExceptionInfo _
-                        [token->index (str prefix msg)])))
-
-                  exit-chan
-                  (do
-                    (async/close! body)
-                    [false ""]))]
-            (when next-token->index
-              (recur next-token->index next-prefix))))]
-    {:exit-chan exit-chan
+                          "UPDATE"
+                          (assoc token->index (get object "token") object)
+                          "DELETE"
+                          (dissoc token->index (get object "token") object)
+                          (throw (ex-info "Unknown event type received in EVENTS object" {:event object}))))
+                      token->index
+                      object)
+                    (throw (ex-info "Unknown event type received from watch" {:event msg}))))))
+            (catch Exception e
+              (exit-fn)
+              (log/error e "Error in test watch-chan" {:router-url router-url}))))]
+    {:exit-fn exit-fn
      :error-chan error
      :go-chan go-chan
-     :query-state-fn query-state-fn}))
+     :query-state-fn query-state-fn
+     :router-url router-url}))
 
 (defn- start-watches
   [router-urls cookies]
@@ -172,8 +176,8 @@
     router-urls))
 
 (defn- stop-watch
-  [{:keys [exit-chan go-chan]}]
-  (async/close! exit-chan)
+  [{:keys [exit-fn go-chan]}]
+  (exit-fn)
   (async/<!! go-chan))
 
 (defn- stop-watches
@@ -186,11 +190,30 @@
   `(let [watch# ~watch
          token# ~token
          entry# ~entry
-         query-state-fn# (:query-state-fn watch#)]
+         router-url# (:router-url watch#)
+         query-state-fn# (:query-state-fn watch#)
+         get-current-token-entry-fn# #(get (query-state-fn#) token#)]
      (is (wait-for
-           #(= (get (query-state-fn#) token#)
+           #(= (get-current-token-entry-fn#)
                entry#)
-           :interval 1 :timeout 5))))
+           :interval 1 :timeout 5)
+         (str "watch for " router-url# " token->index entry for token '" token# "' was '" (get-current-token-entry-fn#)
+              "' instead of '" entry# "'"))))
+
+(defmacro assert-watch-token-index-entry-does-not-change
+  [watch token entry]
+  `(let [watch# ~watch
+         token# ~token
+         entry# ~entry
+         router-url# (:router-url watch#)
+         query-state-fn# (:query-state-fn watch#)
+         get-current-token-entry-fn# #(get (query-state-fn#) token#)]
+     (is (not (wait-for
+                #(not= (get-current-token-entry-fn#)
+                       entry#)
+                :interval 1 :timeout 5))
+         (str "watch for " router-url# " token->index entry for token '" token# "' was '" (get-current-token-entry-fn#)
+              "' instead of '" entry# "'"))))
 
 (defmacro assert-watches-token-index-entry
   [watches token entry]
@@ -278,8 +301,7 @@
               (assert-watch-token-index-entry watch token-1 nil)
               (assert-watch-token-index-entry watch token-2 entry)
               (delete-token-and-assert waiter-url token-2 :hard-delete false)
-              (async/<!! (async/timeout 4000))
-              (assert-watch-token-index-entry watch token-2 entry)
+              (assert-watch-token-index-entry-does-not-change watch token-2 entry)
               (stop-watches [watch]))
             (finally
               (delete-token-and-assert waiter-url token-1)
@@ -301,13 +323,12 @@
                                                              "owner" (retrieve-username)
                                                              "maintenance" false})
               (post-token waiter-url (assoc (kitchen-params) :token token-1 :version "update-1"))
-              (async/<!! (async/timeout 4000))
-              (assert-watch-token-index-entry watch token-1 {"token" token-1
-                                                             "owner" (retrieve-username)
-                                                             "maintenance" false})
-              (assert-watch-token-index-entry watch token-2 {"token" token-2
-                                                             "owner" (retrieve-username)
-                                                             "maintenance" false})
+              (assert-watch-token-index-entry-does-not-change watch token-1 {"token" token-1
+                                                                             "owner" (retrieve-username)
+                                                                             "maintenance" false})
+              (assert-watch-token-index-entry-does-not-change watch token-2 {"token" token-2
+                                                                             "owner" (retrieve-username)
+                                                                             "maintenance" false})
               (stop-watch watch))
             (finally
               (delete-token-and-assert waiter-url token-1)
@@ -329,11 +350,10 @@
                                                              "maintenance" false})
               (assert-watch-token-index-entry watch token-2 nil)
               (post-token waiter-url (assoc (kitchen-params) :token token-1 :maintenance {:message "maintenance message"}))
-              (async/<!! (async/timeout 4000))
-              (assert-watch-token-index-entry watch token-1 {"token" token-1
-                                                             "owner" (retrieve-username)
-                                                             "maintenance" false})
-              (assert-watch-token-index-entry watch token-2 nil)
+              (assert-watch-token-index-entry-does-not-change watch token-1 {"token" token-1
+                                                                             "owner" (retrieve-username)
+                                                                             "maintenance" false})
+              (assert-watch-token-index-entry-does-not-change watch token-2 nil)
               (stop-watch watch))
             (finally
               (delete-token-and-assert waiter-url token-1)
@@ -356,13 +376,12 @@
                                                              "maintenance" true})
               (post-token waiter-url (assoc (kitchen-params) :token token-1 :maintenance {:message "maintenance message"}))
               (post-token waiter-url (assoc (kitchen-params) :token token-2))
-              (async/<!! (async/timeout 4000))
-              (assert-watch-token-index-entry watch token-1 {"token" token-1
-                                                             "owner" (retrieve-username)
-                                                             "maintenance" true})
-              (assert-watch-token-index-entry watch token-2 {"token" token-2
-                                                             "owner" (retrieve-username)
-                                                             "maintenance" true})
+              (assert-watch-token-index-entry-does-not-change watch token-1 {"token" token-1
+                                                                             "owner" (retrieve-username)
+                                                                             "maintenance" true})
+              (assert-watch-token-index-entry-does-not-change watch token-2 {"token" token-2
+                                                                             "owner" (retrieve-username)
+                                                                             "maintenance" true})
               (stop-watch watch))
             (finally
               (delete-token-and-assert waiter-url token-1)

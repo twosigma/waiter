@@ -373,12 +373,12 @@
 
 (defn make-request
   ([waiter-url path &
-    {:keys [body client cookies content-type disable-auth fold-chunked-response? form-params headers
+    {:keys [async? body client cookies content-type disable-auth form-params headers
             method multipart protocol query-params scheme trailers-fn verbose]
-     :or {body nil
+     :or {async? false
+          body nil
           cookies []
           disable-auth nil
-          fold-chunked-response? true
           headers {}
           method :get
           query-params {}
@@ -409,7 +409,7 @@
              (async/<!! (http/request
                           client
                           (cond-> {:body body
-                                   :fold-chunked-response? fold-chunked-response?
+                                   :fold-chunked-response? (not async?)
                                    :follow-redirects? false
                                    :headers request-headers
                                    :method method
@@ -422,14 +422,14 @@
                             cookies (assoc :cookies (map (fn [c] [(:name c) (:value c)]) cookies))
                             trailers-fn (assoc :trailers-fn trailers-fn))))
              response-body (when body
-                             (if fold-chunked-response?
-                               (async/<!! body)
-                               body))
-             error (if fold-chunked-response?
+                             (if async?
+                               body
+                               (async/<!! body)))
+             error (if async?
+                     error-chan
                      (or error
-                         (when error-chan (async/<!! error-chan)))
-                     error-chan)]
-         (when (and verbose fold-chunked-response?)
+                         (when error-chan (async/<!! error-chan))))]
+         (when (and verbose (not async?))
            (log/info (get request-headers "x-cid") "response size:" (count (str response-body))))
          {:body response-body
           :cookies (parse-cookies (get headers "set-cookie"))
@@ -438,9 +438,9 @@
           :request-headers request-headers
           :status status
           :trailers (when trailers
-                      (if fold-chunked-response?
-                        (async/<!! trailers)
-                        trailers))})
+                      (if async?
+                        trailers
+                        (async/<!! trailers)))})
        (catch Exception e
          (when verbose
            (log/info (get request-headers "x-cid") "error in obtaining response" (.getMessage e)))

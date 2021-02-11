@@ -44,10 +44,11 @@
   `(let [chans# ~chans
          timeout-ms# ~timeout-ms
          timeout-chan# (async/timeout timeout-ms#)
-         [_# res-chan#] (-> chans#
+         [msg# res-chan#] (-> chans#
                             (conj timeout-chan#)
                             (async/alts!! :priority true))]
-     (is (= res-chan# timeout-chan#))))
+     (is (= res-chan# timeout-chan#)
+         (str "Expected no message from channel instead got: " msg#))))
 
 (defmacro assert-channels-next-message-with-fn
   [chans msg-fn]
