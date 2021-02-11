@@ -674,9 +674,9 @@
         watch-chan-buffer (async/buffer 1000)
         watch-chan (async/chan watch-chan-buffer watch-chan-xform watch-chan-ex-handler-fn)]
     (async/go
-      (async/<! ctrl)
-      (log/info "closing watch-chan, as ctrl channel in request has been triggered")
-      (async/close! watch-chan))
+      (let [data (async/<! ctrl)]
+        (log/info "closing watch-chan, as ctrl channel in request has been triggered" {:data data})
+        (async/close! watch-chan)))
     (async/put! tokens-watch-channels-update-chan watch-chan)
     (utils/attach-waiter-source
       {:body watch-chan
