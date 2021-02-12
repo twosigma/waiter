@@ -302,7 +302,7 @@
               (assert-watch-token-index-entry watch token-2 entry)
               (delete-token-and-assert waiter-url token-2 :hard-delete false)
               (assert-watch-token-index-entry-does-not-change watch token-2 entry)
-              (stop-watches [watch]))
+              (stop-watch watch))
             (finally
               (delete-token-and-assert waiter-url token-1)
               (delete-token-and-assert waiter-url token-2)))))
