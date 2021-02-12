@@ -637,7 +637,7 @@
       (utils/exception->response ex request))))
 
 (defn handle-list-tokens-watch
-  [index-filter-fn metadata-transducer-fn tokens-watch-channels-update-chan {:keys [ctrl]}]
+  [index-filter-fn metadata-transducer-fn tokens-watch-channels-update-chan {:keys [ctrl] :as request}]
   (let [watch-chan-xform
         (comp
           (map
@@ -675,18 +675,17 @@
           (log/error e "Error during transformation of a token watch event"))
         watch-chan-buffer (async/buffer 1000)
         watch-chan (async/chan watch-chan-buffer watch-chan-xform watch-chan-ex-handler-fn)]
-    (async/go
-      (let [data (async/<! ctrl)]
-        (log/info "closing watch-chan, as ctrl channel in request has been triggered" {:data data})
-        (async/close! watch-chan)))
-    (when-not (async/put! tokens-watch-channels-update-chan watch-chan)
-      (let [e (ex-info "tokens-watch-channels-update-chan is closed!" {})]
-        (async/put! ctrl e)
-        (throw e)))
-    (utils/attach-waiter-source
-      {:body watch-chan
-       :headers {"content-type" "application/json"}
-       :status http-200-ok})))
+    (if (async/put! tokens-watch-channels-update-chan watch-chan)
+      (do
+        (async/go
+          (let [data (async/<! ctrl)]
+            (log/info "closing watch-chan, as ctrl channel in request has been triggered" {:data data})
+            (async/close! watch-chan)))
+        (utils/attach-waiter-source
+          {:body watch-chan
+           :headers {"content-type" "application/json"}
+           :status http-200-ok}))
+      (utils/exception->response (ex-info "tokens-watch-channels-update-chan is closed!" {}) request))))
 
 (defn handle-list-tokens-request
   [kv-store entitlement-manager tokens-watch-channels-update-chan {:keys [request-method] :as req}]

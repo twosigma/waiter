@@ -2828,13 +2828,12 @@
 
     (testing "when tokens-watch-channels-update-chan is closed an error is thrown and ctrl is closed"
       (let [ctrl-chan (async/chan)
-            tokens-watch-channels-update-chan (async/chan)]
-        (async/close! tokens-watch-channels-update-chan)
-        (try
-          (handle-list-tokens-watch index-filter-fn no-change-transducer-fn tokens-watch-channels-update-chan
-                                    {:ctrl ctrl-chan})
-          (catch Exception e
-            (is (= (.getMessage e) "tokens-watch-channels-update-chan is closed!"))))))
+            tokens-watch-channels-update-chan (async/chan)
+            _ (async/close! tokens-watch-channels-update-chan)
+            {:keys [status]}
+            (handle-list-tokens-watch index-filter-fn no-change-transducer-fn tokens-watch-channels-update-chan
+                                      {:ctrl ctrl-chan})]
+        (is (= http-500-internal-server-error status))))
 
     (testing "empty aggregate events (:type :EVENTS) are filtered out by default"
       (let [{:keys [body status]}
