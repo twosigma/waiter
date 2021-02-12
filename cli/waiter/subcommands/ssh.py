@@ -1,8 +1,9 @@
 import argparse
 import os
 
-from waiter.querying import print_no_data, query_token
+from waiter.querying import print_no_services, query_services
 from waiter.util import guard_no_cluster
+
 
 def ssh(clusters, args, _, __):
     guard_no_cluster(clusters)
@@ -13,20 +14,28 @@ def ssh(clusters, args, _, __):
     is_pod_name = args.pop('is-pod-name')
 
     if is_token:
-        query_result = query_token(clusters, token_or_service_id_or_pod_name, include_services=True)
-        if query_result['count'] == 0:
-            print_no_data(clusters)
+        query_result = query_services(clusters, token_or_service_id_or_pod_name)
+        num_services = query_result['count']
+        if num_services == 0:
+            print_no_services(clusters, token_or_service_id_or_pod_name)
             return 1
-        print(query_result)
-        # check if token exists
-        # get all services for the token
-        # get all pods for the services
+        clusters_with_services =
+        if len(query_result.keys) > 1:
+            # get cluster selection
+        else:
+            cluster = query_result.keys()[0]
+        services = query_result[cluster]
+        if len(services) > 1:
+            # get service selection
+        else:
+            service = services[0]
+        # get selection for which service they want
+
     elif is_service_id:
         # get all pods for the service id
         return 0
     elif is_pod_name:
         return 0
-
 
     return 0
 

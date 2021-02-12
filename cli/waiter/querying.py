@@ -47,6 +47,12 @@ def print_no_data(clusters):
     print(no_data_message(clusters))
 
 
+def print_no_services(clusters, token):
+    """Prints a message that there were no services found for a token"""
+    clusters_text = ' / '.join([terminal.bold(c['name']) for c in clusters])
+    print(f'There are no services using token {terminal.bold(token)} in {clusters_text}.')
+
+
 def get_token_on_cluster(cluster, token_name, include_services=False):
     """Gets the token with the given name on the given cluster"""
     token_data, token_etag = get_token(cluster, token_name, include='metadata')
