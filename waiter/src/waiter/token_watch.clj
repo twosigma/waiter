@@ -55,9 +55,9 @@
                       (contains? include-flags "token->index")
                       (assoc :token->index token->index)
                       (contains? include-flags "buffer-state")
-                      (assoc :buffer-state {:update-chan-count (count tokens-update-chan-buffer)
+                      (assoc :buffer-state {:update-chan-count (.count tokens-update-chan-buffer)
                                             :watch-channels-update-chan-count
-                                            (count tokens-watch-channels-update-chan-buffer)}))))
+                                            (.count tokens-watch-channels-update-chan-buffer)}))))
           go-chan
           (async/go
             (try

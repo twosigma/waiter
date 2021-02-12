@@ -424,4 +424,29 @@
             (is (= {:object [], :type :INITIAL}
                    (async/<!! slow-chan))))))
 
-      (stop-token-watch-maintainer go-chan exit-chan))))
+      (stop-token-watch-maintainer go-chan exit-chan)))
+
+  (deftest test-start-token-watch-maintainer-buffer-state
+    (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+          {:keys [exit-chan go-chan tokens-update-chan tokens-watch-channels-update-chan query-state-fn]}
+          (start-token-watch-maintainer kv-store clock 1000 1000 (async/chan))
+          expected-buffer-count 123]
+      (stop-token-watch-maintainer go-chan exit-chan)
+
+      (testing "state provides correct current buffer count for tokens-update-chan"
+        (dotimes [_ expected-buffer-count]
+          (async/put! tokens-update-chan (async/chan)))
+        (is (= {:buffer-state {:update-chan-count expected-buffer-count
+                               :watch-channels-update-chan-count 0}
+                :last-update-time (clock)
+                :watch-count 0}
+               (query-state-fn #{"buffer-state"}))))
+
+      (testing "state provides correct current buffer count for tokens-watch-channels-update-chan"
+        (dotimes [_ expected-buffer-count]
+          (async/put! tokens-watch-channels-update-chan (async/chan)))
+        (is (= {:buffer-state {:update-chan-count expected-buffer-count
+                               :watch-channels-update-chan-count expected-buffer-count}
+                :last-update-time (clock)
+                :watch-count 0}
+               (query-state-fn #{"buffer-state"})))))))
