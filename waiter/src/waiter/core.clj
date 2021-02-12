@@ -63,6 +63,7 @@
             [waiter.statsd :as statsd]
             [waiter.status-codes :refer :all]
             [waiter.token :as token]
+            [waiter.token-watch :as token-watch]
             [waiter.util.async-utils :as au]
             [waiter.util.cache-utils :as cu]
             [waiter.util.date-utils :as du]
@@ -131,6 +132,7 @@
                               ["/service-description-builder" :state-service-description-builder-handler-fn]
                               ["/service-maintainer" :state-service-maintainer-handler-fn]
                               ["/statsd" :state-statsd-handler-fn]
+                              ["/token-watch-maintainer" :state-token-watch-maintainer-fn]
                               ["/work-stealing" :state-work-stealing-handler-fn]
                               [["/" :service-id] :state-service-handler-fn]]
                      "status" :status-handler-fn
@@ -1354,7 +1356,16 @@
                (let [{:keys [sync-instances-interval-ms]} statsd
                      {{:keys [query-state-fn]} :maintainer} router-state-maintainer]
                  (statsd/start-service-instance-metrics-publisher
-                   service-id->service-description-fn query-state-fn sync-instances-interval-ms))))})
+                   service-id->service-description-fn query-state-fn sync-instances-interval-ms))))
+   :token-watch-maintainer (pc/fnk
+                             [[:settings
+                               [:watch-config
+                                [:tokens channels-update-chan-buffer-size tokens-update-chan-buffer-size
+                                 watch-refresh-timeout-ms]]]
+                              [:state clock kv-store]]
+                             (let [watch-refresh-timer-chan (au/timer-chan watch-refresh-timeout-ms)]
+                               (token-watch/start-token-watch-maintainer
+                                 kv-store clock tokens-update-chan-buffer-size channels-update-chan-buffer-size watch-refresh-timer-chan)))})
 
 (def request-handlers
   {:app-name-handler-fn (pc/fnk [service-id-handler-fn]
@@ -1738,6 +1749,13 @@
                               (wrap-secure-request-fn
                                 (fn state-statsd-handler-fn [request]
                                   (handler/get-statsd-state router-id request))))
+   :state-token-watch-maintainer-fn (pc/fnk [[:daemons token-watch-maintainer]
+                                             [:state router-id]
+                                             wrap-secure-request-fn]
+                                      (let [{:keys [query-state-fn]} token-watch-maintainer]
+                                        (wrap-secure-request-fn
+                                          (fn maintainer-state-handler-fn [request]
+                                            (handler/get-token-watch-maintainer-state router-id query-state-fn request)))))
    :state-work-stealing-handler-fn (pc/fnk [[:state offers-allowed-semaphore router-id]
                                             wrap-secure-request-fn]
                                      (wrap-secure-request-fn
@@ -1745,31 +1763,38 @@
                                          (handler/get-work-stealing-state offers-allowed-semaphore router-id request))))
    :status-handler-fn (pc/fnk [] handler/status-handler)
    :token-handler-fn (pc/fnk [[:curator synchronize-fn]
+                              [:daemons token-watch-maintainer]
                               [:routines attach-service-defaults-fn make-inter-router-requests-sync-fn validate-service-description-fn]
                               [:settings [:token-config history-length limit-per-owner]]
                               [:state clock entitlement-manager kv-store token-cluster-calculator token-root waiter-hostnames]
                               wrap-secure-request-fn]
-                       (wrap-secure-request-fn
-                         (fn token-handler-fn [request]
-                           (token/handle-token-request
-                             clock synchronize-fn kv-store token-cluster-calculator token-root history-length limit-per-owner
-                             waiter-hostnames entitlement-manager make-inter-router-requests-sync-fn validate-service-description-fn
-                             attach-service-defaults-fn request))))
-   :token-list-handler-fn (pc/fnk [[:state entitlement-manager kv-store]
+                       (let [{:keys [tokens-update-chan]} token-watch-maintainer]
+                         (wrap-secure-request-fn
+                           (fn token-handler-fn [request]
+                             (token/handle-token-request
+                               clock synchronize-fn kv-store token-cluster-calculator token-root history-length limit-per-owner
+                               waiter-hostnames entitlement-manager make-inter-router-requests-sync-fn validate-service-description-fn
+                               attach-service-defaults-fn tokens-update-chan request)))))
+   :token-list-handler-fn (pc/fnk [[:daemons token-watch-maintainer]
+                                   [:state entitlement-manager kv-store]
                                    wrap-secure-request-fn]
-                            (wrap-secure-request-fn
-                              (fn token-handler-fn [request]
-                                (token/handle-list-tokens-request kv-store entitlement-manager request))))
+                            (let [{:keys [tokens-watch-channels-update-chan]} token-watch-maintainer]
+                              (wrap-secure-request-fn
+                                (fn token-handler-fn [request]
+                                  (token/handle-list-tokens-request kv-store entitlement-manager
+                                                                    tokens-watch-channels-update-chan request)))))
    :token-owners-handler-fn (pc/fnk [[:state kv-store]
                                      wrap-secure-request-fn]
                               (wrap-secure-request-fn
                                 (fn token-owners-handler-fn [request]
                                   (token/handle-list-token-owners-request kv-store request))))
-   :token-refresh-handler-fn (pc/fnk [[:state kv-store]
+   :token-refresh-handler-fn (pc/fnk [[:daemons token-watch-maintainer]
+                                      [:state kv-store]
                                       wrap-router-auth-fn]
-                               (wrap-router-auth-fn
-                                 (fn token-refresh-handler-fn [request]
-                                   (token/handle-refresh-token-request kv-store request))))
+                               (let [{:keys [tokens-update-chan]} token-watch-maintainer]
+                                 (wrap-router-auth-fn
+                                   (fn token-refresh-handler-fn [request]
+                                     (token/handle-refresh-token-request kv-store tokens-update-chan request)))))
    :token-reindex-handler-fn (pc/fnk [[:curator synchronize-fn]
                                       [:routines list-tokens-fn make-inter-router-requests-sync-fn]
                                       [:state kv-store]

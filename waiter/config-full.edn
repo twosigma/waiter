@@ -1042,6 +1042,26 @@
                                  ;; reduced to stale-timeout-mins + fallback-period-secs.
                                  "stale-timeout-mins" 15}}
 
+ ;; Waiter provides watch endpoints to listen on changes of a resource
+ ;; This configures various watch providers for different resources
+ :watch-config {
+                ;; Configures token-watch-maintainer which handles and updates watches
+                ;; for token events
+                :tokens {
+                         ;; Buffer size of the tokens-watch-channels-update-chan
+                         ;; The channel receives updates whenever a watch is added
+                         ;; or removed
+                         :channels-update-chan-buffer-size 1024
+
+                         ;; Buffer size of the tokens-update-chan. The channel receives updates when
+                         ;; tokens are created, updated, deleted (including index refresh endpoint)
+                         :tokens-update-chan-buffer-size 1024
+
+                         ;; Time the token-watch-maintainer waits before fetching
+                         ;; the kv-store for up to date indexes and sending possible
+                         ;; missed events to listening watches
+                         :watch-refresh-timeout-ms 10000}}
+
  ;; Waiter supports making websocket connections to backends.
  ;; The maximum binary and text message sizes in the websocket request or response can be configured
  ;; as follows, the values are in bytes:

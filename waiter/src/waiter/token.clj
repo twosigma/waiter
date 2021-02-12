@@ -15,6 +15,7 @@
 ;;
 (ns waiter.token
   (:require [clj-time.coerce :as tc]
+            [clojure.core.async :as async]
             [clojure.data :as data]
             [clojure.set :as set]
             [clojure.string :as str]
@@ -73,6 +74,12 @@
    :etag token-hash
    :last-update-time last-update-time
    :maintenance (some? maintenance)})
+
+(defn send-internal-index-event
+  "Send an internal event to be processed by the tokens-watch-maintainer daemon process"
+  [tokens-update-chan token owner]
+  (log/info "sending internal index event" {:token token :owner owner})
+  (async/put! tokens-update-chan {:owner owner :token token}))
 
 (let [token-lock "TOKEN_LOCK"
       token-owners-key "^TOKEN_OWNERS"
@@ -181,6 +188,7 @@
                 (update-kv! kv-store owner-key (fn [index]
                                                  (->> (make-index-entry token-hash true last-update-time maintenance)
                                                       (assoc index token))))))))
+
         ; Don't bother removing owner from token-owners, even if they have no tokens now
         (log/info "deleted token for" token))))
 
@@ -204,11 +212,11 @@
         (kv/fetch kv-store owner-key :refresh true))))
 
   (defn list-index-entries-for-owner
-    "List all tokens for a given user."
-    [kv-store owner]
-    (let [owner->owner-key (kv/fetch kv-store token-owners-key)]
+    "List all tokens for a given user by fetching the owner index in the kv-store"
+    [kv-store owner & {:keys [refresh] :or {refresh false}}]
+    (let [owner->owner-key (kv/fetch kv-store token-owners-key :refresh refresh)]
       (if-let [owner-key (get owner->owner-key owner)]
-        (kv/fetch kv-store owner-key)
+        (kv/fetch kv-store owner-key :refresh refresh)
         (log/info "no owner-key found for owner" owner))))
 
   (defn list-token-owners
@@ -260,7 +268,31 @@
               (doseq [[_ owner-key] existing-owner->owner-key]
                 ;; defensive check to avoid deleting duplicated keys after reindex
                 (when-not (contains? new-owner-keys owner-key)
-                  (kv/delete kv-store owner-key))))))))))
+                  (kv/delete kv-store owner-key)))))))))
+
+  (defn get-token->index
+    "Return a map of ALL token to token index entry. The token index entries also include the owner and token.
+     Specifying :refresh true will refresh all owner/token indexes and get the most up to date map."
+    [kv-store & {:keys [refresh] :or {refresh false}}]
+    (->> kv-store
+         list-token-owners
+         (reduce
+           (fn [outer-token->index owner]
+             (reduce
+               (fn [inner-token->index [token entry]]
+                 (->> (assoc entry :owner owner :token token)
+                      (assoc inner-token->index token)))
+               outer-token->index
+               (list-index-entries-for-owner kv-store owner :refresh refresh)))
+           {})))
+
+  (defn get-token-index
+    "Given a token and owner, return the token index entry with the token and owner as added fields.
+     Specifying :refresh true will refresh the owner's index cache and get the most up to date index entry."
+    [kv-store token owner & {:keys [refresh] :or {refresh false}}]
+    (some-> (list-index-entries-for-owner kv-store owner :refresh refresh)
+            (get token)
+            (assoc :owner owner :token token))))
 
 (defprotocol ClusterCalculator
   (get-default-cluster [this]
@@ -298,7 +330,7 @@
 
 (defn- handle-delete-token-request
   "Deletes the token configuration if found."
-  [clock synchronize-fn kv-store history-length waiter-hostnames entitlement-manager make-peer-requests-fn
+  [clock synchronize-fn kv-store history-length waiter-hostnames entitlement-manager make-peer-requests-fn tokens-update-chan
    {:keys [headers] :as request}]
   (let [{:keys [token]} (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostnames)
         authenticated-user (get request :authorization/user)
@@ -337,6 +369,7 @@
             (make-peer-requests-fn "tokens/refresh"
                                    :body (utils/clj->json {:owner token-owner, :token token})
                                    :method :post)
+            (send-internal-index-event tokens-update-chan token token-owner)
             (-> {:delete token, :hard-delete hard-delete, :success true}
               (utils/clj->json-response :headers {"etag" version-hash})
               (assoc :waiter/token token)))
@@ -395,7 +428,7 @@
    Then, updates the configuration for the token in the database using the newest password."
   [clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner waiter-hostnames
    entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
-   {:keys [headers] :as request}]
+   tokens-update-chan {:keys [headers] :as request}]
   (let [request-params (-> request ru/query-params-request :query-params)
         admin-mode? (= "admin" (get request-params "update-mode"))
         authenticated-user (get request :authorization/user)
@@ -566,6 +599,7 @@
           (make-peer-requests-fn "tokens/refresh"
                                  :method :post
                                  :body (utils/clj->json {:token token, :owner owner}))
+          (send-internal-index-event tokens-update-chan token owner)
           (let [creation-mode (if (and (seq existing-token-metadata)
                                        (not (get existing-token-metadata "deleted")))
                                 "updated "
@@ -589,26 +623,78 @@
    If handling POST, validates that the user is the creator of the token if it already exists.
    Then, updates the configuration for the token in the database using the newest password."
   [clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner waiter-hostnames entitlement-manager
-   make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn {:keys [request-method] :as request}]
+   make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn tokens-update-chan {:keys [request-method] :as request}]
   (try
     (case request-method
       :delete (handle-delete-token-request clock synchronize-fn kv-store history-length waiter-hostnames entitlement-manager
-                                           make-peer-requests-fn request)
+                                           make-peer-requests-fn tokens-update-chan request)
       :get (handle-get-token-request kv-store cluster-calculator token-root waiter-hostnames request)
       :post (handle-post-token-request clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner
                                        waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
-                                       attach-service-defaults-fn request)
+                                       attach-service-defaults-fn tokens-update-chan request)
       (throw (ex-info "Invalid request method" {:log-level :info :request-method request-method :status http-405-method-not-allowed})))
     (catch Exception ex
       (utils/exception->response ex request))))
 
+(defn handle-list-tokens-watch
+  [index-filter-fn metadata-transducer-fn tokens-watch-channels-update-chan {:keys [ctrl] :as request}]
+  (let [watch-chan-xform
+        (comp
+          (map
+            (fn event-filter [{:keys [object type] :as event}]
+              (log/info "received event from token-watch-maintainer daemon" {:type (:type event)})
+              (log/debug "full tokens event data received from daemon" {:event event})
+              (case type
+                :INITIAL
+                (assoc event :object (->> object
+                                          (filter index-filter-fn)
+                                          (map metadata-transducer-fn)))
+                :EVENTS
+                (assoc event :object (->> object
+                                          (filter (fn [{:keys [object]}]
+                                                    (index-filter-fn object)))
+                                          (map (fn [{:keys [type] :as entry}]
+                                                 (if (= type :UPDATE)
+                                                   (update entry :object metadata-transducer-fn)
+                                                   entry)))))
+                (throw (ex-info "Invalid event type provided" {:event event})))))
+          (filter
+            (fn empty-aggregate-events [{:keys [object type] :as event}]
+              (case type
+                :INITIAL true
+                :EVENTS (not-empty object)
+                (throw (ex-info "Invalid event type provided" {:event event})))))
+          (map
+            (fn [event]
+              (log/info "forwarding tokens event to client" {:type (:type event)})
+              (log/debug "full tokens event data being sent to client" {:event event})
+              (utils/clj->json event))))
+        watch-chan-ex-handler-fn
+        (fn watch-chan-ex-handler [e]
+          (async/put! ctrl e)
+          (log/error e "Error during transformation of a token watch event"))
+        watch-chan-buffer (async/buffer 1000)
+        watch-chan (async/chan watch-chan-buffer watch-chan-xform watch-chan-ex-handler-fn)]
+    (if (async/put! tokens-watch-channels-update-chan watch-chan)
+      (do
+        (async/go
+          (let [data (async/<! ctrl)]
+            (log/info "closing watch-chan, as ctrl channel in request has been triggered" {:data data})
+            (async/close! watch-chan)))
+        (utils/attach-waiter-source
+          {:body watch-chan
+           :headers {"content-type" "application/json"}
+           :status http-200-ok}))
+      (utils/exception->response (ex-info "tokens-watch-channels-update-chan is closed!" {}) request))))
+
 (defn handle-list-tokens-request
-  [kv-store entitlement-manager {:keys [request-method] :as req}]
+  [kv-store entitlement-manager tokens-watch-channels-update-chan {:keys [request-method] :as req}]
   (try
     (case request-method
       :get (let [{:strs [can-manage-as-user] :as request-params} (-> req ru/query-params-request :query-params)
                  include-deleted (utils/param-contains? request-params "include" "deleted")
                  show-metadata (utils/param-contains? request-params "include" "metadata")
+                 should-watch? (utils/request-flag request-params "watch")
                  should-filter-maintenance? (contains? request-params "maintenance")
                  maintenance-active? (utils/request-flag request-params "maintenance")
                  include-run-as-requester (when (contains? request-params "run-as-requester")
@@ -629,41 +715,45 @@
                                                  (fn [token-parameters]
                                                    (and (contains? token-parameters parameter-name)
                                                         (contains? search-parameter-values
-                                                                   (str (get token-parameters parameter-name)))))))]
-             (->> owners
-                  (map
-                    (fn [owner]
-                      (->> (list-index-entries-for-owner kv-store owner)
-                           (filter
-                             (fn list-tokens-delete-predicate [[_ entry]]
-                               (or include-deleted (not (:deleted entry)))))
-                           (filter
-                             (fn list-tokens-maintenance-predicate [[_ entry]]
-                               (or (not should-filter-maintenance?)
-                                   (= (-> entry :maintenance true?) maintenance-active?))))
-                           (filter
-                             (fn list-tokens-auth-predicate [[token _]]
-                               (or (nil? can-manage-as-user)
-                                   (authz/manage-token? entitlement-manager can-manage-as-user token {"owner" owner}))))
-                           (filter
-                             (fn list-tokens-parameters-predicate [[token _]]
-                               (let [token-parameters (sd/token->token-parameters
-                                                        kv-store token
-                                                        :error-on-missing false
-                                                        :include-deleted include-deleted)]
-                                 (and (every? #(% token-parameters) parameter-filter-predicates)
-                                      (or (nil? include-run-as-requester)
-                                          (= include-run-as-requester (sd/run-as-requester? token-parameters)))
-                                      (or (nil? include-requires-parameters)
-                                          (= include-requires-parameters (sd/requires-parameters? token-parameters)))))))
-                           (map
-                             (fn [[token entry]]
-                               (-> (if show-metadata
-                                     (update entry :last-update-time tc/from-long)
-                                     (dissoc entry :deleted :etag :last-update-time))
-                                 (assoc :owner owner :token token)))))))
-                  flatten
-                  utils/clj->streaming-json-response))
+                                                                   (str (get token-parameters parameter-name)))))))
+                 index-filter-fn
+                 (every-pred
+                   (fn list-tokens-delete-predicate [entry]
+                     (or include-deleted (not (:deleted entry))))
+                   (fn list-tokens-maintenance-predicate [entry]
+                     (or (not should-filter-maintenance?)
+                         (= (-> entry :maintenance true?) maintenance-active?)))
+                   (fn list-tokens-auth-predicate [{:keys [owner token]}]
+                     (or (nil? can-manage-as-user)
+                         (authz/manage-token? entitlement-manager can-manage-as-user token {"owner" owner})))
+                   (fn list-tokens-parameters-predicate [{:keys [token]}]
+                     (let [token-parameters (sd/token->token-parameters
+                                              kv-store token
+                                              :error-on-missing false
+                                              :include-deleted include-deleted)]
+                       (and (every? #(% token-parameters) parameter-filter-predicates)
+                            (or (nil? include-run-as-requester)
+                                (= include-run-as-requester (sd/run-as-requester? token-parameters)))
+                            (or (nil? include-requires-parameters)
+                                (= include-requires-parameters (sd/requires-parameters? token-parameters)))))))
+                 metadata-transducer-fn
+                 (fn metadata-predicate [entry]
+                   (if show-metadata
+                     (update entry :last-update-time tc/from-long)
+                     (dissoc entry :deleted :etag :last-update-time)))]
+             (if should-watch?
+               (handle-list-tokens-watch index-filter-fn metadata-transducer-fn tokens-watch-channels-update-chan req)
+               (->> owners
+                    (map
+                      (fn [owner]
+                        (->> (list-index-entries-for-owner kv-store owner)
+                             (map
+                               (fn [[token entry]]
+                                 (assoc entry :owner owner :token token)))
+                             (filter index-filter-fn)
+                             (map metadata-transducer-fn))))
+                    flatten
+                    utils/clj->streaming-json-response)))
       (throw (ex-info "Only GET supported" {:log-level :info
                                             :request-method request-method
                                             :status http-405-method-not-allowed})))
@@ -689,7 +779,7 @@
 
 (defn handle-refresh-token-request
   "Handle a request to refresh token data directly from the KV store, skipping the cache."
-  [kv-store {{:keys [src-router-id]} :basic-authentication :as req}]
+  [kv-store tokens-update-chan {{:keys [src-router-id]} :basic-authentication :as req}]
   (try
     (let [{:strs [token owner index] :as json-data} (-> req ru/json-request :body)]
       (log/info "received token refresh request" json-data)
@@ -698,7 +788,8 @@
         (refresh-token-index kv-store))
       (when token
         (log/info src-router-id "is force refreshing token" token)
-        (refresh-token kv-store token owner))
+        (refresh-token kv-store token owner)
+        (send-internal-index-event tokens-update-chan token owner))
       (utils/clj->json-response {:success true}))
     (catch Exception ex
       (utils/exception->response ex req))))

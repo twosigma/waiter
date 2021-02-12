@@ -179,6 +179,9 @@
                                    (s/required-key :token-defaults) {(s/required-key "fallback-period-secs") schema/non-negative-int
                                                                      (s/required-key "https-redirect") s/Bool
                                                                      (s/required-key "stale-timeout-mins") schema/non-negative-int}}
+   (s/required-key :watch-config) {(s/required-key :tokens) {(s/required-key :channels-update-chan-buffer-size) schema/non-negative-int
+                                                             (s/required-key :tokens-update-chan-buffer-size) schema/non-negative-int
+                                                             (s/required-key :watch-refresh-timeout-ms) schema/non-negative-int}}
    (s/required-key :waiter-principal) schema/non-empty-string
    (s/required-key :websocket-config) {(s/required-key :ws-max-binary-message-size) schema/positive-int
                                        (s/required-key :ws-max-text-message-size) schema/positive-int}
@@ -471,6 +474,9 @@
                   :token-defaults {"fallback-period-secs" (-> 5 t/minutes t/in-seconds)
                                    "https-redirect" false
                                    "stale-timeout-mins" 15}}
+   :watch-config {:tokens {:channels-update-chan-buffer-size 1024
+                           :tokens-update-chan-buffer-size 1024
+                           :watch-refresh-timeout-ms 10000}}
    :websocket-config {:ws-max-binary-message-size (* 1024 1024 40)
                       :ws-max-text-message-size (* 1024 1024 40)}
    :work-stealing {:max-in-flight-offers 4000

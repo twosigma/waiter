@@ -373,9 +373,10 @@
 
 (defn make-request
   ([waiter-url path &
-    {:keys [body client cookies content-type disable-auth form-params headers
+    {:keys [async? body client cookies content-type disable-auth form-params headers
             method multipart protocol query-params scheme trailers-fn verbose]
-     :or {body nil
+     :or {async? false
+          body nil
           cookies []
           disable-auth nil
           headers {}
@@ -408,6 +409,7 @@
              (async/<!! (http/request
                           client
                           (cond-> {:body body
+                                   :fold-chunked-response? (not async?)
                                    :follow-redirects? false
                                    :headers request-headers
                                    :method method
@@ -419,10 +421,15 @@
                             (not (str/blank? content-type)) (assoc :content-type content-type)
                             cookies (assoc :cookies (map (fn [c] [(:name c) (:value c)]) cookies))
                             trailers-fn (assoc :trailers-fn trailers-fn))))
-             response-body (when body (async/<!! body))
-             error (or error
-                       (when error-chan (async/<!! error-chan)))]
-         (when verbose
+             response-body (when body
+                             (if async?
+                               body
+                               (async/<!! body)))
+             error (if async?
+                     error-chan
+                     (or error
+                         (when error-chan (async/<!! error-chan))))]
+         (when (and verbose (not async?))
            (log/info (get request-headers "x-cid") "response size:" (count (str response-body))))
          {:body response-body
           :cookies (parse-cookies (get headers "set-cookie"))
@@ -430,7 +437,10 @@
           :headers headers
           :request-headers request-headers
           :status status
-          :trailers (when trailers (async/<!! trailers))})
+          :trailers (when trailers
+                      (if async?
+                        trailers
+                        (async/<!! trailers)))})
        (catch Exception e
          (when verbose
            (log/info (get request-headers "x-cid") "error in obtaining response" (.getMessage e)))
@@ -870,7 +880,7 @@
                                :headers (assoc headers "host" token)
                                :method :delete
                                :query-params (if hard-delete {"hard-delete" true} {}))]
-    (assert-response-status response http-200-ok )))
+    (assert-response-status response http-200-ok)))
 
 (defn wait-for
   "Invoke predicate every interval (default 10) seconds until it returns true,
@@ -1138,6 +1148,13 @@
                                      :query-params query-params)]
     (log/debug "retrieved token" token ":" (:body token-response))
     token-response))
+
+(defn get-token-watch-maintainer-state
+  [waiter-url & {:keys [cookies query-params]}]
+  (make-request waiter-url "/state/token-watch-maintainer"
+                :cookies cookies
+                :query-params query-params
+                :method :get))
 
 (defmacro with-service-cleanup
   "Ensures a service is cleaned up."
