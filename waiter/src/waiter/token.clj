@@ -636,13 +636,14 @@
     (catch Exception ex
       (utils/exception->response ex request))))
 
-(defn- handle-list-tokens-watch
+(defn handle-list-tokens-watch
   [index-filter-fn metadata-transducer-fn tokens-watch-channels-update-chan {:keys [ctrl]}]
   (let [watch-chan-xform
         (comp
           (map
             (fn event-filter [{:keys [object type] :as event}]
-              (log/info "received event from token-watch-maintainer daemon" {:event event})
+              (log/info "received event from token-watch-maintainer daemon" {:type (:type event)})
+              (log/debug "full tokens event data received from daemon" {:event event})
               (case type
                 :INITIAL
                 (assoc event :object (->> object
@@ -665,19 +666,23 @@
                 (throw (ex-info "Invalid event type provided" {:event event})))))
           (map
             (fn [event]
-              (log/info "forwarding tokens event to client" {:event event})
+              (log/info "forwarding tokens event to client" {:type (:type event)})
+              (log/debug "full tokens event data being sent to client" {:event event})
               (utils/clj->json event))))
         watch-chan-ex-handler-fn
         (fn watch-chan-ex-handler [e]
-          (log/error e "Error during transformation of a token watch event")
-          (async/go (async/>! ctrl e)))
+          (async/put! ctrl e)
+          (log/error e "Error during transformation of a token watch event"))
         watch-chan-buffer (async/buffer 1000)
         watch-chan (async/chan watch-chan-buffer watch-chan-xform watch-chan-ex-handler-fn)]
     (async/go
       (let [data (async/<! ctrl)]
         (log/info "closing watch-chan, as ctrl channel in request has been triggered" {:data data})
         (async/close! watch-chan)))
-    (async/put! tokens-watch-channels-update-chan watch-chan)
+    (when-not (async/put! tokens-watch-channels-update-chan watch-chan)
+      (let [e (ex-info "tokens-watch-channels-update-chan is closed!" {})]
+        (async/put! ctrl e)
+        (throw e)))
     (utils/attach-waiter-source
       {:body watch-chan
        :headers {"content-type" "application/json"}

@@ -28,6 +28,7 @@
             [waiter.status-codes :refer :all]
             [waiter.test-helpers :refer :all]
             [waiter.token :refer :all]
+            [waiter.token-watch :as token-watch]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
@@ -2755,3 +2756,112 @@
                {"maintenance" false "owner" "owner3" "token" "token8"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))))
+
+(deftest test-handle-list-tokens-watch
+  (let [index-filter-fn (constantly true)
+        strict-index-filter-fn (constantly false)
+        no-change-transducer-fn (fn [x] x)
+        metadata-transducer-fn (fn [x] (assoc x :test-metadata-changed "changed!"))
+        error-fn (fn [] (throw (ex-info "forced test error" {})))
+        token-entry-1 (assoc (make-index-entry "hash" false (clock) false) :token "token-1" :owner "owner-1")
+        initial-event (token-watch/make-index-event :INITIAL [token-entry-1])
+        empty-initial-event (token-watch/make-index-event :INITIAL [])
+        aggregate-event (token-watch/make-index-event :EVENTS [(token-watch/make-index-event :UPDATE token-entry-1)])
+        empty-aggregate-event (token-watch/make-index-event :EVENTS [])
+        wait-for-closed-body-chan (fn [body]
+                                    (wait-for #(false? (async/put! body empty-initial-event))
+                                              :interval 10 :timeout 1000 :unit-multiplier 1))]
+
+    (testing "watch-chan created is added to tokens-watch-channels-update-chan"
+      (let [tokens-watch-channels-update-chan (async/chan)
+            {:keys [body status]}
+            (handle-list-tokens-watch index-filter-fn no-change-transducer-fn tokens-watch-channels-update-chan
+                                      {:ctrl (async/chan)})]
+        (is (= http-200-ok status))
+        (is (= body (async/poll! tokens-watch-channels-update-chan)))))
+
+    (testing "watch-chan is closed when ctrl chan is triggered"
+      (let [ctrl-chan (async/chan)
+            {:keys [body status]}
+            (handle-list-tokens-watch index-filter-fn no-change-transducer-fn (async/chan) {:ctrl ctrl-chan})]
+        (is (= http-200-ok status))
+        (async/close! ctrl-chan)
+        (is (wait-for-closed-body-chan body))))
+
+    (testing "index-filter-fn is applied to :INITIAL event object list elements"
+      (let [{:keys [body status]}
+            (handle-list-tokens-watch strict-index-filter-fn no-change-transducer-fn (async/chan) {:ctrl (async/chan)})]
+        (is (= http-200-ok status))
+        (async/put! body initial-event)
+        (is (= (utils/clj->json empty-initial-event)
+               (async/<!! body)))))
+
+    (testing "index-filter-fn is applied to :EVENTS object list elements' object entry"
+      (let [{:keys [body status]}
+            (handle-list-tokens-watch strict-index-filter-fn no-change-transducer-fn (async/chan) {:ctrl (async/chan)})]
+        (is (= http-200-ok status))
+        (async/put! body aggregate-event)
+        (is (nil? (async/poll! body)))))
+
+    (testing "metadata-transducer-fn is applied to :INITIAL event object list elements"
+      (let [expected-event (token-watch/make-index-event :INITIAL
+                                                         [(metadata-transducer-fn token-entry-1)])
+            {:keys [body status]}
+            (handle-list-tokens-watch index-filter-fn metadata-transducer-fn (async/chan) {:ctrl (async/chan)})]
+        (is (= http-200-ok status))
+        (async/put! body initial-event)
+        (is (= (utils/clj->json expected-event)
+               (async/<!! body)))))
+
+    (testing "metadata-transducer-fn is applied to :EVENTS event object list elements' object entry with type UPDATE"
+      (let [expected-delete-event (token-watch/make-index-event :DELETE {:owner "owner" :token "token"})
+            expected-update-event (token-watch/make-index-event :UPDATE (metadata-transducer-fn token-entry-1))
+            expected-event (token-watch/make-index-event :EVENTS [expected-delete-event expected-update-event])
+            daemon-update-event (token-watch/make-index-event :UPDATE token-entry-1)
+            daemon-event (token-watch/make-index-event :EVENTS [expected-delete-event daemon-update-event])
+            {:keys [body status]}
+            (handle-list-tokens-watch index-filter-fn metadata-transducer-fn (async/chan) {:ctrl (async/chan)})]
+        (is (= http-200-ok status))
+        (async/put! body daemon-event)
+        (is (= (utils/clj->json expected-event)
+               (async/<!! body)))))
+
+    (testing "when tokens-watch-channels-update-chan is closed an error is thrown and ctrl is closed"
+      (let [ctrl-chan (async/chan)
+            tokens-watch-channels-update-chan (async/chan)]
+        (async/close! tokens-watch-channels-update-chan)
+        (try
+          (handle-list-tokens-watch index-filter-fn no-change-transducer-fn tokens-watch-channels-update-chan
+                                    {:ctrl ctrl-chan})
+          (catch Exception e
+            (is (= (.getMessage e) "tokens-watch-channels-update-chan is closed!"))))))
+
+    (testing "empty aggregate events (:type :EVENTS) are filtered out by default"
+      (let [{:keys [body status]}
+            (handle-list-tokens-watch index-filter-fn no-change-transducer-fn (async/chan) {:ctrl (async/chan)})]
+        (is (= http-200-ok status))
+        (async/put! body empty-aggregate-event)
+        (async/put! body aggregate-event)
+        (is (= (utils/clj->json aggregate-event)
+               (async/<!! body)))))
+
+    (testing "Invalid event type closes body channel"
+      (let [{:keys [body status]}
+            (handle-list-tokens-watch index-filter-fn no-change-transducer-fn (async/chan) {:ctrl (async/chan)})]
+        (is (= http-200-ok status))
+        (async/put! body (token-watch/make-index-event :INVALID-TYPE []))
+        (is (nil? (async/<!! body)))))
+
+    (testing "error in index-filter-fn causes watch-chan to be closed"
+      (let [{:keys [body status]}
+            (handle-list-tokens-watch error-fn no-change-transducer-fn (async/chan) {:ctrl (async/chan)})]
+        (is (= http-200-ok status))
+        (async/put! body initial-event)
+        (is (nil? (async/<!! body)))))
+
+    (testing "error in index-filter-fn causes watch-chan to be closed"
+      (let [{:keys [body status]}
+            (handle-list-tokens-watch index-filter-fn error-fn (async/chan) {:ctrl (async/chan)})]
+        (is (= http-200-ok status))
+        (async/put! body initial-event)
+        (is (nil? (async/<!! body)))))))
