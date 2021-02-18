@@ -49,6 +49,7 @@
             [waiter.util.semaphore :as semaphore]
             [waiter.util.utils :as utils])
   (:import (java.io InputStream)
+           (org.eclipse.jetty.util Jetty)
            (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse)))
 
 (defn- make-https-redirect
@@ -1145,7 +1146,8 @@
       (log/info "consuming request body before rendering response")
       (slurp body))
     (let [request-params (-> request ru/query-params-request :query-params)
-          include-request-info (utils/param-contains? request-params "include" "request-info")]
+          include-request-info (utils/param-contains? request-params "include" "request-info")
+          include-server-info (utils/param-contains? request-params "include" "server-info")]
       (-> (cond-> {:status "ok"}
             include-request-info
             (assoc
@@ -1157,7 +1159,8 @@
                 (cond-> (-> (select-keys request request-keys)
                             (update :headers headers/truncate-header-values))
                   (seq trailers)
-                  (assoc :trailers (headers/truncate-header-values trailers))))))
+                  (assoc :trailers (headers/truncate-header-values trailers)))))
+            include-server-info (assoc :server-info {:jetty-version Jetty/VERSION}))
           utils/clj->json-response))
     (catch Throwable th
       (utils/exception->response th request))))
