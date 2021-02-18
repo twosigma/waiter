@@ -13,6 +13,10 @@
 ;; See the License for the specific language governing permissions and
 ;; limitations under the License.
 ;;
+(def jetty-version (or
+                     (System/getenv "WAITER_JETTY_VERSION")
+                     (System/getProperty "waiter.jetty.version")
+                     "9.4.31.v20200723"))
 (defproject waiter "0.1.0-SNAPSHOT"
   :test-paths ["test" "integration"]
   :test-selectors {:default (every-pred
@@ -47,6 +51,19 @@
                   :scope "test"]
                  [twosigma/jet "0.7.10-20210126_171807-gea4b804"
                   :exclusions [org.mortbay.jetty.alpn/alpn-boot]]
+                 ;; custom configuration of Jetty version
+                 [org.eclipse.jetty/jetty-server ~jetty-version]
+                 [org.eclipse.jetty.http2/http2-server ~jetty-version]
+                 [org.eclipse.jetty.websocket/websocket-server ~jetty-version]
+                 [org.eclipse.jetty.websocket/websocket-servlet ~jetty-version]
+                 [org.eclipse.jetty.websocket/websocket-client ~jetty-version]
+                 [org.eclipse.jetty/jetty-client ~jetty-version]
+                 [org.eclipse.jetty/jetty-alpn-java-client ~jetty-version]
+                 [org.eclipse.jetty/jetty-alpn-java-server ~jetty-version]
+                 [org.eclipse.jetty.http2/http2-common ~jetty-version]
+                 [org.eclipse.jetty.http2/http2-http-client-transport ~jetty-version]
+                 [org.eclipse.jetty.http2/http2-client ~jetty-version]
+
                  [twosigma/clj-http "1.0.2-20180124_201819-gcdf23e5"
                   :exclusions [commons-codec commons-io org.clojure/tools.reader potemkin slingshot]]
                  [clj-time "0.15.2"
