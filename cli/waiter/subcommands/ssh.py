@@ -1,24 +1,57 @@
 import argparse
 
 from waiter import terminal
-from waiter.querying import print_no_services, query_services
-from waiter.util import guard_no_cluster, print_error
+from waiter.querying import print_no_data, print_no_services, query_service, query_services
+from waiter.util import get_user_selection, guard_no_cluster
 
 
-def get_user_selection(select_message, items):
-    print(f'{terminal.bold(select_message)}')
-    for count, item in enumerate(items):
-        print(f'{terminal.bold(f"[{count}].")} {item["message"]}')
-    answer = input('Enter the number associated with your choice: ')
-    print('\n')
-    try:
-        index = int(answer)
-        if index < 0 or index >= len(items):
-            raise Exception('Input is out of range!')
-        return items[int(answer)]
-    except ValueError as error:
-        print_error('Input received was not an integer!')
-        raise error
+def ssh_instance(instance):
+    print(instance)
+    return 0
+
+
+def ssh_service(clusters, service_id):
+    query_result = query_service(clusters, service_id)
+    num_services = query_result['count']
+    if num_services == 0:
+        print_no_data(clusters)
+        return 1
+    for cluster_name, service_data in query_result['clusters'].items():
+        if service_data['count'] > 0:
+            service = service_data['service']
+            break
+    instances = service['instances']['active-instances'] + service['instances']['failed-instances']
+    instance_items = [{'instance': instance,
+                       'message': instance['id']}
+                      for instance in instances]
+    select_prompt_message = f'There are multiple instances for service {terminal.bold(service_id)}. ' \
+                            f'Select the correct instance:'
+    selected_instance_item = get_user_selection(select_prompt_message, instance_items)
+    return ssh_instance(selected_instance_item['instance'])
+
+
+def ssh_token(clusters, token):
+    query_result = query_services(clusters, token)
+    num_services = query_result['count']
+    cluster_data = query_result['clusters']
+    if num_services == 0:
+        print_no_services(clusters, token)
+        return 1
+    cluster_items = [{'cluster': cluster,
+                      'services': data['services'],
+                      'message': cluster}
+                     for cluster, data in cluster_data.items()]
+    select_prompt_message = f'There are multiple clusters with services for token ' \
+                            f'{terminal.bold(token)}. Select the correct cluster:'
+    selected_cluster_item = get_user_selection(select_prompt_message, cluster_items)
+    services = selected_cluster_item['services']
+    service_items = [{'service': service,
+                      'message': service['service-id']}
+                     for service in services]
+    select_prompt_message = f'There are multiple services on cluster ' \
+                            f'{terminal.bold(selected_cluster_item["cluster"])}. Select the correct service:'
+    selected_service_item = get_user_selection(select_prompt_message, service_items)
+    return ssh_service(clusters, selected_service_item['service']['service-id'])
 
 
 def ssh(clusters, args, _, __):
@@ -29,38 +62,9 @@ def ssh(clusters, args, _, __):
     is_service_id = args.pop('is-service-id')
     is_pod_name = args.pop('is-pod-name')
     if is_token:
-        query_result = query_services(clusters, token_or_service_id_or_pod_name)
-        num_services = query_result['count']
-        cluster_data = query_result['clusters']
-        if num_services == 0:
-            print_no_services(clusters, token_or_service_id_or_pod_name)
-            return 1
-        cluster_items = [{'cluster': cluster,
-                          'services': data['services'],
-                          'message': cluster}
-                         for cluster, data in cluster_data.items()]
-        if len(cluster_data.keys()) > 0:
-            select_prompt_message = f'There are multiple clusters with services for token ' \
-                                    f'{terminal.bold(token_or_service_id_or_pod_name)}. Select the correct cluster:'
-            selected_cluster_item = get_user_selection(select_prompt_message, cluster_items)
-        else:
-            selected_cluster_item = cluster_items[0]
-        services = selected_cluster_item['services']
-        service_items = [{'service': service,
-                          'message': service['service-id']}
-                         for service in services]
-        if len(services) > 0:
-            select_prompt_message = f'There are multiple services on cluster ' \
-                                    f'{terminal.bold(selected_cluster_item["cluster"])}. Select the correct service:'
-            selected_service_item = get_user_selection(select_prompt_message, service_items)
-            return 1
-        else:
-            selected_service_item = service_items[0]
-        # get selection for which service they want
-
+        return ssh_token(clusters, token_or_service_id_or_pod_name)
     elif is_service_id:
-        # get all pods for the service id
-        return 0
+        return ssh_service(clusters, token_or_service_id_or_pod_name)
     elif is_pod_name:
         return 0
 

@@ -125,3 +125,21 @@ def is_service_current(service, current_token_etag, token_name):
                      for sources in service['source-tokens']
                      for source in sources)
     return is_current
+
+
+def get_user_selection(select_message, items, short_circuit_choice=True):
+    if short_circuit_choice and len(items) == 0:
+        return items[0]
+    print(f'{terminal.bold(select_message)}')
+    for count, item in enumerate(items):
+        print(f'{terminal.bold(f"[{count}].")} {item["message"]}')
+    answer = input('Enter the number associated with your choice: ')
+    print('\n')
+    try:
+        index = int(answer)
+        if index < 0 or index >= len(items):
+            raise Exception('Input is out of range!')
+        return items[int(answer)]
+    except ValueError as error:
+        print_error('Input received was not an integer!')
+        raise error
