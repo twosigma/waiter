@@ -23,6 +23,7 @@
             [plumbing.core :as pc]
             [schema.core :as s]
             [waiter.authorization :as authz]
+            [waiter.correlation-id :as cid]
             [waiter.kv :as kv]
             [waiter.service-description :as sd]
             [waiter.status-codes :refer :all]
@@ -638,12 +639,13 @@
 
 (defn handle-list-tokens-watch
   [index-filter-fn metadata-transducer-fn tokens-watch-channels-update-chan {:keys [ctrl] :as request}]
-  (let [watch-chan-xform
+  (let [correlation-id (cid/get-correlation-id)
+        watch-chan-xform
         (comp
           (map
             (fn event-filter [{:keys [object type] :as event}]
-              (log/info "received event from token-watch-maintainer daemon" {:type (:type event)})
-              (log/debug "full tokens event data received from daemon" {:event event})
+              (cid/cinfo correlation-id "received event from token-watch-maintainer daemon" {:type (:type event)})
+              (cid/cdebug correlation-id "full tokens event data received from daemon" {:event event})
               (case type
                 :INITIAL
                 (assoc event :object (->> object
@@ -666,15 +668,16 @@
                 (throw (ex-info "Invalid event type provided" {:event event})))))
           (map
             (fn [event]
-              (log/info "forwarding tokens event to client" {:type (:type event)})
-              (log/debug "full tokens event data being sent to client" {:event event})
+              (cid/cinfo correlation-id "forwarding tokens event to client" {:type (:type event)})
+              (cid/cdebug correlation-id "full tokens event data being sent to client" {:event event})
               (utils/clj->json event))))
         watch-chan-ex-handler-fn
         (fn watch-chan-ex-handler [e]
           (async/put! ctrl e)
-          (log/error e "Error during transformation of a token watch event"))
+          (cid/cerror correlation-id e "error during transformation of a token watch event"))
         watch-chan-buffer (async/buffer 1000)
         watch-chan (async/chan watch-chan-buffer watch-chan-xform watch-chan-ex-handler-fn)]
+    (log/info "created watch-chan" watch-chan)
     (if (async/put! tokens-watch-channels-update-chan watch-chan)
       (do
         (async/go

@@ -23,9 +23,11 @@
       (try
         (if (async/put! watch-chan event)
           (conj open-chans watch-chan)
-          open-chans)
+          (do
+            (log/info "removing closed watch-chan" watch-chan)
+            open-chans))
         (catch AssertionError e
-          (log/error e "closing watch-chan due to error")
+          (log/error e "removing and closing watch-chan" watch-chan)
           (async/close! watch-chan)
           open-chans)))
     #{}
@@ -56,8 +58,7 @@
                       (assoc :token->index token->index)
                       (contains? include-flags "buffer-state")
                       (assoc :buffer-state {:update-chan-count (.count tokens-update-chan-buffer)
-                                            :watch-channels-update-chan-count
-                                            (.count tokens-watch-channels-update-chan-buffer)}))))
+                                            :watch-channels-update-chan-count (.count tokens-watch-channels-update-chan-buffer)}))))
           go-chan
           (async/go
             (try
@@ -71,7 +72,7 @@
                       (condp = current-chan
                         exit-chan
                         (do
-                          (log/warn "Stopping token-watch-maintainer")
+                          (log/warn "stopping token-watch-maintainer")
                           (when (not= :exit msg)
                             (throw (ex-info "Stopping router-state maintainer" {:time (clock) :reason msg}))))
 
@@ -102,6 +103,7 @@
                         (timers/start-stop-time!
                           (metrics/waiter-timer "core" "token-watch-maintainer" "channel-update")
                           (let [watch-chan msg]
+                            (log/info "received watch-chan" watch-chan)
                             (async/put! watch-chan (make-index-event :INITIAL (or (vals token->index) [])))
                             (assoc current-state :watch-chans (conj watch-chans watch-chan))))
 
@@ -145,6 +147,8 @@
               (catch Exception e
                 (log/error e "Fatal error in token-watch-maintainer")
                 (System/exit 1))))]
+      (metrics/waiter-gauge #(:watch-count (query-state-fn #{}))
+                            "core" "token-watch-maintainer" "connections")
       (metrics/waiter-gauge #(count tokens-update-chan-buffer)
                             "core" "token-watch-maintainer" "update-chan-count")
       (metrics/waiter-gauge #(count tokens-watch-channels-update-chan-buffer)
