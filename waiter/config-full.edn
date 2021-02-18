@@ -138,6 +138,8 @@
 
                   ;; When SSL is enabled, the keystore to use for SSL connections
                   :keystore "/path/to/keystore.p12"
+                  ;; When SSL is enabled, the scanning interval to detect changes to and reload the keystore
+                  :keystore-scan-interval-secs 43200
                   ;; When SSL is enabled, the format of keystore
                   :keystore-type "pkcs12"
                   ;; When SSL is enabled, the password to the keystore
