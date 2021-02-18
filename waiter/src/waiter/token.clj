@@ -677,6 +677,7 @@
           (cid/cerror correlation-id e "error during transformation of a token watch event"))
         watch-chan-buffer (async/buffer 1000)
         watch-chan (async/chan watch-chan-buffer watch-chan-xform watch-chan-ex-handler-fn)]
+    (log/info "created watch-chan" watch-chan)
     (if (async/put! tokens-watch-channels-update-chan watch-chan)
       (do
         (async/go
