@@ -1,19 +1,39 @@
 import argparse
+import logging
 import os
+from enum import Enum
 
-from waiter import terminal
-from waiter.querying import print_no_data, print_no_services, query_service, query_services
+from waiter import plugins, terminal
+from waiter.querying import get_service_id_from_instance_id, print_no_data, print_no_services, query_service, \
+    query_services
 from waiter.util import get_user_selection, guard_no_cluster, print_info
 
 
-def kubectl_exec_to_instance(namespace, pod_name, __, ___):
+class Destination(Enum):
+    TOKEN = 'token'
+    SERVICE_ID = 'service_id'
+    INSTANCE_ID = 'instance_id'
+
+
+def get_instances_from_service_id(clusters, service_id):
+    query_result = query_service(clusters, service_id)
+    num_services = query_result['count']
+    if num_services == 0:
+        return False
+    service = list(query_result['clusters'].values())[0]['service']
+    return service['instances']['active-instances'] + service['instances']['failed-instances']
+
+
+def kubectl_exec_to_instance(api_server, namespace, pod_name, log_directory, ___):
+    kubectl_cmd = os.getenv('WAITER_KUBECTL', 'kubectl')
     container_name = "waiter-app"
-    os.execlp('kubectl', 'kubectl',
-              'namespace', namespace,
+    os.execlp(kubectl_cmd, 'kubectl',
+              '--server', api_server,
+              '--namespace', namespace,
               'exec',
               '-it', pod_name,
               '-c', container_name,
-              '--', '/bin/sh', '-c', 'cd $HOME; exec /bin/sh')
+              '--', '/bin/sh', '-c', f'cd {log_directory}; exec /bin/sh')
 
 
 def ssh_instance(instance, command_to_run=None):
@@ -21,10 +41,13 @@ def ssh_instance(instance, command_to_run=None):
     log_directory = instance['log-directory']
     k8s_pod_name = instance.get('k8s/pod-name', False)
     if k8s_pod_name:
-        # get cluster
-        # get plugin
+        k8s_api_server = instance['k8s/api-server-url']
+        kubectl_exec_to_instance_fn = plugins.get_fn('kubectl-exec-to-instance', kubectl_exec_to_instance)
         k8s_namespace = instance['k8s/namespace']
-        return kubectl_exec_to_instance(k8s_namespace, k8s_pod_name)
+        print_info(f'Executing ssh to k8s pod {terminal.bold(k8s_pod_name)}')
+        logging.debug(f'Executing ssh to k8s pod {terminal.bold(k8s_pod_name)} '
+                      f'using namespace={k8s_namespace} api_server={k8s_api_server}')
+        kubectl_exec_to_instance_fn(k8s_api_server, k8s_namespace, k8s_pod_name, log_directory)
     else:
         hostname = instance['host']
         command_to_run = command_to_run or ['bash']
@@ -34,27 +57,37 @@ def ssh_instance(instance, command_to_run=None):
         os.execlp(ssh_cmd, *args)
 
 
-def ssh_service(clusters, service_id):
-    query_result = query_service(clusters, service_id)
-    num_services = query_result['count']
-    if num_services == 0:
+def ssh_instance_id(clusters, instance_id, command):
+    service_id = get_service_id_from_instance_id(instance_id)
+    instances = get_instances_from_service_id(clusters, service_id)
+    if not instances:
         print_no_data(clusters)
         return 1
-    for cluster_name, service_data in query_result['clusters'].items():
-        if service_data['count'] > 0:
-            service = service_data['service']
-            break
-    instances = service['instances']['active-instances'] + service['instances']['failed-instances']
+    found_instance = next((instance
+                           for instance in instances
+                           if instance['id'] == instance_id),
+                          False)
+    if not found_instance:
+        print_no_data(clusters)
+        return 1
+    return ssh_instance(found_instance, command)
+
+
+def ssh_service_id(clusters, service_id, command):
+    instances = get_instances_from_service_id(clusters, service_id)
+    if not instances:
+        print_no_data(clusters)
+        return 1
     instance_items = [{'instance': instance,
                        'message': instance['id']}
                       for instance in instances]
     select_prompt_message = f'There are multiple instances for service {terminal.bold(service_id)}. ' \
                             f'Select the correct instance:'
     selected_instance_item = get_user_selection(select_prompt_message, instance_items)
-    return ssh_instance(selected_instance_item['instance'])
+    return ssh_instance(selected_instance_item['instance'], command)
 
 
-def ssh_token(clusters, token):
+def ssh_token(clusters, token, command):
     query_result = query_services(clusters, token)
     num_services = query_result['count']
     cluster_data = query_result['clusters']
@@ -75,24 +108,20 @@ def ssh_token(clusters, token):
     select_prompt_message = f'There are multiple services on cluster ' \
                             f'{terminal.bold(selected_cluster_item["cluster"])}. Select the correct service:'
     selected_service_item = get_user_selection(select_prompt_message, service_items)
-    return ssh_service(clusters, selected_service_item['service']['service-id'])
+    return ssh_service_id(clusters, selected_service_item['service']['service-id'], command)
 
 
 def ssh(clusters, args, _, __):
     guard_no_cluster(clusters)
     token_or_service_id_or_pod_name = args.pop('token-or-service-id-or-pod-name')
     command = args.pop('command')
-    is_token = args.pop('is-token')
-    is_service_id = args.pop('is-service-id')
-    is_pod_name = args.pop('is-pod-name')
-    if is_token:
-        return ssh_token(clusters, token_or_service_id_or_pod_name)
-    elif is_service_id:
-        return ssh_service(clusters, token_or_service_id_or_pod_name)
-    elif is_pod_name:
-        return 0
-
-    return 0
+    ssh_destination = args.pop('ssh_destination')
+    if ssh_destination == Destination.TOKEN:
+        return ssh_token(clusters, token_or_service_id_or_pod_name, command)
+    elif ssh_destination == Destination.SERVICE_ID:
+        return ssh_service_id(clusters, token_or_service_id_or_pod_name, command)
+    elif ssh_destination == Destination.INSTANCE_ID:
+        return ssh_instance_id(clusters, token_or_service_id_or_pod_name, command)
 
 
 def register(add_parser):
@@ -101,8 +130,11 @@ def register(add_parser):
                         help='ssh to a pod given the token, service-id, or pod name. Only kubernetes is supported.')
     parser.add_argument('token-or-service-id-or-pod-name')
     id_group = parser.add_mutually_exclusive_group(required=False)
-    id_group.add_argument('--token', '-t', dest='is-token', action='store_true', default=True)
-    id_group.add_argument('--service-id', '-s', dest='is-service-id', action='store_true')
-    id_group.add_argument('--pod-name', '-p', dest='is-pod-name', action='store_true')
+    id_group.add_argument('--token', '-t', dest='ssh_destination', action='store_const', const=Destination.TOKEN,
+                          default=Destination.TOKEN)
+    id_group.add_argument('--service-id', '-s', dest='ssh_destination', action='store_const',
+                          const=Destination.SERVICE_ID)
+    id_group.add_argument('--instance-id', '-i', dest='ssh_destination', action='store_const',
+                          const=Destination.INSTANCE_ID)
     parser.add_argument('command', nargs=argparse.REMAINDER)
     return ssh

@@ -214,3 +214,8 @@ def get_target_cluster_from_token(clusters, token_name, enforce_cluster):
                             f'clusters-{cluster_names}.'
                             '\nConsider specifying with the --cluster flag which cluster you are targeting.')
         return _get_latest_cluster(clusters, query_result)
+
+
+def get_service_id_from_instance_id(instance_id):
+    """Extracts the service_id from the instance_id. instance_ids begin with a service_id followed by a period"""
+    return instance_id.split('.')[0]
