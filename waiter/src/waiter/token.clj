@@ -27,6 +27,7 @@
             [waiter.kv :as kv]
             [waiter.service-description :as sd]
             [waiter.status-codes :refer :all]
+            [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils])
@@ -638,60 +639,86 @@
       (utils/exception->response ex request))))
 
 (defn handle-list-tokens-watch
-  [index-filter-fn metadata-transducer-fn tokens-watch-channels-update-chan {:keys [ctrl] :as request}]
-  (let [correlation-id (cid/get-correlation-id)
-        watch-chan-xform
-        (comp
-          (map
-            (fn event-filter [{:keys [object type] :as event}]
-              (cid/cinfo correlation-id "received event from token-watch-maintainer daemon" {:type (:type event)})
-              (cid/cdebug correlation-id "full tokens event data received from daemon" {:event event})
-              (case type
-                :INITIAL
-                (assoc event :object (->> object
-                                          (filter index-filter-fn)
-                                          (map metadata-transducer-fn)))
-                :EVENTS
-                (assoc event :object (->> object
-                                          (filter (fn [{:keys [object]}]
-                                                    (index-filter-fn object)))
-                                          (map (fn [{:keys [type] :as entry}]
-                                                 (if (= type :UPDATE)
-                                                   (update entry :object metadata-transducer-fn)
-                                                   entry)))))
-                (throw (ex-info "Invalid event type provided" {:event event})))))
-          (filter
-            (fn empty-aggregate-events [{:keys [object type] :as event}]
-              (case type
-                :INITIAL true
-                :EVENTS (not-empty object)
-                (throw (ex-info "Invalid event type provided" {:event event})))))
-          (map
-            (fn [event]
-              (cid/cinfo correlation-id "forwarding tokens event to client" {:type (:type event)})
-              (cid/cdebug correlation-id "full tokens event data being sent to client" {:event event})
-              (utils/clj->json event))))
-        watch-chan-ex-handler-fn
-        (fn watch-chan-ex-handler [e]
-          (async/put! ctrl e)
-          (cid/cerror correlation-id e "error during transformation of a token watch event"))
-        watch-chan-buffer (async/buffer 1000)
-        watch-chan (async/chan watch-chan-buffer watch-chan-xform watch-chan-ex-handler-fn)]
-    (log/info "created watch-chan" watch-chan)
-    (if (async/put! tokens-watch-channels-update-chan watch-chan)
-      (do
-        (async/go
-          (let [data (async/<! ctrl)]
-            (log/info "closing watch-chan, as ctrl channel in request has been triggered" {:data data})
-            (async/close! watch-chan)))
-        (utils/attach-waiter-source
-          {:body watch-chan
-           :headers {"content-type" "application/json"}
-           :status http-200-ok}))
-      (utils/exception->response (ex-info "tokens-watch-channels-update-chan is closed!" {}) request))))
+  [streaming-timeout-ms index-filter-fn metadata-transducer-fn tokens-watch-channels-update-chan {:keys [ctrl] :as request}]
+  (let [{:strs [streaming-timeout]} (-> request ru/query-params-request :query-params)]
+    (if-let [configured-streaming-timeout-ms (if streaming-timeout
+                                               (utils/parse-int streaming-timeout)
+                                               streaming-timeout-ms)]
+      (let [_ (log/info "request will use streaming timeout of" configured-streaming-timeout-ms "ms")
+            correlation-id (cid/get-correlation-id)
+            watch-chan-xform
+            (comp
+              (map
+                (fn event-filter [{:keys [object type] :as event}]
+                  (cid/cinfo correlation-id "received event from token-watch-maintainer daemon" {:type (:type event)})
+                  (cid/cdebug correlation-id "full tokens event data received from daemon" {:event event})
+                  (case type
+                    :INITIAL
+                    (assoc event :object (->> object
+                                              (filter index-filter-fn)
+                                              (map metadata-transducer-fn)))
+                    :EVENTS
+                    (assoc event :object (->> object
+                                              (filter (fn [{:keys [object]}]
+                                                        (index-filter-fn object)))
+                                              (map (fn [{:keys [type] :as entry}]
+                                                     (if (= type :UPDATE)
+                                                       (update entry :object metadata-transducer-fn)
+                                                       entry)))))
+                    (throw (ex-info "Invalid event type provided" {:event event})))))
+              (filter
+                (fn empty-aggregate-events [{:keys [object type] :as event}]
+                  (case type
+                    :INITIAL true
+                    :EVENTS (not-empty object)
+                    (throw (ex-info "Invalid event type provided" {:event event})))))
+              (map
+                (fn [event]
+                  (cid/cinfo correlation-id "forwarding tokens event to client" {:type (:type event)})
+                  (cid/cdebug correlation-id "full tokens event data being sent to client" {:event event})
+                  (utils/clj->json event))))
+            watch-chan-ex-handler-fn
+            (fn watch-chan-ex-handler [e]
+              (async/put! ctrl e)
+              (cid/cerror correlation-id e "error during transformation of a token watch event"))
+            watch-chan-buffer (async/buffer 1000)
+            watch-chan (async/chan watch-chan-buffer watch-chan-xform watch-chan-ex-handler-fn)
+            _ (log/info "created watch-chan" watch-chan)
+            watch-mult (async/mult watch-chan)
+            response-chan (async/chan 1024)
+            _ (async/tap watch-mult response-chan)
+            trigger-chan (au/latest-chan)
+            _ (async/tap watch-mult trigger-chan)]
+        (async/go-loop [timeout-ch (async/timeout configured-streaming-timeout-ms)]
+          (let [[message chan] (async/alts! [trigger-chan timeout-ch] :priority true)]
+            (cond
+              (= chan trigger-chan)
+              (if (nil? message)
+                (log/info "watch-chan has been closed")
+                (recur (async/timeout configured-streaming-timeout-ms)))
+              :else ;; timeout channel has been triggered
+              (do
+                (log/info "closing watch-chan due to streaming timeout" configured-streaming-timeout-ms "ms")
+                (async/close! watch-chan)))))
+        (if (async/put! tokens-watch-channels-update-chan watch-chan)
+          (do
+            (async/go
+              (let [data (async/<! ctrl)]
+                (log/info "closing watch-chan as ctrl channel has been triggered" {:data data})
+                (async/close! watch-chan)))
+            (utils/attach-waiter-source
+              {:body response-chan
+               :headers {"content-type" "application/json"}
+               :status http-200-ok}))
+          (utils/exception->response (ex-info "tokens-watch-channels-update-chan is closed!" {}) request)))
+      (let [ex (ex-info "streaming-timeout query parameter must be an integer"
+                        {:log-level :info
+                         :status http-400-bad-request
+                         :streaming-timeout streaming-timeout})]
+        (utils/exception->response ex request)))))
 
 (defn handle-list-tokens-request
-  [kv-store entitlement-manager tokens-watch-channels-update-chan {:keys [request-method] :as req}]
+  [kv-store entitlement-manager streaming-timeout-ms tokens-watch-channels-update-chan {:keys [request-method] :as req}]
   (try
     (case request-method
       :get (let [{:strs [can-manage-as-user] :as request-params} (-> req ru/query-params-request :query-params)
@@ -745,7 +772,7 @@
                      (update entry :last-update-time tc/from-long)
                      (dissoc entry :deleted :etag :last-update-time)))]
              (if should-watch?
-               (handle-list-tokens-watch index-filter-fn metadata-transducer-fn tokens-watch-channels-update-chan req)
+               (handle-list-tokens-watch streaming-timeout-ms index-filter-fn metadata-transducer-fn tokens-watch-channels-update-chan req)
                (->> owners
                     (map
                       (fn [owner]
