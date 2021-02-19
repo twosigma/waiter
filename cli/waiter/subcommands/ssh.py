@@ -1,13 +1,37 @@
 import argparse
+import os
 
 from waiter import terminal
 from waiter.querying import print_no_data, print_no_services, query_service, query_services
-from waiter.util import get_user_selection, guard_no_cluster
+from waiter.util import get_user_selection, guard_no_cluster, print_info
 
 
-def ssh_instance(instance):
-    print(instance)
-    return 0
+def kubectl_exec_to_instance(namespace, pod_name, __, ___):
+    container_name = "waiter-app"
+    os.execlp('kubectl', 'kubectl',
+              'namespace', namespace,
+              'exec',
+              '-it', pod_name,
+              '-c', container_name,
+              '--', '/bin/sh', '-c', 'cd $HOME; exec /bin/sh')
+
+
+def ssh_instance(instance, command_to_run=None):
+    print_info(f'Attempting to ssh into instance {terminal.bold(instance["id"])}...')
+    log_directory = instance['log-directory']
+    k8s_pod_name = instance.get('k8s/pod-name', False)
+    if k8s_pod_name:
+        # get cluster
+        # get plugin
+        k8s_namespace = instance['k8s/namespace']
+        return kubectl_exec_to_instance(k8s_namespace, k8s_pod_name)
+    else:
+        hostname = instance['host']
+        command_to_run = command_to_run or ['bash']
+        ssh_cmd = os.getenv('WAITER_SSH', 'ssh')
+        args = [ssh_cmd, '-t', hostname, 'cd', log_directory, ';'] + command_to_run
+        print_info(f'Executing ssh to {terminal.bold(hostname)}')
+        os.execlp(ssh_cmd, *args)
 
 
 def ssh_service(clusters, service_id):
