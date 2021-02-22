@@ -1583,17 +1583,8 @@ class WaiterCliTest(util.WaiterTest):
         token_fields = util.minimal_service_description()
         util.post_token(self.waiter_url, token_name, token_fields)
         try:
-            cp = cli.ping(self.waiter_url, token_name)
-            self.assertEqual(0, cp.returncode, cp.stderr)
-            self.assertIn('Pinging token', cli.stdout(cp))
-            self.assertIn('successful', cli.stdout(cp))
-            util.wait_until_services_for_token(self.waiter_url, token_name, 1)
-            services = util.services_for_token(self.waiter_url, token_name)
-            self.assertEqual(1, len(services))
-
-            # get instance information
-            service = services[0]
-            instances = util.instances_for_service(self.waiter_url, service['service-id'])
+            service_id = util.ping_token(self.waiter_url, token_name)
+            instances = util.instances_for_service(self.waiter_url, service_id)
             self.assertEqual(1, len(instances['active-instances']))
             self.assertEqual(0, len(instances['failed-instances']))
             self.assertEqual(0, len(instances['killed-instances']))
@@ -1601,7 +1592,7 @@ class WaiterCliTest(util.WaiterTest):
             # ssh into instance
             env = os.environ.copy()
             env["WAITER_SSH"] = 'echo'
-            instance = instance_fn(service, instances)
+            instance = instance_fn(service_id, instances)
             logging.info(instance)
             cp = cli.ssh(self.waiter_url, instance['id'], ssh_flags='-i', env=env)
             if no_data:
@@ -1618,12 +1609,10 @@ class WaiterCliTest(util.WaiterTest):
         self.__test_ssh_instance_id(lambda _, instances: instances['active-instances'][0])
 
     def test_ssh_instance_id_no_instance(self):
-        self.__test_ssh_instance_id(lambda service, _: {'id': service['service-id'] + '.nonexistent'}, no_data=True)
+        self.__test_ssh_instance_id(lambda service_id, _: {'id': service_id + '.nonexistent'}, no_data=True)
 
     def test_ssh_instance_id_no_service(self):
         instance_id_no_service = "a.a"
         cp = cli.ssh(self.waiter_url, instance_id_no_service, ssh_flags='-i')
         self.assertEqual(1, cp.returncode, cp.stderr)
         self.assertIn('No matching data found', cli.stdout(cp))
-
-

@@ -334,3 +334,7 @@ def wait_until_services_for_token(waiter_url, token_name, expected_num_services)
 
 def wait_until_no_services_for_token(waiter_url, token_name):
     wait_until_services_for_token(waiter_url, token_name, 0)
+
+
+def using_kubernetes():
+    return 0
