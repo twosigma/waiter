@@ -1578,15 +1578,22 @@ class WaiterCliTest(util.WaiterTest):
         self.assertEqual(0, cp.returncode, cp.stderr)
         self.assertEqual(cli.stdout(cp_help), cli.stdout(cp))
 
-    def __test_ssh_instance_id(self, instance_fn, no_data=False, command_to_run=None):
+    def __test_ssh_instance_id(self, instance_fn, no_data=False, command_to_run=None, is_failed_instance=False):
         token_name = self.token_name()
         token_fields = util.minimal_service_description()
+        if is_failed_instance:
+            token_fields['cmd'] = 'this_is_an_invalid_command'
         util.post_token(self.waiter_url, token_name, token_fields)
         try:
-            service_id = util.ping_token(self.waiter_url, token_name)
+            service_id = util.ping_token(self.waiter_url, token_name,
+                                         expected_status_code=503 if is_failed_instance else 200)
             instances = util.instances_for_service(self.waiter_url, service_id)
-            self.assertEqual(1, len(instances['active-instances']))
-            self.assertEqual(0, len(instances['failed-instances']))
+            if is_failed_instance:
+                self.assertEqual(0, len(instances['active-instances']))
+                self.assertLess(0, len(instances['failed-instances']))
+            else:
+                self.assertEqual(1, len(instances['active-instances']))
+                self.assertEqual(0, len(instances['failed-instances']))
             self.assertEqual(0, len(instances['killed-instances']))
 
             # ssh into instance
@@ -1618,8 +1625,15 @@ class WaiterCliTest(util.WaiterTest):
     def test_ssh_instance_id(self):
         self.__test_ssh_instance_id(lambda _, instances: instances['active-instances'][0])
 
+    def test_ssh_instance_id_failed_instance(self):
+        self.__test_ssh_instance_id(lambda _, instances: instances['failed-instances'][0], is_failed_instance=True)
+
     def test_ssh_instance_id_custom_cmd(self):
         self.__test_ssh_instance_id(lambda _, instances: instances['active-instances'][0],
+                                    command_to_run='ls -al')
+
+    def test_ssh_instance_id_custom_cmd_failed_instance(self):
+        self.__test_ssh_instance_id(lambda _, instances: instances['failed-instances'][0], is_failed_instance=True,
                                     command_to_run='ls -al')
 
     def test_ssh_instance_id_no_instance(self):
@@ -1630,3 +1644,4 @@ class WaiterCliTest(util.WaiterTest):
         cp = cli.ssh(self.waiter_url, instance_id_no_service, ssh_flags='-i')
         self.assertEqual(1, cp.returncode, cp.stderr)
         self.assertIn('No matching data found', cli.stdout(cp))
+
