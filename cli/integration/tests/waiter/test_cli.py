@@ -1595,11 +1595,11 @@ class WaiterCliTest(util.WaiterTest):
             env["WAITER_KUBECTL"] = 'echo'
             instance = instance_fn(service_id, instances)
             logging.info(instance)
-            cp = cli.ssh(self.waiter_url, instance['id'], ssh_flags='-i', env=env)
+            cp = cli.ssh(self.waiter_url, instance['id'], ssh_command=command_to_run, ssh_flags='-i', env=env)
             if no_data:
                 self.assertEqual(1, cp.returncode, cp.stderr)
                 self.assertIn('No matching data found', cli.stdout(cp))
-            else:  # TODO: handle custom command
+            else:
                 log_directory = instance['log-directory']
                 self.assertEqual(0, cp.returncode, cp.stderr)
                 if util.using_kubernetes(self.waiter_url):
@@ -1607,14 +1607,19 @@ class WaiterCliTest(util.WaiterTest):
                     namespace = instance['k8s/namespace']
                     pod_name = instance['k8s/pod-name']
                     self.assertIn(f'--server {api_server} --namespace {namespace} exec -it {pod_name} -c -- '
-                                  f'/bin/bash -c cd {log_directory}; exec /bin/bash')
+                                  f"/bin/bash -c cd {log_directory}; {command_to_run or 'exec /bin/bash'}")
                 else:
-                    self.assertIn(f'-t {instance["host"]} cd {log_directory} ; /bin/bash', cli.stdout(cp))
+                    self.assertIn(f"-t {instance['host']} cd {log_directory} ; {command_to_run or '/bin/bash'}",
+                                  cli.stdout(cp))
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
 
     def test_ssh_instance_id(self):
         self.__test_ssh_instance_id(lambda _, instances: instances['active-instances'][0])
+
+    def test_ssh_instance_id_custom_cmd(self):
+        self.__test_ssh_instance_id(lambda _, instances: instances['active-instances'][0],
+                                    command_to_run='ls -al')
 
     def test_ssh_instance_id_no_instance(self):
         self.__test_ssh_instance_id(lambda service_id, _: {'id': service_id + '.nonexistent'}, no_data=True)
