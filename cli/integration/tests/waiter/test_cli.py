@@ -1577,3 +1577,33 @@ class WaiterCliTest(util.WaiterTest):
         cp_help = cli.maintenance('', '', maintenance_flags='-h')
         self.assertEqual(0, cp.returncode, cp.stderr)
         self.assertEqual(cli.stdout(cp_help), cli.stdout(cp))
+
+    def test_ssh_instance_id(self):
+        token_name = self.token_name()
+        token_fields = util.minimal_service_description()
+        util.post_token(self.waiter_url, token_name, token_fields)
+        try:
+            cp = cli.ping(self.waiter_url, token_name)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('Pinging token', cli.stdout(cp))
+            self.assertIn('successful', cli.stdout(cp))
+            util.wait_until_services_for_token(self.waiter_url, token_name, 1)
+            services = util.services_for_token(self.waiter_url, token_name)
+            self.assertEqual(1, len(services))
+
+            # get instance information
+            service = services[0]
+            instances = util.instances_for_service(self.waiter_url, service['service-id'])
+            self.assertEqual(1, len(instances['active-instances']))
+            self.assertEqual(0, len(instances['failed-instances']))
+            self.assertEqual(0, len(instances['killed-instances']))
+
+            # ssh into instance
+            env = os.environ.copy()
+            env["WAITER_SSH"] = 'echo'
+            instance = instances['active-instances'][0]
+            cp = cli.ssh(self.waiter_url, instance['id'], ssh_flags='-i', env=env)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn(f'-t {instance["hostname"]}', cli.stdout(cp))
+        finally:
+            util.delete_token(self.waiter_url, token_name, kill_services=True)

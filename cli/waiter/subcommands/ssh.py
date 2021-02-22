@@ -113,22 +113,23 @@ def ssh_token(clusters, token, command):
 
 def ssh(clusters, args, _, __):
     guard_no_cluster(clusters)
-    token_or_service_id_or_pod_name = args.pop('token-or-service-id-or-pod-name')
+    token_or_service_id_or_instance_id = args.pop('token-or-service-id-or-instance-id')
     command = args.pop('command')
     ssh_destination = args.pop('ssh_destination')
     if ssh_destination == Destination.TOKEN:
-        return ssh_token(clusters, token_or_service_id_or_pod_name, command)
+        return ssh_token(clusters, token_or_service_id_or_instance_id, command)
     elif ssh_destination == Destination.SERVICE_ID:
-        return ssh_service_id(clusters, token_or_service_id_or_pod_name, command)
+        return ssh_service_id(clusters, token_or_service_id_or_instance_id, command)
     elif ssh_destination == Destination.INSTANCE_ID:
-        return ssh_instance_id(clusters, token_or_service_id_or_pod_name, command)
+        return ssh_instance_id(clusters, token_or_service_id_or_instance_id, command)
 
 
 def register(add_parser):
     """Adds this sub-command's parser and returns the action function"""
+    # TODO: better help messages describing behavior
     parser = add_parser('ssh',
-                        help='ssh to a pod given the token, service-id, or pod name. Only kubernetes is supported.')
-    parser.add_argument('token-or-service-id-or-pod-name')
+                        help='ssh to a pod given the token, service-id, or pod name.')
+    parser.add_argument('token-or-service-id-or-instance-id')
     id_group = parser.add_mutually_exclusive_group(required=False)
     id_group.add_argument('--token', '-t', dest='ssh_destination', action='store_const', const=Destination.TOKEN,
                           default=Destination.TOKEN)

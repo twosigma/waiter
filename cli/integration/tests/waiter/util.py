@@ -295,6 +295,18 @@ def services_for_token(waiter_url, token_name, assert_response=True, expected_st
     return services
 
 
+def instances_for_service(waiter_url, service_id, expected_status_code=200):
+    headers = {
+        'Content-Type': 'application/json',
+        'x-cid': cid()
+    }
+    response = session.get(f'{waiter_url}/apps/{service_id}', headers=headers)
+    service = response.json()
+    assert expected_status_code == response.status_code, \
+        f'Expected {expected_status_code}, got {response.status_code} with body {response.text}'
+    return service['instances']
+
+
 def multi_cluster_tests_enabled():
     """
     Returns true if the WAITER_TEST_MULTI_CLUSTER environment variable is set to "true",
