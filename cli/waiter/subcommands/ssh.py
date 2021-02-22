@@ -10,19 +10,28 @@ from waiter.util import get_user_selection, guard_no_cluster, print_info
 
 BASH_PATH = '/bin/bash'
 
+
 class Destination(Enum):
     TOKEN = 'token'
     SERVICE_ID = 'service_id'
     INSTANCE_ID = 'instance_id'
 
 
-def get_instances_from_service_id(clusters, service_id):
+def get_instances_from_service_id(clusters, service_id, include_active_instances, include_failed_instances,
+                                  include_killed_instances):
     query_result = query_service(clusters, service_id)
     num_services = query_result['count']
     if num_services == 0:
         return False
     service = list(query_result['clusters'].values())[0]['service']
-    return service['instances']['active-instances'] + service['instances']['failed-instances']
+    services = []
+    if include_active_instances:
+        services += service['instances']['active-instances']
+    if include_failed_instances:
+        services += service['instances']['failed-instances']
+    if include_killed_instances:
+        services += service['instances']['killed-instances']
+    return services
 
 
 def kubectl_exec_to_instance(kubectl_cmd, api_server, namespace, pod_name, log_directory, command_to_run=None):
@@ -60,7 +69,7 @@ def ssh_instance(instance, command_to_run=None):
 
 def ssh_instance_id(clusters, instance_id, command):
     service_id = get_service_id_from_instance_id(instance_id)
-    instances = get_instances_from_service_id(clusters, service_id)
+    instances = get_instances_from_service_id(clusters, service_id, True, True, True)
     if not instances:
         print_no_data(clusters)
         return 1
@@ -74,8 +83,10 @@ def ssh_instance_id(clusters, instance_id, command):
     return ssh_instance(found_instance, command)
 
 
-def ssh_service_id(clusters, service_id, command):
-    instances = get_instances_from_service_id(clusters, service_id)
+def ssh_service_id(clusters, service_id, command, include_active_instances, include_failed_instances,
+                   include_killed_instances):
+    instances = get_instances_from_service_id(clusters, service_id, include_active_instances, include_failed_instances,
+                                              include_killed_instances)
     if not instances:
         print_no_data(clusters)
         return 1
@@ -88,7 +99,7 @@ def ssh_service_id(clusters, service_id, command):
     return ssh_instance(selected_instance_item['instance'], command)
 
 
-def ssh_token(clusters, token, command):
+def ssh_token(clusters, token, command, include_active_instances, include_failed_instances, include_killed_instances):
     query_result = query_services(clusters, token)
     num_services = query_result['count']
     cluster_data = query_result['clusters']
@@ -109,7 +120,8 @@ def ssh_token(clusters, token, command):
     select_prompt_message = f'There are multiple services on cluster ' \
                             f'{terminal.bold(selected_cluster_item["cluster"])}. Select the correct service:'
     selected_service_item = get_user_selection(select_prompt_message, service_items)
-    return ssh_service_id(clusters, selected_service_item['service']['service-id'], command)
+    return ssh_service_id(clusters, selected_service_item['service']['service-id'], command, include_active_instances,
+                          include_failed_instances, include_killed_instances)
 
 
 def ssh(clusters, args, _, __):
@@ -117,10 +129,15 @@ def ssh(clusters, args, _, __):
     token_or_service_id_or_instance_id = args.pop('token-or-service-id-or-instance-id')
     command = args.pop('command')
     ssh_destination = args.pop('ssh_destination')
+    include_active_instances = args.pop('include_active_instances')
+    include_failed_instances = args.pop('include_failed_instances')
+    include_killed_instances = args.pop('include_killed_instances')
     if ssh_destination == Destination.TOKEN:
-        return ssh_token(clusters, token_or_service_id_or_instance_id, command)
+        return ssh_token(clusters, token_or_service_id_or_instance_id, command,
+                         include_active_instances, include_failed_instances, include_killed_instances)
     elif ssh_destination == Destination.SERVICE_ID:
-        return ssh_service_id(clusters, token_or_service_id_or_instance_id, command)
+        return ssh_service_id(clusters, token_or_service_id_or_instance_id, command,
+                              include_active_instances, include_failed_instances, include_killed_instances)
     elif ssh_destination == Destination.INSTANCE_ID:
         return ssh_instance_id(clusters, token_or_service_id_or_instance_id, command)
 
@@ -128,6 +145,7 @@ def ssh(clusters, args, _, __):
 def register(add_parser):
     """Adds this sub-command's parser and returns the action function"""
     # TODO: better help messages describing behavior
+    # TODO: docstrings for all functions
     parser = add_parser('ssh',
                         help='ssh to a pod given the token, service-id, or pod name.')
     parser.add_argument('token-or-service-id-or-instance-id')
@@ -138,5 +156,8 @@ def register(add_parser):
                           const=Destination.SERVICE_ID)
     id_group.add_argument('--instance-id', '-i', dest='ssh_destination', action='store_const',
                           const=Destination.INSTANCE_ID)
+    parser.add_argument('--include-active-instances', dest='include_active_instances', action='store_true', default=True)
+    parser.add_argument('--include-failed-instances', dest='include_failed_instances', action='store_true', default=True)
+    parser.add_argument('--include-killed-instances', dest='include_killed_instances', action='store_true')
     parser.add_argument('command', nargs=argparse.REMAINDER)
     return ssh
