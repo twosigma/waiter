@@ -1607,7 +1607,8 @@ class WaiterCliTest(util.WaiterTest):
                     namespace = instance['k8s/namespace']
                     pod_name = instance['k8s/pod-name']
                     self.assertIn(f'--server {api_server} --namespace {namespace} exec -it {pod_name} -c -- '
-                                  f"/bin/bash -c cd {log_directory}; {command_to_run or 'exec /bin/bash'}")
+                                  f"/bin/bash -c cd {log_directory}; {command_to_run or 'exec /bin/bash'}",
+                                  cli.stdout(cp))
                 else:
                     self.assertIn(f"-t {instance['host']} cd {log_directory} ; {command_to_run or '/bin/bash'}",
                                   cli.stdout(cp))
