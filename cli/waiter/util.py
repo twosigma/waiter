@@ -128,7 +128,7 @@ def is_service_current(service, current_token_etag, token_name):
 
 
 def get_user_selection(select_message, items, short_circuit_choice=True):
-    if short_circuit_choice and len(items) == 0:
+    if short_circuit_choice and len(items) == 1:
         return items[0]
     print(f'{terminal.bold(select_message)}')
     for count, item in enumerate(items):

@@ -1601,7 +1601,6 @@ class WaiterCliTest(util.WaiterTest):
             env["WAITER_SSH"] = 'echo'
             env["WAITER_KUBECTL"] = 'echo'
             instance = instance_fn(service_id, instances)
-            logging.info(instance)
             cp = cli.ssh(self.waiter_url, instance['id'], ssh_command=command_to_run, ssh_flags='-i', env=env)
             if no_data:
                 self.assertEqual(1, cp.returncode, cp.stderr)
@@ -1645,3 +1644,37 @@ class WaiterCliTest(util.WaiterTest):
         self.assertEqual(1, cp.returncode, cp.stderr)
         self.assertIn('No matching data found', cli.stdout(cp))
 
+    def __test_ssh_service_id(self, command_to_run=None):
+        token_name = self.token_name()
+        token_fields = util.minimal_service_description()
+        util.post_token(self.waiter_url, token_name, token_fields)
+        try:
+            service_id = util.ping_token(self.waiter_url, token_name)
+            instances = util.instances_for_service(self.waiter_url, service_id)
+            self.assertEqual(1, len(instances['active-instances']))
+            self.assertEqual(0, len(instances['failed-instances']))
+            self.assertEqual(0, len(instances['killed-instances']))
+
+            # ssh into instance
+            env = os.environ.copy()
+            env["WAITER_SSH"] = 'echo'
+            env["WAITER_KUBECTL"] = 'echo'
+            instance = instances['active-instances'][0]
+            cp = cli.ssh(self.waiter_url, service_id, ssh_command=command_to_run, ssh_flags='-s', env=env)
+            log_directory = instance['log-directory']
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            if util.using_kubernetes(self.waiter_url):
+                api_server = instance['k8s/api-server-url']
+                namespace = instance['k8s/namespace']
+                pod_name = instance['k8s/pod-name']
+                self.assertIn(f'--server {api_server} --namespace {namespace} exec -it {pod_name} -c -- '
+                              f"/bin/bash -c cd {log_directory}; {command_to_run or 'exec /bin/bash'}",
+                              cli.stdout(cp))
+            else:
+                self.assertIn(f"-t {instance['host']} cd {log_directory} ; {command_to_run or '/bin/bash'}",
+                              cli.stdout(cp))
+        finally:
+            util.delete_token(self.waiter_url, token_name, kill_services=True)
+
+    def test_ssh_service_id_one_instance(self):
+        self.__test_ssh_service_id()
