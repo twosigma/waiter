@@ -8,6 +8,7 @@ from waiter.querying import get_service_id_from_instance_id, print_no_data, prin
     query_services
 from waiter.util import get_user_selection, guard_no_cluster, print_info
 
+BASH_PATH = '/bin/bash'
 
 class Destination(Enum):
     TOKEN = 'token'
@@ -24,16 +25,16 @@ def get_instances_from_service_id(clusters, service_id):
     return service['instances']['active-instances'] + service['instances']['failed-instances']
 
 
-def kubectl_exec_to_instance(api_server, namespace, pod_name, log_directory, ___):
-    kubectl_cmd = os.getenv('WAITER_KUBECTL', 'kubectl')
-    container_name = "waiter-app"
-    os.execlp(kubectl_cmd, 'kubectl',
-              '--server', api_server,
-              '--namespace', namespace,
-              'exec',
-              '-it', pod_name,
-              '-c', container_name,
-              '--', '/bin/sh', '-c', f'cd {log_directory}; exec /bin/sh')
+def kubectl_exec_to_instance(kubectl_cmd, api_server, namespace, pod_name, log_directory, command_to_run=None):
+    container_name = 'waiter-app'
+    args = ['--server', api_server,
+            '--namespace', namespace,
+            'exec',
+            '-it', pod_name,
+            '-c', container_name,
+            '--',
+            '/bin/bash', '-c', f"cd {log_directory}; {' '.join(command_to_run) or 'exec /bin/bash'}"]
+    os.execlp(kubectl_cmd, 'kubectl', *args)
 
 
 def ssh_instance(instance, command_to_run=None):
@@ -42,15 +43,15 @@ def ssh_instance(instance, command_to_run=None):
     k8s_pod_name = instance.get('k8s/pod-name', False)
     if k8s_pod_name:
         k8s_api_server = instance['k8s/api-server-url']
-        kubectl_exec_to_instance_fn = plugins.get_fn('kubectl-exec-to-instance', kubectl_exec_to_instance)
+        kubectl_cmd = os.getenv('WAITER_KUBECTL', plugins.get_fn('get-kubectl-cmd', lambda: 'kubectl')())
         k8s_namespace = instance['k8s/namespace']
         print_info(f'Executing ssh to k8s pod {terminal.bold(k8s_pod_name)}')
         logging.debug(f'Executing ssh to k8s pod {terminal.bold(k8s_pod_name)} '
                       f'using namespace={k8s_namespace} api_server={k8s_api_server}')
-        kubectl_exec_to_instance_fn(k8s_api_server, k8s_namespace, k8s_pod_name, log_directory)
+        kubectl_exec_to_instance(kubectl_cmd, k8s_api_server, k8s_namespace, k8s_pod_name, log_directory, command_to_run)
     else:
         hostname = instance['host']
-        command_to_run = command_to_run or ['bash']
+        command_to_run = command_to_run or [BASH_PATH]
         ssh_cmd = os.getenv('WAITER_SSH', 'ssh')
         args = [ssh_cmd, '-t', hostname, 'cd', log_directory, ';'] + command_to_run
         print_info(f'Executing ssh to {terminal.bold(hostname)}')

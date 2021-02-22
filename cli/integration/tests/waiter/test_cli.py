@@ -1578,7 +1578,7 @@ class WaiterCliTest(util.WaiterTest):
         self.assertEqual(0, cp.returncode, cp.stderr)
         self.assertEqual(cli.stdout(cp_help), cli.stdout(cp))
 
-    def __test_ssh_instance_id(self, instance_fn, no_data=False):
+    def __test_ssh_instance_id(self, instance_fn, no_data=False, command_to_run=None):
         token_name = self.token_name()
         token_fields = util.minimal_service_description()
         util.post_token(self.waiter_url, token_name, token_fields)
@@ -1592,19 +1592,27 @@ class WaiterCliTest(util.WaiterTest):
             # ssh into instance
             env = os.environ.copy()
             env["WAITER_SSH"] = 'echo'
+            env["WAITER_KUBECTL"] = 'echo'
             instance = instance_fn(service_id, instances)
             logging.info(instance)
             cp = cli.ssh(self.waiter_url, instance['id'], ssh_flags='-i', env=env)
             if no_data:
                 self.assertEqual(1, cp.returncode, cp.stderr)
                 self.assertIn('No matching data found', cli.stdout(cp))
-            else:
+            else:  # TODO: handle custom command
+                log_directory = instance['log-directory']
                 self.assertEqual(0, cp.returncode, cp.stderr)
-                self.assertIn(f'-t {instance["host"]}', cli.stdout(cp))
+                if util.using_kubernetes(self.waiter_url):
+                    api_server = instance['k8s/api-server-url']
+                    namespace = instance['k8s/namespace']
+                    pod_name = instance['k8s/pod-name']
+                    self.assertIn(f'--server {api_server} --namespace {namespace} exec -it {pod_name} -c -- '
+                                  f'/bin/bash -c cd {log_directory}; exec /bin/bash')
+                else:
+                    self.assertIn(f'-t {instance["host"]} cd {log_directory} ; /bin/bash', cli.stdout(cp))
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
 
-    # TODO: k8s vs non k8s
     def test_ssh_instance_id(self):
         self.__test_ssh_instance_id(lambda _, instances: instances['active-instances'][0])
 

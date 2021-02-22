@@ -336,5 +336,12 @@ def wait_until_no_services_for_token(waiter_url, token_name):
     wait_until_services_for_token(waiter_url, token_name, 0)
 
 
-def using_kubernetes():
-    return 0
+def retrieve_default_scheduler_name(waiter_url):
+    settings = retrieve_waiter_settings(waiter_url)
+    kind = settings["scheduler-config"]["kind"]
+    default_scheduler = settings["scheduler-config"][kind].get("default-scheduler", False)
+    return default_scheduler or kind
+
+
+def using_kubernetes(waiter_url):
+    return "kubernetes" == retrieve_default_scheduler_name(waiter_url)
