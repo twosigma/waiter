@@ -1,10 +1,12 @@
 import argparse
+import collections
 import json
 import logging
 import os
 import sys
 import time
 from datetime import datetime, timedelta
+from tabulate import tabulate
 
 from waiter import terminal
 
@@ -127,13 +129,22 @@ def is_service_current(service, current_token_etag, token_name):
     return is_current
 
 
-def get_user_selection(select_message, items, short_circuit_choice=True):
+def get_user_selection(select_message, column_names, items, short_circuit_choice=True):
+    """
+    Prompts user with table of choices where column_names is the headers and items are the rows. The order of
+    column_names is the same order that will show in the table columns. When short_circuit_choice is True it will return
+    the first item if there is only one choice, and will not prompt user. If it is False then it will prompt the user
+    with a single choice to make.
+    """
     if short_circuit_choice and len(items) == 1:
         return items[0]
-    print(f'{terminal.bold(select_message)}')
-    for count, item in enumerate(items):
-        print(f'{terminal.bold(f"[{count}].")} {item["message"]}')
-    answer = input('Enter the number associated with your choice: ')
+    print(select_message)
+    rows = [collections.OrderedDict([('IDX', idx)] + list(map(lambda column_name: (column_name, item[column_name]),
+                                                              column_names)))
+            for idx, item in enumerate(items)]
+    items_table = tabulate(rows, headers='keys', tablefmt='github')
+    print(items_table)
+    answer = input('Enter the IDX associated with your choice: ')
     print('\n')
     try:
         index = int(answer)

@@ -1685,17 +1685,20 @@ class WaiterCliTest(util.WaiterTest):
     def test_ssh_service_id_multiple_instances(self):
         self.__test_ssh_service_id(min_instances=2, stdin='0\n'.encode('utf8'))
 
-    def test_ssh_service_id_no_instances(self):
-        self.assertTrue(False)
+    def test_ssh_service_id_non_existent_service(self):
+        service_id = "nonexistent"
+        cp = cli.ssh(self.waiter_url, service_id, ssh_flags='-s')
+        self.assertEqual(1, cp.returncode, cp.stderr)
+        self.assertIn('No matching data found', cli.stdout(cp))
 
-    def test_ssh_token_single_cluster(self):
-        self.asserTrue(False)
-
-    def test_ssh_token_multiple_clusters(self):
-        self.asserTrue(False)
-
-    def test_ssh_token_single_service(self):
-        self.asserTrue(False)
-
-    def test_ssh_token_multiple_services(self):
-        self.asserTrue(False)
+    # def test_ssh_token_single_cluster(self):
+    #     self.assertTrue(False)
+    #
+    # def test_ssh_token_multiple_clusters(self):
+    #     self.assertTrue(False)
+    #
+    # def test_ssh_token_single_service(self):
+    #     self.assertTrue(False)
+    #
+    # def test_ssh_token_multiple_services(self):
+    #     self.assertTrue(False)

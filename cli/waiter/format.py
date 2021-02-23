@@ -53,3 +53,10 @@ def format_last_request_time(service):
     else:
         last_request_time = 'n/a'
     return last_request_time
+
+
+def format_boolean(status):
+    """Formats Boolean status value. Associates Success with True and Failed with False."""
+    if status:
+        return terminal.success(str(status))
+    return terminal.failed(str(status))
