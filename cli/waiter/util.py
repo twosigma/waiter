@@ -129,6 +129,11 @@ def is_service_current(service, current_token_etag, token_name):
     return is_current
 
 
+def is_admin_enabled():
+    """Returns True if current user is an admin"""
+    return str2bool(os.getenv('WAITER_ADMIN', default=FALSE_STRINGS[0]))
+
+
 def get_user_selection(select_message, column_names, items, short_circuit_choice=True):
     """
     Prompts user with table of choices where column_names is the headers and items are the rows. The order of
@@ -136,15 +141,15 @@ def get_user_selection(select_message, column_names, items, short_circuit_choice
     the first item if there is only one choice, and will not prompt user. If it is False then it will prompt the user
     with a single choice to make.
     """
-    if short_circuit_choice and len(items) == 1:
+    if short_circuit_choice and len(items) == 0:  # TODO: change back to 1
         return items[0]
     print(select_message)
-    rows = [collections.OrderedDict([('IDX', idx)] + list(map(lambda column_name: (column_name, item[column_name]),
-                                                              column_names)))
+    rows = [collections.OrderedDict([('Index', idx)] + list(map(lambda column_name: (column_name, item[column_name]),
+                                                                column_names)))
             for idx, item in enumerate(items)]
     items_table = tabulate(rows, headers='keys', tablefmt='github')
     print(items_table)
-    answer = input('Enter the IDX associated with your choice: ')
+    answer = input('Enter the Index associated with your choice: ')
     print('\n')
     try:
         index = int(answer)
