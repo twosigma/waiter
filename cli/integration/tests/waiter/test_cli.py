@@ -1644,23 +1644,26 @@ class WaiterCliTest(util.WaiterTest):
         self.assertEqual(1, cp.returncode, cp.stderr)
         self.assertIn('No matching data found', cli.stdout(cp))
 
-    def __test_ssh_service_id(self, command_to_run=None):
+    def __test_ssh_service_id(self, command_to_run=None, min_instances=1, stdin=None):
         token_name = self.token_name()
         token_fields = util.minimal_service_description()
+        if min_instances:
+            token_fields['min-instances'] = min_instances
         util.post_token(self.waiter_url, token_name, token_fields)
         try:
             service_id = util.ping_token(self.waiter_url, token_name)
+            util.wait_until_instances_for_service(self.waiter_url, service_id,
+                                                  {'active-instances': min_instances,
+                                                   'failed-instances': 0,
+                                                   'killed-instances': 0})
             instances = util.instances_for_service(self.waiter_url, service_id)
-            self.assertEqual(1, len(instances['active-instances']))
-            self.assertEqual(0, len(instances['failed-instances']))
-            self.assertEqual(0, len(instances['killed-instances']))
 
             # ssh into instance
             env = os.environ.copy()
             env["WAITER_SSH"] = 'echo'
             env["WAITER_KUBECTL"] = 'echo'
             instance = instances['active-instances'][0]
-            cp = cli.ssh(self.waiter_url, service_id, ssh_command=command_to_run, ssh_flags='-s', env=env)
+            cp = cli.ssh(self.waiter_url, service_id, ssh_command=command_to_run, ssh_flags='-s', stdin=stdin, env=env)
             log_directory = instance['log-directory']
             self.assertEqual(0, cp.returncode, cp.stderr)
             if util.using_kubernetes(self.waiter_url):
@@ -1678,3 +1681,6 @@ class WaiterCliTest(util.WaiterTest):
 
     def test_ssh_service_id_one_instance(self):
         self.__test_ssh_service_id()
+
+    def test_ssh_service_id_multiple_instances(self):
+        self.__test_ssh_service_id(min_instances=2, stdin='0\n'.encode('utf8'))

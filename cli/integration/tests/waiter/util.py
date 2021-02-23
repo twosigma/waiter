@@ -307,6 +307,14 @@ def instances_for_service(waiter_url, service_id, expected_status_code=200):
     return service['instances']
 
 
+def wait_until_instances_for_service(waiter_url, service_id, goal):
+    return wait_until(lambda: instances_for_service(waiter_url, service_id),
+                      lambda instances:
+                      goal['active-instances'] == len(instances['active-instances']) and
+                      goal['failed-instances'] == len(instances['failed-instances']) and
+                      goal['killed-instances'] == len(instances['killed-instances']))
+
+
 def multi_cluster_tests_enabled():
     """
     Returns true if the WAITER_TEST_MULTI_CLUSTER environment variable is set to "true",
