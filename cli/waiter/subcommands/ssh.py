@@ -125,6 +125,7 @@ def ssh_token(clusters, token, command, include_active_instances, include_failed
 
 
 def ssh(clusters, args, _, __):
+    """TODO: descibe"""
     guard_no_cluster(clusters)
     token_or_service_id_or_instance_id = args.pop('token-or-service-id-or-instance-id')
     command = args.pop('command')
