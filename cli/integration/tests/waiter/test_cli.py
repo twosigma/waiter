@@ -1609,11 +1609,13 @@ class WaiterCliTest(util.WaiterTest):
                 log_directory = instance['log-directory']
                 self.assertEqual(0, cp.returncode, cp.stderr)
                 if util.using_kubernetes(self.waiter_url):
+                    container_name = 'waiter-app'
                     api_server = instance['k8s/api-server-url']
                     namespace = instance['k8s/namespace']
                     pod_name = instance['k8s/pod-name']
                     self.assertIn(f'--server {api_server} --namespace {namespace} exec -it {pod_name} -c -- '
-                                  f"/bin/bash -c cd {log_directory}; {command_to_run or 'exec /bin/bash'}",
+                                  f"/bin/bash -c {container_name} cd {log_directory}; "
+                                  f"{command_to_run or 'exec /bin/bash'}",
                                   cli.stdout(cp))
                 else:
                     self.assertIn(f"-t {instance['host']} cd {log_directory} ; {command_to_run or '/bin/bash'}",
@@ -1667,11 +1669,13 @@ class WaiterCliTest(util.WaiterTest):
             log_directory = instance['log-directory']
             self.assertEqual(0, cp.returncode, cp.stderr)
             if util.using_kubernetes(self.waiter_url):
+                container_name = 'waiter-app'
                 api_server = instance['k8s/api-server-url']
                 namespace = instance['k8s/namespace']
                 pod_name = instance['k8s/pod-name']
                 self.assertIn(f'--server {api_server} --namespace {namespace} exec -it {pod_name} -c -- '
-                              f"/bin/bash -c cd {log_directory}; {command_to_run or 'exec /bin/bash'}",
+                              f"/bin/bash -c {container_name} cd {log_directory}; "
+                              f"{command_to_run or 'exec /bin/bash'}",
                               cli.stdout(cp))
             else:
                 self.assertIn(f"-t {instance['host']} cd {log_directory} ; {command_to_run or '/bin/bash'}",
@@ -1684,6 +1688,9 @@ class WaiterCliTest(util.WaiterTest):
 
     def test_ssh_service_id_multiple_instances(self):
         self.__test_ssh_service_id(min_instances=2, stdin='0\n'.encode('utf8'))
+
+    def test_ssh_service_id_invalid_prompt_input(self):
+        self.__test_ssh_service_id(min_instances=2, stdin='-123\n'.encode('utf8'))
 
     def test_ssh_service_id_non_existent_service(self):
         service_id = "nonexistent"
@@ -1702,3 +1709,7 @@ class WaiterCliTest(util.WaiterTest):
     #
     # def test_ssh_token_multiple_services(self):
     #     self.assertTrue(False)
+    #
+    # def test_ssh_token_quick(self):
+    #     self.assertTrue(False)
+
