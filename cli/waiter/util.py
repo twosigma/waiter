@@ -136,26 +136,38 @@ def is_admin_enabled():
 
 def get_user_selection(select_message, column_names, items, short_circuit_choice=True):
     """
-    Prompts user with table of choices where column_names is the headers and items are the rows. The order of
-    column_names is the same order that will show in the table columns. When short_circuit_choice is True it will return
-    the first item if there is only one choice, and will not prompt user. If it is False then it will prompt the user
-    with a single choice to make.
+    Prompts user with table of choices
+    :param select_message: list of local cluster configs from the configuration file
+    :param column_names: column names of the tabular list of choices. Order is maintained. The first field should be
+    unique among the list of items.
+    :param items: List of items with fields associated with the column names for display.
+    :param short_circuit_choice: When True and only one item in items, return that item as the selection without user
+    prompt.
+    :exception Raises exception when user input is invalid
+    :return user selected item
     """
-    if short_circuit_choice and len(items) == 0:  # TODO: change back to 1
+    if short_circuit_choice and len(items) == 0:
         return items[0]
     print(select_message)
     rows = [collections.OrderedDict([('Index', idx)] + list(map(lambda column_name: (column_name, item[column_name]),
                                                                 column_names)))
             for idx, item in enumerate(items)]
+    alternate_id_field = column_names[0]
     items_table = tabulate(rows, headers='keys', tablefmt='github')
     print(items_table)
-    answer = input('Enter the Index associated with your choice: ')
+    answer = input(f'Enter the Index or {alternate_id_field} associated with your choice: ')
     print('\n')
     try:
+        selected_item = next((item
+                              for item in items
+                              if item[alternate_id_field].upper() == answer.strip().upper()),
+                             False)
+        if selected_item:
+            return selected_item
         index = int(answer)
         if index < 0 or index >= len(items):
             raise Exception('Input is out of range!')
         return items[int(answer)]
     except ValueError as error:
-        print_error('Input received was not an integer!')
+        print_error('Input received did not match any of the choices!')
         raise error

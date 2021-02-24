@@ -187,15 +187,6 @@ def ssh(clusters, args, _, enforce_cluster):
 
 def register(add_parser):
     """Adds this sub-command's parser and returns the action function"""
-    # index instead of IDX, or entity id
-    # Instance ID -> instance (don't include service-id)
-    # cluster: instances count, in-flight requests ["outstanding"], last-request-time (greatest of all services)
-    # service: instances count, in-flight requests ["outstanding"], last-request-time (greatest of all services)
-    # instance-id: include host
-    # add --container-name configuration for ADMIN command
-    # add --quick which will skip prompts, cluster: choose the latest-request-time,
-    #       service: choose which service token etag points to,
-    #       pod choose 0th pod
     parser = add_parser('ssh',
                         help='ssh to a Waiter instance',
                         description='ssh to an instance given the token, service id, or instance id. Working directory '
