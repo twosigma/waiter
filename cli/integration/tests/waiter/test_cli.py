@@ -1613,8 +1613,8 @@ class WaiterCliTest(util.WaiterTest):
                     api_server = instance['k8s/api-server-url']
                     namespace = instance['k8s/namespace']
                     pod_name = instance['k8s/pod-name']
-                    self.assertIn(f'--server {api_server} --namespace {namespace} exec -it {pod_name} -c -- '
-                                  f"/bin/bash -c {container_name} cd {log_directory}; "
+                    self.assertIn(f'--server {api_server} --namespace {namespace} exec -it {pod_name} -c '
+                                  f"{container_name} -- /bin/bash -c cd {log_directory}; "
                                   f"{command_to_run or 'exec /bin/bash'}",
                                   cli.stdout(cp))
                 else:
@@ -1673,9 +1673,8 @@ class WaiterCliTest(util.WaiterTest):
                 api_server = instance['k8s/api-server-url']
                 namespace = instance['k8s/namespace']
                 pod_name = instance['k8s/pod-name']
-                self.assertIn(f'--server {api_server} --namespace {namespace} exec -it {pod_name} -c -- '
-                              f"/bin/bash -c {container_name} cd {log_directory}; "
-                              f"{command_to_run or 'exec /bin/bash'}",
+                self.assertIn(f'--server {api_server} --namespace {namespace} exec -it {pod_name} -c {container_name} '
+                              f"-- /bin/bash -c cd {log_directory}; {command_to_run or 'exec /bin/bash'}",
                               cli.stdout(cp))
             else:
                 self.assertIn(f"-t {instance['host']} cd {log_directory} ; {command_to_run or '/bin/bash'}",
