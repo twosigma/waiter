@@ -658,13 +658,19 @@
                                               (filter index-filter-fn)
                                               (map metadata-transducer-fn)))
                     :EVENTS
-                    (assoc event :object (->> object
-                                              (filter (fn [{:keys [object]}]
-                                                        (index-filter-fn object)))
-                                              (map (fn [{:keys [type] :as entry}]
-                                                     (if (= type :UPDATE)
-                                                       (update entry :object metadata-transducer-fn)
-                                                       entry)))))
+                    (do
+                      (cid/cinfo correlation-id "sample tokens from event :EVENTS"
+                                 {:sample-tokens (->> object
+                                                      (take 5)
+                                                      (map (fn [entry]
+                                                             (get-in entry [:object :token]))))})
+                      (assoc event :object (->> object
+                                                (filter (fn [{:keys [object]}]
+                                                          (index-filter-fn object)))
+                                                (map (fn [{:keys [type] :as entry}]
+                                                       (if (= type :UPDATE)
+                                                         (update entry :object metadata-transducer-fn)
+                                                         entry))))))
                     (throw (ex-info "Invalid event type provided" {:event event})))))
               (filter
                 (fn empty-aggregate-events [{:keys [object type] :as event}]

@@ -82,6 +82,7 @@
                           (let [{:keys [token owner]} msg
                                 token-index-entry (token/get-token-index kv-store token owner :refresh true)
                                 local-token-index-entry (get token->index token)]
+                            (log/info "token-watch-maintainer received a token update" {:token token})
                             (if (= token-index-entry local-token-index-entry)
                               ; There is no change detected, so no event to be reported
                               current-state
