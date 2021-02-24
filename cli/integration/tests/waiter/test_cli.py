@@ -1712,4 +1712,6 @@ class WaiterCliTest(util.WaiterTest):
     #
     # def test_ssh_token_quick(self):
     #     self.assertTrue(False)
-
+    #
+    # def test_ssh_custom_container(self):
+    #     self.assertTrue(False)
