@@ -146,7 +146,7 @@ def get_user_selection(select_message, column_names, items, short_circuit_choice
     :exception Raises exception when user input is invalid
     :return user selected item
     """
-    if short_circuit_choice and len(items) == 0:
+    if short_circuit_choice and len(items) == 1:
         return items[0]
     print(select_message)
     rows = [collections.OrderedDict([('Index', idx)] + list(map(lambda column_name: (column_name, item[column_name]),
