@@ -136,7 +136,6 @@ def is_admin_enabled():
 
 def get_user_selection(select_message, column_names, items, short_circuit_choice=True):
     """
-    Prompts user with table of choices
     :param select_message: list of local cluster configs from the configuration file
     :param column_names: column names of the tabular list of choices. Order is maintained. The first field should be
     unique among the list of items.
@@ -144,7 +143,7 @@ def get_user_selection(select_message, column_names, items, short_circuit_choice
     :param short_circuit_choice: When True and only one item in items, return that item as the selection without user
     prompt.
     :exception Raises exception when user input is invalid
-    :return user selected item
+    :return selected item (an element from the items list)
     """
     if short_circuit_choice and len(items) == 1:
         return items[0]

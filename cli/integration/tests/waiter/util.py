@@ -308,7 +308,9 @@ def instances_for_service(waiter_url, service_id, expected_status_code=200):
 
 
 def wait_until_instances_for_service(waiter_url, service_id, goal):
-    """TODO: descibe"""
+    """
+    waits until instances for a service reach the desired # of active-instances, failed-instances, and killed-instances
+    """
     return wait_until(lambda: instances_for_service(waiter_url, service_id),
                       lambda instances:
                       goal['active-instances'] == len(instances['active-instances']) and
@@ -346,7 +348,7 @@ def wait_until_no_services_for_token(waiter_url, token_name):
 
 
 def retrieve_default_scheduler_name(waiter_url):
-    """TODO: descibe"""
+    """gets the scheduler of waiter"""
     settings = retrieve_waiter_settings(waiter_url)
     kind = settings["scheduler-config"]["kind"]
     default_scheduler = settings["scheduler-config"][kind].get("default-scheduler", False)
@@ -354,5 +356,5 @@ def retrieve_default_scheduler_name(waiter_url):
 
 
 def using_kubernetes(waiter_url):
-    """TODO: descibe"""
+    """returns True if the scheduler of waiter is k8s and False otherwise"""
     return "kubernetes" == retrieve_default_scheduler_name(waiter_url)
