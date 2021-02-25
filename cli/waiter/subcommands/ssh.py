@@ -4,10 +4,10 @@ import os
 from enum import Enum
 
 from waiter import plugins, terminal
-from waiter.format import format_status, format_timestamp_string
+from waiter.display import get_user_selection, tabulate_service_instances, tabulate_token_services
 from waiter.querying import get_service_id_from_instance_id, get_target_cluster_from_token, get_token, print_no_data, \
-    print_no_services, query_service, query_services, get_services_on_cluster
-from waiter.util import get_user_selection, guard_no_cluster, is_admin_enabled, print_info, is_service_current
+    print_no_services, query_service, query_token, get_services_on_cluster
+from waiter.util import guard_no_cluster, is_admin_enabled, print_info, is_service_current
 
 BASH_PATH = '/bin/bash'
 
@@ -25,6 +25,18 @@ def get_instances_from_service_id(clusters, service_id, include_active_instances
     if num_services == 0:
         return False
     service = list(query_result['clusters'].values())[0]['service']
+    instances = []
+    if include_active_instances:
+        instances += service['instances']['active-instances']
+    if include_failed_instances:
+        instances += service['instances']['failed-instances']
+    if include_killed_instances:
+        instances += service['instances']['killed-instances']
+    return instances
+
+
+def get_instances_from_service_data(service, include_active_instances, include_failed_instances,
+                                    include_killed_instances):
     instances = []
     if include_active_instances:
         instances += service['instances']['active-instances']
@@ -92,19 +104,13 @@ def ssh_service_id(clusters, service_id, command, container_name, skip_prompts, 
     if not instances or len(instances) == 0:
         print_no_data(clusters)
         return 1
-    instance_column_names = ['instance_id', 'Host', 'Status']
-    instance_items = [{'instance': instance,
-                       'instance_id': instance['id'],
-                       'Host': instance['host'],
-                       'Status': terminal.success('Healthy') if instance['healthy?'] else terminal.failed('Unhealthy')}
-                      for instance in instances]
     if skip_prompts:
-        selected_instance_item = instance_items[0]
+        selected_instance = instances[0]
     else:
-        select_prompt_message = f'There are multiple instances for service {terminal.bold(service_id)}. ' \
-                                f'Select the correct instance:'
-        selected_instance_item = get_user_selection(select_prompt_message, instance_column_names, instance_items)
-    return ssh_instance(selected_instance_item['instance'], container_name, command)
+        column_names = ['Instance Id', 'Host', 'Status']
+        tabular_output = tabulate_service_instances(instances, show_index=True, column_names=column_names)
+        selected_instance = get_user_selection(instances, tabular_output)
+    return ssh_instance(selected_instance, container_name, command)
 
 
 def ssh_token(clusters, enforce_cluster, token, command, container_name, skip_prompts, include_active_instances,
@@ -118,48 +124,28 @@ def ssh_token(clusters, enforce_cluster, token, command, container_name, skip_pr
             return 1
         services = query_result['services']
         selected_service_id = next((s['service-id']
-                                   for s in services if is_service_current(s, token_etag, token)),
+                                    for s in services if is_service_current(s, token_etag, token)),
                                    False)
         if not selected_service_id:
             print_no_data(clusters)
             return 1
     else:
-        query_result = query_services(clusters, token)
-        num_services = query_result['count']
+        query_result = query_token(clusters, token, include_services=True)
+        if query_result['count'] == 0:
+            print_no_data(clusters)
+            return
         cluster_data = query_result['clusters']
-        if num_services == 0:
+        services = [{'cluster': cluster, 'etag': data['etag'], **service}
+                    for cluster, data in cluster_data.items()
+                    for service in data['services']]
+        if len(services) == 0:
             print_no_services(clusters, token)
             return 1
-        cluster_column_names = ['cluster', 'Services', 'instances', 'in_flight_requests', 'last_request']
-        cluster_items = [{'cluster': cluster,
-                          'Services': len(data['services']),
-                          'instances': sum(service['instance-counts']['healthy-instances'] +
-                                           service['instance-counts']['unhealthy-instances']
-                                           for service in data['services']),
-                          'in_flight_requests': sum(service['request-metrics']['outstanding']
-                                                    for service in data['services']),
-                          'last_request': format_timestamp_string(max(service['last-request-time']
-                                                                           for service in data['services'])),
-                          'data': data['services']}
-                         for cluster, data in cluster_data.items()
-                         if len(data['services']) > 0]
-        select_prompt_message = f'There are multiple clusters with services for token ' \
-                                f'{terminal.bold(token)}. Select the correct cluster:'
-        selected_cluster_item = get_user_selection(select_prompt_message, cluster_column_names, cluster_items)
-        services = selected_cluster_item['data']
-        service_column_names = ['service_id', 'Status', 'instances', 'in_flight_requests', 'last_request']
-        service_items = [{'service': service,
-                          'service_id': service['service-id'],
-                          'Status': format_status(service['status']),
-                          'instances': service['instance-counts']['healthy-instances'] +
-                                       service['instance-counts']['unhealthy-instances'],
-                          'in_flight_requests': service['request-metrics']['outstanding'],
-                          'last_request': format_timestamp_string(service['last-request-time'])}
-                         for service in services]
-        select_prompt_message = f'There are multiple services on cluster ' \
-                                f'{terminal.bold(selected_cluster_item["cluster"])}. Select the correct service:'
-        selected_service_item = get_user_selection(select_prompt_message, service_column_names, service_items)
-        selected_service_id = selected_service_item['service']['service-id']
+        column_names = ['Service Id', 'Cluster', 'Instances', 'In-flight req.', 'Status', 'Last request', 'Current?']
+        tabular_output, sorted_services = tabulate_token_services(services, token, show_index=True, summary_table=False,
+                                                                  column_names=column_names)
+        selected_service = get_user_selection(sorted_services, tabular_output)
+        selected_service_id = selected_service['service-id']
     return ssh_service_id(clusters, selected_service_id, command, container_name, skip_prompts,
                           include_active_instances, include_failed_instances, include_killed_instances)
 
@@ -202,9 +188,8 @@ def register(add_parser):
     id_group.add_argument('--instance-id', '-i', dest='ssh_destination', action='store_const',
                           const=Destination.INSTANCE_ID, help='ssh directly to instance id')
     parser.add_argument('--quick', '-q', dest='quick', action='store_true',
-                        help='Skips cluster prompt by selecting the one that the token is configured to, services '
-                             'prompt by selecting the service that the token currently refers to, and instances prompt '
-                             'by selecting a random one. Has no effect if an instance-id is provided.')
+                        help='Skips services prompt by selecting the service that the token currently refers to, and '
+                             'instances prompt by selecting a random one. Has no effect with --instance-id flag.')
     parser.add_argument('--include-active-instances', dest='include_active_instances', action='store_true',
                         default=True,
                         help='included by default; includes active instances for possible ssh destination')
