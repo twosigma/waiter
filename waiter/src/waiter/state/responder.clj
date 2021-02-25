@@ -25,6 +25,7 @@
             [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
+            [waiter.state.ejection-expiry :as ejection-expiry]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils]
@@ -557,7 +558,7 @@
   instances are ejected using the eject-instance-chan,
   updated state is passed into the block through the update-state-chan,
   state queries are passed into the block through the query-state-chan."
-  [service-id trigger-uneject-process-fn
+  [ejection-expiry-tracker service-id trigger-uneject-process-fn
    {:keys [eject-backoff-base-time-ms lingering-request-threshold-ms max-eject-time-ms]}
    {:keys [eject-instance-chan exit-chan kill-instance-chan query-state-chan release-instance-chan
            reserve-instance-chan scaling-state-chan uneject-instance-chan update-state-chan work-stealing-chan]}
@@ -681,11 +682,17 @@
                          release-instance-chan
                          (timers/start-stop-time!
                            responder-release-timer
-                           (handle-release-instance-request
-                             current-state service-id update-slot-state-fn update-status-tag-fn
-                             update-state-by-ejecting-instance-fn update-instance-id->eject-expiry-time-fn
-                             work-stealing-received-in-flight-counter max-eject-time-ms
-                             eject-backoff-base-time-ms max-backoff-exponent data))
+                           (let [[{instance-id :id} _] data
+                                 current-state' (handle-release-instance-request
+                                                  current-state service-id update-slot-state-fn update-status-tag-fn
+                                                  update-state-by-ejecting-instance-fn update-instance-id->eject-expiry-time-fn
+                                                  work-stealing-received-in-flight-counter max-eject-time-ms
+                                                  eject-backoff-base-time-ms max-backoff-exponent data)
+                                 consecutive-failures (get-in current-state [:instance-id->consecutive-failures instance-id])
+                                 consecutive-failures' (get-in current-state' [:instance-id->consecutive-failures instance-id])]
+                             (when (not= consecutive-failures consecutive-failures')
+                               (ejection-expiry/track-consecutive-failures! ejection-expiry-tracker service-id instance-id consecutive-failures'))
+                             current-state'))
 
                          scaling-state-chan
                          (let [{:keys [scaling-state]} data]
@@ -754,7 +761,7 @@
 
 (defn prepare-and-start-service-chan-responder
   "Starts the service channel responder."
-  [service-id service-description instance-request-properties ejection-config]
+  [service-id service-description instance-request-properties ejection-config ejection-expiry-tracker]
   (log/debug "[prepare-and-start-service-chan-responder] starting" service-id)
   (let [{:keys [lingering-request-threshold-ms queue-timeout-ms]} instance-request-properties
         timeout-request-fn (fn [service-id c [reason-map resp-chan _ request-queue-timeout-ms]]
@@ -797,5 +804,6 @@
           {:strs [load-balancing]} service-description
           load-balancing (keyword load-balancing)
           initial-state {:load-balancing load-balancing}]
-      (start-service-chan-responder service-id trigger-uneject-process timeout-config channel-map initial-state))
+      (start-service-chan-responder
+        ejection-expiry-tracker service-id trigger-uneject-process timeout-config channel-map initial-state))
     channel-map))

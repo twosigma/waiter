@@ -22,6 +22,7 @@
             [clojure.tools.logging :as log]
             [digest]
             [plumbing.core :as pc]
+            [waiter.state.ejection-expiry :as ejection-expiry]
             [waiter.state.maintainer :refer :all]
             [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
@@ -731,6 +732,7 @@
                              :started-at (t/minus (t/now) (t/minutes 2))})
           deployment-error-config {:min-failed-instances 2
                                    :min-hosts 2}
+          ejection-expiry-tracker (ejection-expiry/->EjectionExpiryTracker 100 (atom {}))
           service-id-0 "service-0"
           instance-0-1 (create-instance service-id-0 1)
           instance-0-2 (create-instance service-id-0 2)
@@ -762,8 +764,9 @@
       (let [{:keys [router-state-push-mult]}
             (start-router-state-maintainer
               scheduler-state-chan router-chan router-id-0 exit-chan service-id->service-description-fn
-              refresh-service-descriptions-fn dummy-deployment-error-config-fn deployment-error-config)]
-        (async/tap router-state-push-mult router-state-push-chan))
+              refresh-service-descriptions-fn dummy-deployment-error-config-fn deployment-error-config
+              ejection-expiry-tracker)]
+        (async/tap router-state-push-mult router-state-push-chan ejection-expiry-tracker))
 
       (async/>!! scheduler-state-chan
                  [[:update-available-services {:available-service-ids #{service-id-0 service-id-1 service-id-2 service-id-3 service-id-4 service-id-5}
@@ -889,11 +892,13 @@
         instance {:id (str service-id ".1")
                   :started-at (t/minus (t/now) (t/minutes 2))}
         deployment-error-config {:min-failed-instances 2
-                                 :min-hosts 2}]
+                                 :min-hosts 2}
+        ejection-expiry-tracker (ejection-expiry/->EjectionExpiryTracker 100 (atom {}))]
     (let [{:keys [router-state-push-mult]}
           (start-router-state-maintainer
             scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn
-            refresh-service-descriptions-fn dummy-deployment-error-config-fn deployment-error-config)]
+            refresh-service-descriptions-fn dummy-deployment-error-config-fn deployment-error-config
+            ejection-expiry-tracker)]
       (async/tap router-state-push-mult router-state-push-chan))
     (async/>!! router-chan {router-id (str "http://www." router-id ".com")})
     (async/>!! scheduler-state-chan [[:update-available-services {:available-service-ids #{service-id}
@@ -936,11 +941,13 @@
         instance-2 {:id (str service-id-2 ".1")
                     :started-at (t/minus (t/now) (t/minutes 4))}
         deployment-error-config {:min-failed-instances 2
-                                 :min-hosts 2}]
+                                 :min-hosts 2}
+        ejection-expiry-tracker (ejection-expiry/->EjectionExpiryTracker 100 (atom {}))]
     (let [{:keys [router-state-push-mult]}
           (start-router-state-maintainer
             scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn
-            refresh-service-descriptions-fn dummy-deployment-error-config-fn deployment-error-config)]
+            refresh-service-descriptions-fn dummy-deployment-error-config-fn deployment-error-config
+            ejection-expiry-tracker)]
       (async/tap router-state-push-mult router-state-push-chan))
     (async/>!! router-chan {router-id (str "http://www." router-id ".com")})
     (async/>!! scheduler-state-chan [[:update-available-services {:available-service-ids #{service-id-1 service-id-2}
@@ -980,27 +987,31 @@
                          :started-at (t/minus (t/now) (t/seconds (+ (-> index t/minutes t/in-seconds) 10)))})
         deployment-error-config {:min-failed-instances 2
                                  :min-hosts 2}
+        ejection-failure-threshold 10
+        ejection-expiry-tracker (ejection-expiry/->EjectionExpiryTracker
+                                               ejection-failure-threshold
+                                               (atom {service-id #{(str service-id ".2c") (str service-id ".2d")}}))
         instance-0 (make-instance 0)
         instance-1 (make-instance 1)
         instance-2a (-> (make-instance 2) (update :id str "a"))
         instance-2b (-> (make-instance 2) (update :id str "b") (assoc :flags #{:expired}))
+        instance-2c (-> (make-instance 2) (update :id str "c"))
         instance-3 (make-instance 3)
         instance-4 (make-instance 4)
         instance-5 (make-instance 5)]
     (let [{:keys [notify-instance-killed-fn query-chan router-state-push-mult]}
           (start-router-state-maintainer
             scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn
-            refresh-service-descriptions-fn dummy-deployment-error-config-fn deployment-error-config)]
+            refresh-service-descriptions-fn dummy-deployment-error-config-fn deployment-error-config
+            ejection-expiry-tracker)]
       (async/tap router-state-push-mult router-state-push-chan)
       (async/>!! router-chan {router-id (str "http://www." router-id ".com")})
       (async/>!! scheduler-state-chan [[:update-available-services {:available-service-ids #{service-id}
                                                                     :scheduler-sync-time (t/now)}]])
       (async/<!! router-state-push-chan)
-      (let [healthy-instances [instance-2a instance-2b instance-3 instance-4 instance-5]
+      (let [healthy-instances [instance-2a instance-2b instance-2c instance-3 instance-4 instance-5]
             unhealthy-instances [instance-0 instance-1]
-            sorted-instance-ids (->> (concat healthy-instances unhealthy-instances)
-                                  (map :id)
-                                  sort)]
+            sorted-instance-ids (->> (concat healthy-instances unhealthy-instances) (map :id) sort)]
         (async/>!! scheduler-state-chan [[:update-service-instances {:healthy-instances healthy-instances
                                                                      :unhealthy-instances unhealthy-instances
                                                                      :sorted-instance-ids sorted-instance-ids
@@ -1010,9 +1021,9 @@
                     service-id->healthy-instances service-id->killed-instances service-id->unhealthy-instances]}
             (async/<!! router-state-push-chan)]
         (is (= #{service-id} all-available-service-ids))
-        (is (= {service-id [instance-2b instance-4 instance-5]} service-id->expired-instances))
+        (is (= {service-id [instance-2b instance-2c instance-4 instance-5]} service-id->expired-instances))
         (is (empty? (get service-id->failed-instances service-id)))
-        (is (= {service-id [instance-2a instance-2b instance-3 instance-4 instance-5]} service-id->healthy-instances))
+        (is (= {service-id [instance-2a instance-2b instance-2c instance-3 instance-4 instance-5]} service-id->healthy-instances))
         (is (empty? (get service-id->killed-instances service-id)))
         (is (= {service-id [instance-0 instance-1]} service-id->unhealthy-instances)))
 
@@ -1023,9 +1034,9 @@
                     service-id->healthy-instances service-id->killed-instances service-id->unhealthy-instances]}
             (async/<!! response-chan)]
         (is (= #{service-id} all-available-service-ids))
-        (is (= {service-id [instance-2b instance-4 instance-5]} service-id->expired-instances))
+        (is (= {service-id [instance-2b instance-2c instance-4 instance-5]} service-id->expired-instances))
         (is (empty? (get service-id->failed-instances service-id)))
-        (is (= {service-id [instance-2a instance-2b instance-3 instance-4 instance-5]} service-id->healthy-instances))
+        (is (= {service-id [instance-2a instance-2b instance-2c instance-3 instance-4 instance-5]} service-id->healthy-instances))
         (is (= [instance-0] (get service-id->killed-instances service-id)))
         (is (= {service-id [instance-0 instance-1]} service-id->unhealthy-instances)))
 
@@ -1036,11 +1047,31 @@
                     service-id->healthy-instances service-id->killed-instances service-id->unhealthy-instances]}
             (async/<!! response-chan)]
         (is (= #{service-id} all-available-service-ids))
-        (is (= {service-id [instance-2b instance-4 instance-5]} service-id->expired-instances))
+        (is (= {service-id [instance-2b instance-2c instance-4 instance-5]} service-id->expired-instances))
         (is (empty? (get service-id->failed-instances service-id)))
-        (is (= {service-id [instance-2a instance-2b instance-3 instance-4 instance-5]} service-id->healthy-instances))
+        (is (= {service-id [instance-2a instance-2b instance-2c instance-3 instance-4 instance-5]} service-id->healthy-instances))
         (is (= [instance-0 instance-1] (get service-id->killed-instances service-id)))
         (is (= {service-id [instance-0 instance-1]} service-id->unhealthy-instances)))
+
+      (let [healthy-instances [instance-2a instance-2b instance-2c instance-3 instance-4 instance-5]
+            unhealthy-instances [instance-0 instance-1]
+            sorted-instance-ids (->> (concat healthy-instances unhealthy-instances) (map :id) sort)]
+        (ejection-expiry/track-consecutive-failures!
+          ejection-expiry-tracker service-id (:id instance-2c) (dec ejection-failure-threshold))
+        (async/>!! scheduler-state-chan [[:update-service-instances {:healthy-instances healthy-instances
+                                                                     :unhealthy-instances unhealthy-instances
+                                                                     :sorted-instance-ids sorted-instance-ids
+                                                                     :service-id service-id
+                                                                     :scheduler-sync-time (t/now)}]])
+        (let [{:keys [all-available-service-ids service-id->expired-instances service-id->failed-instances
+                      service-id->healthy-instances service-id->killed-instances service-id->unhealthy-instances]}
+              (async/<!! router-state-push-chan)]
+          (is (= #{service-id} all-available-service-ids))
+          (is (= {service-id [instance-2b instance-4 instance-5]} service-id->expired-instances))
+          (is (empty? (get service-id->failed-instances service-id)))
+          (is (= {service-id [instance-2a instance-2b instance-2c instance-3 instance-4 instance-5]} service-id->healthy-instances))
+          (is (= [instance-0 instance-1] (get service-id->killed-instances service-id)))
+          (is (= {service-id [instance-0 instance-1]} service-id->unhealthy-instances))))
 
       (let [_ (-> instance-0 notify-instance-killed-fn async/<!!)
             response-chan (async/promise-chan)
@@ -1051,7 +1082,7 @@
         (is (= #{service-id} all-available-service-ids))
         (is (= {service-id [instance-2b instance-4 instance-5]} service-id->expired-instances))
         (is (empty? (get service-id->failed-instances service-id)))
-        (is (= {service-id [instance-2a instance-2b instance-3 instance-4 instance-5]} service-id->healthy-instances))
+        (is (= {service-id [instance-2a instance-2b instance-2c instance-3 instance-4 instance-5]} service-id->healthy-instances))
         (is (= [instance-1 instance-0] (get service-id->killed-instances service-id)))
         (is (= {service-id [instance-0 instance-1]} service-id->unhealthy-instances)))
 
@@ -1082,12 +1113,14 @@
         refresh-service-ids-atom (atom nil)
         refresh-service-descriptions-fn (fn [service-ids] (reset! refresh-service-ids-atom service-ids))
         deployment-error-config {:min-failed-instances 2
-                                 :min-hosts 2}]
+                                 :min-hosts 2}
+        ejection-expiry-tracker (ejection-expiry/->EjectionExpiryTracker 100 (atom {}))]
     (with-redefs [distribute-slots-using-consistent-hash-distribution (fn [routers instances _ _ _] (slot-partition-fn routers instances))]
 
       (let [{:keys [router-state-push-mult]}
             (start-router-state-maintainer scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn
-                                           refresh-service-descriptions-fn dummy-deployment-error-config-fn deployment-error-config)]
+                                           refresh-service-descriptions-fn dummy-deployment-error-config-fn deployment-error-config
+                                           ejection-expiry-tracker)]
         (async/tap router-state-push-mult router-state-push-chan))
 
 
@@ -1200,12 +1233,14 @@
         refresh-service-descriptions-fn identity
         deployment-error-config {:grace-period-ms (* grace-period-secs 1000)
                                  :min-failed-instances 1
-                                 :min-hosts 1}]
+                                 :min-hosts 1}
+        ejection-expiry-tracker (ejection-expiry/->EjectionExpiryTracker 100 (atom {}))]
     (with-redefs [distribute-slots-using-consistent-hash-distribution (fn [routers instances _ _ _] (slot-partition-fn routers instances))]
 
       (let [{:keys [router-state-push-mult]}
             (start-router-state-maintainer scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn
-                                           refresh-service-descriptions-fn dummy-deployment-error-config-fn deployment-error-config)]
+                                           refresh-service-descriptions-fn dummy-deployment-error-config-fn deployment-error-config
+                                           ejection-expiry-tracker)]
         (async/tap router-state-push-mult router-state-push-chan))
 
       (async/>!! router-chan routers)

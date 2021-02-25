@@ -30,6 +30,7 @@
                                              s/Keyword schema/require-symbol-factory-fn}
                                             schema/contains-kind-sub-map?)
    (s/required-key :ejection-config) {(s/required-key :eject-backoff-base-time-ms) schema/positive-int
+                                      (s/required-key :expiry-threshold) schema/positive-int
                                       (s/required-key :max-eject-time-ms) schema/positive-int}
    (s/required-key :cors-config) (s/constrained
                                    {:kind s/Keyword
@@ -273,6 +274,7 @@
                  :max-age 3600
                  :token-parameter {:factory-fn 'waiter.cors/token-parameter-based-validator}}
    :ejection-config {:eject-backoff-base-time-ms 10000
+                     :expiry-threshold 5
                      :max-eject-time-ms 300000}
    ;; To be considered part of the same cluster, routers need to
    ;; 1. have the same leader-latch-path to participate in leadership election

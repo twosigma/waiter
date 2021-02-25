@@ -21,6 +21,7 @@
             [metrics.counters :as counters]
             [plumbing.core :as pc]
             [waiter.metrics :as metrics]
+            [waiter.state.ejection-expiry :as ejection-expiry]
             [waiter.state.responder :refer :all]
             [waiter.util.utils :as utils])
   (:import (clojure.lang PersistentQueue)
@@ -495,7 +496,9 @@
         (is (= expected-result response))
         response)))
 
-  (defn- launch-service-chan-responder [id-counter-value initial-state]
+  (defn- launch-service-chan-responder [id-counter-value initial-state &
+                                        {:keys [ejection-expiry-tracker]
+                                         :or {ejection-expiry-tracker (ejection-expiry/->EjectionExpiryTracker 10 (atom {}))}}]
     (reset! id-counter id-counter-value)
     (let [initial-state (utils/assoc-if-absent initial-state :load-balancing :oldest)
           channel-config (retrieve-channel-config)
@@ -514,7 +517,8 @@
         (metrics/reset-counter work-stealing-received-in-flight-counter
                                (+ (count (:work-stealing-queue initial-state)) (count (:request-id->work-stealer initial-state)))))
       ;; start the service-chan-responder
-      (start-service-chan-responder service-id trigger-uneject-process-fn timeout-config channel-config initial-state)
+      (start-service-chan-responder
+        ejection-expiry-tracker service-id trigger-uneject-process-fn timeout-config channel-config initial-state)
       (assoc channel-config :trigger-uneject-process-atom trigger-uneject-process-atom)))
 
   (let [instance-h1 {:id "s1.h1" :started-at (DateTime. 10000)}
@@ -2895,7 +2899,92 @@
                             (update-in [:instance-id->state] #(update-slot-state-fn %1 "s1.h3" 2 1))
                             (update-in [:instance-id->state] #(update-slot-state-fn %1 "s1.h4" 1 1))))
 
-          (async/>!! exit-chan :exit))))))
+          (async/>!! exit-chan :exit))))
+
+    (deftest test-start-service-chan-responder-ejection-expiry-tracking
+      (counters/clear! (metrics/service-counter service-id "request-counts" "outstanding")) ;; clear the counter to zero
+      (counters/inc! (metrics/service-counter service-id "request-counts" "outstanding") 20) ;; more outstanding requests than available slots
+      (let [test-instance-id->state (-> {}
+                                      (update-slot-state-fn "s1.h1" 10 8)
+                                      (update-slot-state-fn "s1.h2" 10 0)
+                                      (update-slot-state-fn "s1.h3" 8 0))
+            initial-state {:id->instance id->instance-data
+                           :instance-id->eject-expiry-time {}
+                           :instance-id->request-id->use-reason-map {"s1.h1" {"req-11" {:cid "cid-11" :request-id "req-11" :reason :serve-request}
+                                                                              "req-12" {:cid "cid-12" :request-id "req-12" :reason :serve-request}
+                                                                              "req-13" {:cid "cid-13" :request-id "req-13" :reason :serve-request}
+                                                                              "req-14" {:cid "cid-14" :request-id "req-14" :reason :serve-request}
+                                                                              "req-15" {:cid "cid-15" :request-id "req-15" :reason :serve-request}
+                                                                              "req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}
+                                                                              "req-17" {:cid "cid-17" :request-id "req-17" :reason :serve-request}
+                                                                              "req-18" {:cid "cid-18" :request-id "req-18" :reason :serve-request}}}
+                           :instance-id->consecutive-failures {}
+                           :instance-id->state test-instance-id->state
+                           :load-balancing :oldest
+                           :request-id->work-stealer {}
+                           :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3"]
+                           :work-stealing-queue (make-queue [])}
+            service-id->instance-ids-atom (atom {})
+            ejection-expiry-tracker (ejection-expiry/->EjectionExpiryTracker 3 service-id->instance-ids-atom)
+            {:keys [exit-chan query-state-chan release-instance-chan]}
+            (launch-service-chan-responder 19 initial-state :ejection-expiry-tracker ejection-expiry-tracker)]
+        (let [current-time (t/now)]
+          (with-redefs [t/now (fn [] current-time)]
+            (release-instance-fn release-instance-chan "s1.h1" 11 :instance-error)
+            (check-state-fn query-state-chan
+                            (-> initial-state
+                              (utils/dissoc-in [:instance-id->request-id->use-reason-map "s1.h1" "req-11"])
+                              (update-in [:instance-id->state] #(update-slot-state-fn %1 "s1.h1" 10 7 #{:healthy :ejected}))
+                              (update :instance-id->consecutive-failures assoc "s1.h1" 1)
+                              (update :instance-id->eject-expiry-time assoc "s1.h1" (t/plus current-time (t/millis eject-backoff-base-time-ms)))))
+
+            (release-instance-fn release-instance-chan "s1.h1" 12 :instance-error)
+            (check-state-fn query-state-chan
+                            (-> initial-state
+                              (utils/dissoc-in [:instance-id->request-id->use-reason-map "s1.h1" "req-11"])
+                              (utils/dissoc-in [:instance-id->request-id->use-reason-map "s1.h1" "req-12"])
+                              (update-in [:instance-id->state] #(update-slot-state-fn %1 "s1.h1" 10 6 #{:healthy :ejected}))
+                              (update :instance-id->consecutive-failures assoc "s1.h1" 2)
+                              (update :instance-id->eject-expiry-time assoc "s1.h1" (t/plus current-time (t/millis (* 2 eject-backoff-base-time-ms))))))
+            (is (= {} @service-id->instance-ids-atom))
+
+            (release-instance-fn release-instance-chan "s1.h1" 13 :instance-error)
+            (check-state-fn query-state-chan
+                            (-> initial-state
+                              (utils/dissoc-in [:instance-id->request-id->use-reason-map "s1.h1" "req-11"])
+                              (utils/dissoc-in [:instance-id->request-id->use-reason-map "s1.h1" "req-12"])
+                              (utils/dissoc-in [:instance-id->request-id->use-reason-map "s1.h1" "req-13"])
+                              (update-in [:instance-id->state] #(update-slot-state-fn %1 "s1.h1" 10 5 #{:healthy :ejected}))
+                              (update :instance-id->consecutive-failures assoc "s1.h1" 3)
+                              (update :instance-id->eject-expiry-time assoc "s1.h1" (t/plus current-time (t/millis (* 4 eject-backoff-base-time-ms))))))
+            (is (= {"s1" #{"s1.h1"}} @service-id->instance-ids-atom))
+
+            (release-instance-fn release-instance-chan "s1.h1" 14 :instance-error)
+            (check-state-fn query-state-chan
+                            (-> initial-state
+                              (utils/dissoc-in [:instance-id->request-id->use-reason-map "s1.h1" "req-11"])
+                              (utils/dissoc-in [:instance-id->request-id->use-reason-map "s1.h1" "req-12"])
+                              (utils/dissoc-in [:instance-id->request-id->use-reason-map "s1.h1" "req-13"])
+                              (utils/dissoc-in [:instance-id->request-id->use-reason-map "s1.h1" "req-14"])
+                              (update-in [:instance-id->state] #(update-slot-state-fn %1 "s1.h1" 10 4 #{:healthy :ejected}))
+                              (update :instance-id->consecutive-failures assoc "s1.h1" 4)
+                              (update :instance-id->eject-expiry-time assoc "s1.h1" (t/plus current-time (t/millis (* 8 eject-backoff-base-time-ms))))))
+            (is (= {"s1" #{"s1.h1"}} @service-id->instance-ids-atom))
+
+            (release-instance-fn release-instance-chan "s1.h1" 15 :success)
+            (check-state-fn query-state-chan
+                            (-> initial-state
+                              (utils/dissoc-in [:instance-id->request-id->use-reason-map "s1.h1" "req-11"])
+                              (utils/dissoc-in [:instance-id->request-id->use-reason-map "s1.h1" "req-12"])
+                              (utils/dissoc-in [:instance-id->request-id->use-reason-map "s1.h1" "req-13"])
+                              (utils/dissoc-in [:instance-id->request-id->use-reason-map "s1.h1" "req-14"])
+                              (utils/dissoc-in [:instance-id->request-id->use-reason-map "s1.h1" "req-15"])
+                              (update-in [:instance-id->state] #(update-slot-state-fn %1 "s1.h1" 10 3 #{:healthy}))
+                              (update :instance-id->consecutive-failures dissoc "s1.h1")
+                              (update :instance-id->eject-expiry-time dissoc "s1.h1")))
+            (is (= {} @service-id->instance-ids-atom))))
+
+        (async/>!! exit-chan :exit)))))
 
 (deftest test-trigger-uneject-process
   (let [correlation-id "test-correlation-id"

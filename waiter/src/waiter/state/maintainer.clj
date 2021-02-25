@@ -26,6 +26,7 @@
             [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
+            [waiter.state.ejection-expiry :as ejection-expiry]
             [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
@@ -515,7 +516,8 @@
    Acts as the central access point for modifying this data for the router.
    Exposes the state of the router via a `query-state-fn` no-args function that is returned."
   [scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn
-   refresh-service-descriptions-fn service-id->deployment-error-config-fn default-deployment-error-config]
+   refresh-service-descriptions-fn service-id->deployment-error-config-fn default-deployment-error-config
+   ejection-expiry-tracker]
   (cid/with-correlation-id
     "router-state-maintainer"
     (let [killed-instances-to-keep 10
@@ -580,6 +582,7 @@
                                                  (count service-id->healthy-instances') "services with healthy instances and"
                                                  (count services-without-instances) "services without instances:"
                                                  (vec services-without-instances)))
+                                     (ejection-expiry/select-services! ejection-expiry-tracker all-available-service-ids')
                                      (assoc loop-state
                                        :all-available-service-ids all-available-service-ids'
                                        :service-id->healthy-instances service-id->healthy-instances'
@@ -605,8 +608,9 @@
                                        (let [grace-period-secs (t/seconds (int (get service-description "grace-period-secs")))
                                              expiry-mins-int (int (get service-description "instance-expiry-mins"))
                                              expiry-mins (t/minutes expiry-mins-int)
-                                             instance-expired? (fn instance-expired? [instance]
-                                                                 (or (contains? (:flags instance) :expired)
+                                             instance-expired? (fn instance-expired? [{:keys [flags id] :as instance}]
+                                                                 (or (contains? flags :expired)
+                                                                     (ejection-expiry/instance-expired? ejection-expiry-tracker service-id id)
                                                                      (and (pos? expiry-mins-int)
                                                                           (du/older-than? scheduler-sync-time expiry-mins instance))))
                                              expired-healthy-instances (filter instance-expired? healthy-instances)
@@ -628,6 +632,7 @@
                                              service-id->instability-issue' (if instability-issue
                                                                               (assoc service-id->instability-issue service-id instability-issue)
                                                                               (dissoc service-id->instability-issue service-id))]
+                                         (ejection-expiry/select-instances! ejection-expiry-tracker service-id (map :id expired-instances))
                                          (when (or (not= (get service-id->healthy-instances service-id) healthy-instances)
                                                    (not= (get service-id->unhealthy-instances service-id) unhealthy-instances))
                                            (let [curr-instances (set healthy-instances)
