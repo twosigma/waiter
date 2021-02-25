@@ -1579,8 +1579,10 @@ class WaiterCliTest(util.WaiterTest):
         self.assertEqual(cli.stdout(cp_help), cli.stdout(cp))
 
     def __test_ssh_instance_id(self, instance_fn, no_data=False, command_to_run=None, is_failed_instance=False):
+        # TODO: combine service, instance id, and token
         token_name = self.token_name()
         token_fields = util.minimal_service_description()
+        # handle min-instance
         if is_failed_instance:
             token_fields['cmd'] = 'this_is_an_invalid_command'
         util.post_token(self.waiter_url, token_name, token_fields)
@@ -1600,8 +1602,11 @@ class WaiterCliTest(util.WaiterTest):
             env = os.environ.copy()
             env["WAITER_SSH"] = 'echo'
             env["WAITER_KUBECTL"] = 'echo'
+
+            # handle if instance-id, service-id, token-id
             instance = instance_fn(service_id, instances)
             cp = cli.ssh(self.waiter_url, instance['id'], ssh_command=command_to_run, ssh_flags='-i', env=env)
+
             if no_data:
                 self.assertEqual(1, cp.returncode, cp.stderr)
                 self.assertIn('No matching data found', cli.stdout(cp))

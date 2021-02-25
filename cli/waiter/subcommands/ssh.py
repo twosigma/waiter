@@ -4,7 +4,7 @@ import os
 from enum import Enum
 
 from waiter import plugins, terminal
-from waiter.format import format_boolean, format_status, format_timestamp_string
+from waiter.format import format_status, format_timestamp_string
 from waiter.querying import get_service_id_from_instance_id, get_target_cluster_from_token, get_token, print_no_data, \
     print_no_services, query_service, query_services, get_services_on_cluster
 from waiter.util import get_user_selection, guard_no_cluster, is_admin_enabled, print_info, is_service_current
@@ -92,11 +92,11 @@ def ssh_service_id(clusters, service_id, command, container_name, skip_prompts, 
     if not instances or len(instances) == 0:
         print_no_data(clusters)
         return 1
-    instance_column_names = ['Instance ID', 'Host', 'Healthy?']
+    instance_column_names = ['instance_id', 'Host', 'Status']
     instance_items = [{'instance': instance,
-                       'Instance ID': instance['id'],
+                       'instance_id': instance['id'],
                        'Host': instance['host'],
-                       'Healthy?': format_boolean(instance['healthy?'])}
+                       'Status': terminal.success('Healthy') if instance['healthy?'] else terminal.failed('Unhealthy')}
                       for instance in instances]
     if skip_prompts:
         selected_instance_item = instance_items[0]
@@ -130,34 +130,34 @@ def ssh_token(clusters, enforce_cluster, token, command, container_name, skip_pr
         if num_services == 0:
             print_no_services(clusters, token)
             return 1
-        cluster_column_names = ['Cluster', 'Services', 'Instances', 'In-flight Requests', 'Last Request Time']
-        cluster_items = [{'Cluster': cluster,
+        cluster_column_names = ['cluster', 'Services', 'instances', 'in_flight_requests', 'last_request']
+        cluster_items = [{'cluster': cluster,
                           'Services': len(data['services']),
-                          'Instances': sum(service['instance-counts']['healthy-instances'] +
+                          'instances': sum(service['instance-counts']['healthy-instances'] +
                                            service['instance-counts']['unhealthy-instances']
                                            for service in data['services']),
-                          'In-flight Requests': sum(service['request-metrics']['outstanding']
+                          'in_flight_requests': sum(service['request-metrics']['outstanding']
                                                     for service in data['services']),
-                          'Last Request Time': format_timestamp_string(max(service['last-request-time']
+                          'last_request': format_timestamp_string(max(service['last-request-time']
                                                                            for service in data['services'])),
-                          'services': data['services']}
+                          'data': data['services']}
                          for cluster, data in cluster_data.items()
                          if len(data['services']) > 0]
         select_prompt_message = f'There are multiple clusters with services for token ' \
                                 f'{terminal.bold(token)}. Select the correct cluster:'
         selected_cluster_item = get_user_selection(select_prompt_message, cluster_column_names, cluster_items)
-        services = selected_cluster_item['services']
-        service_column_names = ['Service ID', 'Status', 'Instances', 'In-flight Requests', 'Last Request Time']
+        services = selected_cluster_item['data']
+        service_column_names = ['service_id', 'Status', 'instances', 'in_flight_requests', 'last_request']
         service_items = [{'service': service,
-                          'Service ID': service['service-id'],
+                          'service_id': service['service-id'],
                           'Status': format_status(service['status']),
-                          'Instances': service['instance-counts']['healthy-instances'] +
+                          'instances': service['instance-counts']['healthy-instances'] +
                                        service['instance-counts']['unhealthy-instances'],
-                          'In-flight Requests': service['request-metrics']['outstanding'],
-                          'Last Request Time': format_timestamp_string(service['last-request-time'])}
+                          'in_flight_requests': service['request-metrics']['outstanding'],
+                          'last_request': format_timestamp_string(service['last-request-time'])}
                          for service in services]
         select_prompt_message = f'There are multiple services on cluster ' \
-                                f'{terminal.bold(selected_cluster_item["Cluster"])}. Select the correct service:'
+                                f'{terminal.bold(selected_cluster_item["cluster"])}. Select the correct service:'
         selected_service_item = get_user_selection(select_prompt_message, service_column_names, service_items)
         selected_service_id = selected_service_item['service']['service-id']
     return ssh_service_id(clusters, selected_service_id, command, container_name, skip_prompts,

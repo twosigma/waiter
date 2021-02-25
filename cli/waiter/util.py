@@ -145,17 +145,21 @@ def get_user_selection(select_message, column_names, items, short_circuit_choice
     :exception Raises exception when user input is invalid
     :return selected item (an element from the items list)
     """
-    if short_circuit_choice and len(items) == 1:
+    if short_circuit_choice and len(items) == 0: #
         return items[0]
-    print(select_message)
-    rows = [collections.OrderedDict([('Index', idx)] + list(map(lambda column_name: (column_name, item[column_name]),
+    rows = [collections.OrderedDict([('INDEX', idx)] + list(map(lambda column_name:
+                                                                (column_name.upper(), str(item[column_name]).lower()),
                                                                 column_names)))
             for idx, item in enumerate(items)]
     alternate_id_field = column_names[0]
-    items_table = tabulate(rows, headers='keys', tablefmt='github')
+    items_table = tabulate(rows, headers='keys', tablefmt='plain')
     print(items_table)
-    answer = input(f'Enter the Index or {alternate_id_field} associated with your choice: ')
-    print('\n')
+    # for index, item in enumerate(items):
+    #     info_str = ''
+    #     for name in column_names[1:]:
+    #         info_str += f'{name}={item[name]} '
+    #     print(f'{index}. {terminal.bold(item[column_names[0]])} ({info_str.strip()})')
+    answer = input(f'Enter the Index or {alternate_id_field} of your choice: ')
     try:
         selected_item = next((item
                               for item in items
