@@ -20,10 +20,13 @@ def ping_on_cluster(cluster, timeout, wait_for_request, token_name, service_exis
     def perform_ping():
         status = None
         try:
+            default_queue_timeout_millis = 300000
             timeout_seconds = timeout if wait_for_request else 5
+            timeout_millis = timeout_seconds * 1000
             headers = {
+                'X-Waiter-Queue-Timeout': str(max(default_queue_timeout_millis, timeout_millis)),
                 'X-Waiter-Token': token_name,
-                'X-Waiter-Timeout': str(timeout_seconds * 1000)
+                'X-Waiter-Timeout': str(timeout_millis)
             }
             read_timeout = timeout_seconds if wait_for_request else (timeout_seconds + 5)
             resp = http_util.get(cluster, '/waiter-ping', headers=headers, read_timeout=read_timeout)
