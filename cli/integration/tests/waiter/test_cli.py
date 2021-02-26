@@ -1589,9 +1589,8 @@ class WaiterCliTest(util.WaiterTest):
         try:
             if multiple_services:
                 token_new_fields = util.minimal_service_description()
-                token_new_fields['cmd'] = 'this_is_an_invalid_command2'
                 util.post_token(self.waiter_url, token_name, token_new_fields)
-                util.ping_token(self.waiter_url, token_name, expected_status_code=503)
+                util.ping_token(self.waiter_url, token_name)
             util.post_token(self.waiter_url, token_name, token_fields)
             service_id = util.ping_token(self.waiter_url, token_name,
                                          expected_status_code=503 if is_failed_instance else 200)
