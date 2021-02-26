@@ -159,7 +159,6 @@ def ssh(clusters, args, _, enforce_cluster):
     include_failed_instances = args.pop('include_failed_instances')
     include_killed_instances = args.pop('include_killed_instances')
     container_name = args.pop('container_name', 'waiter-app')
-    print(args)
     skip_prompts = args.pop('quick')
     if ssh_destination == Destination.TOKEN:
         return ssh_token(clusters, enforce_cluster, token_or_service_id_or_instance_id, command, container_name,
