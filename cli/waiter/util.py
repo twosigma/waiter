@@ -1,12 +1,10 @@
 import argparse
-import collections
 import json
 import logging
 import os
 import sys
 import time
 from datetime import datetime, timedelta
-from tabulate import tabulate
 
 from waiter import terminal
 
