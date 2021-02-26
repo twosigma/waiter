@@ -127,7 +127,7 @@ def ssh_token(clusters, enforce_cluster, token, command, container_name, skip_pr
         if len(services) == 0:
             print_no_services(clusters, token)
             return 1
-        max_last_request = max(s['last-request-time'] for s in services)
+        max_last_request = max(s.get('last-request-time', '') for s in services)
         selected_service_id = next(s['service-id'] for s in services if s['last-request-time'] == max_last_request)
     else:
         query_result = query_token(clusters, token, include_services=True)
@@ -188,8 +188,8 @@ def register(add_parser):
     id_group.add_argument('--instance-id', '-i', dest='ssh_destination', action='store_const',
                           const=Destination.INSTANCE_ID, help='ssh directly to instance id')
     parser.add_argument('--quick', '-q', dest='quick', action='store_true',
-                        help='Skips services prompt by selecting the service that the token currently refers to, and '
-                             'instances prompt by selecting a random one. Has no effect with --instance-id flag.')
+                        help='Skips services prompt by selecting the service with latest request, and instances prompt '
+                             'by selecting a random one.')
     parser.add_argument('--include-active-instances', dest='include_active_instances', action='store_true',
                         default=True,
                         help='included by default; includes active instances for possible ssh destination')
