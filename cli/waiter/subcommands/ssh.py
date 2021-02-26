@@ -158,7 +158,8 @@ def ssh(clusters, args, _, enforce_cluster):
     include_active_instances = args.pop('include_active_instances')
     include_failed_instances = args.pop('include_failed_instances')
     include_killed_instances = args.pop('include_killed_instances')
-    container_name = args.pop('container-name', 'waiter-app')
+    container_name = args.pop('container_name', 'waiter-app')
+    print(args)
     skip_prompts = args.pop('quick')
     if ssh_destination == Destination.TOKEN:
         return ssh_token(clusters, enforce_cluster, token_or_service_id_or_instance_id, command, container_name,
@@ -178,8 +179,9 @@ def register(add_parser):
                                     'will be the log directory.')
     parser.add_argument('token-or-service-id-or-instance-id')
     if is_admin_enabled():
-        parser.add_argument('--container-name', help='specify the container name you want to ssh into. Defaults to '
-                                                     '"waiter-app". Has no effect if instance is not k8s pod.')
+        parser.add_argument('--container-name', '-c',
+                            help='specify the container name you want to ssh into. Defaults to ="waiter-app". Has no '
+                                 'effect if instance is not k8s pod.')
     id_group = parser.add_mutually_exclusive_group(required=False)
     id_group.add_argument('--token', '-t', dest='ssh_destination', action='store_const', const=Destination.TOKEN,
                           default=Destination.TOKEN, help='Default; ssh with token')
