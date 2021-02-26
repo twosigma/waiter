@@ -296,6 +296,7 @@ def services_for_token(waiter_url, token_name, assert_response=True, expected_st
 
 
 def instances_for_service(waiter_url, service_id, expected_status_code=200):
+    """returns instances map of a service"""
     headers = {
         'Content-Type': 'application/json',
         'x-cid': cid()
