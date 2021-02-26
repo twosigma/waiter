@@ -5,9 +5,9 @@ from enum import Enum
 
 from waiter import plugins, terminal
 from waiter.display import get_user_selection, tabulate_service_instances, tabulate_token_services
-from waiter.querying import get_service_id_from_instance_id, get_target_cluster_from_token, get_token, print_no_data, \
-    print_no_services, query_service, query_token, get_services_on_cluster
-from waiter.util import guard_no_cluster, is_admin_enabled, print_info, is_service_current
+from waiter.querying import get_service_id_from_instance_id, get_target_cluster_from_token, print_no_data, \
+    print_no_services, query_service, query_token, get_services_on_cluster, print_no_instances
+from waiter.util import guard_no_cluster, is_admin_enabled, print_info
 
 BASH_PATH = '/bin/bash'
 
@@ -101,8 +101,11 @@ def ssh_service_id(clusters, service_id, command, container_name, skip_prompts, 
                    include_failed_instances, include_killed_instances):
     instances = get_instances_from_service_id(clusters, service_id, include_active_instances, include_failed_instances,
                                               include_killed_instances)
-    if not instances or len(instances) == 0:
+    if not instances:
         print_no_data(clusters)
+        return 1
+    if len(instances) == 0:
+        print_no_instances(service_id)
         return 1
     if skip_prompts:
         selected_instance = instances[0]
@@ -117,23 +120,20 @@ def ssh_token(clusters, enforce_cluster, token, command, container_name, skip_pr
               include_failed_instances, include_killed_instances):
     if skip_prompts:
         cluster = get_target_cluster_from_token(clusters, token, enforce_cluster)
-        _, token_etag = get_token(cluster, token)
         query_result = get_services_on_cluster(cluster, token)
-        if query_result['count'] == 0:
+        services = [s
+                    for s in query_result.get('services', [])
+                    if s['instance-counts']['healthy-instances'] + s['instance-counts']['unhealthy-instances'] > 0]
+        if len(services) == 0:
             print_no_services(clusters, token)
             return 1
-        services = query_result['services']
-        selected_service_id = next((s['service-id']
-                                    for s in services if is_service_current(s, token_etag, token)),
-                                   False)
-        if not selected_service_id:
-            print_no_data(clusters)
-            return 1
+        max_last_request = max(s['last-request-time'] for s in services)
+        selected_service_id = next(s['service-id'] for s in services if s['last-request-time'] == max_last_request)
     else:
         query_result = query_token(clusters, token, include_services=True)
         if query_result['count'] == 0:
             print_no_data(clusters)
-            return
+            return 1
         cluster_data = query_result['clusters']
         services = [{'cluster': cluster, 'etag': data['etag'], **service}
                     for cluster, data in cluster_data.items()

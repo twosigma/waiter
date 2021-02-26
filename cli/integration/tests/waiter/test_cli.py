@@ -1588,6 +1588,12 @@ class WaiterCliTest(util.WaiterTest):
             token_fields['cmd'] = 'this_is_an_invalid_command'
         util.post_token(self.waiter_url, token_name, token_fields)
         try:
+            if multiple_services:
+                token_new_fields = util.minimal_service_description()
+                token_new_fields['cmd'] = 'this_is_an_invalid_command2'
+                util.post_token(self.waiter_url, token_name, token_new_fields)
+                util.ping_token(self.waiter_url, token_name, expected_status_code=503)
+                util.post_token(self.waiter_url, token_name, token_fields)
             service_id = util.ping_token(self.waiter_url, token_name,
                                          expected_status_code=503 if is_failed_instance else 200)
             instances = util.instances_for_service(self.waiter_url, service_id)
@@ -1600,11 +1606,6 @@ class WaiterCliTest(util.WaiterTest):
                                                       {'active-instances': min_instances,
                                                        'failed-instances': 0,
                                                        'killed-instances': 0})
-            if multiple_services:
-                token_new_fields = util.minimal_service_description()
-                token_new_fields['cmd'] = 'this_is_an_invalid_command2'
-                util.post_token(self.waiter_url, token_name, token_new_fields)
-                util.ping_token(self.waiter_url, token_name, expected_status_code=503)
             env = os.environ.copy()
             env['WAITER_SSH'] = 'echo'
             env['WAITER_KUBECTL'] = 'echo'
@@ -1697,11 +1698,11 @@ class WaiterCliTest(util.WaiterTest):
         self.__test_ssh(lambda _, instances: instances['active-instances'][0],  min_instances=2, test_service=True,
                         quick=True)
 
-    def test_ssh_token(self):
+    def test_ssh_token_single_instance(self):
         self.__test_ssh(lambda _, instances: instances['active-instances'][0])
 
     def test_ssh_token_multiple_services_sorted(self):
-        self.__test_ssh(lambda _, instances: instances['active-instances'][0], stdin='1\n'.encode('utf8'),
+        self.__test_ssh(lambda _, instances: instances['active-instances'][0], stdin='0\n'.encode('utf8'),
                         multiple_services=True)
 
     def test_ssh_token_multiple_instances(self):
@@ -1710,7 +1711,7 @@ class WaiterCliTest(util.WaiterTest):
 
     def test_ssh_token_multiple_services_instances(self):
         self.__test_ssh(lambda _, instances: instances['active-instances'][0], min_instances=2, multiple_services=True,
-                        stdin='1\n0\n'.encode('utf8'))
+                        stdin='0\n0\n'.encode('utf8'))
 
     def test_ssh_token_multiple_services_instances_quick(self):
         self.__test_ssh(lambda _, instances: instances['active-instances'][0], min_instances=2, multiple_services=True,
@@ -1719,3 +1720,32 @@ class WaiterCliTest(util.WaiterTest):
     def test_ssh_token_custom_container(self):
         self.__test_ssh(lambda _, instances: instances['active-instances'][0], admin=True,
                         container_name='waiter-files')
+
+    def test_ssh_token_invalid_token(self):
+        token_name = "nonexistent"
+        cp = cli.ssh(self.waiter_url, token_name)
+        self.assertEqual(1, cp.returncode, cp.stderr)
+        self.assertIn('No matching data found', cli.stdout(cp))
+
+    def test_ssh_token_invalid_token_quick(self):
+        token_name = "nonexistent"
+        cp = cli.ssh(self.waiter_url, token_name, ssh_flags='-q')
+        self.assertEqual(1, cp.returncode, cp.stderr)
+        self.assertIn('The token does not exist. You must create it first.', cli.stderr(cp))
+
+    def __test_ssh_token_no_services(self, ssh_flags=None):
+        token_name = self.token_name()
+        token_fields = util.minimal_service_description()
+        util.post_token(self.waiter_url, token_name, token_fields)
+        try:
+            cp = cli.ssh(self.waiter_url, token_name, ssh_flags=ssh_flags)
+            self.assertEqual(1, cp.returncode, cp.stderr)
+            self.assertIn(f'There are no services using token {token_name}', cli.stdout(cp))
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_ssh_token_no_services(self):
+        self.__test_ssh_token_no_services()
+
+    def test_ssh_token_no_services_quick(self):
+        self.__test_ssh_token_no_services(ssh_flags='-q')

@@ -53,6 +53,12 @@ def print_no_services(clusters, token):
     print(f'There are no services using token {terminal.bold(token)} in {clusters_text}.')
 
 
+def print_no_instances(service):
+    """Prints a message that there are no relevant instances for the service"""
+    print(f'There are no relevant instances using service id {terminal.bold(service)}.')
+    print(f'Check the --include flags for active, failed, and killed instances.')
+
+
 def get_token_on_cluster(cluster, token_name, include_services=False):
     """Gets the token with the given name on the given cluster"""
     token_data, token_etag = get_token(cluster, token_name, include='metadata')
