@@ -1679,7 +1679,7 @@ class WaiterCliTest(util.WaiterTest):
 
     def test_ssh_service_id_multiple_instances(self):
         self.__test_ssh(lambda _, instances: instances['active-instances'][0], min_instances=2,
-                        stdin='0\n'.encode('utf8'), test_service=True)
+                        stdin='1\n'.encode('utf8'), test_service=True)
 
     def test_ssh_service_id_invalid_prompt_input(self):
         self.__test_ssh(lambda _, instances: instances['active-instances'][0], min_instances=2,
@@ -1699,16 +1699,16 @@ class WaiterCliTest(util.WaiterTest):
         self.__test_ssh(lambda _, instances: instances['active-instances'][0])
 
     def test_ssh_token_multiple_services_sorted(self):
-        self.__test_ssh(lambda _, instances: instances['active-instances'][0], stdin='0\n'.encode('utf8'),
+        self.__test_ssh(lambda _, instances: instances['active-instances'][0], stdin='1\n'.encode('utf8'),
                         multiple_services=True)
 
     def test_ssh_token_multiple_instances(self):
         self.__test_ssh(lambda _, instances: instances['active-instances'][0], min_instances=2,
-                        stdin='0\n'.encode('utf8'))
+                        stdin='1\n'.encode('utf8'))
 
     def test_ssh_token_multiple_services_instances(self):
         self.__test_ssh(lambda _, instances: instances['active-instances'][0], min_instances=2, multiple_services=True,
-                        stdin='0\n0\n'.encode('utf8'))
+                        stdin='1\n1\n'.encode('utf8'))
 
     def test_ssh_token_multiple_services_instances_quick(self):
         self.__test_ssh(lambda _, instances: instances['active-instances'][0], min_instances=2, multiple_services=True,

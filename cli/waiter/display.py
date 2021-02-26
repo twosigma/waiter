@@ -43,7 +43,7 @@ def tabulate_token_services(services, token_name, token_etag=None, show_index=Fa
         services = sorted(services, key=lambda s: s.get('last-request-time', None) or '', reverse=True)
         rows = [collections.OrderedDict([(key, data)
                                          for key, data in
-                                         [('Index', f'[{index}]'),
+                                         [('Index', f'[{index + 1}]'),
                                           ('Service Id', s['service-id']),
                                           ('Cluster', s.get('cluster', None)),
                                           ('Run as user', s['effective-parameters']['run-as-user']),
@@ -88,7 +88,7 @@ def tabulate_service_instances(instances, show_index=False, column_names=[]):
     if len(instances) > 0:
         rows = [collections.OrderedDict([(key, data)
                                          for key, data in
-                                         [('Index', f'[{index}]'),
+                                         [('Index', f'[{index + 1}]'),
                                           ('Instance Id', inst['id']),
                                           ('Host', inst['host']),
                                           ('Status', format_instance_healthy(inst))]
@@ -115,7 +115,7 @@ def get_user_selection(items, tabular_str, short_circuit_choice=True):
     answer = input(f'Enter the Index of your choice: ')
     print()
     try:
-        index = int(answer)
+        index = int(answer) - 1
         if index < 0 or index >= len(items):
             raise Exception('Input is out of range!')
         return items[index]
