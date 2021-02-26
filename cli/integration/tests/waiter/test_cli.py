@@ -1596,16 +1596,16 @@ class WaiterCliTest(util.WaiterTest):
                 util.post_token(self.waiter_url, token_name, token_fields)
             service_id = util.ping_token(self.waiter_url, token_name,
                                          expected_status_code=503 if is_failed_instance else 200)
-            instances = util.instances_for_service(self.waiter_url, service_id)
             if is_failed_instance:
-                self.assertEqual(0, len(instances['active-instances']))
-                self.assertLess(0, len(instances['failed-instances']))
-                self.assertEqual(0, len(instances['killed-instances']))
+                goal_fn = lambda instances: 0 == len(instances['active-instances']) and \
+                                            0 < len(instances['failed-instances']) and \
+                                            0 == len(instances['killed-instances'])
             else:
-                util.wait_until_instances_for_service(self.waiter_url, service_id,
-                                                      {'active-instances': min_instances,
-                                                       'failed-instances': 0,
-                                                       'killed-instances': 0})
+                goal_fn = lambda instances: min_instances == len(instances['active-instances']) and \
+                                            0 == len(instances['failed-instances']) and \
+                                            0 == len(instances['killed-instances'])
+            util.wait_until(lambda: util.instances_for_service(self.waiter_url, service_id), goal_fn)
+            instances = util.instances_for_service(self.waiter_url, service_id)
             env = os.environ.copy()
             env['WAITER_SSH'] = 'echo'
             env['WAITER_KUBECTL'] = 'echo'
