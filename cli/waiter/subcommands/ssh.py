@@ -171,7 +171,7 @@ def register(add_parser):
     parser.add_argument('token-or-service-id-or-instance-id')
     if is_admin_enabled():
         parser.add_argument('--container-name', '-c',
-                            help='specify the container name you want to ssh into. Defaults to ="waiter-app". Has no '
+                            help='specify the container name you want to ssh into. Defaults to "waiter-app". Has no '
                                  'effect if instance is not k8s pod.')
     id_group = parser.add_mutually_exclusive_group(required=False)
     id_group.add_argument('--token', '-t', dest='ssh_destination', action='store_const', const=Destination.TOKEN,
