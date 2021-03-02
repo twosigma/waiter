@@ -1578,9 +1578,10 @@ class WaiterCliTest(util.WaiterTest):
         self.assertEqual(0, cp.returncode, cp.stderr)
         self.assertEqual(cli.stdout(cp_help), cli.stdout(cp))
 
-    def __test_ssh(self, instance_fn, command_to_run=None, stdin=None, min_instances=1, admin=False,
+    def __test_ssh(self, instance_fn, command_to_run=None, stdin=None, min_instances=1, admin=False, ssh_flags=None,
                    container_name=None, is_failed_instance=False, test_service=False, test_instance=False,
-                   multiple_services=False, quick=False, expect_no_data=False, expect_out_of_range=False):
+                   multiple_services=False, quick=False, expect_no_data=False, expect_no_instances=False,
+                   expect_out_of_range=False):
         token_name = self.token_name()
         token_fields = util.minimal_service_description()
         token_fields['min-instances'] = min_instances
@@ -1595,12 +1596,12 @@ class WaiterCliTest(util.WaiterTest):
             service_id = util.ping_token(self.waiter_url, token_name,
                                          expected_status_code=503 if is_failed_instance else 200)
             if is_failed_instance:
-                goal_fn = lambda instances: 0 < len(instances['failed-instances']) and \
-                                            0 == len(instances['killed-instances'])
+                goal_fn = lambda insts: 0 < len(insts['failed-instances']) and \
+                                        0 == len(insts['killed-instances'])
             else:
-                goal_fn = lambda instances: min_instances == len(instances['active-instances']) and \
-                                            0 == len(instances['failed-instances']) and \
-                                            0 == len(instances['killed-instances'])
+                goal_fn = lambda insts: min_instances == len(insts['active-instances']) and \
+                                        0 == len(insts['failed-instances']) and \
+                                        0 == len(insts['killed-instances'])
             util.wait_until(lambda: util.instances_for_service(self.waiter_url, service_id), goal_fn)
             instances = util.instances_for_service(self.waiter_url, service_id)
             env = os.environ.copy()
@@ -1609,7 +1610,7 @@ class WaiterCliTest(util.WaiterTest):
             if admin:
                 env['WAITER_ADMIN'] = 'true'
             instance = instance_fn(service_id, instances)
-            ssh_flags = []
+            ssh_flags = [ssh_flags] if ssh_flags else []
             if quick:
                 ssh_flags.append('-q')
             if container_name:
@@ -1631,6 +1632,9 @@ class WaiterCliTest(util.WaiterTest):
             elif expect_no_data:
                 self.assertEqual(1, cp.returncode, cp.stderr)
                 self.assertIn('No matching data found', cli.stdout(cp))
+            elif expect_no_instances:
+                self.assertEqual(1, cp.returncode, cp.stderr)
+                self.assertIn(f'There are no relevant instances using service id {service_id}', cli.stdout(cp))
             else:
                 log_directory = instance['log-directory']
                 self.assertEqual(0, cp.returncode, cp.stderr)
@@ -1676,6 +1680,10 @@ class WaiterCliTest(util.WaiterTest):
 
     def test_ssh_service_id_single_instance(self):
         self.__test_ssh(lambda _, instances: instances['active-instances'][0], test_service=True)
+
+    def test_ssh_service_id_no_relevant_instances(self):
+        self.__test_ssh(lambda _, instances: instances['active-instances'][0], test_service=True,
+                        ssh_flags='--no-active', expect_no_instances=True)
 
     def test_ssh_service_id_multiple_instances(self):
         self.__test_ssh(lambda _, instances: instances['active-instances'][0], min_instances=2,

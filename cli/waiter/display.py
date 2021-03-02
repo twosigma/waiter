@@ -22,9 +22,18 @@ def format_using_current_token(service, token_etag, token_name):
         return 'Not Current'
 
 
-def format_instance_healthy(instance):
+def format_instance_status(instance):
     """Formats the "Healthy?" column for the given instance"""
-    return terminal.success('Healthy') if instance['healthy?'] else terminal.failed('Unhealthy')
+    if instance['healthy?']:
+        return terminal.success('Healthy')
+    else:
+        if instance['_status'] == 'failed':
+            status = 'Failed'
+        elif instance['_status'] == 'killed':
+            status = 'Killed'
+        else:
+            status = 'Unhealthy'
+        return terminal.failed(status)
 
 
 def tabulate_token_services(services, token_name, token_etag=None, show_index=False, summary_table=True,
@@ -91,7 +100,7 @@ def tabulate_service_instances(instances, show_index=False, column_names=[]):
                                          [('Index', f'[{index + 1}]'),
                                           ('Instance Id', inst['id']),
                                           ('Host', inst['host']),
-                                          ('Status', format_instance_healthy(inst))]
+                                          ('Status', format_instance_status(inst))]
                                          if key in column_names or show_index and key == 'Index'])
                 for index, inst in enumerate(instances)]
         return tabulate(rows, headers='keys', tablefmt='plain')

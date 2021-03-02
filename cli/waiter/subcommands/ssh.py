@@ -18,6 +18,10 @@ class Destination(Enum):
     INSTANCE_ID = 'instance_id'
 
 
+def map_instances_with_status(instances, status):
+    return [{'_status': status, **inst} for inst in instances]
+
+
 def get_instances_from_service_id(clusters, service_id, include_active_instances, include_failed_instances,
                                   include_killed_instances):
     query_result = query_service(clusters, service_id)
@@ -27,23 +31,11 @@ def get_instances_from_service_id(clusters, service_id, include_active_instances
     service = list(query_result['clusters'].values())[0]['service']
     instances = []
     if include_active_instances:
-        instances += service['instances']['active-instances']
+        instances += map_instances_with_status(service['instances']['active-instances'], 'active')
     if include_failed_instances:
-        instances += service['instances']['failed-instances']
+        instances += map_instances_with_status(service['instances']['failed-instances'], 'failed')
     if include_killed_instances:
-        instances += service['instances']['killed-instances']
-    return instances
-
-
-def get_instances_from_service_data(service, include_active_instances, include_failed_instances,
-                                    include_killed_instances):
-    instances = []
-    if include_active_instances:
-        instances += service['instances']['active-instances']
-    if include_failed_instances:
-        instances += service['instances']['failed-instances']
-    if include_killed_instances:
-        instances += service['instances']['killed-instances']
+        instances += map_instances_with_status(service['instances']['killed-instances'], 'killed')
     return instances
 
 
@@ -84,7 +76,7 @@ def ssh_instance(instance, container_name, command_to_run=None):
 def ssh_instance_id(clusters, instance_id, command, container_name):
     service_id = get_service_id_from_instance_id(instance_id)
     instances = get_instances_from_service_id(clusters, service_id, True, True, True)
-    if not instances:
+    if instances is False:
         print_no_data(clusters)
         return 1
     found_instance = next((instance
@@ -101,7 +93,7 @@ def ssh_service_id(clusters, service_id, command, container_name, skip_prompts, 
                    include_failed_instances, include_killed_instances):
     instances = get_instances_from_service_id(clusters, service_id, include_active_instances, include_failed_instances,
                                               include_killed_instances)
-    if not instances:
+    if instances is False:
         print_no_data(clusters)
         return 1
     if len(instances) == 0:
@@ -191,13 +183,17 @@ def register(add_parser):
     parser.add_argument('--quick', '-q', dest='quick', action='store_true',
                         help='Skips services prompt by selecting the service with latest request, and instances prompt '
                              'by selecting a random one.')
-    parser.add_argument('--include-active-instances', dest='include_active_instances', action='store_true',
-                        default=True,
-                        help='included by default; includes active instances for possible ssh destination')
-    parser.add_argument('--include-failed-instances', dest='include_failed_instances', action='store_true',
-                        default=True,
-                        help='included by default; includes failed instances for possible ssh destination')
-    parser.add_argument('--include-killed-instances', dest='include_killed_instances', action='store_true',
-                        help='includes killed instances for possible ssh destination')
+    parser.add_argument('--active', '-a',  dest='include_active_instances', action='store_true', default=True,
+                        help='included by default; includes active instances when prompting')
+    parser.add_argument('--failed', '-f', dest='include_failed_instances', action='store_true',
+                        help='includes failed instances when prompting')
+    parser.add_argument('--killed', '-k', dest='include_killed_instances', action='store_true',
+                        help='includes killed instances when prompting')
+    parser.add_argument('--no-active', dest='include_active_instances', action='store_false',
+                        help="don't show active instances in prompt")
+    parser.add_argument('--no-failed', dest='include_failed_instances', action='store_false',
+                        help="don't show failed instances in prompt")
+    parser.add_argument('--no-killed', dest='include_killed_instances', action='store_false',
+                        help="don't show killed instances in prompt")
     parser.add_argument('command', nargs=argparse.REMAINDER, help='command to be run on instance')
     return ssh
