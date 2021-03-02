@@ -181,7 +181,7 @@ def register(add_parser):
     id_group.add_argument('--instance-id', '-i', dest='ssh_destination', action='store_const',
                           const=Destination.INSTANCE_ID, help='ssh directly to instance id')
     parser.add_argument('--quick', '-q', dest='quick', action='store_true',
-                        help='Skips services prompt by selecting the service with latest request, and instances prompt '
+                        help='skips services prompt by selecting the service with latest request, and instances prompt '
                              'by selecting a random one.')
     parser.add_argument('--active', '-a',  dest='include_active_instances', action='store_true', default=True,
                         help='included by default; includes active instances when prompting')
