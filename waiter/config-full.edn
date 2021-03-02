@@ -793,6 +793,11 @@
                    ;; failures and eject-backoff-base-time-ms (milliseconds):
                    :eject-backoff-base-time-ms 10000
 
+                   ;; Ejected instances that are consistently failing requests despite being deemed as healthy
+                   ;; by health checks are marked as expired when the number of consecutive failed requests
+                   ;; reaches the expiry-threshold.
+                   :expiry-threshold 5
+
                    ;; Killed instances are ejected for max-eject-time-ms (milliseconds):
                    :max-eject-time-ms 300000}
 

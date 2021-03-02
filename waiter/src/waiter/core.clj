@@ -57,6 +57,7 @@
             [waiter.service-description :as sd]
             [waiter.settings :as settings]
             [waiter.simulator :as simulator]
+            [waiter.state.ejection-expiry :as ejection-expiry]
             [waiter.state.maintainer :as maintainer]
             [waiter.state.responder :as responder]
             [waiter.state.router :as router]
@@ -115,6 +116,7 @@
                               ["/autoscaler" :state-autoscaler-handler-fn]
                               ["/autoscaling-multiplexer" :state-autoscaling-multiplexer-handler-fn]
                               ["/codahale-reporters" :state-codahale-reporters-handler-fn]
+                              ["/ejection-expiry" :state-ejection-expiry-handler-fn]
                               ["/entitlement-manager" :state-entitlement-manager-handler-fn]
                               ["/fallback" :state-fallback-handler-fn]
                               ["/gc-broken-services" :state-gc-for-broken-services]
@@ -630,6 +632,9 @@
                        router-id]
                 (discovery/register router-id curator name (str base-path "/" discovery-relative-path)
                                     {:host host :port (primary-port port)}))
+   :ejection-expiry-tracker (pc/fnk [[:settings [:ejection-config expiry-threshold]]]
+                              (let [service-id->instance-ids-atom (atom {})]
+                                (ejection-expiry/->EjectionExpiryTracker expiry-threshold service-id->instance-ids-atom)))
    :entitlement-manager (pc/fnk [[:settings entitlement-config]
                                  kv-store-factory]
                           (let [context {:kv-store-factory kv-store-factory}]
@@ -1281,7 +1286,7 @@
    :router-state-maintainer (pc/fnk [[:routines refresh-service-descriptions-fn service-id->service-description-fn]
                                      [:scheduler scheduler]
                                      [:settings deployment-error-config]
-                                     [:state router-id scheduler-state-chan]
+                                     [:state ejection-expiry-tracker router-id scheduler-state-chan]
                                      router-list-maintainer]
                               (let [exit-chan (async/chan)
                                     router-chan (async/tap (:router-mult-chan router-list-maintainer) (au/latest-chan))
@@ -1289,7 +1294,7 @@
                                     maintainer (maintainer/start-router-state-maintainer
                                                  scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn
                                                  refresh-service-descriptions-fn service-id->deployment-error-config-fn
-                                                 deployment-error-config)]
+                                                 deployment-error-config ejection-expiry-tracker)]
                                 {:exit-chan exit-chan
                                  :maintainer maintainer}))
    :scheduler-broken-services-gc (pc/fnk [[:curator gc-state-reader-fn gc-state-writer-fn]
@@ -1315,13 +1320,14 @@
    :service-chan-maintainer (pc/fnk [[:routines service-id->service-description-fn
                                       start-work-stealing-balancer-fn stop-work-stealing-balancer-fn]
                                      [:settings ejection-config instance-request-properties]
-                                     [:state query-service-maintainer-chan]
+                                     [:state ejection-expiry-tracker query-service-maintainer-chan]
                                      router-state-maintainer]
                               (let [start-service
                                     (fn start-service [populate-maintainer-chan! service-id]
                                       (let [service-description (service-id->service-description-fn service-id)
                                             maintainer-chan-map (responder/prepare-and-start-service-chan-responder
-                                                                  service-id service-description instance-request-properties ejection-config)
+                                                                  service-id service-description instance-request-properties ejection-config
+                                                                  ejection-expiry-tracker)
                                             work-stealing-chan-map (start-work-stealing-balancer-fn populate-maintainer-chan! service-id)]
                                         {:maintainer-chan-map maintainer-chan-map
                                          :work-stealing-chan-map work-stealing-chan-map}))
@@ -1635,6 +1641,11 @@
                                               router-id
                                               #(pc/map-vals reporter/state codahale-reporters)
                                               request)))
+   :state-ejection-expiry-handler-fn (pc/fnk [[:state ejection-expiry-tracker router-id]
+                                              wrap-secure-request-fn]
+                                       (wrap-secure-request-fn
+                                         (fn entitlement-manager-state-handler-fn [request]
+                                           (handler/get-ejection-expiry-state router-id ejection-expiry-tracker request))))
    :state-entitlement-manager-handler-fn (pc/fnk [[:state entitlement-manager router-id]
                                                   wrap-secure-request-fn]
                                            (wrap-secure-request-fn

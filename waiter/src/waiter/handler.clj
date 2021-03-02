@@ -40,6 +40,7 @@
             [waiter.scheduler :as scheduler]
             [waiter.service :as service]
             [waiter.service-description :as sd]
+            [waiter.state.ejection-expiry :as ejection-expiry]
             [waiter.statsd :as statsd]
             [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
@@ -806,8 +807,9 @@
           scheme (some-> request utils/request->scheme name)
           make-url (fn make-url [path]
                      (str (when scheme (str scheme "://")) host "/state/" path))]
-      (utils/clj->streaming-json-response {:details (->> ["autoscaler" "autoscaling-multiplexer" "codahale-reporters" "entitlement-manager"
-                                                          "fallback" "gc-broken-services" "gc-services" "gc-transient-metrics" "interstitial"
+      (utils/clj->streaming-json-response {:details (->> ["autoscaler" "autoscaling-multiplexer" "codahale-reporters"
+                                                          "ejection-expiry" "entitlement-manager" "fallback"
+                                                          "gc-broken-services" "gc-services" "gc-transient-metrics" "interstitial"
                                                           "jwt-auth-server" "kv-store" "launch-metrics" "leader" "local-usage"
                                                           "maintainer" "router-metrics" "scheduler" "service-description-builder"
                                                           "service-maintainer" "statsd" "token-watch-maintainer" "work-stealing"]
@@ -855,6 +857,13 @@
   "Outputs the state retrieved by invoking the query-state-fn."
   [router-id query-state-fn request]
   (get-function-state query-state-fn router-id request))
+
+(defn get-ejection-expiry-state
+  "Outputs the ejection-expiry-tracker state."
+  [router-id ejection-expiry-tracker request]
+  (let [{:strs [include]} (-> request ru/query-params-request :query-params)
+        include-flags (if (string? include) #{include} (set include))]
+    (get-function-state #(ejection-expiry/tracker-state ejection-expiry-tracker include-flags) router-id request)))
 
 (defn get-entitlement-manager-state
   "Outputs the entitlement-manager state."
