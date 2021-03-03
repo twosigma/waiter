@@ -120,7 +120,6 @@ def get_user_selection(items, tabular_str, short_circuit_choice=True):
     if short_circuit_choice and len(items) == 1:
         return items[0]
     print(tabular_str)
-    print("testing", end='\r')
     answer = input(f'Enter the Index of your choice: ')
     print()
     try:
