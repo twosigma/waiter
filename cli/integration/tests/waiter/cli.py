@@ -372,3 +372,11 @@ def maintenance(subcommand, token_name, waiter_url=None, flags=None, maintenance
     args = f"maintenance {subcommand} {token_name} {maintenance_flags or ''}"
     cp = cli(args, waiter_url, flags, stdin, env=env)
     return cp
+
+
+def ssh(waiter_url=None, token_or_service_id_or_instance_id=None, ssh_command=None, ssh_flags=None, flags=None,
+        stdin=None, env=None):
+    """Attempts to ssh to token, service_id, or instance_id"""
+    args = f"ssh {ssh_flags or ''} {token_or_service_id_or_instance_id or ''} {ssh_command or ''}"
+    cp = cli(args, waiter_url, flags, stdin=stdin, env=env)
+    return cp

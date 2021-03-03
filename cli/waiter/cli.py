@@ -3,7 +3,8 @@ import logging
 from urllib.parse import urlparse
 
 from waiter import configuration, http_util, metrics, version
-from waiter.subcommands import create, delete, init, kill, maintenance, ping, show, tokens, update
+from waiter.subcommands import create, delete, init, kill, maintenance, ping, show, ssh, tokens, update
+import waiter.plugins as waiter_plugins
 
 parser = argparse.ArgumentParser(description='waiter is the Waiter CLI')
 parser.add_argument('--cluster', '-c', help='the name of the Waiter cluster to use')
@@ -39,6 +40,9 @@ actions = {
     },
     'show': {
         'run-function': show.register(subparsers.add_parser)
+    },
+    'ssh': {
+        'run-function': ssh.register(subparsers.add_parser)
     },
     'tokens': {
         'run-function': tokens.register(subparsers.add_parser)
@@ -105,6 +109,7 @@ def run(args, plugins):
     url = args.pop('url')
 
     logging.debug('plugins: %s', plugins)
+    waiter_plugins.configure(plugins)
 
     if action is None:
         parser.print_help()

@@ -47,6 +47,18 @@ def print_no_data(clusters):
     print(no_data_message(clusters))
 
 
+def print_no_services(clusters, token):
+    """Prints a message that there were no services found for a token"""
+    clusters_text = ' / '.join([terminal.bold(c['name']) for c in clusters])
+    print(f'There are no services using token {terminal.bold(token)} in {clusters_text}.')
+
+
+def print_no_instances(service):
+    """Prints a message that there are no relevant instances for the service"""
+    print(f'There are no relevant instances using service id {terminal.bold(service)}.')
+    print(f'Check the --include flags for active, failed, and killed instances.')
+
+
 def get_token_on_cluster(cluster, token_name, include_services=False):
     """Gets the token with the given name on the given cluster"""
     token_data, token_etag = get_token(cluster, token_name, include='metadata')
@@ -208,3 +220,8 @@ def get_target_cluster_from_token(clusters, token_name, enforce_cluster):
                             f'clusters-{cluster_names}.'
                             '\nConsider specifying with the --cluster flag which cluster you are targeting.')
         return _get_latest_cluster(clusters, query_result)
+
+
+def get_service_id_from_instance_id(instance_id):
+    """Extracts the service_id from the instance_id. instance_ids begin with a service_id followed by a period"""
+    return instance_id.split('.')[0]

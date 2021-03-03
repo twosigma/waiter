@@ -125,3 +125,8 @@ def is_service_current(service, current_token_etag, token_name):
                      for sources in service['source-tokens']
                      for source in sources)
     return is_current
+
+
+def is_admin_enabled():
+    """Returns True if current user is an admin"""
+    return str2bool(os.getenv('WAITER_ADMIN', default=FALSE_STRINGS[0]))

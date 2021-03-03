@@ -8,7 +8,8 @@ import requests
 from waiter import terminal, http_util
 from waiter.data_format import load_data
 from waiter.querying import get_token, query_token, get_target_cluster_from_token
-from waiter.util import FALSE_STRINGS, print_info, response_message, TRUE_STRINGS, guard_no_cluster, str2bool
+from waiter.util import FALSE_STRINGS, is_admin_enabled, print_info, response_message, TRUE_STRINGS, guard_no_cluster, \
+    str2bool
 
 BOOL_STRINGS = TRUE_STRINGS + FALSE_STRINGS
 INT_PARAM_SUFFIXES = ['-failures', '-index', '-instances', '-length', '-level', '-mins', '-secs']
@@ -138,10 +139,9 @@ def create_or_update_token(clusters, args, _, enforce_cluster, action):
 
 def add_arguments(parser):
     """Adds arguments to the given parser"""
-    is_admin_enabled = str2bool(os.getenv('WAITER_ADMIN', default=FALSE_STRINGS[0]))
     add_token_flags(parser)
     parser.add_argument('token', nargs='?')
-    if is_admin_enabled:
+    if is_admin_enabled():
         parser.add_argument('--admin', '-a', help='run command in admin mode', action='store_true')
     format_group = parser.add_mutually_exclusive_group()
     format_group.add_argument('--json', help='provide the data in a JSON file', dest='json')

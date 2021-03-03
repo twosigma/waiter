@@ -295,6 +295,19 @@ def services_for_token(waiter_url, token_name, assert_response=True, expected_st
     return services
 
 
+def instances_for_service(waiter_url, service_id, expected_status_code=200):
+    """returns instances map of a service"""
+    headers = {
+        'Content-Type': 'application/json',
+        'x-cid': cid()
+    }
+    response = session.get(f'{waiter_url}/apps/{service_id}', headers=headers)
+    service = response.json()
+    assert expected_status_code == response.status_code, \
+        f'Expected {expected_status_code}, got {response.status_code} with body {response.text}'
+    return service['instances']
+
+
 def multi_cluster_tests_enabled():
     """
     Returns true if the WAITER_TEST_MULTI_CLUSTER environment variable is set to "true",
@@ -322,3 +335,16 @@ def wait_until_services_for_token(waiter_url, token_name, expected_num_services)
 
 def wait_until_no_services_for_token(waiter_url, token_name):
     wait_until_services_for_token(waiter_url, token_name, 0)
+
+
+def retrieve_default_scheduler_name(waiter_url):
+    """gets the scheduler of waiter"""
+    settings = retrieve_waiter_settings(waiter_url)
+    kind = settings["scheduler-config"]["kind"]
+    default_scheduler = settings["scheduler-config"][kind].get("default-scheduler", False)
+    return default_scheduler or kind
+
+
+def using_kubernetes(waiter_url):
+    """returns True if the scheduler of waiter is k8s and False otherwise"""
+    return "kubernetes" == retrieve_default_scheduler_name(waiter_url)
