@@ -239,15 +239,23 @@ def load_file(file_format, path):
     return content
 
 
-def wait_until_routers(waiter_url, predicate):
+def wait_until_routers(waiter_url, route, predicate):
     auth_cookie = {'x-waiter-auth': session.cookies['x-waiter-auth']}
     max_wait_ms = retrieve_waiter_settings(waiter_url)['scheduler-syncer-interval-secs'] * 2 * 1000
     routers = session.get(f'{waiter_url}/state/maintainer').json()['state']['routers']
     for _, router_url in routers.items():
         logging.debug(f'Waiting for at most {max_wait_ms}ms on {router_url}')
-        wait_until(lambda: requests.get(f'{router_url.rstrip("/")}/apps', cookies=auth_cookie).json(),
+        wait_until(lambda: requests.get(f'{router_url.rstrip("/")}{route}', cookies=auth_cookie).json(),
                    predicate,
                    max_wait_ms=max_wait_ms)
+
+
+def wait_until_routers_services(waiter_url, predicate):
+    wait_until_routers(waiter_url, '/apps', predicate)
+
+
+def wait_until_routers_service(waiter_url, service_id, predicate):
+    wait_until_routers(waiter_url, f'/apps/{service_id}', predicate)
 
 
 def ping_token(waiter_url, token_name, expected_status_code=200):
@@ -263,12 +271,12 @@ def ping_token(waiter_url, token_name, expected_status_code=200):
         expected_status_code == response.status_code, \
         f'Expected {expected_status_code}, got {response.status_code} with body {response.text} '
     service_id = response.headers['x-waiter-service-id']
-    wait_until_routers(waiter_url, lambda services: any(s['service-id'] == service_id for s in services))
+    wait_until_routers_services(waiter_url, lambda services: any(s['service-id'] == service_id for s in services))
     return service_id
 
 
 def wait_until_routers_recognize_service_killed(waiter_url, service_id):
-    wait_until_routers(waiter_url, lambda services: not any(s['service-id'] == service_id for s in services))
+    wait_until_routers_services(waiter_url, lambda services: not any(s['service-id'] == service_id for s in services))
 
 
 def kill_service(waiter_url, service_id):

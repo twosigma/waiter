@@ -1582,6 +1582,10 @@ class WaiterCliTest(util.WaiterTest):
                    container_name=None, is_failed_instance=False, test_service=False, test_instance=False,
                    multiple_services=False, quick=False, expect_no_data=False, expect_no_instances=False,
                    expect_out_of_range=False):
+        # flakyness in choosing the instance (quick failed)
+        # instance should be considered random
+        # failed instances should be considered chosen at random
+
         token_name = self.token_name()
         token_fields = util.minimal_service_description()
         token_fields['min-instances'] = min_instances
@@ -1602,13 +1606,14 @@ class WaiterCliTest(util.WaiterTest):
                 goal_fn = lambda insts: min_instances == len(insts['active-instances']) and \
                                         0 == len(insts['failed-instances']) and \
                                         0 == len(insts['killed-instances'])
-            util.wait_until(lambda: util.instances_for_service(self.waiter_url, service_id), goal_fn)
+            util.wait_until_routers_service(self.waiter_url, service_id, lambda service: goal_fn(service['instances']))
             instances = util.instances_for_service(self.waiter_url, service_id)
             env = os.environ.copy()
             env['WAITER_SSH'] = 'echo'
             env['WAITER_KUBECTL'] = 'echo'
             if admin:
                 env['WAITER_ADMIN'] = 'true'
+            # get possible instances
             instance = instance_fn(service_id, instances)
             ssh_flags = [ssh_flags] if ssh_flags else []
             if quick:
@@ -1638,6 +1643,7 @@ class WaiterCliTest(util.WaiterTest):
             else:
                 log_directory = instance['log-directory']
                 self.assertEqual(0, cp.returncode, cp.stderr)
+                # iterate through possible instannces and at least one should match this portion
                 if util.using_kubernetes(self.waiter_url):
                     container_name = container_name or 'waiter-app'
                     api_server = instance['k8s/api-server-url']
