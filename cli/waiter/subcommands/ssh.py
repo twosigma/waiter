@@ -183,17 +183,20 @@ def register(add_parser):
     parser.add_argument('--quick', '-q', dest='quick', action='store_true',
                         help='skips services prompt by selecting the service with latest request, and instances prompt '
                              'by selecting a random one.')
-    parser.add_argument('--active', '-a',  dest='include_active_instances', action='store_true', default=True,
-                        help='included by default; includes active instances when prompting')
-    parser.add_argument('--failed', '-f', dest='include_failed_instances', action='store_true',
-                        help='includes failed instances when prompting')
-    parser.add_argument('--killed', '-k', dest='include_killed_instances', action='store_true',
-                        help='includes killed instances when prompting')
-    parser.add_argument('--no-active', dest='include_active_instances', action='store_false',
-                        help="don't show active instances in prompt")
-    parser.add_argument('--no-failed', dest='include_failed_instances', action='store_false',
-                        help="don't show failed instances in prompt")
-    parser.add_argument('--no-killed', dest='include_killed_instances', action='store_false',
-                        help="don't show killed instances in prompt")
+    active_group = parser.add_mutually_exclusive_group(required=False)
+    failed_group = parser.add_mutually_exclusive_group(required=False)
+    killed_group = parser.add_mutually_exclusive_group(required=False)
+    active_group.add_argument('--active', '-a', dest='include_active_instances', action='store_true', default=True,
+                              help='included by default; includes active instances when prompting')
+    failed_group.add_argument('--failed', '-f', dest='include_failed_instances', action='store_true',
+                              help='includes failed instances when prompting')
+    killed_group.add_argument('--killed', '-k', dest='include_killed_instances', action='store_true',
+                              help='includes killed instances when prompting')
+    active_group.add_argument('--no-active', dest='include_active_instances', action='store_false',
+                              help="don't show active instances in prompt")
+    failed_group.add_argument('--no-failed', dest='include_failed_instances', action='store_false',
+                              help="don't show failed instances in prompt")
+    killed_group.add_argument('--no-killed', dest='include_killed_instances', action='store_false',
+                              help="don't show killed instances in prompt")
     parser.add_argument('command', nargs=argparse.REMAINDER, help='command to be run on instance')
     return ssh
