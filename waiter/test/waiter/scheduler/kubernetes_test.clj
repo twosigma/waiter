@@ -192,6 +192,18 @@
           (is (= spec-termination-grace-period-secs
                  (get-in replicaset-spec [:spec :template :spec :terminationGracePeriodSeconds]))))))))
 
+(deftest test-replicaset-spec-pre-stop-cmd
+  (let [current-time (t/now)]
+    (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
+                  config/retrieve-waiter-principal (constantly "waiter@test.com")
+                  t/now (constantly current-time)]
+      (let [service-description (assoc dummy-service-description "pre-stop-cmd" "/exec/script")
+            scheduler (make-dummy-scheduler ["test-service-id"]
+                                            {:service-id->service-description-fn (constantly service-description)})
+            replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description)]
+        (is (= ["/exec/script"]
+               (get-in replicaset-spec [:spec :template :spec :containers 0 :lifecycle :preStop :exec :command])))))))
+
 (deftest test-get-port-range
   ;; this condition is critical for our sidecar-proxy logic,
   ;; which reserves a second range of ports by incrementing the hash code,

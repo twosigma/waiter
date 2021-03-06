@@ -947,7 +947,7 @@
    service-id
    {:strs [backend-proto cmd cpus grace-period-secs health-check-authentication health-check-interval-secs
            health-check-max-consecutive-failures health-check-port-index health-check-proto image
-           mem min-instances namespace ports run-as-user termination-grace-period-secs]
+           mem min-instances namespace ports pre-stop-cmd run-as-user termination-grace-period-secs]
     :as service-description}
    {:keys [container-init-commands default-container-image default-namespace log-bucket-url image-aliases]
     :as context}]
@@ -1073,6 +1073,8 @@
                                  ;; whereas Kubernetes treats it as a run count.
                                  :failureThreshold (inc health-check-max-consecutive-failures)
                                  :initialDelaySeconds grace-period-secs)))
+      (not (str/blank? pre-stop-cmd))
+      (assoc-in [:spec :template :spec :containers 0 :lifecycle :preStop :exec :command] [pre-stop-cmd])
       ;; Optional fileserver sidecar container
       ;; fileserver port must be provided and the container must be enabled on the service
       fileserver-enabled?

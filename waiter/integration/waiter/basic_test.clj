@@ -23,6 +23,7 @@
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
             [plumbing.core :as pc]
+            [waiter.headers :as headers]
             [waiter.interstitial :as interstitial]
             [waiter.schema :as schema]
             [waiter.service-description :as sd]
@@ -455,17 +456,24 @@
           max-constraints (sd/extract-max-constraints constraints)]
       (is (seq max-constraints))
       (doseq [[parameter max-constraint] (rest max-constraints)]
-        (let [headers {:x-waiter-cmd "false"
-                       :x-waiter-cmd-type "shell"
-                       :x-waiter-name (rand-name)
-                       :x-waiter-version "1"
-                       (keyword (str "x-waiter-" (name parameter))) (inc max-constraint)}
+        (let [string-param? (contains? headers/params-with-str-value (name parameter))
+              param-value (if string-param?
+                            (apply str (repeat (inc max-constraint) "x"))
+                            (inc max-constraint))
+              headers (-> {:x-waiter-cmd "false"
+                               :x-waiter-cmd-type "shell"
+                               :x-waiter-name (rand-name)
+                               :x-waiter-version "1"}
+                        (assoc (keyword (str "x-waiter-" (name parameter))) param-value))
               {:keys [body] :as response} (make-light-request waiter-url headers)]
           (assert-response-status response http-400-bad-request)
           (is (not (str/includes? body "clojure")) body)
           (is (every? #(str/includes? body %)
-                      ["The following fields exceed their allowed limits"
-                       (str (name parameter) " is " (inc max-constraint) " but the max allowed is " max-constraint)])
+                      (cond-> ["The following fields exceed their allowed limits"]
+                        (not string-param?)
+                        (conj (str (name parameter) " is " (inc max-constraint) " but the max allowed is " max-constraint))
+                        string-param?
+                        (conj (str (name parameter) " must be at most " max-constraint " characters"))))
               body))))))
 
 (deftest ^:parallel ^:integration-fast test-header-metadata
@@ -660,7 +668,7 @@
 
           (testing "should provide effective service description when requested"
             (let [service (service waiter-url service-id {"effective-parameters" "true"})]
-              (is (= (disj sd/service-parameter-keys "image" "namespace" "profile" "scheduler")
+              (is (= (disj sd/service-parameter-keys "image" "namespace" "pre-stop-cmd" "profile" "scheduler")
                      (set (keys (get service "effective-parameters")))))))))
 
       (let [{:keys [cookies service-id]} (make-request-with-debug-info

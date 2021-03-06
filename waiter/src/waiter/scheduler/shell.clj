@@ -700,8 +700,14 @@
                        (dissoc :service-id->health-check-context)))))
 
   (validate-service [_ service-id]
-    (let [{:strs [image]} (service-id->service-description-fn service-id)]
-      (when image (throw (ex-info "Image field is set. Images are not supported with shell scheduler" {:image image}))))))
+    (let [{:strs [image pre-stop-cmd] :as service-description} (service-id->service-description-fn service-id)]
+      (when-not (str/blank? image)
+        (throw (ex-info "Image field is set. Images are not supported with shell scheduler" {:image image})))
+      (when-not (str/blank? pre-stop-cmd)
+        (throw (ex-info "Unsupported pre-stop-cmd on service"
+                        {:pre-stop-cmd pre-stop-cmd
+                         :service-description service-description
+                         :service-id service-id}))))))
 
 (s/defn ^:always-validate create-shell-scheduler
   "Returns a new ShellScheduler with the provided configuration. Validates the

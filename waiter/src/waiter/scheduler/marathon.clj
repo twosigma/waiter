@@ -472,7 +472,7 @@
                        (dissoc :service-id->health-check-context)))))
 
   (validate-service [_ service-id]
-    (let [{:strs [cmd-type health-check-authentication run-as-user] :as service-description}
+    (let [{:strs [cmd-type health-check-authentication pre-stop-cmd run-as-user] :as service-description}
           (service-id->service-description-fn service-id)]
       (authz/check-user authorizer run-as-user service-id)
       (when (= "docker" cmd-type)
@@ -483,6 +483,11 @@
       (when (not= "disabled" health-check-authentication)
         (throw (ex-info "Unsupported health check authentication on service"
                         {:health-check-authentication health-check-authentication
+                         :service-description service-description
+                         :service-id service-id})))
+      (when-not (str/blank? pre-stop-cmd)
+        (throw (ex-info "Unsupported pre-stop-cmd on service"
+                        {:pre-stop-cmd pre-stop-cmd
                          :service-description service-description
                          :service-id service-id}))))))
 

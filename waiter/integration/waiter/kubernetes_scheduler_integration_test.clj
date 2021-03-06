@@ -5,7 +5,8 @@
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
             [waiter.status-codes :refer :all]
-            [waiter.util.client-tools :refer :all]))
+            [waiter.util.client-tools :refer :all])
+  (:import (java.net ServerSocket)))
 
 (defn- get-watch-state [state-json]
   (or (get-in state-json ["state" "watch-state"])
@@ -422,3 +423,39 @@
                   (is (contains? response-body reverse-proxy-flag))
                   (is (= "yes" (get response-body reverse-proxy-flag))))))))
         (log/warn "skipping the integration test as :reverse-proxy is not defined")))))
+
+(deftest ^:parallel ^:integration-fast test-kubernetes-pre-stop-command
+  (testing-using-waiter-url
+    (when (using-k8s? waiter-url)
+      (let [timeout-ms 60000
+            server-socket (doto (ServerSocket.)
+                            (.setSoTimeout timeout-ms))
+            pre-stop-cmd (str "/usr/bin/nc " (retrieve-hostname) " " (.getLocalPort server-socket))
+            _ (println "pre-stop command is" pre-stop-cmd)
+            request-headers {:x-waiter-name (rand-name)
+                             :x-waiter-pre-stop-cmd pre-stop-cmd}
+            {:keys [cookies service-id] :as response} (make-request-with-debug-info
+                                                        request-headers
+                                                        #(make-kitchen-request waiter-url % :method :get :path "/status"))
+            pre-stop-callback-promise (promise)]
+        (with-service-cleanup
+          service-id
+          (assert-response-status response http-200-ok)
+          (assert-service-on-all-routers waiter-url service-id cookies)
+
+          (launch-thread
+            (try
+              (println "waiting for callback on socket")
+              (.accept server-socket)
+              (println service-id "deleted")
+              (deliver pre-stop-callback-promise :called)
+              (catch Exception ex
+                (println "Error in listening for socket message" (.getMessage ex)))))
+
+          ;; deleting the service terminates any running pods
+          (delete-service waiter-url service-id)
+          (println service-id "deleted")
+
+          (is (= :called (deref pre-stop-callback-promise timeout-ms :timeout)))
+          (println "closing socket" server-socket)
+          (.close server-socket))))))

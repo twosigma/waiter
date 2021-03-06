@@ -435,7 +435,8 @@
                                         :default {:factory-fn 'waiter.service-description/create-default-service-description-builder}}
    :service-description-constraints {"cmd" {:max 1200}
                                      "cpus" {:max 32}
-                                     "mem" {:max (* 128 1024)}}
+                                     "mem" {:max (* 128 1024)}
+                                     "pre-stop-cmd" {:max 1200}}
    :service-description-defaults {"allowed-params" #{}
                                   "authentication" "standard"
                                   "backend-proto" "http"
