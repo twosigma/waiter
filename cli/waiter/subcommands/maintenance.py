@@ -57,6 +57,7 @@ def check_maintenance(clusters, args, enforce_cluster):
 def start_maintenance(clusters, args, enforce_cluster):
     """Sets the token in maintenance mode by updating the token user metadata fields"""
     token_name = args['token']
+    timeout_secs = args['timeout']
     kill_services_option = args.pop('kill_services', 'force_kill')
     cluster, existing_token_data, existing_token_etag = _get_existing_token_data(clusters, token_name, enforce_cluster)
     json_body = existing_token_data
@@ -64,6 +65,7 @@ def start_maintenance(clusters, args, enforce_cluster):
     json_body.update(update_doc)
     return_code, token_etag = _update_token(cluster, token_name, existing_token_etag, json_body)
     if return_code == 0:
+        print_info(f'{token_name} maintenance mode activated on cluster {cluster}.')
         kill_services = False
         force_flag = False
         if kill_services_option == 'force_kill':
@@ -76,7 +78,6 @@ def start_maintenance(clusters, args, enforce_cluster):
                       f"{'force ' if force_flag else ''} kill services")
         if kill_services:
             if token_etag:
-                timeout_secs = 5
                 success = process_kill_request(clusters, token_name, False, force_flag, timeout_secs, True)
                 return 0 if success else 1
             else:
@@ -147,7 +148,7 @@ def register_stop(add_parser):
                             help='Skip pinging the token. Pinging the token is enabled by default.')
     ping_group.add_argument('--ping', action='store_true', dest='ping_token',
                             help='Ping the token after stopping maintenance.')
-    parser.add_argument('--timeout', '-t', default=300, help='read timeout (in seconds) for ping request',
+    parser.add_argument('--timeout', '-t', default=300, help='read timeout (in seconds) for ping request.',
                         type=check_positive)
     parser.add_argument('token')
     parser.set_defaults(sub_func=stop_maintenance)
@@ -167,6 +168,8 @@ def register_start(add_parser):
                                  "Killing the token's services is enabled by default.")
     kill_group.add_argument('--no-kill', action='store_const', const='no_kill', dest='kill_services',
                             help="Skip killing the token's currently running services.")
+    parser.add_argument('--timeout', '-t', default=10, help='timeout (in seconds) for service kill requests.',
+                        type=check_positive)
     parser.add_argument('token')
     parser.add_argument('message',
                         help='Your message will be provided in a 503 response for requests to the token. '
