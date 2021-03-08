@@ -1453,6 +1453,7 @@ class WaiterCliTest(util.WaiterTest):
             cp = cli.maintenance('start', token_name, self.waiter_url,
                                  maintenance_flags=f'{start_args} "{custom_maintenance_message}"')
             self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('Maintenance mode activated', cli.stdout(cp))
             token_data = util.load_token(self.waiter_url, token_name)
             self.assertEqual({'message': custom_maintenance_message}, token_data['maintenance'])
             for key, value in token_fields.items():
