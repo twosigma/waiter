@@ -65,7 +65,7 @@ def start_maintenance(clusters, args, enforce_cluster):
     json_body.update(update_doc)
     return_code, token_etag = _update_token(cluster, token_name, existing_token_etag, json_body)
     if return_code == 0:
-        print_info(f'{token_name} maintenance mode activated on cluster {cluster}.')
+        print_info(f'maintenance mode activated for {terminal.bold(token_name)} on cluster {terminal.bold(cluster)}.')
         kill_services = False
         force_flag = False
         if kill_services_option == 'force_kill':
