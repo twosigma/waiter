@@ -1367,11 +1367,12 @@
                              [[:settings
                                [:watch-config
                                 [:tokens channels-update-chan-buffer-size tokens-update-chan-buffer-size
-                                 watch-refresh-timeout-ms]]]
+                                 owner-batch-chan-buffer-size watch-refresh-batch-size watch-refresh-timeout-ms]]]
                               [:state clock kv-store]]
                              (let [watch-refresh-timer-chan (au/timer-chan watch-refresh-timeout-ms)]
                                (token-watch/start-token-watch-maintainer
-                                 kv-store clock tokens-update-chan-buffer-size channels-update-chan-buffer-size watch-refresh-timer-chan)))})
+                                 kv-store clock tokens-update-chan-buffer-size channels-update-chan-buffer-size
+                                 watch-refresh-timer-chan watch-refresh-batch-size owner-batch-chan-buffer-size)))})
 
 (def request-handlers
   {:app-name-handler-fn (pc/fnk [service-id-handler-fn]

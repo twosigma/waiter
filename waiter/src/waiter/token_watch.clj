@@ -36,7 +36,8 @@
 (defn start-token-watch-maintainer
   "Starts daemon thread that maintains token watches and process/filters internal token events to be streamed to
   clients through the watch handlers. Returns map of various channels and state functions to control the daemon."
-  [kv-store clock tokens-update-chan-buffer-size channels-update-chan-buffer-size watch-refresh-timer-chan]
+  [kv-store clock tokens-update-chan-buffer-size channels-update-chan-buffer-size watch-refresh-timer-chan
+   watch-refresh-batch-size owner-batch-chan-buffer-size]
   (cid/with-correlation-id
     "token-watch-maintainer"
     (let [exit-chan (async/promise-chan)
@@ -44,7 +45,8 @@
           tokens-update-chan (async/chan tokens-update-chan-buffer)
           tokens-watch-channels-update-chan-buffer (async/buffer channels-update-chan-buffer-size)
           tokens-watch-channels-update-chan (async/chan tokens-watch-channels-update-chan-buffer)
-          owner-batch-chan (async/chan 1000)
+          owner-batch-chan-buffer (async/buffer owner-batch-chan-buffer-size)
+          owner-batch-chan (async/chan owner-batch-chan-buffer)
           query-chan (async/chan)
           state-atom (atom {:last-update-time (clock)
                             :token->index (token/get-token->index kv-store :refresh true)
@@ -58,7 +60,8 @@
                       (contains? include-flags "token->index")
                       (assoc :token->index token->index)
                       (contains? include-flags "buffer-state")
-                      (assoc :buffer-state {:update-chan-count (.count tokens-update-chan-buffer)
+                      (assoc :buffer-state {:owner-batch-chan-count (.count owner-batch-chan-buffer)
+                                            :update-chan-count (.count tokens-update-chan-buffer)
                                             :watch-channels-update-chan-count (.count tokens-watch-channels-update-chan-buffer)}))))
           go-chan
           (async/go
@@ -86,7 +89,7 @@
                             (if (= token-index-entry local-token-index-entry)
                               ; There is no change detected, so no event to be reported
                               current-state
-                              (let [[index-event next-state] ; TODO: make change here
+                              (let [[index-event next-state]
                                     (if (some? token-index-entry)
                                       ; If index-entry retrieved from kv-store exists then treat as UPDATE
                                       ; (includes token creation and soft deletion)
@@ -151,12 +154,14 @@
                                                  :watch-chans open-chans)))
 
                         watch-refresh-timer-chan
+                        ; TODO: how to handle back pressure from owner-batch-chan?
                         (timers/start-stop-time!
                           (metrics/waiter-timer "core" "token-watch-maintainer" "refresh")
                           (let [owners (token/list-token-owners kv-store)]
-                            (doseq [owner-batch (partition 100 100 []  (token/list-token-owners kv-store))]
+                            (doseq [owner-batch (partition watch-refresh-batch-size watch-refresh-batch-size []
+                                                           (token/list-token-owners kv-store))]
                               (async/put! owner-batch-chan (set owner-batch)))
-                            ; trigger a heart beat if no owners
+                            ; trigger a heart beat even if no owners
                             (when (empty? owners)
                               (async/put! owner-batch-chan #{})))
                           current-state)

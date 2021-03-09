@@ -128,7 +128,7 @@
     (let [kv-store (kv/->LocalKeyValueStore (atom {}))
           watch-chans (create-watch-chans 10)
           {:keys [exit-chan go-chan query-chan tokens-watch-channels-update-chan]}
-          (start-token-watch-maintainer kv-store clock 1 1 (async/chan))]
+          (start-token-watch-maintainer kv-store clock 1 1 (async/chan) 50 1)]
       (is (= {:last-update-time (clock)
               :token->index {}
               :watch-count 0}
@@ -150,7 +150,7 @@
           _ (store-service-description-for-token
               synchronize-fn kv-store history-length limit-per-owner "token1" token1-service-desc token1-metadata)
           {:keys [exit-chan go-chan query-chan tokens-watch-channels-update-chan]}
-          (start-token-watch-maintainer kv-store clock 1 1 (async/chan))
+          (start-token-watch-maintainer kv-store clock 1 1 (async/chan) 50 1)
           token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1"))
           expected-token->index {"token1" token-cur-index}]
       (is (= {:last-update-time (clock)
@@ -174,7 +174,7 @@
     (let [kv-store (kv/->LocalKeyValueStore (atom {}))
           watch-chans (create-watch-chans 10)
           {:keys [exit-chan go-chan tokens-update-chan query-chan tokens-watch-channels-update-chan]}
-          (start-token-watch-maintainer kv-store clock 1 1 (async/chan))]
+          (start-token-watch-maintainer kv-store clock 1 1 (async/chan) 50 1)]
 
       (testing "watch-channels get UPDATE event for added tokens"
         (add-watch-chans tokens-watch-channels-update-chan watch-chans)
@@ -254,7 +254,7 @@
           watch-chans-1 (create-watch-chans 10)
           watch-chans-2 (create-watch-chans 10)
           {:keys [exit-chan go-chan tokens-watch-channels-update-chan query-chan]}
-          (start-token-watch-maintainer kv-store clock 1 1 watch-refresh-timer-chan)]
+          (start-token-watch-maintainer kv-store clock 1 1 watch-refresh-timer-chan 50 1)]
       (is (= {:last-update-time (clock)
               :token->index {}
               :watch-count 0}
@@ -296,7 +296,7 @@
           watch-chans (create-watch-chans 10)
           watch-refresh-timer-chan (async/chan)
           {:keys [exit-chan go-chan tokens-watch-channels-update-chan query-chan]}
-          (start-token-watch-maintainer kv-store clock 1 1 watch-refresh-timer-chan)]
+          (start-token-watch-maintainer kv-store clock 1 1 watch-refresh-timer-chan 50 1)]
       (is (= {:last-update-time (clock)
               :token->index {}
               :watch-count 0}
@@ -372,7 +372,7 @@
   (deftest test-start-token-watch-maintainer-query-state
     (let [kv-store (kv/->LocalKeyValueStore (atom {}))
           {:keys [exit-chan go-chan query-state-fn]}
-          (start-token-watch-maintainer kv-store clock 1 1 (async/chan))]
+          (start-token-watch-maintainer kv-store clock 1 1 (async/chan) 50 1)]
 
       (testing "query-state-fn provides current state with default fields"
         (is (= {:last-update-time (clock)
@@ -380,7 +380,8 @@
                (query-state-fn #{}))))
 
       (testing "query-state-fn respects include-flags"
-        (is (= {:buffer-state {:update-chan-count 0
+        (is (= {:buffer-state {:owner-batch-chan-count 0
+                               :update-chan-count 0
                                :watch-channels-update-chan-count 0}
                 :last-update-time (clock)
                 :token->index {}
@@ -392,7 +393,7 @@
   (deftest test-start-token-watch-maintainer-slow-channel
     (let [kv-store (kv/->LocalKeyValueStore (atom {}))
           {:keys [exit-chan go-chan tokens-update-chan tokens-watch-channels-update-chan query-chan]}
-          (start-token-watch-maintainer kv-store clock 1 1 (async/chan))]
+          (start-token-watch-maintainer kv-store clock 1 1 (async/chan) 50 1)]
 
       (testing "sending 5000 internal events does not halt daemon process with a slow watch-channel"
         (let [buffer-size 1
@@ -429,14 +430,15 @@
   (deftest test-start-token-watch-maintainer-buffer-state
     (let [kv-store (kv/->LocalKeyValueStore (atom {}))
           {:keys [exit-chan go-chan tokens-update-chan tokens-watch-channels-update-chan query-state-fn]}
-          (start-token-watch-maintainer kv-store clock 1000 1000 (async/chan))
+          (start-token-watch-maintainer kv-store clock 1000 1000 (async/chan) 50 1)
           expected-buffer-count 123]
       (stop-token-watch-maintainer go-chan exit-chan)
 
       (testing "state provides correct current buffer count for tokens-update-chan"
         (dotimes [_ expected-buffer-count]
           (async/put! tokens-update-chan (async/chan)))
-        (is (= {:buffer-state {:update-chan-count expected-buffer-count
+        (is (= {:buffer-state {:owner-batch-chan-count 0
+                               :update-chan-count expected-buffer-count
                                :watch-channels-update-chan-count 0}
                 :last-update-time (clock)
                 :watch-count 0}
@@ -445,7 +447,8 @@
       (testing "state provides correct current buffer count for tokens-watch-channels-update-chan"
         (dotimes [_ expected-buffer-count]
           (async/put! tokens-watch-channels-update-chan (async/chan)))
-        (is (= {:buffer-state {:update-chan-count expected-buffer-count
+        (is (= {:buffer-state {:owner-batch-chan-count 0
+                               :update-chan-count expected-buffer-count
                                :watch-channels-update-chan-count expected-buffer-count}
                 :last-update-time (clock)
                 :watch-count 0}

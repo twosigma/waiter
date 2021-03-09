@@ -1064,9 +1064,23 @@
                          ;; tokens are created, updated, deleted (including index refresh endpoint)
                          :tokens-update-chan-buffer-size 1024
 
-                         ;; Time the token-watch-maintainer waits before fetching
-                         ;; the kv-store for up to date indexes and sending possible
-                         ;; missed events to listening watches
+                         ;; Buffer size of the owner-batch-chan
+                         ;; This will limit the number of possible owners that waiter supports to this equation:
+                         ;; Note: the extra 1024 value comes from the maximum allowed buffered messages from a
+                         ;; async/put! call
+                         ;; max-owner-count = (owner-batch-chan-buffer-size + 1024) * watch-refresh-batch-size
+                         :owner-batch-chan-buffer-size 1024
+
+                         ;; Batch size of the owner batches created when handling a full refresh.
+                         ;; It is important to consider the time it takes to process each batch, as events will wait for
+                         ;; the batch to finish processing. The bottleneck will be in refreshing the key value store for
+                         ;; each owner in the batch. So time for processing is similar to this equation:
+                         ;; batch-process-time = watch-refresh-batch-size * refresh-kv-store-for-one-owner
+                         :watch-refresh-batch-size 50
+
+                         ;; Time the token-watch-maintainer waits before creating refresh batches to be processed at a
+                         ;; lower priority than the tokens-update-chan and channels-update-chan
+                         ;; This time should be much greater than the time it takes to process all the batches.
                          :watch-refresh-timeout-ms 10000}}
 
  ;; Waiter supports making websocket connections to backends.
