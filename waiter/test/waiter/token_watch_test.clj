@@ -39,6 +39,39 @@
 
   (defn- clock-millis [] (.getMillis ^DateTime (clock))))
 
+(defn- create-watch-chans
+  [x]
+  (for [_ (range x)]
+    (async/chan (async/sliding-buffer 1024))))
+
+(defn- poll-watch-chans-next-messages!
+  [chans]
+  (for [chan chans]
+    (loop [msg (async/poll! chan)
+           msgs []]
+      (if msg
+        (recur (async/poll! chan) (conj msgs msg))
+        msgs))))
+
+(defn- poll-watch-chans-events!
+  [chans]
+  (let [chans-msgs (poll-watch-chans-next-messages! chans)
+        chans-events (map
+                      (fn [msgs]
+                        (reduce
+                          (fn [events {:keys [object]}]
+                            (concat events object))
+                          []
+                          msgs))
+                      chans-msgs)]
+    chans-events))
+
+(defn- get-watch-chans-next-message!!
+  [chans]
+  (let [res (for [chan chans] (async/<!! chan))]
+    (assert (apply = res))
+    (first res)))
+
 (defmacro assert-channels-no-new-message
   [chans timeout-ms]
   `(let [chans# ~chans
@@ -54,8 +87,9 @@
   [chans msg-fn]
   `(let [chans# ~chans
          msg-fn# ~msg-fn
-         res# (for [chan# chans#] (async/<!! chan#))]
-     (is (every? msg-fn# res#))))
+         msg# (get-watch-chans-next-message!! chans#)]
+     (is (msg-fn# msg#)
+         (str "Message received did not satisfy function: " msg#))))
 
 (defmacro assert-channels-next-message
   "Assert that list of channels next message"
@@ -64,10 +98,16 @@
          msg# ~msg]
      (assert-channels-next-message-with-fn chans# #(= % msg#))))
 
-(defn- create-watch-chans
-  [x]
-  (for [_ (range x)]
-    (async/chan (async/sliding-buffer 1024))))
+(defmacro assert-watch-chans-aggregate-events
+  [chans events]
+  `(let [chans# ~chans
+         events# ~events
+         chans-events# (poll-watch-chans-events! chans#)
+         msg-counts# (map count chans-events#)]
+     (is (apply = msg-counts#))
+     (is (apply = (map frequencies chans-events#)))
+     (is (= (frequencies (first chans-events#))
+            (frequencies events#)))))
 
 (deftest test-send-event-to-channels
   (let [event {:event :DELETE :object {:owner "owner1" :token "token1"}}]
@@ -296,7 +336,7 @@
           watch-chans (create-watch-chans 10)
           watch-refresh-timer-chan (async/chan)
           {:keys [exit-chan go-chan tokens-watch-channels-update-chan query-chan]}
-          (start-token-watch-maintainer kv-store clock 1 1 watch-refresh-timer-chan 50 1)]
+          (start-token-watch-maintainer kv-store clock 1 1 watch-refresh-timer-chan 1 1)]
       (is (= {:last-update-time (clock)
               :token->index {}
               :watch-count 0}
@@ -339,13 +379,13 @@
           (assert-channels-next-message watch-chans (make-aggregate-index-events
                                                       (make-index-event :UPDATE token-cur-index)))))
 
-      (testing "refresh-timeout should update current-state and watchers if token is soft deleted"
-        (delete-service-description-for-token clock synchronize-fn kv-store history-length "token1"
-                                              (get token1-index :owner) auth-user)
+      (testing "refresh-timeout should update current-state and watchers if token changes owners"
+        (store-service-description-for-token
+          synchronize-fn kv-store history-length limit-per-owner "token1" token1-service-desc
+          (assoc token1-metadata "owner" "owner2"))
         (trigger-token-watch-refresh watch-refresh-timer-chan)
         (let [token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1")
-                                                  :last-update-time (clock-millis)
-                                                  :deleted true)
+                                                  :owner "owner2")
               expected-token->index {"token1" token-cur-index}]
           (is (= {:last-update-time (clock)
                   :token->index expected-token->index
@@ -354,18 +394,46 @@
           (assert-channels-next-message watch-chans (make-aggregate-index-events
                                                       (make-index-event :UPDATE token-cur-index)))))
 
-      (testing "refresh-timeout should update current-state and watchers if token is hard deleted"
-        (delete-service-description-for-token clock synchronize-fn kv-store history-length "token1"
-                                              (get token1-index :owner) auth-user :hard-delete true)
+      (testing "refresh-timeout should update current-state and watchers if token changes owners"
+        (store-service-description-for-token
+          synchronize-fn kv-store history-length limit-per-owner "token1" token1-service-desc
+          (assoc token1-metadata "owner" "owner1"))
         (trigger-token-watch-refresh watch-refresh-timer-chan)
-        (is (= {:last-update-time (clock)
-                :token->index {}
-                :watch-count 10}
-               (get-latest-state query-chan)))
-        (assert-channels-next-message watch-chans (make-aggregate-index-events
-                                                    (make-index-event :DELETE
-                                                                      {:owner (get token1-index :owner)
-                                                                       :token "token1"}))))
+        (let [token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1")
+                                                  :owner "owner1")
+              expected-token->index {"token1" token-cur-index}]
+          (is (= {:last-update-time (clock)
+                  :token->index expected-token->index
+                  :watch-count 10}
+                 (get-latest-state query-chan)))
+          (assert-watch-chans-aggregate-events watch-chans [(make-index-event :UPDATE token-cur-index)])))
+
+      ;(testing "refresh-timeout should update current-state and watchers if token is soft deleted"
+      ;  (delete-service-description-for-token clock synchronize-fn kv-store history-length "token1"
+      ;                                        "owner2" auth-user)
+      ;  (trigger-token-watch-refresh watch-refresh-timer-chan)
+      ;  (let [token-cur-index (assoc token1-index :deleted true
+      ;                                            :etag (get-token-hash kv-store "token1")
+      ;                                            :last-update-time (clock-millis)
+      ;                                            :owner "owner2")
+      ;        expected-token->index {"token1" token-cur-index}]
+      ;    (is (= {:last-update-time (clock)
+      ;            :token->index expected-token->index
+      ;            :watch-count 10}
+      ;           (get-latest-state query-chan)))
+      ;    (assert-watch-chans-aggregate-events watch-chans [(make-index-event :UPDATE token-cur-index)])))
+      ;
+      ;(testing "refresh-timeout should update current-state and watchers if token is hard deleted"
+      ;  (delete-service-description-for-token clock synchronize-fn kv-store history-length "token1"
+      ;                                        "owner2" auth-user :hard-delete true)
+      ;  (trigger-token-watch-refresh watch-refresh-timer-chan)
+      ;  (is (= {:last-update-time (clock)
+      ;          :token->index {}
+      ;          :watch-count 10}
+      ;         (get-latest-state query-chan)))
+      ;  (assert-watch-chans-aggregate-events watch-chans [(make-index-event :DELETE
+      ;                                                                      {:owner "owner2"
+      ;                                                                       :token "token1"})]))
 
       (stop-token-watch-maintainer go-chan exit-chan)))
 

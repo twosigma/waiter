@@ -117,13 +117,20 @@
                           (let [owner-batch msg
                                 next-batch-token->index
                                 (token/get-token->index-with-owners kv-store owner-batch :refresh true)
+                                owner-batch-tokens (set (keys next-batch-token->index))
+                                _ (println "tokens of interest:" owner-batch-tokens)
                                 old-batch-token->index (reduce
                                                          (fn [cur-token->index [token index]]
-                                                           (if (contains? owner-batch (:owner index))
+                                                           (println "calc-old" token)
+                                                           (if (or (contains? owner-batch (:owner index))
+                                                                   (contains? owner-batch-tokens token))
                                                              (assoc cur-token->index token index)
                                                              cur-token->index))
                                                          {}
                                                          token->index)
+                                _ (println "token->index for batch")
+                                _ (println next-batch-token->index)
+                                _ (println old-batch-token->index)
                                 [only-old-indexes only-next-indexes _]
                                 (data/diff old-batch-token->index next-batch-token->index)
                                 ; if token in old-indexes and not in only-next-indexes, then those token indexes were deleted
@@ -153,10 +160,12 @@
                             (assoc current-state :token->index next-token->index
                                                  :watch-chans open-chans)))
 
+                        ; TODO: handle when an owner index is deleted from the kv-store
                         watch-refresh-timer-chan
                         (timers/start-stop-time!
                           (metrics/waiter-timer "core" "token-watch-maintainer" "refresh")
                           (let [owners (token/list-token-owners kv-store)]
+                            (println "owners:" owners)
                             (doseq [owner-batch (partition watch-refresh-batch-size watch-refresh-batch-size []
                                                            (token/list-token-owners kv-store))]
                               (async/put! owner-batch-chan (set owner-batch)))
