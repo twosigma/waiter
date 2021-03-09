@@ -429,14 +429,15 @@
 
   (deftest test-start-token-watch-maintainer-buffer-state
     (let [kv-store (kv/->LocalKeyValueStore (atom {}))
-          {:keys [exit-chan go-chan tokens-update-chan tokens-watch-channels-update-chan query-state-fn]}
-          (start-token-watch-maintainer kv-store clock 1000 1000 (async/chan) 50 1)
+          {:keys [exit-chan go-chan owner-batch-chan tokens-update-chan tokens-watch-channels-update-chan
+                  query-state-fn]}
+          (start-token-watch-maintainer kv-store clock 1000 1000 (async/chan) 50 1000)
           expected-buffer-count 123]
       (stop-token-watch-maintainer go-chan exit-chan)
 
       (testing "state provides correct current buffer count for tokens-update-chan"
         (dotimes [_ expected-buffer-count]
-          (async/put! tokens-update-chan (async/chan)))
+          (async/put! tokens-update-chan {}))
         (is (= {:buffer-state {:owner-batch-chan-count 0
                                :update-chan-count expected-buffer-count
                                :watch-channels-update-chan-count 0}
@@ -448,6 +449,16 @@
         (dotimes [_ expected-buffer-count]
           (async/put! tokens-watch-channels-update-chan (async/chan)))
         (is (= {:buffer-state {:owner-batch-chan-count 0
+                               :update-chan-count expected-buffer-count
+                               :watch-channels-update-chan-count expected-buffer-count}
+                :last-update-time (clock)
+                :watch-count 0}
+               (query-state-fn #{"buffer-state"}))))
+
+      (testing "state provides correct current buffer count for owner-batch-chan"
+        (dotimes [_ expected-buffer-count]
+          (async/put! owner-batch-chan #{}))
+        (is (= {:buffer-state {:owner-batch-chan-count expected-buffer-count
                                :update-chan-count expected-buffer-count
                                :watch-channels-update-chan-count expected-buffer-count}
                 :last-update-time (clock)

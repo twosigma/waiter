@@ -154,7 +154,6 @@
                                                  :watch-chans open-chans)))
 
                         watch-refresh-timer-chan
-                        ; TODO: how to handle back pressure from owner-batch-chan?
                         (timers/start-stop-time!
                           (metrics/waiter-timer "core" "token-watch-maintainer" "refresh")
                           (let [owners (token/list-token-owners kv-store)]
@@ -184,6 +183,7 @@
                             "core" "token-watch-maintainer" "watch-channels-update-chan-count")
       {:exit-chan exit-chan
        :go-chan go-chan
+       :owner-batch-chan owner-batch-chan
        :query-chan query-chan
        :query-state-fn query-state-fn
        :tokens-update-chan tokens-update-chan
