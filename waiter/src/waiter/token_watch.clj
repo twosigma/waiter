@@ -44,6 +44,7 @@
           tokens-update-chan (async/chan tokens-update-chan-buffer)
           tokens-watch-channels-update-chan-buffer (async/buffer channels-update-chan-buffer-size)
           tokens-watch-channels-update-chan (async/chan tokens-watch-channels-update-chan-buffer)
+          owner-batch-chan (async/chan 1000)
           query-chan (async/chan)
           state-atom (atom {:last-update-time (clock)
                             :token->index (token/get-token->index kv-store :refresh true)
@@ -65,7 +66,7 @@
               (loop [{:keys [token->index watch-chans] :as current-state} @state-atom]
                 (reset! state-atom current-state)
                 (let [[msg current-chan]
-                      (async/alts! [exit-chan tokens-update-chan tokens-watch-channels-update-chan
+                      (async/alts! [exit-chan tokens-update-chan tokens-watch-channels-update-chan owner-batch-chan
                                     watch-refresh-timer-chan query-chan]
                                    :priority true)
                       next-state
@@ -85,7 +86,7 @@
                             (if (= token-index-entry local-token-index-entry)
                               ; There is no change detected, so no event to be reported
                               current-state
-                              (let [[index-event next-state]
+                              (let [[index-event next-state] ; TODO: make change here
                                     (if (some? token-index-entry)
                                       ; If index-entry retrieved from kv-store exists then treat as UPDATE
                                       ; (includes token creation and soft deletion)
@@ -107,11 +108,21 @@
                             (async/put! watch-chan (make-index-event :INITIAL (or (vals token->index) [])))
                             (assoc current-state :watch-chans (conj watch-chans watch-chan))))
 
-                        watch-refresh-timer-chan
+                        owner-batch-chan
                         (timers/start-stop-time!
-                          (metrics/waiter-timer "core" "token-watch-maintainer" "refresh")
-                          (let [next-token->index (token/get-token->index kv-store :refresh true)
-                                [only-old-indexes only-next-indexes _] (data/diff token->index next-token->index)
+                          (metrics/waiter-timer "core" "token-watch-maintainer" "refresh-batch")
+                          (let [owner-batch msg
+                                next-batch-token->index
+                                (token/get-token->index-with-owners kv-store owner-batch :refresh true)
+                                old-batch-token->index (reduce
+                                                         (fn [cur-token->index [token index]]
+                                                           (if (contains? owner-batch (:owner index))
+                                                             (assoc cur-token->index token index)
+                                                             cur-token->index))
+                                                         {}
+                                                         token->index)
+                                [only-old-indexes only-next-indexes _]
+                                (data/diff old-batch-token->index next-batch-token->index)
                                 ; if token in old-indexes and not in only-next-indexes, then those token indexes were deleted
                                 delete-events
                                 (for [[token {:keys [owner]}] only-old-indexes
@@ -120,11 +131,13 @@
                                 ; if token in only-next-indexes, it has been updated (soft-delete, and creation included)
                                 update-events
                                 (for [[token _] only-next-indexes]
-                                  (make-index-event :UPDATE (get next-token->index token)))
+                                  (make-index-event :UPDATE (get next-batch-token->index token)))
                                 events (concat delete-events update-events)
-                                ; send events event if empty, which will serve as a heartbeat
-                                open-chans
-                                (send-event-to-channels! watch-chans (make-index-event :EVENTS events))]
+                                next-token->index
+                                (merge (->> only-old-indexes keys (apply dissoc token->index))
+                                       (select-keys next-batch-token->index (keys only-next-indexes)))
+                                ; send events even if empty, which will serve as a heartbeat
+                                open-chans (send-event-to-channels! watch-chans (make-index-event :EVENTS events))]
                             (when (not-empty events)
                               (counters/inc! (metrics/waiter-counter "core" "token-watch-maintainer" "refresh-sync"))
                               (meters/mark! (metrics/waiter-meter "core" "token-watch-maintainer" "refresh-sync-rate"))
@@ -136,6 +149,17 @@
                                          :token-count (count token->index)}))
                             (assoc current-state :token->index next-token->index
                                                  :watch-chans open-chans)))
+
+                        watch-refresh-timer-chan
+                        (timers/start-stop-time!
+                          (metrics/waiter-timer "core" "token-watch-maintainer" "refresh")
+                          (let [owners (token/list-token-owners kv-store)]
+                            (doseq [owner-batch (partition 100 100 []  (token/list-token-owners kv-store))]
+                              (async/put! owner-batch-chan (set owner-batch)))
+                            ; trigger a heart beat if no owners
+                            (when (empty? owners)
+                              (async/put! owner-batch-chan #{})))
+                          current-state)
 
                         query-chan
                         (let [{:keys [response-chan include-flags]} msg]

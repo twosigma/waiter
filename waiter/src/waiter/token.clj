@@ -272,21 +272,26 @@
                 (when-not (contains? new-owner-keys owner-key)
                   (kv/delete kv-store owner-key)))))))))
 
+  (defn get-token->index-with-owners
+    "Return a map of token to token index entry for the list of owners. The index entry will include the owner and
+    token. Specifying :refresh true will refresh the list of owners indexes."
+    [kv-store owners & {:keys [refresh] :or {refresh false}}]
+    (reduce
+      (fn [outer-token->index owner]
+        (reduce
+          (fn [inner-token->index [token entry]]
+            (->> (assoc entry :owner owner :token token)
+                 (assoc inner-token->index token)))
+          outer-token->index
+          (list-index-entries-for-owner kv-store owner :refresh refresh)))
+      {}
+      owners))
+
   (defn get-token->index
     "Return a map of ALL token to token index entry. The token index entries also include the owner and token.
      Specifying :refresh true will refresh all owner/token indexes and get the most up to date map."
     [kv-store & {:keys [refresh] :or {refresh false}}]
-    (->> kv-store
-         list-token-owners
-         (reduce
-           (fn [outer-token->index owner]
-             (reduce
-               (fn [inner-token->index [token entry]]
-                 (->> (assoc entry :owner owner :token token)
-                      (assoc inner-token->index token)))
-               outer-token->index
-               (list-index-entries-for-owner kv-store owner :refresh refresh)))
-           {})))
+    (get-token->index-with-owners kv-store (list-token-owners kv-store) :refresh refresh))
 
   (defn get-token-index
     "Given a token and owner, return the token index entry with the token and owner as added fields.
