@@ -30,7 +30,9 @@
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
             [waiter.util.ring-utils :as ru]
-            [waiter.util.utils :as utils])
+            [waiter.util.utils :as utils]
+            [metrics.timers :as timers]
+            [waiter.metrics :as metrics])
   (:import (org.joda.time DateTime)))
 
 (def ^:const ANY-USER "*")
@@ -276,17 +278,21 @@
     "Return a map of ALL token to token index entry. The token index entries also include the owner and token.
      Specifying :refresh true will refresh all owner/token indexes and get the most up to date map."
     [kv-store & {:keys [refresh] :or {refresh false}}]
-    (let [owner->owner-key (kv/fetch kv-store token-owners-key :refresh refresh)]
-      (reduce
-        (fn [outer-token->index [owner owner-key]]
-          (reduce
-            (fn [inner-token->index [token entry]]
-              (->> (assoc entry :owner owner :token token)
-                   (assoc inner-token->index token)))
-            outer-token->index
-            (kv/fetch kv-store owner-key :refresh refresh)))
-        {}
-        owner->owner-key)))
+    (timers/start-stop-time!
+      (metrics/waiter-timer "core" "token" "get-token->index" (str refresh))
+      (let [owner->owner-key (kv/fetch kv-store token-owners-key :refresh refresh)]
+        (reduce
+          (fn [outer-token->index [owner owner-key]]
+            (reduce
+              (fn [inner-token->index [token entry]]
+                (->> (assoc entry :owner owner :token token)
+                     (assoc inner-token->index token)))
+              outer-token->index
+              (timers/start-stop-time!
+                (metrics/waiter-timer "core" "token" "refresh-owner" (str refresh))
+                (kv/fetch kv-store owner-key :refresh refresh))))
+          {}
+          owner->owner-key))))
 
   (defn get-token-index
     "Given a token and owner, return the token index entry with the token and owner as added fields.
