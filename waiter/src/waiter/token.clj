@@ -66,6 +66,10 @@
     (throw (ex-info "Validation failed for user metadata on token"
                     {:failed-check (str user-metadata-check) :status http-400-bad-request :log-level :warn}))))
 
+(defn- get-refresh-metric-name
+  [refresh]
+  (if refresh "with-refresh" "without-refresh"))
+
 ;; We'd like to maintain an index of tokens by their owner.
 ;; We'll store an index in the key "^TOKEN_OWNERS" that maintains
 ;; a map of owner to another key, in which we'll store the tokens
@@ -279,7 +283,7 @@
      Specifying :refresh true will refresh all owner/token indexes and get the most up to date map."
     [kv-store & {:keys [refresh] :or {refresh false}}]
     (timers/start-stop-time!
-      (metrics/waiter-timer "core" "token" "get-token->index" refresh)
+      (metrics/waiter-timer "core" "token" "get-token->index" (get-refresh-metric-name refresh))
       (let [owner->owner-key (kv/fetch kv-store token-owners-key :refresh refresh)]
         (reduce
           (fn [outer-token->index [owner owner-key]]
@@ -289,7 +293,7 @@
                      (assoc inner-token->index token)))
               outer-token->index
               (timers/start-stop-time!
-                (metrics/waiter-timer "core" "token" "refresh-owner" refresh)
+                (metrics/waiter-timer "core" "token" "refresh-owner" (get-refresh-metric-name refresh))
                 (kv/fetch kv-store owner-key :refresh refresh))))
           {}
           owner->owner-key))))
@@ -299,7 +303,7 @@
      Specifying :refresh true will refresh the owner's index cache and get the most up to date index entry."
     [kv-store token owner & {:keys [refresh] :or {refresh false}}]
     (timers/start-stop-time!
-      (metrics/waiter-timer "core" "token" "get-token-index" refresh)
+      (metrics/waiter-timer "core" "token" "get-token-index" (get-refresh-metric-name refresh))
       (some-> (list-index-entries-for-owner kv-store owner :refresh refresh)
               (get token)
               (assoc :owner owner :token token)))))
