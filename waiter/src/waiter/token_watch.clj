@@ -110,6 +110,7 @@
                         watch-refresh-timer-chan
                         (timers/start-stop-time!
                           (metrics/waiter-timer "core" "token-watch-maintainer" "refresh")
+                          (log/info "refresh starting...")
                           (let [next-token->index (token/get-token->index kv-store :refresh true)
                                 [only-old-indexes only-next-indexes _] (data/diff token->index next-token->index)
                                 ; if token in old-indexes and not in only-next-indexes, then those token indexes were deleted
@@ -134,6 +135,7 @@
                                         {:only-in-current only-old-indexes
                                          :only-in-next only-next-indexes
                                          :token-count (count token->index)}))
+                            (log/info "refresh ended.")
                             (assoc current-state :token->index next-token->index
                                                  :watch-chans open-chans)))
 

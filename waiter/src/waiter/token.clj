@@ -279,7 +279,7 @@
      Specifying :refresh true will refresh all owner/token indexes and get the most up to date map."
     [kv-store & {:keys [refresh] :or {refresh false}}]
     (timers/start-stop-time!
-      (metrics/waiter-timer "core" "token" "get-token->index" (str refresh))
+      (metrics/waiter-timer "core" "token" "get-token->index" refresh)
       (let [owner->owner-key (kv/fetch kv-store token-owners-key :refresh refresh)]
         (reduce
           (fn [outer-token->index [owner owner-key]]
@@ -289,7 +289,7 @@
                      (assoc inner-token->index token)))
               outer-token->index
               (timers/start-stop-time!
-                (metrics/waiter-timer "core" "token" "refresh-owner" (str refresh))
+                (metrics/waiter-timer "core" "token" "refresh-owner" refresh)
                 (kv/fetch kv-store owner-key :refresh refresh))))
           {}
           owner->owner-key))))
@@ -298,9 +298,11 @@
     "Given a token and owner, return the token index entry with the token and owner as added fields.
      Specifying :refresh true will refresh the owner's index cache and get the most up to date index entry."
     [kv-store token owner & {:keys [refresh] :or {refresh false}}]
-    (some-> (list-index-entries-for-owner kv-store owner :refresh refresh)
-            (get token)
-            (assoc :owner owner :token token))))
+    (timers/start-stop-time!
+      (metrics/waiter-timer "core" "token" "get-token-index" refresh)
+      (some-> (list-index-entries-for-owner kv-store owner :refresh refresh)
+              (get token)
+              (assoc :owner owner :token token)))))
 
 (defprotocol ClusterCalculator
   (get-default-cluster [this]
