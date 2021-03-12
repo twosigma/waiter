@@ -107,7 +107,7 @@
                                 initial-event
                                 (timers/start-stop-time!
                                   (metrics/waiter-timer "core" "token-watch-maintainer" "channel-update-build-event")
-                                  (make-index-event :INITIAL (or (vals token->index) [])))]
+                                  (make-index-event :INITIAL (doall (or (vals token->index) []))))]
                             (timers/start-stop-time!
                               (metrics/waiter-timer "core" "token-watch-maintainer" "channel-update-forward-event")
                               (async/put! watch-chan initial-event))
