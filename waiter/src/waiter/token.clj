@@ -20,19 +20,19 @@
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
+            [metrics.timers :as timers]
             [plumbing.core :as pc]
             [schema.core :as s]
             [waiter.authorization :as authz]
             [waiter.correlation-id :as cid]
             [waiter.kv :as kv]
+            [waiter.metrics :as metrics]
             [waiter.service-description :as sd]
             [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
             [waiter.util.ring-utils :as ru]
-            [waiter.util.utils :as utils]
-            [metrics.timers :as timers]
-            [waiter.metrics :as metrics])
+            [waiter.util.utils :as utils])
   (:import (org.joda.time DateTime)))
 
 (def ^:const ANY-USER "*")
