@@ -102,9 +102,16 @@
                         tokens-watch-channels-update-chan
                         (timers/start-stop-time!
                           (metrics/waiter-timer "core" "token-watch-maintainer" "channel-update")
-                          (let [watch-chan msg]
-                            (log/info "received watch-chan" watch-chan)
-                            (async/put! watch-chan (make-index-event :INITIAL (or (vals token->index) [])))
+                          (log/info "received watch-chan" msg)
+                          (let [watch-chan msg
+                                initial-event
+                                (timers/start-stop-time!
+                                  (metrics/waiter-timer "core" "token-watch-maintainer" "channel-update-build-event")
+                                  (make-index-event :INITIAL (or (vals token->index) [])))]
+                            (timers/start-stop-time!
+                              (metrics/waiter-timer "core" "token-watch-maintainer" "channel-update-forward-event")
+                              (async/put! watch-chan initial-event))
+                            (log/info "finished sending initial event")
                             (assoc current-state :watch-chans (conj watch-chans watch-chan))))
 
                         watch-refresh-timer-chan
