@@ -200,6 +200,13 @@
         ; Don't bother removing owner from token-owners, even if they have no tokens now
         (log/info "deleted token for" token))))
 
+  (defn list-index-entries-for-owner-key
+    "List all tokens for a given user by fetching the owner index in the kv-store with the owner-key"
+    [kv-store owner-key & {:keys [refresh] :or {refresh false}}]
+    (timers/start-stop-time!
+      (metrics/waiter-timer "core" "token" "list-index-entries-for-owner-key" (get-refresh-metric-name refresh))
+      (kv/fetch kv-store owner-key :refresh refresh)))
+
   (defn refresh-token
     "Refresh the KV cache for a given token"
     [kv-store token owner]
@@ -208,7 +215,7 @@
         ; NOTE: The token may still show up temporarily in the old owners list
         (let [owner->owner-key (kv/fetch kv-store token-owners-key :refresh true)]
           (if-let [owner-key (owner->owner-key owner)]
-            (kv/fetch kv-store owner-key :refresh true)
+            (list-index-entries-for-owner-key kv-store owner-key :refresh true)
             (throw (ex-info "no owner-key found" {:owner owner :status http-500-internal-server-error})))))
       refreshed-token))
 
@@ -217,14 +224,14 @@
     [kv-store]
     (let [owner->owner-key (kv/fetch kv-store token-owners-key :refresh true)]
       (doseq [[_ owner-key] owner->owner-key]
-        (kv/fetch kv-store owner-key :refresh true))))
+        (list-index-entries-for-owner-key kv-store owner-key :refresh true))))
 
   (defn list-index-entries-for-owner
     "List all tokens for a given user by fetching the owner index in the kv-store"
     [kv-store owner & {:keys [refresh] :or {refresh false}}]
     (let [owner->owner-key (kv/fetch kv-store token-owners-key :refresh refresh)]
       (if-let [owner-key (get owner->owner-key owner)]
-        (kv/fetch kv-store owner-key :refresh refresh)
+        (list-index-entries-for-owner-key kv-store owner-key :refresh refresh)
         (log/info "no owner-key found for owner" owner))))
 
   (defn list-token-owners
@@ -292,9 +299,7 @@
                 (->> (assoc entry :owner owner :token token)
                      (assoc inner-token->index token)))
               outer-token->index
-              (timers/start-stop-time!
-                (metrics/waiter-timer "core" "token" "refresh-owner" (get-refresh-metric-name refresh))
-                (kv/fetch kv-store owner-key :refresh refresh))))
+              (list-index-entries-for-owner-key kv-store owner-key :refresh refresh)))
           {}
           owner->owner-key))))
 
