@@ -251,10 +251,12 @@
     [kv-store token & {:keys [refresh] :or {refresh false}}]
     (timers/start-stop-time!
       (metrics/waiter-timer "core" "token" "get-token-index" (get-refresh-metric-name refresh))
-      (let [{:strs [deleted last-update-time maintenance] :as token-data} (kv/fetch kv-store token :refresh refresh)
+      (let [{:strs [deleted last-update-time maintenance owner] :as token-data} (kv/fetch kv-store token :refresh refresh)
             token-hash (sd/token-data->token-hash token-data)]
         (when token-data
-          (make-index-entry token-hash deleted last-update-time maintenance)))))
+          (cond-> (make-index-entry token-hash deleted last-update-time maintenance)
+                  (contains? include :owner) (assoc :owner owner)
+                  (contains? include :token) (assoc :token token)))))))
 
   (defn reindex-tokens
     "Reindex all tokens. `tokens` is a sequence of token maps.  Remove existing index entries.

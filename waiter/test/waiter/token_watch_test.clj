@@ -210,6 +210,14 @@
             (is (= {:last-update-time (clock)
                     :token->index expected-token->index
                     :watch-count 10}
+                   (get-latest-state query-chan))))
+
+          (testing "faulty owner change events do not affect tokens-update-chan processing"
+            (send-internal-index-event tokens-update-chan "token1" "old-owner")
+            (assert-channels-no-new-message watch-chans 1000)
+            (is (= {:last-update-time (clock)
+                    :token->index expected-token->index
+                    :watch-count 10}
                    (get-latest-state query-chan))))))
 
       (testing "watch-channels get UPDATE event for soft deleted tokens"
@@ -246,6 +254,7 @@
                 :token->index {}
                 :watch-count 10}
                (get-latest-state query-chan))))
+
       (stop-token-watch-maintainer go-chan exit-chan)))
 
   (deftest test-start-token-watch-maintainer-watch-count
