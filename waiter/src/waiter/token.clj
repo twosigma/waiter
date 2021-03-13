@@ -20,11 +20,13 @@
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
+            [metrics.timers :as timers]
             [plumbing.core :as pc]
             [schema.core :as s]
             [waiter.authorization :as authz]
             [waiter.correlation-id :as cid]
             [waiter.kv :as kv]
+            [waiter.metrics :as metrics]
             [waiter.service-description :as sd]
             [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
@@ -63,6 +65,10 @@
   (when-let [user-metadata-check (s/check sd/user-metadata-schema user-metadata)]
     (throw (ex-info "Validation failed for user metadata on token"
                     {:failed-check (str user-metadata-check) :status http-400-bad-request :log-level :warn}))))
+
+(defn- get-refresh-metric-name
+  [refresh]
+  (if refresh "with-refresh" "without-refresh"))
 
 ;; We'd like to maintain an index of tokens by their owner.
 ;; We'll store an index in the key "^TOKEN_OWNERS" that maintains
@@ -194,6 +200,13 @@
         ; Don't bother removing owner from token-owners, even if they have no tokens now
         (log/info "deleted token for" token))))
 
+  (defn list-index-entries-for-owner-key
+    "List all tokens for a given user by fetching the owner index in the kv-store with the owner-key"
+    [kv-store owner-key & {:keys [refresh] :or {refresh false}}]
+    (timers/start-stop-time!
+      (metrics/waiter-timer "core" "token" "list-index-entries-for-owner-key" (get-refresh-metric-name refresh))
+      (kv/fetch kv-store owner-key :refresh refresh)))
+
   (defn refresh-token
     "Refresh the KV cache for a given token"
     [kv-store token owner]
@@ -202,7 +215,7 @@
         ; NOTE: The token may still show up temporarily in the old owners list
         (let [owner->owner-key (kv/fetch kv-store token-owners-key :refresh true)]
           (if-let [owner-key (owner->owner-key owner)]
-            (kv/fetch kv-store owner-key :refresh true)
+            (list-index-entries-for-owner-key kv-store owner-key :refresh true)
             (throw (ex-info "no owner-key found" {:owner owner :status http-500-internal-server-error})))))
       refreshed-token))
 
@@ -211,14 +224,14 @@
     [kv-store]
     (let [owner->owner-key (kv/fetch kv-store token-owners-key :refresh true)]
       (doseq [[_ owner-key] owner->owner-key]
-        (kv/fetch kv-store owner-key :refresh true))))
+        (list-index-entries-for-owner-key kv-store owner-key :refresh true))))
 
   (defn list-index-entries-for-owner
     "List all tokens for a given user by fetching the owner index in the kv-store"
     [kv-store owner & {:keys [refresh] :or {refresh false}}]
     (let [owner->owner-key (kv/fetch kv-store token-owners-key :refresh refresh)]
       (if-let [owner-key (get owner->owner-key owner)]
-        (kv/fetch kv-store owner-key :refresh refresh)
+        (list-index-entries-for-owner-key kv-store owner-key :refresh refresh)
         (log/info "no owner-key found for owner" owner))))
 
   (defn list-token-owners
@@ -276,25 +289,29 @@
     "Return a map of ALL token to token index entry. The token index entries also include the owner and token.
      Specifying :refresh true will refresh all owner/token indexes and get the most up to date map."
     [kv-store & {:keys [refresh] :or {refresh false}}]
-    (let [owner->owner-key (kv/fetch kv-store token-owners-key :refresh refresh)]
-      (reduce
-        (fn [outer-token->index [owner owner-key]]
-          (reduce
-            (fn [inner-token->index [token entry]]
-              (->> (assoc entry :owner owner :token token)
-                   (assoc inner-token->index token)))
-            outer-token->index
-            (kv/fetch kv-store owner-key :refresh refresh)))
-        {}
-        owner->owner-key)))
+    (timers/start-stop-time!
+      (metrics/waiter-timer "core" "token" "get-token->index" (get-refresh-metric-name refresh))
+      (let [owner->owner-key (kv/fetch kv-store token-owners-key :refresh refresh)]
+        (reduce
+          (fn [outer-token->index [owner owner-key]]
+            (reduce
+              (fn [inner-token->index [token entry]]
+                (->> (assoc entry :owner owner :token token)
+                     (assoc inner-token->index token)))
+              outer-token->index
+              (list-index-entries-for-owner-key kv-store owner-key :refresh refresh)))
+          {}
+          owner->owner-key))))
 
   (defn get-token-index
     "Given a token and owner, return the token index entry with the token and owner as added fields.
      Specifying :refresh true will refresh the owner's index cache and get the most up to date index entry."
     [kv-store token owner & {:keys [refresh] :or {refresh false}}]
-    (some-> (list-index-entries-for-owner kv-store owner :refresh refresh)
-            (get token)
-            (assoc :owner owner :token token))))
+    (timers/start-stop-time!
+      (metrics/waiter-timer "core" "token" "get-token-index" (get-refresh-metric-name refresh))
+      (some-> (list-index-entries-for-owner kv-store owner :refresh refresh)
+              (get token)
+              (assoc :owner owner :token token)))))
 
 (defprotocol ClusterCalculator
   (get-default-cluster [this]
