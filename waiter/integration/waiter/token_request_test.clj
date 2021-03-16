@@ -910,10 +910,48 @@
         (is (str/includes? (:body response) "Service namespace must either be omitted or match the run-as-user"))
         (assert-response-status response http-400-bad-request)))))
 
+(deftest ^:parallel ^:integration-fast test-stale-service-prompt-gc
+  (testing-using-waiter-url
+    (let [service-id-prefix (rand-name)
+          target-user (retrieve-username)
+          token (create-token-name waiter-url ".")
+          {:keys [cookies]} (make-request waiter-url "/waiter-auth")
+          token-definition (assoc (kitchen-request-headers :prefix "")
+                             :fallback-period-secs 0
+                             :idle-timeout-mins 30
+                             :name (str service-id-prefix "-v1")
+                             :namespace target-user
+                             :run-as-user target-user
+                             :stale-timeout-mins 0
+                             :token token)
+          response (post-token waiter-url token-definition :cookies cookies)]
+      (assert-response-status response http-200-ok)
+      (let [{:keys [service-id] :as response}
+            (make-request-with-debug-info
+              {:x-waiter-token token}
+              #(make-request waiter-url "/hello" :cookies cookies :headers %))
+            service-id-1 service-id]
+        (with-service-cleanup
+          service-id-1
+          (assert-response-status response http-200-ok)
+          (assert-service-on-all-routers waiter-url service-id-1 cookies)
+          (let [token-definition (assoc token-definition :name (str service-id-prefix "-v2"))
+                response (post-token waiter-url token-definition :cookies cookies)]
+            (assert-response-status response http-200-ok)
+            (let [{:keys [service-id] :as response}
+                  (make-request-with-debug-info
+                    {:x-waiter-token token}
+                    #(make-request waiter-url "/hello" :headers %))
+                  service-id-2 service-id]
+              (with-service-cleanup
+                service-id-2
+                (is (not= service-id-1 service-id-2))
+                (assert-response-status response http-200-ok)
+                (assert-service-not-on-any-routers waiter-url service-id-1 cookies)
+                (assert-service-on-all-routers waiter-url service-id-2 cookies)))))))))
 
 (deftest ^:parallel ^:integration-fast test-bad-token
   (testing-using-waiter-url
-
     (let [common-headers {"x-waiter-cmd" "foo-bar"
                           "x-waiter-cmd-type" "shell"}]
       (testing "ignore missing token when have service description"
