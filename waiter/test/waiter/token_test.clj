@@ -1189,9 +1189,8 @@
          details# (get-in parsed-body# ["waiter-error" "details"])
          message# (get-in parsed-body# ["waiter-error" "message"])]
      (is (= http-400-bad-request status#))
-     (is (not (str/includes? body# "clojure")))
-     (is (every? (partial str/includes? details#) invalid-keys#))
-     (is (str/includes? message# "Validation failed for user metadata on token") body#)))
+     (is (every? (partial str/includes? details#) invalid-keys#) details#)
+     (is (every? (partial str/includes? message#) invalid-keys#) message#)))
 
 (deftest test-post-failure-in-handle-token-request
   (with-redefs [sd/service-description->service-id (fn [prefix sd] (str prefix (hash (select-keys sd sd/service-parameter-keys))))]
@@ -1784,45 +1783,9 @@
              "Individual params must be made up of letters, numbers, and underscores and must start with a letter."
              "Individual params cannot start with MESOS_, MARATHON_, PORT, or WAITER_ and cannot be HOME, USER, LOGNAME."])))
 
-      (testing "post:new-user-metadata:bad-fallback-period-secs"
-        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
-              service-description (walk/stringify-keys
-                                    {:fallback-period-secs "bad" :token "abcdefgh"})
-              {:keys [body status]}
-              (run-handle-token-request
-                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
-                {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
-                 :headers {"accept" "application/json"}
-                 :request-method :post})
-              {{:strs [details message]} "waiter-error"} (json/read-str body)]
-          (is (= http-400-bad-request status))
-          (is (not (str/includes? body "clojure")))
-          (is (str/includes? (str details) "fallback-period-secs") body)
-          (is (str/includes? message "Validation failed for user metadata on token") body)))
-
-      (testing "post:new-user-metadata:fallback-period-secs-limit-exceeded"
-        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
-              service-description (walk/stringify-keys
-                                    {:fallback-period-secs (-> 1 t/days t/in-seconds inc)
-                                     :token "abcdefgh"})
-              {:keys [body status]}
-              (run-handle-token-request
-                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
-                {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
-                 :headers {"accept" "application/json"}
-                 :request-method :post})
-              {{:strs [details message]} "waiter-error"} (json/read-str body)]
-          (is (= http-400-bad-request status))
-          (is (not (str/includes? body "clojure")))
-          (is (str/includes? (str details) "fallback-period-secs") body)
-          (is (str/includes? message "Validation failed for user metadata on token") body)))
-
       (let [kv-store (kv/->LocalKeyValueStore (atom {}))
             service-description (walk/stringify-keys
-                                  {:maintenance {:message "custom maintenance message"}
-                                   :token "abcdefgh"})
+                                  {:token "abcdefgh"})
             make-token-request-with-invalid-user-metadata
             (fn [service-description]
               (let [response
@@ -1833,6 +1796,26 @@
                        :headers {"accept" "application/json"}
                        :request-method :post})]
                 response))]
+
+
+        (testing "post:new-user-metadata:bad-fallback-period-secs"
+          (let [invalid-keys ["fallback-period-secs"]
+                service-description (walk/stringify-keys
+                                      {:fallback-period-secs "bad" :token "abcdefgh"})
+                response (make-token-request-with-invalid-user-metadata service-description)]
+            (assert-bad-user-metadata-response response invalid-keys)))
+
+        (testing "post:new-user-metadata:fallback-period-secs-limit-exceeded"
+          (let [invalid-keys ["fallback-period-secs"]
+                service-description (assoc service-description "fallback-period-secs" (-> 1 t/days t/in-seconds inc))
+                response (make-token-request-with-invalid-user-metadata service-description)]
+            (assert-bad-user-metadata-response response invalid-keys)))
+
+        (testing "post:new-user-metadata:https-redirect-not-boolean"
+          (let [invalid-keys ["https-redirect"]
+                service-description (assoc service-description "https-redirect" "not-boolean-value")
+                response (make-token-request-with-invalid-user-metadata service-description)]
+            (assert-bad-user-metadata-response response invalid-keys)))
 
         (testing "post:new-user-metadata:maintenance-message-max-length-exceeded"
           (let [invalid-keys ["maintenance" "message"]
@@ -1854,7 +1837,7 @@
 
         (testing "post:new-user-metadata:maintenance-message-is-not-defined"
           (let [invalid-keys ["maintenance" "message"]
-                service-description (update service-description "maintenance" dissoc "message")
+                service-description (assoc service-description "maintenance" {})
                 response (make-token-request-with-invalid-user-metadata service-description)]
             (assert-bad-user-metadata-response response invalid-keys)))
 
@@ -1866,7 +1849,63 @@
         (testing "post:new-user-metadata:maintenance-is-nil"
           (let [service-description (assoc service-description "maintenance" nil)
                 response (make-token-request-with-invalid-user-metadata service-description)]
-            (assert-bad-user-metadata-response response ["maintenance"]))))
+            (assert-bad-user-metadata-response response ["maintenance"])))
+
+        (testing "post:new-user-metadata:owner-not-a-string"
+          (let [invalid-keys ["owner"]
+                service-description (assoc service-description "owner" 1234)
+                response (make-token-request-with-invalid-user-metadata service-description)]
+            (assert-bad-user-metadata-response response invalid-keys)))
+
+        (testing "post:new-user-metadata:owner-empty-string"
+          (let [invalid-keys ["owner"]
+                service-description (assoc service-description "owner" "")
+                response (make-token-request-with-invalid-user-metadata service-description)]
+            (assert-bad-user-metadata-response response invalid-keys)))
+
+        (testing "post:new-user-metadata:stale-timeout-mins-not-an-integer"
+          (let [invalid-keys ["stale-timeout-mins"]
+                service-description (assoc service-description "stale-timeout-mins" "not-an-integer")
+                response (make-token-request-with-invalid-user-metadata service-description)]
+            (assert-bad-user-metadata-response response invalid-keys)))
+
+        (testing "post:new-user-metadata:stale-timeout-mins-out-of-range"
+          (let [invalid-keys ["stale-timeout-mins"]
+                service-description (assoc service-description "stale-timeout-mins" 241)
+                response (make-token-request-with-invalid-user-metadata service-description)]
+            (assert-bad-user-metadata-response response invalid-keys)))
+
+        (testing "post:new-user-metadata:cors-rules-not-a-list"
+          (let [invalid-keys ["cors-rules"]
+                service-description (assoc service-description "cors-rules" 1234)
+                response (make-token-request-with-invalid-user-metadata service-description)]
+            (assert-bad-user-metadata-response response invalid-keys)))
+
+        (testing "post:new-user-metadata:cors-rules"
+          (let [invalid-keys ["cors-rules" "origin-regex" "methods" "target-schemes"]
+                cors-rules [{"origin-regex" "test\\.co(m"
+                             "methods" ["a"]
+                             "target-schemes" ["https"]}]
+                service-description (assoc service-description "cors-rules" cors-rules)
+                response (make-token-request-with-invalid-user-metadata service-description)]
+            (assert-bad-user-metadata-response response invalid-keys)))
+
+        (testing "post:new-user-metadata:cors-rules-2"
+          (let [invalid-keys ["cors-rules" "origin-regex" "methods" "target-schemes"]
+                cors-rules [{"origin-regex" "test\\.co(m"
+                             "methods" []
+                             "target-schemes" []}]
+                service-description (assoc service-description "cors-rules" cors-rules)
+                response (make-token-request-with-invalid-user-metadata service-description)]
+            (assert-bad-user-metadata-response response invalid-keys)))
+
+        (testing "post:new-user-metadata:cors-rules-3"
+          (let [invalid-keys ["cors-rules"]
+                cors-rules {"origin-regex" "test\\.com"
+                            "methods" ["GET" "POST"]}
+                service-description (assoc service-description "cors-rules" cors-rules)
+                response (make-token-request-with-invalid-user-metadata service-description)]
+            (assert-bad-user-metadata-response response invalid-keys))))
 
       (testing "post:new-service-description:token-limit-reached"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -1921,74 +1960,7 @@
           (is (not (str/includes? body "clojure")))
           (is (str/includes? (str details) "json-payload") body)
           (is (str/includes? (str details) "query-parameter") body)
-          (is (str/includes? message "The token should be provided only as a query parameter or in the json payload") body)))
-
-      (testing "post:new-service-description-cors-rules"
-        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
-              cors-rules [{"origin-regex" "test\\.co(m"
-                           "methods" ["a"]
-                           "target-schemes" ["https"]}]
-              service-description (walk/stringify-keys
-                                    {:cors-rules cors-rules
-                                     :token "abcdefgh"})
-              {:keys [body status]}
-              (run-handle-token-request
-                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
-                {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
-                 :headers {"accept" "application/json"}
-                 :request-method :post})
-              {{:strs [details message]} "waiter-error"} (json/read-str body)]
-          (is (= http-400-bad-request status))
-          (is (not (str/includes? body "clojure")))
-          (is (str/includes? (str details) "cors-rules") body)
-          (is (str/includes? (str details) "origin-regex\\\" (throws? (is-a-valid-regular-expression?") body)
-          (is (str/includes? (str details) "methods\\\" [(not (is-an-http-method?") body)
-          (is (str/includes? (str details) "target-schemes\\\" disallowed-key") body)
-          (is (str/includes? message "Validation failed for user metadata on token") body)))
-
-      (testing "post:new-service-description-cors-rules-2"
-        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
-              cors-rules [{"origin-regex" "test\\.co(m"
-                           "methods" []
-                           "target-schemes" []}]
-              service-description (walk/stringify-keys
-                                    {:cors-rules cors-rules
-                                     :token "abcdefgh"})
-              {:keys [body status]}
-              (run-handle-token-request
-                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
-                {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
-                 :headers {"accept" "application/json"}
-                 :request-method :post})
-              {{:strs [details message]} "waiter-error"} (json/read-str body)]
-          (is (= http-400-bad-request status))
-          (is (not (str/includes? body "clojure")))
-          (is (str/includes? (str details) "cors-rules") body)
-          (is (str/includes? (str details) "origin-regex\\\" (throws? (is-a-valid-regular-expression?") body)
-          (is (str/includes? (str details) "methods\\\" (not (not-empty []") body)
-          (is (str/includes? (str details) "target-schemes\\\" disallowed-key") body)
-          (is (str/includes? message "Validation failed for user metadata on token") body)))
-
-      (testing "post:new-service-description-cors-rules-2"
-        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
-              cors-rules {"origin-regex" "test\\.com"
-                          "methods" ["GET" "POST"]}
-              service-description (walk/stringify-keys
-                                    {:cors-rules cors-rules
-                                     :token "abcdefgh"})
-              {:keys [body status]}
-              (run-handle-token-request
-                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
-                {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
-                 :headers {"accept" "application/json"}
-                 :request-method :post})
-              {{:strs [details message]} "waiter-error"} (json/read-str body)]
-          (is (= http-400-bad-request status))
-          (is (str/includes? (str details) "cors-rules\\\" (not (sequential?") body)
-          (is (str/includes? message "Validation failed for user metadata on token") body))))))
+          (is (str/includes? message "The token should be provided only as a query parameter or in the json payload") body))))))
 
 (deftest test-store-service-description
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
