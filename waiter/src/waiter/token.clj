@@ -248,15 +248,14 @@
 
   (defn get-token-index
     "Given a token, determine the correct index entry of the token. Returns nil if token doesn't exist."
-    [kv-store token & {:keys [include refresh] :or {include #{} refresh false}}]
+    [kv-store token & {:keys [refresh] :or {refresh false}}]
     (timers/start-stop-time!
       (metrics/waiter-timer "core" "token" "get-token-index" (get-refresh-metric-name refresh))
       (let [{:strs [deleted last-update-time maintenance owner] :as token-data} (kv/fetch kv-store token :refresh refresh)
             token-hash (sd/token-data->token-hash token-data)]
         (when token-data
-          (cond-> (make-index-entry token-hash deleted last-update-time maintenance)
-                  (contains? include :owner) (assoc :owner owner)
-                  (contains? include :token) (assoc :token token))))))
+          (-> (make-index-entry token-hash deleted last-update-time maintenance)
+              (assoc :owner owner :token token))))))
 
   (defn reindex-tokens
     "Reindex all tokens. `tokens` is a sequence of token maps.  Remove existing index entries.
@@ -276,7 +275,8 @@
               owner->index-entries (pc/map-vals
                                      (fn [tokens]
                                        (pc/map-from-keys
-                                         (partial get-token-index kv-store)
+                                         #(-> (get-token-index kv-store %)
+                                              (dissoc :owner :token))
                                          tokens))
                                      owner->tokens)
               owner->owner-key (pc/map-from-keys (fn [_] (new-owner-key)) (keys owner->index-entries))]
