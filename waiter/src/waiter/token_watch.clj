@@ -80,9 +80,7 @@
                         (timers/start-stop-time!
                           (metrics/waiter-timer "core" "token-watch-maintainer" "token-update")
                           (let [{:keys [owner token]} msg
-                                token-index-entry (token/get-token-index kv-store token
-                                                                         :include #{:token :owner}
-                                                                         :refresh true)
+                                token-index-entry (token/get-token-index kv-store token :refresh true)
                                 local-token-index-entry (get token->index token)]
                             (if (= token-index-entry local-token-index-entry)
                               ; There is no change detected, so no event to be reported
