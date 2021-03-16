@@ -246,6 +246,17 @@
     [kv-store]
     (into {} (kv/fetch kv-store token-owners-key)))
 
+  (defn get-token-index
+    "Given a token, determine the correct index entry of the token. Returns nil if token doesn't exist."
+    [kv-store token & {:keys [refresh] :or {refresh false}}]
+    (timers/start-stop-time!
+      (metrics/waiter-timer "core" "token" "get-token-index" (get-refresh-metric-name refresh))
+      (let [{:strs [deleted last-update-time maintenance owner] :as token-data} (kv/fetch kv-store token :refresh refresh)
+            token-hash (sd/token-data->token-hash token-data)]
+        (when token-data
+          (-> (make-index-entry token-hash deleted last-update-time maintenance)
+              (assoc :owner owner :token token))))))
+
   (defn reindex-tokens
     "Reindex all tokens. `tokens` is a sequence of token maps.  Remove existing index entries.
      Writes new entries before deleting old ones to avoid intervening index queries from reading empty results."
@@ -264,10 +275,8 @@
               owner->index-entries (pc/map-vals
                                      (fn [tokens]
                                        (pc/map-from-keys
-                                         (fn [token]
-                                           (let [{:strs [deleted last-update-time maintenance] :as token-data} (kv/fetch kv-store token)
-                                                 token-hash (sd/token-data->token-hash token-data)]
-                                             (make-index-entry token-hash deleted last-update-time maintenance)))
+                                         #(-> (get-token-index kv-store %)
+                                              (dissoc :owner :token))
                                          tokens))
                                      owner->tokens)
               owner->owner-key (pc/map-from-keys (fn [_] (new-owner-key)) (keys owner->index-entries))]
@@ -301,17 +310,7 @@
               outer-token->index
               (list-index-entries-for-owner-key kv-store owner-key :refresh refresh)))
           {}
-          owner->owner-key))))
-
-  (defn get-token-index
-    "Given a token and owner, return the token index entry with the token and owner as added fields.
-     Specifying :refresh true will refresh the owner's index cache and get the most up to date index entry."
-    [kv-store token owner & {:keys [refresh] :or {refresh false}}]
-    (timers/start-stop-time!
-      (metrics/waiter-timer "core" "token" "get-token-index" (get-refresh-metric-name refresh))
-      (some-> (list-index-entries-for-owner kv-store owner :refresh refresh)
-              (get token)
-              (assoc :owner owner :token token)))))
+          owner->owner-key)))))
 
 (defprotocol ClusterCalculator
   (get-default-cluster [this]
