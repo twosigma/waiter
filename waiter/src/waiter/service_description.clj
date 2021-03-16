@@ -1384,7 +1384,8 @@
                                 ;; (this stale-timeout-mins value is configured in the default token values :( )
                                 (let [{:strs [stale-timeout-mins]} (attach-token-defaults-fn {})]
                                   (t/minutes stale-timeout-mins)))]
-        (log/info service-id "that uses references went stale at" (du/date-to-str update-time))
+        (log/info service-id "that uses references went stale at" (du/date-to-str update-time)
+                  "and will be gc-ed in" (t/in-seconds gc-delay-duration) "seconds")
         (t/plus update-time gc-delay-duration))
       ;; when GC is enabled, use idle-timeout
       (pos? idle-timeout-mins)
