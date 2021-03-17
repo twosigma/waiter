@@ -478,6 +478,7 @@
        (assoc parameter-key# (do ~error-message-body)))))
 
 (defn validate-user-metadata-schema
+  "Validates provided user-metadata of a token and throws an error with user readable validation issues."
   [user-metadata]
   (try
     (s/validate user-metadata-schema user-metadata)
@@ -507,7 +508,7 @@
                                          (attach-error-message-for-parameter
                                            parameter->issues
                                            :stale-timeout-mins
-                                           "stale-timeout-mins must be an integer between 0 240"))]
+                                           "stale-timeout-mins must be an integer between 0 and 240 (inclusive)"))]
         (throw (ex-info (str "Validation failed for token:\n" (str/join "\n" (vals parameter->error-message)))
                         {:failed-check (str parameter->issues) :status http-400-bad-request :log-level :warn}))))))
 
