@@ -59,13 +59,6 @@
                        :status 412
                        :token-metadata token-metadata})))))
 
-(defn validate-token-parameters
-  "Validates whether the user-specified token parameters are valid."
-  [user-metadata]
-  (when-let [user-metadata-check (s/check sd/user-metadata-schema user-metadata)]
-    (throw (ex-info "Validation failed for user metadata on token"
-                    {:failed-check (str user-metadata-check) :status http-400-bad-request :log-level :warn}))))
-
 (defn- get-refresh-metric-name
   [refresh]
   (if refresh "with-refresh" "without-refresh"))
@@ -480,7 +473,7 @@
       (throw (ex-info (str "No parameters provided for " token) {:status http-400-bad-request :log-level :warn})))
     (sd/validate-token token)
     (validate-service-description-fn new-service-parameter-template)
-    (validate-token-parameters new-user-metadata)
+    (sd/validate-user-metadata-schema new-user-metadata)
     (let [unknown-keys (-> new-token-data
                            keys
                            set

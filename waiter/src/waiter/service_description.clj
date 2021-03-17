@@ -216,6 +216,37 @@
           (map? provided) {:bad-size (count provided)}
           :default {:bad-type provided})))))
 
+(defn generate-friendly-cors-rules-error-message
+  "If the provided cors-rules was invalid, attempt to generate a friendly error message."
+  [issue]
+  (when-let [cors-rules (get issue "cors-rules")]
+    (if (coll? cors-rules)
+      (->> cors-rules
+           (map
+             (fn [rule]
+               (reduce
+                 (fn [error-messages [key _]]
+                   (conj error-messages
+                         (str key " "
+                              (case key
+                                ("origin-regex" "target-path-regex") "must be a valid regular expression"
+                                "methods" "must be a non-empty list of http methods (in upper-case)"
+                                "is not a valid key"))))
+                 []
+                 rule)))
+           (str/join ", ")
+           (str "cors-rules list has invalid items: "))
+      "cors-rules must be a list")))
+
+(defn generate-friendly-maintenance-error-message
+  "If the provided maintenance field was invalid, attempt to generate a friendly error message."
+  [issue]
+  (when-let [maintenance (get issue "maintenance")]
+    (cond
+      (get maintenance "message")
+      "maintenance message must be a non-empty string with length at most 512"
+      :else "maintenance must be a map")))
+
 (defn generate-friendly-environment-variable-error-message
   "If the provided metadata was invalid, attempt to generate a friendly error message. Return nil for unknown error."
   [issue]
@@ -444,6 +475,41 @@
      (cond-> ~parameter->error-message
        (contains? parameter->issues# parameter-name#)
        (assoc parameter-key# (do ~error-message-body)))))
+
+(defn validate-user-metadata-schema
+  "Validates provided user-metadata of a token and throws an error with user readable validation issues."
+  [user-metadata]
+  (try
+    (s/validate user-metadata-schema user-metadata)
+    (catch Exception _
+      (let [parameter->issues (s/check user-metadata-schema user-metadata)
+            parameter->error-message (-> {}
+                                         (attach-error-message-for-parameter
+                                           parameter->issues
+                                           :cors-rules
+                                           (generate-friendly-cors-rules-error-message parameter->issues))
+                                         (attach-error-message-for-parameter
+                                           parameter->issues
+                                           :fallback-period-secs
+                                           "fallback-period-secs must be an integer between 0 and 86400 (inclusive)")
+                                         (attach-error-message-for-parameter
+                                           parameter->issues
+                                           :https-redirect
+                                           "https-redirect must be a boolean value")
+                                         (attach-error-message-for-parameter
+                                           parameter->issues
+                                           :maintenance
+                                           (generate-friendly-maintenance-error-message parameter->issues))
+                                         (attach-error-message-for-parameter
+                                           parameter->issues
+                                           :owner
+                                           "owner must be a non-empty string")
+                                         (attach-error-message-for-parameter
+                                           parameter->issues
+                                           :stale-timeout-mins
+                                           "stale-timeout-mins must be an integer between 0 and 240 (inclusive)"))]
+        (throw (ex-info (str "Validation failed for token:\n" (str/join "\n" (vals parameter->error-message)))
+                        {:failed-check (str parameter->issues) :status http-400-bad-request :log-level :warn}))))))
 
 (defn validate-schema
   "Validates the provided service description template.

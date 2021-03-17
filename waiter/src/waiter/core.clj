@@ -729,7 +729,7 @@
                             (sd/validate-schema defaults max-constraints-schema initial-profile->defaults
                                                 {:allow-missing-required-fields? true})
                             ;; validate the profile's token parameters
-                            (token/validate-token-parameters defaults)
+                            (sd/validate-user-metadata-schema defaults)
                             defaults)))
    :query-service-maintainer-chan (pc/fnk [] (au/latest-chan)) ; TODO move to service-chan-maintainer
    :router-metrics-agent (pc/fnk [router-id] (metrics-sync/new-router-metrics-agent router-id {}))
