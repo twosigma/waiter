@@ -79,7 +79,7 @@
                         tokens-update-chan
                         (timers/start-stop-time!
                           (metrics/waiter-timer "core" "token-watch-maintainer" "token-update")
-                          (let [token msg
+                          (let [{:keys [token]} msg
                                 token-index-entry (token/get-token-index kv-store token :refresh true)
                                 local-token-index-entry (get token->index token)]
                             (if (= token-index-entry local-token-index-entry)
