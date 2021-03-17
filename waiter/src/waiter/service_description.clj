@@ -229,8 +229,7 @@
                    (conj error-messages
                          (str key " "
                               (case key
-                                "origin-regex" "must be a valid regular expression"
-                                "target-path-regex" "must be a valid regular expression"
+                                ("origin-regex" "target-path-regex") "must be a valid regular expression"
                                 "methods" "must be a non-empty list of http methods (in upper-case)"
                                 "is not a valid key"))))
                  []
