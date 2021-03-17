@@ -79,7 +79,7 @@
                         tokens-update-chan
                         (timers/start-stop-time!
                           (metrics/waiter-timer "core" "token-watch-maintainer" "token-update")
-                          (let [{:keys [owner token]} msg
+                          (let [{:keys [token]} msg
                                 token-index-entry (token/get-token-index kv-store token :refresh true)
                                 local-token-index-entry (get token->index token)]
                             (if (= token-index-entry local-token-index-entry)
@@ -92,7 +92,7 @@
                                       [(make-index-event :UPDATE token-index-entry)
                                        (assoc-in current-state [:token->index token] token-index-entry)]
                                       ; index-entry doesn't exist then treat as DELETE
-                                      [(make-index-event :DELETE {:owner owner :token token})
+                                      [(make-index-event :DELETE {:token token})
                                        (assoc current-state :token->index (dissoc token->index token))])
                                     open-chans (->> [index-event]
                                                     (make-index-event :EVENTS)

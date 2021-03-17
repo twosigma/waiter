@@ -185,7 +185,7 @@
         (let [token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1"))
               expected-token->index {"token1" token-cur-index}]
           (assert-channels-next-message watch-chans (make-index-event :INITIAL []))
-          (send-internal-index-event tokens-update-chan "token1" (get token1-index :owner))
+          (send-internal-index-event tokens-update-chan "token1")
           (assert-channels-next-message watch-chans (make-aggregate-index-events (make-index-event :UPDATE token-cur-index)))
           (is (= {:last-update-time (clock)
                   :token->index expected-token->index
@@ -197,7 +197,7 @@
           synchronize-fn kv-store history-length limit-per-owner "token1" (assoc token1-service-desc "cpus" 2) token1-metadata)
         (let [token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1"))
               expected-token->index {"token1" token-cur-index}]
-          (send-internal-index-event tokens-update-chan "token1" (get token1-index :owner))
+          (send-internal-index-event tokens-update-chan "token1")
           (assert-channels-next-message watch-chans (make-aggregate-index-events (make-index-event :UPDATE token-cur-index)))
           (is (= {:last-update-time (clock)
                   :token->index expected-token->index
@@ -205,15 +205,7 @@
                  (get-latest-state query-chan)))
 
           (testing "watch-channels doesn't send event if no changes in token-index-entry and current-state"
-            (send-internal-index-event tokens-update-chan "token1" (get token1-index :owner))
-            (assert-channels-no-new-message watch-chans 1000)
-            (is (= {:last-update-time (clock)
-                    :token->index expected-token->index
-                    :watch-count 10}
-                   (get-latest-state query-chan))))
-
-          (testing "faulty owner change events do not affect tokens-update-chan processing"
-            (send-internal-index-event tokens-update-chan "token1" "old-owner")
+            (send-internal-index-event tokens-update-chan "token1")
             (assert-channels-no-new-message watch-chans 1000)
             (is (= {:last-update-time (clock)
                     :token->index expected-token->index
@@ -227,7 +219,7 @@
                                                   :last-update-time (clock-millis)
                                                   :deleted true)
               expected-token->index {"token1" token-cur-index}]
-          (send-internal-index-event tokens-update-chan "token1" (get token1-index :owner))
+          (send-internal-index-event tokens-update-chan "token1")
           (assert-channels-next-message watch-chans (make-aggregate-index-events (make-index-event :UPDATE token-cur-index)))
           (is (= {:last-update-time (clock)
                   :token->index expected-token->index
@@ -237,18 +229,17 @@
       (testing "watch-channels get DELETE event for hard deleted tokens"
         (delete-service-description-for-token clock synchronize-fn kv-store history-length "token1"
                                               (get token1-index :owner) auth-user :hard-delete true)
-        (send-internal-index-event tokens-update-chan "token1" (get token1-index :owner))
+        (send-internal-index-event tokens-update-chan "token1")
         (assert-channels-next-message watch-chans
                                       (make-aggregate-index-events
-                                        (make-index-event :DELETE {:owner (get token1-index :owner)
-                                                                   :token "token1"})))
+                                        (make-index-event :DELETE {:token "token1"})))
         (is (= {:last-update-time (clock)
                 :token->index {}
                 :watch-count 10}
                (get-latest-state query-chan))))
 
       (testing "watch-channels doesn't send event if no changes in token-index-entry and current-state"
-        (send-internal-index-event tokens-update-chan "token1" (get token1-index :owner))
+        (send-internal-index-event tokens-update-chan "token1")
         (assert-channels-no-new-message watch-chans 1000)
         (is (= {:last-update-time (clock)
                 :token->index {}
@@ -419,7 +410,7 @@
                     (store-service-description-for-token
                       synchronize-fn kv-store history-length limit-per-owner "token1" token1-service-desc
                       (assoc token1-metadata "last-update-time" i))
-                    (send-internal-index-event tokens-update-chan "token1" (get token1-index :owner))
+                    (send-internal-index-event tokens-update-chan "token1")
                     (let [token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1")
                                                               :last-update-time i)
                           expected-token->index {"token1" token-cur-index}]
