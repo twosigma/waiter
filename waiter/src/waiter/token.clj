@@ -85,9 +85,9 @@
 
 (defn send-internal-index-event
   "Send an internal event to be processed by the tokens-watch-maintainer daemon process"
-  [tokens-update-chan token owner]
-  (log/info "sending internal index event" {:token token :owner owner})
-  (async/put! tokens-update-chan {:owner owner :token token}))
+  [tokens-update-chan token]
+  (log/info "sending internal index event" {:token token})
+  (async/put! tokens-update-chan token))
 
 (let [token-lock "TOKEN_LOCK"
       token-owners-key "^TOKEN_OWNERS"
@@ -387,7 +387,7 @@
             (make-peer-requests-fn "tokens/refresh"
                                    :body (utils/clj->json {:owner token-owner, :token token})
                                    :method :post)
-            (send-internal-index-event tokens-update-chan token token-owner)
+            (send-internal-index-event tokens-update-chan token)
             (-> {:delete token, :hard-delete hard-delete, :success true}
               (utils/clj->json-response :headers {"etag" version-hash})
               (assoc :waiter/token token)))
@@ -617,7 +617,7 @@
           (make-peer-requests-fn "tokens/refresh"
                                  :method :post
                                  :body (utils/clj->json {:token token, :owner owner}))
-          (send-internal-index-event tokens-update-chan token owner)
+          (send-internal-index-event tokens-update-chan token)
           (let [creation-mode (if (and (seq existing-token-metadata)
                                        (not (get existing-token-metadata "deleted")))
                                 "updated "
@@ -835,7 +835,7 @@
       (when token
         (log/info src-router-id "is force refreshing token" token)
         (refresh-token kv-store token owner)
-        (send-internal-index-event tokens-update-chan token owner))
+        (send-internal-index-event tokens-update-chan token))
       (utils/clj->json-response {:success true}))
     (catch Exception ex
       (utils/exception->response ex req))))
