@@ -516,48 +516,61 @@
                            :log-level :warn}))))
 
       nil
-      (do
+      (let [existing-editor (get existing-token-metadata "editor")
+            existing-owner (get existing-token-metadata "owner")
+            owner? (and existing-owner (authz/manage-token? entitlement-manager authenticated-user token existing-token-metadata))
+            editor? (and existing-editor (not owner?)  (authz/run-as? entitlement-manager authenticated-user existing-editor))
+            delegated-user (if editor?
+                             (do ;; allow editor to run with owner privileges
+                               (log/info "promoting editor to owner privileges while editing token"
+                                         {:editor authenticated-user :owner existing-owner})
+                               existing-owner)
+                             authenticated-user)]
+        (when editor?
+          (let [existing-token-parameters (sd/token->token-parameters kv-store token :include-deleted false)]
+            (doseq [parameter-name ["editor" "owner" "run-as-user"]]
+              (let [existing-value (get existing-token-parameters parameter-name)
+                    new-value (get new-token-data parameter-name)]
+                (when (not= existing-value new-value)
+                  (throw (ex-info (str "Not allowed to edit parameter " parameter-name)
+                                  {:authenticated-user authenticated-user
+                                   :existing-token-description existing-token-parameters
+                                   :parameter parameter-name
+                                   :parameter-exiting-value existing-value
+                                   :parameter-new-value new-value
+                                   :status http-403-forbidden
+                                   :log-level :warn})))))))
         (when (and run-as-user (not= "*" run-as-user))
-          (when-not (authz/run-as? entitlement-manager authenticated-user run-as-user)
+          (when-not (authz/run-as? entitlement-manager delegated-user run-as-user)
             (throw (ex-info "Cannot run as user"
                             {:authenticated-user authenticated-user
+                             :delegated-user delegated-user
                              :run-as-user run-as-user
                              :status http-403-forbidden
                              :log-level :warn}))))
-        (let [existing-service-description-owner (get existing-token-metadata "owner")]
-          (if-not (str/blank? existing-service-description-owner)
-            (when-not (authz/manage-token? entitlement-manager authenticated-user token existing-token-metadata)
-              (throw (ex-info "Cannot change owner of token"
-                              {:existing-owner existing-service-description-owner
-                               :new-user owner
-                               :status http-403-forbidden
-                               :log-level :warn})))
-            (when-not (authz/run-as? entitlement-manager authenticated-user owner)
-              (throw (ex-info "Cannot create token as user"
-                              {:authenticated-user authenticated-user
-                               :owner owner
-                               :status http-403-forbidden
-                               :log-level :warn})))))
-        (when (contains? new-token-metadata "last-update-time")
-          (throw (ex-info "Cannot modify last-update-time token metadata"
-                          {:status http-400-bad-request
-                           :token-metadata new-token-metadata
-                           :log-level :warn})))
-        (when (contains? new-token-metadata "last-update-user")
-          (throw (ex-info "Cannot modify last-update-user token metadata"
-                          {:status http-400-bad-request
-                           :token-metadata new-token-metadata
-                           :log-level :warn})))
-        (when (contains? new-token-metadata "root")
-          (throw (ex-info "Cannot modify root token metadata"
-                          {:status http-400-bad-request
-                           :token-metadata new-token-metadata
-                           :log-level :warn})))
-        (when (contains? new-token-metadata "previous")
-          (throw (ex-info "Cannot modify previous token metadata"
-                          {:status http-400-bad-request
-                           :token-metadata new-token-metadata
-                           :log-level :warn}))))
+        (if-not (str/blank? existing-owner)
+          (when-not (authz/manage-token? entitlement-manager delegated-user token existing-token-metadata)
+            (throw (ex-info "Cannot change owner of token"
+                            {:authenticated-user authenticated-user
+                             :delegated-user delegated-user
+                             :existing-owner existing-owner
+                             :new-user owner
+                             :status http-403-forbidden
+                             :log-level :warn})))
+          (when-not (authz/run-as? entitlement-manager delegated-user owner)
+            (throw (ex-info "Cannot create token as user"
+                            {:authenticated-user authenticated-user
+                             :delegated-user delegated-user
+                             :owner owner
+                             :status http-403-forbidden
+                             :log-level :warn}))))
+        ;; Neither owner nor editor may modify system metadata fields
+        (doseq [parameter-name ["last-update-time" "last-update-user" "root" "previous"]]
+          (when (contains? new-token-metadata parameter-name)
+            (throw (ex-info (str "Cannot modify " parameter-name " token metadata")
+                            {:status http-400-bad-request
+                             :token-metadata new-token-metadata
+                             :log-level :warn})))))
 
       (throw (ex-info "Invalid update-mode"
                       {:mode (get request-params "update-mode")
