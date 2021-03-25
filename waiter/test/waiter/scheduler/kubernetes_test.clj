@@ -29,6 +29,7 @@
             [waiter.scheduler :as scheduler]
             [waiter.scheduler.kubernetes :refer :all]
             [waiter.status-codes :refer :all]
+            [waiter.util.cache-utils :as cu]
             [waiter.util.client-tools :as ct]
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
@@ -80,8 +81,10 @@
                                       :default-container-image "twosigma/waiter-test-apps:latest"})
       :retrieve-auth-token-state-fn (constantly nil)
       :retrieve-syncer-state-fn (constantly nil)
+      :response->deployment-error-msg-fn waiter.scheduler.kubernetes/default-k8s-message-transform
       :restart-expiry-threshold 100
       :restart-kill-threshold 200
+      :service-id->deployment-error-cache (cu/cache-factory {:threshold 50 :ttl (-> 2 t/seconds t/in-millis)})
       :service-id->failed-instances-transient-store (atom {})
       :service-id->password-fn #(str "password-" %)
       :service-id->service-description-fn (pc/map-from-keys (constantly {"health-check-port-index" 0
@@ -534,13 +537,20 @@
          global-state (merge rs-state pods-state)]
      (reset! watch-state global-state))))
 
+(defn- reset-scheduler-service-id->deployment-error!
+  [{:keys [service-id->deployment-error-cache]} service-id->deployment-error]
+  (doseq [[service-id _] (cu/cache->map service-id->deployment-error-cache)]
+    (cu/cache-evict service-id->deployment-error-cache service-id))
+  (doseq [[service-id deployment-error] service-id->deployment-error]
+    (cu/cache-get-or-load service-id->deployment-error-cache service-id (constantly deployment-error))))
+
 (deftest test-scheduler-get-services
   (let [test-cases
         [{:api-server-response
           {:kind "ReplicaSetList"
            :apiVersion "apps/v1"
            :items []}
-          :expected-result nil}
+          :expected-result []}
 
          {:api-server-response
           {:kind "ReplicaSetList"
@@ -684,11 +694,24 @@
                                     :k8s/replicaset-creation-timestamp "2020-01-02T03:04:05.000Z"
                                     :k8s/replicaset-annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"}
                                     :task-count 0
+                                    :task-stats {:running 0, :healthy 0, :unhealthy 0, :staged 0}})]}
+
+         {:api-server-response
+          {:kind "ReplicaSetList"
+           :apiVersion "apps/v1"
+           :items []}
+          :service-id->deployment-error {"test-app-1234" "K8s API Error: something failed"}
+          :expected-result
+          [(scheduler/make-Service {:deployment-error "K8s API Error: something failed"
+                                    :id "test-app-1234"
+                                    :instances 0
+                                    :task-count 0
                                     :task-stats {:running 0, :healthy 0, :unhealthy 0, :staged 0}})]}]]
     (log/info "Expecting Key error due to bad :mismatched-replicaset in API server response...")
-    (doseq [{:keys [api-server-response expected-result]} test-cases]
+    (doseq [{:keys [api-server-response expected-result service-id->deployment-error]} test-cases]
       (let [dummy-scheduler (make-dummy-scheduler ["test-app-1234" "test-app-6789"])
             _ (reset-scheduler-watch-state! dummy-scheduler api-server-response)
+            _ (reset-scheduler-service-id->deployment-error! dummy-scheduler service-id->deployment-error)
             actual-result (->> dummy-scheduler
                                scheduler/get-services
                                sanitize-k8s-service-records)]
@@ -1094,6 +1117,20 @@
             actual-result (scheduler/service-exists? dummy-scheduler service-id)]
         (is (= expected-result actual-result))))))
 
+(defmacro assert-service-deployment-error
+  [scheduler search-service-id search-deployment-error]
+  `(let [scheduler# ~scheduler
+         search-service-id# ~search-service-id
+         search-deployment-error# ~search-deployment-error
+         services# (scheduler/get-services scheduler#)]
+     (is (some
+           (fn [service#]
+             (let [service-id# (:id service#)
+                   deployment-error# (get-in service# [:deployment-error :service-deployment-error-msg])]
+               (and (= service-id# search-service-id#)
+                    (= deployment-error# search-deployment-error#))))
+           services#))))
+
 (deftest test-create-app
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
                 config/retrieve-waiter-principal (constantly "waiter@test.com")]
@@ -1112,17 +1149,35 @@
           (let [actual (with-redefs [api-request (fn mocked-api-request [& _]
                                                    (ss/throw+ {:status http-403-forbidden}))]
                          (scheduler/create-service-if-new dummy-scheduler descriptor))]
-            (is (nil? actual))))
+            (is (nil? actual))
+            (assert-service-deployment-error
+              dummy-scheduler (:service-id service) (str "Unknown reason - check logs"))))
         (testing "unsuccessful-create: service creation conflict (already running)"
           (let [actual (with-redefs [api-request (fn mocked-api-request [& _]
                                                    (ss/throw+ {:status http-409-conflict}))]
                          (scheduler/create-service-if-new dummy-scheduler descriptor))]
-            (is (nil? actual))))
+            (is (nil? actual))
+            (assert-service-deployment-error
+              dummy-scheduler (:service-id service) (str "Unknown reason - check logs"))))
         (testing "unsuccessful-create: internal error"
           (let [actual (with-redefs [api-request (fn mocked-api-request [& _]
                                                    (throw-exception))]
                          (scheduler/create-service-if-new dummy-scheduler descriptor))]
-            (is (nil? actual))))
+            (is (nil? actual))
+            (assert-service-deployment-error
+              dummy-scheduler (:service-id service) (str "Unknown reason - check logs"))))
+        (testing "unsuccessful-create: failing k8s deployment error does not persist passed cache ttl"
+          (Thread/sleep 2001)
+          (is (= [] (scheduler/get-services dummy-scheduler))))
+        (testing "unsuccessful-create: message is propagated as deployment-error"
+          (let [k8s-error-message "some error message"
+                actual (with-redefs [api-request (fn mocked-api-request [& _]
+                                                   (ss/throw+ {:status http-400-bad-request
+                                                               :body {:message k8s-error-message}}))]
+                         (scheduler/create-service-if-new dummy-scheduler descriptor))]
+            (is (nil? actual))
+            (assert-service-deployment-error
+              dummy-scheduler (:service-id service) k8s-error-message)))
 
         (testing "successful create"
           (let [apis-url "https://k8s-api.example//apis"
@@ -1132,6 +1187,21 @@
                                                                  :request-method request-method
                                                                  :url url})
                                      service))]
+
+            (testing "removes previously created deployment error"
+              (let [api-calls-atom (atom [])
+                    actual (with-redefs [api-request (make-api-request api-calls-atom)
+                                         replicaset->Service identity]
+                             (scheduler/create-service-if-new dummy-scheduler descriptor))
+                    api-calls @api-calls-atom
+                    services (scheduler/get-services dummy-scheduler)]
+                (is (= 1 (count api-calls)))
+                (is (= {:kind "ReplicaSet"
+                        :request-method :post
+                        :url (str apis-url "/apps/v1/namespaces/waiter/replicasets")}
+                       (first api-calls)))
+                (is (= service actual))
+                (is (= [] services))))
 
             (testing "without pod disruption budget"
               (let [api-calls-atom (atom [])
@@ -1392,6 +1462,7 @@
                     :replicaset-spec-builder {:factory-fn 'waiter.scheduler.kubernetes/default-replicaset-builder
                                               :container-init-commands ["waiter-k8s-init"]
                                               :default-container-image "twosigma/waiter-test-apps:latest"}
+                    :response->deployment-error-msg-fn 'waiter.scheduler.kubernetes/default-k8s-message-transform
                     :restart-expiry-threshold 2
                     :restart-kill-threshold 8
                     :url "http://127.0.0.1:8001"}

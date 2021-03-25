@@ -560,6 +560,10 @@
                                  ;; The number of pod restart at which the pod will be killed:
                                  :restart-kill-threshold 8
 
+                                 ;; The deployment error message transform function for generating a user friendly message from a failing
+                                 ;; kubernetes api request
+                                 :response->deployment-error-msg-fn waiter.scheduler.kubernetes/default-k8s-message-transform-fn
+
                                  ;; Base URL for accessing the Kubernetes API server.
                                  ;; The URL used below is the default proxy URL bound to by the `kubectl proxy` command:
                                  :url "http://localhost:8001"
@@ -1000,8 +1004,7 @@
                 {:label "Waiter on GitHub" :link {:type :url :value "http://github.com/twosigma/waiter"}}]
 
  ;; Sets tolerance level for Waiter when declaring deployment errors
- :deployment-error-config {
-                           ;; The number of instances that must fail in order to declare a deployment error:
+ :deployment-error-config {;; The number of instances that must fail in order to declare a deployment error:
                            :min-failed-instances 2
 
                            ;; The number of hosts on which health checks must fail in order to declare a deployment error:

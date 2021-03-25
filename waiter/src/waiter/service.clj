@@ -262,7 +262,16 @@
                 instance)
               (if (and instance (not= instance :no-matching-instance-found))
                 ; instance is a deployment error if it (1) does not have an :id tag, (2) is not nil, and (3) does not equal :no-matching-instance-found
-                (ex-info (str "Deployment error: " (utils/message instance)) {:service-id service-id :status http-503-service-unavailable})
+                (let [{:keys [service-deployment-error-msg service-deployment-error-details]} instance
+                      {:keys [error-message error-map]}
+                      (cond->
+                        {:error-message (utils/message instance)
+                         :error-map {:service-id service-id
+                                     :status http-503-service-unavailable}}
+                        (and service-deployment-error-msg service-deployment-error-details)
+                        (-> (assoc :error-message service-deployment-error-msg)
+                            (update :error-map #(merge service-deployment-error-details %))))]
+                  (ex-info (str "Deployment error: " error-message) error-map))
                 (if-not (t/before? (t/now) expiry-time)
                   (do
                     ;; No instances were started in a reasonable amount of time

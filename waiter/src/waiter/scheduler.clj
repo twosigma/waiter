@@ -619,7 +619,7 @@
           (if service-id
             (let [request-instances-time (t/now)
                   active-instance-ids (->> active-instances (map :id) set)
-                  {:keys [instances task-count]} service
+                  {:keys [deployment-error instances task-count]} service
                   {:keys [instance-id->unhealthy-instance instance-id->tracked-failed-instance instance-id->failed-health-check-count]}
                   (get service-id->health-check-context service-id)
                   {:keys [healthy-instances unhealthy-instances] :as service-instance-info}
@@ -643,6 +643,7 @@
                                         (conj scheduler-messages
                                               [:update-service-instances
                                                (assoc service-instance-info
+                                                 :deployment-error deployment-error
                                                  :failed-instances all-failed-instances
                                                  :instance-counts {:healthy (count healthy-instances)
                                                                    :requested instances
