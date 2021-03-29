@@ -518,11 +518,15 @@
       nil
       (let [existing-editor (get existing-token-metadata "editor")
             existing-owner (get existing-token-metadata "owner")
-            owner? (and existing-owner (authz/manage-token? entitlement-manager authenticated-user token existing-token-metadata))
-            editor? (and existing-editor (not owner?)  (authz/run-as? entitlement-manager authenticated-user existing-editor))]
+            creating-token? (empty? existing-token-metadata)
+            owner? (and existing-owner
+                        (authz/manage-token? entitlement-manager authenticated-user token existing-token-metadata))
+            editor? (and (not creating-token?)
+                         existing-editor
+                         (not owner?)
+                         (authz/run-as? entitlement-manager authenticated-user existing-editor))]
         (when editor?
-          (log/info "applying editor privileges to operation" {:editor authenticated-user :owner existing-owner}))
-        (if editor?
+          (log/info "applying editor privileges to operation" {:editor authenticated-user :owner existing-owner})
           (let [existing-token-parameters (sd/token->token-parameters kv-store token :include-deleted false)]
             (doseq [parameter-name ["editor" "owner" "run-as-user"]]
               (let [existing-value (get existing-token-parameters parameter-name)
@@ -536,19 +540,18 @@
                                    :parameter-new-value new-value
                                    :privileges {:editor? editor? :owner? owner?}
                                    :status http-403-forbidden
-                                   :log-level :warn}))))))
-          ;; only check run-as-user rules when not running as editor
-          (when (and run-as-user (not= "*" run-as-user))
-            (when-not (authz/run-as? entitlement-manager authenticated-user run-as-user)
-              (throw (ex-info "Cannot run as user"
-                              {:authenticated-user authenticated-user
-                               :privileges {:editor? editor? :owner? owner?}
-                               :run-as-user run-as-user
-                               :status http-403-forbidden
-                               :log-level :warn})))))
-        (if-not (str/blank? existing-owner)
+                                   :log-level :warn})))))))
+        ;; only check run-as-user rules when not running as editor, editor cannot change run-as-user from previous check
+        (when (and (not editor?) run-as-user (not= "*" run-as-user))
+          (when-not (authz/run-as? entitlement-manager authenticated-user run-as-user)
+            (throw (ex-info "Cannot run as user"
+                            {:authenticated-user authenticated-user
+                             :run-as-user run-as-user
+                             :status http-403-forbidden
+                             :log-level :warn}))))
+        (if-not creating-token?
           ;; editing token
-          (let [delegated-user (if editor? existing-owner authenticated-user)]
+          (let [delegated-user (or (when editor? existing-owner) authenticated-user)]
             (when-not (authz/manage-token? entitlement-manager delegated-user token existing-token-metadata)
               (throw (ex-info "Cannot change owner of token"
                               {:authenticated-user authenticated-user
