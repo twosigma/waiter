@@ -44,7 +44,7 @@ jobs:
           pip install -e .
           pip install -r integration/requirements.txt
       - name: Run cli-integration tests
-      	shell: 'script -q -e -c "bash {0}"'
+        shell: 'script -q -e -c "bash {0}"'
         run: |
           cd cli
           ./bin/ci/run-integration-tests.sh
