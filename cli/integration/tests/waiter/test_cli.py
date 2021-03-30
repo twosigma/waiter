@@ -1628,35 +1628,23 @@ class WaiterCliTest(util.WaiterTest):
             cp = cli.ssh(self.waiter_url, ssh_dest, stdin=stdin, ssh_command=command_to_run,
                          ssh_flags=' '.join(ssh_flags),
                          env=env)
+            stdout = cli.stdout(cp)
             if expect_out_of_range:
                 self.assertEqual(1, cp.returncode, cp.stderr)
                 self.assertIn('Input is out of range!', cli.stderr(cp))
             elif expect_no_data:
                 self.assertEqual(1, cp.returncode, cp.stderr)
-                self.assertIn('No matching data found', cli.stdout(cp))
+                self.assertIn('No matching data found', stdout)
             elif expect_no_instances:
                 self.assertEqual(1, cp.returncode, cp.stderr)
-                self.assertIn(f'There are no relevant instances using service id {service_id}', cli.stdout(cp))
+                self.assertIn(f'There are no relevant instances using service id {service_id}', stdout)
             else:
                 self.assertEqual(0, cp.returncode, cp.stderr)
-                found = False
-                for instance in possible_instances:
-                    log_directory = instance['log-directory']
-                    if util.using_kubernetes(self.waiter_url):
-                        container_name = container_name or 'waiter-app'
-                        api_server = instance['k8s/api-server-url']
-                        namespace = instance['k8s/namespace']
-                        pod_name = instance['k8s/pod-name']
-                        command_args = f'--server {api_server} --namespace {namespace} exec -it {pod_name} -c '
-                        f"{container_name} -- /bin/bash -c cd {log_directory}; "
-                        f"{command_to_run or 'exec /bin/bash'}"
-                    else:
-                        command_args = f"-t {instance['host']} cd {log_directory} ; {command_to_run or '/bin/bash'}"
-                    if command_args in cli.stdout(cp):
-                        found = True
-                        break
-                self.assertTrue(found, msg=f"None of the possible instances {possible_instances} were detected in ssh "
-                                           f"command output: \n{cli.stdout(cp)}")
+                ssh_instance = util.get_ssh_instance_from_output(self.waiter_url, possible_instances, stdout,
+                                                                 command_to_run=command_to_run)
+                self.assertIsNotNone(ssh_instance,
+                                     msg=f"None of the possible instances {possible_instances} were detected in ssh "
+                                         f"command output: \n{stdout}")
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
 
