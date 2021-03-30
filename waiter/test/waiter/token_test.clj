@@ -1330,7 +1330,7 @@
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
           (is (= http-403-forbidden status))
-          (is (str/includes? body "Cannot change owner of token"))))
+          (is (str/includes? body "Cannot update token"))))
 
       (testing "post:new-service-description:create-unauthorized-owner"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))

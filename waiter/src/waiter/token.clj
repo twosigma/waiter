@@ -519,13 +519,13 @@
       (let [existing-editor (get existing-token-metadata "editor")
             existing-owner (get existing-token-metadata "owner")
             creating-token? (empty? existing-token-metadata)
-            existing-owner? (and existing-owner
-                                 (authz/manage-token? entitlement-manager authenticated-user token existing-token-metadata))
-            editor? (and (not creating-token?)
-                         (not existing-owner?)
-                         existing-editor
-                         (authz/run-as? entitlement-manager authenticated-user existing-editor))]
-        (when editor?
+            current-owner? (and existing-owner
+                                (authz/manage-token? entitlement-manager authenticated-user token existing-token-metadata))
+            editing? (and (not creating-token?)
+                          (not current-owner?)
+                          existing-editor
+                          (authz/run-as? entitlement-manager authenticated-user existing-editor))]
+        (when editing?
           (log/info "applying editor privileges to operation" {:editor authenticated-user :owner existing-owner})
           (let [existing-token-parameters (sd/token->token-parameters kv-store token :include-deleted false)]
             (doseq [parameter-name ["editor" "owner" "run-as-user"]]
@@ -538,35 +538,35 @@
                                    :parameter parameter-name
                                    :parameter-exiting-value existing-value
                                    :parameter-new-value new-value
-                                   :privileges {:current-owner? existing-owner? :editor? editor?}
+                                   :privileges {:current-owner? current-owner? :editor? editing?}
                                    :status http-403-forbidden
                                    :log-level :warn})))))))
         ;; only check run-as-user rules when not running as editor, editor cannot change run-as-user from previous check
-        (when (and (not editor?) run-as-user (not= "*" run-as-user))
+        (when (and (not editing?) run-as-user (not= "*" run-as-user))
           (when-not (authz/run-as? entitlement-manager authenticated-user run-as-user)
             (throw (ex-info "Cannot run as user"
                             {:authenticated-user authenticated-user
                              :run-as-user run-as-user
                              :status http-403-forbidden
                              :log-level :warn}))))
-        (if-not creating-token?
-          ;; editing token
-          (let [delegated-user (or (when editor? existing-owner) authenticated-user)]
-            (when-not (authz/manage-token? entitlement-manager delegated-user token existing-token-metadata)
-              (throw (ex-info "Cannot change owner of token"
-                              {:authenticated-user authenticated-user
-                               :existing-owner existing-owner
-                               :new-user owner
-                               :privileges {:editor? editor? :owner? existing-owner?}
-                               :status http-403-forbidden
-                               :log-level :warn}))))
+        (if creating-token?
           ;; new token creation
           (when-not (authz/run-as? entitlement-manager authenticated-user owner)
             (throw (ex-info "Cannot create token as user"
                             {:authenticated-user authenticated-user
                              :owner owner
                              :status http-403-forbidden
-                             :log-level :warn}))))
+                             :log-level :warn})))
+          ;; editing token
+          (let [delegated-user (or (when editing? existing-owner) authenticated-user)]
+            (when-not (authz/manage-token? entitlement-manager delegated-user token existing-token-metadata)
+              (throw (ex-info "Cannot update token"
+                              {:authenticated-user authenticated-user
+                               :existing-owner existing-owner
+                               :new-user owner
+                               :privileges {:editor? editing? :owner? current-owner?}
+                               :status http-403-forbidden
+                               :log-level :warn})))))
         ;; Neither owner nor editor may modify system metadata fields
         (doseq [parameter-name ["last-update-time" "last-update-user" "root" "previous"]]
           (when (contains? new-token-metadata parameter-name)
