@@ -519,11 +519,11 @@
       (let [existing-editor (get existing-token-metadata "editor")
             existing-owner (get existing-token-metadata "owner")
             creating-token? (empty? existing-token-metadata)
-            owner? (and existing-owner
-                        (authz/manage-token? entitlement-manager authenticated-user token existing-token-metadata))
+            existing-owner? (and existing-owner
+                                 (authz/manage-token? entitlement-manager authenticated-user token existing-token-metadata))
             editor? (and (not creating-token?)
+                         (not existing-owner?)
                          existing-editor
-                         (not owner?)
                          (authz/run-as? entitlement-manager authenticated-user existing-editor))]
         (when editor?
           (log/info "applying editor privileges to operation" {:editor authenticated-user :owner existing-owner})
@@ -538,7 +538,7 @@
                                    :parameter parameter-name
                                    :parameter-exiting-value existing-value
                                    :parameter-new-value new-value
-                                   :privileges {:editor? editor? :owner? owner?}
+                                   :privileges {:current-owner? existing-owner? :editor? editor?}
                                    :status http-403-forbidden
                                    :log-level :warn})))))))
         ;; only check run-as-user rules when not running as editor, editor cannot change run-as-user from previous check
@@ -557,7 +557,7 @@
                               {:authenticated-user authenticated-user
                                :existing-owner existing-owner
                                :new-user owner
-                               :privileges {:editor? editor? :owner? owner?}
+                               :privileges {:editor? editor? :owner? existing-owner?}
                                :status http-403-forbidden
                                :log-level :warn}))))
           ;; new token creation
@@ -565,7 +565,6 @@
             (throw (ex-info "Cannot create token as user"
                             {:authenticated-user authenticated-user
                              :owner owner
-                             :privileges {:editor? editor? :owner? owner?}
                              :status http-403-forbidden
                              :log-level :warn}))))
         ;; Neither owner nor editor may modify system metadata fields
