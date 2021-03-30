@@ -1176,7 +1176,42 @@
                     "previous" {}
                     "root" token-root}
                    token-metadata)))
-          (is (empty? (sd/fetch-core kv-store service-id-1))))))))
+          (is (empty? (sd/fetch-core kv-store service-id-1)))))
+
+      (testing "post:edit-service-description:editor-privileges:edit-allowed-fields"
+        (let [token (str token "-editor-test")
+              entitlement-manager (reify authz/EntitlementManager
+                                    (authorized? [_ subject verb {:keys [user]}]
+                                      (and (or (= :manage verb) (= :run-as verb))
+                                           (or (str/includes? subject user) (str/includes? user subject)))))
+              cur-service-description (walk/stringify-keys
+                                        {:cmd "cmd1" :mem 100 :permitted-user "tp1" :run-as-user "to1A" :version "v1"
+                                         :editor "te1" :owner "to1" :token token})
+              _ (kv/store kv-store token cur-service-description)
+              new-service-description (walk/stringify-keys
+                                        {:cmd "cmd2" :mem 200 :permitted-user "tp2" :run-as-user "to1A" :version "v2"
+                                         :editor "te1" :owner "to1" :token token})
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
+                {:authorization/user "te1"
+                 :body (-> new-service-description utils/clj->json StringBufferInputStream.)
+                 :headers {}
+                 :request-method :post})]
+          (is (= http-200-ok status))
+          (is (str/includes? body (str "Successfully updated " token)))
+          (is (= (select-keys new-service-description sd/service-parameter-keys)
+                 (sd/token->service-parameter-template kv-store token)))
+          (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]
+            (is (= (select-keys new-service-description sd/service-parameter-keys)
+                   service-parameter-template))
+            (is (= (assoc (select-keys new-service-description sd/token-metadata-keys)
+                     "cluster" (str token-root "-cluster")
+                     "last-update-time" (clock-millis)
+                     "last-update-user" "te1"
+                     "previous" cur-service-description
+                     "root" token-root)
+                   token-metadata))))))))
 
 (defmacro assert-bad-user-metadata-response
   "Asserts the response is due to invalid user-metadata for a specific key path"
@@ -1295,7 +1330,7 @@
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
           (is (= http-403-forbidden status))
-          (is (str/includes? body "Cannot change owner of token"))))
+          (is (str/includes? body "Cannot update token"))))
 
       (testing "post:new-service-description:create-unauthorized-owner"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -1960,7 +1995,74 @@
           (is (not (str/includes? body "clojure")))
           (is (str/includes? (str details) "json-payload") body)
           (is (str/includes? (str details) "query-parameter") body)
-          (is (str/includes? message "The token should be provided only as a query parameter or in the json payload") body))))))
+          (is (str/includes? message "The token should be provided only as a query parameter or in the json payload") body)))
+
+      (testing "post:new-service-description:editor-privileges:failure"
+        (let [token (str token "-editor-test-new-fail")
+              kv-store (kv/->LocalKeyValueStore (atom {}))
+              entitlement-manager (reify authz/EntitlementManager
+                                    (authorized? [_ subject verb {:keys [user]}]
+                                      (and (or (= :manage verb) (= :run-as verb))
+                                           (or (str/includes? subject user) (str/includes? user subject)))))
+              service-description (walk/stringify-keys
+                                    {:cmd "cmd1" :mem 100 :permitted-user "tp1" :run-as-user "to2A" :version "v1"
+                                     :editor "te1" :owner "to1" :token token})
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
+                {:authorization/user "te2"
+                 :body (-> service-description utils/clj->json StringBufferInputStream.)
+                 :headers {}
+                 :request-method :post})]
+          (is (= http-403-forbidden status))
+          (is (str/includes? body "Cannot run as user"))))
+
+      (testing "post:edit-service-description:editor-privileges:failure"
+        (let [token (str token "-editor-test-edit-fail")
+              kv-store (kv/->LocalKeyValueStore (atom {}))
+              entitlement-manager (reify authz/EntitlementManager
+                                    (authorized? [_ subject verb {:keys [user]}]
+                                      (and (or (= :manage verb) (= :run-as verb))
+                                           (or (str/includes? subject user) (str/includes? user subject)))))
+              cur-service-description (walk/stringify-keys
+                                        {:cmd "cmd1" :mem 100 :permitted-user "tp1" :run-as-user "to2A" :version "v1"
+                                         :editor "te1" :owner "to1" :token token})
+              _ (kv/store kv-store token cur-service-description)
+              new-service-description (walk/stringify-keys (assoc cur-service-description :cmd "cmd2"))
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
+                {:authorization/user "te2"
+                 :body (-> new-service-description utils/clj->json StringBufferInputStream.)
+                 :headers {}
+                 :request-method :post})]
+          (is (= http-403-forbidden status))
+          (is (str/includes? body "Cannot run as user"))))
+
+      (testing "post:edit-service-description:editor-privileges:edit-restricted-field-owner"
+        (let [token (str token "-editor-test")
+              kv-store (kv/->LocalKeyValueStore (atom {}))
+              entitlement-manager (reify authz/EntitlementManager
+                                    (authorized? [_ subject verb {:keys [user]}]
+                                      (and (or (= :manage verb) (= :run-as verb))
+                                           (or (str/includes? subject user) (str/includes? user subject)))))
+              cur-service-description (walk/stringify-keys
+                                        {:cmd "cmd1" :mem 100 :permitted-user "tp1" :run-as-user "to1A" :version "v1"
+                                         :editor "te1" :owner "to1" :token token})]
+          (kv/store kv-store token cur-service-description)
+          (doseq [parameter-name ["editor" "owner" "run-as-user"]]
+            (let [new-service-description (walk/stringify-keys (assoc cur-service-description parameter-name "new"))
+                  {:keys [body status]}
+                  (run-handle-token-request
+                    kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
+                    {:authorization/user "te1"
+                     :body (-> new-service-description utils/clj->json StringBufferInputStream.)
+                     :headers {}
+                     :request-method :post})]
+              (is (= http-403-forbidden status))
+              (is (str/includes? body (str "Not allowed to edit parameter " parameter-name)))
+              (is (= (select-keys cur-service-description sd/service-parameter-keys)
+                     (sd/token->service-parameter-template kv-store token))))))))))
 
 (deftest test-store-service-description
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))

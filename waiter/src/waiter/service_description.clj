@@ -117,6 +117,7 @@
   {(s/optional-key "cors-rules") [{(s/required-key "origin-regex") schema/regex-pattern
                                    (s/optional-key "target-path-regex") schema/regex-pattern
                                    (s/optional-key "methods") (s/both (s/pred not-empty) [schema/http-method])}]
+   (s/optional-key "editor") schema/non-empty-string
    (s/optional-key "fallback-period-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/days 1))) 'at-most-1-day))
    (s/optional-key "https-redirect") s/Bool
    (s/optional-key "maintenance") {(s/required-key "message") (s/constrained s/Str #(<= 1 (count %) 512))}
@@ -161,7 +162,7 @@
 (def ^:const system-metadata-keys #{"cluster" "deleted" "last-update-time" "last-update-user" "previous" "root"})
 
 ; keys allowed in user metadata for tokens, these need to be distinct from service description keys
-(def ^:const user-metadata-keys #{"cors-rules" "fallback-period-secs" "https-redirect" "maintenance" "owner" "stale-timeout-mins"})
+(def ^:const user-metadata-keys #{"cors-rules" "editor" "fallback-period-secs" "https-redirect" "maintenance" "owner" "stale-timeout-mins"})
 
 ; keys allowed in metadata for tokens, these need to be distinct from service description keys
 (def ^:const token-metadata-keys (set/union system-metadata-keys user-metadata-keys))
