@@ -3,12 +3,12 @@ import json
 import logging
 import os
 import pty
-import struct
 import re
+import struct
 import shlex
 import subprocess
-import termios
 import tempfile
+import termios
 from fcntl import fcntl, F_GETFL, F_SETFL, ioctl
 
 import yaml
