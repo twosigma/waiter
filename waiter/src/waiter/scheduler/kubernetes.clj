@@ -397,7 +397,9 @@
       (throw (ex-info "k8s watch connection failed"
                       {:watch-resource resource-name
                        :watch-response update-json}))
-      update-json)))
+      ;; Drop managedFields from response objects when present (much too verbose!)
+      ;; https://github.com/kubernetes/kubernetes/issues/90066#issuecomment-626828512
+      (utils/dissoc-in update-json [:object :metadata :managedFields]))))
 
 (defn api-request
   "Make an HTTP request to the Kubernetes API server using the configured authentication.
