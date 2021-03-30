@@ -28,14 +28,15 @@ def get_instances_from_service_id(clusters, service_id, include_active_instances
     num_services = query_result['count']
     if num_services == 0:
         return False
-    service = list(query_result['clusters'].values())[0]['service']
+    services = map(lambda service_data: service_data['service'], query_result['clusters'].values())
     instances = []
-    if include_active_instances:
-        instances += map_instances_with_status(service['instances']['active-instances'], 'active')
-    if include_failed_instances:
-        instances += map_instances_with_status(service['instances']['failed-instances'], 'failed')
-    if include_killed_instances:
-        instances += map_instances_with_status(service['instances']['killed-instances'], 'killed')
+    for service in services:
+        if include_active_instances:
+            instances += map_instances_with_status(service['instances']['active-instances'], 'active')
+        if include_failed_instances:
+            instances += map_instances_with_status(service['instances']['failed-instances'], 'failed')
+        if include_killed_instances:
+            instances += map_instances_with_status(service['instances']['killed-instances'], 'killed')
     return instances
 
 
@@ -126,6 +127,7 @@ def ssh_token(clusters, enforce_cluster, token, command, container_name, skip_pr
         if query_result['count'] == 0:
             print_no_data(clusters)
             return 1
+        clusters_by_name = {c['name']: c for c in clusters}
         cluster_data = query_result['clusters']
         services = [{'cluster': cluster, 'etag': data['etag'], **service}
                     for cluster, data in cluster_data.items()
@@ -138,6 +140,7 @@ def ssh_token(clusters, enforce_cluster, token, command, container_name, skip_pr
                                                                   column_names=column_names)
         selected_service = get_user_selection(sorted_services, tabular_output)
         selected_service_id = selected_service['service-id']
+        clusters = [clusters_by_name[selected_service['cluster']]]
     return ssh_service_id(clusters, selected_service_id, command, container_name, skip_prompts,
                           include_active_instances, include_failed_instances, include_killed_instances)
 
