@@ -59,8 +59,10 @@ def sh(cmd, stdin=None, env=None, wait_for_exit=True):
     master_input, slave_input = pty.openpty()
     master_stdout, slave_stdout = pty.openpty()
     master_stderr, slave_stderr = pty.openpty()
-    # resize TTY, otherwise stdout and stderr will have many new lines because the terminal columns is 0
+    # resize pseudo terminal TTY, otherwise stdout and stderr will have many new lines because the terminal columns is 0 causing tabuler
+    # output to have many newlines
     ioctl(slave_stdout, termios.TIOCSWINSZ, struct.pack("hhhh", 200, 200, 0, 0))
+    ioctl(slave_stderr, termios.TIOCSWINSZ, struct.pack("hhhh", 200, 200, 0, 0))
     if wait_for_exit:
         # We manually attach stdin to a TTY if there is no piped input
         # since the default stdin isn't guaranteed to be a TTY.
