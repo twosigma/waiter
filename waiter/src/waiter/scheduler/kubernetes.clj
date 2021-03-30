@@ -869,9 +869,13 @@
                        (dissoc :service-id->health-check-context)))
       (or (contains? include-flags "watch-state")
           (contains? include-flags "watch-state-details"))
-      (assoc :watch-state (cond-> @watch-state
-                            (not (contains? include-flags "watch-state-details"))
-                            (dissoc :service-id->pod-id->pod :service-id->service)))))
+      (assoc :watch-state (if (contains? include-flags "watch-state-details")
+                            (update @watch-state :service-id->pod-id->pod
+                                    (fn [service-id->pod-id->pod]
+                                      (pc/map-vals (fn [pod-id->pod]
+                                                     (pc/map-vals #(dissoc % :spec) pod-id->pod))
+                                                   service-id->pod-id->pod)))
+                            (dissoc @watch-state :service-id->pod-id->pod :service-id->service)))))
 
   (validate-service [this service-id]
     (let [{:strs [run-as-user]} (retrieve-service-description this service-id)]
