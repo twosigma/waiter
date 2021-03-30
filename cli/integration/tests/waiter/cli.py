@@ -1,47 +1,73 @@
+import errno
 import json
 import logging
 import os
 import pty
+import struct
+import re
 import shlex
 import subprocess
+import termios
 import tempfile
-from fcntl import fcntl, F_GETFL, F_SETFL
+from fcntl import fcntl, F_GETFL, F_SETFL, ioctl
 
 import yaml
 
 from tests.waiter import util
 
-# Manually create a TTY that we can use as the default STDIN
-_STDIN_TTY = pty.openpty()[1]
+
+def _read_all_lines(fd):
+    """Reads all the lines from a file descriptor. Ensure the file descriptor is non blocking or this function will
+    be blocking"""
+    fd = os.dup(fd)
+    f_out = ''
+    file = os.fdopen(fd, 'r')
+    try:
+        while True:
+            line = file.readline()
+            if not line: # EOF reached
+                return f_out
+            f_out += line
+    except OSError as e:
+        # EIO means EOF in some operating systems
+        if e.errno == errno.EIO:
+            return f_out
+        else:
+            raise e
 
 
 def decode(b):
-    """Decodes as UTF-8"""
-    return b.decode('UTF-8')
+    """Removes ANSI formatting from string"""
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    return ansi_escape.sub('', b)
 
 
 def stdout(cp):
-    """Returns the UTF-8 decoded and stripped stdout of the given CompletedProcess"""
+    """Returns the stripped stdout without ANSI formatting of the given CompletedProcess"""
     return decode(cp.stdout).strip()
 
 
 def stderr(cp):
-    """Returns the UTF-8 decoded and stripped stderr of the given CompletedProcess"""
+    """Returns the stripped stderr without ANSI formatting of the given CompletedProcess"""
     return decode(cp.stderr).strip()
 
 
 def sh(cmd, stdin=None, env=None, wait_for_exit=True):
     """Runs command using subprocess.run"""
-    logging.info(cmd + (f' # stdin: {decode(stdin)}' if stdin else ''))
+    logging.info(cmd + (f' # stdin: {stdin.decode("UTF-8")}' if stdin else ''))
     command_args = shlex.split(cmd)
+    master_input, slave_input = pty.openpty()
+    master_stdout, slave_stdout = pty.openpty()
+    master_stderr, slave_stderr = pty.openpty()
+    # resize TTY, otherwise stdout and stderr will have many new lines because the terminal columns is 0
+    ioctl(slave_stdout, termios.TIOCSWINSZ, struct.pack("hhhh", 200, 200, 0, 0))
     if wait_for_exit:
         # We manually attach stdin to a TTY if there is no piped input
         # since the default stdin isn't guaranteed to be a TTY.
-        input_args = {'input': stdin} if stdin is not None else {'stdin': _STDIN_TTY}
-        cp = subprocess.run(command_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, **input_args)
-        return cp
+        input_args = {'input': stdin} if stdin is not None else {'stdin': slave_input}
+        proc = subprocess.run(command_args, stdout=slave_stdout, stderr=slave_stderr, env=env, **input_args, close_fds=True)
     else:
-        proc = subprocess.Popen(command_args, stdin=_STDIN_TTY, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc = subprocess.Popen(command_args, stdin=slave_input, stdout=subprocess.PIPE, stderr=subprocess.PIPE, close_fds=True)
         # Get the current stdout, stderr flags
         stdout_flags = fcntl(proc.stdout, F_GETFL)
         stderr_flags = fcntl(proc.stderr, F_GETFL)
@@ -49,7 +75,15 @@ def sh(cmd, stdin=None, env=None, wait_for_exit=True):
         # (if we don't set this, calls to readlines() will block)
         fcntl(proc.stdout, F_SETFL, stdout_flags | os.O_NONBLOCK)
         fcntl(proc.stderr, F_SETFL, stderr_flags | os.O_NONBLOCK)
-        return proc
+    os.close(slave_stdout)
+    os.close(slave_stderr)
+    os.close(slave_input)
+    proc.stdout = _read_all_lines(master_stdout)
+    proc.stderr = _read_all_lines(master_stderr)
+    os.close(master_input)
+    os.close(master_stdout)
+    os.close(master_stderr)
+    return proc
 
 
 def command():
