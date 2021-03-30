@@ -1,13 +1,10 @@
 name: 'Waiter cli-integration tests'
 
 on:
+  push
   pull_request:
     branches:
       - master
-  push:
-    branches:
-      - master
-      - 'build**'
   schedule:
     - cron: '0 0 * * *'
 
