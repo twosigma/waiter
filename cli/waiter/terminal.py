@@ -52,7 +52,7 @@ wrap = textwrap.wrap
 
 def colorize(s, color):
     """Formats the given string with the given color"""
-    return color + s + Color.END if tty() else s
+    return f'{color}{s}{Color.END}' if tty() else s
 
 
 def tty():
