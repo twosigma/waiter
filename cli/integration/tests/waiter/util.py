@@ -359,6 +359,7 @@ def using_kubernetes(waiter_url):
 
 
 def get_ssh_command(instance, is_kubernetes_enabled, container_name='waiter-app', command_to_run=None):
+    """create the ssh arguments string that is expected when using waiter ssh"""
     log_directory = instance['log-directory']
     if is_kubernetes_enabled:
         api_server = instance['k8s/api-server-url']
@@ -373,15 +374,18 @@ def get_ssh_command(instance, is_kubernetes_enabled, container_name='waiter-app'
 
 def get_ssh_instance_from_output(waiter_url, possible_instances, stdout_output, container_name=None,
                                  command_to_run=None):
+    """returns the instance that served as the destination of the waiter ssh command based on the stdout output"""
     is_kubernetes_enabled = using_kubernetes(waiter_url)
     for instance in possible_instances:
         ssh_command = get_ssh_command(instance, is_kubernetes_enabled, container_name=container_name,
                                       command_to_run=command_to_run)
         if ssh_command in stdout_output:
             return instance
+        logging.debug(f"ssh command was not in stdout_output: {ssh_command}")
 
 
 def get_instances_not_in_output(possible_instances, stdout_output):
+    """return instances where their id is not in the stdout output"""
     return [instance
             for instance in possible_instances
             if instance['id'] not in stdout_output]
