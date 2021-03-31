@@ -525,6 +525,11 @@
                           (not current-owner?)
                           existing-editor
                           (authz/run-as? entitlement-manager authenticated-user existing-editor))]
+        (log/info "existing-token-metadata" existing-token-metadata)
+        (log/info "existing-owner" existing-owner)
+        (log/info "existing-editor" existing-editor)
+        (log/info "new-service-parameter-template" new-service-parameter-template)
+        (log/info "privileges" {:current-owner? current-owner? :editor? editing?})
         (when editing?
           (log/info "applying editor privileges to operation" {:editor authenticated-user :owner existing-owner})
           (let [existing-token-parameters (sd/token->token-parameters kv-store token :include-deleted false)]
