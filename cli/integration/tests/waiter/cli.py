@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import pty
+import re
 import shlex
 import subprocess
 import tempfile
@@ -16,8 +17,9 @@ _STDIN_TTY = pty.openpty()[1]
 
 
 def decode(b):
-    """Decodes as UTF-8"""
-    return b.decode('UTF-8')
+    """Decodes as UTF-8, and removes ANSI formatting"""
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    return ansi_escape.sub('', b.decode('UTF-8'))
 
 
 def stdout(cp):
@@ -34,14 +36,20 @@ def sh(cmd, stdin=None, env=None, wait_for_exit=True):
     """Runs command using subprocess.run"""
     logging.info(cmd + (f' # stdin: {decode(stdin)}' if stdin else ''))
     command_args = shlex.split(cmd)
+    if env:
+        tty_env = env.copy()
+    else:
+        tty_env = os.environ.copy()
+    tty_env['WAITER_FORCE_CLI_TTY'] = 'true'
     if wait_for_exit:
         # We manually attach stdin to a TTY if there is no piped input
         # since the default stdin isn't guaranteed to be a TTY.
         input_args = {'input': stdin} if stdin is not None else {'stdin': _STDIN_TTY}
-        cp = subprocess.run(command_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, **input_args)
+        cp = subprocess.run(command_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=tty_env, **input_args)
         return cp
     else:
-        proc = subprocess.Popen(command_args, stdin=_STDIN_TTY, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc = subprocess.Popen(command_args, stdin=_STDIN_TTY, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                env=tty_env)
         # Get the current stdout, stderr flags
         stdout_flags = fcntl(proc.stdout, F_GETFL)
         stderr_flags = fcntl(proc.stderr, F_GETFL)

@@ -1,3 +1,4 @@
+import os
 import sys
 
 import textwrap
@@ -52,9 +53,10 @@ wrap = textwrap.wrap
 
 def colorize(s, color):
     """Formats the given string with the given color"""
-    return color + s + Color.END if tty() else s
+    return f'{color}{s}{Color.END}' if tty() else s
 
 
 def tty():
-    """Returns true if running in a real terminal (as opposed to being piped or redirected)"""
-    return sys.stdout.isatty()
+    """Returns true if running in a real terminal (as opposed to being piped or redirected). If WAITER_TTY is set then
+    return True else False"""
+    return os.getenv("WAITER_FORCE_CLI_TTY", False) or sys.stdout.isatty()
