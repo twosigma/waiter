@@ -1641,6 +1641,7 @@ class WaiterCliTest(util.WaiterTest):
             else:
                 self.assertEqual(0, cp.returncode, cp.stderr)
                 ssh_instance = util.get_ssh_instance_from_output(self.waiter_url, possible_instances, stdout,
+                                                                 container_name=container_name,
                                                                  command_to_run=command_to_run)
                 self.assertIsNotNone(ssh_instance,
                                      msg=f"None of the possible instances {possible_instances} were detected in ssh "

@@ -371,10 +371,12 @@ def get_ssh_command(instance, is_kubernetes_enabled, container_name='waiter-app'
         return f"-t {instance['host']} cd {log_directory} ; {command_to_run or '/bin/bash'}"
 
 
-def get_ssh_instance_from_output(waiter_url, possible_instances, stdout_output, command_to_run=None):
+def get_ssh_instance_from_output(waiter_url, possible_instances, stdout_output, container_name=None,
+                                 command_to_run=None):
     is_kubernetes_enabled = using_kubernetes(waiter_url)
     for instance in possible_instances:
-        ssh_command = get_ssh_command(instance, is_kubernetes_enabled, command_to_run=command_to_run)
+        ssh_command = get_ssh_command(instance, is_kubernetes_enabled, container_name=container_name,
+                                      command_to_run=command_to_run)
         if ssh_command in stdout_output:
             return instance
 
