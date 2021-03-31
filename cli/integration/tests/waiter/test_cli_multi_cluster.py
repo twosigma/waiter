@@ -538,18 +538,20 @@ class MultiWaiterCliTest(util.WaiterTest):
             env = os.environ.copy()
             env['WAITER_SSH'] = 'echo'
             env['WAITER_KUBECTL'] = 'echo'
-            cp = cli.ssh(token_or_service_id_or_instance_id=service1_id, stdin='1\n'.encode('utf8'), ssh_flags='-s',
-                         env=env)
-            stdout = cli.stdout(cp)
-            self.assertEqual(0, cp.returncode, cp.stderr)
-            # all instances should have been an option when prompting
-            self.assertFalse(util.get_instances_not_in_output(possible_instances, stdout))
-            # any one of the instances should have been attempted to ssh into
-            ssh_instance1 = util.get_ssh_instance_from_output(self.waiter_url_1, instances1, stdout)
-            ssh_instance2 = util.get_ssh_instance_from_output(self.waiter_url_2, instances2, stdout)
-            found = ssh_instance1 is not None or ssh_instance2 is not None
-            self.assertTrue(found, msg=f"None of the possible instances {possible_instances} were detected in ssh "
-                                       f"command output: \n{stdout}")
+            config = self.__two_cluster_config()
+            with cli.temp_config_file(config) as path:
+                cp = cli.ssh(token_or_service_id_or_instance_id=service1_id, stdin='1\n'.encode('utf8'), ssh_flags='-s',
+                             flags=f'--config {path}', env=env)
+                stdout = cli.stdout(cp)
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                # all instances should have been an option when prompting
+                self.assertFalse(util.get_instances_not_in_output(possible_instances, stdout))
+                # any one of the instances should have been attempted to ssh into
+                ssh_instance1 = util.get_ssh_instance_from_output(self.waiter_url_1, instances1, stdout)
+                ssh_instance2 = util.get_ssh_instance_from_output(self.waiter_url_2, instances2, stdout)
+                found = ssh_instance1 is not None or ssh_instance2 is not None
+                self.assertTrue(found, msg=f"None of the possible instances {possible_instances} were detected in ssh "
+                                           f"command output: \n{stdout}")
         finally:
             util.delete_token(self.waiter_url_1, token_name, kill_services=True)
             util.delete_token(self.waiter_url_2, token_name, kill_services=True)
