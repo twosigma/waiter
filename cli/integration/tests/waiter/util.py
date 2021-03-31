@@ -358,16 +358,18 @@ def using_kubernetes(waiter_url):
     return "kubernetes" == retrieve_default_scheduler_name(waiter_url)
 
 
-def get_ssh_command(instance, is_kubernetes_enabled, container_name='waiter-app', command_to_run=None):
+def get_ssh_command(instance, is_kubernetes_enabled, container_name=None, command_to_run=None):
     """create the ssh arguments string that is expected when using waiter ssh"""
     log_directory = instance['log-directory']
     if is_kubernetes_enabled:
+        container_name = container_name or 'waiter-app'
+        command_to_run = command_to_run or 'exec /bin/bash'
         api_server = instance['k8s/api-server-url']
         namespace = instance['k8s/namespace']
         pod_name = instance['k8s/pod-name']
         return f'--server {api_server} --namespace {namespace} exec -it {pod_name} -c '\
                f"{container_name} -- /bin/bash -c cd {log_directory}; "\
-               f"{command_to_run or 'exec /bin/bash'}"
+               f"{command_to_run}"
     else:
         return f"-t {instance['host']} cd {log_directory} ; {command_to_run or '/bin/bash'}"
 
