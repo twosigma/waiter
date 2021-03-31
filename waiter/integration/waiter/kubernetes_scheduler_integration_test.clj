@@ -405,8 +405,8 @@
               (testing "Expected envoy specific headers are present in both request and response"
                 (let [response-body (try-parse-json (:body response))
                       response-headers (:headers response)]
-                  ;; x-envoy-expected-rq-timeout-ms is absent when timeouts are not configured
-                  (is (contains? (get response-body "headers") "x-envoy-expected-rq-timeout-ms"))
+                  ;; x-envoy-expected-rq-timeout-ms is absent when timeouts are disabled
+                  (is (contains? (get response-body "headers") "x-envoy-external-address"))
                   (is (contains? response-headers "x-envoy-upstream-service-time")))))
 
             (let [response (make-request-with-debug-info
