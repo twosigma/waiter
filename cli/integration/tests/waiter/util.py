@@ -303,6 +303,15 @@ def services_for_token(waiter_url, token_name, assert_response=True, expected_st
     return services
 
 
+def create_empty_service_with_token(waiter_url, token, assert_response=True, expected_status_code=200):
+    """Creates a service with no instances and returns the service-id"""
+    response = session.get(f'{waiter_url}/service-id', headers={'x-waiter-token': token})
+    if assert_response:
+        assert expected_status_code == response.status_code, \
+            f'Expected {expected_status_code}, got {response.status_code} with body {response.text}'
+    return response.content.decode('UTF-8')
+
+
 def instances_for_service(waiter_url, service_id, expected_status_code=200):
     """returns instances map of a service"""
     headers = {
