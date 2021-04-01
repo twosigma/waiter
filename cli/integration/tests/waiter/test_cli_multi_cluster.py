@@ -1,4 +1,5 @@
 import logging
+import os
 import unittest
 import uuid
 
@@ -519,3 +520,45 @@ class MultiWaiterCliTest(util.WaiterTest):
         finally:
             util.delete_token(self.waiter_url_1, token_name)
 
+    def __test_ssh_same_service_id_on_multiple_clusters(self, create_empty_service=True):
+        token_name = self.token_name()
+        service_desc = util.minimal_service_description()
+        util.post_token(self.waiter_url_1, token_name, service_desc)
+        util.post_token(self.waiter_url_2, token_name, service_desc)
+        try:
+            # service ids should be the same as their service descriptions are the same
+            service1_id = util.create_empty_service_with_token(self.waiter_url_1, token_name) if create_empty_service \
+                else util.ping_token(self.waiter_url_1, token_name)
+            service2_id = util.ping_token(self.waiter_url_2, token_name)
+            self.assertEqual(service1_id, service2_id)
+            instances1 = [] if create_empty_service else \
+                util.instances_for_service(self.waiter_url_1, service1_id)['active-instances']
+            instances2 = util.instances_for_service(self.waiter_url_2, service2_id)['active-instances']
+            possible_instances = instances1 + instances2
+            env = os.environ.copy()
+            env['WAITER_SSH'] = 'echo'
+            env['WAITER_KUBECTL'] = 'echo'
+            config = self.__two_cluster_config()
+            with cli.temp_config_file(config) as path:
+                cp = cli.ssh(token_or_service_id_or_instance_id=service1_id, stdin='1\n'.encode('utf8'), ssh_flags='-s',
+                             flags=f'--config {path}', env=env)
+                stdout = cli.stdout(cp)
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                # all instances should have been an option when prompting
+                self.assertFalse(util.get_instances_not_in_output(possible_instances, stdout))
+                # any one of the instances should have been attempted to ssh into
+                ssh_instance1 = None if create_empty_service else \
+                    util.get_ssh_instance_from_output(self.waiter_url_1, instances1, stdout)
+                ssh_instance2 = util.get_ssh_instance_from_output(self.waiter_url_2, instances2, stdout)
+                found = ssh_instance1 is not None or ssh_instance2 is not None
+                self.assertTrue(found, msg=f"None of the possible instances {possible_instances} were detected in ssh "
+                                           f"command output: \n{stdout}")
+        finally:
+            util.delete_token(self.waiter_url_1, token_name, kill_services=True)
+            util.delete_token(self.waiter_url_2, token_name, kill_services=True)
+
+    def test_ssh_service_id_on_multiple_clusters_no_instances(self):
+        self.__test_ssh_same_service_id_on_multiple_clusters(create_empty_service=False)
+
+    def test_ssh_service_id_on_multiple_clusters_multiple_instances(self):
+        self.__test_ssh_same_service_id_on_multiple_clusters()

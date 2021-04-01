@@ -303,6 +303,15 @@ def services_for_token(waiter_url, token_name, assert_response=True, expected_st
     return services
 
 
+def create_empty_service_with_token(waiter_url, token, assert_response=True, expected_status_code=200):
+    """Creates a service with no instances and returns the service-id"""
+    response = session.get(f'{waiter_url}/service-id', headers={'x-waiter-token': token})
+    if assert_response:
+        assert expected_status_code == response.status_code, \
+            f'Expected {expected_status_code}, got {response.status_code} with body {response.text}'
+    return response.content.decode('UTF-8')
+
+
 def instances_for_service(waiter_url, service_id, expected_status_code=200):
     """returns instances map of a service"""
     headers = {
@@ -356,3 +365,38 @@ def retrieve_default_scheduler_name(waiter_url):
 def using_kubernetes(waiter_url):
     """returns True if the scheduler of waiter is k8s and False otherwise"""
     return "kubernetes" == retrieve_default_scheduler_name(waiter_url)
+
+
+def get_ssh_command(instance, is_kubernetes_enabled, container_name=None, command_to_run=None):
+    """create the ssh arguments string that is expected when using waiter ssh"""
+    log_directory = instance['log-directory']
+    if is_kubernetes_enabled:
+        container_name = container_name or 'waiter-app'
+        command_to_run = command_to_run or 'exec /bin/bash'
+        api_server = instance['k8s/api-server-url']
+        namespace = instance['k8s/namespace']
+        pod_name = instance['k8s/pod-name']
+        return f'--server {api_server} --namespace {namespace} exec -it {pod_name} -c '\
+               f"{container_name} -- /bin/bash -c cd {log_directory}; "\
+               f"{command_to_run}"
+    else:
+        return f"-t {instance['host']} cd {log_directory} ; {command_to_run or '/bin/bash'}"
+
+
+def get_ssh_instance_from_output(waiter_url, possible_instances, stdout_output, container_name=None,
+                                 command_to_run=None):
+    """returns the instance that served as the destination of the waiter ssh command based on the stdout output"""
+    is_kubernetes_enabled = using_kubernetes(waiter_url)
+    for instance in possible_instances:
+        ssh_command = get_ssh_command(instance, is_kubernetes_enabled, container_name=container_name,
+                                      command_to_run=command_to_run)
+        if ssh_command in stdout_output:
+            return instance
+        logging.debug(f"ssh command was not in stdout_output: {ssh_command}")
+
+
+def get_instances_not_in_output(possible_instances, stdout_output):
+    """return instances where their id is not in the stdout output"""
+    return [instance
+            for instance in possible_instances
+            if instance['id'] not in stdout_output]
