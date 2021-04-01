@@ -269,7 +269,6 @@
 (defn service-id-handler
   "Retrieves the service-id of the service specified by the request."
   [{:keys [descriptor] :as request} kv-store store-service-description-fn]
-  (println request)
   (try
     (let [{:keys [service-id core-service-description]} descriptor]
       (when (not= core-service-description (sd/fetch-core kv-store service-id))

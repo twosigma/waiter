@@ -609,7 +609,7 @@
 
 (let [messages (atom {})]
   (defn message
-    "Returns the message corresponding to the provided key."
+    "Returns the message corresponding to the provided key"
     [key]
     (@messages key))
 
