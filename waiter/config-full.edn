@@ -1004,7 +1004,8 @@
                 {:label "Waiter on GitHub" :link {:type :url :value "http://github.com/twosigma/waiter"}}]
 
  ;; Sets tolerance level for Waiter when declaring deployment errors
- :deployment-error-config {;; The number of instances that must fail in order to declare a deployment error:
+ :deployment-error-config {
+                           ;; The number of instances that must fail in order to declare a deployment error:
                            :min-failed-instances 2
 
                            ;; The number of hosts on which health checks must fail in order to declare a deployment error:
