@@ -1,3 +1,4 @@
+import os
 import sys
 
 import textwrap
@@ -56,5 +57,6 @@ def colorize(s, color):
 
 
 def tty():
-    """Returns true if running in a real terminal (as opposed to being piped or redirected)"""
-    return sys.stdout.isatty()
+    """Returns true if running in a real terminal (as opposed to being piped or redirected). If WAITER_TTY is set then
+    return True else False"""
+    return os.getenv("WAITER_FORCE_CLI_TTY", False) or sys.stdout.isatty()
