@@ -79,9 +79,10 @@
                         tokens-update-chan
                         (timers/start-stop-time!
                           (metrics/waiter-timer "core" "token-watch-maintainer" "token-update")
-                          (let [{:keys [token]} msg
+                          (let [{:keys [token x-cid] :as internal-event} msg
                                 token-index-entry (token/get-token-index kv-store token :refresh true)
                                 local-token-index-entry (get token->index token)]
+                            (log/info "token-watch-maintainer received an internal index event" internal-event)
                             (if (= token-index-entry local-token-index-entry)
                               ; There is no change detected, so no event to be reported
                               current-state
@@ -94,6 +95,7 @@
                                       ; index-entry doesn't exist then treat as DELETE
                                       [(make-index-event :DELETE {:token token})
                                        (assoc current-state :token->index (dissoc token->index token))])
+                                    _ (log/info "token-watch-maintainer sending a token event to watches" {:event index-event})
                                     open-chans (->> [index-event]
                                                     (make-index-event :EVENTS)
                                                     (send-event-to-channels! watch-chans))]
