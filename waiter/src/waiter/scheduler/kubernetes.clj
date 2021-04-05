@@ -78,8 +78,8 @@
 (defn create-service-deployment-error
   "Transforms the deployment error message to be more user friendly"
   [k8s-error-response response->deployment-error-msg-fn]
-  {:service-deployment-error-msg (response->deployment-error-msg-fn k8s-error-response)
-   :service-deployment-error-details {:k8s-response-body (get-in k8s-error-response [:body])}})
+  {:service-deployment-error-details {:k8s-response-body (get-in k8s-error-response [:body])}
+   :service-deployment-error-msg (response->deployment-error-msg-fn k8s-error-response)})
 
 (defn- use-short-service-hash? [k8s-max-name-length]
   ;; This is fairly arbitrary, but if we have at least 48 characters for the app name,
