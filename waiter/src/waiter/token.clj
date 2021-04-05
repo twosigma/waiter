@@ -674,9 +674,8 @@
             watch-chan-xform
             (comp
               (map
-                (fn event-filter [{:keys [object type] :as event}]
-                  (cid/cinfo correlation-id "received event from token-watch-maintainer daemon" {:type (:type event)
-                                                                                                 :token-sample (first (:object event))})
+                (fn event-filter [{:keys [id object type] :as event}]
+                  (cid/cinfo correlation-id "received event from token-watch-maintainer daemon" {:id id})
                   (cid/cdebug correlation-id "full tokens event data received from daemon" {:event event})
                   (case type
                     :INITIAL
@@ -699,9 +698,10 @@
                     :EVENTS (not-empty object)
                     (throw (ex-info "Invalid event type provided" {:event event})))))
               (map
-                (fn [event]
-                  (cid/cinfo correlation-id "forwarding tokens event to client" {:type (:type event)
-                                                                                 :token-sample (first (:object event))})
+                (fn [{:keys [id object type] :as event}]
+                  (cid/cinfo correlation-id "forwarding tokens event to client"
+                             (case type :INITIAL {:id id :object-count (count object) :object-sample (first object) :type type}
+                                        :EVENTS event))
                   (cid/cdebug correlation-id "full tokens event data being sent to client" {:event event})
                   (utils/clj->json event))))
             watch-chan-ex-handler-fn
