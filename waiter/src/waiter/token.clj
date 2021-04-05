@@ -675,7 +675,8 @@
             (comp
               (map
                 (fn event-filter [{:keys [object type] :as event}]
-                  (cid/cinfo correlation-id "received event from token-watch-maintainer daemon" {:type (:type event)})
+                  (cid/cinfo correlation-id "received event from token-watch-maintainer daemon" {:type (:type event)
+                                                                                                 :token-sample (first (:object event))})
                   (cid/cdebug correlation-id "full tokens event data received from daemon" {:event event})
                   (case type
                     :INITIAL
@@ -699,7 +700,8 @@
                     (throw (ex-info "Invalid event type provided" {:event event})))))
               (map
                 (fn [event]
-                  (cid/cinfo correlation-id "forwarding tokens event to client" {:type (:type event)})
+                  (cid/cinfo correlation-id "forwarding tokens event to client" {:type (:type event)
+                                                                                 :token-sample (first (:object event))})
                   (cid/cdebug correlation-id "full tokens event data being sent to client" {:event event})
                   (utils/clj->json event))))
             watch-chan-ex-handler-fn
