@@ -265,6 +265,27 @@
       (is (cache-contains? cache "two"))
       (is (= 2 (cache-size cache))))))
 
+(deftest test-atom-cache-put
+  (let [error-when-invoked-fn #(throw (Exception. "cache should already have value for key"))]
+    (testing "put! sets value for key"
+      (let [cache (cache-factory {})]
+        (cache-put! cache "one" 1)
+        (is (= 1 (cache-get-or-load cache "one" error-when-invoked-fn)))))
+
+    (testing "put! overwrites existing key"
+      (let [cache (cache-factory {})]
+        (cache-put! cache "one" 100)
+        (is (= 100 (cache-get-or-load cache "one" error-when-invoked-fn)))))
+
+    (testing "put! respects threshold"
+      (let [cache (cache-factory {:threshold 2})]
+        (cache-put! cache "one" 1)
+        (cache-put! cache "two" 2)
+        (cache-put! cache "three" 3)
+        (is (= 2 (cache-get-or-load cache "two" error-when-invoked-fn)))
+        (is (= 3 (cache-get-or-load cache "three" error-when-invoked-fn)))
+        (is (= 100 (cache-get-or-load cache "one" (constantly 100))))))))
+
 (deftest test-retry-strategy
   (let [make-call-atom-and-function (fn [num-failures return-value]
                                       (let [call-counter-atom (atom 0)

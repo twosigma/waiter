@@ -648,7 +648,7 @@
             (let [deployment-error (create-service-deployment-error response response->deployment-error-msg-fn)]
               (log/info "creating deployment error for service" {:deployment-error deployment-error
                                                                  :service-id service-id})
-              (cu/cache-set service-id->deployment-error-cache service-id deployment-error)
+              (cu/cache-put! service-id->deployment-error-cache service-id deployment-error)
               (ss/throw+ response))))
         {:keys [k8s/replicaset-uid] :as service} (some-> response-json replicaset->Service)]
     (if service
