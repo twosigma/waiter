@@ -22,7 +22,8 @@
             [waiter.status-codes :refer :all]
             [waiter.test-helpers :refer :all]
             [waiter.token :refer :all]
-            [waiter.token-watch :refer :all])
+            [waiter.token-watch :refer :all]
+            [waiter.correlation-id :as cid])
   (:import (org.joda.time DateTime)))
 
 (def ^:const history-length 5)
@@ -113,8 +114,13 @@
       stop-token-watch-maintainer (fn [go-chan exit-chan]
                                     (async/>!! exit-chan :exit)
                                     (async/<!! go-chan))
-      make-aggregate-index-events (fn [object]
-                                    (make-index-event :EVENTS [object]))
+      make-aggregate-index-events (fn [object & {:keys [id]}]
+                                    (make-index-event :EVENTS [object] :id id))
+      token-watch-test-x-cid "token-watch-test"
+      send-internal-index-event-fn (fn [tokens-update-chan token]
+                                     (cid/with-correlation-id
+                                       token-watch-test-x-cid
+                                       (send-internal-index-event tokens-update-chan token)))
       auth-user "auth-user"
       token1-metadata {"cluster" "c1" "last-update-time" 1000 "owner" "owner1"}
       token1-service-desc {"cpus" 1}
@@ -185,8 +191,9 @@
         (let [token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1"))
               expected-token->index {"token1" token-cur-index}]
           (assert-channels-next-message watch-chans (make-index-event :INITIAL []))
-          (send-internal-index-event tokens-update-chan "token1")
-          (assert-channels-next-message watch-chans (make-aggregate-index-events (make-index-event :UPDATE token-cur-index)))
+          (send-internal-index-event-fn tokens-update-chan "token1")
+          (assert-channels-next-message watch-chans (make-aggregate-index-events (make-index-event :UPDATE token-cur-index)
+                                                                                 :id token-watch-test-x-cid))
           (is (= {:last-update-time (clock)
                   :token->index expected-token->index
                   :watch-count 10}
@@ -197,15 +204,16 @@
           synchronize-fn kv-store history-length limit-per-owner "token1" (assoc token1-service-desc "cpus" 2) token1-metadata)
         (let [token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1"))
               expected-token->index {"token1" token-cur-index}]
-          (send-internal-index-event tokens-update-chan "token1")
-          (assert-channels-next-message watch-chans (make-aggregate-index-events (make-index-event :UPDATE token-cur-index)))
+          (send-internal-index-event-fn tokens-update-chan "token1")
+          (assert-channels-next-message watch-chans (make-aggregate-index-events (make-index-event :UPDATE token-cur-index)
+                                                                                 :id token-watch-test-x-cid))
           (is (= {:last-update-time (clock)
                   :token->index expected-token->index
                   :watch-count 10}
                  (get-latest-state query-chan)))
 
           (testing "watch-channels doesn't send event if no changes in token-index-entry and current-state"
-            (send-internal-index-event tokens-update-chan "token1")
+            (send-internal-index-event-fn tokens-update-chan "token1")
             (assert-channels-no-new-message watch-chans 1000)
             (is (= {:last-update-time (clock)
                     :token->index expected-token->index
@@ -219,8 +227,9 @@
                                                   :last-update-time (clock-millis)
                                                   :deleted true)
               expected-token->index {"token1" token-cur-index}]
-          (send-internal-index-event tokens-update-chan "token1")
-          (assert-channels-next-message watch-chans (make-aggregate-index-events (make-index-event :UPDATE token-cur-index)))
+          (send-internal-index-event-fn tokens-update-chan "token1")
+          (assert-channels-next-message watch-chans (make-aggregate-index-events (make-index-event :UPDATE token-cur-index)
+                                                                                 :id token-watch-test-x-cid))
           (is (= {:last-update-time (clock)
                   :token->index expected-token->index
                   :watch-count 10}
@@ -229,17 +238,18 @@
       (testing "watch-channels get DELETE event for hard deleted tokens"
         (delete-service-description-for-token clock synchronize-fn kv-store history-length "token1"
                                               (get token1-index :owner) auth-user :hard-delete true)
-        (send-internal-index-event tokens-update-chan "token1")
+        (send-internal-index-event-fn tokens-update-chan "token1")
         (assert-channels-next-message watch-chans
                                       (make-aggregate-index-events
-                                        (make-index-event :DELETE {:token "token1"})))
+                                        (make-index-event :DELETE {:token "token1"})
+                                        :id token-watch-test-x-cid))
         (is (= {:last-update-time (clock)
                 :token->index {}
                 :watch-count 10}
                (get-latest-state query-chan))))
 
       (testing "watch-channels doesn't send event if no changes in token-index-entry and current-state"
-        (send-internal-index-event tokens-update-chan "token1")
+        (send-internal-index-event-fn tokens-update-chan "token1")
         (assert-channels-no-new-message watch-chans 1000)
         (is (= {:last-update-time (clock)
                 :token->index {}
@@ -410,7 +420,7 @@
                     (store-service-description-for-token
                       synchronize-fn kv-store history-length limit-per-owner "token1" token1-service-desc
                       (assoc token1-metadata "last-update-time" i))
-                    (send-internal-index-event tokens-update-chan "token1")
+                    (send-internal-index-event-fn tokens-update-chan "token1")
                     (let [token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1")
                                                               :last-update-time i)
                           expected-token->index {"token1" token-cur-index}]
