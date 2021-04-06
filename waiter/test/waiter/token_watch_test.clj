@@ -17,14 +17,12 @@
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.test :refer :all]
-            [waiter.correlation-id :as cid]
             [waiter.kv :as kv]
             [waiter.service-description :as sd]
             [waiter.status-codes :refer :all]
             [waiter.test-helpers :refer :all]
             [waiter.token :refer :all]
-            [waiter.token-watch :refer :all]
-            [waiter.util.utils :as utils])
+            [waiter.token-watch :refer :all])
   (:import (org.joda.time DateTime)))
 
 (def ^:const history-length 5)
