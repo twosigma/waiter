@@ -86,7 +86,7 @@
                           (let [{:keys [token cid] :as internal-event} msg]
                             (cid/with-correlation-id
                               (str "token-watch-maintainer" "." cid "." external-event-cid)
-                              (log/info "token-watch-maintainer received an internal index event" internal-event)
+                              (log/info "received an internal index event" internal-event)
                               (let [token-index-entry (token/get-token-index kv-store token :refresh true)
                                     local-token-index-entry (get token->index token)]
                                 (if (= token-index-entry local-token-index-entry)
@@ -101,7 +101,7 @@
                                           ; index-entry doesn't exist then treat as DELETE
                                           [(make-index-event :DELETE {:token token})
                                            (assoc current-state :token->index (dissoc token->index token))])
-                                        _ (log/info "token-watch-maintainer sending a token event to watches" {:event index-event})
+                                        _ (log/info "sending a token event to watches" {:event index-event})
                                         open-chans (->> (make-index-event :EVENTS [index-event] :id external-event-cid)
                                                         (send-event-to-channels! watch-chans))]
                                     (assoc next-state :watch-chans open-chans)))))))
@@ -149,7 +149,7 @@
                                 (meters/mark! (metrics/waiter-meter "core" "token-watch-maintainer" "refresh-sync-rate"))
                                 (meters/mark! (metrics/waiter-meter "core" "token-watch-maintainer" "refresh-sync-count")
                                               (count events))
-                                (log/info "token-watch-maintainer found some differences in kv-store and current-state"
+                                (log/info "found some differences in kv-store and current-state"
                                           {:only-in-current only-old-indexes
                                            :only-in-next only-next-indexes
                                            :token-count (count token->index)}))
