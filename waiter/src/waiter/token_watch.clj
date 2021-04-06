@@ -42,8 +42,7 @@
   [kv-store clock tokens-update-chan-buffer-size channels-update-chan-buffer-size watch-refresh-timer-chan]
   (cid/with-correlation-id
     "token-watch-maintainer"
-    (let [cid-factory-fn utils/unique-identifier
-          exit-chan (async/promise-chan)
+    (let [exit-chan (async/promise-chan)
           tokens-update-chan-buffer (async/buffer tokens-update-chan-buffer-size)
           tokens-update-chan (async/chan tokens-update-chan-buffer)
           tokens-watch-channels-update-chan-buffer (async/buffer channels-update-chan-buffer-size)
@@ -68,7 +67,7 @@
             (try
               (loop [{:keys [token->index watch-chans] :as current-state} @state-atom]
                 (reset! state-atom current-state)
-                (let [external-event-cid (cid-factory-fn)
+                (let [external-event-cid (utils/unique-identifier)
                       [msg current-chan]
                       (async/alts! [exit-chan tokens-update-chan tokens-watch-channels-update-chan
                                     watch-refresh-timer-chan query-chan]
