@@ -116,11 +116,11 @@
                                     (async/<!! go-chan))
       make-aggregate-index-events (fn [object & {:keys [id]}]
                                     (make-index-event :EVENTS [object] :id id))
-      token-watch-test-x-cid "token-watch-test"
-      token-watch-cid-factory-fn (constantly token-watch-test-x-cid)
+      token-watch-test-cid "token-watch-test"
+      token-watch-cid-factory-fn (constantly token-watch-test-cid)
       send-internal-index-event-fn (fn [tokens-update-chan token]
                                      (cid/with-correlation-id
-                                       token-watch-test-x-cid
+                                       token-watch-test-cid
                                        (send-internal-index-event tokens-update-chan token)))
       auth-user "auth-user"
       token1-metadata {"cluster" "c1" "last-update-time" 1000 "owner" "owner1"}
@@ -147,7 +147,7 @@
                 :token->index {}
                 :watch-count 10}
                (get-latest-state query-chan)))
-        (assert-channels-next-message watch-chans (make-index-event :INITIAL [] :id token-watch-test-x-cid)))
+        (assert-channels-next-message watch-chans (make-index-event :INITIAL [] :id token-watch-test-cid)))
 
       (stop-token-watch-maintainer go-chan exit-chan)))
 
@@ -191,10 +191,10 @@
           synchronize-fn kv-store history-length limit-per-owner "token1" token1-service-desc token1-metadata)
         (let [token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1"))
               expected-token->index {"token1" token-cur-index}]
-          (assert-channels-next-message watch-chans (make-index-event :INITIAL [] :id token-watch-test-x-cid))
+          (assert-channels-next-message watch-chans (make-index-event :INITIAL [] :id token-watch-test-cid))
           (send-internal-index-event-fn tokens-update-chan "token1")
           (assert-channels-next-message watch-chans (make-aggregate-index-events (make-index-event :UPDATE token-cur-index)
-                                                                                 :id token-watch-test-x-cid))
+                                                                                 :id token-watch-test-cid))
           (is (= {:last-update-time (clock)
                   :token->index expected-token->index
                   :watch-count 10}
@@ -207,7 +207,7 @@
               expected-token->index {"token1" token-cur-index}]
           (send-internal-index-event-fn tokens-update-chan "token1")
           (assert-channels-next-message watch-chans (make-aggregate-index-events (make-index-event :UPDATE token-cur-index)
-                                                                                 :id token-watch-test-x-cid))
+                                                                                 :id token-watch-test-cid))
           (is (= {:last-update-time (clock)
                   :token->index expected-token->index
                   :watch-count 10}
@@ -230,7 +230,7 @@
               expected-token->index {"token1" token-cur-index}]
           (send-internal-index-event-fn tokens-update-chan "token1")
           (assert-channels-next-message watch-chans (make-aggregate-index-events (make-index-event :UPDATE token-cur-index)
-                                                                                 :id token-watch-test-x-cid))
+                                                                                 :id token-watch-test-cid))
           (is (= {:last-update-time (clock)
                   :token->index expected-token->index
                   :watch-count 10}
@@ -243,7 +243,7 @@
         (assert-channels-next-message watch-chans
                                       (make-aggregate-index-events
                                         (make-index-event :DELETE {:token "token1"})
-                                        :id token-watch-test-x-cid))
+                                        :id token-watch-test-cid))
         (is (= {:last-update-time (clock)
                 :token->index {}
                 :watch-count 10}
@@ -277,13 +277,13 @@
                 :token->index {}
                 :watch-count 10}
                (get-latest-state query-chan)))
-        (assert-channels-next-message watch-chans-1 (make-index-event :INITIAL [] :id token-watch-test-x-cid))
+        (assert-channels-next-message watch-chans-1 (make-index-event :INITIAL [] :id token-watch-test-cid))
         (add-watch-chans tokens-watch-channels-update-chan watch-chans-2)
         (is (= {:last-update-time (clock)
                 :token->index {}
                 :watch-count 20}
                (get-latest-state query-chan)))
-        (assert-channels-next-message watch-chans-2 (make-index-event :INITIAL [] :id token-watch-test-x-cid)))
+        (assert-channels-next-message watch-chans-2 (make-index-event :INITIAL [] :id token-watch-test-cid)))
 
       (testing "watch-count should decrement when daemon process is refreshed"
         (remove-watch-chans watch-chans-1)
@@ -321,7 +321,7 @@
                (get-latest-state query-chan))))
 
       (add-watch-chans tokens-watch-channels-update-chan watch-chans)
-      (assert-channels-next-message watch-chans (make-index-event :INITIAL [] :id token-watch-test-x-cid))
+      (assert-channels-next-message watch-chans (make-index-event :INITIAL [] :id token-watch-test-cid))
 
       (testing "refresh-timeout should update current-state and watchers if token is added to kv-store"
         (store-service-description-for-token
@@ -335,7 +335,7 @@
                  (get-latest-state query-chan)))
           (assert-channels-next-message watch-chans (make-aggregate-index-events
                                                       (make-index-event :UPDATE token-cur-index)
-                                                      :id token-watch-test-x-cid))))
+                                                      :id token-watch-test-cid))))
 
       (testing "refresh-timeout should update current-state and watchers if token is out of date"
         (store-service-description-for-token
@@ -350,7 +350,7 @@
                  (get-latest-state query-chan)))
           (assert-channels-next-message watch-chans (make-aggregate-index-events
                                                       (make-index-event :UPDATE token-cur-index)
-                                                      :id token-watch-test-x-cid))))
+                                                      :id token-watch-test-cid))))
 
       (testing "refresh-timeout should update current-state and watchers if token is soft deleted"
         (delete-service-description-for-token clock synchronize-fn kv-store history-length "token1"
@@ -366,7 +366,7 @@
                  (get-latest-state query-chan)))
           (assert-channels-next-message watch-chans (make-aggregate-index-events
                                                       (make-index-event :UPDATE token-cur-index)
-                                                      :id token-watch-test-x-cid))))
+                                                      :id token-watch-test-cid))))
 
       (testing "refresh-timeout should update current-state and watchers if token is hard deleted"
         (delete-service-description-for-token clock synchronize-fn kv-store history-length "token1"
@@ -380,7 +380,7 @@
                                                     (make-index-event :DELETE
                                                                       {:owner (get token1-index :owner)
                                                                        :token "token1"})
-                                                    :id token-watch-test-x-cid)))
+                                                    :id token-watch-test-cid)))
 
       (stop-token-watch-maintainer go-chan exit-chan)))
 
@@ -436,7 +436,7 @@
 
           (testing "channel is closed and no longer can have messages put! to it, but can still read"
             (is (not (async/put! slow-chan "temp")))
-            (is (= { :id token-watch-test-x-cid :object [] :type :INITIAL}
+            (is (= { :id token-watch-test-cid :object [] :type :INITIAL}
                    (async/<!! slow-chan))))))
 
       (stop-token-watch-maintainer go-chan exit-chan)))
