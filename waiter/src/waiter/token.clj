@@ -80,7 +80,7 @@
   "Send an internal event to be processed by the tokens-watch-maintainer daemon process"
   [tokens-update-chan token]
   (log/info "sending internal index event" {:token token})
-  (async/put! tokens-update-chan {:token token :cid (cid/get-correlation-id)}))
+  (async/put! tokens-update-chan {:cid (cid/get-correlation-id) :token token}))
 
 (let [token-lock "TOKEN_LOCK"
       token-owners-key "^TOKEN_OWNERS"
