@@ -262,8 +262,8 @@
                 instance)
               (if (and instance (not= instance :no-matching-instance-found))
                 ; instance is a deployment error if it (1) does not have an :id tag, (2) is not nil, and (3) does not equal :no-matching-instance-found
-                (let [{:keys [service-deployment-error-msg service-deployment-error-details]} instance
-                      {:keys [error-message error-map]}
+                (let [{:keys [service-deployment-error-details service-deployment-error-msg]} instance
+                      {:keys [error-map error-message]}
                       (cond->
                         {:error-map {:service-id service-id
                                      :status http-503-service-unavailable}
