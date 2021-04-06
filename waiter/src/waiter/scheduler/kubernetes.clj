@@ -726,6 +726,7 @@
                                 retrieve-auth-token-state-fn
                                 retrieve-syncer-state-fn
                                 reverse-proxy
+                                service-id->deployment-error-cache
                                 service-id->failed-instances-transient-store
                                 service-id->password-fn
                                 service-id->service-description-fn
@@ -1388,6 +1389,7 @@
            reverse-proxy scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
            service-id->password-fn start-scheduler-syncer-fn url watch-connect-timeout-ms watch-retries watch-socket-timeout-ms]
     {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver
+    {service-id->deployment-error-cache-threshold :threshold service-id->deployment-error-cache-ttl-sec :ttl} :service-id->deployment-error-cache
     :as context}]
   {:pre [(schema/contains-kind-sub-map? authorizer)
          (or (zero? container-running-grace-secs) (pos-int? container-running-grace-secs))
@@ -1435,8 +1437,8 @@
                       (utils/assoc-if-absent :client-name "waiter-k8s")
                       (utils/assoc-if-absent :user-agent "waiter-k8s")
                       hu/http-client-factory)
-        service-id->deployment-error-cache (cu/cache-factory {:threshold 5000
-                                                              :ttl (-> 5 t/minutes t/in-millis)})
+        service-id->deployment-error-cache (cu/cache-factory {:threshold service-id->deployment-error-cache-threshold
+                                                              :ttl (-> service-id->deployment-error-cache-ttl-sec t/seconds t/in-millis)})
         service-id->failed-instances-transient-store (atom {})
         replicaset-spec-builder-ctx (assoc replicaset-spec-builder
                                       :log-bucket-sync-secs log-bucket-sync-secs
