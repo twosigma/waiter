@@ -39,10 +39,11 @@
 (defn start-token-watch-maintainer
   "Starts daemon thread that maintains token watches and process/filters internal token events to be streamed to
   clients through the watch handlers. Returns map of various channels and state functions to control the daemon."
-  [kv-store clock tokens-update-chan-buffer-size channels-update-chan-buffer-size watch-refresh-timer-chan cid-factory-fn]
+  [kv-store clock tokens-update-chan-buffer-size channels-update-chan-buffer-size watch-refresh-timer-chan]
   (cid/with-correlation-id
     "token-watch-maintainer"
-    (let [exit-chan (async/promise-chan)
+    (let [cid-factory-fn utils/unique-identifier
+          exit-chan (async/promise-chan)
           tokens-update-chan-buffer (async/buffer tokens-update-chan-buffer-size)
           tokens-update-chan (async/chan tokens-update-chan-buffer)
           tokens-watch-channels-update-chan-buffer (async/buffer channels-update-chan-buffer-size)
