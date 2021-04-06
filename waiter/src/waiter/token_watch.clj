@@ -67,7 +67,8 @@
             (try
               (loop [{:keys [token->index watch-chans] :as current-state} @state-atom]
                 (reset! state-atom current-state)
-                (let [[msg current-chan]
+                (let [external-event-cid (cid-factory-fn)
+                      [msg current-chan]
                       (async/alts! [exit-chan tokens-update-chan tokens-watch-channels-update-chan
                                     watch-refresh-timer-chan query-chan]
                                    :priority true)
@@ -84,7 +85,7 @@
                           (metrics/waiter-timer "core" "token-watch-maintainer" "token-update")
                           (let [{:keys [token cid] :as internal-event} msg]
                             (cid/with-correlation-id
-                              (str "token-watch-maintainer" "." cid)
+                              (str "token-watch-maintainer" "." cid "." external-event-cid)
                               (log/info "token-watch-maintainer received an internal index event" internal-event)
                               (let [token-index-entry (token/get-token-index kv-store token :refresh true)
                                     local-token-index-entry (get token->index token)]
@@ -101,7 +102,7 @@
                                           [(make-index-event :DELETE {:token token})
                                            (assoc current-state :token->index (dissoc token->index token))])
                                         _ (log/info "token-watch-maintainer sending a token event to watches" {:event index-event})
-                                        open-chans (->> (make-index-event :EVENTS [index-event] :id cid)
+                                        open-chans (->> (make-index-event :EVENTS [index-event] :id external-event-cid)
                                                         (send-event-to-channels! watch-chans))]
                                     (assoc next-state :watch-chans open-chans)))))))
 
@@ -109,13 +110,13 @@
                         (timers/start-stop-time!
                           (metrics/waiter-timer "core" "token-watch-maintainer" "channel-update")
                           (cid/with-correlation-id
-                            (cid-factory-fn)
+                            (str "token-watch-maintainer" "." external-event-cid)
                             (log/info "received watch-chan" msg)
                             (let [watch-chan msg
                                   initial-event
                                   (timers/start-stop-time!
                                     (metrics/waiter-timer "core" "token-watch-maintainer" "channel-update-build-event")
-                                    (make-index-event :INITIAL (doall (or (vals token->index) [])) :id (cid/get-correlation-id)))]
+                                    (make-index-event :INITIAL (doall (or (vals token->index) [])) :id external-event-cid))]
                               (timers/start-stop-time!
                                 (metrics/waiter-timer "core" "token-watch-maintainer" "channel-update-forward-event")
                                 (async/put! watch-chan initial-event))
@@ -126,7 +127,7 @@
                         (timers/start-stop-time!
                           (metrics/waiter-timer "core" "token-watch-maintainer" "refresh")
                           (cid/with-correlation-id
-                            (cid-factory-fn)
+                            (str "token-watch-maintainer" "." external-event-cid)
                             (log/info "refresh starting...")
                             (let [next-token->index (token/get-token->index kv-store :refresh true)
                                   [only-old-indexes only-next-indexes _] (data/diff token->index next-token->index)
@@ -142,7 +143,7 @@
                                   events (concat delete-events update-events)
                                   ; send events event if empty, which will serve as a heartbeat
                                   open-chans
-                                  (send-event-to-channels! watch-chans (make-index-event :EVENTS events :id (cid/get-correlation-id)))]
+                                  (send-event-to-channels! watch-chans (make-index-event :EVENTS events :id external-event-cid))]
                               (when (not-empty events)
                                 (counters/inc! (metrics/waiter-counter "core" "token-watch-maintainer" "refresh-sync"))
                                 (meters/mark! (metrics/waiter-meter "core" "token-watch-maintainer" "refresh-sync-rate"))

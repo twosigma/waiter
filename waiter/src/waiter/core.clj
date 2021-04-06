@@ -1369,11 +1369,9 @@
                                 [:tokens channels-update-chan-buffer-size tokens-update-chan-buffer-size
                                  watch-refresh-timeout-ms]]]
                               [:state clock kv-store]]
-                             (let [watch-refresh-timer-chan (au/timer-chan watch-refresh-timeout-ms)
-                                   cid-factory-fn (fn create-watch-cid []
-                                                    (str "token-watch-maintainer" "." (utils/unique-identifier)))]
+                             (let [watch-refresh-timer-chan (au/timer-chan watch-refresh-timeout-ms)]
                                (token-watch/start-token-watch-maintainer
-                                 kv-store clock tokens-update-chan-buffer-size channels-update-chan-buffer-size watch-refresh-timer-chan cid-factory-fn)))})
+                                 kv-store clock tokens-update-chan-buffer-size channels-update-chan-buffer-size watch-refresh-timer-chan utils/unique-identifier)))})
 
 (def request-handlers
   {:app-name-handler-fn (pc/fnk [service-id-handler-fn]

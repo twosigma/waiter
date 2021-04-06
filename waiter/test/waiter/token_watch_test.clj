@@ -23,7 +23,8 @@
             [waiter.status-codes :refer :all]
             [waiter.test-helpers :refer :all]
             [waiter.token :refer :all]
-            [waiter.token-watch :refer :all])
+            [waiter.token-watch :refer :all]
+            [waiter.util.utils :as utils])
   (:import (org.joda.time DateTime)))
 
 (def ^:const history-length 5)
@@ -117,7 +118,7 @@
       make-aggregate-index-events (fn [object & {:keys [id]}]
                                     (make-index-event :EVENTS [object] :id id))
       token-watch-test-cid "token-watch-test"
-      token-watch-cid-factory-fn (constantly token-watch-test-cid)
+      test-cid-factory-fn (constantly token-watch-test-cid)
       send-internal-index-event-fn (fn [tokens-update-chan token]
                                      (cid/with-correlation-id
                                        token-watch-test-cid
@@ -135,7 +136,9 @@
     (let [kv-store (kv/->LocalKeyValueStore (atom {}))
           watch-chans (create-watch-chans 10)
           {:keys [exit-chan go-chan query-chan tokens-watch-channels-update-chan]}
-          (start-token-watch-maintainer kv-store clock 1 1 (async/chan) token-watch-cid-factory-fn)]
+          (with-redefs
+            [utils/unique-identifier (fn [] token-watch-test-cid)]
+            (start-token-watch-maintainer kv-store clock 1 1 (async/chan) test-cid-factory-fn))]
       (is (= {:last-update-time (clock)
               :token->index {}
               :watch-count 0}
@@ -157,7 +160,7 @@
           _ (store-service-description-for-token
               synchronize-fn kv-store history-length limit-per-owner "token1" token1-service-desc token1-metadata)
           {:keys [exit-chan go-chan query-chan tokens-watch-channels-update-chan]}
-          (start-token-watch-maintainer kv-store clock 1 1 (async/chan) token-watch-cid-factory-fn)
+          (start-token-watch-maintainer kv-store clock 1 1 (async/chan) test-cid-factory-fn)
           token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1"))
           expected-token->index {"token1" token-cur-index}]
       (is (= {:last-update-time (clock)
@@ -181,7 +184,7 @@
     (let [kv-store (kv/->LocalKeyValueStore (atom {}))
           watch-chans (create-watch-chans 10)
           {:keys [exit-chan go-chan tokens-update-chan query-chan tokens-watch-channels-update-chan]}
-          (start-token-watch-maintainer kv-store clock 1 1 (async/chan) token-watch-cid-factory-fn)]
+          (start-token-watch-maintainer kv-store clock 1 1 (async/chan) test-cid-factory-fn)]
 
       (testing "watch-channels get UPDATE event for added tokens"
         (add-watch-chans tokens-watch-channels-update-chan watch-chans)
@@ -265,7 +268,7 @@
           watch-chans-1 (create-watch-chans 10)
           watch-chans-2 (create-watch-chans 10)
           {:keys [exit-chan go-chan tokens-watch-channels-update-chan query-chan]}
-          (start-token-watch-maintainer kv-store clock 1 1 watch-refresh-timer-chan token-watch-cid-factory-fn)]
+          (start-token-watch-maintainer kv-store clock 1 1 watch-refresh-timer-chan test-cid-factory-fn)]
       (is (= {:last-update-time (clock)
               :token->index {}
               :watch-count 0}
@@ -307,7 +310,7 @@
           watch-chans (create-watch-chans 10)
           watch-refresh-timer-chan (async/chan)
           {:keys [exit-chan go-chan tokens-watch-channels-update-chan query-chan]}
-          (start-token-watch-maintainer kv-store clock 1 1 watch-refresh-timer-chan token-watch-cid-factory-fn)]
+          (start-token-watch-maintainer kv-store clock 1 1 watch-refresh-timer-chan test-cid-factory-fn)]
       (is (= {:last-update-time (clock)
               :token->index {}
               :watch-count 0}
@@ -387,7 +390,7 @@
   (deftest test-start-token-watch-maintainer-query-state
     (let [kv-store (kv/->LocalKeyValueStore (atom {}))
           {:keys [exit-chan go-chan query-state-fn]}
-          (start-token-watch-maintainer kv-store clock 1 1 (async/chan) token-watch-cid-factory-fn)]
+          (start-token-watch-maintainer kv-store clock 1 1 (async/chan) test-cid-factory-fn)]
 
       (testing "query-state-fn provides current state with default fields"
         (is (= {:last-update-time (clock)
@@ -407,7 +410,7 @@
   (deftest test-start-token-watch-maintainer-slow-channel
     (let [kv-store (kv/->LocalKeyValueStore (atom {}))
           {:keys [exit-chan go-chan tokens-update-chan tokens-watch-channels-update-chan query-chan]}
-          (start-token-watch-maintainer kv-store clock 1 1 (async/chan) token-watch-cid-factory-fn)]
+          (start-token-watch-maintainer kv-store clock 1 1 (async/chan) test-cid-factory-fn)]
 
       (testing "sending 5000 internal events does not halt daemon process with a slow watch-channel"
         (let [buffer-size 1
@@ -436,7 +439,7 @@
 
           (testing "channel is closed and no longer can have messages put! to it, but can still read"
             (is (not (async/put! slow-chan "temp")))
-            (is (= { :id token-watch-test-cid :object [] :type :INITIAL}
+            (is (= {:id token-watch-test-cid :object [] :type :INITIAL}
                    (async/<!! slow-chan))))))
 
       (stop-token-watch-maintainer go-chan exit-chan)))
@@ -444,7 +447,7 @@
   (deftest test-start-token-watch-maintainer-buffer-state
     (let [kv-store (kv/->LocalKeyValueStore (atom {}))
           {:keys [exit-chan go-chan tokens-update-chan tokens-watch-channels-update-chan query-state-fn]}
-          (start-token-watch-maintainer kv-store clock 1000 1000 (async/chan) token-watch-cid-factory-fn)
+          (start-token-watch-maintainer kv-store clock 1000 1000 (async/chan) test-cid-factory-fn)
           expected-buffer-count 123]
       (stop-token-watch-maintainer go-chan exit-chan)
 
