@@ -265,8 +265,8 @@
                 (let [{:keys [service-deployment-error-msg service-deployment-error-details]} instance
                       {:keys [error-message error-map]}
                       (cond->
-                        {:error-map {:status http-503-service-unavailable
-                                     :service-id service-id}
+                        {:error-map {:service-id service-id
+                                     :status http-503-service-unavailable}
                          :error-message (utils/message instance)}
                         (and service-deployment-error-msg service-deployment-error-details)
                         (-> (assoc :error-message service-deployment-error-msg)
