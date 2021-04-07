@@ -1426,6 +1426,8 @@
          (not (str/blank? scheduler-name))
          (au/chan? scheduler-state-chan)
          (pos-int? scheduler-syncer-interval-secs)
+         (pos-int? service-id->deployment-error-cache-threshold)
+         (pos-int? service-id->deployment-error-cache-ttl-sec)
          (fn? service-id->password-fn)
          (fn? service-id->service-description-fn)
          (fn? start-scheduler-syncer-fn)

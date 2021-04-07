@@ -1465,6 +1465,8 @@
                     :response->deployment-error-msg-fn 'waiter.scheduler.kubernetes/default-k8s-message-transform
                     :restart-expiry-threshold 2
                     :restart-kill-threshold 8
+                    :service-id->deployment-error-cache {:threshold 5000
+                                                         :ttl 60}
                     :url "http://127.0.0.1:8001"}
         base-config (merge context k8s-config)]
     (with-redefs [start-pods-watch! (constantly nil)
@@ -1523,6 +1525,19 @@
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :restart-kill-threshold "string"))))
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :restart-kill-threshold 1))))
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :restart-kill-threshold -1)))))
+
+          (testing "bad response->deployment-error-msg-fn"
+            (is (thrown? Throwable (kubernetes-scheduler (dissoc base-config :response->deployment-error-msg-fn))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :response->deployment-error-msg-fn 1))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :response->deployment-error-msg-fn "string")))))
+
+          (testing "bad service-id->deployment-error-cache-threshold"
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :service-id->deployment-error-cache {:threshold 1}))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :service-id->deployment-error-cache {:ttl 1}))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :service-id->deployment-error-cache {:threshold 1
+                                                                                                                 :ttl -1}))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :service-id->deployment-error-cache {:threshold -1
+                                                                                                                 :ttl 1})))))
 
           (testing "good restart-kill-threshold"
             (is (instance? KubernetesScheduler (kubernetes-scheduler (dissoc base-config :restart-kill-threshold))))
