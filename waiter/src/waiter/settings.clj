@@ -389,8 +389,11 @@
                                    :replicaset-spec-builder {:factory-fn 'waiter.scheduler.kubernetes/default-replicaset-builder
                                                              :container-init-commands ["waiter-k8s-init"]
                                                              :default-container-image "twosigma/waiter-test-apps:latest"}
+                                   :response->deployment-error-msg-fn 'waiter.scheduler.kubernetes/default-k8s-message-transform
                                    :restart-expiry-threshold 2
-                                   :restart-kill-threshold 8}
+                                   :restart-kill-threshold 8
+                                   :service-id->deployment-error-cache {:threshold 5000
+                                                                        :ttl 60}}
                       :marathon {:factory-fn 'waiter.scheduler.marathon/marathon-scheduler
                                  :authorizer {:kind :default
                                               :default {:factory-fn 'waiter.authorization/noop-authorizer}}

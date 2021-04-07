@@ -55,6 +55,11 @@
       (.get key (fn cache-loader [] {:data (get-fn)}))
       :data))
 
+(defn cache-put!
+  "Sets a value in the cache based upon the key and overwrites the current value if it exists."
+  [^Cache cache key value]
+  (.put cache key {:data value}))
+
 (defn cache-evict
   "Evicts a key from an atom-based cache."
   [^Cache cache key]

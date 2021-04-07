@@ -35,6 +35,7 @@
             [waiter.service-description :as sd]
             [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
+            [waiter.util.cache-utils :as cu]
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
@@ -68,6 +69,17 @@
   "Parse a Kubernetes API timestamp string."
   [k8s-timestamp-str]
   (du/str-to-date-safe k8s-timestamp-str k8s-timestamp-format))
+
+(defn default-k8s-message-transform
+  "Takes k8s api error response and creates a user friendly deployment error message"
+  [k8s-error-response]
+  (get-in k8s-error-response [:body :message] "Unknown reason - check logs"))
+
+(defn create-service-deployment-error
+  "Transforms the deployment error message to be more user friendly"
+  [k8s-error-response response->deployment-error-msg-fn]
+  {:service-deployment-error-details {:k8s-response-body (get-in k8s-error-response [:body])}
+   :service-deployment-error-msg (response->deployment-error-msg-fn k8s-error-response)})
 
 (defn- use-short-service-hash? [k8s-max-name-length]
   ;; This is fairly arbitrary, but if we have at least 48 characters for the app name,
@@ -136,6 +148,14 @@
                       :unhealthy (- replicas readyReplicas staged)}}))
     (catch Throwable t
       (log/error t "error converting ReplicaSet to Waiter Service"))))
+
+(defn create-empty-service
+  "Creates an instance of an empty service"
+  [service-id]
+  (scheduler/make-Service
+    {:id service-id
+     :instances 0
+     :task-count 0}))
 
 (defn k8s-object->id
   "Get the id (name) from a ReplicaSet or Pod's metadata"
@@ -419,7 +439,8 @@
       (scheduler/log "response from K8s API server:" result)
       result)
     (catch [:status http-400-bad-request] response
-      (log/error "malformed K8s API request: " url options response))
+      (log/error "malformed K8s API request: " url options response)
+      (ss/throw+ response))
     (catch [:client http-client] response
       (log/error "request to K8s API server failed: " url options body response)
       (ss/throw+ response))))
@@ -431,8 +452,17 @@
 
 (defn- get-services
   "Get all Waiter Services (reified as ReplicaSets) running in this Kubernetes cluster."
-  [{:keys [watch-state] :as scheduler}]
-  (-> watch-state deref :service-id->service vals))
+  [{:keys [service-id->deployment-error-cache watch-state]}]
+  (let [service-id->service (-> watch-state deref :service-id->service)
+        service-id->deployment-error (cu/cache->map service-id->deployment-error-cache)
+        service-ids (set (concat (keys service-id->deployment-error) (keys service-id->service)))]
+    (map
+      (fn [service-id]
+        (let [deployment-error (get-in service-id->deployment-error [service-id :data])
+              service (or (get service-id->service service-id) (create-empty-service service-id))]
+          (cond-> service
+                  deployment-error (assoc :deployment-error deployment-error))))
+      service-ids)))
 
 (defn- get-replicaset-pods
   "Get all Kubernetes pods associated with the given Waiter Service's corresponding ReplicaSet."
@@ -600,7 +630,8 @@
 (defn create-service
   "Reify a Waiter Service as a Kubernetes ReplicaSet."
   [{:keys [service-description service-id]}
-   {:keys [api-server-url pdb-api-version pdb-spec-builder-fn replicaset-api-version replicaset-spec-builder-fn] :as scheduler}]
+   {:keys [api-server-url pdb-api-version pdb-spec-builder-fn replicaset-api-version replicaset-spec-builder-fn
+           response->deployment-error-msg-fn service-id->deployment-error-cache] :as scheduler}]
   (let [{:strs [cmd-type]} service-description]
     (when (= "docker" cmd-type)
       (throw (ex-info "Unsupported command type on service"
@@ -610,11 +641,18 @@
   (let [rs-spec (replicaset-spec-builder-fn scheduler service-id service-description)
         request-namespace (k8s-object->namespace rs-spec)
         request-url (str api-server-url "/apis/" replicaset-api-version "/namespaces/" request-namespace "/replicasets")
-        response-json (api-request request-url scheduler
-                                   :body (utils/clj->json rs-spec)
-                                   :request-method :post)
+        response-json
+        (ss/try+
+          (api-request request-url scheduler :body (utils/clj->json rs-spec) :request-method :post)
+          (catch Object response
+            (let [deployment-error (create-service-deployment-error response response->deployment-error-msg-fn)]
+              (log/info "creating deployment error for service" {:deployment-error deployment-error
+                                                                 :service-id service-id})
+              (cu/cache-put! service-id->deployment-error-cache service-id deployment-error)
+              (ss/throw+ response))))
         {:keys [k8s/replicaset-uid] :as service} (some-> response-json replicaset->Service)]
-    (when-not service
+    (if service
+      (cu/cache-evict service-id->deployment-error-cache service-id)
       (throw (ex-info "failed to create service"
                       {:service-description service-description
                        :service-id service-id})))
@@ -682,11 +720,13 @@
                                 pod-suffix-length
                                 replicaset-api-version
                                 replicaset-spec-builder-fn
+                                response->deployment-error-msg-fn
                                 restart-expiry-threshold
                                 restart-kill-threshold
                                 retrieve-auth-token-state-fn
                                 retrieve-syncer-state-fn
                                 reverse-proxy
+                                service-id->deployment-error-cache
                                 service-id->failed-instances-transient-store
                                 service-id->password-fn
                                 service-id->service-description-fn
@@ -1345,10 +1385,11 @@
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
   [{:keys [authentication authorizer cluster-name container-running-grace-secs custom-options http-options leader?-fn log-bucket-sync-secs
            log-bucket-url max-patch-retries max-name-length pdb-api-version pdb-spec-builder pod-base-port pod-sigkill-delay-secs
-           pod-suffix-length replicaset-api-version replicaset-spec-builder restart-expiry-threshold restart-kill-threshold
+           pod-suffix-length replicaset-api-version replicaset-spec-builder response->deployment-error-msg-fn restart-expiry-threshold restart-kill-threshold
            reverse-proxy scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
            service-id->password-fn start-scheduler-syncer-fn url watch-connect-timeout-ms watch-retries watch-socket-timeout-ms]
     {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver
+    {service-id->deployment-error-cache-threshold :threshold service-id->deployment-error-cache-ttl-sec :ttl} :service-id->deployment-error-cache
     :as context}]
   {:pre [(schema/contains-kind-sub-map? authorizer)
          (or (zero? container-running-grace-secs) (pos-int? container-running-grace-secs))
@@ -1377,6 +1418,7 @@
          (pos-int? pod-suffix-length)
          (not (str/blank? replicaset-api-version))
          (symbol? (:factory-fn replicaset-spec-builder))
+         (symbol? response->deployment-error-msg-fn)
          (pos-int? restart-expiry-threshold)
          (or (nil? restart-kill-threshold) (pos-int? restart-kill-threshold))
          (or (nil? restart-kill-threshold) (<= restart-expiry-threshold restart-kill-threshold))
@@ -1384,6 +1426,8 @@
          (not (str/blank? scheduler-name))
          (au/chan? scheduler-state-chan)
          (pos-int? scheduler-syncer-interval-secs)
+         (pos-int? service-id->deployment-error-cache-threshold)
+         (pos-int? service-id->deployment-error-cache-ttl-sec)
          (fn? service-id->password-fn)
          (fn? service-id->service-description-fn)
          (fn? start-scheduler-syncer-fn)
@@ -1395,6 +1439,8 @@
                       (utils/assoc-if-absent :client-name "waiter-k8s")
                       (utils/assoc-if-absent :user-agent "waiter-k8s")
                       hu/http-client-factory)
+        service-id->deployment-error-cache (cu/cache-factory {:threshold service-id->deployment-error-cache-threshold
+                                                              :ttl (-> service-id->deployment-error-cache-ttl-sec t/seconds t/in-millis)})
         service-id->failed-instances-transient-store (atom {})
         replicaset-spec-builder-ctx (assoc replicaset-spec-builder
                                       :log-bucket-sync-secs log-bucket-sync-secs
@@ -1414,6 +1460,7 @@
                                      (assert (fn? f) "ReplicaSet spec function must be a Clojure fn")
                                      (fn [scheduler service-id service-description]
                                        (f scheduler service-id service-description replicaset-spec-builder-ctx)))
+        response->deployment-error-msg-fn (-> response->deployment-error-msg-fn utils/resolve-symbol!)
         restart-kill-threshold (or restart-kill-threshold (+ 2 restart-expiry-threshold))
         watch-options (cond-> default-watch-options
                         (some? watch-retries) (assoc :watch-retries watch-retries)
@@ -1462,12 +1509,14 @@
                             :pod-suffix-length pod-suffix-length
                             :replicaset-api-version replicaset-api-version
                             :replicaset-spec-builder-fn replicaset-spec-builder-fn
+                            :response->deployment-error-msg-fn response->deployment-error-msg-fn
                             :restart-expiry-threshold restart-expiry-threshold
                             :restart-kill-threshold restart-kill-threshold
                             :retrieve-auth-token-state-fn retrieve-auth-token-state-fn
                             :retrieve-syncer-state-fn retrieve-syncer-state-fn
                             :reverse-proxy reverse-proxy
                             :scheduler-name scheduler-name
+                            :service-id->deployment-error-cache service-id->deployment-error-cache
                             :service-id->failed-instances-transient-store service-id->failed-instances-transient-store
                             :service-id->password-fn service-id->password-fn
                             :service-id->service-description-fn service-id->service-description-fn

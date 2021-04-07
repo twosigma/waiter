@@ -597,7 +597,7 @@
                                        :time scheduler-sync-time))
 
                                    :update-service-instances
-                                   (let [{:keys [service-id healthy-instances unhealthy-instances failed-instances instance-counts scheduler-sync-time]} message-data
+                                   (let [{:keys [deployment-error service-id healthy-instances unhealthy-instances failed-instances instance-counts scheduler-sync-time]} message-data
                                          service-id->healthy-instances' (assoc service-id->healthy-instances service-id healthy-instances)
                                          service-id->unhealthy-instances' (assoc service-id->unhealthy-instances service-id unhealthy-instances)
                                          service-description (service-id->service-description-fn service-id)]
@@ -624,7 +624,7 @@
                                              service-id->instance-counts' (assoc service-id->instance-counts service-id instance-counts)
                                              deployment-error-config (merge default-deployment-error-config
                                                                             (service-id->deployment-error-config-fn service-id))
-                                             deployment-error (get-deployment-error healthy-instances unhealthy-instances failed-instances deployment-error-config)
+                                             deployment-error (or deployment-error (get-deployment-error healthy-instances unhealthy-instances failed-instances deployment-error-config))
                                              service-id->deployment-error' (if deployment-error
                                                                              (assoc service-id->deployment-error service-id deployment-error)
                                                                              (dissoc service-id->deployment-error service-id))

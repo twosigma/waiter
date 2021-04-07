@@ -560,6 +560,18 @@
                                  ;; The number of pod restart at which the pod will be killed:
                                  :restart-kill-threshold 8
 
+                                 ;; The deployment error message transform function for generating a user friendly message from a failing
+                                 ;; kubernetes api request
+                                 :response->deployment-error-msg-fn waiter.scheduler.kubernetes/default-k8s-message-transform-fn
+
+                                 ;; Cache configuration for service-id->deployment-error-cache
+                                 ;; This cache represents deployment errors at the service level (e.g. k8s api errors)
+                                 :service-id->deployment-error-cache {
+                                                                      ;; max number of services with a deployment-error
+                                                                      :threshold 5000
+                                                                      ;; time (seconds) to live for a service with deployment-error
+                                                                      :ttl 120}
+
                                  ;; Base URL for accessing the Kubernetes API server.
                                  ;; The URL used below is the default proxy URL bound to by the `kubectl proxy` command:
                                  :url "http://localhost:8001"
