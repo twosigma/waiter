@@ -65,10 +65,11 @@
   [handler]
   (fn [{:keys [body] :as request}]
     (let [{:keys [internal-protocol] :as response} (handler request)]
-      (if (and (instance? ServletInputStream body)
-                 (not (.isFinished ^ServletInputStream body))
-                 (not (instance? ManyToManyChannel response))
-                 (not (hu/http2? internal-protocol)))
+      (if-not (and (instance? ServletInputStream body)
+                   (not (.isFinished ^ServletInputStream body))
+                   (not (instance? ManyToManyChannel response))
+                   (not (hu/http2? internal-protocol)))
+        response
         (let [response-ch (async/promise-chan)
               input-stream ^ServletInputStream body
               bytes-counter-atom (atom 0)
@@ -104,8 +105,7 @@
                   (complete-request-streaming throwable))))
             (catch Throwable throwable
               (complete-request-streaming throwable)))
-          response-ch)
-        response))))
+          response-ch)))))
 
 (defn- initialize-server-metrics
   "Initializes the gauge metrics for the server instance."
