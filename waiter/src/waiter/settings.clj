@@ -110,6 +110,7 @@
    (s/required-key :scheduler-syncer-interval-secs) schema/positive-int
    (s/required-key :server-options) {(s/optional-key :accept-queue-size) schema/non-negative-int
                                      (s/optional-key :blocking-timeout) schema/non-negative-int
+                                     (s/optional-key :drain-request-bytes) s/Bool
                                      (s/optional-key :http2?) s/Bool
                                      (s/optional-key :http2c?) s/Bool
                                      (s/optional-key :keystore) schema/non-empty-string
@@ -427,6 +428,7 @@
                     ;; We set it to a reasonably high 15 mins by default.
                     ;; The idle timeout is configured per request, so we do not explicitly configure it here.
                     :blocking-timeout 900000 ;; 15 minutes
+                    :drain-request-bytes true
                     :http2? false
                     :http2c? true
                     :keystore-scan-interval-secs (* 60 60 12)

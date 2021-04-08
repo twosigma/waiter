@@ -130,6 +130,11 @@
  :server-options {;; The timeout in ms for blocking I/O operations, default 15 minutes (in millis)
                   :blocking-timeout 900000
 
+                  ;; Drains request bytes before emitting a response, default is true (backward compatibility).
+                  ;; Some clients are sensitive to request bytes having streamed completely before receiving a response.
+                  ;; In such scnearios, we configure Waiter to drain all request bytes before emitting the response line.
+                  :drain-request-bytes true
+
                   ;; Whether or not to  enable secure HTTP2 transport, default false
                   :http2? false
 

@@ -148,17 +148,18 @@
                         options (merge (cond-> server-options
                                          (:ssl-port server-options) (assoc :ssl? true))
                                        websocket-config
-                                       {:ring-handler (-> (core/ring-handler-factory waiter-request?-fn handlers)
-                                                        (cors/wrap-cors-preflight
-                                                          cors-validator (:max-age cors-config) discover-service-parameters-fn waiter-request?-fn)
-                                                        core/wrap-error-handling
-                                                        (core/wrap-debug generate-log-url-fn)
-                                                        (core/attach-waiter-api-middleware waiter-request?-fn)
-                                                        (core/attach-server-header-middleware server-name)
-                                                        rlog/wrap-log
-                                                        core/correlation-id-middleware
-                                                        (core/wrap-request-info router-id support-info)
-                                                        consume-request-stream)
+                                       {:ring-handler (cond-> (-> (core/ring-handler-factory waiter-request?-fn handlers)
+                                                                (cors/wrap-cors-preflight
+                                                                  cors-validator (:max-age cors-config) discover-service-parameters-fn waiter-request?-fn)
+                                                                core/wrap-error-handling
+                                                                (core/wrap-debug generate-log-url-fn)
+                                                                (core/attach-waiter-api-middleware waiter-request?-fn)
+                                                                (core/attach-server-header-middleware server-name)
+                                                                rlog/wrap-log
+                                                                core/correlation-id-middleware
+                                                                (core/wrap-request-info router-id support-info))
+                                                        (get-in settings [:server-options :drain-request-bytes])
+                                                        (consume-request-stream))
                                         :websocket-acceptor websocket-request-acceptor
                                         :websocket-handler (-> (core/websocket-handler-factory handlers)
                                                              rlog/wrap-log
