@@ -69,7 +69,11 @@
                  (not (instance? ManyToManyChannel response))
                  (not (hu/http2? internal-protocol)))
         (try
-          (slurp body)
+          (let [body-stream ^ServletInputStream body
+                buffer (byte-array 1024)]
+            ;; read until the request payload is fully consumed
+            (while (not (.isFinished body-stream))
+              (.read body-stream buffer)))
           (catch IOException e
             (log/error e "Unable to consume request stream"))))
       response)))
