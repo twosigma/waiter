@@ -37,15 +37,28 @@
       (assert-response-status canary-response http-200-ok)
       (with-service-cleanup
         service-id
-        (dotimes [n num-streaming-requests]
-          (let [request-cid (str service-name "-iter" n)
+
+        (testing "error response from waiter"
+          (let [request-cid (str service-name "-error")
                 headers (assoc headers
                           :content-length body-size
                           :content-type "application/octet-stream"
-                          :x-cid request-cid)
-                {:keys [body] :as response} (make-kitchen-request waiter-url headers :body post-body :path "/streaming")]
-            (assert-response-status response http-200-ok)
-            (is (.equals post-body body) (str response)))) ;; avoids printing the post-body when assertion fails
+                          :x-cid request-cid
+                          :x-waiter-cpus "bad-cpus")
+                response (make-kitchen-request waiter-url headers :body post-body :path "/streaming")]
+            (assert-response-status response http-400-bad-request)
+            (assert-waiter-response response)))
+
+        (testing "successful proxying"
+          (dotimes [n num-streaming-requests]
+            (let [request-cid (str service-name "-iter" n)
+                  headers (assoc headers
+                            :content-length body-size
+                            :content-type "application/octet-stream"
+                            :x-cid request-cid)
+                  {:keys [body] :as response} (make-kitchen-request waiter-url headers :body post-body :path "/streaming")]
+              (assert-response-status response http-200-ok)
+              (is (.equals post-body body) (str response))))) ;; avoids printing the post-body when assertion fails
         ; wait to allow metrics to be aggregated
         (let [sleep-period (max (* 20 metrics-sync-interval-ms) 10000)]
           (log/debug "sleeping for" sleep-period "ms")
@@ -112,8 +125,8 @@
     (when-let [request-streaming-timeout (streaming-timeout-fn streaming-timeout-ms)]
       (.setRequestProperty url-connection "x-waiter-streaming-timeout" (str request-streaming-timeout)))
     (let [service-id (-> url-connection
-                         (.getHeaderField "x-waiter-backend-id")
-                         (instance-id->service-id))
+                       (.getHeaderField "x-waiter-backend-id")
+                       (instance-id->service-id))
           input-stream (.getInputStream url-connection)
           data-byte-array (byte-array 300000)
           sleep-iteration 5]

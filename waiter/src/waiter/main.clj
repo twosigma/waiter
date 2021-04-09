@@ -16,6 +16,7 @@
 (ns waiter.main
   (:gen-class)
   (:require [clj-time.core :as t]
+            [clojure.core.async :as async]
             [clojure.java.io :as io]
             [clojure.java.shell :as sh]
             [clojure.string :as str]
@@ -23,6 +24,7 @@
             [clojure.tools.logging :as log]
             [metrics.core :as mc]
             [metrics.jvm.core :as jvm-metrics]
+            [metrics.meters :as meters]
             [plumbing.core :as pc]
             [plumbing.graph :as graph]
             [qbits.jet.server :as server]
@@ -38,8 +40,7 @@
             [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
   (:import (clojure.core.async.impl.channels ManyToManyChannel)
-           (java.io IOException)
-           (javax.servlet ServletInputStream)
+           (javax.servlet ReadListener ServletInputStream)
            (org.eclipse.jetty.server AbstractConnector Server)))
 
 (defn retrieve-git-version []
@@ -64,15 +65,47 @@
   [handler]
   (fn [{:keys [body] :as request}]
     (let [{:keys [internal-protocol] :as response} (handler request)]
-      (when (and (instance? ServletInputStream body)
-                 (not (.isFinished ^ServletInputStream body))
-                 (not (instance? ManyToManyChannel response))
-                 (not (hu/http2? internal-protocol)))
-        (try
-          (slurp body)
-          (catch IOException e
-            (log/error e "Unable to consume request stream"))))
-      response)))
+      (if-not (and (instance? ServletInputStream body)
+                   (not (.isFinished ^ServletInputStream body))
+                   (not (instance? ManyToManyChannel response))
+                   (not (hu/http2? internal-protocol)))
+        response
+        (let [response-ch (async/promise-chan)
+              input-stream ^ServletInputStream body
+              bytes-counter-atom (atom 0)
+              throughput-meter-global (metrics/waiter-meter "streaming" "request-bytes")
+              throughput-iterations-meter-global (metrics/waiter-meter "streaming" "request-iterations")
+              complete-request-streaming (fn complete-request-streaming [throwable]
+                                           (if throwable
+                                             (log/debug throwable "error after consuming" @bytes-counter-atom "bytes from request stream")
+                                             (log/debug "successfully consumed" @bytes-counter-atom "bytes from request stream"))
+                                           (async/>!! response-ch response))
+              buffer-size 1024
+              buffer-bytes (byte-array buffer-size)]
+          (try
+            (.setReadListener
+              input-stream
+              (reify ReadListener
+                (onAllDataRead [_]
+                  (complete-request-streaming nil))
+                (onDataAvailable [_]
+                  (try
+                    (loop []
+                      (let [bytes-read (.read input-stream buffer-bytes)]
+                        (when (pos? bytes-read)
+                          (swap! bytes-counter-atom + bytes-read)
+                          (meters/mark! throughput-meter-global bytes-read)
+                          (meters/mark! throughput-iterations-meter-global))
+                        (when (and (utils/non-neg? bytes-read) (.isReady input-stream))
+                          (recur))))
+                    (catch Throwable throwable
+                      (complete-request-streaming throwable)
+                      (throw throwable))))
+                (onError [_ throwable]
+                  (complete-request-streaming throwable))))
+            (catch Throwable throwable
+              (complete-request-streaming throwable)))
+          response-ch)))))
 
 (defn- initialize-server-metrics
   "Initializes the gauge metrics for the server instance."
