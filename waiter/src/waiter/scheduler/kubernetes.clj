@@ -645,6 +645,7 @@
         (ss/try+
           (api-request request-url scheduler :body (utils/clj->json rs-spec) :request-method :post)
           (catch Object response
+            ; Don't create deployment error for http-409-conflict (replicaset already exists)
             (when-not (= (:status response) http-409-conflict)
               (let [deployment-error (create-service-deployment-error response response->deployment-error-msg-fn)]
                 (log/info "creating deployment error for service" {:deployment-error deployment-error
