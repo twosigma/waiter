@@ -62,7 +62,7 @@
 (defn- consume-request-stream
   "Consumes, when appropriate, the request stream before sending the response.
    HTTP/2 request support bidirectional streaming and are not subject to the consuming of the stream."
-  [handler]
+  [handler buffer-size]
   (fn [{:keys [body] :as request}]
     (let [{:keys [internal-protocol] :as response} (handler request)]
       (if-not (and (instance? ServletInputStream body)
@@ -80,7 +80,6 @@
                                              (log/debug throwable "error after consuming" @bytes-counter-atom "bytes from request stream")
                                              (log/debug "successfully consumed" @bytes-counter-atom "bytes from request stream"))
                                            (async/>!! response-ch response))
-              buffer-size 1024
               buffer-bytes (byte-array buffer-size)]
           (try
             (.setReadListener
@@ -145,6 +144,7 @@
                          [:state cors-validator router-id server-name]
                          handlers] ; Insist that all systems are running before we start server
                   (let [{:keys [websocket-request-acceptor]} handlers
+                        {:keys [drain-request-buffer-size]} server-options
                         options (merge (cond-> server-options
                                          (:ssl-port server-options) (assoc :ssl? true))
                                        websocket-config
@@ -158,7 +158,7 @@
                                                         rlog/wrap-log
                                                         core/correlation-id-middleware
                                                         (core/wrap-request-info router-id support-info)
-                                                        consume-request-stream)
+                                                        (consume-request-stream drain-request-buffer-size))
                                         :websocket-acceptor websocket-request-acceptor
                                         :websocket-handler (-> (core/websocket-handler-factory handlers)
                                                              rlog/wrap-log

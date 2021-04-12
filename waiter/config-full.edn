@@ -130,6 +130,11 @@
  :server-options {;; The timeout in ms for blocking I/O operations, default 15 minutes (in millis)
                   :blocking-timeout 900000
 
+                  ;; The buffer size used while draining request bytes before emitting a response, the default is 16384.
+                  ;; Draining request bytes is necessary for clients that are sensitive to request being streamed completely before receiving a response.
+                  ;; Waiter, conservatively, drains all request bytes before emitting the response line.
+                  :drain-request-buffer-size 16384
+
                   ;; Whether or not to  enable secure HTTP2 transport, default false
                   :http2? false
 
