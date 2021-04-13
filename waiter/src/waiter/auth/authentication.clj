@@ -341,7 +341,8 @@
                   waiter-token?
                   (assoc :waiter/token token)
                   (utils/request-flag headers "x-waiter-debug")
-                  (attach-authorization-headers))))))
+                  (attach-authorization-headers)))
+              "process-auth-keep-alive-request")))
 
         ;; default response
         :else

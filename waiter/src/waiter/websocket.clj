@@ -549,4 +549,5 @@
                           (fn [response]
                             (when (ru/error-response? response)
                               (async/close! out))
-                            response)))))
+                            response)
+                          "wrap-ws-close-on-error"))))

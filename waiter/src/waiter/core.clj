@@ -202,7 +202,7 @@
                               (cond-> response
                                 (utils/waiter-generated-response? response)
                                 (rr/header "server" server-name)))]
-      (ru/update-response response add-server-header))))
+      (ru/update-response response add-server-header "server-header-middleware"))))
 
 (defn attach-waiter-api-middleware
   "Attaches a boolean value for :waiter-api-call? to the response."
@@ -217,7 +217,7 @@
       (-> request
         (add-waiter-api-call-fn)
         (handler)
-        (ru/update-response add-waiter-api-call-fn)))))
+        (ru/update-response add-waiter-api-call-fn "waiter-api-middleware")))))
 
 (defn correlation-id-middleware
   "Attaches an x-cid header to the request and response if one is not already provided."
@@ -279,7 +279,8 @@
         handler
         (ru/update-response
           (fn wrap-request-protocols-into-response [response]
-            (assoc response :internal-protocol internal-protocol)))))))
+            (assoc response :internal-protocol internal-protocol))
+          "request-info")))))
 
 (defn wrap-debug
   "Attaches debugging headers to requests when enabled.
@@ -319,7 +320,7 @@
                                                         "x-waiter-backend-proto" backend-proto)
                                         backend-directory (assoc "x-waiter-backend-directory" backend-directory
                                                                  "x-waiter-backend-log-url" backend-log-url))))))]
-        (ru/update-response response add-headers))
+        (ru/update-response response add-headers "wrap-debug"))
       (handler request))))
 
 (defn wrap-error-handling

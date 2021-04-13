@@ -77,7 +77,7 @@
                                (string? existing-header) [existing-header set-cookie-header]
                                :else (conj existing-header set-cookie-header))]
               (assoc-in response [:headers "set-cookie"] new-header)))]
-    (ru/update-response response add-cookie-into-response)))
+    (ru/update-response response add-cookie-into-response "add-cookie")))
 
 (defn add-encoded-cookie
   "Inserts the provided name-value pair as a Set-Cookie header in the response after encoding the value."

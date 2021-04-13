@@ -24,12 +24,17 @@
 
 (defn update-response
   "Updates a response, handling the case where it may be a chan."
-  [response response-fn]
+  [response response-fn label]
   (if (au/chan? response)
     (async/go
       (let [response-obj (async/<! response)]
-        (log/info "extracted" response-obj "from" response)
-        (response-fn response-obj)))
+        (log/info label "extracted" response-obj "from" response)
+        (if (au/chan? response-obj)
+          (async/go
+            (let [nested-response-obj (async/<! response-obj)]
+              (log/info label "extracted nested" nested-response-obj "from" response-obj)
+              (response-fn response-obj)))
+          (response-fn response-obj))))
     (response-fn response)))
 
 (defn json-request

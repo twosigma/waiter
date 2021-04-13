@@ -20,5 +20,5 @@
 
 (deftest test-update-response
   (let [update-fn (fn [response] (assoc response :k :v))]
-    (is (= {:k :v} (update-response {} update-fn)))
-    (is (= {:k :v} (async/<!! (update-response (async/go {}) update-fn))))))
+    (is (= {:k :v} (update-response {} update-fn "test")))
+    (is (= {:k :v} (async/<!! (update-response (async/go {}) update-fn "test"))))))

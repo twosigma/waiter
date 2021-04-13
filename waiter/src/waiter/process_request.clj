@@ -596,7 +596,7 @@
                     (counters/inc! (metrics/service-counter service-id "response-status" (str status)))
                     (statsd/inc! metric-group (str "response_status_" status))
                     response)]
-      (ru/update-response response update!))))
+      (ru/update-response response update! "wrap-response-status-metrics"))))
 
 (defn abort-http-request-callback-factory
   "Creates a callback to abort the http request."

@@ -173,11 +173,12 @@
                   (if principal
                     (let [auth-params-map (auth/build-auth-params-map :spnego principal)
                           response (auth/handle-request-auth request-handler request auth-params-map password)]
-                      (log/info "added cookies to response")
+                      (log/info "added cookies to response" response)
                       (if token
                         (if (map? response)
                           (rr/header response "www-authenticate" token)
                           (let [actual-response (async/<! response)]
+                            (log/info "www-authenticate: extracted nested response" actual-response "from" response)
                             (rr/header actual-response "www-authenticate" token)))
                         response))
                     (do

@@ -499,7 +499,8 @@
         ;; allow downstream processing before deciding on authentication challenge in response
         (ru/update-response
           (request-handler request)
-          (make-401-response-updater request))
+          (make-401-response-updater request)
+          "authenticate-request")
         ;; non-401 response avoids further downstream handler processing
         (utils/exception->response result-map-or-throwable request))
       (let [{:keys [claims expiry-time subject]} result-map-or-throwable
@@ -534,7 +535,7 @@
         :else
         (cond-> (request-handler request)
           attach-www-authenticate-on-missing-bearer-token?
-          (ru/update-response (make-401-response-updater request)))))))
+          (ru/update-response (make-401-response-updater request) "attach-www-authenticate"))))))
 
 (defrecord JwtAuthenticator [allow-bearer-auth-api? allow-bearer-auth-services?
                              attach-www-authenticate-on-missing-bearer-token?

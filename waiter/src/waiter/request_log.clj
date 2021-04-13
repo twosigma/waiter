@@ -121,4 +121,5 @@
         (fn [response]
           (let [elapsed-ns (timers/stop timer)]
             (log-request! request (assoc response :handle-request-latency-ns elapsed-ns)))
-          response)))))
+          response)
+        "wrap-log"))))

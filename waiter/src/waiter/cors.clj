@@ -121,7 +121,7 @@
                                :log-level :warn})))
             (log/info "cors request allowed" summary)
             (-> (handler request)
-              (ru/update-response bless))))))))
+              (ru/update-response bless "wrap-cors"))))))))
 
 (defrecord PatternBasedCorsValidator [pattern-check]
   CorsValidator

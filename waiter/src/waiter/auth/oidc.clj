@@ -340,7 +340,8 @@
             (log/info "invoking OIDC auth handler directly")
             (ru/update-response
               (request-handler request)
-              (make-oidc-auth-response-updater jwt-auth-server @oidc-mode-delay password request))))))))
+              (make-oidc-auth-response-updater jwt-auth-server @oidc-mode-delay password request)
+              "oidc-handler")))))))
 
 (defrecord OidcAuthenticator [allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri oidc-default-mode
                               jwt-auth-server jwt-validator oidc-num-challenge-cookies-allowed-in-request
