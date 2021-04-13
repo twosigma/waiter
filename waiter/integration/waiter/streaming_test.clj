@@ -38,17 +38,6 @@
       (with-service-cleanup
         service-id
 
-        (testing "error response from waiter"
-          (let [request-cid (str service-name "-error")
-                headers (assoc headers
-                          :content-length body-size
-                          :content-type "application/octet-stream"
-                          :x-cid request-cid
-                          :x-waiter-cpus "bad-cpus")
-                response (make-kitchen-request waiter-url headers :body post-body :path "/streaming")]
-            (assert-response-status response http-400-bad-request)
-            (assert-waiter-response response)))
-
         (testing "successful proxying"
           (dotimes [n num-streaming-requests]
             (let [request-cid (str service-name "-iter" n)
@@ -86,7 +75,18 @@
               (str "response-size-histogram: " response-size-histogram))
           ;; all (canary and streaming) response sizes are logged
           (is (->> (get-in response-size-histogram [:value :1.0] 0.0) (- body-size) Math/abs (>= epsilon))
-              (str "response-size-histogram: " response-size-histogram)))))))
+              (str "response-size-histogram: " response-size-histogram)))
+
+        (testing "error response from waiter"
+          (let [request-cid (str service-name "-error")
+                headers (assoc headers
+                          :content-length body-size
+                          :content-type "application/octet-stream"
+                          :x-cid request-cid
+                          :x-waiter-cpus "bad-cpus")
+                response (make-kitchen-request waiter-url headers :body post-body :path "/streaming")]
+            (assert-response-status response http-400-bad-request)
+            (assert-waiter-response response)))))))
 
 (deftest ^:parallel ^:integration-fast test-large-request
   (testing-using-waiter-url
