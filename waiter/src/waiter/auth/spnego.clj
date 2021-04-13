@@ -161,6 +161,7 @@
       (auth/select-auth-header request negotiate-token?)
       (let [current-correlation-id (cid/get-correlation-id)
             gss-response-chan (async/promise-chan)]
+        (log/info "validating negotiate header")
         ;; launch task that will populate the response in response-chan
         (populate-gss-credentials thread-pool-executor request gss-response-chan)
         (async/go
@@ -172,18 +173,22 @@
                   (if principal
                     (let [auth-params-map (auth/build-auth-params-map :spnego principal)
                           response (auth/handle-request-auth request-handler request auth-params-map password)]
-                      (log/debug "added cookies to response")
+                      (log/info "added cookies to response")
                       (if token
                         (if (map? response)
                           (rr/header response "www-authenticate" token)
                           (let [actual-response (async/<! response)]
                             (rr/header actual-response "www-authenticate" token)))
                         response))
-                    (response-http-401-unauthorized-negotiate request))
+                    (do
+                      (log/info "issuing 401 unauthorized response")
+                      (response-http-401-unauthorized-negotiate request)))
                   (catch Throwable th
                     (log/error th "error while processing response")
                     th))
                 error)))))
       ;; Default to unauthorized
       :else
-      (response-http-401-unauthorized-negotiate request))))
+      (do
+        (log/info "issuing 401 unauthorized response")
+        (response-http-401-unauthorized-negotiate request)))))

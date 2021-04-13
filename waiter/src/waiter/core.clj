@@ -210,6 +210,7 @@
   (fn attach-waiter-api-middleware-fn [request]
     (let [waiter-api-call? (boolean (waiter-request?-fn request))
           add-waiter-api-call-fn (fn add-waiter-api-call-fn [http-obj]
+                                   (log/info "attaching waiter-api middleware to" http-obj)
                                    (assoc http-obj
                                      :request-type (if waiter-api-call? "waiter-api" "waiter-proxy")
                                      :waiter-api-call? waiter-api-call?))]

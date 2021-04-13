@@ -331,12 +331,16 @@
               (not (supports-redirect? oidc-authority oidc-redirect-user-agent-products request))
               ;; OIDC auth is avoided if client already has too many challenge cookies
               (too-many-oidc-challenge-cookies? request oidc-num-challenge-cookies-allowed-in-request))
-          (request-handler request)
+          (do
+            (log/info "invoking request handler directly")
+            (request-handler request))
 
           :else
-          (ru/update-response
-            (request-handler request)
-            (make-oidc-auth-response-updater jwt-auth-server @oidc-mode-delay password request)))))))
+          (do
+            (log/info "invoking OIDC auth handler directly")
+            (ru/update-response
+              (request-handler request)
+              (make-oidc-auth-response-updater jwt-auth-server @oidc-mode-delay password request))))))))
 
 (defrecord OidcAuthenticator [allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri oidc-default-mode
                               jwt-auth-server jwt-validator oidc-num-challenge-cookies-allowed-in-request

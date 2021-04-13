@@ -16,6 +16,7 @@
 (ns waiter.util.ring-utils
   (:require [clojure.core.async :as async]
             [clojure.data.json :as json]
+            [clojure.tools.logging :as log]
             [ring.middleware.params :as ring-params]
             [ring.util.request :as ring-request]
             [waiter.status-codes :refer :all]
@@ -25,7 +26,10 @@
   "Updates a response, handling the case where it may be a chan."
   [response response-fn]
   (if (au/chan? response)
-    (async/go (response-fn (async/<! response)))
+    (async/go
+      (let [response-obj (async/<! response)]
+        (log/info "extracted" response-obj "from" response)
+        (response-fn response-obj)))
     (response-fn response)))
 
 (defn json-request
