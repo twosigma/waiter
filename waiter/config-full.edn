@@ -586,7 +586,7 @@
                                  :watch-connect-timeout-ms 10000
 
                                  ;; Determines, in milliseconds, how long to block scheduler initializaion waiting for initial watch state.
-                                 ;; When 0, the scheduler factory returns immidiately (maybe without initial Kubernetes scheduler state knowledge).
+                                 ;; When 0, the scheduler factory returns immediately (maybe without initial Kubernetes scheduler state knowledge).
                                  ;; Defaults to 2 minutes.
                                  :watch-init-timeout-ms 120000
 
