@@ -1232,6 +1232,7 @@
   {:api-request-fn api-request
    :connect-timeout-ms (-> 10 t/seconds t/in-millis)
    :exit-on-error? true
+   :init-timeout-ms (-> 2 t/minutes t/in-millis)
    :socket-timeout-ms (-> 15 t/minutes t/in-millis)
    :streaming-api-request-fn streaming-watch-api-request
    :watch-retries 0})
@@ -1377,6 +1378,29 @@
                                   (assoc-in state [:rs-metadata :version :watch] version))))))}
       (merge options))))
 
+(defn wait-for-watches
+  "Waits until both the Pod and ReplicaSet scheduler watch states are populated.
+   Logs and error and returns if this takes longer than watch-init-timeout-ms.
+   If watch-init-timeout-ms is zero, then returns immediately."
+  [{:keys [watch-state]} {:keys [init-timeout-ms]}]
+  (let [sleep-ms 10]
+    (when (pos? init-timeout-ms)
+      (loop [total-ms-slept 0]
+        (cond
+          ;; base case: both watches initialized
+          (let [current-watch-state @watch-state]
+            (and (get-in current-watch-state [:rs-metadata :timestamp :snapshot])
+                 (get-in current-watch-state [:pods-metadata :timestamp :snapshot])))
+          (log/info "scheduler watches ready after" total-ms-slept "milliseconds")
+          ;; recursive case: still waiting for one or both watches
+          (<= total-ms-slept init-timeout-ms)
+          (do
+            (utils/sleep sleep-ms)
+            (recur (+ total-ms-slept sleep-ms)))
+          ;; base case: init-timeout expired, but the watches still aren't ready
+          :else
+          (log/error "scheduler watches still not ready after" init-timeout-ms "milliseconds"))))))
+
 (defn fileserver-container-enabled?
   "Returns true when the port is configured on the fileserver configuration."
   [{:keys [fileserver]} _ _ _]
@@ -1389,7 +1413,7 @@
            log-bucket-url max-patch-retries max-name-length pdb-api-version pdb-spec-builder pod-base-port pod-sigkill-delay-secs
            pod-suffix-length replicaset-api-version replicaset-spec-builder response->deployment-error-msg-fn restart-expiry-threshold restart-kill-threshold
            reverse-proxy scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
-           service-id->password-fn start-scheduler-syncer-fn url watch-connect-timeout-ms watch-retries watch-socket-timeout-ms]
+           service-id->password-fn start-scheduler-syncer-fn url watch-connect-timeout-ms watch-init-timeout-ms watch-retries watch-socket-timeout-ms]
     {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver
     {service-id->deployment-error-cache-threshold :threshold service-id->deployment-error-cache-ttl-sec :ttl} :service-id->deployment-error-cache
     :as context}]
@@ -1434,6 +1458,7 @@
          (fn? service-id->service-description-fn)
          (fn? start-scheduler-syncer-fn)
          (or (nil? watch-connect-timeout-ms) (integer? watch-connect-timeout-ms))
+         (or (nil? watch-init-timeout-ms) (integer? watch-init-timeout-ms))
          (or (nil? watch-retries) (integer? watch-retries))
          (or (nil? watch-socket-timeout-ms) (integer? watch-socket-timeout-ms))]}
   (let [authorizer (utils/create-component authorizer)
@@ -1467,6 +1492,7 @@
         watch-options (cond-> default-watch-options
                         (some? watch-retries) (assoc :watch-retries watch-retries)
                         watch-connect-timeout-ms (assoc :connect-timeout-ms watch-connect-timeout-ms)
+                        watch-init-timeout-ms (assoc :init-timeout-ms watch-init-timeout-ms)
                         watch-socket-timeout-ms (assoc :socket-timeout-ms watch-socket-timeout-ms))
         watch-state (atom nil)
         scheduler-promise (promise) ;; resolves circular dependency
@@ -1531,4 +1557,5 @@
                             :rs-watch-daemon rs-watch-thread})
       (assert (every? #(contains? scheduler %) (keys scheduler-config))
               "ensure all fields in scheduler-config are present in KubernetesScheduler")
+      (wait-for-watches scheduler watch-options)
       scheduler)))

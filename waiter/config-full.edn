@@ -585,6 +585,11 @@
                                  ;; Defaults to 10 seconds.
                                  :watch-connect-timeout-ms 10000
 
+                                 ;; Determines, in milliseconds, how long to block scheduler initializaion waiting for initial watch state.
+                                 ;; When 0, the scheduler factory returns immediately (maybe without initial Kubernetes scheduler state knowledge).
+                                 ;; Defaults to 2 minutes.
+                                 :watch-init-timeout-ms 120000
+
                                  ;; Number of times to retry a watch before falling back to a global state query.
                                  ;; These retries only apply to a closed watch connection, not to connections returning an HTTP error code.
                                  ;; Defaults to 0 (one attempt, no retries) if not provided.
