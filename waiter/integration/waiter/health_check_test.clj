@@ -19,10 +19,11 @@
             [clojure.walk :as walk]
             [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
-            [waiter.util.http-utils :as hu]))
+            [waiter.util.http-utils :as hu]
+            [waiter.util.utils :as utils]))
 
 (defn assert-ping-response
-  [waiter-url health-check-protocol idle-timeout service-id response]
+  [waiter-url health-check-protocol idle-timeout service-id response & {:keys [query-params] :or {query-params {}}}]
   (assert-response-status response http-200-ok)
   (let [{:keys [ping-response service-description service-state]}
         (some-> response :body json/read-str walk/keywordize-keys)]
@@ -35,13 +36,16 @@
                (get-in ping-response [:headers :x-kitchen-protocol-version]))
             (str ping-response))
         (is (= "get" (get-in ping-response [:headers :x-kitchen-request-method])) (str ping-response))
-        (is (= {:exists? true :healthy? true :service-id service-id :status "Running"} service-state)))
+        (if (utils/param-contains? query-params "exclude" "service-state")
+          (is (= {:result "excluded"} service-state))
+          (is (= {:exists? true :healthy? true :service-id service-id :status "Running"} service-state))))
       (do
         (is (= "timed-out" (get ping-response :result)) (str ping-response))
         (is (= {:exists? true :healthy? false :service-id service-id :status "Starting"} service-state))))))
 
 (defn run-ping-service-test
-  [waiter-url idle-timeout command backend-proto health-check-proto num-ports health-check-port-index]
+  [waiter-url idle-timeout command backend-proto health-check-proto num-ports health-check-port-index
+   & {:keys [query-params] :or {query-params {}}}]
   (let [headers (cond-> {:accept "application/json"
                          :x-waiter-cmd command
                          :x-waiter-debug true
@@ -52,12 +56,13 @@
                   health-check-proto (assoc :x-waiter-health-check-proto health-check-proto)
                   idle-timeout (assoc :x-waiter-timeout idle-timeout)
                   num-ports (assoc :x-waiter-ports num-ports))
-        {:keys [headers] :as response} (make-kitchen-request waiter-url headers :method :post :path "/waiter-ping")
+        {:keys [headers] :as response} (make-kitchen-request waiter-url headers
+                                                             :method :post :path "/waiter-ping" :query-params query-params)
         service-id (get headers "x-waiter-service-id")
         health-check-protocol (or health-check-proto backend-proto "http")]
     (with-service-cleanup
       service-id
-      (assert-ping-response waiter-url health-check-protocol idle-timeout service-id response))))
+      (assert-ping-response waiter-url health-check-protocol idle-timeout service-id response :query-params query-params))))
 
 (deftest ^:parallel ^:integration-fast test-basic-ping-service
   (testing-using-waiter-url
@@ -68,6 +73,17 @@
           num-ports nil
           health-check-port-index nil]
       (run-ping-service-test waiter-url idle-timeout command backend-proto health-check-proto num-ports health-check-port-index))))
+
+(deftest ^:parallel ^:integration-fast test-basic-ping-service-exclude-service-state
+  (testing-using-waiter-url
+    (let [idle-timeout nil
+          command (kitchen-cmd "-p $PORT0")
+          backend-proto nil
+          health-check-proto nil
+          num-ports nil
+          health-check-port-index nil]
+      (run-ping-service-test waiter-url idle-timeout command backend-proto health-check-proto num-ports health-check-port-index
+                             :query-params {"exclude" "service-state"}))))
 
 (deftest ^:parallel ^:integration-fast test-ping-http-http-port0-timeout
   (testing-using-waiter-url
