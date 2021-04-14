@@ -91,6 +91,7 @@
                                                                          "run-as-user" "myself"})
                                                             service-ids)
       :scheduler-name "dummy-scheduler"
+      :watch-init-timeout-ms 0
       :watch-state (atom nil)}
      (merge args)
      (update-in [:authorizer] utils/create-component)
@@ -1467,7 +1468,8 @@
                     :restart-kill-threshold 8
                     :service-id->deployment-error-cache {:threshold 5000
                                                          :ttl 60}
-                    :url "http://127.0.0.1:8001"}
+                    :url "http://127.0.0.1:8001"
+                    :watch-init-timeout-ms 0}
         base-config (merge context k8s-config)]
     (with-redefs [start-pods-watch! (constantly nil)
                   start-replicasets-watch! (constantly nil)]
