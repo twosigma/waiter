@@ -1037,7 +1037,8 @@
         (let [request-params (-> request ru/query-params-request :query-params)
               exclude-service-state (utils/param-contains? request-params "exclude" "service-state")
               service-state (if exclude-service-state
-                              {:result :excluded}
+                              {:result :excluded
+                               :service-id service-id}
                               (fa/<? (service-state-fn service-id (:result ping-response))))]
           (merge
             (dissoc ping-response [:body :error-chan :headers :request :result :status :trailers])
