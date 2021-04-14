@@ -1031,11 +1031,16 @@
                                 :request-type "ping"
                                 :waiter-api-call? false))]
           (rlog/log-request! request response))
-        (merge
-          (dissoc ping-response [:body :error-chan :headers :request :result :status :trailers])
-          (utils/clj->json-response
-            {:ping-response (select-keys ping-response [:body :headers :result :status])
-             :service-description core-service-description
-             :service-state (fa/<? (service-state-fn service-id (:result ping-response)))})))
+        (let [request-params (-> request ru/query-params-request :query-params)
+              exclude-service-state (utils/param-contains? request-params "exclude" "service-state")
+              service-state (if exclude-service-state
+                              {:result :excluded}
+                              (fa/<? (service-state-fn service-id (:result ping-response))))]
+          (merge
+            (dissoc ping-response [:body :error-chan :headers :request :result :status :trailers])
+            (utils/clj->json-response
+              {:ping-response (select-keys ping-response [:body :headers :result :status])
+               :service-description core-service-description
+               :service-state service-state}))))
       (catch Exception ex
         (utils/exception->response ex request)))))
