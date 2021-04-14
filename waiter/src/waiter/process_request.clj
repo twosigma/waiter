@@ -739,9 +739,12 @@
 (defn handle-process-exception
   "Handles an error during process."
   [exception {:keys [descriptor] :as request}]
-  (log/error exception "error during process")
-  (track-process-error-metrics descriptor)
-  (utils/exception->response exception request))
+  (let [error-message (str (some-> exception .getMessage))]
+    (if (str/includes? error-message service/deployment-error-prefix)
+      (log/error "error during process" error-message)
+      (log/error exception "error during process" error-message))
+    (track-process-error-metrics descriptor)
+    (utils/exception->response exception request)))
 
 (let [process-timer (metrics/waiter-timer "core" "process")]
   (defn process

@@ -33,6 +33,8 @@
 
 (def ^:const status-check-path "/status")
 
+(def ^:const deployment-error-prefix "Deployment error: ")
+
 ;;; Service instance ejecting, work-stealing, access and creation
 
 ;; Attempt to eject instances
@@ -265,13 +267,14 @@
                 (let [{:keys [service-deployment-error-details service-deployment-error-msg]} instance
                       {:keys [error-map error-message]}
                       (cond->
-                        {:error-map {:service-id service-id
+                        {:error-map {:log-level :info
+                                     :service-id service-id
                                      :status http-503-service-unavailable}
                          :error-message (utils/message instance)}
                         (and service-deployment-error-msg service-deployment-error-details)
                         (-> (assoc :error-message service-deployment-error-msg)
                             (update :error-map #(merge service-deployment-error-details %))))]
-                  (ex-info (str "Deployment error: " error-message) error-map))
+                  (ex-info (str deployment-error-prefix error-message) error-map))
                 (if-not (t/before? (t/now) expiry-time)
                   (do
                     ;; No instances were started in a reasonable amount of time
