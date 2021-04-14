@@ -37,7 +37,7 @@
             (str ping-response))
         (is (= "get" (get-in ping-response [:headers :x-kitchen-request-method])) (str ping-response))
         (if (utils/param-contains? query-params "exclude" "service-state")
-          (is (= {:result "excluded"} service-state))
+          (is (= {:result "excluded" :service-id service-id} service-state))
           (is (= {:exists? true :healthy? true :service-id service-id :status "Running"} service-state))))
       (do
         (is (= "timed-out" (get ping-response :result)) (str ping-response))
