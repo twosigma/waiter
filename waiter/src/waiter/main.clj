@@ -69,7 +69,9 @@
                    (not (.isFinished ^ServletInputStream body))
                    (not (instance? ManyToManyChannel response))
                    (not (hu/http2? internal-protocol)))
-        response
+        (do
+          (log/info "not consuming bytes from request stream")
+          response)
         (let [response-ch (async/promise-chan)
               input-stream ^ServletInputStream body
               bytes-counter-atom (atom 0)
@@ -77,8 +79,8 @@
               throughput-iterations-meter-global (metrics/waiter-meter "streaming" "request-iterations")
               complete-request-streaming (fn complete-request-streaming [throwable]
                                            (if throwable
-                                             (log/debug throwable "error after consuming" @bytes-counter-atom "bytes from request stream")
-                                             (log/debug "successfully consumed" @bytes-counter-atom "bytes from request stream"))
+                                             (log/info throwable "error after consuming" @bytes-counter-atom "bytes from request stream")
+                                             (log/info "successfully consumed" @bytes-counter-atom "bytes from request stream"))
                                            (async/>!! response-ch response))
               buffer-bytes (byte-array buffer-size)]
           (try
@@ -144,20 +146,21 @@
                          [:state cors-validator router-id server-name]
                          handlers] ; Insist that all systems are running before we start server
                   (let [{:keys [websocket-request-acceptor]} handlers
-                        {:keys [drain-request-buffer-size]} server-options
+                        {:keys [drain-request-buffer? drain-request-buffer-size]} server-options
                         options (merge (cond-> server-options
                                          (:ssl-port server-options) (assoc :ssl? true))
                                        websocket-config
-                                       {:ring-handler (-> (core/ring-handler-factory waiter-request?-fn handlers)
-                                                        (cors/wrap-cors-preflight
-                                                          cors-validator (:max-age cors-config) discover-service-parameters-fn waiter-request?-fn)
-                                                        core/wrap-error-handling
-                                                        (core/wrap-debug generate-log-url-fn)
-                                                        (core/attach-waiter-api-middleware waiter-request?-fn)
-                                                        (core/attach-server-header-middleware server-name)
-                                                        rlog/wrap-log
-                                                        core/correlation-id-middleware
-                                                        (core/wrap-request-info router-id support-info)
+                                       {:ring-handler (cond-> (-> (core/ring-handler-factory waiter-request?-fn handlers)
+                                                                (cors/wrap-cors-preflight
+                                                                  cors-validator (:max-age cors-config) discover-service-parameters-fn waiter-request?-fn)
+                                                                core/wrap-error-handling
+                                                                (core/wrap-debug generate-log-url-fn)
+                                                                (core/attach-waiter-api-middleware waiter-request?-fn)
+                                                                (core/attach-server-header-middleware server-name)
+                                                                rlog/wrap-log
+                                                                core/correlation-id-middleware
+                                                                (core/wrap-request-info router-id support-info))
+                                                        drain-request-buffer?
                                                         (consume-request-stream drain-request-buffer-size))
                                         :websocket-acceptor websocket-request-acceptor
                                         :websocket-handler (-> (core/websocket-handler-factory handlers)
