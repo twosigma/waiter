@@ -105,7 +105,8 @@
           [users chan] (async/alts!! [response-chan (async/timeout 1000)] :priority true)]
       (when (and (= response-chan chan) (not (contains? users run-as-user)))
         (throw (ex-info "No prestashed tickets available"
-                        {:message (utils/message :prestashed-tickets-not-available)
+                        {:error-class "waiter.PrestashedTickets"
+                         :message (utils/message :prestashed-tickets-not-available)
                          :service-id service-id
                          :status http-403-forbidden
                          :user run-as-user

@@ -38,6 +38,7 @@
         auth-principal "user@test.com"
         standard-request {}
         standard-401-response {:body "Unauthorized"
+                               :error-class "waiter.KerberosNegotiate"
                                :headers {"content-type" "text/plain"
                                          "www-authenticate" "Negotiate"}
                                :status http-401-unauthorized
@@ -60,6 +61,7 @@
         (with-redefs [too-many-pending-auth-requests? (constantly true)]
           (let [handler (require-gss request-handler thread-pool max-queue-length password)]
             (is (= {:body "Too many Kerberos authentication requests"
+                    :error-class "waiter.KerberosQueueLength"
                     :headers {"content-type" "text/plain"}
                     :status http-503-service-unavailable
                     :waiter/response-source :waiter}

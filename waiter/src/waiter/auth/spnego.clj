@@ -70,6 +70,7 @@
   [request]
   (log/info "triggering 401 negotiate for spnego authentication")
   (-> (response-http-401-unauthorized request "for negotiation")
+    (assoc :error-class "waiter.KerberosNegotiate")
     (assoc-in [:headers "www-authenticate"] (str/trim negotiate-prefix))))
 
 (defn response-http-401-unauthorized-spnego-disabled
@@ -84,7 +85,8 @@
   (log/info "triggering 503 unavailable for spnego authentication")
   (counters/inc! (metrics/waiter-counter "core" "response-status" "503"))
   (meters/mark! (metrics/waiter-meter "core" "response-status-rate" "503"))
-  (-> {:message "Too many Kerberos authentication requests"
+  (-> {:details {:error-class "waiter.KerberosQueueLength"}
+       :message "Too many Kerberos authentication requests"
        :status http-503-service-unavailable}
     (utils/data->error-response request)
     (cookies/cookies-response)))

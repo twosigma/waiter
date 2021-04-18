@@ -860,7 +860,8 @@
   (fn [{{:keys [suspended-state service-id]} :descriptor :as request}]
     (if (get suspended-state :suspended false)
       (let [{:keys [last-updated-by time]} suspended-state
-            response-map (cond-> {:service-id service-id}
+            response-map (cond-> {:error-class "waiter.Suspended"
+                                  :service-id service-id}
                            time (assoc :suspended-at (du/date-to-str time))
                            (not (str/blank? last-updated-by)) (assoc :last-updated-by last-updated-by))]
         (log/info "service has been suspended" response-map)
@@ -878,7 +879,8 @@
   (fn maintenance-mode-handler [{{:keys [service-description-template token waiter-headers]
          {:strs [maintenance owner]} :token-metadata} :waiter-discovery
         :as request}]
-    (let [response-map {:name (get service-description-template "name")
+    (let [response-map {:error-class "waiter.Maintenance"
+                        :name (get service-description-template "name")
                         :token token
                         :token-owner owner}]
       (cond (contains? waiter-headers "x-waiter-maintenance")
@@ -927,6 +929,7 @@
       (if (> current-queue-length max-queue-length)
         (let [outstanding-requests (counters/value (metrics/service-counter service-id "request-counts" "outstanding"))
               response-map {:current-queue-length current-queue-length
+                            :error-class "waiter.QueueLength"
                             :max-queue-length max-queue-length
                             :outstanding-requests outstanding-requests
                             :service-id service-id}]
