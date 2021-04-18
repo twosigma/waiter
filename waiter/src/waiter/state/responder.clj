@@ -226,8 +226,12 @@
       (log/info "cleaning up work-stealing offers before exiting")
       ; cleanup state by rejecting any outstanding work-stealing offers, return nil since :exit was sent
       (doseq [work-stealing-offer (vec work-stealing-queue)]
-        (complete-work-stealing-offer! service-id work-stealing-offer :rejected work-stealing-received-in-flight-counter)))
-    current-state))
+        (complete-work-stealing-offer! service-id work-stealing-offer :rejected work-stealing-received-in-flight-counter))
+      ;; return nil to trigger responder termination
+      nil)
+    (do
+      (log/warn "unsupported exit data:" data)
+      current-state)))
 
 (defn update-slots-metrics
   "Resets the counters for the slots assigned, available and in-use using data available in `instance-id->state`."
@@ -536,20 +540,21 @@
   "Releases the head of the work-stealing queue if no help is required."
   [current-state service-id slots-in-use-counter slots-available-counter work-stealing-received-in-flight-counter
    requests-outstanding-counter]
-  (update-in current-state
-    [:work-stealing-queue]
-    (fn [work-stealing-queue]
-      (when work-stealing-queue
-        (if (work-stealing/help-required?
-              {"outstanding" (counters/value requests-outstanding-counter)
-               "slots-available" (counters/value slots-available-counter)
-               "slots-in-use" (counters/value slots-in-use-counter)
-               "slots-received" (counters/value work-stealing-received-in-flight-counter)})
-          work-stealing-queue
-          (let [offer (first work-stealing-queue)]
-            (log/info "service-chan-responder deleting a work-stealing offer since help deemed unnecessary")
-            (complete-work-stealing-offer! service-id offer :rejected work-stealing-received-in-flight-counter)
-            (pop work-stealing-queue)))))))
+  (when current-state
+    (update-in current-state
+      [:work-stealing-queue]
+      (fn [work-stealing-queue]
+        (when work-stealing-queue
+          (if (work-stealing/help-required?
+                {"outstanding" (counters/value requests-outstanding-counter)
+                 "slots-available" (counters/value slots-available-counter)
+                 "slots-in-use" (counters/value slots-in-use-counter)
+                 "slots-received" (counters/value work-stealing-received-in-flight-counter)})
+            work-stealing-queue
+            (let [offer (first work-stealing-queue)]
+              (log/info "service-chan-responder deleting a work-stealing offer since help deemed unnecessary")
+              (complete-work-stealing-offer! service-id offer :rejected work-stealing-received-in-flight-counter)
+              (pop work-stealing-queue))))))))
 
 (defn start-service-chan-responder
   "go block that maintains the available instances for one service.
