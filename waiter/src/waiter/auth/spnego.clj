@@ -32,6 +32,8 @@
            (org.ietf.jgss GSSContext GSSCredential GSSException GSSManager)))
 
 (def ^:const negotiate-prefix "Negotiate ")
+(def ^:const error-class-kerberos-negotiate "waiter.KerberosNegotiate")
+(def ^:const error-class-kerberos-queue-length "waiter.KerberosQueueLength")
 
 (defn- negotiate-token?
   "Predicate to determine if an authorization header represents a spnego negotiate token."
@@ -70,7 +72,7 @@
   [request]
   (log/info "triggering 401 negotiate for spnego authentication")
   (-> (response-http-401-unauthorized request "for negotiation")
-    (assoc :error-class "waiter.KerberosNegotiate")
+    (assoc :error-class error-class-kerberos-negotiate)
     (assoc-in [:headers "www-authenticate"] (str/trim negotiate-prefix))))
 
 (defn response-http-401-unauthorized-spnego-disabled
@@ -85,7 +87,7 @@
   (log/info "triggering 503 unavailable for spnego authentication")
   (counters/inc! (metrics/waiter-counter "core" "response-status" "503"))
   (meters/mark! (metrics/waiter-meter "core" "response-status-rate" "503"))
-  (-> {:details {:error-class "waiter.KerberosQueueLength"}
+  (-> {:details {:error-class error-class-kerberos-queue-length}
        :message "Too many Kerberos authentication requests"
        :status http-503-service-unavailable}
     (utils/data->error-response request)

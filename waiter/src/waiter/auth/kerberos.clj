@@ -27,6 +27,8 @@
             [waiter.util.utils :as utils])
   (:import (java.util.concurrent LinkedBlockingQueue ThreadPoolExecutor TimeUnit)))
 
+(def ^:const error-class-prestashed-tickets "waiter.PrestashedTickets")
+
 (defn get-opt-in-accounts
   "Returns the list of users whose tickets are prestashed on host"
   [host]
@@ -105,7 +107,7 @@
           [users chan] (async/alts!! [response-chan (async/timeout 1000)] :priority true)]
       (when (and (= response-chan chan) (not (contains? users run-as-user)))
         (throw (ex-info "No prestashed tickets available"
-                        {:error-class "waiter.PrestashedTickets"
+                        {:error-class error-class-prestashed-tickets
                          :message (utils/message :prestashed-tickets-not-available)
                          :service-id service-id
                          :status http-403-forbidden

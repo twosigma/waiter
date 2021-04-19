@@ -52,6 +52,10 @@
            (org.eclipse.jetty.websocket.api UpgradeException)
            (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse)))
 
+(def ^:const error-class-maintenance "waiter.Maintenance")
+(def ^:const error-class-queue-length "waiter.QueueLength")
+(def ^:const error-class-suspended "waiter.Suspended")
+
 (defn make-auth-user-map
   "Creates a map containing the username and principal from a request"
   [{:keys [authorization/metadata authorization/principal]}]
@@ -860,7 +864,7 @@
   (fn [{{:keys [suspended-state service-id]} :descriptor :as request}]
     (if (get suspended-state :suspended false)
       (let [{:keys [last-updated-by time]} suspended-state
-            response-map (cond-> {:error-class "waiter.Suspended"
+            response-map (cond-> {:error-class error-class-suspended
                                   :service-id service-id}
                            time (assoc :suspended-at (du/date-to-str time))
                            (not (str/blank? last-updated-by)) (assoc :last-updated-by last-updated-by))]
@@ -879,7 +883,7 @@
   (fn maintenance-mode-handler [{{:keys [service-description-template token waiter-headers]
          {:strs [maintenance owner]} :token-metadata} :waiter-discovery
         :as request}]
-    (let [response-map {:error-class "waiter.Maintenance"
+    (let [response-map {:error-class error-class-maintenance
                         :name (get service-description-template "name")
                         :token token
                         :token-owner owner}]
@@ -929,7 +933,7 @@
       (if (> current-queue-length max-queue-length)
         (let [outstanding-requests (counters/value (metrics/service-counter service-id "request-counts" "outstanding"))
               response-map {:current-queue-length current-queue-length
-                            :error-class "waiter.QueueLength"
+                            :error-class error-class-queue-length
                             :max-queue-length max-queue-length
                             :outstanding-requests outstanding-requests
                             :service-id service-id}]
