@@ -814,7 +814,7 @@
                      (str (when scheme (str scheme "://")) host "/state/" path))]
       (utils/clj->streaming-json-response {:details (->> ["autoscaler" "autoscaling-multiplexer" "codahale-reporters"
                                                           "ejection-expiry" "entitlement-manager" "fallback"
-                                                          "gc-broken-services" "gc-services" "gc-transient-metrics" "interstitial"
+                                                          "gc-broken-services" "gc-services" "gc-transient-metrics" "instance-tracker" "interstitial"
                                                           "jwt-auth-server" "kv-store" "launch-metrics" "leader" "local-usage"
                                                           "maintainer" "router-metrics" "scheduler" "service-description-builder"
                                                           "service-maintainer" "statsd" "token-watch-maintainer" "work-stealing"]
@@ -906,17 +906,13 @@
        :leader-id (leader-id-fn)})
     router-id request))
 
-(defn get-token-watch-maintainer-state
-  "Using the query-state-fn, pass include-flags to get the token-watch-maintainer-state and return
+(defn get-daemon-state
+  "Using the query-state-fn, pass include-flags to get the daemon state and return
   streaming response"
   [router-id query-state-fn request]
-  (try
-    (let [{:strs [include]} (-> request ru/query-params-request :query-params)
-          include-flags (if (string? include) #{include} (set include))]
-      (utils/clj->streaming-json-response {:router-id router-id
-                                           :state (query-state-fn include-flags)}))
-    (catch Exception ex
-      (utils/exception->response ex request))))
+  (let [{:strs [include]} (-> request ru/query-params-request :query-params)
+        include-flags (if (string? include) #{include} (set include))]
+    (get-function-state #(query-state-fn include-flags) router-id request)))
 
 (defn get-router-metrics-state
   "Outputs the router metrics state."

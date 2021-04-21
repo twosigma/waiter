@@ -44,6 +44,7 @@
             [waiter.discovery :as discovery]
             [waiter.handler :as handler]
             [waiter.headers :as headers]
+            [waiter.instance-tracker :as instance-tracker]
             [waiter.interstitial :as interstitial]
             [waiter.kv :as kv]
             [waiter.metrics :as metrics]
@@ -122,6 +123,7 @@
                               ["/gc-broken-services" :state-gc-for-broken-services]
                               ["/gc-services" :state-gc-for-services]
                               ["/gc-transient-metrics" :state-gc-for-transient-metrics]
+                              ["/instance-tracker" :state-instance-tracker-fn]
                               ["/interstitial" :state-interstitial-handler-fn]
                               ["/jwt-auth-server" :state-jwt-auth-server-handler-fn]
                               ["/kv-store" :state-kv-store-handler-fn]
@@ -1228,6 +1230,22 @@
                                      (metrics/transient-metrics-gc query-state-fn local-usage-agent service-gc-go-routine metrics-config)]
                                  (metrics/transient-metrics-data-producer service-id->metrics-chan service-id->metrics-fn metrics-config)
                                  metrics-gc-chans))
+   :instance-tracker (pc/fnk
+                       [[:routines service-id->service-description-fn]
+                        [:settings
+                         [:cluster-config name]
+                         [:instance-tracker-config instance-failure-handler]]
+                        [:state clock]
+                        router-state-maintainer]
+                       (let [{{:keys [router-state-push-mult]} :maintainer} router-state-maintainer
+                             instance-failure-context {:clock clock
+                                                       :cluster-name name
+                                                       :service-id->service-description-fn service-id->service-description-fn}
+                             instance-failure-handler-component (utils/create-component instance-failure-handler
+                                                                                        :context instance-failure-context)
+                             router-state-chan (async/tap router-state-push-mult (au/latest-chan))]
+                         (instance-tracker/start-instance-tracker
+                           clock router-state-chan instance-failure-handler-component)))
    :interstitial-maintainer (pc/fnk [[:routines service-id->service-description-fn]
                                      [:state interstitial-state-atom]
                                      router-state-maintainer]
@@ -1686,6 +1704,13 @@
                                       (wrap-secure-request-fn
                                         (fn state-interstitial-handler-fn [request]
                                           (handler/get-query-chan-state-handler router-id interstitial-query-chan request)))))
+   :state-instance-tracker-fn (pc/fnk [[:daemons instance-tracker]
+                                       [:state router-id]
+                                       wrap-secure-request-fn]
+                                (let [{:keys [query-state-fn]} instance-tracker]
+                                  (wrap-secure-request-fn
+                                    (fn instance-tracker-state-handler-fn [request]
+                                      (handler/get-daemon-state router-id query-state-fn request)))))
    :state-jwt-auth-server-handler-fn (pc/fnk [[:state jwt-auth-server router-id]
                                               wrap-secure-request-fn]
                                        (wrap-secure-request-fn
@@ -1766,7 +1791,7 @@
                                       (let [{:keys [query-state-fn]} token-watch-maintainer]
                                         (wrap-secure-request-fn
                                           (fn maintainer-state-handler-fn [request]
-                                            (handler/get-token-watch-maintainer-state router-id query-state-fn request)))))
+                                            (handler/get-daemon-state router-id query-state-fn request)))))
    :state-work-stealing-handler-fn (pc/fnk [[:state offers-allowed-semaphore router-id]
                                             wrap-secure-request-fn]
                                      (wrap-secure-request-fn
