@@ -611,6 +611,22 @@
               (is (get service "scaling-state") (str service))
               (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
+          (testing "with include healthy-instances parameter"
+            (let [service (service waiter-url service-id {"include" "healthy-instances"})
+                  healthy-instances (get-in service ["instances" "healthy-instances"])]
+              (is service)
+              (is (contains? #{"Running" "Starting"} (get service "status")))
+              (is (seq healthy-instances) (str service))
+              (doseq [instance healthy-instances]
+                (is (every? #(contains? instance %) ["host" "id" "port" "started-at"])
+                    (str {:healthy-instances healthy-instances :instance instance})))
+              (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
+              (is (get-in service ["request-metrics" "outstanding"]) (str service))
+              (is (get-in service ["request-metrics" "total"]) (str service))
+              (is (get service "resource-usage") (str service))
+              (is (get service "scaling-state") (str service))
+              (is (pos? (get-in service ["service-description" "cpus"])) service)))
+
           (testing "with star run-as-user parameter"
             (let [run-as-user-param (->> current-user reverse (drop 2) (cons "*") reverse (str/join ""))
                   service (service waiter-url service-id {"run-as-user" run-as-user-param})] ;; see my app as myself

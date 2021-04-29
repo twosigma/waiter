@@ -369,6 +369,7 @@
           include-effective-parameters? (or (utils/request-flag request-params "effective-parameters")
                                             (utils/param-contains? request-params "include" "effective-parameters"))
           include-references? (utils/param-contains? request-params "include" "references")
+          include-healthy-instances? (utils/param-contains? request-params "include" "healthy-instances")
           response-data (map
                           (fn service-id->service-info [service-id]
                             (let [scaling-state (retrieve-scaling-state query-autoscaler-state-fn service-id)
@@ -390,6 +391,10 @@
                                  :url (prepend-waiter-url (str "/apps/" service-id))}
                                 include-effective-parameters?
                                 (assoc :effective-parameters effective-service-description)
+                                include-healthy-instances?
+                                (assoc-in [:instances :healthy-instances]
+                                          (->> (get service-id->healthy-instances service-id)
+                                            (map #(select-keys % [:host :id :port :started-at]))))
                                 include-references?
                                 (assoc :references (seq (service-id->references-fn service-id)))
                                 scaling-state

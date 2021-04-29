@@ -34,6 +34,7 @@
             [waiter.statsd :as statsd]
             [waiter.status-codes :refer :all]
             [waiter.test-helpers :refer :all]
+            [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
   (:import (clojure.core.async.impl.channels ManyToManyChannel)
            (clojure.lang ExceptionInfo)
@@ -624,17 +625,17 @@
         healthy-services #{"service1" "service2" "service4" "service6" "service7" "service8" "service9" "service10" "service11"}
         unhealthy-services #{"service2" "service3" "service5"}
         service-id->references {"service1" {:sources [{:token "t1.org" :version "v1"} {:token "t2.com" :version "v2"}]
-                                            :type :token }
+                                            :type :token}
                                 "service3" {:sources [{:token "t2.com" :version "v2"} {:token "t3.edu" :version "v3"}]
-                                            :type :token }
+                                            :type :token}
                                 "service4" {:sources [{:token "t1.org" :version "v1"} {:token "t2.com" :version "v2"}]
-                                            :type :token }
+                                            :type :token}
                                 "service5" {:sources [{:token "t1.org" :version "v1"} {:token "t3.edu" :version "v3"}]
-                                            :type :token }
+                                            :type :token}
                                 "service7" {:sources [{:token "t1.org" :version "v2"} {:token "t2.com" :version "v1"}]
-                                            :type :token }
+                                            :type :token}
                                 "service9" {:sources [{:token "t2.com" :version "v3"}]
-                                            :type :token }}
+                                            :type :token}}
         service-id->source-tokens {"service1" [{:token "t1.org" :version "v1"} {:token "t2.com" :version "v2"}]
                                    "service3" [{:token "t2.com" :version "v2"} {:token "t3.edu" :version "v3"}]
                                    "service4" [{:token "t1.org" :version "v1"} {:token "t2.com" :version "v2"}]
@@ -642,8 +643,19 @@
                                    "service7" [{:token "t1.org" :version "v2"} {:token "t2.com" :version "v1"}]
                                    "service9" [{:token "t2.com" :version "v3"}]}
         all-services (set/union other-user-services test-user-services)
+        current-time (t/now)
         query-state-fn (constantly {:all-available-service-ids all-services
-                                    :service-id->healthy-instances (pc/map-from-keys (constantly []) healthy-services)
+                                    :service-id->healthy-instances (pc/map-from-keys
+                                                                     (fn [service-id]
+                                                                       (let [instance-id-1 (str service-id ".i1")]
+                                                                         [{:flags []
+                                                                           :healthy? true
+                                                                           :host (str "127.0.0." (hash instance-id-1))
+                                                                           :id instance-id-1
+                                                                           :port (+ 1000 (rand 1000))
+                                                                           :service-id service-id
+                                                                           :started-at (du/date-to-str current-time)}]))
+                                                                     healthy-services)
                                     :service-id->unhealthy-instances (pc/map-from-keys (constantly []) unhealthy-services)})
         query-autoscaler-state-fn (constantly
                                     (pc/map-from-keys
@@ -941,7 +953,27 @@
                       keys
                       set
                       (set/intersection test-user-services))
-                 (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))))
+                 (->> body json/read-str walk/keywordize-keys (map :service-id) set)))))
+
+      (testing "list-services-handler:include-healthy-instances"
+        (let [request (assoc request :query-string "include=healthy-instances")
+              {:keys [body] :as response}
+              (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                     service-id->service-description-fn service-id->metrics-fn
+                                     service-id->references-fn service-id->source-tokens-entries-fn request)
+              service-id->healthy-instances (->> body
+                                              (json/read-str)
+                                              (walk/keywordize-keys)
+                                              (pc/map-from-vals :service-id)
+                                              (pc/map-vals #(get-in % [:instances :healthy-instances])))]
+          (assert-successful-json-response response)
+          (is (= test-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set)))
+          (doseq [service-id test-user-services]
+            (if (contains? healthy-services service-id)
+              (let [healthy-instances (get-in (query-state-fn) [:service-id->healthy-instances service-id])]
+                (is (= (map #(select-keys % [:host :id :port :started-at]) healthy-instances)
+                       (get service-id->healthy-instances service-id))))
+              (is (empty? (get service-id->healthy-instances service-id))))))))))
 
 (deftest test-delete-service-handler
   (let [test-user "test-user"
