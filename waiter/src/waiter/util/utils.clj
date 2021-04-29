@@ -548,11 +548,8 @@
   (fn [body-function]
     (async/go-loop [num-tries 1
                     current-delay-ms initial-delay-ms]
-      (let [{:keys [success result]}
-            (try
-              {:success true, :result (fa/<? (body-function))}
-              (catch Exception ex
-                {:success false, :result ex}))]
+      (let [result (async/<! (body-function))
+            success (not (instance? Throwable result))]
         (cond
           success result
           (>= num-tries max-retries) result

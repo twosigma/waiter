@@ -22,13 +22,12 @@
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.walk :as walk]
-            [full.async :refer [<? <?? go-try]]
+            [full.async :as fa]
             [waiter.status-codes :refer :all]
             [waiter.test-helpers :refer :all]
             [waiter.util.cache-utils :refer :all]
             [waiter.util.date-utils :refer :all]
-            [waiter.util.utils :refer :all]
-            [full.async :as fa])
+            [waiter.util.utils :refer :all])
   (:import (clojure.lang ExceptionInfo)
            (java.net ServerSocket)
            (java.util UUID)
