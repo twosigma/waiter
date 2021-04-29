@@ -24,12 +24,12 @@
             [clojure.walk :as walk]
             [comb.template :as template]
             [digest]
+            [full.async :as fa]
             [taoensso.nippy :as nippy]
             [taoensso.nippy.compression :as compression]
             [waiter.status-codes :refer :all]
             [waiter.util.date-utils :as du]
-            [waiter.util.http-utils :as hu]
-            [full.async :as fa])
+            [waiter.util.http-utils :as hu])
   (:import (clojure.core.async.impl.channels ManyToManyChannel)
            (clojure.lang ExceptionInfo)
            (java.io OutputStreamWriter)
@@ -530,7 +530,10 @@
 
 (defn async-retry-strategy
   "Return a async retry function using the specified retry config.
-   The returned function accepts a no-args async function to be executed.
+   The returned function accepts a no-args async body-function to be executed. The returned function returns a channel
+   where the result of the retry strategy will be sent to.
+   The body-function must return a channel (i.e. async/go). If the channel receives an Exception, the body-function
+   will be considered for retry. Otherwise the message received from the channel will be returned.
 
    `delay-multiplier` each previous delay is multiplied by delay-multiplier to generate the next delay.
    `initial-delay-ms` the initial delay for the first retry.
