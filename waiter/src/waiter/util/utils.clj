@@ -28,7 +28,8 @@
             [taoensso.nippy.compression :as compression]
             [waiter.status-codes :refer :all]
             [waiter.util.date-utils :as du]
-            [waiter.util.http-utils :as hu])
+            [waiter.util.http-utils :as hu]
+            [full.async :as fa])
   (:import (clojure.core.async.impl.channels ManyToManyChannel)
            (clojure.lang ExceptionInfo)
            (java.io OutputStreamWriter)
@@ -525,6 +526,36 @@
           :else (let [delay-ms (long (min max-delay-ms current-delay-ms))]
                   (log/info "sleeping" delay-ms "ms before retry" (str "#" num-tries))
                   (sleep delay-ms)
+                  (recur (inc num-tries) (* delay-ms delay-multiplier))))))))
+
+(defn async-retry-strategy
+  "Return a async retry function using the specified retry config.
+   The returned function accepts a no-args async function to be executed.
+
+   `delay-multiplier` each previous delay is multiplied by delay-multiplier to generate the next delay.
+   `initial-delay-ms` the initial delay for the first retry.
+   `max-delay-ms` the delay cap for exponential backoff delay.
+   `max-retries`  limit the number of retries.
+   "
+  [{:keys [delay-multiplier initial-delay-ms max-delay-ms max-retries]
+    :or {delay-multiplier 1.0
+         initial-delay-ms 100
+         max-delay-ms 300000 ; 300k millis = 5 minutes
+         max-retries 10}}]
+  (fn [body-function]
+    (async/go-loop [num-tries 1
+                    current-delay-ms initial-delay-ms]
+      (let [{:keys [success result]}
+            (try
+              {:success true, :result (fa/<? (body-function))}
+              (catch Exception ex
+                {:success false, :result ex}))]
+        (cond
+          success result
+          (>= num-tries max-retries) result
+          :else (let [delay-ms (long (min max-delay-ms current-delay-ms))]
+                  (log/info "sleeping" delay-ms "ms before retry" (str "#" num-tries))
+                  (async/<! (async/timeout delay-ms))
                   (recur (inc num-tries) (* delay-ms delay-multiplier))))))))
 
 (defn unique-identifier

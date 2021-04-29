@@ -27,7 +27,8 @@
             [waiter.test-helpers :refer :all]
             [waiter.util.cache-utils :refer :all]
             [waiter.util.date-utils :refer :all]
-            [waiter.util.utils :refer :all])
+            [waiter.util.utils :refer :all]
+            [full.async :as fa])
   (:import (clojure.lang ExceptionInfo)
            (java.net ServerSocket)
            (java.util UUID)
@@ -295,7 +296,12 @@
                                                          (throw (IllegalStateException. "function throws error")))
                                                        return-value)]
                                         [call-counter-atom function]))
+        make-call-atom-and-async-function (fn [num-failues return-value]
+                                            (let [[atom function] (make-call-atom-and-function num-failues return-value)]
+                                              [atom (fn [] (fa/go-try (function)))]))
+        expected-buffer-ms 100
         return-value {:function-result true}]
+
     (testing "retry-strategy:no-retries"
       (let [[call-counter-atom function] (make-call-atom-and-function 0 return-value)
             retry-config {:delay-multiplier 1.0
@@ -304,6 +310,7 @@
             actual-result ((retry-strategy retry-config) function)]
         (is (= return-value actual-result))
         (is (= 1 @call-counter-atom))))
+
     (testing "retry-strategy:multiple-retries-success"
       (let [[call-counter-atom function] (make-call-atom-and-function 4 return-value)
             retry-config {:delay-multiplier 1.0
@@ -312,6 +319,7 @@
             actual-result ((retry-strategy retry-config) function)]
         (is (= return-value actual-result))
         (is (= 5 @call-counter-atom))))
+
     (testing "retry-strategy:multiple-retries-failure"
       (let [[call-counter-atom function] (make-call-atom-and-function 20 return-value)
             retry-config {:delay-multiplier 1.0
@@ -320,6 +328,7 @@
         (is (thrown-with-msg? IllegalStateException #"function throws error"
                               ((retry-strategy retry-config) function)))
         (is (= 10 @call-counter-atom))))
+
     (testing "retry-strategy:multiple-retries-failure-elapsed-time-constant"
       (let [actual-elapsed-time-atom (atom 0)]
         (with-redefs [sleep (fn [time] (swap! actual-elapsed-time-atom + time))]
@@ -333,6 +342,7 @@
             (let [actual-elapsed-time @actual-elapsed-time-atom
                   expected-elapsed-time (* (dec 5) 10)]
               (is (= expected-elapsed-time actual-elapsed-time)))))))
+
     (testing "retry-strategy:multiple-retries-failure-elapsed-time-exponential"
       (let [actual-elapsed-time-atom (atom 0)]
         (with-redefs [sleep (fn [time] (swap! actual-elapsed-time-atom + time))]
@@ -346,6 +356,7 @@
             (let [actual-elapsed-time @actual-elapsed-time-atom
                   expected-elapsed-time (* (reduce + [1 2 4 8]) 10)]
               (is (= expected-elapsed-time actual-elapsed-time)))))))
+
     (testing "retry-strategy:multiple-retries-success-elapsed-time-exponential-2"
       (let [actual-elapsed-time-atom (atom 0)]
         (with-redefs [sleep (fn [time] (swap! actual-elapsed-time-atom + time))]
@@ -359,6 +370,7 @@
             (let [actual-elapsed-time @actual-elapsed-time-atom
                   expected-elapsed-time (* (reduce + [1 2 4 8 16 32 64 128]) 10)]
               (is (= expected-elapsed-time actual-elapsed-time)))))))
+
     (testing "retry-strategy:multiple-retries-success-elapsed-time-exponential-5"
       (let [actual-elapsed-time-atom (atom 0)]
         (with-redefs [sleep (fn [time] (swap! actual-elapsed-time-atom + time))]
@@ -372,6 +384,7 @@
             (let [actual-elapsed-time @actual-elapsed-time-atom
                   expected-elapsed-time (* (reduce + [1 5 25 125]) 10)]
               (is (= expected-elapsed-time actual-elapsed-time)))))))
+
     (testing "retry-strategy:max-delay-ms"
       (let [actual-elapsed-time-atom (atom 0)]
         (with-redefs [sleep (fn [time] (swap! actual-elapsed-time-atom + time))]
@@ -385,7 +398,105 @@
             (is (= 6 @call-counter-atom))
             (let [actual-elapsed-time @actual-elapsed-time-atom
                   expected-elapsed-time (reduce + [10 50 100 100 100])]
-              (is (= expected-elapsed-time actual-elapsed-time)))))))))
+              (is (= expected-elapsed-time actual-elapsed-time)))))))
+
+    (testing "async-retry-strategy:no-retries"
+      (let [[call-counter-atom function] (make-call-atom-and-async-function 0 return-value)
+            retry-config {:delay-multiplier 1.0
+                          :initial-delay-ms 1
+                          :max-retries 0}
+            actual-result (fa/<?? ((async-retry-strategy retry-config) function))]
+        (is (= return-value actual-result))
+        (is (= 1 @call-counter-atom))))
+
+    (testing "async-retry-strategy:multiple-retries-success"
+      (let [[call-counter-atom function] (make-call-atom-and-async-function 4 return-value)
+            retry-config {:delay-multiplier 1.0
+                          :initial-delay-ms 1
+                          :max-retries 10}
+            actual-result (fa/<?? ((async-retry-strategy retry-config) function))]
+        (is (= return-value actual-result))
+        (is (= 5 @call-counter-atom))))
+
+    (testing "async-retry-strategy:multiple-retries-failure"
+      (let [[call-counter-atom function] (make-call-atom-and-async-function 20 return-value)
+            retry-config {:delay-multiplier 1.0
+                          :initial-delay-ms 1
+                          :max-retries 10}]
+        (is (thrown-with-msg? ExceptionInfo #"function throws error"
+                              (fa/<?? ((async-retry-strategy retry-config) function))))
+        (is (= 10 @call-counter-atom))))
+
+    (testing "async-retry-strategy:multiple-retries-failure-elapsed-time-constant"
+      (let [[call-counter-atom function] (make-call-atom-and-async-function 20 return-value)
+            retry-config {:delay-multiplier 1.0
+                          :initial-delay-ms 10
+                          :max-retries 5}
+            start-time (System/currentTimeMillis)
+            _ (is (thrown-with-msg? ExceptionInfo #"function throws error"
+                                    (fa/<?? ((async-retry-strategy retry-config) function))))
+            end-time (System/currentTimeMillis)]
+        (is (= 5 @call-counter-atom))
+        (let [actual-elapsed-time (- end-time start-time)
+              expected-elapsed-time (* (dec 5) 10)]
+          (is (<= expected-elapsed-time actual-elapsed-time (+ expected-buffer-ms expected-elapsed-time))))))
+
+    (testing "async-retry-strategy:multiple-retries-failure-elapsed-time-exponential"
+      (let [[call-counter-atom function] (make-call-atom-and-async-function 20 return-value)
+            retry-config {:delay-multiplier 2
+                          :initial-delay-ms 10
+                          :max-retries 5}
+            start-time (System/currentTimeMillis)
+            _ (is (thrown-with-msg? ExceptionInfo #"function throws error"
+                                    (fa/<?? ((async-retry-strategy retry-config) function))))
+            end-time (System/currentTimeMillis)]
+        (is (= 5 @call-counter-atom))
+        (let [actual-elapsed-time (- end-time start-time)
+              expected-elapsed-time (* (reduce + [1 2 4 8]) 10)]
+          (is (<= expected-elapsed-time actual-elapsed-time (+ expected-buffer-ms expected-elapsed-time))))))
+
+    (testing "async-retry-strategy:multiple-retries-success-elapsed-time-exponential-2"
+      (let [[call-counter-atom function] (make-call-atom-and-async-function 8 return-value)
+            retry-config {:delay-multiplier 2
+                          :initial-delay-ms 10
+                          :max-retries 10}
+            start-time (System/currentTimeMillis)
+            actual-result (fa/<?? ((async-retry-strategy retry-config) function))
+            end-time (System/currentTimeMillis)]
+        (is (= return-value actual-result))
+        (is (= 9 @call-counter-atom))
+        (let [actual-elapsed-time (- end-time start-time)
+              expected-elapsed-time (* (reduce + [1 2 4 8 16 32 64 128]) 10)]
+          (is (<= expected-elapsed-time actual-elapsed-time (+ expected-buffer-ms expected-elapsed-time))))))
+
+    (testing "async-retry-strategy:multiple-retries-success-elapsed-time-exponential-5"
+      (let [[call-counter-atom function] (make-call-atom-and-async-function 4 return-value)
+            retry-config {:delay-multiplier 5
+                          :initial-delay-ms 10
+                          :max-retries 10}
+            start-time (System/currentTimeMillis)
+            actual-result (fa/<?? ((async-retry-strategy retry-config) function))
+            end-time (System/currentTimeMillis)]
+        (is (= return-value actual-result))
+        (is (= 5 @call-counter-atom))
+        (let [actual-elapsed-time (- end-time start-time)
+              expected-elapsed-time (* (reduce + [1 5 25 125]) 10)]
+          (is (<= expected-elapsed-time actual-elapsed-time (+ expected-buffer-ms expected-elapsed-time))))))
+
+    (testing "async-retry-strategy:max-delay-ms"
+      (let [[call-counter-atom function] (make-call-atom-and-async-function 5 return-value)
+            retry-config {:delay-multiplier 5
+                          :initial-delay-ms 10
+                          :max-delay-ms 100
+                          :max-retries 10}
+            start-time (System/currentTimeMillis)
+            actual-result (fa/<?? ((async-retry-strategy retry-config) function))
+            end-time (System/currentTimeMillis)]
+        (is (= return-value actual-result))
+        (is (= 6 @call-counter-atom))
+        (let [actual-elapsed-time (- end-time start-time)
+              expected-elapsed-time (reduce + [10 50 100 100 100])]
+          (is (<= expected-elapsed-time actual-elapsed-time (+ expected-buffer-ms expected-elapsed-time))))))))
 
 (deftest test-unique-identifier
   (testing "unique-identifier:test-uniqueness-in-100s-calls-in-parallel"
